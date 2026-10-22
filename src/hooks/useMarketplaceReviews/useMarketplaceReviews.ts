@@ -6,6 +6,7 @@ import type { CommerceIndexedReviewsResult, CommerceSellerReputationOverview } f
 import { MARKETPLACE_REVIEWS_PAGE_SIZE } from '@/config/commerce';
 import { REVIEW_SORT_COPY } from '@/config/commerce-copy';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { useAttestorKeyWindowsVersion } from '@/hooks/useAttestorKeyWindows/useAttestorKeyWindows';
 import { countedSnippetReputation } from '@/libs/commerce/review-counting';
 import {
   MARKETPLACE_REVIEW_SORT_DEFAULT,
@@ -21,6 +22,7 @@ import { toast } from '@/molecules/Toaster/use-toast';
  * when the index did not answer (the page shows nothing).
  */
 export function useListingRating(sellerPubky: string, listingId: string) {
+  const keyWindowsVersion = useAttestorKeyWindowsVersion();
   const [rating, setRating] = useState<CommerceReputationSnippet | null | 'unavailable' | undefined>(undefined);
 
   useEffect(() => {
@@ -36,7 +38,7 @@ export function useListingRating(sellerPubky: string, listingId: string) {
     return () => {
       active = false;
     };
-  }, [sellerPubky, listingId]);
+  }, [sellerPubky, listingId, keyWindowsVersion]);
 
   return rating;
 }
@@ -54,6 +56,7 @@ export function useListingRating(sellerPubky: string, listingId: string) {
  */
 export function useSellerReputation(sellerPubky: string, options?: { enabled?: boolean }) {
   const enabled = options?.enabled !== false;
+  const keyWindowsVersion = useAttestorKeyWindowsVersion();
   const [overview, setOverview] = useState<CommerceSellerReputationOverview | { status: 'loading' }>({
     status: 'loading',
   });
@@ -76,7 +79,7 @@ export function useSellerReputation(sellerPubky: string, options?: { enabled?: b
     return () => {
       active = false;
     };
-  }, [sellerPubky, enabled]);
+  }, [sellerPubky, enabled, keyWindowsVersion]);
 
   return overview;
 }

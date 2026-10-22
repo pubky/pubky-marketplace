@@ -1,8 +1,13 @@
+import { MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS } from '@/config/commerce';
 import { marketplaceApi } from '@/services/nexus/marketplace/marketplace.api';
 import type {
+  NexusAttestorAnnotation,
+  NexusAttestorProfile,
   NexusListingDetails,
   NexusReputationSummary,
   NexusReviewStream,
+  TAttestorAnnotationsParams,
+  TAttestorProfileParams,
   TListingDetailsParams,
   TListingReviewsParams,
   TListingStreamParams,
@@ -122,5 +127,39 @@ export class NexusMarketplaceService {
    */
   static async fetchListingReviews(params: TListingReviewsParams): Promise<NexusReviewStream> {
     return await queryNexus<NexusReviewStream>({ url: marketplaceApi.listingReviews(params) });
+  }
+
+  /**
+   * Single-attempt read of an attestor's indexed profile. `queryNexus` would
+   * retry a 404 with backoff, but an attestor that has not published (or an
+   * index without the route) is an ordinary answer here, so the 404 propagates
+   * at once and the caller treats it as "no profile".
+   *
+   * @param params - Attestor path param
+   * @returns The profile with its served `record` (proof included)
+   */
+  static async fetchAttestorProfile(params: TAttestorProfileParams): Promise<NexusAttestorProfile> {
+    return await fetchNexus<NexusAttestorProfile>({
+      url: marketplaceApi.attestorProfile(params),
+      timeoutMs: MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS,
+    });
+  }
+
+  /**
+   * Single-attempt read of an attestor's annotations for up to 100 order
+   * refs (the caller chunks longer lists). Same absence semantics as
+   * `fetchAttestorProfile`.
+   *
+   * @param params - Attestor path param and the order refs to ask for
+   * @returns One entry per requested order ref, in request order, `null`
+   *   where the index holds no annotation
+   */
+  static async fetchAttestorAnnotations(
+    params: TAttestorAnnotationsParams,
+  ): Promise<(NexusAttestorAnnotation | null)[]> {
+    return await fetchNexus<(NexusAttestorAnnotation | null)[]>({
+      url: marketplaceApi.attestorAnnotations(params),
+      timeoutMs: MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS,
+    });
   }
 }

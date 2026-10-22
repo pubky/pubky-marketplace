@@ -1,3 +1,4 @@
+import { attestorProfileKeyWindows, narrowTrustedAttestors } from '@/libs/commerce/attestor-key-windows';
 import {
   getAuctionDurationsMinutes,
   getCommerceAdapterMode,
@@ -147,9 +148,21 @@ export const MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS: readonly MarketplaceTrustedA
   { pubky: 'pstmi1bgg6dnrwmfabo9eqycm91esxx338awz1r5feaiub49934o', label: 'Pubky Market', validFrom: '2026-10-01' },
 ];
 
-/** The effective trust list: the compiled defaults plus this deployment's runtime entries. */
-export function marketplaceTrustedAttestors(): readonly MarketplaceTrustedAttestor[] {
+/** The configured trust list: the compiled defaults plus this deployment's runtime entries. */
+export function configuredMarketplaceTrustedAttestors(): readonly MarketplaceTrustedAttestor[] {
   return [...MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS, ...getMarketplaceTrustedAttestors()];
+}
+
+/**
+ * The effective trust list: the configured entries, narrowed by the key
+ * windows the attestors' verified profiles reported this session (a retired
+ * or compromised key's window ends earlier). It never holds a key the
+ * configuration lacks, and with no profile read it is the configured list.
+ * Every trust decision (counting, windows sent to the index, the badge)
+ * reads this list.
+ */
+export function marketplaceTrustedAttestors(): readonly MarketplaceTrustedAttestor[] {
+  return narrowTrustedAttestors(configuredMarketplaceTrustedAttestors(), attestorProfileKeyWindows());
 }
 
 /**
@@ -214,6 +227,21 @@ export function trustedMarketplaceAttestorAtRecordTime(
 
 /** Page size for marketplace review lists (listing and shop surfaces). */
 export const MARKETPLACE_REVIEWS_PAGE_SIZE = 10;
+
+/** Most order refs one `attestor/{id}/annotations` request may name (the index's cap); a longer list is chunked. */
+export const MARKETPLACE_ATTESTOR_ANNOTATIONS_BATCH_MAX = 100;
+/** How long a read attestor profile is used before it is read again. */
+export const MARKETPLACE_ATTESTOR_PROFILE_TTL_MS = 30 * 60 * 1_000;
+/** How long after a failed or missing profile read before the next attempt. */
+export const MARKETPLACE_ATTESTOR_PROFILE_RETRY_MS = 5 * 60 * 1_000;
+/**
+ * The longest a trust-dependent read waits for the attestor profiles before it
+ * goes on with the configured windows (a profile that arrives later still
+ * narrows what is evaluated afterwards).
+ */
+export const MARKETPLACE_ATTESTOR_PROFILE_WAIT_MS = 2_500;
+/** Deadline of one attestor profile or annotation request. */
+export const MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS = 5_000;
 export const COMMERCE_MEDIA_ALT_TEXT_MAX_CHARS = 300;
 export const COMMERCE_CATALOG_SKELETON_COUNT = 8;
 

@@ -1,3 +1,4 @@
+import { CommerceAttestorApplication, type CommerceAttestorOrderRef } from '@/application/commerce/attestor';
 import {
   CommerceApplication,
   type CommerceCatalogStreamFilters,
@@ -321,6 +322,8 @@ export class CommerceController {
    * server-side filters only narrow what gets fetched, never what renders.
    */
   static async fetchCatalogListings(filters: CommerceCatalogUiFilters): Promise<void> {
+    // Read the attestor profiles alongside the stream, not before it: cards re-render when one narrows the trust list.
+    void CommerceAttestorApplication.loadKeyWindows();
     await CommerceApplication.fetchCatalogListings(this.catalogStreamFilters(filters));
   }
 
@@ -1166,6 +1169,7 @@ export class CommerceController {
    * data, never cached as a record.
    */
   static async fetchListingRating(sellerPubky: unknown, listingId: unknown) {
+    await CommerceAttestorApplication.loadKeyWindows();
     return await CommerceApplication.fetchListingRating(
       CommerceRecordNormalizer.pubky(sellerPubky),
       CommerceRecordNormalizer.entityId(listingId),
@@ -1173,21 +1177,34 @@ export class CommerceController {
   }
 
   static async fetchSellerReputation(sellerPubky: unknown) {
+    await CommerceAttestorApplication.loadKeyWindows();
     return await CommerceApplication.fetchSellerReputationOverview(CommerceRecordNormalizer.pubky(sellerPubky));
   }
 
   /** A page of indexed reviews about a seller, with joined responses. */
   static async fetchSellerReviews(sellerPubky: unknown, page: CommerceReviewsPage = {}) {
+    await CommerceAttestorApplication.loadKeyWindows();
     return await CommerceApplication.fetchSellerReviews(CommerceRecordNormalizer.pubky(sellerPubky), page);
   }
 
   /** A page of indexed buyer reviews of one listing, with joined responses. */
   static async fetchListingReviews(sellerPubky: unknown, listingId: unknown, page: CommerceReviewsPage = {}) {
+    await CommerceAttestorApplication.loadKeyWindows();
     return await CommerceApplication.fetchListingReviews(
       CommerceRecordNormalizer.pubky(sellerPubky),
       CommerceRecordNormalizer.entityId(listingId),
       page,
     );
+  }
+
+  /**
+   * The refund and return notes for a page of reviews: each attested order's
+   * outcomes from its attestor's annotation, keyed by `reviewOutcomeKey`.
+   * Network-only and never throwing: until the attestor publishes, and on an
+   * index without the routes, the map is simply empty.
+   */
+  static async fetchReviewOutcomes(orders: readonly CommerceAttestorOrderRef[]) {
+    return await CommerceAttestorApplication.fetchOutcomes(orders);
   }
 
   /** The current user's own published review rows, newest update first (local-first). */

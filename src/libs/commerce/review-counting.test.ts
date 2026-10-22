@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS } from '@/config/commerce';
+import { resetAttestorKeyWindows, setAttestorProfileKeyWindows } from '@/libs/commerce/attestor-key-windows';
 import type { MarketplaceTrustedAttestor } from '@/libs/runtime-config/runtime-config.schema';
 import type {
   CommerceIndexedReview,
@@ -332,6 +333,99 @@ describe('indexed review trust', () => {
     expect(isCountedIndexedReview({ ...review, moderation: { state: 'excluded', reason: 'review_fraud' } })).toBe(
       false,
     );
+  });
+});
+
+describe('trust narrowed by an attestor profile', () => {
+  const review: CommerceIndexedReview = {
+    reviewId: '8Z8CWH8NVYQY39ZEBFGKQWWEKG',
+    uri: `pubky://${B}/pub/pubky.app/marketplace/v1/reviews/8Z8CWH8NVYQY39ZEBFGKQWWEKG`,
+    reviewerId: B,
+    subjectId: A,
+    listingOwnerId: A,
+    listingId: 'rangefinder_camera',
+    role: 'buyer_reviewing_seller',
+    ratingOverall: 5,
+    text: '',
+    verified: true,
+    attestorId: TEST_TRUSTED_ATTESTOR.pubky,
+    editedLate: false,
+    createdAt: '2026-03-10T12:00:00.000Z',
+    updatedAt: '2026-03-10T12:00:00.000Z',
+    revision: 1,
+    moderation: null,
+    response: null,
+  };
+  const compromisedFrom = seconds('2026-05-01T00:00:00Z');
+  const narrowTestAttestor = (bounds: { validUntil?: number | null; compromisedFrom?: number | null }) =>
+    setAttestorProfileKeyWindows(TEST_TRUSTED_ATTESTOR.pubky, [
+      { pubky: TEST_TRUSTED_ATTESTOR.pubky, validUntil: null, compromisedFrom: null, ...bounds },
+    ]);
+
+  afterEach(() => resetAttestorKeyWindows());
+
+  it('stops counting a review attested at or after compromisedFrom, and keeps one attested before it', () => {
+    narrowTestAttestor({ compromisedFrom });
+
+    expect(isCountedIndexedReview({ ...review, iat: compromisedFrom - 1 })).toBe(true);
+    expect(isCountedIndexedReview({ ...review, iat: compromisedFrom })).toBe(false);
+    expect(indexedReviewTrustedAttestor({ ...review, iat: compromisedFrom + 86_400 })).toBeNull();
+  });
+
+  it('stops counting a review attested after the profile validUntil for the key', () => {
+    narrowTestAttestor({ validUntil: seconds('2026-04-01T00:00:00Z') });
+
+    expect(isCountedIndexedReview({ ...review, iat: seconds('2026-03-20T00:00:00Z') })).toBe(true);
+    expect(isCountedIndexedReview({ ...review, iat: seconds('2026-04-02T00:00:00Z') })).toBe(false);
+  });
+
+  it('fails closed for a review the index served without iat once the key has an end', () => {
+    expect(isCountedIndexedReview({ ...review, iat: null })).toBe(true);
+
+    narrowTestAttestor({ compromisedFrom });
+
+    expect(isCountedIndexedReview({ ...review, iat: null })).toBe(false);
+  });
+
+  it('never widens: a later validUntil or an uncompromised profile entry leaves every review as it was', () => {
+    narrowTestAttestor({ validUntil: seconds('2030-01-01T00:00:00Z') });
+
+    expect(isCountedIndexedReview({ ...review, iat: seconds('2026-09-01T00:00:00Z') })).toBe(true);
+    expect(isCountedIndexedReview({ ...review, iat: seconds('2025-12-31T00:00:00Z') })).toBe(false);
+  });
+
+  it('never adds a key: a key only the profile names stays unrecognized', () => {
+    setAttestorProfileKeyWindows(TEST_TRUSTED_ATTESTOR.pubky, [
+      { pubky: UNTRUSTED, validUntil: null, compromisedFrom: null },
+    ]);
+
+    expect(
+      indexedReviewTrustedAttestor({ ...review, attestorId: UNTRUSTED, iat: seconds('2026-03-01T00:00:00Z') }),
+    ).toBeNull();
+    expect(isCountedIndexedReview({ ...review, iat: seconds('2026-03-01T00:00:00Z') })).toBe(true);
+  });
+
+  it('sends the narrowed end to the index in the attestors window', () => {
+    const from = Math.ceil(Date.parse(TEST_TRUSTED_ATTESTOR.validFrom) / 1000);
+    expect(attestorWindowsParam()?.endsWith(`${TEST_TRUSTED_ATTESTOR.pubky}:${from}:`)).toBe(true);
+
+    narrowTestAttestor({ compromisedFrom });
+
+    expect(attestorWindowsParam()).toContain(`${TEST_TRUSTED_ATTESTOR.pubky}:${from}:${compromisedFrom}`);
+  });
+
+  it('drops a card bucket the narrowed window cuts and keeps one it still covers', () => {
+    const before = bucket({ firstIat: seconds('2026-03-01T00:00:00Z'), lastIat: seconds('2026-04-15T00:00:00Z') });
+    const spanning = bucket({ firstIat: seconds('2026-03-01T00:00:00Z'), lastIat: seconds('2026-06-01T00:00:00Z') });
+    expect(countedFromTrustedBuckets({ [TEST_TRUSTED_ATTESTOR.pubky]: spanning }).buyers).toBe(2);
+
+    narrowTestAttestor({ compromisedFrom });
+
+    expect(countedFromTrustedBuckets({ [TEST_TRUSTED_ATTESTOR.pubky]: before }).buyers).toBe(2);
+    expect(countedFromTrustedBuckets({ [TEST_TRUSTED_ATTESTOR.pubky]: spanning })).toMatchObject({
+      buyers: 0,
+      itemRating: null,
+    });
   });
 });
 

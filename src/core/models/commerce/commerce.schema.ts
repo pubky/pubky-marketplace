@@ -391,6 +391,11 @@ export interface CommerceIndexedReview {
   verified: boolean;
   attestorId: string | null;
   /**
+   * The attested order's salted hash, which keys the attestor's annotations
+   * (refund and return notes); null or absent for an unattested review.
+   */
+  orderRef?: string | null;
+  /**
    * The attestation's `iat` (seconds), which the trust window is checked
    * against. Null when the review is unverified or the index has not read
    * it yet; absent when the index predates serving it.

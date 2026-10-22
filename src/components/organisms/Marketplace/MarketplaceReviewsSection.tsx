@@ -16,14 +16,18 @@ import { Link } from '@/atoms/Link/Link';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Textarea } from '@/atoms/Textarea/Textarea';
 import { Typography } from '@/atoms/Typography/Typography';
-import { REVIEW_MODERATION_COPY, REVIEW_SORT_COPY } from '@/config/commerce-copy';
+import { REVIEW_MODERATION_COPY, REVIEW_OUTCOME_COPY, REVIEW_SORT_COPY } from '@/config/commerce-copy';
 import { isSocialLinkOutEnabled } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { useAttestorKeyWindowsVersion } from '@/hooks/useAttestorKeyWindows/useAttestorKeyWindows';
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { useMarketplaceReviews } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
+import { useReviewOutcomes } from '@/hooks/useReviewOutcomes/useReviewOutcomes';
+import type { ReviewOutcome } from '@/libs/commerce/attestor-records';
 import { VERIFIED_PURCHASE_INFO, VERIFIED_PURCHASE_INFO_LABEL } from '@/libs/commerce/eu-region';
 import { indexedReviewTrustedAttestor, isCountedIndexedReview } from '@/libs/commerce/review-counting';
+import { reviewOutcomesOf } from '@/libs/commerce/review-outcomes';
 import { isMarketplaceReviewSort, MARKETPLACE_REVIEW_SORTS } from '@/libs/commerce/review-sort';
 import { cn } from '@/libs/utils/utils';
 import type { CommerceIndexedReview, CommerceReviewResponseModelSchema } from '@/models/commerce/commerce.schema';
@@ -83,6 +87,9 @@ export function MarketplaceReviewsSection({
   const { status, reviews, isFetching, isReordering, hasMore, loadMore, sort, setSort, sortSupported } =
     useMarketplaceReviews({ sellerPubky, listingId });
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
+  // The counted and not-counted groups derive from the trust list at render; a narrowing profile re-renders them.
+  useAttestorKeyWindowsVersion();
+  const outcomes = useReviewOutcomes(reviews);
 
   if (status === 'unavailable' || status === 'loading') return null;
 
@@ -94,6 +101,7 @@ export function MarketplaceReviewsSection({
       review={review}
       showListing={listingId === undefined}
       currentUserPubky={currentUserPubky}
+      outcomes={reviewOutcomesOf(review, outcomes)}
     />
   );
 
@@ -192,11 +200,14 @@ function MarketplaceReviewItem({
   review,
   showListing,
   currentUserPubky,
+  outcomes,
 }: {
   review: CommerceIndexedReview;
   /** On a storefront each review leads with the listing it reviews; a listing page omits it. */
   showListing: boolean;
   currentUserPubky: string | null;
+  /** What the review's attestor recorded for its order (refunded, returned); empty for none. */
+  outcomes: ReviewOutcome[];
 }) {
   const isSubject = currentUserPubky !== null && currentUserPubky === review.subjectId;
   const isReviewer = currentUserPubky !== null && currentUserPubky === review.reviewerId;
@@ -235,6 +246,7 @@ function MarketplaceReviewItem({
           </Typography>
         )}
         <MarketplaceReviewVerificationBadge review={review} />
+        <MarketplaceReviewOutcomes review={review} outcomes={outcomes} />
         {!isReviewer && <MarketplaceReviewMenu review={review} />}
       </div>
       {moderation !== null ? (
@@ -339,6 +351,29 @@ function MarketplaceReviewMenu({ review }: { review: CommerceIndexedReview }) {
       )}
     </>
   );
+}
+
+/**
+ * The attestor's refund and return notes beside a review (design section 6):
+ * one small note per outcome kind with the date the attestor recorded, named
+ * after the attestor that said so. Purely informational: the review's stars,
+ * its place in the list and its moderation display do not depend on it.
+ */
+function MarketplaceReviewOutcomes({ review, outcomes }: { review: CommerceIndexedReview; outcomes: ReviewOutcome[] }) {
+  const attestorLabel = indexedReviewTrustedAttestor(review)?.label;
+  if (outcomes.length === 0 || attestorLabel === undefined) return null;
+  return outcomes.map(({ kind, on }) => (
+    <Badge
+      key={kind}
+      variant="outline"
+      className="gap-1 text-muted-foreground"
+      title={REVIEW_OUTCOME_COPY.detail(kind, attestorLabel, formatReviewDate(on))}
+      data-testid={`marketplace-review-outcome-${kind}`}
+    >
+      {REVIEW_OUTCOME_COPY.label[kind]}
+      <span className="font-normal">· {formatReviewDate(on)}</span>
+    </Badge>
+  ));
 }
 
 /**
