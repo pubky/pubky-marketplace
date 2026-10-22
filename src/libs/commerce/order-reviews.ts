@@ -107,3 +107,23 @@ export function reviewWindowClosesAtMs(reviews: Pick<OrderItemReview, 'createdAt
   const opened = Math.min(...reviews.map(({ createdAt }) => Date.parse(createdAt)));
   return opened + COMMERCE_REVIEW_EDIT_WINDOW_SECONDS * 1000;
 }
+
+/**
+ * True when a command envelope is the service's refusal of a seller's
+ * `review.create` after a double-blind window ended (`INVALID_STATE`, "The
+ * review window has closed."). Its message is the user-facing text.
+ */
+export function isReviewWindowClosedRefusal(response: unknown): boolean {
+  if (!response || typeof response !== 'object') return false;
+  const error = (response as { error?: unknown }).error;
+  if (!error || typeof error !== 'object') return false;
+  const { code, message } = error as { code?: unknown; message?: unknown };
+  return code === 'INVALID_STATE' && typeof message === 'string' && /review window has closed/i.test(message);
+}
+
+/** A review date as the Shop shows it (UTC, so every device reads the same day). */
+export function formatReviewDate(iso: string): string {
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(
+    new Date(iso),
+  );
+}

@@ -530,6 +530,27 @@ describe('MarketplaceTransactionService read projections', () => {
     expect(init.headers).toEqual({ authorization: SESSION_BEARER });
   });
 
+  it('reads the withheld answer of both review-attestation routes as pending, not as an invalid response', async () => {
+    await establishSession();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse(200, { status: 'pending', releaseAt: '2026-09-04T12:00:00.000Z' }))
+      .mockResolvedValueOnce(jsonResponse(200, { status: 'pending', releaseAt: '2026-09-04T12:00:00.000Z' }));
+
+    await expect(MarketplaceTransactionService.getReviewAttestations(ACTOR, ORDER_ID)).resolves.toEqual({
+      status: 'pending',
+      releaseAt: '2026-09-04T12:00:00.000Z',
+    });
+    await expect(MarketplaceTransactionService.getReviewAttestation(ACTOR, ORDER_ID)).resolves.toEqual({
+      status: 'pending',
+      releaseAt: '2026-09-04T12:00:00.000Z',
+    });
+    const urls = vi.mocked(fetch).mock.calls.map(([url]) => url);
+    expect(urls).toEqual([
+      `http://127.0.0.1:8080/v1/orders/${ORDER_ID}/review-attestations`,
+      `http://127.0.0.1:8080/v1/orders/${ORDER_ID}/review-attestation`,
+    ]);
+  });
+
   it('answers null for review attestations of an unknown or foreign order', async () => {
     await establishSession();
     vi.mocked(fetch).mockResolvedValueOnce(

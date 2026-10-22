@@ -453,7 +453,13 @@ export interface CommerceReputationSummary {
 }
 
 export type CommerceSyncJobOperation = 'publish' | 'update' | 'remove';
-export type CommerceSyncJobStatus = 'pending' | 'running' | 'failed';
+/**
+ * `awaiting_release` is a review the service has issued no attestation for
+ * yet because a double-blind window withholds it. It is neither pending work
+ * nor a failure: it keeps no attempt count and no backoff, and a retry that
+ * still finds the review withheld leaves it as it is.
+ */
+export type CommerceSyncJobStatus = 'pending' | 'running' | 'failed' | 'awaiting_release';
 
 export interface CommerceSyncJobModelSchema {
   id: string;

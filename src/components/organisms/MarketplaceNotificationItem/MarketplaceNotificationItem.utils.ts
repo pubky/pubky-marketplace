@@ -1,3 +1,4 @@
+import { REVIEW_NOTIFICATION_COPY } from '@/config/commerce-copy';
 import { formatBitcoinAwareMoney } from '@/libs/commerce/bitcoin-payment-code';
 import type { MarketplaceNotification } from '@/services/marketplace/marketplace';
 import {
@@ -108,6 +109,10 @@ function getBaseActionText(type: MarketplaceNotification['type']): string {
       return 'confirmed a USDT refund address for an order';
     case 'review_received':
       return 'left you a review';
+    case 'review_waiting':
+      return REVIEW_NOTIFICATION_COPY.waiting.action;
+    case 'review_released':
+      return REVIEW_NOTIFICATION_COPY.released.action;
     case 'pickup_details_updated':
       return 'updated the pickup details';
     case 'pickup_details_cleared':

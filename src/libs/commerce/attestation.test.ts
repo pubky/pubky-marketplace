@@ -5,6 +5,8 @@ import {
   extractReviewAttestation,
   extractReviewAttestations,
   marketplaceAttestationSchema,
+  readReviewAttestationPending,
+  readReviewResultPending,
   reviewAttestationIssuedAt,
   verifyOwnReviewAttestation,
 } from '@/libs/commerce/attestation';
@@ -205,5 +207,39 @@ describe('reviewAttestationIssuedAt', () => {
 
   it('is null when the embedded attestation does not parse', () => {
     expect(reviewAttestationIssuedAt({ eligibilityAttestation: 'not.a.jws' })).toBeNull();
+  });
+});
+
+describe('readReviewAttestationPending', () => {
+  it('reads the withheld answer of the attestation routes', () => {
+    expect(readReviewAttestationPending({ status: 'pending', releaseAt: '2026-11-01T00:00:00.000Z' })).toEqual({
+      status: 'pending',
+      releaseAt: '2026-11-01T00:00:00.000Z',
+    });
+  });
+
+  it('does not read an issued attestation, a missing release date or other statuses as pending', () => {
+    expect(readReviewAttestationPending({ status: 'issued', releaseAt: '2026-11-01T00:00:00.000Z' })).toBeNull();
+    expect(readReviewAttestationPending({ status: 'pending' })).toBeNull();
+    expect(readReviewAttestationPending(null)).toBeNull();
+    expect(readReviewAttestationPending({ attestation: 'x.y.z' })).toBeNull();
+  });
+});
+
+describe('readReviewResultPending', () => {
+  it('reads a withheld command result with its release date', () => {
+    expect(readReviewResultPending({ attestationStatus: 'pending', releaseAt: '2026-11-01T00:00:00.000Z' })).toEqual({
+      releaseAt: '2026-11-01T00:00:00.000Z',
+    });
+  });
+
+  it('keeps a withheld result without a usable release date pending', () => {
+    expect(readReviewResultPending({ attestationStatus: 'pending' })).toEqual({ releaseAt: null });
+    expect(readReviewResultPending({ attestationStatus: 'pending', releaseAt: 5 })).toEqual({ releaseAt: null });
+  });
+
+  it('reads a result without the status, as from a service without the window, as released', () => {
+    expect(readReviewResultPending({ attestation: 'x.y.z' })).toBeNull();
+    expect(readReviewResultPending({ attestationStatus: 'issued' })).toBeNull();
   });
 });

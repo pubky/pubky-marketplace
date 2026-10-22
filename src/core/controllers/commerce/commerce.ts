@@ -790,7 +790,19 @@ export class CommerceController {
     });
   }
 
-  /** Retries own-review records whose homeserver publication never landed. */
+  /**
+   * The current user's reviews a double-blind window still withholds: the
+   * held terms and the window end, which the surfaces show as "Publishes when
+   * the other side reviews, or on {date}".
+   */
+  static async getAwaitingReleaseOwnMarketplaceReviews() {
+    return await CommerceApplication.getAwaitingReleaseReviews(this.getCurrentUserPubky());
+  }
+
+  /**
+   * Retries own-review records whose homeserver publication never landed, and
+   * re-reads the attestations of reviews a double-blind window withheld.
+   */
   static async resumeOwnReviewPublications() {
     return await CommerceApplication.resumeOwnReviewPublications(this.getCurrentUserPubky());
   }

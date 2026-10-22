@@ -55,6 +55,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     getOwnMarketplaceOrderReviews: vi.fn(async () =>
       controllerState.ownReview === null ? [] : [controllerState.ownReview],
     ),
+    getAwaitingReleaseOwnMarketplaceReviews: vi.fn(async () => []),
   },
 }));
 

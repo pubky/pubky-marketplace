@@ -2,13 +2,16 @@
 
 import { type Dispatch, type SetStateAction, useEffect, useState } from 'react';
 import { getCommerceAdapterMode, getCommercePollIntervalMs, isTransactionalCommerceMode } from '@/config/commerce';
+import { REVIEW_PENDING_COPY } from '@/config/commerce-copy';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { readReviewResultPending } from '@/libs/commerce/attestation';
 import {
   MARKETPLACE_FAILURE_MESSAGES,
   marketplaceErrorCode,
   marketplaceFailureMessage,
 } from '@/libs/commerce/failure-messages';
 import { orderShowsCommandResult } from '@/libs/commerce/order-command-result';
+import { formatReviewDate, isReviewWindowClosedRefusal } from '@/libs/commerce/order-reviews';
 import { plainRefundRefusal } from '@/libs/commerce/partial-refund';
 import { pickupRefusalFailureMessage } from '@/libs/commerce/pickup';
 import { orderChangedMessage } from '@/libs/commerce/refund-copy';
@@ -165,6 +168,11 @@ export function useMarketplaceOrders() {
           const current = fresh?.find((view) => view.order.id === order.id)?.order;
           if (current && orderShowsCommandResult(current, kind, payload)) return true;
         }
+        // The service's own words: a seller's review after the window is refused, not failed.
+        if (kind === 'review.create' && isReviewWindowClosedRefusal(response)) {
+          toast({ variant: 'error', description: response.error.message });
+          return false;
+        }
         if (isPaymentNotFinalRefusal(response)) {
           toast({ variant: 'error', description: PAYMENT_NOT_FINAL_COPY });
           return false;
@@ -192,7 +200,7 @@ export function useMarketplaceOrders() {
         return false;
       }
       if (kind === 'review.create' || kind === 'review.update') {
-        await publishReviewRecord(order, response.result);
+        await publishReviewRecord(order, response.result, order.buyerPubky === currentUserPubky ? 'buyer' : 'seller');
       }
       await refresh();
       return true;
@@ -217,12 +225,25 @@ export function useMarketplaceOrders() {
  * itself already succeeded; a publication failure is reported honestly and
  * the staged record retries when the orders surface next loads.
  */
-async function publishReviewRecord(order: MarketplaceOrder, result: unknown): Promise<void> {
+async function publishReviewRecord(
+  order: MarketplaceOrder,
+  result: unknown,
+  reviewerRole: 'buyer' | 'seller',
+): Promise<void> {
+  const resultRecord = (result ?? {}) as Record<string, unknown>;
   try {
-    const published = await CommerceController.publishOwnMarketplaceReviews(
-      order,
-      (result ?? {}) as Record<string, unknown>,
-    );
+    const published = await CommerceController.publishOwnMarketplaceReviews(order, resultRecord);
+    const withheld = readReviewResultPending(resultRecord);
+    if (withheld !== null) {
+      // A double-blind window holds the review back: it is saved and publishes at release.
+      toast({
+        description: REVIEW_PENDING_COPY.savedToast(
+          reviewerRole,
+          withheld.releaseAt === null ? null : formatReviewDate(withheld.releaseAt),
+        ),
+      });
+      return;
+    }
     if (published.length === 0) return; // No attestation issued: review stays service-only.
     toast({
       description:
