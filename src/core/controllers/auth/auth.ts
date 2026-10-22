@@ -29,6 +29,7 @@ import { NotificationCoordinator } from '@/coordinators/notifications/notificati
 import { StreamCoordinator } from '@/coordinators/streams/stream';
 import { TtlCoordinator } from '@/coordinators/ttl/ttl';
 import { clearDatabase, clearPrivateData } from '@/database/franky/franky.helpers';
+import { clearPubkyLocalStorage } from '@/libs/auth/clear-pubky-local-storage';
 import { readHostIdentity, writeHostIdentity } from '@/libs/auth/host-identity';
 import { HOSTED_SIGN_IN_MESSAGE } from '@/libs/auth/sign-in-error-copy';
 import { AppError } from '@/libs/error/error';
@@ -63,6 +64,7 @@ import {
 } from '@/stores/auth/auth.persisted';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import type { GrantSigner } from '@/stores/auth/auth.types';
+import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { useHomeStore } from '@/stores/home/home.store';
 import { useHotStore } from '@/stores/hot/hot.store';
@@ -75,6 +77,12 @@ import { useSearchStore } from '@/stores/search/search.store';
 import { useSettingsStore } from '@/stores/settings/settings.store';
 import type { SettingsState } from '@/stores/settings/settings.types';
 import { useSignInStore } from '@/stores/signIn/signIn.store';
+
+/** Forgets the buyer country in memory and removes its persisted copy from the device. */
+function resetBuyerCountry(): void {
+  useBuyerCountryStore.getState().reset();
+  useBuyerCountryStore.persist.clearStorage();
+}
 
 export class AuthController {
   private constructor() {} // Prevent instantiation
@@ -1012,6 +1020,10 @@ export class AuthController {
           useHotStore.getState().reset();
           useLocalFilesStore.getState().reset();
           useCommerceStore.getState().reset();
+          resetBuyerCountry();
+          for (const departed of new Set([captured?.pubky, currentPubky, persistedPubky])) {
+            if (departed && departed !== newPubky) clearPubkyLocalStorage(departed);
+          }
         }
         // Identity replacement is committed only after the new grant is saved.
         if (persistedPubky && persistedPubky !== newPubky) clearPersistedAuthIdentity();
@@ -1153,11 +1165,16 @@ export class AuthController {
       useSignInStore.getState().reset();
       useLocalFilesStore.getState().reset();
       useCommerceStore.getState().reset();
+      // The buyer country is personal data of the signing-out account: gone from memory and from the device.
+      resetBuyerCountry();
       useHomeStore.getState().reset();
       useHotStore.getState().reset();
       useSearchStore.getState().reset();
       useNotificationStore.getState().reset();
       useSettingsStore.getState().reset();
+      // Entries keyed by the leaving pubky (orders checkpoint, own drops, feature-discovery flags). An
+      // account that stays signed in keeps them.
+      if (pubky && !preserveServiceSessions && !keepServicePubky) clearPubkyLocalStorage(pubky);
 
       // The only step that differs between a full sign-out wipe and the
       // no-identity restore path: the latter keeps the public browse cache.

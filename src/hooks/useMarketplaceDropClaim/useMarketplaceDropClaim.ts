@@ -20,7 +20,7 @@ import {
 } from '@/libs/commerce/transaction-commands';
 import { VARIANT_REFUSAL_COPY, variantRefusalMessage } from '@/libs/commerce/variant-refusals';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
-import { getDigitalRegionBlockEnabled, getEuFenceEnabled } from '@/libs/runtime-config/runtime-config';
+import { getRegionPolicy } from '@/libs/runtime-config/runtime-config';
 import type { CommerceDeliveryAddressModelSchema } from '@/models/commerce/commerce.schema';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -148,7 +148,7 @@ export function useMarketplaceDropClaim(onClaimed?: () => void | Promise<void>):
         postalCode: claimAddress.postal_code,
         countryCode: claimAddress.country_code.toUpperCase(),
       };
-      const regionRulesOn = getEuFenceEnabled() || getDigitalRegionBlockEnabled();
+      const regionRulesOn = !getRegionPolicy().allOpen;
       const destinationError = await checkDestinationCountry(address.countryCode, [listingOwnerPubky]);
       if (destinationError) {
         setFailure(destinationError);

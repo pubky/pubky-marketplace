@@ -61,7 +61,7 @@ import { classifyVariantRefusal, variantRefusalMessage } from '@/libs/commerce/v
 import { AppError } from '@/libs/error/error';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
-import { getDigitalRegionBlockEnabled, getEuFenceEnabled } from '@/libs/runtime-config/runtime-config';
+import { getRegionPolicy } from '@/libs/runtime-config/runtime-config';
 import type { CommerceDeliveryAddressModelSchema } from '@/models/commerce/commerce.schema';
 import { showPaymentMethodRefusalToast } from '@/molecules/Toaster/payment-method-refusal-toast';
 import { toast } from '@/molecules/Toaster/use-toast';
@@ -728,13 +728,20 @@ export function useMarketplaceCheckout(
     }
     const sealedTo = await resolveKeys(shippedSellers);
     if (!sealedTo.ok) return { ok: false };
-    // Placing an order to an address is the buyer's choice of country: remember it for the
-    // listings and send it with this command (legal launch plan C2).
-    if (requiresDeliveryAddress && (getEuFenceEnabled() || getDigitalRegionBlockEnabled())) {
-      CommerceController.setBuyerCountry(canonicalCountryCode(data.countryCode));
-    }
+    // Placing an order to an address is the buyer's choice of country: send it with this command
+    // when a region is nuanced (the controller adds it) and remember it for the listings; where regions
+    // are only blocked, send just the address country and remember nothing (legal launch plan C2).
+    const regionPolicy = getRegionPolicy();
+    const addressCountry = canonicalCountryCode(data.countryCode);
+    if (requiresDeliveryAddress && regionPolicy.hasNuanced) CommerceController.setBuyerCountry(addressCountry);
     const response = await CommerceController.commitCreateMarketplaceCheckout({
       lines: checkoutLines,
+      ...(requiresDeliveryAddress &&
+      regionPolicy.hasBlocked &&
+      !regionPolicy.hasNuanced &&
+      /^[A-Z]{2}$/.test(addressCountry)
+        ? { buyerCountry: addressCountry }
+        : {}),
       fulfillmentChoiceBySeller,
       deliveryKeys: sealedTo.keys,
       ...(storeShare.selected.some((store) => shippedSellers.includes(store.sellerPubky))

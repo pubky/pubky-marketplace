@@ -6,6 +6,7 @@ import { Button } from '@/atoms/Button/Button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/atoms/Dialog/Dialog';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useBuyerCountry } from '@/hooks/useBuyerCountry/useBuyerCountry';
+import { useCommerceAvailability } from '@/hooks/useCommerceAvailability/useCommerceAvailability';
 import { useMarketplaceOffer } from '@/hooks/useMarketplaceOffer/useMarketplaceOffer';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import { formatCommerceMoney } from '@/libs/commerce/format';
@@ -33,6 +34,7 @@ export function MarketplaceOfferDialog({
   isOwner = false,
   holdDisabled = false,
   holdLabel,
+  regionHeld = false,
 }: {
   aggregateId: string;
   expectedRevision: number | null;
@@ -45,8 +47,12 @@ export function MarketplaceOfferDialog({
   isOwner?: boolean;
   holdDisabled?: boolean;
   holdLabel?: string;
+  /** Commerce is blocked for this listing (its seller's country); the visitor's own region is read here. */
+  regionHeld?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const commerce = useCommerceAvailability();
+  const commerceHeld = regionHeld || commerce.held;
   // `onAccepted` refreshes the projection, which is exactly the recovery a
   // revision conflict needs: reload the terms/revision, then the user re-offers.
   const offer = useMarketplaceOffer(aggregateId, expectedRevision, onAccepted, priceAsset, isOwner);
@@ -78,7 +84,7 @@ export function MarketplaceOfferDialog({
           requireAuth(() => onSessionRequired?.());
           return;
         }
-        if (holdDisabled) return;
+        if (holdDisabled || commerceHeld) return;
         requireAuth(() => setOpen(true));
       }}
     >
@@ -87,7 +93,7 @@ export function MarketplaceOfferDialog({
           size="default"
           variant="secondary"
           className="w-fit rounded-full"
-          disabled={isOwner || holdDisabled || (expectedRevision === null && !isSessionRequired)}
+          disabled={isOwner || holdDisabled || commerceHeld || (expectedRevision === null && !isSessionRequired)}
         >
           <HandCoins className="size-4" />
           {isOwner ? 'You cannot buy your own listing' : holdDisabled ? (holdLabel ?? 'Held') : 'Make offer'}

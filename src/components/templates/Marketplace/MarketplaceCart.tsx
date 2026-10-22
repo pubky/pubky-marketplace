@@ -9,6 +9,7 @@ import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
+import { useCommerceAvailability } from '@/hooks/useCommerceAvailability/useCommerceAvailability';
 import { useMarketplaceCart } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import { useMarketplaceCartStock } from '@/hooks/useMarketplaceCartStock/useMarketplaceCartStock';
 import { useMarketplaceFirstMediaUrls } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
@@ -19,6 +20,7 @@ import { DIGITAL_CHECKOUT_COPY } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { commerceListingFulfillmentMethods, commerceVariantUnitPrice } from '@/libs/commerce/marketplace-records';
 import { formatDateTime } from '@/libs/utils/dateTime';
+import { CommerceBlockedNotice } from '@/molecules/Marketplace/CommerceBlockedNotice';
 import { MarketplaceCheckoutSteps } from '@/molecules/Marketplace/MarketplaceCheckoutSteps';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
 import { MarketplaceProductSummary } from '@/molecules/Marketplace/MarketplaceProductSummary';
@@ -31,6 +33,7 @@ import { MarketplaceCartSkeleton } from './MarketplaceCart.skeleton';
 
 export function MarketplaceCart() {
   const cart = useMarketplaceCart();
+  const commerce = useCommerceAvailability();
   const cartMediaUris = cart.items.map((item) =>
     item.listing.record.media.filter(({ type }) => type === 'image').map(({ url }) => url),
   );
@@ -69,6 +72,10 @@ export function MarketplaceCart() {
             <MarketplaceCheckoutSteps currentStep={1} />
           </div>
         </div>
+
+        {commerce.blocked && commerce.message && commerce.info && (
+          <CommerceBlockedNotice message={commerce.message} info={commerce.info} testId="marketplace-cart-blocked" />
+        )}
 
         {cart.isLoading ? (
           <div data-surface="marketplace-cart">
@@ -126,11 +133,17 @@ export function MarketplaceCart() {
                               Quantity and variant are fixed at the accepted offer.
                             </Typography>
                           </div>
-                          <Button asChild className="rounded-full">
-                            <Link href={getMarketplaceOfferCheckoutRoute(item.awardId)} overrideDefaults>
+                          {commerce.held ? (
+                            <Button className="rounded-full" disabled>
                               Checkout
-                            </Link>
-                          </Button>
+                            </Button>
+                          ) : (
+                            <Button asChild className="rounded-full">
+                              <Link href={getMarketplaceOfferCheckoutRoute(item.awardId)} overrideDefaults>
+                                Checkout
+                              </Link>
+                            </Button>
+                          )}
                           <Button
                             size="icon"
                             variant="secondary"
@@ -296,6 +309,10 @@ export function MarketplaceCart() {
                             {SOLD_OUT_COPY.cartBlocked}
                           </Typography>
                         </div>
+                      ) : commerce.held ? (
+                        <Button className="w-full rounded-full" disabled data-testid="marketplace-cart-checkout">
+                          Checkout
+                        </Button>
                       ) : (
                         <Button asChild className="w-full rounded-full">
                           <Link

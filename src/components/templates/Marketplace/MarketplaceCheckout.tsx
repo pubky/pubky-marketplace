@@ -107,6 +107,7 @@ import { BitkitDownloads } from '@/molecules/BitkitDownloads/BitkitDownloads';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { BuyerCountryField } from '@/molecules/Marketplace/BuyerCountryField';
 import { CheckoutSaleTerms } from '@/molecules/Marketplace/CheckoutSaleTerms';
+import { CommerceBlockedNotice } from '@/molecules/Marketplace/CommerceBlockedNotice';
 import { DeliveryKeyBlockedNotice } from '@/molecules/Marketplace/DeliveryKeyBlockedNotice';
 import { MarketplaceCheckoutStatusLabels } from '@/molecules/Marketplace/MarketplaceCheckoutStatusLabels';
 import { MarketplaceCheckoutSteps } from '@/molecules/Marketplace/MarketplaceCheckoutSteps';
@@ -582,9 +583,11 @@ function MarketplaceCartCheckout() {
   const payDisabledReason =
     locksRoute === 'mixed'
       ? LOCKS_MIXED_CHECKOUT_COPY
-      : region.blocked
-        ? (region.refusal ?? 'Tell us the country you live in to continue.')
-        : checkoutPayDisabledReason;
+      : region.commerce.blocked
+        ? region.commerce.message
+        : region.blocked
+          ? (region.refusal ?? 'Tell us the country you live in to continue.')
+          : checkoutPayDisabledReason;
 
   const removeAwardLine = async () => {
     const line = cart.awardItems.find((item) => item.awardId === award?.id);
@@ -732,6 +735,14 @@ function MarketplaceCartCheckout() {
             />
           </div>
         </div>
+
+        {region.commerce.blocked && region.commerce.message && region.commerce.info && (
+          <CommerceBlockedNotice
+            message={region.commerce.message}
+            info={region.commerce.info}
+            testId="marketplace-checkout-blocked"
+          />
+        )}
 
         {awardOutcome && isOfferCheckout ? (
           <MarketplaceAwardOutcome

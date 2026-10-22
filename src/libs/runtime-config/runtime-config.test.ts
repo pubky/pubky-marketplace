@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   escapeForInlineScript,
+  getClientRegionHeader,
   getCommerceAdapterMode,
   getCommercePollIntervalMs,
   getDigitalRegionBlockEnabled,
@@ -14,6 +15,7 @@ import {
   getPaykitSetupUrl,
   getPrivEncryptionKeysEnabled,
   getPrivEncryptionKeysHomeservers,
+  getRegionPolicy,
   getRuntimeConfig,
   getSentryDsn,
   getSentryEnvironment,
@@ -290,6 +292,117 @@ describe('runtime-config resolver', () => {
       setAllRuntimeEnv();
       expect(readServerConfig().euFenceEnabled).toBe(false);
       expect(readServerConfig().digitalRegionBlockEnabled).toBe(false);
+    });
+
+    describe('region modes', () => {
+      const setModes = (value: string | undefined) => {
+        resetRuntimeConfigForTests();
+        if (value === undefined) delete process.env[PUBKY_RUNTIME_ENV_NAMES.regionModes];
+        else process.env[PUBKY_RUNTIME_ENV_NAMES.regionModes] = value;
+      };
+
+      it('names the settings after the service ones', () => {
+        expect(PUBKY_RUNTIME_ENV_NAMES.regionModes).toBe('PUBKY_RUNTIME_REGION_MODES');
+        expect(PUBKY_RUNTIME_ENV_NAMES.clientRegionHeader).toBe('PUBKY_RUNTIME_CLIENT_REGION_HEADER');
+      });
+
+      it('leaves every region open while the setting and both flags are unset', () => {
+        expect(readServerConfig().regionModes).toBeUndefined();
+        const policy = getRegionPolicy();
+        expect(policy.allOpen).toBe(true);
+        expect(policy.usesClientRegion).toBe(false);
+      });
+
+      it('derives the EU and GB as nuanced from the older flags while the setting is unset', () => {
+        process.env[PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled] = 'true';
+        const policy = getRegionPolicy();
+        expect(policy.modeOf('DE')).toBe('nuanced');
+        expect(policy.modeOf('GB')).toBe('nuanced');
+        expect(policy.modeOf('US')).toBe('open');
+        expect(policy).toMatchObject({ fenceActive: true, digitalHoldActive: false, hasBlocked: false });
+      });
+
+      it('lets the setting win over the older flags', () => {
+        process.env[PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled] = 'true';
+        process.env[PUBKY_RUNTIME_ENV_NAMES.digitalRegionBlockEnabled] = 'true';
+        setModes('EU=blocked,GB=blocked,US=blocked');
+        const policy = getRegionPolicy();
+        expect(policy.modeOf('DE')).toBe('blocked');
+        expect(policy.modeOf('US')).toBe('blocked');
+        expect(policy.hasNuanced).toBe(false);
+        expect(getEuFenceEnabled()).toBe(false);
+        expect(getDigitalRegionBlockEnabled()).toBe(false);
+      });
+
+      it('opens everything with none, even with the older flags on', () => {
+        process.env[PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled] = 'true';
+        setModes('none');
+        expect(getRegionPolicy().allOpen).toBe(true);
+      });
+
+      it('resolves the canonical spelling and treats a blank value as unset', () => {
+        setModes(' eu = Blocked ,us=BLOCKED ');
+        expect(readServerConfig().regionModes).toBe('EU=blocked,US=blocked');
+        setModes('   ');
+        expect(readServerConfig().regionModes).toBeUndefined();
+      });
+
+      it('memoizes the policy per resolved config', () => {
+        setModes('US=blocked');
+        const first = getRegionPolicy();
+        expect(getRegionPolicy()).toBe(first);
+        setModes('US=open');
+        expect(getRegionPolicy()).not.toBe(first);
+      });
+
+      it.each(['EU', 'EU=closed', 'USA=blocked', 'UK=blocked', 'EU=blocked,', 'none,US=blocked'])(
+        'fails loudly on the malformed value %j',
+        (value) => {
+          setModes(value);
+          expect(() => readServerConfig()).toThrow();
+        },
+      );
+
+      it('fails the strict deployed parse on a malformed value and accepts a good one', () => {
+        simulateDeployedEnv();
+        setAllRuntimeEnv();
+        process.env[PUBKY_RUNTIME_ENV_NAMES.regionModes] = 'EU=blocked';
+        expect(readServerConfig().regionModes).toBe('EU=blocked');
+        process.env[PUBKY_RUNTIME_ENV_NAMES.regionModes] = 'EU=nope';
+        expect(() => readServerConfig()).toThrow();
+      });
+
+      it('rejects a malformed injected value in the browser config', () => {
+        const injected = { ...JSON.parse(JSON.stringify(readServerConfig())), regionModes: 'EU=nope' };
+        window[RUNTIME_CONFIG_WINDOW_KEY] = injected;
+        expect(() => readClientConfig()).toThrow();
+      });
+
+      it('carries the setting to the browser through the injected config', () => {
+        setModes('EU=blocked,US=blocked');
+        const script = serializeRuntimeConfig();
+        const injected: unknown = JSON.parse(script.slice(script.indexOf('(') + 1, script.lastIndexOf(')')));
+        resetRuntimeConfigForTests();
+        window[RUNTIME_CONFIG_WINDOW_KEY] = injected;
+        expect(getRegionPolicy().modeOf('DE')).toBe('blocked');
+      });
+
+      it('reads the visitor country from x-client-region unless the deploy names another header', () => {
+        expect(APP_RUNTIME_DEFAULTS.clientRegionHeader).toBe('x-client-region');
+        expect(getClientRegionHeader()).toBe('x-client-region');
+        resetRuntimeConfigForTests();
+        process.env[PUBKY_RUNTIME_ENV_NAMES.clientRegionHeader] = ' X-Vercel-IP-Country ';
+        expect(getClientRegionHeader()).toBe('x-vercel-ip-country');
+      });
+
+      it.each(['x client region', 'x_client_region', '-x', 'x-', 'x--y', 'x:y'])(
+        'rejects the header name %j',
+        (value) => {
+          resetRuntimeConfigForTests();
+          process.env[PUBKY_RUNTIME_ENV_NAMES.clientRegionHeader] = value;
+          expect(() => readServerConfig()).toThrow();
+        },
+      );
     });
 
     it('does not request scoped encryption keys unless the deploy opts in', () => {

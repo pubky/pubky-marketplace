@@ -6,6 +6,7 @@ import { Button } from '@/atoms/Button/Button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/atoms/Dialog/Dialog';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useBuyerCountry } from '@/hooks/useBuyerCountry/useBuyerCountry';
+import { useCommerceAvailability } from '@/hooks/useCommerceAvailability/useCommerceAvailability';
 import { useMarketplaceBid } from '@/hooks/useMarketplaceBid/useMarketplaceBid';
 import { marketplaceBidMinimum } from '@/hooks/useMarketplaceBid/useMarketplaceBid.types';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
@@ -26,6 +27,7 @@ export function MarketplaceBidDialog({
   onAccepted,
   auctionPhase = 'live',
   isOwner = false,
+  regionHeld = false,
 }: {
   aggregateId: string;
   projection: MarketplaceListingProjection | null;
@@ -36,8 +38,12 @@ export function MarketplaceBidDialog({
   onAccepted: () => void | Promise<void>;
   auctionPhase?: AuctionPhase;
   isOwner?: boolean;
+  /** Commerce is blocked for this listing (its seller's country); the visitor's own region is read here. */
+  regionHeld?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const commerce = useCommerceAvailability();
+  const commerceHeld = regionHeld || commerce.held;
   // `onAccepted` refreshes the projection, which is exactly the recovery a
   // revision conflict needs: reload the price/revision, then the user rebids.
   const bid = useMarketplaceBid(
@@ -74,7 +80,7 @@ export function MarketplaceBidDialog({
           setOpen(false);
           return;
         }
-        if (auctionPhase === 'ended') return;
+        if (auctionPhase === 'ended' || commerceHeld) return;
         if (isSessionRequired) {
           requireAuth(() => onSessionRequired?.());
           return;
@@ -86,7 +92,7 @@ export function MarketplaceBidDialog({
         <Button
           size="default"
           className="w-fit rounded-full"
-          disabled={isOwner || auctionPhase === 'ended' || (!projection?.auction && !isSessionRequired)}
+          disabled={isOwner || auctionPhase === 'ended' || commerceHeld || (!projection?.auction && !isSessionRequired)}
         >
           <Gavel className="size-4" />
           {auctionPhase === 'ended' ? 'Auction ended' : isOwner ? 'You cannot bid on your own listing' : 'Place a bid'}

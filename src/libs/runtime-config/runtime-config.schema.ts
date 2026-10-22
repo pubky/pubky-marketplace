@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isValidBasePath } from '../base-path/base-path';
+import { parseRegionModes } from '../commerce/region-modes';
 
 /**
  * Shared, zod-only schema for the environment-specific values that must be configurable at
@@ -337,6 +338,34 @@ const shopGrantClientIdValue = z.string().regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(
 });
 const optionalShopGrantClientIdFromString = optionalTrimmedString.pipe(shopGrantClientIdValue.optional());
 
+/**
+ * The per-region commerce modes (`SELECTOR=MODE` list, see `@/libs/commerce/region-modes`). The
+ * resolved value is the canonical spelling, so the injected browser config and the env agree.
+ */
+const regionModesValue = z.string().superRefine((value, ctx) => {
+  const parsed = parseRegionModes(value);
+  if (!parsed.ok) ctx.addIssue({ code: 'custom', message: `Invalid REGION_MODES value: ${parsed.error}` });
+});
+const optionalRegionModesFromString = optionalTrimmedString
+  .transform((val, ctx) => {
+    if (val === undefined) return undefined;
+    const parsed = parseRegionModes(val);
+    if (!parsed.ok) {
+      ctx.addIssue({ code: 'custom', message: `Invalid REGION_MODES value: ${parsed.error}` });
+      return z.NEVER;
+    }
+    return parsed.canonical;
+  })
+  .pipe(regionModesValue.optional());
+
+/** An HTTP header name, kept lowercase so the lookup matches however the edge spells it. */
+const clientRegionHeaderValue = z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, {
+  message: 'Expected a lowercase HTTP header name like x-client-region',
+});
+const optionalClientRegionHeaderFromString = optionalTrimmedString
+  .transform((val) => val?.trim().toLowerCase())
+  .pipe(clientRegionHeaderValue.optional());
+
 /** Rates validate eagerly (bad number/range throws here); the default applies in the value schema. */
 const sampleRateFromString = z
   .string()
@@ -513,6 +542,7 @@ export const APP_RUNTIME_DEFAULTS = {
   usdtPaymentsEnabled: false,
   euFenceEnabled: false,
   digitalRegionBlockEnabled: false,
+  clientRegionHeader: 'x-client-region',
   frameAncestors: [] as string[],
   embedded: false,
   privEncryptionKeys: false,
@@ -671,6 +701,18 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
    */
   digitalRegionBlockEnabled: z.boolean().default(APP_RUNTIME_DEFAULTS.digitalRegionBlockEnabled),
   /**
+   * Per-region commerce modes for the Shop (`SELECTOR=MODE` list; selectors are ISO alpha-2 codes,
+   * `EU` or `UNKNOWN`; modes are `open`, `nuanced`, `blocked`; `none` opens everything), mirroring
+   * the service's `REGION_MODES`. Unset, the two flags above decide (EU and GB nuanced); once set it
+   * wins and they are ignored. See `@/libs/commerce/region-modes`.
+   */
+  regionModes: regionModesValue.optional(),
+  /**
+   * The request header the edge sets to the visitor's country, read by the Shop's
+   * `/api/marketplace/client-region` route. Mirrors the service's `CLIENT_COUNTRY_HEADER`.
+   */
+  clientRegionHeader: clientRegionHeaderValue.default(APP_RUNTIME_DEFAULTS.clientRegionHeader),
+  /**
    * Pubky Passport origin override. Absent means the Passport deployment that
    * signs users up on this deploy's homeserver (see `getPassportOrigin`).
    */
@@ -826,6 +868,8 @@ export const runtimeEnvInputSchema = z
     usdtPaymentsEnabled: optionalBooleanFromString,
     euFenceEnabled: optionalBooleanFromString,
     digitalRegionBlockEnabled: optionalBooleanFromString,
+    regionModes: optionalRegionModesFromString,
+    clientRegionHeader: optionalClientRegionHeaderFromString,
     passportUrl: optionalPassportUrlFromString,
     frameAncestors: optionalFrameAncestorsFromString(false),
     embedded: optionalBooleanFromString,
@@ -936,6 +980,8 @@ export const runtimeEnvInputSchemaWithDefaults = z
     usdtPaymentsEnabled: optionalBooleanFromString,
     euFenceEnabled: optionalBooleanFromString,
     digitalRegionBlockEnabled: optionalBooleanFromString,
+    regionModes: optionalRegionModesFromString,
+    clientRegionHeader: optionalClientRegionHeaderFromString,
     passportUrl: optionalDevPassportUrlFromString,
     frameAncestors: optionalFrameAncestorsFromString(true),
     embedded: optionalBooleanFromString,
@@ -1037,6 +1083,8 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   usdtPaymentsEnabled: 'PUBKY_RUNTIME_USDT_PAYMENTS_ENABLED',
   euFenceEnabled: 'PUBKY_RUNTIME_EU_FENCE_ENABLED',
   digitalRegionBlockEnabled: 'PUBKY_RUNTIME_DIGITAL_REGION_BLOCK_ENABLED',
+  regionModes: 'PUBKY_RUNTIME_REGION_MODES',
+  clientRegionHeader: 'PUBKY_RUNTIME_CLIENT_REGION_HEADER',
   passportUrl: 'PUBKY_RUNTIME_PASSPORT_URL',
   frameAncestors: 'PUBKY_RUNTIME_FRAME_ANCESTORS',
   embedded: 'PUBKY_RUNTIME_EMBEDDED',

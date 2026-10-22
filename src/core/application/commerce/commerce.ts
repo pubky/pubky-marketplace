@@ -152,6 +152,7 @@ import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { hasHttpStatus, isAppError, isNotFound } from '@/libs/error/error.utils';
 import { HttpMethod, HttpStatusCode } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
+import { getRegionPolicy } from '@/libs/runtime-config/runtime-config';
 import type {
   CommerceAuctionRegistrationCommand,
   CommerceCatalogEntryModelSchema,
@@ -182,7 +183,7 @@ import {
   watchlistStatesEqual,
   watchlistStateToRecordBody,
 } from '@/pipes/commerce/commerce.watchlist';
-import { buildDefaultShopRecord } from '@/pipes/commerce/default-shop';
+import { buildDefaultShopRecord, DEFAULT_SHOP_COUNTRY_CODE } from '@/pipes/commerce/default-shop';
 import {
   detectWatchAlerts,
   type WatchIndexObservation,
@@ -5023,6 +5024,9 @@ export class CommerceApplication {
     const shipsFrom =
       location ??
       (await LocalCommerceService.getListingsBySeller(ownerPubky)).find((row) => row.record.location)?.record.location;
+    // Nothing says where this shop is, so it would fall back to the default country. A blocked default
+    // must not be published for the seller: they choose a country in shop settings instead.
+    if (!shipsFrom && getRegionPolicy().modeOf(DEFAULT_SHOP_COUNTRY_CODE) === 'blocked') return;
     const record = buildDefaultShopRecord({ ownerPubky, profile, location: shipsFrom, now: new Date() });
     await this.queueShopWrite(ownerPubky, async () => {
       if (await LocalCommerceService.getShop(ownerPubky)) return;

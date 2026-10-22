@@ -1,5 +1,6 @@
 import { PHASE_PRODUCTION_BUILD } from 'next/constants';
 import { normalizeBasePath } from '@/libs/base-path/base-path';
+import { type RegionPolicy, resolveRegionPolicy } from '@/libs/commerce/region-modes';
 import {
   type CommerceAdapterMode,
   type DeployEnv,
@@ -244,8 +245,27 @@ export const getMarketplaceGrantSessionEnabled = (): boolean => getRuntimeConfig
 export const getMarketplaceGrantPollMilliseconds = (): number => getRuntimeConfig().marketplaceGrantPollMilliseconds;
 export const getPassportSignInEnabled = (): boolean => getRuntimeConfig().passportSignIn;
 export const getUsdtPaymentsEnabled = (): boolean => getRuntimeConfig().usdtPaymentsEnabled;
-export const getEuFenceEnabled = (): boolean => getRuntimeConfig().euFenceEnabled;
-export const getDigitalRegionBlockEnabled = (): boolean => getRuntimeConfig().digitalRegionBlockEnabled;
+/** C3 and C4 are on for the regions that are nuanced (the EU fence flag, unless the region modes say otherwise). */
+export const getEuFenceEnabled = (): boolean => getRegionPolicy().fenceActive;
+/** C3b is on for the regions that are nuanced (the digital hold flag, unless the region modes say otherwise). */
+export const getDigitalRegionBlockEnabled = (): boolean => getRegionPolicy().digitalHoldActive;
+export const getClientRegionHeader = (): string => getRuntimeConfig().clientRegionHeader;
+
+const regionPolicyByConfig = new WeakMap<RuntimeConfig, RegionPolicy>();
+
+/**
+ * The per-region commerce policy this deployment runs: `PUBKY_RUNTIME_REGION_MODES` when set,
+ * otherwise derived from the EU fence and digital hold flags. Resolved once per config.
+ */
+export function getRegionPolicy(): RegionPolicy {
+  const config = getRuntimeConfig();
+  let policy = regionPolicyByConfig.get(config);
+  if (!policy) {
+    policy = resolveRegionPolicy(config);
+    regionPolicyByConfig.set(config, policy);
+  }
+  return policy;
+}
 export const getPrivEncryptionKeysEnabled = (): boolean => getRuntimeConfig().privEncryptionKeys;
 export const getPassportPrivEncryptionKeysEnabled = (): boolean => getRuntimeConfig().passportPrivEncryptionKeys;
 export const getPrivEncryptionKeysHomeservers = (): readonly string[] =>

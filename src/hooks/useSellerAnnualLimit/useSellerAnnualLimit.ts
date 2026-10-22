@@ -15,7 +15,7 @@ const LOADING: SellerAnnualLimitState = { status: 'loading' };
 
 /**
  * The seller's annual-limit state from the service (legal launch plan C4). Off while the Shop's
- * EU fence flag is off, while the service's is, and when the read fails: the service enforces the
+ * EU fence is off (no nuanced region, or the fence flag is off), while the service's is, and when the read fails: the service enforces the
  * limit on its own, so a failed read never blocks the page.
  *
  * The service derives residence and the declaration from the published shop record, so the state

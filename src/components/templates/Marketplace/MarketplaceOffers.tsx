@@ -16,6 +16,7 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { withBasePath } from '@/config/base-path';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { isMarketplaceAwardCheckoutEligible } from '@/core/services/marketplace/marketplace-projections';
+import { useCommerceAvailability } from '@/hooks/useCommerceAvailability/useCommerceAvailability';
 import { useMarketplaceCart } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
@@ -33,6 +34,7 @@ import { takeDocumentFragment } from '@/libs/navigation/document-fragment';
 import { formatDateTime } from '@/libs/utils/dateTime';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
+import { CommerceBlockedNotice } from '@/molecules/Marketplace/CommerceBlockedNotice';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
 import { MarketplaceProductSummary } from '@/molecules/Marketplace/MarketplaceProductSummary';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
@@ -46,6 +48,7 @@ export function MarketplaceOffers() {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const offers = useMarketplaceOffers();
   const cart = useMarketplaceCart();
+  const commerce = useCommerceAvailability();
   const [convertedOrderStates, setConvertedOrderStates] = useState<Record<string, MarketplaceOrder['state']>>({});
   const [countering, setCountering] = useState<MarketplaceOffer | null>(null);
   const { listings, isHydrating } = useOfferListings(offers.offers);
@@ -109,6 +112,10 @@ export function MarketplaceOffers() {
             Manage offers you’ve sent and received.
           </Typography>
         </div>
+
+        {commerce.blocked && commerce.message && commerce.info && (
+          <CommerceBlockedNotice message={commerce.message} info={commerce.info} testId="marketplace-offers-blocked" />
+        )}
 
         {offers.isLoading ? (
           <Skeleton className="h-40 w-full" />
@@ -224,6 +231,7 @@ export function MarketplaceOffers() {
                         <Button
                           size="default"
                           className="rounded-full"
+                          disabled={commerce.held}
                           onClick={async () => {
                             const award = offer.award;
                             if (!award || award.state !== 'active') return;
@@ -250,6 +258,7 @@ export function MarketplaceOffers() {
                             <Button
                               size="default"
                               className="rounded-full"
+                              disabled={commerce.held}
                               onClick={() => void offers.act(offer, 'offer.accept')}
                             >
                               Accept
@@ -258,6 +267,7 @@ export function MarketplaceOffers() {
                               size="default"
                               variant="outline"
                               className="rounded-full"
+                              disabled={commerce.held}
                               onClick={() => setCountering(offer)}
                             >
                               Counter
