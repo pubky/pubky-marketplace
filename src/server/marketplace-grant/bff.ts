@@ -86,7 +86,7 @@ export async function parseStrictJson<T>(request: Request, schema: z.ZodType<T>,
 export async function pairSession(
   request: Request,
   authorization: string | null,
-): Promise<{ cookie: string; maxAge: number }> {
+): Promise<{ cookie: string; maxAge: number } | null> {
   const config = requiredConfig();
   assertSameOrigin(request, config);
   await assertGrantSchema(config);
@@ -98,7 +98,8 @@ export async function pairSession(
   const bound = makeBoundCookie(bridgeId);
   const cookieHash = hashBoundCookie(config, config.stateKeyEpoch, 'session', bridgeId, bound.secret);
   const bearerSealed = sealBearer(config, bridgeId, input.session_id, input.pubky, bearer);
-  await replaceBridge(config, {
+  // Another pairing for this user won the race: keep its bridge and set no cookie.
+  const installed = await replaceBridge(config, {
     bridgeId,
     cookieHash,
     pubky: input.pubky,
@@ -107,6 +108,7 @@ export async function pairSession(
     keyEpoch: config.stateKeyEpoch,
     expiresAt,
   });
+  if (!installed) return null;
   return { cookie: bound.value, maxAge: Math.max(1, Math.floor((expiresAt.getTime() - Date.now()) / 1000)) };
 }
 

@@ -3,13 +3,17 @@ import {
   DIGITAL_REGION_MESSAGE,
   digitalHoldRefusal,
   EU_27,
-  EU_UNAVAILABLE_MESSAGE,
   fenceRefusal,
   isDigitalHeldCountry,
   isEuCountry,
+  isPrivateSellerOnlyCountry,
+  namedPrivateSellerNotice,
+  PRIVATE_SELLER_NOTICE,
+  REGION_UNAVAILABLE_MESSAGE,
+  SALE_INFO_PRIVATE,
   SELLER_LIMIT_MESSAGE,
   sellerDeclaration,
-  sellerUnavailableToEuBuyers,
+  sellerUnavailableToPrivateOnlyBuyers,
 } from './eu-region';
 import { marketplaceRegionRefusalMessage } from './failure-messages';
 
@@ -23,6 +27,13 @@ describe('EU-27 and GB membership', () => {
   it('knows members, case-insensitively, and non-members', () => {
     for (const code of ['DE', 'fr', 'GR', 'IE', 'MT']) expect(isEuCountry(code)).toBe(true);
     for (const code of ['GB', 'UK', 'CH', 'NO', 'US', 'EL', '', null, undefined]) expect(isEuCountry(code)).toBe(false);
+  });
+
+  it('keeps the EU-27 and GB to private sellers (C3) and nobody else', () => {
+    for (const code of [...EU_27, 'GB', 'gb', 'de']) expect(isPrivateSellerOnlyCountry(code)).toBe(true);
+    for (const code of ['CH', 'NO', 'IS', 'LI', 'US', 'EL', 'UK', '', null, undefined]) {
+      expect(isPrivateSellerOnlyCountry(code)).toBe(false);
+    }
   });
 
   it('holds digital items back from the EU-27 and GB only', () => {
@@ -43,21 +54,29 @@ describe('seller declaration', () => {
   });
 
   it('keeps a business or undeclared seller from EU buyers', () => {
-    expect(sellerUnavailableToEuBuyers('private')).toBe(false);
-    expect(sellerUnavailableToEuBuyers('trader')).toBe(true);
-    expect(sellerUnavailableToEuBuyers('undeclared')).toBe(true);
+    expect(sellerUnavailableToPrivateOnlyBuyers('private')).toBe(false);
+    expect(sellerUnavailableToPrivateOnlyBuyers('trader')).toBe(true);
+    expect(sellerUnavailableToPrivateOnlyBuyers('undeclared')).toBe(true);
   });
 });
 
 describe('fenceRefusal', () => {
   it('refuses an EU buyer for business and undeclared sellers only', () => {
-    expect(fenceRefusal({ buyerCountry: 'DE', declaration: 'trader' })).toBe(EU_UNAVAILABLE_MESSAGE);
-    expect(fenceRefusal({ buyerCountry: 'FR', declaration: 'undeclared' })).toBe(EU_UNAVAILABLE_MESSAGE);
+    expect(fenceRefusal({ buyerCountry: 'DE', declaration: 'trader' })).toBe(REGION_UNAVAILABLE_MESSAGE);
+    expect(fenceRefusal({ buyerCountry: 'FR', declaration: 'undeclared' })).toBe(REGION_UNAVAILABLE_MESSAGE);
     expect(fenceRefusal({ buyerCountry: 'DE', declaration: 'private' })).toBeNull();
   });
 
+  it('refuses a UK buyer for business and undeclared sellers only, with the same words', () => {
+    expect(REGION_UNAVAILABLE_MESSAGE).toBe('Not available to buyers in the EU or UK');
+    expect(fenceRefusal({ buyerCountry: 'GB', declaration: 'trader' })).toBe(REGION_UNAVAILABLE_MESSAGE);
+    expect(fenceRefusal({ buyerCountry: 'GB', declaration: 'undeclared' })).toBe(REGION_UNAVAILABLE_MESSAGE);
+    expect(fenceRefusal({ buyerCountry: 'GB', declaration: 'private' })).toBeNull();
+    expect(fenceRefusal({ buyerCountry: 'GB', declaration: 'unknown' })).toBeNull();
+  });
+
   it('leaves every other country and an unknown country open', () => {
-    for (const buyerCountry of ['US', 'GB', 'CH', null]) {
+    for (const buyerCountry of ['US', 'CH', 'NO', null]) {
       expect(fenceRefusal({ buyerCountry, declaration: 'trader' })).toBeNull();
     }
   });
@@ -65,6 +84,15 @@ describe('fenceRefusal', () => {
   it('refuses everyone for a seller at the annual limit', () => {
     expect(fenceRefusal({ buyerCountry: 'US', declaration: 'private', limitReached: true })).toBe(SELLER_LIMIT_MESSAGE);
     expect(fenceRefusal({ buyerCountry: null, declaration: 'private', limitReached: true })).toBe(SELLER_LIMIT_MESSAGE);
+  });
+});
+
+describe('private-seller notices', () => {
+  it('name the UK with the EU, since UK consumers have the same 14-day right', () => {
+    for (const text of [PRIVATE_SELLER_NOTICE, namedPrivateSellerNotice('Shop a'), SALE_INFO_PRIVATE]) {
+      expect(text).toContain('EU and UK consumer rights for buying from a business');
+      expect(text).toContain('14-day right to cancel');
+    }
   });
 });
 
@@ -80,7 +108,7 @@ describe('digitalHoldRefusal', () => {
 describe('marketplaceRegionRefusalMessage', () => {
   it('words the service refusals', () => {
     expect(marketplaceRegionRefusalMessage({ code: 'SELLER_UNAVAILABLE_IN_REGION', reason: 'business_seller' })).toBe(
-      EU_UNAVAILABLE_MESSAGE,
+      REGION_UNAVAILABLE_MESSAGE,
     );
     expect(
       marketplaceRegionRefusalMessage({

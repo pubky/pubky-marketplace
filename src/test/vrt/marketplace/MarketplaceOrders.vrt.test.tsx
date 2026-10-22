@@ -229,6 +229,18 @@ const fixtures = vi.hoisted(async () => {
     };
   };
 
+  // pubky/pubky-marketplace#368: a completed order of a final-sale listing, seen by its buyer.
+  const finalSaleBuyerView = () => ({
+    order: createOrderFixture('completed', {
+      id: '018f47d2-6a27-7c23-a49d-000000000706',
+      fulfillment: 'shipping',
+      nextActor: 'none',
+      returnPolicy: { acceptsReturns: false, returnWindowDays: null },
+    }),
+    payment: createPaymentFixture('confirmed'),
+    receipt: null,
+  });
+
   const deliveryAssumedView = () => ({
     order: createOrderFixture('delivered', {
       id: '018f47d2-6a27-7c23-a49d-000000000703',
@@ -422,16 +434,84 @@ const fixtures = vi.hoisted(async () => {
     everyOrderState: createOrderViewsForEveryState(),
     everyPaymentState: createOrderViewsForEveryPaymentState(),
     sellerNeedsAttention,
+    ownReviewRow: {
+      id: `${ORDER_FIXTURE_BUYER}:REVIEW1`,
+      owner_id: ORDER_FIXTURE_BUYER,
+      review_id: 'REVIEW1',
+      order_id: reviewedOrderView(23).order.id,
+      subject_id: ORDER_FIXTURE_SELLER,
+      record: {
+        schemaVersion: 1 as const,
+        recordType: 'review' as const,
+        ownerPubky: ORDER_FIXTURE_BUYER,
+        revision: 1,
+        createdAt: '2026-08-21T10:00:00.000Z',
+        updatedAt: '2026-08-21T10:00:00.000Z',
+        reviewId: 'REVIEW1',
+        subjectPubky: ORDER_FIXTURE_SELLER,
+        listingOwnerPubky: ORDER_FIXTURE_SELLER,
+        listingId: 'boots',
+        role: 'buyer_reviewing_seller' as const,
+        ratings: { overall: 5 },
+        text: 'Accurate and fast. The boots fit as described.',
+        eligibilityAttestation: 'A'.repeat(32),
+      },
+      attestation_verified: true,
+      attestation_iss: 'issuer',
+      sync_status: 'synced' as const,
+      updated_at: 1,
+    },
     reviewedInWindow: [reviewedOrderView(23)],
     reviewedOutOfWindow: [reviewedOrderView(25)],
     trackableShipped: [trackableShippedView()],
     bitcoinRefunded: [bitcoinRefundedView()],
     deliveryAssumed: [deliveryAssumedView()],
+    finalSaleBuyer: [finalSaleBuyerView()],
+    // pubky/pubky-marketplace#370: the buyer's return status block while the seller hasn't acted.
+    returnRequestedBuyer: [
+      {
+        order: createOrderFixture('return_requested', { id: '018f47d2-6a27-7c23-a49d-000000000707' }),
+        payment: createPaymentFixture('confirmed'),
+        receipt: null,
+      },
+    ],
+    // A delivered final-sale order: it says when it completes, with no return clause.
+    finalSaleDelivered: [
+      {
+        order: createOrderFixture('delivered', {
+          id: '018f47d2-6a27-7c23-a49d-000000000708',
+          fulfillment: 'shipping',
+          nextActor: 'none',
+          returnPolicy: { acceptsReturns: false, returnWindowDays: null },
+          autoCompleteDays: 7,
+        }),
+        payment: createPaymentFixture('confirmed'),
+        receipt: null,
+      },
+    ],
     usdtRefundBuyerNeeded: [usdtRefundView('return_approved', 'buyer', false)],
     usdtRefundBuyerConfirmed: [usdtRefundView('return_approved', 'buyer', true)],
     usdtRefundSellerConfirmed: [usdtRefundView('return_received', 'seller', true)],
     usdtRefundSellerWaiting: [usdtRefundView('return_received', 'seller', false)],
     usdtRefundBuyerRecorded: [usdtRefundView('refunded_external', 'buyer', true)],
+    // pubky/pubky-marketplace#373: Arbitrum shows less reaching the buyer than the seller recorded.
+    usdtRefundBuyerShort: [
+      (() => {
+        const view = usdtRefundView('refunded_external', 'buyer', true);
+        return {
+          ...view,
+          order: {
+            ...view.order,
+            externalRefund: {
+              amountMinor: 13_700,
+              transactionId: REFUND_FIXTURE_TX_HASH,
+              recordedAt: '2026-10-10T10:00:00.000Z',
+              receivedUnits: 136_970_435,
+            },
+          },
+        };
+      })(),
+    ],
     usdtReviewSeller: [usdtReviewSellerView()],
     digitalDelivered: [digitalDeliveredView()],
     digitalToDeliver: [digitalToDeliverView()],
@@ -508,6 +588,7 @@ const ordersState = vi.hoisted(() => ({
   orders: [] as unknown[],
   isLoading: false,
   error: null as string | null,
+  needsSession: false,
   adapterMode: 'sandbox' as string,
 }));
 
@@ -534,10 +615,41 @@ vi.mock('@/hooks/useMarketplaceOrders/useMarketplaceOrders', () => ({
     orders: ordersState.orders,
     isLoading: ordersState.isLoading,
     error: ordersState.error,
+    needsSession: ordersState.needsSession,
     adapterMode: ordersState.adapterMode,
     advancePayment: vi.fn(),
     actOnOrder: vi.fn(),
     refresh: vi.fn(),
+  }),
+}));
+
+// The approval dialog on the missing-session state, closed: only its trigger renders.
+vi.mock('@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner')>()),
+  useMarketplaceApprovalSigner: () => 'Bitkit',
+}));
+
+vi.mock('@/providers/ShopHostSessionProvider/ShopHostSessionProvider', () => ({
+  useIsShopHosted: () => false,
+}));
+
+vi.mock('@/hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect', () => ({
+  useMarketplaceSessionConnect: () => ({
+    status: 'idle',
+    authorizationUrl: '',
+    errorMessage: null,
+    requestsFullGrant: false,
+    requestsGrantReconnect: false,
+    requestsGrantBootstrap: false,
+    requestsPassport: false,
+    requiresSignIn: false,
+    approvalSigner: 'Bitkit',
+    start: vi.fn(),
+    startPassport: vi.fn(),
+    cancel: vi.fn(),
+    copyAuthUrl: vi.fn(async () => {}),
+    openInRing: vi.fn(),
+    isOpeningRing: false,
   }),
 }));
 
@@ -552,9 +664,26 @@ beforeEach(async () => {
   const { useMarketplaceDisplayStore } = await import('@/stores/marketplace-display/marketplace-display.store');
   useMarketplaceDisplayStore.setState({ showFxEstimate: true, measurementSystem: 'metric' });
   ordersState.adapterMode = 'sandbox';
+  ordersState.needsSession = false;
+  // The "My reviews" panel reads the local rows and the reviewer's homeserver; pin both so no scene
+  // reaches the network, and only the scenes below show the panel.
+  vi.spyOn(CommerceController, 'getOwnMarketplaceReviews').mockResolvedValue([]);
+  vi.spyOn(CommerceController, 'refreshOwnMarketplaceReviews').mockResolvedValue(0);
 });
 
 describe('Marketplace orders — visual regression', () => {
+  it('asks to approve the marketplace when the session is missing at mobile viewport', async () => {
+    ordersState.orders = [];
+    ordersState.isLoading = false;
+    ordersState.error = 'A marketplace session is required.';
+    ordersState.needsSession = true;
+    ordersState.adapterMode = 'transaction-service';
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
+    await expect(screen.getByRole('button', { name: 'Approve' })).toBeVisible();
+    await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('orders-session-required-mobile');
+  });
+
   it('renders every order state at desktop viewport', async () => {
     const { everyOrderState } = await fixtures;
     ordersState.orders = everyOrderState;
@@ -620,6 +749,53 @@ describe('Marketplace orders — visual regression', () => {
     const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_DESKTOP });
     await expect.element(screen.getByTestId('order-refund-record')).toBeVisible();
     await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('orders-bitcoin-refund-desktop');
+  });
+
+  it('renders a USDT refund Arbitrum shows short at mobile viewport', async () => {
+    const { usdtRefundBuyerShort } = await fixtures;
+    ordersState.orders = usdtRefundBuyerShort;
+    ordersState.isLoading = false;
+    ordersState.error = null;
+    ordersState.adapterMode = 'transaction-service';
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
+    await expect.element(screen.getByTestId('order-refund-record')).toBeVisible();
+    await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('orders-usdt-refund-short-mobile');
+  });
+
+  it('renders a delivered final-sale order with its completion note at mobile viewport', async () => {
+    const { finalSaleDelivered } = await fixtures;
+    ordersState.orders = finalSaleDelivered;
+    ordersState.isLoading = false;
+    ordersState.error = null;
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
+    await expect.element(screen.getByText('Completes automatically 7 days after delivery.')).toBeVisible();
+    await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('orders-final-sale-delivered-mobile');
+  });
+
+  it('renders a final-sale order with no return at mobile viewport', async () => {
+    const { finalSaleBuyer } = await fixtures;
+    ordersState.orders = finalSaleBuyer;
+    ordersState.isLoading = false;
+    ordersState.error = null;
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
+    await expect.element(screen.getByTestId('return-closed-note')).toBeVisible();
+    await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('orders-final-sale-mobile');
+  });
+
+  it('renders the buyer return status with Cancel return at mobile viewport', async () => {
+    const { returnRequestedBuyer } = await fixtures;
+    ordersState.orders = returnRequestedBuyer;
+    ordersState.isLoading = false;
+    ordersState.error = null;
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
+    await expect.element(screen.getByTestId('order-return-status')).toBeVisible();
+    await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot(
+      'orders-return-requested-buyer-mobile',
+    );
   });
 
   it('renders the buyer asking for a USDT refund address at desktop viewport', async () => {
@@ -909,6 +1085,57 @@ describe('Marketplace orders — visual regression', () => {
       }
     });
   }
+
+  it('renders My reviews with Remove my review at desktop viewport', async () => {
+    const { reviewedInWindow, ownReviewRow } = await fixtures;
+    ordersState.orders = reviewedInWindow;
+    ordersState.isLoading = false;
+    ordersState.error = null;
+    vi.spyOn(CommerceController, 'getOwnMarketplaceReviews').mockResolvedValue([ownReviewRow]);
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await expect.element(screen.getByRole('button', { name: 'Remove my review' })).toBeVisible();
+    await expect(await expectVrtSurface('marketplace-my-reviews')).toMatchScreenshot('orders-my-reviews-desktop');
+  });
+
+  it('renders an order reviewed item by item as one My reviews card at desktop viewport', async () => {
+    const { reviewedInWindow, ownReviewRow } = await fixtures;
+    ordersState.orders = reviewedInWindow;
+    ordersState.isLoading = false;
+    ordersState.error = null;
+    const beltRow = {
+      ...ownReviewRow,
+      id: `${ownReviewRow.owner_id}:REVIEW2`,
+      review_id: 'REVIEW2',
+      record: {
+        ...ownReviewRow.record,
+        reviewId: 'REVIEW2',
+        listingId: 'belt',
+        ratings: { overall: 4 },
+        text: 'The belt is sturdy.',
+      },
+    };
+    vi.spyOn(CommerceController, 'getOwnMarketplaceReviews').mockResolvedValue([ownReviewRow, beltRow]);
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await expect.element(screen.getByRole('button', { name: 'Remove my review' })).toBeVisible();
+    await expect(await expectVrtSurface('marketplace-my-reviews')).toMatchScreenshot('orders-my-reviews-items-desktop');
+  });
+
+  it('renders the remove-review confirmation at mobile viewport', async () => {
+    const { reviewedInWindow, ownReviewRow } = await fixtures;
+    ordersState.orders = reviewedInWindow;
+    ordersState.isLoading = false;
+    ordersState.error = null;
+    vi.spyOn(CommerceController, 'getOwnMarketplaceReviews').mockResolvedValue([ownReviewRow]);
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
+    await screen.getByRole('button', { name: 'Remove my review' }).click();
+    await expect.element(screen.getByRole('alertdialog')).toBeVisible();
+    await expect(await expectVrtSurface('marketplace-my-review-remove-dialog')).toMatchScreenshot(
+      'orders-remove-review-dialog-mobile',
+    );
+  });
 
   it('rejects an incorrect production surface marker', async () => {
     ordersState.orders = [];

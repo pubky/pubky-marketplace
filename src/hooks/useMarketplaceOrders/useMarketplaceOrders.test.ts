@@ -6,6 +6,7 @@ import { PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
 import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
+import { toast } from '@/molecules/Toaster/use-toast';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { USDT_WIRE_PAYMENT_NOT_FINAL_REFUSAL } from '@/test/fixtures/commerce/usdt-orders';
@@ -37,10 +38,11 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     // Own-review publication (trust & reputation P1.6): the load path resumes
     // pending publications and review commands publish the record.
     resumeOwnReviewPublications: vi.fn(async () => 0),
+    resumeOwnReviewRemovals: vi.fn(async () => 0),
     sweepOwnAuctionReserves: vi.fn(async () => 0),
     publishOrderReceipts: vi.fn(async () => undefined),
     resumeOwnReviewResponsePublications: vi.fn(async () => 0),
-    publishOwnMarketplaceReview: vi.fn(async () => null),
+    publishOwnMarketplaceReviews: vi.fn(async () => []),
   },
 }));
 
@@ -348,6 +350,101 @@ describe('useMarketplaceOrders', () => {
       requestedAmountMinor: 250,
     });
     expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain('reloaded');
+  });
+
+  describe('per-item review commands', () => {
+    const items = [
+      { listingId: 'boots', rating: 5, text: 'Great boots.' },
+      { listingId: 'belt', rating: 3, text: '' },
+    ];
+    const reviewWire = (listingId: string, rating: number, text: string) => ({
+      id: `00000000-0000-4000-8000-00000000${listingId === 'boots' ? '2001' : '2002'}`,
+      reviewerPubky: BUYER,
+      subjectPubky: SELLER,
+      listingAggregateId: `listing:${SELLER}_${listingId}`,
+      rating,
+      text,
+      createdAt: '2026-08-21T10:00:00.000Z',
+    });
+
+    it('publishes the records of the command result once the command is accepted', async () => {
+      const { result } = renderHook(() => useMarketplaceOrders());
+      await waitFor(() => expect(result.current.orders).toHaveLength(1));
+      const order = result.current.orders[0].order;
+      const commandResult = { kind: 'review' as const, reviews: [], attestations: [] };
+      vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
+        ok: true,
+        version: 1,
+        commandId: '00000000-0000-4000-8000-000000001111',
+        aggregateId: `order:${order.id}`,
+        revision: 2,
+        eventIds: [],
+        result: commandResult,
+      });
+      vi.mocked(CommerceController.publishOwnMarketplaceReviews).mockResolvedValueOnce([{} as never, {} as never]);
+
+      let succeeded = false;
+      await act(async () => {
+        succeeded = await result.current.actOnOrder(order, 'review.create', { items });
+      });
+
+      expect(succeeded).toBe(true);
+      expect(CommerceController.publishOwnMarketplaceReviews).toHaveBeenCalledWith(order, commandResult);
+      expect(vi.mocked(toast)).toHaveBeenCalledWith({
+        description: '2 reviews published to your homeserver with their purchase attestations.',
+      });
+    });
+
+    it.each(['INVARIANT_VIOLATION', 'INVALID_STATE'])(
+      'lets the second tab of a double submit finish without publishing a second record set on %s',
+      async (code) => {
+        const { result } = renderHook(() => useMarketplaceOrders());
+        await waitFor(() => expect(result.current.orders).toHaveLength(1));
+        const order = result.current.orders[0].order;
+        vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
+          ok: false,
+          error: { code, message: 'This participant already reviewed these listings.' },
+        });
+        vi.mocked(CommerceController.getMarketplaceOrders).mockResolvedValue([
+          {
+            ...order,
+            revision: 3,
+            state: 'completed',
+            reviews: items.map(({ listingId, rating, text }) => reviewWire(listingId, rating, text)),
+          },
+        ]);
+        vi.mocked(toast).mockClear();
+
+        let succeeded = false;
+        await act(async () => {
+          succeeded = await result.current.actOnOrder(order, 'review.create', { items });
+        });
+
+        expect(succeeded).toBe(true);
+        expect(CommerceController.publishOwnMarketplaceReviews).not.toHaveBeenCalled();
+        expect(vi.mocked(toast)).not.toHaveBeenCalled();
+      },
+    );
+
+    it('still reports a refused review whose listings the order does not show as reviewed', async () => {
+      const { result } = renderHook(() => useMarketplaceOrders());
+      await waitFor(() => expect(result.current.orders).toHaveLength(1));
+      const order = result.current.orders[0].order;
+      vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
+        ok: false,
+        error: { code: 'INVALID_STATE', message: 'The order is not eligible for review.' },
+      });
+      vi.mocked(toast).mockClear();
+
+      let succeeded = true;
+      await act(async () => {
+        succeeded = await result.current.actOnOrder(order, 'review.create', { items });
+      });
+
+      expect(succeeded).toBe(false);
+      expect(CommerceController.publishOwnMarketplaceReviews).not.toHaveBeenCalled();
+      expect(vi.mocked(toast)).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' }));
+    });
   });
 
   it('toasts static pickup-refusal copy from actOnOrder and never an echoed meeting address', async () => {

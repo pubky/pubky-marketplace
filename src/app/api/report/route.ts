@@ -1,24 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ReportController } from '@/controllers/report/report';
+import type { TReportSubmitParams } from '@/controllers/report/report.types';
 import { handleApiError } from '@/libs/api/route-error-handler';
+import { readSupportIntake } from '@/libs/api/support-intake-guards';
 import { HttpStatusCode } from '@/libs/http/http.types';
 
 /**
- * API Route for post and listing report submission to Chatwoot
+ * API Route for post, listing and review report submission to Chatwoot
  *
  * This endpoint receives report data from the UI and processes it through
  * the controller layer following Franky's architecture.
  *
- * All validation is handled by the controller layer.
- * This route only parses the request body and delegates to the controller.
+ * Requests are limited per client address and across all clients, and the
+ * body is capped in size; both are checked before the body is parsed.
+ * Field validation is handled by the controller layer.
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { pubky, postUrl, issueType, reason, name, listingId, sellerPubky } = body;
+    const intake = await readSupportIntake('report', request);
+    if (!intake.ok) return intake.response;
+    const { pubky, postUrl, issueType, reason, name, listingId, sellerPubky, reviewUri, reviewerPubky } = intake.body;
 
-    // Delegate to controller - validation happens there
-    await ReportController.submit({ pubky, postUrl, issueType, reason, name, listingId, sellerPubky });
+    // Delegate to controller - fields are unchecked until it validates them
+    await ReportController.submit({
+      pubky,
+      postUrl,
+      issueType,
+      reason,
+      name,
+      listingId,
+      sellerPubky,
+      reviewUri,
+      reviewerPubky,
+    } as TReportSubmitParams);
 
     return NextResponse.json({ message: 'Success' });
   } catch (error) {

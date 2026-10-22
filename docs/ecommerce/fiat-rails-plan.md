@@ -35,7 +35,7 @@ Server's `[paykit] server_url` can be repointed.
 | #   | Task                                                                                         | Size | Parallel? |
 | --- | -------------------------------------------------------------------------------------------- | ---- | --------- |
 | 0.1 | Review/ratify `fiat-rails-design.md` (topology, trust table, seller-owned accounts decision) | S    | —         |
-| 0.2 | Confirm staging deploy target (Railway) + secret handling for processor test keys            | S    | with 0.1  |
+| 0.2 | Confirm staging deploy target + secret handling for processor test keys                      | S    | with 0.1  |
 | 0.3 | Send nothing upstream; file the proposal doc in-repo (done on this branch)                   | S    | with 0.1  |
 
 Exit: sign-off on design; staging plan agreed.
@@ -56,7 +56,7 @@ changes yet beyond a temporary checkout-URL surface for testing.
 | 1.6  | `/checkout-sessions` buyer endpoint (idempotent re-mint, rate-limited)                                                                                                                                                             | S    | after 1.4      |
 | 1.7  | Seller registry: `pubky → stripe_account_id`, manual/CLI insert for staging (Connect onboarding is Phase 4)                                                                                                                        | S    | with 1.4       |
 | 1.8  | Lock-creation tooling: extend the live-test harness to author `asset: "USD"` locks                                                                                                                                                 | S    | with 1.2       |
-| 1.9  | Deploy to Railway; point staging Lock Server `[paykit] server_url` at the gateway; verify existing BTC regtest live-test still passes through the proxy                                                                            | M    | after 1.3, 1.5 |
+| 1.9  | Deploy to staging; point staging Lock Server `[paykit] server_url` at the gateway; verify existing BTC regtest live-test still passes through the proxy                                                                            | M    | after 1.3, 1.5 |
 | 1.10 | Integration test: scripted USD purchase → Stripe test checkout → webhook → pull → delay → Locks `completed` → credential → unlock (extend `src/test/live/` pattern)                                                                | M    | after 1.9      |
 
 Exit: `npm run test:marketplace:locks` still green through the proxy; new fiat live

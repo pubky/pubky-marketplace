@@ -109,7 +109,12 @@ export type UsdtRefundOrder = {
   refundDestination?: RefundDestination | null;
   paymentAddress?: string | null;
   returnRequest?: { state: string; requestedAmountMinor: number } | null;
-  externalRefund?: { amountMinor: number; transactionId: string } | null;
+  externalRefund?: {
+    amountMinor: number;
+    transactionId: string;
+    /** USDT millionths Arbitrum shows reaching the refund address; absent when the service didn't check. */
+    receivedUnits?: number | null;
+  } | null;
 };
 
 /**
@@ -247,18 +252,19 @@ export function usdtRefundDueMoney(order: UsdtRefundOrder): UsdtRefundOrder['tot
 
 export const USDT_REFUND_COPY = {
   buyerTitle: 'Refund address',
-  buyerNeededDue: 'Confirm where your USDT refund should go. The seller sends it and records it here.',
+  buyerNeededDue: 'Confirm your refund address so the seller can refund you. They send it there and record it here.',
   buyerNeeded:
     'If you are ever refunded, the seller sends it to the address you confirm here. You can confirm it now or when a refund is due.',
   buyerConfirmed: 'Your refund address is confirmed. The seller sends the refund there and records it on this order.',
   buyerRecorded: 'Your refund address is locked in because the seller has recorded a refund.',
   sellerTitle: 'Buyer refund address',
   sellerWaiting: "Ask the buyer to confirm a refund address first. It's on their order page.",
-  sellerAwaitingBuyer: "The buyer hasn't confirmed a refund address yet.",
+  sellerAwaitingBuyer: "Waiting for the buyer's refund address. You can record the refund once they confirm it.",
   sellerConfirmed: 'Send this refund from Bitkit, then record the Arbitrum transaction hash with Record refund.',
   sellerConfirmedInReview:
     'Send this refund from Bitkit, then record the Arbitrum transaction hash when you resolve this payment as refunded.',
   sellerRecorded: 'You recorded a refund to this address. The Shop has not checked it on Arbitrum.',
+  sellerRecordedChecked: 'You recorded a refund to this address. The Shop checked it on Arbitrum.',
   networkWarning:
     'If this is an exchange deposit address, check that the exchange accepts USDT on Arbitrum One. Funds sent on the wrong network can be lost.',
   networkConfirmation: 'This address accepts USDT on Arbitrum One',
@@ -270,6 +276,15 @@ export const USDT_REFUND_COPY = {
   paykitAddressChoice: 'Send it to my Paykit USDT address',
   recordedBySeller: 'Recorded by the seller',
   notChecked: "The Shop hasn't checked it on Arbitrum.",
+  checked: 'Checked on Arbitrum.',
+  transactionNotFound: "Arbitrum doesn't show this transaction yet. Check the hash, or try again once it's confirmed.",
+  transactionReverted: 'This transaction failed on Arbitrum. Send the refund again and record the new hash.',
+  transactionAlreadyRecorded:
+    'This transaction is already recorded as the refund of another order. Send this refund in its own transaction.',
+  transactionWrongRecipient:
+    "This transaction sent no USDT to the buyer's refund address. Check that you sent it to the address above.",
+  feeHint:
+    'Bitkit can take the network fee in USDT. Keep the amount plus the fee in your wallet so the buyer receives the full refund.',
   referenceLabel: 'Arbitrum transaction hash',
   referenceRequired: 'Enter the Arbitrum transaction hash (0x followed by 64 characters).',
   railUnknown:
@@ -283,6 +298,10 @@ export const USDT_REFUND_REFUSAL_COPY: ReadonlyMap<string, string> = new Map([
   ['refund_destination_required', USDT_REFUND_COPY.sellerWaiting],
   ['invalid_refund_destination', USDT_REFUND_COPY.addressInvalid],
   ['invalid_refund_reference', USDT_REFUND_COPY.referenceRequired],
+  ['refund_transaction_not_found', USDT_REFUND_COPY.transactionNotFound],
+  ['refund_transaction_reverted', USDT_REFUND_COPY.transactionReverted],
+  ['refund_transaction_wrong_recipient', USDT_REFUND_COPY.transactionWrongRecipient],
+  ['refund_transaction_already_recorded', USDT_REFUND_COPY.transactionAlreadyRecorded],
 ]);
 
 /**
@@ -318,9 +337,12 @@ export function usdtRefundRefusalMessage(
 }
 
 /**
- * The buyer's receipt line for a recorded USDT refund. It states what the
- * seller recorded and that nobody checked it; the Paykit `refunded` outcome is
- * an annotation, never an independently verified on-chain refund (D5).
+ * The receipt line for a recorded USDT refund. When the service checked the
+ * transaction on Arbitrum (`receivedUnits`), it says so, and a short refund
+ * names what was received against what was recorded. Otherwise it states what
+ * the seller recorded and that the Shop hasn't checked it. The Paykit
+ * `refunded` outcome is an annotation, never an independently verified
+ * on-chain refund (D5).
  */
 export function usdtRefundRecordLine(order: UsdtRefundOrder): string | null {
   const refund = order.externalRefund;
@@ -336,5 +358,15 @@ export function usdtRefundRecordLine(order: UsdtRefundOrder): string | null {
       : ` (${formatCommerceMoney({ ...order.total, amountMinor: refund.amountMinor })} of ${formatCommerceMoney(order.total)})`
     : '';
   const what = amount ? `a refund of ${amount}${scope}` : `a refund${scope}`;
-  return `The seller recorded ${what}${destination} (transaction ${refund.transactionId}). ${USDT_REFUND_COPY.notChecked}`;
+  const received = refund.receivedUnits;
+  if (typeof received !== 'number') {
+    return `The seller recorded ${what}${destination} (transaction ${refund.transactionId}). ${USDT_REFUND_COPY.notChecked}`;
+  }
+  const recordedUnits = cap
+    ? refund.amountMinor
+    : usdtParityMillionths({ ...order.total, amountMinor: refund.amountMinor });
+  if (recordedUnits !== null && received < recordedUnits) {
+    return `The seller recorded ${what}${destination} (transaction ${refund.transactionId}). Arbitrum shows ${formatUsdt(received, { grouped: true })} received of ${formatUsdt(recordedUnits, { grouped: true })}.`;
+  }
+  return `The seller refunded ${amount ?? formatUsdt(received, { grouped: true })}${scope}${destination} (transaction ${refund.transactionId}). ${USDT_REFUND_COPY.checked}`;
 }

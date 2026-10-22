@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { HandCoins } from 'lucide-react';
 import { getMarketplaceListingRoute } from '@/app/routes';
@@ -96,6 +96,7 @@ export function MarketplaceOffers() {
       showRightSidebar={false}
       showLeftMobileButton={false}
       showRightMobileButton={false}
+      disableMainContentOverflow
       className="pb-28"
     >
       <Container overrideDefaults className="flex w-full flex-col gap-6">
@@ -376,26 +377,47 @@ function listingCompositeId(offer: MarketplaceOffer): string {
   return listingRef ? `${listingRef.sellerPubky}:${listingRef.listingId}` : '';
 }
 
+/** How long an offer waits before its listing, which failed to load, is tried again. */
+export const OFFER_LISTING_RETRY_MS = 30_000;
+
 function useOfferListings(offers: readonly MarketplaceOffer[]) {
   const ids = useMemo(() => offers.map(listingCompositeId).filter(Boolean).sort().join('|'), [offers]);
   const [listings, setListings] = useState<Map<string, CommerceListingRecord>>(new Map());
   const [isHydrating, setIsHydrating] = useState(false);
+  // The offers poll hands back a new array every few seconds even when nothing changed. Reloading on it
+  // cleared the listings each time, so every card's thumbnail fell back to the placeholder and loaded
+  // again. Reload only when the set of listings changes, and keep the shown ones until the new ones land.
+  const offersRef = useRef(offers);
+  useEffect(() => {
+    offersRef.current = offers;
+  }, [offers]);
 
   useEffect(() => {
     let active = true;
-    const currentOffers = offers;
-    setListings(new Map());
-    setIsHydrating(false);
-    void loadOfferListings(currentOffers).then((nextListings) => {
-      if (!active) return;
-      setListings(nextListings);
-      setIsHydrating(false);
-    });
-    if (ids) setIsHydrating(true);
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    const loaded = new Map<string, CommerceListingRecord>();
+    // A listing that failed to load (a transient fetch error) is tried again on a slow timer, alone, so
+    // its card heals without the set of offers changing and the loaded ones are never reloaded.
+    const load = (offersToLoad: readonly MarketplaceOffer[]) => {
+      void loadOfferListings(offersToLoad).then((nextListings) => {
+        if (!active) return;
+        for (const [id, listing] of nextListings) loaded.set(id, listing);
+        setListings(new Map(loaded));
+        setIsHydrating(false);
+        const missing = offersRef.current.filter((offer) => {
+          const id = listingCompositeId(offer);
+          return Boolean(id) && !loaded.has(id);
+        });
+        if (missing.length) retry = setTimeout(() => load(missing), OFFER_LISTING_RETRY_MS);
+      });
+    };
+    load(offersRef.current);
+    setIsHydrating(Boolean(ids));
     return () => {
       active = false;
+      if (retry) clearTimeout(retry);
     };
-  }, [ids, offers]);
+  }, [ids]);
 
   return { listings, isHydrating };
 }

@@ -3,6 +3,8 @@
 import { Store } from 'lucide-react';
 import type { CommerceSellerReputationOverview } from '@/application/commerce/commerce';
 import { Typography } from '@/atoms/Typography/Typography';
+import { trustedAttestedReviewCount } from '@/libs/commerce/attestor-trust';
+import { countedSummaryReputation } from '@/libs/commerce/review-counting';
 import { MarketplaceStarRating } from '@/molecules/MarketplaceStarRating/MarketplaceStarRating';
 
 export interface MarketplaceSellerIdentityProps {
@@ -10,7 +12,8 @@ export interface MarketplaceSellerIdentityProps {
   displayName: string;
   avatarUrl?: string | null;
   avatarAlt?: string;
-  reputation: CommerceSellerReputationOverview | { status: 'loading' };
+  /** The seller's rating; omitted where the page rates the product instead. */
+  reputation?: CommerceSellerReputationOverview | { status: 'loading' };
   onAvatarError?: () => void;
   variant?: 'default' | 'card';
 }
@@ -23,6 +26,7 @@ export function MarketplaceSellerIdentity({
   onAvatarError,
   variant = 'default',
 }: MarketplaceSellerIdentityProps) {
+  const counted = reputation?.status === 'rated' ? countedSummaryReputation(reputation.summary) : null;
   return (
     <div className="flex min-w-0 items-center gap-3">
       {avatarUrl ? (
@@ -45,11 +49,13 @@ export function MarketplaceSellerIdentity({
         >
           {displayName}
         </Typography>
-        {reputation.status === 'rated' && reputation.summary.count > 0 ? (
+        {reputation === undefined ? null : counted !== null && counted.itemRating !== null ? (
+          <MarketplaceStarRating rating={counted.itemRating} basis={counted} size="sm" className="mt-1" />
+        ) : counted === null && reputation.status === 'rated' && reputation.summary.count > 0 ? (
           <MarketplaceStarRating
             rating={reputation.summary.avg}
             count={reputation.summary.count}
-            verifiedCount={reputation.summary.verifiedCount}
+            verifiedCount={trustedAttestedReviewCount(reputation.summary.attestors)}
             size="sm"
             className="mt-1"
           />

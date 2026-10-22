@@ -100,7 +100,7 @@ export const orderTransitions = {
   completed: ['return_requested', 'refunded_external'],
   cancel_requested: ['cancelled', 'refunded_external'],
   cancelled: ['paid', 'refunded_external'],
-  return_requested: ['return_approved', 'refunded_external'],
+  return_requested: ['return_approved', 'delivered', 'completed', 'refunded_external'],
   return_approved: ['return_received', 'refunded_external'],
   return_received: ['refunded_external'],
   refunded_external: [

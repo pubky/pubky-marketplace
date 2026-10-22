@@ -76,6 +76,31 @@ const pubkyValue = z
   .trim()
   .regex(/^[ybndrfg8ejkmcpqxot1uwisza345h769]{52}$/, 'Expected a 52-character z-base-32 Pubky');
 
+/** An RFC 3339 instant with an offset, or a `YYYY-MM-DD` date meaning 00:00 UTC that day. */
+const trustWindowInstantValue = z.union([z.iso.datetime({ offset: true }), z.iso.date()]);
+
+/**
+ * One review attestor this deployment trusts for "Verified purchase". An
+ * attestation counts only when its issuer is `pubky` and its time falls in
+ * `[validFrom, validUntil)`; an absent `validUntil` leaves the window open.
+ * `label` names the attestor on the badge ("Verified purchase · Pubky Market").
+ * Unknown keys are rejected so a misspelt `validUntil` cannot silently leave a
+ * retired key trusted forever.
+ */
+export const marketplaceTrustedAttestorValue = z
+  .object({
+    pubky: pubkyValue,
+    label: z.string().trim().min(1).max(40),
+    validFrom: trustWindowInstantValue,
+    validUntil: trustWindowInstantValue.optional(),
+  })
+  .strict()
+  .refine((entry) => entry.validUntil === undefined || Date.parse(entry.validUntil) > Date.parse(entry.validFrom), {
+    message: 'validUntil must be later than validFrom',
+    path: ['validUntil'],
+  });
+export type MarketplaceTrustedAttestor = z.infer<typeof marketplaceTrustedAttestorValue>;
+
 /** Parse a JSON-array-of-strings env value into a string[]. Throws on malformed input. */
 function parseJsonStringArray(val: string, label = 'value'): string[] {
   const parsed: unknown = JSON.parse(val);
@@ -191,6 +216,24 @@ const optionalHomeserverArrayFromString = (label: string) =>
       }
     })
     .pipe(z.array(homeserverValue).optional());
+
+/** Env form: a JSON array of trust-list entries. Blank or unset means no runtime entries. */
+const optionalTrustedAttestorsFromString = z
+  .string()
+  .optional()
+  .transform((val, ctx) => {
+    if (val === undefined || val.trim() === '') return undefined;
+    try {
+      return JSON.parse(val) as unknown;
+    } catch (error) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Invalid MARKETPLACE_TRUSTED_ATTESTORS value: ${(error as Error).message}`,
+      });
+      return z.NEVER;
+    }
+  })
+  .pipe(z.array(marketplaceTrustedAttestorValue).optional());
 
 /**
  * Optional-tier env strings: a missing OR empty/whitespace value means "unset".
@@ -475,6 +518,7 @@ export const APP_RUNTIME_DEFAULTS = {
   privEncryptionKeys: false,
   passportPrivEncryptionKeys: false,
   privEncryptionKeysHomeservers: [] as string[],
+  marketplaceTrustedAttestors: [] as MarketplaceTrustedAttestor[],
   preludeSdkTimeoutMs: 5_000,
   previewImage: '/preview.webp',
   siteName: 'Pubky App',
@@ -615,7 +659,7 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
    * Shop-side switch for the EU scope fence (legal launch plan C2-C4), mirroring the
    * marketplace service's `EU_FENCE_ENABLED`. Off by default. On, the Shop asks the buyer
    * for their country where no address supplies it, sends it with every selling command,
-   * shows business and undeclared sellers as unavailable to EU buyers, and shows sellers
+   * shows business and undeclared sellers as unavailable to EU and UK buyers, and shows sellers
    * their annual-limit counters. The seller declaration and the consumer-law copy do not
    * depend on it.
    */
@@ -684,6 +728,14 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
     .default([...APP_RUNTIME_DEFAULTS.privEncryptionKeysHomeservers]),
   /** Client id of the Shop's grant sign-in. Absent means `SHOP_GRANT_CLIENT_ID` in `src/config/app.ts`. */
   shopGrantClientId: shopGrantClientIdValue.optional(),
+  /**
+   * Review attestors this deployment trusts in addition to the compiled
+   * defaults (`MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS` in `src/config/commerce.ts`).
+   * Empty by default.
+   */
+  marketplaceTrustedAttestors: z
+    .array(marketplaceTrustedAttestorValue)
+    .default(() => [...APP_RUNTIME_DEFAULTS.marketplaceTrustedAttestors]),
   preludeSdkKey: nonEmptyStringValue.optional(),
   preludeSdkTimeoutMs: positiveIntValue.default(APP_RUNTIME_DEFAULTS.preludeSdkTimeoutMs),
   plausibleDomain: nonEmptyStringValue.optional(),
@@ -783,6 +835,7 @@ export const runtimeEnvInputSchema = z
     passportPrivEncryptionKeys: optionalBooleanFromString,
     privEncryptionKeysHomeservers: optionalHomeserverArrayFromString('PRIV_ENCRYPTION_KEYS_HOMESERVERS'),
     shopGrantClientId: optionalShopGrantClientIdFromString,
+    marketplaceTrustedAttestors: optionalTrustedAttestorsFromString,
     preludeSdkKey: optionalTrimmedString,
     preludeSdkTimeoutMs: optionalPositiveIntFromString,
     plausibleDomain: optionalTrimmedString,
@@ -892,6 +945,7 @@ export const runtimeEnvInputSchemaWithDefaults = z
     passportPrivEncryptionKeys: optionalBooleanFromString,
     privEncryptionKeysHomeservers: optionalHomeserverArrayFromString('PRIV_ENCRYPTION_KEYS_HOMESERVERS'),
     shopGrantClientId: optionalShopGrantClientIdFromString,
+    marketplaceTrustedAttestors: optionalTrustedAttestorsFromString,
     preludeSdkKey: optionalTrimmedString,
     preludeSdkTimeoutMs: optionalPositiveIntFromString,
     plausibleDomain: optionalTrimmedString,
@@ -992,6 +1046,7 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   passportPrivEncryptionKeys: 'PUBKY_RUNTIME_PASSPORT_PRIV_ENCRYPTION_KEYS',
   privEncryptionKeysHomeservers: 'PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS_HOMESERVERS',
   shopGrantClientId: 'PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID',
+  marketplaceTrustedAttestors: 'PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS',
   preludeSdkKey: 'PUBKY_RUNTIME_PRELUDE_SDK_KEY',
   preludeSdkTimeoutMs: 'PUBKY_RUNTIME_PRELUDE_SDK_TIMEOUT_MS',
   plausibleDomain: 'PUBKY_RUNTIME_PLAUSIBLE_DOMAIN',

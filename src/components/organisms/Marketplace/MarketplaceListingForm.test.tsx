@@ -1,5 +1,5 @@
 import { createRef, useEffect } from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -236,7 +236,7 @@ function FormHarness({
   formRef?: { current: UseFormReturn<CreateMarketplaceListingData> | null };
 }) {
   const form = useForm<CreateMarketplaceListingData>({
-    defaultValues: { ...createMarketplaceListingDefaults, fulfillment, ...defaultValues },
+    defaultValues: { ...createMarketplaceListingDefaults, countryCode: 'US', fulfillment, ...defaultValues },
   });
   useEffect(() => {
     if (formRef) formRef.current = form;
@@ -647,6 +647,24 @@ describe('MarketplaceListingForm pickup capability (§A7)', () => {
     expect(requiredItems().length).toBeLessThan(remainingBefore);
   });
 
+  it('takes Required to publish › Country to the Country field in Item and focuses it', async () => {
+    const user = userEvent.setup({ delay: null });
+    const scrolled: Element[] = [];
+    window.HTMLElement.prototype.scrollIntoView = vi.fn(function (this: Element) {
+      scrolled.push(this);
+    });
+    render(<FormHarness defaultValues={{ countryCode: '' }} />);
+
+    const required = screen.getByText('Required to publish').parentElement as HTMLElement;
+    await user.click(within(required).getByRole('link', { name: 'Country' }));
+
+    const country = screen.getByLabelText('Country');
+    expect(country).toHaveFocus();
+    expect(scrolled).toContain(country);
+    expect(scrolled).toContain(document.getElementById('listing-section-item'));
+    expect(scrolled).not.toContain(document.getElementById('listing-section-shipping'));
+  });
+
   it('keeps publish disabled when description is empty even if other minimums are filled', () => {
     render(
       <FormHarness
@@ -858,6 +876,7 @@ describe('MarketplaceListingForm scoped status watch', () => {
     const form = useForm<CreateMarketplaceListingData>({
       defaultValues: {
         ...createMarketplaceListingDefaults,
+        countryCode: 'US',
         fulfillment: 'pickup',
         title: 'Vintage boots',
         description: 'Well cared for boots.',
@@ -1347,7 +1366,7 @@ describe('MarketplaceListingForm publish gate vs schema', () => {
       />,
     );
 
-    const formValues = { ...createMarketplaceListingDefaults, fulfillment, ...values };
+    const formValues = { ...createMarketplaceListingDefaults, countryCode: 'US', fulfillment, ...values };
     const schemaValid = createMarketplaceListingSchema.safeParse(formValues).success;
     expect(isCreateMarketplaceListingPublishReady(formValues, photos)).toBe(schemaValid && photos > 0);
     expect(isCreateMarketplaceListingPublishReady(formValues, photos)).toBe(enabled);

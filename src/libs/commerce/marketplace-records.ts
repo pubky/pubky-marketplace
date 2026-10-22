@@ -840,12 +840,18 @@ const commerceReviewRecordSchemaInner = commercePublicRecordBaseSchema
         communication: z.number().int().min(1).max(5).optional(),
       })
       .passthrough(),
-    text: z.string().trim().min(1).max(COMMERCE_REVIEW_TEXT_MAX_CHARS),
+    /** Optional since specs `.15`: an item review may carry stars only. */
+    text: z.string().trim().max(COMMERCE_REVIEW_TEXT_MAX_CHARS),
     eligibilityAttestation: z
       .string()
       .min(32)
       .max(4_096)
       .regex(/^[A-Za-z0-9._~-]+$/),
+    /** The attested order's `order_ref`; part of the hash ID, so each order gets its own review. */
+    orderRef: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
   })
   .passthrough()
   .superRefine(validateRecordDates);

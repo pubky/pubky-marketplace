@@ -562,9 +562,18 @@ export class LocalCommerceService {
   static async commitSellerCatalogRefresh(
     entries: CommerceCatalogEntryModelSchema[],
     records: CommerceListingRecord[],
+    /** Listings whose record is gone: their cached index entries are dropped too. */
+    deleted?: { sellerPubky: string; deletedListingIds: ReadonlySet<string> },
   ): Promise<void> {
     try {
       await db.transaction('rw', CommerceCatalogEntryModel.table, CommerceListingModel.table, async () => {
+        if (deleted && deleted.deletedListingIds.size > 0) {
+          await CommerceCatalogEntryModel.table
+            .where('seller_id')
+            .equals(deleted.sellerPubky)
+            .filter((entry) => deleted.deletedListingIds.has(entry.listing_id))
+            .delete();
+        }
         const currentListings = await CommerceListingModel.table.bulkGet(
           records.map((record) => `${record.ownerPubky}:${record.listingId}`),
         );
@@ -824,8 +833,18 @@ export class LocalCommerceService {
     return (await CommerceReviewModel.findById(compositeReviewId)) ?? undefined;
   }
 
-  static async getOwnReviewByOrder(ownerId: string, orderId: string): Promise<CommerceReviewModelSchema | undefined> {
-    return await CommerceReviewModel.findByOwnerAndOrder(ownerId, orderId);
+  /** One of the user's review rows of an order: the one rating `listingId` when given, otherwise any. */
+  static async getOwnReviewByOrder(
+    ownerId: string,
+    orderId: string,
+    listingId?: string,
+  ): Promise<CommerceReviewModelSchema | undefined> {
+    return await CommerceReviewModel.findByOwnerAndOrder(ownerId, orderId, listingId);
+  }
+
+  /** Every review row of the user's for one order: one per reviewed listing. */
+  static async getOwnReviewsByOrder(ownerId: string, orderId: string): Promise<CommerceReviewModelSchema[]> {
+    return await CommerceReviewModel.findAllByOwnerAndOrder(ownerId, orderId);
   }
 
   static async getPendingOwnReviews(ownerId: string): Promise<CommerceReviewModelSchema[]> {
@@ -846,6 +865,9 @@ export class LocalCommerceService {
     this.assertSyncJobIdentity(job, review.owner_id, review.review_id, 'review');
     try {
       await db.transaction('rw', CommerceReviewModel.table, CommerceSyncJobModel.table, async () => {
+        // A publication supersedes a removal that has not reached the homeserver.
+        await this.ownReviewJobs(review.owner_id, review.review_id, 'remove').delete();
+        await this.ownReviewRemovalJobsOfOrder(review.owner_id, review.order_id, review.record.listingId).delete();
         await CommerceReviewModel.upsert(review);
         await CommerceSyncJobModel.upsert(job);
       });
@@ -854,6 +876,145 @@ export class LocalCommerceService {
       throw Err.database(DatabaseErrorCode.WRITE_FAILED, 'Failed to stage review synchronization', {
         service: ErrorService.Local,
         operation: 'stageOwnReviewSync',
+        context: { tables: [CommerceReviewModel.table.name, CommerceSyncJobModel.table.name] },
+        cause: error,
+      });
+    }
+  }
+
+  /**
+   * The removal jobs of an order's review, whichever path ID the removed
+   * record had. With `listingId`, only the jobs of that item's record (and
+   * those staged before per-item reviews, which name no listing and cover
+   * the order).
+   */
+  private static ownReviewRemovalJobsOfOrder(ownerId: string, orderId: string, listingId?: string) {
+    return CommerceSyncJobModel.table
+      .where('owner_id')
+      .equals(ownerId)
+      .filter((job) => {
+        if (job.entity_type !== 'review' || job.operation !== 'remove') return false;
+        const payload = job.payload as { orderId?: unknown; listingId?: unknown } | null;
+        if (payload?.orderId !== orderId) return false;
+        return listingId === undefined || payload.listingId === undefined || payload.listingId === listingId;
+      });
+  }
+
+  /**
+   * True while a removal of this order's review of one listing (the service
+   * withdrawal or the homeserver DEL) is still owed in the outbox. Until it
+   * is acknowledged, nothing on this device may bring that item's review back.
+   */
+  static async hasOwedOwnReviewRemoval(ownerId: string, orderId: string, listingId: string): Promise<boolean> {
+    return (await this.ownReviewRemovalJobsOfOrder(ownerId, orderId, listingId).count()) > 0;
+  }
+
+  /**
+   * Drops a publication that must not stand: the row and the publish jobs of
+   * the review, in one transaction.
+   */
+  static async abandonOwnReviewPublication(review: CommerceReviewModelSchema): Promise<void> {
+    await db.transaction('rw', CommerceReviewModel.table, CommerceSyncJobModel.table, async () => {
+      await this.ownReviewJobs(review.owner_id, review.review_id, 'publish').delete();
+      await CommerceReviewModel.table.delete(review.id);
+    });
+  }
+
+  private static ownReviewJobs(ownerId: string, reviewId: string, operation?: CommerceSyncJobModelSchema['operation']) {
+    return CommerceSyncJobModel.table
+      .where('entity_id')
+      .equals(reviewId)
+      .filter(
+        (job) =>
+          job.entity_type === 'review' &&
+          job.owner_id === ownerId &&
+          (operation === undefined || job.operation === operation),
+      );
+  }
+
+  /**
+   * Removes an own review locally and stages the homeserver DEL in one
+   * transaction: the row disappears at once, and the `remove` job keeps the
+   * DEL retryable. Jobs of earlier publications of the same review are
+   * dropped; the removal supersedes them.
+   */
+  static async stageOwnReviewRemoval(
+    review: CommerceReviewModelSchema,
+    job: CommerceSyncJobModelSchema,
+  ): Promise<void> {
+    this.assertSyncJobIdentity(job, review.owner_id, review.review_id, 'review');
+    try {
+      await db.transaction('rw', CommerceReviewModel.table, CommerceSyncJobModel.table, async () => {
+        await this.ownReviewJobs(review.owner_id, review.review_id).delete();
+        await CommerceReviewModel.table.delete(review.id);
+        await CommerceSyncJobModel.upsert(job);
+      });
+    } catch (error) {
+      if (isAppError(error)) throw error;
+      throw Err.database(DatabaseErrorCode.WRITE_FAILED, 'Failed to stage review removal', {
+        service: ErrorService.Local,
+        operation: 'stageOwnReviewRemoval',
+        context: { tables: [CommerceReviewModel.table.name, CommerceSyncJobModel.table.name] },
+        cause: error,
+      });
+    }
+  }
+
+  /** The outbox jobs still owed a homeserver DEL of an own review, oldest first. */
+  static async getOwnReviewRemovalJobs(ownerId: string): Promise<CommerceSyncJobModelSchema[]> {
+    const jobs = await CommerceSyncJobModel.table
+      .where('owner_id')
+      .equals(ownerId)
+      .filter((job) => job.entity_type === 'review' && job.operation === 'remove')
+      .toArray();
+    return jobs.sort((left, right) => left.created_at - right.created_at);
+  }
+
+  /** Records a failed DEL attempt on its job so the outbox keeps the count and cause. */
+  static async recordSyncJobFailure(id: string, errorCode: string | null): Promise<void> {
+    await db.transaction('rw', CommerceSyncJobModel.table, async () => {
+      const current = await CommerceSyncJobModel.findById(id);
+      if (!current) return;
+      await CommerceSyncJobModel.upsert({
+        ...current,
+        status: 'failed' as const,
+        attempts: current.attempts + 1,
+        last_error_code: errorCode,
+        updated_at: Math.max(Date.now(), current.updated_at + 1),
+      });
+    });
+  }
+
+  /** Drops the publish jobs a retried publication left behind once its PUT landed. */
+  static async completeOwnReviewPublishJobs(ownerId: string, reviewId: string): Promise<void> {
+    await this.ownReviewJobs(ownerId, reviewId, 'publish').delete();
+  }
+
+  /**
+   * Writes a review read from the reviewer's homeserver into the local row,
+   * unless the local state must win: a removal still owed to the homeserver,
+   * an unsynced local edit, or a local record at the same or a later
+   * revision. Checked in the write's own transaction, so a delete or an edit
+   * staged while the read was in flight is never overwritten.
+   */
+  static async applyRefreshedOwnReview(review: CommerceReviewModelSchema): Promise<boolean> {
+    try {
+      return await db.transaction('rw', CommerceReviewModel.table, CommerceSyncJobModel.table, async () => {
+        const removals = await this.ownReviewJobs(review.owner_id, review.review_id, 'remove').count();
+        if (removals > 0) return false;
+        const current = await CommerceReviewModel.table.get(review.id);
+        if (current) {
+          if (current.sync_status !== 'synced') return false;
+          if (current.record.revision >= review.record.revision) return false;
+        }
+        await CommerceReviewModel.upsert(review);
+        return true;
+      });
+    } catch (error) {
+      if (isAppError(error)) throw error;
+      throw Err.database(DatabaseErrorCode.WRITE_FAILED, 'Failed to refresh an own review', {
+        service: ErrorService.Local,
+        operation: 'applyRefreshedOwnReview',
         context: { tables: [CommerceReviewModel.table.name, CommerceSyncJobModel.table.name] },
         cause: error,
       });

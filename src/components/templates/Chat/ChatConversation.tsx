@@ -12,6 +12,7 @@ import { useChatConversation } from '@/hooks/useChatConversation/useChatConversa
 import { useChatIdentity } from '@/hooks/useChatIdentity/useChatIdentity';
 import { useFillViewport } from '@/hooks/useFillViewport/useFillViewport';
 import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
+import { useKeyboardViewport } from '@/hooks/useKeyboardViewport/useKeyboardViewport';
 import { CHAT_COPY } from '@/libs/chat/copy';
 import { cn } from '@/libs/utils/utils';
 import type { ChatContext } from '@/models/chat/chat.schema';
@@ -42,6 +43,10 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
   const frameRef = useRef<HTMLDivElement>(null);
   // The thread ends where the page ends, whatever the layout puts above or below it.
   const fillHeight = useFillViewport(frameRef);
+  // With the phone keyboard open the thread takes the whole visible area: the page header and the
+  // notes under the composer would leave the messages a sliver, and the composer must sit on the keyboard.
+  const keyboard = useKeyboardViewport();
+  const pinned = keyboard.isKeyboardVisible;
   const thread = useChatConversation(peerPubky, context);
   const { name } = useChatPeerName(peerPubky);
   const router = useRouter();
@@ -82,14 +87,27 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
           // The server render's height only; the measured height takes over before the first paint.
           'mx-auto flex h-[calc(100svh-12rem)] w-full max-w-3xl flex-col gap-3',
           isEmbedded && 'pt-2',
+          pinned && 'fixed inset-x-0 z-40 bg-background px-4 py-2',
         )}
-        style={fillHeight === null ? undefined : { height: fillHeight }}
+        style={
+          pinned
+            ? { top: keyboard.viewportOffsetTop, height: keyboard.viewportHeight }
+            : fillHeight === null
+              ? undefined
+              : { height: fillHeight }
+        }
+        data-keyboard-pinned={pinned ? 'true' : undefined}
         data-surface="chat-conversation"
       >
         {/* Phones: stays under the sticky Pubky header if the page scrolls (the embed collapses the
             offset). Desktop: static. A sticky offset there lands 144px into the thread, because the
             layout wrapper, not the window, is the scrollport. */}
-        <div className="sticky top-24 z-10 flex items-center gap-2 bg-background lg:static">
+        <div
+          className={cn(
+            'flex items-center gap-2 bg-background',
+            pinned ? 'static' : 'sticky top-(--header-offset-mobile) z-10 lg:static',
+          )}
+        >
           <Button asChild variant="ghost" size="icon" className="rounded-full" aria-label="All messages">
             <Link href={APP_ROUTES.MESSAGES} overrideDefaults>
               <ArrowLeft className="size-5" aria-hidden="true" />
@@ -145,12 +163,12 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
               disabledReason={disabledReason}
               placeholder={`Message ${name}`}
             />
-            {inboxStatus === 'disabled' && awaitingFirstReply && !peerNotEnabled ? (
+            {!pinned && inboxStatus === 'disabled' && awaitingFirstReply && !peerNotEnabled ? (
               <Typography as="p" size="xs" className="px-1 text-muted-foreground" data-testid="chat-no-inbox-note">
                 {CHAT_COPY.noInboxFirstContact}
               </Typography>
             ) : null}
-            <ChatPrivacyNote />
+            {pinned ? null : <ChatPrivacyNote />}
           </>
         )}
       </Container>

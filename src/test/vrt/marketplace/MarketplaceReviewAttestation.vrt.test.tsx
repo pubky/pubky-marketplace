@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderForVRT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { MarketplaceOrderActions } from '@/organisms/Marketplace/MarketplaceOrderActions';
+import { purchaseAttestationJwsFixture, TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
 
 // The review dialog's D2 amount-band opt-in and the own-review verified
 // status line, in every honest state: seller consented (checkbox), seller
@@ -39,11 +40,21 @@ const controllerState = vi.hoisted(() => ({
   ownReview: null as unknown,
 }));
 
+vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
+  const { TEST_TRUSTED_ATTESTOR } = await import('@/test/fixtures/commerce/trusted-attestors');
+  return {
+    ...(await importOriginal<typeof import('@/libs/runtime-config/runtime-config')>()),
+    getMarketplaceTrustedAttestors: () => [TEST_TRUSTED_ATTESTOR],
+  };
+});
+
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     ...createMarketplaceVrtCommerceController(),
     getMarketplaceBandConsent: vi.fn(async () => controllerState.bandConsent),
-    getOwnMarketplaceReview: vi.fn(async () => controllerState.ownReview),
+    getOwnMarketplaceOrderReviews: vi.fn(async () =>
+      controllerState.ownReview === null ? [] : [controllerState.ownReview],
+    ),
   },
 }));
 
@@ -65,9 +76,15 @@ function ownReviewRow(overrides: Record<string, unknown> = {}) {
     review_id: '8Z8CWH8NVYQY39ZEBFGKQWWEKG',
     order_id: 'order-1',
     subject_id: 's'.repeat(52),
-    record: {},
+    record: {
+      listingId: 'boots',
+      eligibilityAttestation: purchaseAttestationJwsFixture({
+        iss: TEST_TRUSTED_ATTESTOR.pubky,
+        iat: Date.UTC(2026, 7, 21) / 1000,
+      }),
+    },
     attestation_verified: true,
-    attestation_iss: 'o'.repeat(52),
+    attestation_iss: TEST_TRUSTED_ATTESTOR.pubky,
     sync_status: 'synced',
     updated_at: 0,
     ...overrides,

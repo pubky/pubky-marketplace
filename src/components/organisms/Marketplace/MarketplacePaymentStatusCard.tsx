@@ -60,6 +60,7 @@ import {
   formatOrderInstant,
   holderBoundCopy,
   holderUnboundCopy,
+  isBuyerCancelledUnpaid,
   isHoldExpiredNoLateMoney,
   isLateCompletionOrder,
   isRefundRequiredPayment,
@@ -346,7 +347,7 @@ export function MarketplacePaymentStatusCard({
           state={buyerWallet.state}
           canPayWithPaypal={methodPayment.availableMethods?.includes('paypal') ?? false}
           onOpenChange={(open) => setBuyerConnection({ owner: currentUserPubky, orderId: order.id, open })}
-          onRecheck={buyerWallet.recheck}
+          onRecheck={() => buyerWallet.recheck()}
         />
       )}
       {showStatusLabels && !statusInLabels && (
@@ -411,7 +412,12 @@ export function MarketplacePaymentStatusCard({
           {locksTerminalReasonCopy(locksTerminalReason)}
         </Typography>
       )}
-      {visibleStatus === 'expired' && !locksTerminalReason && (
+      {visibleStatus === 'expired' && !locksTerminalReason && isBuyerCancelledUnpaid(order) && (
+        <Typography as="p" className="text-sm text-muted-foreground" data-testid="buyer-cancelled-note">
+          {isBuyer ? CHECKOUT_HOLD_COPY.cancelledByBuyer : CHECKOUT_HOLD_COPY.cancelledByBuyerSeller}
+        </Typography>
+      )}
+      {visibleStatus === 'expired' && !locksTerminalReason && !isBuyerCancelledUnpaid(order) && (
         <Typography as="p" className="text-sm text-muted-foreground">
           {expiredNoLateMoney
             ? CHECKOUT_HOLD_COPY.expiredNoLateMoney
@@ -423,11 +429,15 @@ export function MarketplacePaymentStatusCard({
           {CHECKOUT_HOLD_COPY.pendingBitcoinPaymentBuyer}
         </Typography>
       )}
-      {visibleStatus === 'expired' && isBuyer && isPaykitRail && order.paykitDeliveryState !== 'delivered' && (
-        <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
-          {PAYKIT_DELIVERY_ELAPSED_COPY}
-        </Typography>
-      )}
+      {visibleStatus === 'expired' &&
+        isBuyer &&
+        isPaykitRail &&
+        order.paykitDeliveryState !== 'delivered' &&
+        !isBuyerCancelledUnpaid(order) && (
+          <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
+            {PAYKIT_DELIVERY_ELAPSED_COPY}
+          </Typography>
+        )}
       {visibleStatus === 'manual_review' && !refundRequired && (
         <Typography as="p" className="text-sm text-muted-foreground" data-testid="payment-manual-review-copy">
           {isBuyer && rail === 'bitcoin'
@@ -539,8 +549,8 @@ export function MarketplacePaymentStatusCard({
               )}
               <Button
                 size="sm"
-                variant="ghost"
-                className="w-fit rounded-full"
+                variant="destructive-soft"
+                className="w-full rounded-full"
                 disabled={isReleasingHold}
                 onClick={() => void releaseUnboundHold()}
               >
@@ -681,9 +691,17 @@ export function MarketplacePaymentStatusCard({
                     variant="secondary"
                     className="w-fit rounded-full"
                     data-testid="order-payment-bitkit-unverified-recheck"
-                    onClick={buyerWallet.recheck}
+                    disabled={buyerWallet.pending}
+                    onClick={() => buyerWallet.recheck({ keepVerdict: true })}
                   >
-                    Check connection
+                    {buyerWallet.pending ? (
+                      <>
+                        <LoaderCircle className="size-4 animate-spin" />
+                        Checking…
+                      </>
+                    ) : (
+                      'Check connection'
+                    )}
                   </Button>
                 </div>
               )}
@@ -695,8 +713,8 @@ export function MarketplacePaymentStatusCard({
               )}
               <Button
                 size="sm"
-                variant="ghost"
-                className="mt-2 w-fit rounded-full"
+                variant="destructive-soft"
+                className="mt-2 w-full rounded-full"
                 disabled={isReleasingHold || methodPayment.pendingAction !== null}
                 onClick={() => void releaseUnboundHold()}
               >

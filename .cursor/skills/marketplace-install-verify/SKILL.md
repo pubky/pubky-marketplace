@@ -58,8 +58,8 @@ Keep these when changing the scripts:
   after this skill passes.
 - **Staging deep proof:** `pubky/pubky-marketplace-service` `scripts/release/hold-smoke.py`
   through `DEEP_PROOFS=hold_smoke` (checkout holds, competing buyer 409, cancel and restock). It
-  reads the staging database through Railway today; on another platform it needs its `sql()`
-  helper pointed at the new database.
+  takes its target, database access command and production guard from `HOLD_SMOKE_*` environment
+  variables (see the script header); it has no default host.
 - **Regtest purchase:** not automated. It needs Bitkit wallets on both sides; follow
   `pubky/pubky-payment-rails` `docs/wallet-leg.md` on staging after this skill passes.
 - **Nexus parity:** `REFERENCE_NEXUS_URL` replaces the listing snapshot comparison from the
@@ -79,5 +79,5 @@ Keep these when changing the scripts:
 - Run the unit tests: `node --test .cursor/skills/marketplace-install-verify/scripts/lib.test.mjs`.
 - A new check needs a PASS run on a healthy stack and a FAIL run with a deliberately wrong input
   before it is relied on.
-- Railway-only helpers (`railway-facts.mjs`, `railway-instances.mjs`, `running-commit.mjs railway`)
-  read the old stack so it can be verified, and compared, the same way as the new one.
+- The skill carries no platform-specific helpers: a deployment's facts come from the config file and the
+  `*_CMD` commands the operator supplies.

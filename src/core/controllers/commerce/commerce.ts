@@ -138,8 +138,20 @@ export class CommerceController {
     return await CommerceApplication.refreshShop(CommerceRecordNormalizer.pubky(ownerPubky));
   }
 
+  static async refreshShopOrGetCached(ownerPubky: unknown) {
+    return await CommerceApplication.refreshShopOrGetCached(CommerceRecordNormalizer.pubky(ownerPubky));
+  }
+
   static async getOrFetchShop(ownerPubky: unknown) {
     return await CommerceApplication.getOrFetchShop(CommerceRecordNormalizer.pubky(ownerPubky));
+  }
+
+  static async subscribeShopEvents(ownerPubky: unknown, cursor: string | null = null) {
+    return await CommerceApplication.subscribeShopEvents(CommerceRecordNormalizer.pubky(ownerPubky), cursor);
+  }
+
+  static async latestShopEventCursor(ownerPubky: unknown) {
+    return await CommerceApplication.latestShopEventCursor(CommerceRecordNormalizer.pubky(ownerPubky));
   }
 
   static async getListing(ownerPubky: unknown, listingId: unknown) {
@@ -753,13 +765,25 @@ export class CommerceController {
     return await CommerceApplication.getOwnMarketplaceReview(this.getCurrentUserPubky(), order);
   }
 
+  /** The current user's own published review rows of one order, one per reviewed listing. */
+  static async getOwnMarketplaceOrderReviews(order: MarketplaceOrder) {
+    if (typeof order?.id !== 'string' || order.id.length === 0) {
+      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'An order id is required.', {
+        service: ErrorService.Marketplace,
+        operation: 'getOwnMarketplaceOrderReviews',
+      });
+    }
+    return await CommerceApplication.getOwnMarketplaceOrderReviews(this.getCurrentUserPubky(), order);
+  }
+
   /**
-   * Publishes the current user's review record (with its embedded purchase
-   * attestation) to their homeserver after a successful review command.
-   * Returns null when the command result carried no attestation.
+   * Publishes the current user's review records (one per reviewed listing,
+   * each with its embedded purchase attestation) to their homeserver after
+   * a successful review command. Returns no records when the command result
+   * carried no attestation.
    */
-  static async publishOwnMarketplaceReview(order: MarketplaceOrder, result: Record<string, unknown>) {
-    return await CommerceApplication.commitPublishOwnReview({
+  static async publishOwnMarketplaceReviews(order: MarketplaceOrder, result: Record<string, unknown>) {
+    return await CommerceApplication.commitPublishOwnReviews({
       actorPubky: this.getCurrentUserPubky(),
       order,
       result,
@@ -769,6 +793,35 @@ export class CommerceController {
   /** Retries own-review records whose homeserver publication never landed. */
   static async resumeOwnReviewPublications() {
     return await CommerceApplication.resumeOwnReviewPublications(this.getCurrentUserPubky());
+  }
+
+  /**
+   * Re-reads the current user's own reviews of these orders from their
+   * homeserver and refreshes the local rows (an edit made on another device).
+   * Returns the number of rows changed.
+   */
+  static async refreshOwnMarketplaceReviews(orders: MarketplaceOrder[]) {
+    return await CommerceApplication.refreshOwnReviews(this.getCurrentUserPubky(), orders);
+  }
+
+  /**
+   * Removes the current user's published review of one order: local row now,
+   * homeserver DEL through the retryable outbox. See
+   * `CommerceApplication.commitDeleteOwnReview` for the outcomes.
+   */
+  static async commitDeleteOwnMarketplaceReview(orderId: unknown) {
+    if (typeof orderId !== 'string' || orderId.length === 0) {
+      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'An order id is required.', {
+        service: ErrorService.Marketplace,
+        operation: 'commitDeleteOwnMarketplaceReview',
+      });
+    }
+    return await CommerceApplication.commitDeleteOwnReview(this.getCurrentUserPubky(), orderId);
+  }
+
+  /** Retries own-review removals whose homeserver DEL never landed. */
+  static async resumeOwnReviewRemovals() {
+    return await CommerceApplication.resumeOwnReviewRemovals(this.getCurrentUserPubky());
   }
 
   /**
@@ -1104,6 +1157,13 @@ export class CommerceController {
    * `unavailable`) for rating headers. Network-only: reputation is index
    * data, never cached as a record.
    */
+  static async fetchListingRating(sellerPubky: unknown, listingId: unknown) {
+    return await CommerceApplication.fetchListingRating(
+      CommerceRecordNormalizer.pubky(sellerPubky),
+      CommerceRecordNormalizer.entityId(listingId),
+    );
+  }
+
   static async fetchSellerReputation(sellerPubky: unknown) {
     return await CommerceApplication.fetchSellerReputationOverview(CommerceRecordNormalizer.pubky(sellerPubky));
   }

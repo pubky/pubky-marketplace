@@ -8,6 +8,7 @@ import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { NEXUS_LISTINGS_PER_PAGE } from '@/config/nexus';
 import { bumpAuthEpoch } from '@/controllers/auth/auth-epoch';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { sellerDeclaration } from '@/libs/commerce/eu-region';
 import { marketplaceCommandResponseSchema } from '@/libs/commerce/transaction-commands';
 import { UNLIMITED_STOCK_REFUSAL, UNLIMITED_STOCK_RESERVED_MESSAGE } from '@/libs/commerce/unlimited-stock';
 import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
@@ -280,6 +281,44 @@ describe('CommerceApplication', () => {
     expect(fetchJson).not.toHaveBeenCalled();
   });
 
+  it("reads a cached shop fresh so a seller's later declaration reaches the buyer's EU fence", async () => {
+    const cached = createCommerceShopFixture();
+    const updated = {
+      ...cached,
+      sellerStatus: 'private' as const,
+      location: { countryCode: 'BE' },
+      revision: cached.revision + 1,
+    };
+    await LocalCommerceService.upsertShop(cached, 'synced');
+    vi.mocked(CommerceHomeserverService.fetchJson).mockResolvedValue(updated);
+
+    const shop = await CommerceApplication.refreshShopOrGetCached(cached.ownerPubky);
+
+    expect(shop).toEqual(updated);
+    expect(sellerDeclaration(shop)).toBe('private');
+    expect(await CommerceController.getShop(cached.ownerPubky)).toMatchObject({
+      record: updated,
+      sync_status: 'synced',
+    });
+  });
+
+  it.each([
+    {
+      reason: 'offline',
+      fail: () => vi.mocked(CommerceHomeserverService.fetchJson).mockRejectedValue(new TypeError('offline')),
+    },
+    {
+      reason: 'a 404',
+      fail: () => vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockResolvedValue({ found: false }),
+    },
+  ])('falls back to the cached shop when the read fails ($reason)', async ({ fail }) => {
+    const cached = createCommerceShopFixture();
+    await LocalCommerceService.upsertShop(cached, 'synced');
+    fail();
+
+    await expect(CommerceApplication.refreshShopOrGetCached(cached.ownerPubky)).resolves.toEqual(cached);
+  });
+
   it.each([
     { available: 0, expected: 0 },
     { available: 2, expected: 2 },
@@ -469,6 +508,34 @@ describe('CommerceApplication', () => {
     vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockRejectedValue(failure);
 
     await expect(CommerceApplication.getOrFetchShop(COMMERCE_FIXTURE_SELLER)).rejects.toBe(failure);
+  });
+
+  it("reads the cursor of the seller's latest shop write", async () => {
+    vi.spyOn(HomeserverService, 'resolveHomeserverOf').mockResolvedValue('h'.repeat(52));
+    const subscribe = vi.spyOn(HomeserverService, 'subscribeHomeserverEventStream').mockResolvedValue(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue({ cursor: '259582', eventType: 'PUT', owner: COMMERCE_FIXTURE_SELLER, path: '' });
+          controller.close();
+        },
+      }),
+    );
+
+    await expect(CommerceApplication.latestShopEventCursor(COMMERCE_FIXTURE_SELLER)).resolves.toBe('259582');
+    expect(subscribe).toHaveBeenCalledWith(expect.objectContaining({ latestOnly: true }));
+  });
+
+  it("subscribes to the seller's homeserver events for their shop record only", async () => {
+    const stream = new ReadableStream();
+    vi.spyOn(HomeserverService, 'resolveHomeserverOf').mockResolvedValue('h'.repeat(52));
+    const subscribe = vi.spyOn(HomeserverService, 'subscribeHomeserverEventStream').mockResolvedValue(stream);
+
+    await expect(CommerceApplication.subscribeShopEvents(COMMERCE_FIXTURE_SELLER)).resolves.toBe(stream);
+    expect(subscribe).toHaveBeenCalledWith({
+      homeserver: 'h'.repeat(52),
+      users: [[COMMERCE_FIXTURE_SELLER, null]],
+      pathPrefixes: ['/pub/pubky.app/marketplace/v1/shop.json'],
+    });
   });
 
   it('refreshes shop settings into the cache used by the public shop', async () => {
@@ -3083,6 +3150,18 @@ describe('CommerceApplication', () => {
     const capturedById = new Map(capturedRecords.map((record) => [record.listingId, record]));
     const capturedSeller = capturedRecords[0].ownerPubky;
 
+    // The refresh reads records through fetchJsonIfFound; these tests stub fetchJson, so bridge the two.
+    beforeEach(() => {
+      vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockImplementation(async (url) => {
+        try {
+          return { found: true, json: await CommerceHomeserverService.fetchJson(url) };
+        } catch (error) {
+          if (isAppError(error) && error.context?.statusCode === 404) return { found: false };
+          throw error;
+        }
+      });
+    });
+
     it('refreshes discovery and hydrates the missing canonical listing while retaining cached records', async () => {
       vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
       await CommerceCatalogEntryModel.table.clear();
@@ -3100,6 +3179,42 @@ describe('CommerceApplication', () => {
       expect(await LocalCommerceService.getListingsBySeller(capturedSeller)).toHaveLength(3);
       expect(fetchJson).toHaveBeenCalledExactlyOnceWith(
         `pubky://${capturedSeller}/pub/pubky.app/marketplace/v1/listings/aa2c8b308dbc47619793fe64dcefa9e8`,
+      );
+    });
+
+    it('skips a listing Nexus still indexes after its record was deleted, instead of failing the refresh', async () => {
+      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
+      await CommerceCatalogEntryModel.table.clear();
+      await CommerceListingModel.table.clear();
+      const deletedId = 'aa2c8b308dbc47619793fe64dcefa9e8';
+      // This browser met the listing before it was deleted elsewhere: its index entry is cached.
+      await CommerceCatalogEntryModel.table.put(
+        createCommerceCatalogEntryFixture({
+          id: `${capturedSeller}:${deletedId}`,
+          seller_id: capturedSeller,
+          listing_id: deletedId,
+        }),
+      );
+      vi.spyOn(NexusMarketplaceService, 'fetchListingStream').mockResolvedValue(SELLER_REFRESH_FIXTURE.nexus);
+      vi.spyOn(CommerceHomeserverService, 'fetchJson').mockImplementation(async (url) => {
+        const listingId = url.split('/').pop()!;
+        if (listingId === deletedId) {
+          throw Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
+            service: ErrorService.Homeserver,
+            operation: 'fetchJson',
+            context: { statusCode: 404 },
+          });
+        }
+        return capturedById.get(listingId)!;
+      });
+
+      await CommerceApplication.refreshListingsBySeller(capturedSeller);
+
+      const listings = await LocalCommerceService.getListingsBySeller(capturedSeller);
+      expect(listings).toHaveLength(2);
+      expect(listings.map(({ listing_id }) => listing_id)).not.toContain(deletedId);
+      expect((await CommerceCatalogEntryModel.table.toArray()).map(({ listing_id }) => listing_id)).not.toContain(
+        deletedId,
       );
     });
 

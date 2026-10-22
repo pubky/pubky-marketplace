@@ -102,7 +102,7 @@ describe('passportCallbacks', () => {
 
   it('returns one-origin HTTPS callbacks for each outcome', () => {
     expect(passportCallbacks('https://shop.pubky.app')).toEqual({
-      xSource: 'Pubky Shop',
+      xSource: 'Pubky Market',
       xSuccess: 'https://shop.pubky.app/auth/passport/return?outcome=success',
       xError: 'https://shop.pubky.app/auth/passport/return?outcome=error',
       xCancel: 'https://shop.pubky.app/auth/passport/return?outcome=cancel',
@@ -111,7 +111,7 @@ describe('passportCallbacks', () => {
 
   it('returns under the mount path when the Shop is served from pubky.app/shop', () => {
     expect(passportCallbacks('https://pubky.app', '/shop')).toEqual({
-      xSource: 'Pubky Shop',
+      xSource: 'Pubky Market',
       xSuccess: 'https://pubky.app/shop/auth/passport/return?outcome=success',
       xError: 'https://pubky.app/shop/auth/passport/return?outcome=error',
       xCancel: 'https://pubky.app/shop/auth/passport/return?outcome=cancel',
@@ -123,7 +123,7 @@ describe('passportCallbacks', () => {
 
   it("returns to the build's own mount path, not the App's /shop wrapper, when the App frames the Shop", () => {
     expect(passportCallbacks('https://pubky.app', '/shop-embed')).toEqual({
-      xSource: 'Pubky Shop',
+      xSource: 'Pubky Market',
       xSuccess: 'https://pubky.app/shop-embed/auth/passport/return?outcome=success',
       xError: 'https://pubky.app/shop-embed/auth/passport/return?outcome=error',
       xCancel: 'https://pubky.app/shop-embed/auth/passport/return?outcome=cancel',

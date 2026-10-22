@@ -138,6 +138,8 @@ function makeCorrelation(registered: boolean) {
 }
 
 const HOLD_DEADLINE = '2026-08-20T21:15:00.000Z';
+// The Paykit window before the hold (its deadline plus the 60 s margin).
+const ORDER_CREATED_AT = '2026-08-20T20:46:00.000Z';
 const ACTIVATED_REQUEST_DEADLINE = '2026-08-20T21:07:00.000Z';
 
 function Harness({ children }: { children: React.ReactNode }) {
@@ -777,6 +779,20 @@ describe('Marketplace payment status card — visual regression', () => {
     view.locks.enabled = true;
   });
 
+  it('renders a checkout the buyer cancelled at mobile viewport', async () => {
+    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
+    const screen = await renderCard('expired', 'transaction-service', {
+      adapter: 'paykit',
+      deployEnv: 'staging',
+      orderState: 'cancelled',
+      orderOverrides: { cancellationReason: 'Changed my mind', paymentMethod: 'bitcoin' },
+      viewport: VRT_VIEWPORT_MOBILE,
+    });
+    await expect.element(screen.getByTestId('buyer-cancelled-note')).toBeVisible();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-buyer-cancelled-mobile');
+    view.locks.enabled = true;
+  });
+
   it('renders elapsed unpaid copy at desktop viewport', async () => {
     view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
     const screen = await renderCard('expired', 'transaction-service', {
@@ -839,6 +855,7 @@ function projectionBody(scene: keyof typeof projectionSamples): Record<string, u
 describe('Marketplace payment status card — USDT orders', () => {
   const usdt = (overrides: Record<string, unknown> = {}) => ({
     ...USDT_ORDER_FIELDS,
+    createdAt: ORDER_CREATED_AT,
     holdExpiresAt: HOLD_DEADLINE,
     ...overrides,
   });
@@ -869,7 +886,7 @@ describe('Marketplace payment status card — USDT orders', () => {
     await expect.element(screen.getByText('Pay exactly 137.000000 USDT')).toBeInTheDocument();
     await expect
       .element(screen.getByTestId('usdt-accept-by'))
-      .toHaveTextContent('Approve in Bitkit by Aug 20, 2026, 9:15 PM.');
+      .toHaveTextContent('Approve in Bitkit by Aug 20, 2026, 9:00 PM.');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-usdt-awaiting-desktop');
   });
 
@@ -942,6 +959,7 @@ describe('Marketplace payment status card — USDT orders', () => {
     paymentMethod: 'paykit',
     paymentAsset: null,
     acceptedAssets: ['BTC', 'USDT'],
+    createdAt: ORDER_CREATED_AT,
     holdExpiresAt: HOLD_DEADLINE,
     paykitDeliveryState: 'delivered',
     ...overrides,
@@ -956,7 +974,7 @@ describe('Marketplace payment status card — USDT orders', () => {
     await expect.element(screen.getByText('Pay in Bitkit (Bitcoin or USDT)')).toBeInTheDocument();
     await expect
       .element(screen.getByTestId('paykit-accept-by'))
-      .toHaveTextContent('Approve in Bitkit by Aug 20, 2026, 9:15 PM.');
+      .toHaveTextContent('Approve in Bitkit by Aug 20, 2026, 9:00 PM.');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-paykit-awaiting-desktop');
   });
 

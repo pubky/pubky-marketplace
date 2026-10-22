@@ -45,11 +45,12 @@ import type {
   CommerceCatalogAuctionTerms,
   CommerceCatalogEntryModelSchema,
   CommerceIndexedReview,
+  CommerceReputationBucket,
   CommerceReputationSnippet,
   CommerceReputationSummary,
   CommerceSavedSearchParams,
 } from '@/models/commerce/commerce.schema';
-import type { NexusListingDetails } from '@/services/nexus/marketplace/marketplace.types';
+import type { NexusListingDetails, NexusReputationBucket } from '@/services/nexus/marketplace/marketplace.types';
 
 const MARKETPLACE_BASE_PATH = '/pub/pubky.app/marketplace/v1';
 
@@ -125,10 +126,42 @@ const NEXUS_AUCTION_TERM_FIELDS = [
  * scopes without any indexed review — both parse to `undefined` and
  * normalize to `null` (honest absence, never a fabricated 0.0).
  */
+const nexusCountSchema = z.number().int().nonnegative();
+
+/**
+ * One counting rules v2 bucket (index release IX2). `seller_*` appear only
+ * on the seller scope; both or neither.
+ */
+const nexusReputationBucketSchema = z
+  .object({
+    orders: nexusCountSchema,
+    buyers: nexusCountSchema,
+    sum_buyer_means: z.number().nonnegative(),
+    weighted_sum: z.number().nonnegative(),
+    weight_total: nexusCountSchema,
+    histogram: z.tuple([nexusCountSchema, nexusCountSchema, nexusCountSchema, nexusCountSchema, nexusCountSchema]),
+    first_iat: z.number().int().nullable(),
+    last_iat: z.number().int().nullable(),
+    seller_buyers: nexusCountSchema.optional(),
+    sum_seller_buyer_means: z.number().nonnegative().optional(),
+  })
+  .refine((bucket) => (bucket.seller_buyers === undefined) === (bucket.sum_seller_buyer_means === undefined), {
+    message: 'seller_buyers and sum_seller_buyer_means come together',
+    path: ['seller_buyers'],
+  });
+
+const nexusReputationBucketsSchema = z.record(z.string(), nexusReputationBucketSchema);
+
+const nexusScopedListingReputationSchema = z.object({
+  scoped_listing_reputation: nexusReputationBucketSchema.optional(),
+});
+
 const nexusReputationSnippetSchema = z.object({
   avg: z.number().min(0).max(5),
-  count: z.number().int().nonnegative(),
-  verified_count: z.number().int().nonnegative(),
+  count: nexusCountSchema,
+  verified_count: nexusCountSchema,
+  buckets: nexusReputationBucketsSchema.optional(),
+  unverified_count: nexusCountSchema.optional(),
 });
 
 /**
@@ -216,6 +249,19 @@ const nexusListingStreamSchema = z.array(nexusListingDetailsSchema);
 const nexusReviewRoleSchema = z.enum(['buyer_reviewing_seller', 'seller_reviewing_buyer']);
 
 /**
+ * Review moderation as the index serves it. Indexes older than review
+ * moderation send no field; that reads as null (not moderated).
+ */
+const nexusReviewModerationSchema = z
+  .object({
+    state: z.enum(['text_hidden', 'excluded']),
+    reason: z.string(),
+  })
+  .nullable()
+  .optional()
+  .transform((moderation) => moderation ?? null);
+
+/**
  * Wire schema for one indexed review inside a Nexus review-stream entry.
  * `verified === true` requires `attestor_id` to name the signer — an entry
  * claiming verification without naming who verified is rejected as
@@ -233,10 +279,14 @@ const nexusReviewDetailsSchema = z
     text: z.string(),
     verified: z.boolean(),
     attestor_id: commercePubkySchema.nullable(),
+    // Absent before index release IX2; null when the review is unverified.
+    iat: z.number().int().positive().nullable().optional(),
+    price_weight: z.number().int().min(1).max(5).nullable().optional(),
     edited_late: z.boolean(),
     created_at: commerceTimestampSchema,
     updated_at: commerceTimestampSchema,
     revision: z.number().int().positive(),
+    moderation: nexusReviewModerationSchema,
   })
   .superRefine((review, context) => {
     if (review.verified && review.attestor_id === null) {
@@ -279,6 +329,9 @@ const nexusReputationSummarySchema = z.object({
   edited_late_count: z.number().int().nonnegative(),
   attestors: z.record(z.string(), z.number().int().nonnegative()),
   last_reviewed_at: z.string().nullable(),
+  buckets: nexusReputationBucketsSchema.optional(),
+  unverified_count: nexusCountSchema.optional(),
+  scoped: nexusReputationBucketSchema.optional(),
 });
 
 /** The catalog filter state a saved search persists — mirrors the commerce store's filter fields. */
@@ -405,6 +458,20 @@ export class CommerceRecordNormalizer {
     return this.toCatalogEntry(this.parse(nexusListingDetailsSchema, input, 'nexusListingDetails'));
   }
 
+  /**
+   * The exact listing figure a `v0/listing/{seller}/{listing}` payload carries
+   * when the request named attestor windows; undefined from an index without
+   * trust buckets.
+   */
+  static nexusScopedListingReputation(input: unknown): CommerceReputationBucket | undefined {
+    const { scoped_listing_reputation: scoped } = this.parse(
+      nexusScopedListingReputationSchema,
+      input,
+      'nexusScopedListingReputation',
+    );
+    return scoped === undefined ? undefined : this.toReputationBucket(scoped);
+  }
+
   static savedSearchParams(input: unknown): CommerceSavedSearchParams {
     return this.parse(commerceSavedSearchParamsSchema, input, 'savedSearchParams');
   }
@@ -420,19 +487,24 @@ export class CommerceRecordNormalizer {
     const entries = this.parse(nexusReviewStreamSchema, input, 'nexusReviewStream');
     return entries.map(({ review, response }) => ({
       reviewId: review.review_id,
+      uri: this.reviewUri(review.reviewer_id, review.review_id),
       reviewerId: review.reviewer_id,
       subjectId: review.subject_id,
       listingOwnerId: review.listing_owner_id,
       listingId: review.listing_id,
       role: review.role,
       ratingOverall: review.rating_overall,
-      text: review.text,
+      // A moderated review never shows its text, even if an index sent some.
+      text: review.moderation === null ? review.text : '',
       verified: review.verified,
       attestorId: review.attestor_id,
+      ...(review.iat !== undefined && { iat: review.iat }),
+      ...(review.price_weight !== undefined && { priceWeight: review.price_weight }),
       editedLate: review.edited_late,
       createdAt: review.created_at,
       updatedAt: review.updated_at,
       revision: review.revision,
+      moderation: review.moderation,
       response:
         response === null
           ? null
@@ -458,6 +530,9 @@ export class CommerceRecordNormalizer {
       editedLateCount: summary.edited_late_count,
       attestors: summary.attestors,
       lastReviewedAt: summary.last_reviewed_at,
+      ...(summary.buckets !== undefined && { buckets: this.toReputationBuckets(summary.buckets) }),
+      ...(summary.unverified_count !== undefined && { unverifiedCount: summary.unverified_count }),
+      ...(summary.scoped !== undefined && { scoped: this.toReputationBucket(summary.scoped) }),
     };
   }
 
@@ -491,7 +566,36 @@ export class CommerceRecordNormalizer {
   // as nothing or "New seller", never as zeros.
   private static toReputationSnippet(snippet: NexusListingDetails['reputation']): CommerceReputationSnippet | null {
     if (!snippet) return null;
-    return { avg: snippet.avg, count: snippet.count, verifiedCount: snippet.verified_count };
+    return {
+      avg: snippet.avg,
+      count: snippet.count,
+      verifiedCount: snippet.verified_count,
+      ...(snippet.buckets !== undefined && { buckets: this.toReputationBuckets(snippet.buckets) }),
+      ...(snippet.unverified_count !== undefined && { unverifiedCount: snippet.unverified_count }),
+    };
+  }
+
+  private static toReputationBuckets(
+    buckets: Record<string, NexusReputationBucket>,
+  ): Record<string, CommerceReputationBucket> {
+    return Object.fromEntries(
+      Object.entries(buckets).map(([attestorId, bucket]) => [attestorId, this.toReputationBucket(bucket)]),
+    );
+  }
+
+  private static toReputationBucket(bucket: NexusReputationBucket): CommerceReputationBucket {
+    return {
+      orders: bucket.orders,
+      buyers: bucket.buyers,
+      sumBuyerMeans: bucket.sum_buyer_means,
+      weightedSum: bucket.weighted_sum,
+      weightTotal: bucket.weight_total,
+      histogram: bucket.histogram,
+      firstIat: bucket.first_iat,
+      lastIat: bucket.last_iat,
+      sellerBuyers: bucket.seller_buyers ?? null,
+      sumSellerBuyerMeans: bucket.sum_seller_buyer_means ?? null,
+    };
   }
 
   /**

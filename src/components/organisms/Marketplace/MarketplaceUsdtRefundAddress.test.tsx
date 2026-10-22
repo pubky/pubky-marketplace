@@ -61,7 +61,7 @@ describe('MarketplaceUsdtRefundAddress — buyer', () => {
     const { actOnOrder } = renderPanel(createUsdtOrderFixture('return_approved'));
     const user = userEvent.setup();
 
-    expect(screen.getByText(/Confirm where your USDT refund should go/)).toBeInTheDocument();
+    expect(screen.getByText(/Confirm your refund address so the seller can refund you/)).toBeInTheDocument();
     expect(screen.getByTestId('usdt-refund-network-warning')).toHaveTextContent(
       'If this is an exchange deposit address, check that the exchange accepts USDT on Arbitrum One. Funds sent on the wrong network can be lost.',
     );
@@ -177,7 +177,7 @@ describe('MarketplaceUsdtRefundAddress — seller', () => {
       />,
     );
     expect(screen.getByTestId('usdt-refund-seller')).toHaveTextContent(
-      "The buyer hasn't confirmed a refund address yet.",
+      "Waiting for the buyer's refund address. You can record the refund once they confirm it.",
     );
     expect(screen.queryByTestId('usdt-refund-destination')).not.toBeInTheDocument();
   });

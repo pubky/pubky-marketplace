@@ -3,8 +3,10 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { orderAmountEntry } from '@/libs/commerce/bitcoin-payment-code';
+import { buyerSellerRatings, reviewListingAggregateId, reviewsOfReviewer } from '@/libs/commerce/order-reviews';
 import { resolveTrackingCarrierName } from '@/libs/commerce/order-tracking';
 import { isUsdtRefundOrder, normalizeArbitrumTxHash } from '@/libs/commerce/usdt-refund';
+import { toast } from '@/molecules/Toaster/use-toast';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import {
   formatOrderMajor,
@@ -13,6 +15,7 @@ import {
   marketplaceOrderActionDefaults,
   marketplaceOrderActionSchemaFor,
   paypalRefundedMinor,
+  type ReviewItemDraft,
 } from './useMarketplaceOrderAction.types';
 
 export function useMarketplaceOrderAction(
@@ -82,27 +85,75 @@ export function useMarketplaceOrderAction(
           });
           break;
         case 'review':
+          if (data.reviewItems.length > 0) {
+            succeeded = await actOnOrder(order, 'review.create', {
+              items: reviewItemTerms(data.reviewItems),
+              ...sellerRatingTerms(data),
+              // D2 both-sides consent: this is only half the gate — the
+              // service includes a band only when the seller also consented.
+              allowAmountBand: data.allowAmountBand,
+            });
+            break;
+          }
           succeeded = await actOnOrder(order, 'review.create', {
             rating: Number(data.rating),
             text: data.text,
-            // D2 both-sides consent: this is only half the gate — the
-            // service includes a band only when the seller also consented.
             allowAmountBand: data.allowAmountBand,
           });
           break;
-        case 'review_edit':
+        case 'review_edit': {
           // Durable service only (24h edit window). `actOnOrder` sources
           // `expected_revision` from the loaded order. A revision conflict
           // re-reads the order and succeeds when that review is already there.
+          if (data.reviewItems.length === 0) {
+            succeeded = await actOnOrder(order, 'review.update', {
+              rating: Number(data.rating),
+              text: data.text,
+            });
+            break;
+          }
+          // Only the listings whose stars or text changed are sent, so an
+          // edit revises only those records. The service takes seller
+          // ratings with at least one item, so a seller-only change sends the
+          // first, unchanged.
+          const own = reviewsOfReviewer(order, order.buyerPubky);
+          const changed = data.reviewItems.filter((item) => {
+            const current = own.find(
+              (review) => reviewListingAggregateId(order, review) === `listing:${order.sellerPubky}_${item.listingId}`,
+            );
+            return current === undefined || current.rating !== Number(item.rating) || current.text !== item.text;
+          });
+          const rated = buyerSellerRatings(order);
+          const seller = sellerRatingTerms(data);
+          const sellerChanged =
+            seller.seller !== undefined &&
+            (rated?.shipping !== seller.seller.shipping || rated?.communication !== seller.seller.communication);
+          if (changed.length === 0 && !sellerChanged) {
+            toast({ variant: 'info', description: 'Nothing changed in your review.' });
+            succeeded = true;
+            break;
+          }
           succeeded = await actOnOrder(order, 'review.update', {
-            rating: Number(data.rating),
-            text: data.text,
+            items: reviewItemTerms(changed.length > 0 ? changed : data.reviewItems.slice(0, 1)),
+            ...(sellerChanged ? seller : {}),
           });
           break;
+        }
       }
     })();
     return succeeded;
   };
 
   return { form, setAction, submit };
+}
+
+function reviewItemTerms(items: ReviewItemDraft[]) {
+  return items.map(({ listingId, rating, text }) => ({ listingId, rating: Number(rating), text }));
+}
+
+/** The seller ratings of a review form: both or neither (the schema refuses one alone). */
+function sellerRatingTerms(data: MarketplaceOrderActionData) {
+  return data.sellerShipping === ''
+    ? {}
+    : { seller: { shipping: Number(data.sellerShipping), communication: Number(data.sellerCommunication) } };
 }

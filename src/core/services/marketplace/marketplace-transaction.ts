@@ -157,11 +157,13 @@ const TRANSACTION_SERVICE_COMMAND_KINDS: ReadonlySet<MarketplaceCommand['kind']>
   'order.cancel_approve',
   'return.request',
   'return.approve',
+  'return.cancel',
   'return.receive',
   'refund.record_external',
   'refund.confirm_destination',
   'review.create',
   'review.update',
+  'review.withdraw',
 ] satisfies MarketplaceCommand['kind'][]);
 
 /** A hung public config read must end in Checkout's retryable failure state, not an endless skeleton. */
@@ -804,6 +806,32 @@ export class MarketplaceTransactionService {
       raw,
       'Marketplace returned an invalid review attestation.',
     ).attestation;
+  }
+
+  /**
+   * `GET /v1/orders/{id}/review-attestations`: every purchase attestation
+   * the caller was issued for the order, one per reviewed listing in line
+   * order and all sharing the order's `order_ref`. Idempotent re-fetch for
+   * re-publication of any item record. Empty when the caller has reviewed
+   * nothing or the deployment issues no attestations; null when the order is
+   * unknown or foreign.
+   */
+  static async getReviewAttestations(actor: string, orderId: string): Promise<unknown[] | null> {
+    const raw = await this.readProjection(
+      'getReviewAttestations',
+      actor,
+      `/v1/orders/${encodeURIComponent(orderId)}/review-attestations`,
+      { nullOnNotFound: true },
+    );
+    if (raw === null) return null;
+    return this.parseProjection(
+      'getReviewAttestations',
+      z.object({
+        attestations: z.array(z.object({ listingId: z.string().min(1), jws: z.string().min(32) }).passthrough()),
+      }),
+      raw,
+      'Marketplace returned invalid review attestations.',
+    ).attestations;
   }
 
   /**

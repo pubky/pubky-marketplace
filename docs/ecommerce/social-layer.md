@@ -21,7 +21,7 @@ Keeping the layers visually and structurally separate means a buyer always knows
 
 ## How reads degrade before Nexus aggregation is deployed
 
-The tag aggregate endpoints (`GET v0/listing/{seller_id}/{listing_id}/tags`, `GET v0/shop/{seller_id}/tags`) landed on the marketplace Nexus (branch `feat/marketplace-indexing` of pubky-nexus) and are served by the deployed marketplace-indexing Nexus on Railway (see [`status.md`](status.md)). Against a Nexus that does not serve them (the official staging Nexus, or a target whose event replay has not reached the tag records yet):
+The tag aggregate endpoints (`GET v0/listing/{seller_id}/{listing_id}/tags`, `GET v0/shop/{seller_id}/tags`) landed on the marketplace Nexus (branch `feat/marketplace-indexing` of pubky-nexus) and are served by the deployed marketplace-indexing Nexus (see [`status.md`](status.md)). Against a Nexus that does not serve them (the official staging Nexus, or a target whose event replay has not reached the tag records yet):
 
 - The endpoints answer **404**, which the client treats as "aggregation not available": it returns an empty aggregate and does NOT touch the local cache.
 - The panel then shows exactly what is locally true — the viewer's own tags — and nothing else. No invented counts, no placeholder taggers.

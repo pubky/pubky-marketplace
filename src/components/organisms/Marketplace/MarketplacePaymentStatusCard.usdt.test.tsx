@@ -124,20 +124,24 @@ describe('MarketplacePaymentStatusCard — USDT orders', () => {
   });
 
   it('tells the buyer of an unpaid USDT order when to approve in Bitkit and that shipping waits for finality', () => {
-    renderPhase('awaiting', true);
+    const { order, payment } = createUsdtOrderFixture('awaiting', { createdAt: '2026-08-20T20:46:00.000Z' });
+    renderCard(order, payment, true);
 
-    expect(screen.getByTestId('usdt-accept-by')).toHaveTextContent('Approve in Bitkit by 20 Aug 2026, 21:15.');
+    expect(screen.getByTestId('usdt-accept-by')).toHaveTextContent('Approve in Bitkit by 20 Aug 2026, 21:00.');
     expect(screen.getByTestId('usdt-finality-note')).toHaveTextContent(
-      'The seller ships once Arbitrum finalizes your payment, usually within minutes.',
+      'The seller ships once Arbitrum finalizes your payment, usually in about 15–20 minutes.',
     );
     expect(screen.getByTestId('usdt-finality-note')).toHaveTextContent(USDT_FINALITY_EXPECTATION_COPY);
   });
 
   it('states the window the order carries, not a fixed length', () => {
-    const { order, payment } = createUsdtOrderFixture('awaiting', { holdExpiresAt: '2026-08-20T21:45:00.000Z' });
+    const { order, payment } = createUsdtOrderFixture('awaiting', {
+      createdAt: '2026-08-20T20:46:00.000Z',
+      holdExpiresAt: '2026-08-20T21:45:00.000Z',
+    });
     renderCard(order, payment, true);
 
-    expect(screen.getByTestId('usdt-accept-by')).toHaveTextContent('Approve in Bitkit by 20 Aug 2026, 21:45.');
+    expect(screen.getByTestId('usdt-accept-by')).toHaveTextContent('Approve in Bitkit by 20 Aug 2026, 21:15.');
     expect(screen.getByTestId('usdt-accept-by')).not.toHaveTextContent(/minutes/);
   });
 

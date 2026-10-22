@@ -5,7 +5,13 @@ import { COMMERCE_REVIEW_EDIT_WINDOW_SECONDS } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
-import { createOrderFixture, createUsdtOrderFixture, ORDER_FIXTURE_BUYER } from '@/test/fixtures/commerce/orders';
+import {
+  createOrderFixture,
+  createUsdtOrderFixture,
+  ORDER_FIXTURE_BUYER,
+  ORDER_FIXTURE_SELLER,
+} from '@/test/fixtures/commerce/orders';
+import { purchaseAttestationJwsFixture, TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
 import { REFUND_FIXTURE_ADDRESS, REFUND_FIXTURE_TX_HASH } from '@/test/fixtures/commerce/usdt-refund.wire';
 import { MarketplaceOrderActions } from './MarketplaceOrderActions';
 
@@ -15,7 +21,7 @@ import { MarketplaceOrderActions } from './MarketplaceOrderActions';
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getMarketplaceBandConsent: vi.fn(async () => null),
-    getOwnMarketplaceReview: vi.fn(async () => null),
+    getOwnMarketplaceOrderReviews: vi.fn(async () => []),
     commitMarkReady: vi.fn(async () => ({ ok: true })),
     commitConfirmPickup: vi.fn(async () => ({ ok: true })),
     executeMarketplaceCommand: vi.fn(async () => ({
@@ -36,7 +42,7 @@ const mockedController = vi.mocked(CommerceController);
 
 beforeEach(() => {
   mockedController.getMarketplaceBandConsent.mockReset().mockResolvedValue(null);
-  mockedController.getOwnMarketplaceReview.mockReset().mockResolvedValue(null);
+  mockedController.getOwnMarketplaceOrderReviews.mockReset().mockResolvedValue([]);
 });
 
 const WINDOW_MS = COMMERCE_REVIEW_EDIT_WINDOW_SECONDS * 1000;
@@ -106,18 +112,18 @@ describe('MarketplaceOrderActions review editing', () => {
     await user.click(screen.getByRole('button', { name: 'Edit review' }));
     expect(screen.getByText('Edit your review')).toBeInTheDocument();
 
-    const textField = screen.getByLabelText('Review');
+    const textField = screen.getByLabelText(/^Review of Handmade leather boots/);
     expect(textField).toHaveValue('Accurate and fast.');
-    expect(screen.getByRole('radio', { name: '5 stars' })).toBeChecked();
+    const stars = within(screen.getByRole('radiogroup', { name: 'Rating for Handmade leather boots' }));
+    expect(stars.getByRole('radio', { name: '5 stars' })).toBeChecked();
 
-    await user.click(screen.getByRole('radio', { name: '3 stars' }));
+    await user.click(stars.getByRole('radio', { name: '3 stars' }));
     await user.clear(textField);
     await user.type(textField, 'Item arrived scratched after all.');
     await user.click(screen.getByRole('button', { name: 'Confirm' }));
 
     expect(actOnOrder).toHaveBeenCalledWith(order, 'review.update', {
-      rating: 3,
-      text: 'Item arrived scratched after all.',
+      items: [{ listingId: 'boots', rating: 3, text: 'Item arrived scratched after all.' }],
     });
   });
 
@@ -126,25 +132,25 @@ describe('MarketplaceOrderActions review editing', () => {
     const { order, actOnOrder } = renderActions({ withOwnReview: false });
 
     await user.click(screen.getByRole('button', { name: 'Leave review' }));
-    const oneStar = screen.getByRole('radio', { name: '1 star' });
+    const group = within(screen.getByRole('radiogroup', { name: 'Rating for Handmade leather boots' }));
+    const oneStar = group.getByRole('radio', { name: '1 star' });
     await user.click(oneStar);
     expect(oneStar).toBeChecked();
     expect(oneStar).toHaveFocus();
 
     await user.keyboard('{ArrowRight}');
-    expect(screen.getByRole('radio', { name: '2 stars' })).toBeChecked();
-    expect(screen.getByRole('radio', { name: '2 stars' })).toHaveFocus();
+    expect(group.getByRole('radio', { name: '2 stars' })).toBeChecked();
+    expect(group.getByRole('radio', { name: '2 stars' })).toHaveFocus();
 
     await user.keyboard('{ArrowRight}');
-    expect(screen.getByRole('radio', { name: '3 stars' })).toBeChecked();
-    expect(screen.getByRole('radio', { name: '3 stars' })).toHaveFocus();
+    expect(group.getByRole('radio', { name: '3 stars' })).toBeChecked();
+    expect(group.getByRole('radio', { name: '3 stars' })).toHaveFocus();
 
-    await user.type(screen.getByLabelText('Review'), 'Accurate and fast.');
+    await user.type(screen.getByLabelText(/^Review of Handmade leather boots/), 'Accurate and fast.');
     await user.click(screen.getByRole('button', { name: 'Confirm' }));
 
     expect(actOnOrder).toHaveBeenCalledWith(order, 'review.create', {
-      rating: 3,
-      text: 'Accurate and fast.',
+      items: [{ listingId: 'boots', rating: 3, text: 'Accurate and fast.' }],
       allowAmountBand: false,
     });
   });
@@ -154,14 +160,65 @@ describe('MarketplaceOrderActions review editing', () => {
     renderActions({ withOwnReview: false });
 
     await user.click(screen.getByRole('button', { name: 'Leave review' }));
-    const checked = screen.getByRole('radio', { name: '5 stars' });
-    const radios = screen.getAllByRole('radio');
+    const group = within(screen.getByRole('radiogroup', { name: 'Rating for Handmade leather boots' }));
+    const checked = group.getByRole('radio', { name: '5 stars' });
+    const radios = group.getAllByRole('radio');
     expect(checked).toBeChecked();
     expect(radios.filter((radio) => radio.tabIndex >= 0)).toEqual([checked]);
 
     checked.focus();
     await user.tab();
-    expect(screen.getByLabelText('Review')).toHaveFocus();
+    expect(screen.getByLabelText(/^Review of Handmade leather boots/)).toHaveFocus();
+  });
+});
+
+describe('MarketplaceOrderActions review disclosure', () => {
+  it('tells the buyer the review is public, tied to their Pubky, and shows the purchase', async () => {
+    const user = userEvent.setup();
+    renderActions({ withOwnReview: false });
+
+    await user.click(screen.getByRole('button', { name: 'Leave review' }));
+    expect(screen.getByTestId('review-disclosure')).toHaveTextContent(
+      'Your review is public, tied to your Pubky, and shows you bought this item.',
+    );
+  });
+
+  it('tells the buyer the price range of each reviewed item becomes public', async () => {
+    const user = userEvent.setup();
+    renderActions({ withOwnReview: false });
+
+    await user.click(screen.getByRole('button', { name: 'Leave review' }));
+    expect(screen.getByTestId('review-disclosure')).toHaveTextContent(
+      'The price range of each item you review becomes public too.',
+    );
+  });
+
+  it('keeps the price-range line out of the sandbox dialog, whose attestations carry no price', async () => {
+    const user = userEvent.setup();
+    renderActions({ withOwnReview: false, canEditReview: false });
+
+    await user.click(screen.getByRole('button', { name: 'Leave review' }));
+    expect(screen.getByTestId('review-disclosure')).not.toHaveTextContent(/price range/);
+  });
+
+  it('tells a seller reviewing a buyer that the review shows the buyer ordered from them', async () => {
+    const user = userEvent.setup();
+    const order = createOrderFixture('completed', { reviews: [] });
+    render(<MarketplaceOrderActions order={order} isBuyer={false} canEditReview={false} actOnOrder={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: 'Leave review' }));
+    expect(screen.getByTestId('review-disclosure')).toHaveTextContent(
+      'Your review is public, tied to your Pubky, and shows this buyer ordered from you.',
+    );
+  });
+
+  it('says in the band opt-in helper text that the band becomes public', async () => {
+    mockedController.getMarketplaceBandConsent.mockResolvedValue(true);
+    const user = userEvent.setup();
+    renderActions({ withOwnReview: false });
+
+    await user.click(screen.getByRole('button', { name: 'Leave review' }));
+    expect(await screen.findByText(/it becomes public with your review/i)).toBeInTheDocument();
   });
 });
 
@@ -175,13 +232,12 @@ describe('MarketplaceOrderActions amount-band opt-in (D2 both-sides consent)', (
     const checkbox = await screen.findByRole('checkbox', { name: /include an approximate price range/i });
     expect(checkbox).not.toBeChecked();
 
-    await user.type(screen.getByLabelText('Review'), 'Accurate and fast.');
+    await user.type(screen.getByLabelText(/^Review of Handmade leather boots/), 'Accurate and fast.');
     await user.click(checkbox);
     await user.click(screen.getByRole('button', { name: 'Confirm' }));
 
     expect(actOnOrder).toHaveBeenCalledWith(order, 'review.create', {
-      rating: 5,
-      text: 'Accurate and fast.',
+      items: [{ listingId: 'boots', rating: 5, text: 'Accurate and fast.' }],
       allowAmountBand: true,
     });
   });
@@ -193,12 +249,11 @@ describe('MarketplaceOrderActions amount-band opt-in (D2 both-sides consent)', (
 
     await user.click(screen.getByRole('button', { name: 'Leave review' }));
     await screen.findByRole('checkbox', { name: /include an approximate price range/i });
-    await user.type(screen.getByLabelText('Review'), 'Accurate and fast.');
+    await user.type(screen.getByLabelText(/^Review of Handmade leather boots/), 'Accurate and fast.');
     await user.click(screen.getByRole('button', { name: 'Confirm' }));
 
     expect(actOnOrder).toHaveBeenCalledWith(order, 'review.create', {
-      rating: 5,
-      text: 'Accurate and fast.',
+      items: [{ listingId: 'boots', rating: 5, text: 'Accurate and fast.' }],
       allowAmountBand: false,
     });
   });
@@ -225,6 +280,15 @@ describe('MarketplaceOrderActions amount-band opt-in (D2 both-sides consent)', (
 });
 
 describe('MarketplaceOrderActions own-review verified status', () => {
+  const ISSUED_IN_WINDOW = Date.parse('2026-10-20T12:00:00Z') / 1000;
+
+  function attestedRecord(iss: string, iat: number): CommerceReviewModelSchema['record'] {
+    return {
+      listingId: 'boots',
+      eligibilityAttestation: purchaseAttestationJwsFixture({ iss, iat }),
+    } as CommerceReviewModelSchema['record'];
+  }
+
   function publishedReviewRow(overrides: Partial<CommerceReviewModelSchema> = {}): CommerceReviewModelSchema {
     return {
       id: `${ORDER_FIXTURE_BUYER}:8Z8CWH8NVYQY39ZEBFGKQWWEKG`,
@@ -232,9 +296,9 @@ describe('MarketplaceOrderActions own-review verified status', () => {
       review_id: '8Z8CWH8NVYQY39ZEBFGKQWWEKG',
       order_id: 'order-1',
       subject_id: 's'.repeat(52),
-      record: {} as CommerceReviewModelSchema['record'],
+      record: attestedRecord(TEST_TRUSTED_ATTESTOR.pubky, ISSUED_IN_WINDOW),
       attestation_verified: true,
-      attestation_iss: 'o'.repeat(52),
+      attestation_iss: TEST_TRUSTED_ATTESTOR.pubky,
       sync_status: 'synced',
       updated_at: Date.now(),
       ...overrides,
@@ -242,17 +306,45 @@ describe('MarketplaceOrderActions own-review verified status', () => {
   }
 
   it('shows the verified state when the published record carries a verifying attestation', async () => {
-    mockedController.getOwnMarketplaceReview.mockResolvedValue(publishedReviewRow());
+    mockedController.getOwnMarketplaceOrderReviews.mockResolvedValue([publishedReviewRow()]);
     renderActions();
 
     await waitFor(() => {
-      expect(screen.getByTestId('own-review-status')).toHaveTextContent(/Verified purchase/);
+      expect(screen.getByTestId('own-review-status')).toHaveTextContent(
+        `Verified purchase · Pubky Market — your published review embeds a purchase attestation signed by attestor ${TEST_TRUSTED_ATTESTOR.pubky.slice(0, 8)}….`,
+      );
     });
-    expect(screen.getByTestId('own-review-status')).toHaveTextContent(/signed by attestor oooooooo…/);
+  });
+
+  it('does not claim a verified purchase when the attestation was issued before the attestor became trusted', async () => {
+    const issuedBeforeWindow = Date.parse(TEST_TRUSTED_ATTESTOR.validFrom) / 1000 - 1;
+    mockedController.getOwnMarketplaceOrderReviews.mockResolvedValue([
+      publishedReviewRow({ record: attestedRecord(TEST_TRUSTED_ATTESTOR.pubky, issuedBeforeWindow) }),
+    ]);
+    renderActions();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('own-review-status')).toHaveTextContent(/is not an attestor this app recognizes/);
+    });
+    expect(screen.getByTestId('own-review-status')).not.toHaveTextContent(/Verified purchase/);
+  });
+
+  it('does not claim a verified purchase when the attestation signer is not a trusted attestor', async () => {
+    mockedController.getOwnMarketplaceOrderReviews.mockResolvedValue([
+      publishedReviewRow({ attestation_iss: 'o'.repeat(52), record: attestedRecord('o'.repeat(52), ISSUED_IN_WINDOW) }),
+    ]);
+    renderActions();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('own-review-status')).toHaveTextContent(
+        'Your published review embeds a valid purchase attestation, but its signer (oooooooo…) is not an attestor this app recognizes.',
+      );
+    });
+    expect(screen.getByTestId('own-review-status')).not.toHaveTextContent(/Verified purchase/);
   });
 
   it('shows the pending-publication state truthfully', async () => {
-    mockedController.getOwnMarketplaceReview.mockResolvedValue(publishedReviewRow({ sync_status: 'pending' }));
+    mockedController.getOwnMarketplaceOrderReviews.mockResolvedValue([publishedReviewRow({ sync_status: 'pending' })]);
     renderActions();
 
     await waitFor(() => {
@@ -263,12 +355,281 @@ describe('MarketplaceOrderActions own-review verified status', () => {
   });
 
   it('does not claim that no attestation was issued when the durable row is unavailable', async () => {
-    mockedController.getOwnMarketplaceReview.mockResolvedValue(null);
+    mockedController.getOwnMarketplaceOrderReviews.mockResolvedValue([]);
     renderActions();
 
     await waitFor(() => {
       expect(screen.getByTestId('own-review-status')).toHaveTextContent(/publication status will appear/);
     });
+  });
+});
+
+describe('MarketplaceOrderActions per-item reviews', () => {
+  const LISTINGS = [
+    { id: 'boots', title: 'Handmade leather boots' },
+    { id: 'belt', title: 'Braided leather belt' },
+    { id: 'wallet', title: 'Slim leather wallet' },
+  ];
+
+  function threeItemOrder(
+    reviewed: { id: string; rating: number; text: string; shipping?: number; communication?: number }[] = [],
+    firstReviewAgeMs = 60_000,
+  ) {
+    return createOrderFixture('completed', {
+      lines: LISTINGS.map(({ id, title }) => ({
+        ...createOrderFixture('completed').lines[0],
+        listingAggregateId: `listing:${ORDER_FIXTURE_SELLER}_${id}`,
+        title,
+      })),
+      reviews: reviewed.map((review, index) => ({
+        id: `018f47d2-6a27-7c23-a62f-00000000070${index}`,
+        reviewerPubky: ORDER_FIXTURE_BUYER,
+        subjectPubky: ORDER_FIXTURE_SELLER,
+        listingAggregateId: `listing:${ORDER_FIXTURE_SELLER}_${review.id}`,
+        rating: review.rating,
+        text: review.text,
+        shipping: review.shipping ?? null,
+        communication: review.communication ?? null,
+        createdAt: new Date(Date.now() - firstReviewAgeMs + index).toISOString(),
+      })),
+    });
+  }
+
+  function renderOrder(order: MarketplaceOrder, canEditReview = true) {
+    const actOnOrder = vi.fn(
+      async (_order: MarketplaceOrder, _kind: string, _payload: Record<string, unknown>) => true,
+    );
+    render(
+      <MarketplaceOrderActions order={order} isBuyer={true} canEditReview={canEditReview} actOnOrder={actOnOrder} />,
+    );
+    return actOnOrder;
+  }
+
+  const stars = (title: string) => within(screen.getByRole('radiogroup', { name: `Rating for ${title}` }));
+
+  it('asks for stars and optional text on every listing of the order', async () => {
+    const user = userEvent.setup();
+    renderOrder(threeItemOrder());
+
+    await user.click(screen.getByRole('button', { name: 'Leave review' }));
+    expect(screen.getAllByTestId('review-item')).toHaveLength(3);
+    for (const { title } of LISTINGS) {
+      expect(stars(title).getAllByRole('radio')).toHaveLength(5);
+      expect(screen.getByLabelText(`Review of ${title} (optional)`)).toHaveValue('');
+    }
+  });
+
+  it('submits one item term per listing with empty text allowed and no seller ratings by default', async () => {
+    const user = userEvent.setup();
+    const order = threeItemOrder();
+    const actOnOrder = renderOrder(order);
+
+    await user.click(screen.getByRole('button', { name: 'Leave review' }));
+    await user.click(stars('Handmade leather boots').getByRole('radio', { name: '4 stars' }));
+    await user.click(stars('Slim leather wallet').getByRole('radio', { name: '2 stars' }));
+    await user.type(screen.getByLabelText('Review of Braided leather belt (optional)'), '  Solid belt.  ');
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() => expect(actOnOrder).toHaveBeenCalledTimes(1));
+    expect(actOnOrder).toHaveBeenCalledWith(order, 'review.create', {
+      items: [
+        { listingId: 'boots', rating: 4, text: '' },
+        { listingId: 'belt', rating: 5, text: 'Solid belt.' },
+        { listingId: 'wallet', rating: 2, text: '' },
+      ],
+      allowAmountBand: false,
+    });
+  });
+
+  it('sends the seller ratings once, next to the items', async () => {
+    const user = userEvent.setup();
+    const order = threeItemOrder();
+    const actOnOrder = renderOrder(order);
+
+    await user.click(screen.getByRole('button', { name: 'Leave review' }));
+    const seller = within(screen.getByTestId('review-seller-ratings'));
+    await user.click(
+      within(seller.getByRole('radiogroup', { name: 'Shipping' })).getByRole('radio', { name: '4 stars' }),
+    );
+    await user.click(
+      within(seller.getByRole('radiogroup', { name: 'Communication' })).getByRole('radio', { name: '5 stars' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() => expect(actOnOrder).toHaveBeenCalledTimes(1));
+    expect(actOnOrder).toHaveBeenCalledWith(
+      order,
+      'review.create',
+      expect.objectContaining({ seller: { shipping: 4, communication: 5 } }),
+    );
+  });
+
+  it('refuses a single seller rating and lets the buyer clear it', async () => {
+    const user = userEvent.setup();
+    const actOnOrder = renderOrder(threeItemOrder());
+
+    await user.click(screen.getByRole('button', { name: 'Leave review' }));
+    const seller = within(screen.getByTestId('review-seller-ratings'));
+    await user.click(
+      within(seller.getByRole('radiogroup', { name: 'Shipping' })).getByRole('radio', { name: '3 stars' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    expect(await screen.findByText('Rate both shipping and communication, or leave both blank.')).toBeInTheDocument();
+    expect(actOnOrder).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Clear seller ratings' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => expect(actOnOrder).toHaveBeenCalledTimes(1));
+    expect(actOnOrder.mock.calls[0]?.[2]).not.toHaveProperty('seller');
+  });
+
+  it('offers only the listings not reviewed yet when adding items inside the window', async () => {
+    const user = userEvent.setup();
+    const order = threeItemOrder([{ id: 'boots', rating: 4, text: 'Great boots.', shipping: 5, communication: 4 }]);
+    const actOnOrder = renderOrder(order);
+
+    expect(screen.queryByRole('button', { name: 'Leave review' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Review more items' }));
+    expect(screen.getAllByTestId('review-item')).toHaveLength(2);
+    expect(screen.queryByRole('radiogroup', { name: 'Rating for Handmade leather boots' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('review-seller-ratings-note')).toBeInTheDocument();
+    expect(screen.queryByTestId('review-seller-ratings')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => expect(actOnOrder).toHaveBeenCalledTimes(1));
+    expect(actOnOrder).toHaveBeenCalledWith(order, 'review.create', {
+      items: [
+        { listingId: 'belt', rating: 5, text: '' },
+        { listingId: 'wallet', rating: 5, text: '' },
+      ],
+      allowAmountBand: false,
+    });
+  });
+
+  it('withholds adding items once the window from the first review has closed', () => {
+    renderOrder(threeItemOrder([{ id: 'boots', rating: 4, text: '' }], WINDOW_MS + 60_000));
+
+    expect(screen.queryByRole('button', { name: 'Review more items' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit review' })).not.toBeInTheDocument();
+  });
+
+  it('counts the window from the earliest of the buyer item reviews', () => {
+    const order = threeItemOrder(
+      [
+        { id: 'boots', rating: 4, text: '' },
+        { id: 'belt', rating: 3, text: '' },
+      ],
+      WINDOW_MS - 60_000,
+    );
+    renderOrder(order);
+
+    expect(screen.getByRole('button', { name: 'Edit review' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Review more items' })).toBeInTheDocument();
+  });
+
+  it('edits one item and sends only that item', async () => {
+    const user = userEvent.setup();
+    const order = threeItemOrder([
+      { id: 'boots', rating: 4, text: 'Great boots.', shipping: 5, communication: 4 },
+      { id: 'belt', rating: 3, text: 'Fine belt.', shipping: 5, communication: 4 },
+      { id: 'wallet', rating: 5, text: '', shipping: 5, communication: 4 },
+    ]);
+    const actOnOrder = renderOrder(order);
+
+    await user.click(screen.getByRole('button', { name: 'Edit review' }));
+    expect(stars('Braided leather belt').getByRole('radio', { name: '3 stars' })).toBeChecked();
+    expect(screen.getByLabelText('Review of Handmade leather boots (optional)')).toHaveValue('Great boots.');
+    await user.click(stars('Braided leather belt').getByRole('radio', { name: '2 stars' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() => expect(actOnOrder).toHaveBeenCalledTimes(1));
+    expect(actOnOrder).toHaveBeenCalledWith(order, 'review.update', {
+      items: [{ listingId: 'belt', rating: 2, text: 'Fine belt.' }],
+    });
+  });
+
+  it('sends the seller ratings alone with the first item when only they changed', async () => {
+    const user = userEvent.setup();
+    const order = threeItemOrder([
+      { id: 'boots', rating: 4, text: 'Great boots.', shipping: 5, communication: 4 },
+      { id: 'belt', rating: 3, text: '', shipping: 5, communication: 4 },
+    ]);
+    const actOnOrder = renderOrder(order);
+
+    await user.click(screen.getByRole('button', { name: 'Edit review' }));
+    const seller = within(screen.getByTestId('review-seller-ratings'));
+    await user.click(
+      within(seller.getByRole('radiogroup', { name: 'Communication' })).getByRole('radio', { name: '2 stars' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() => expect(actOnOrder).toHaveBeenCalledTimes(1));
+    expect(actOnOrder).toHaveBeenCalledWith(order, 'review.update', {
+      items: [{ listingId: 'boots', rating: 4, text: 'Great boots.' }],
+      seller: { shipping: 5, communication: 2 },
+    });
+  });
+
+  it('sends nothing when an edit changes nothing', async () => {
+    const user = userEvent.setup();
+    const actOnOrder = renderOrder(threeItemOrder([{ id: 'boots', rating: 4, text: 'Great boots.' }]));
+
+    await user.click(screen.getByRole('button', { name: 'Edit review' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(actOnOrder).not.toHaveBeenCalled();
+  });
+
+  it('keeps the single v1 rating for a buyer on the sandbox', async () => {
+    const user = userEvent.setup();
+    const order = threeItemOrder();
+    const actOnOrder = renderOrder(order, false);
+
+    await user.click(screen.getByRole('button', { name: 'Leave review' }));
+    expect(screen.queryByTestId('review-items')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('Review'), 'Accurate and fast.');
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() => expect(actOnOrder).toHaveBeenCalledTimes(1));
+    expect(actOnOrder).toHaveBeenCalledWith(order, 'review.create', {
+      rating: 5,
+      text: 'Accurate and fast.',
+      allowAmountBand: false,
+    });
+  });
+
+  it('shows the publication state of each reviewed item under its title', async () => {
+    mockedController.getOwnMarketplaceOrderReviews.mockResolvedValue([
+      {
+        id: `${ORDER_FIXTURE_BUYER}:A`,
+        owner_id: ORDER_FIXTURE_BUYER,
+        review_id: 'A',
+        order_id: 'order-1',
+        subject_id: ORDER_FIXTURE_SELLER,
+        record: { listingId: 'belt' } as CommerceReviewModelSchema['record'],
+        attestation_verified: false,
+        attestation_iss: null,
+        sync_status: 'pending',
+        updated_at: Date.now(),
+      },
+    ]);
+    renderOrder(
+      threeItemOrder([
+        { id: 'boots', rating: 4, text: '' },
+        { id: 'belt', rating: 3, text: '' },
+      ]),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('own-review-status')).toHaveTextContent(
+        'Braided leather belt: Your review is saved. Publication is pending and will retry automatically.',
+      );
+    });
+    expect(screen.getByTestId('own-review-status')).toHaveTextContent(
+      'Handmade leather boots: Your review is saved. Its publication status will appear shortly.',
+    );
   });
 });
 
@@ -693,6 +1054,45 @@ describe('MarketplaceOrderActions digital orders (digital delivery design §6 E1
 
     expect(screen.getByRole('button', { name: 'Request return' })).toBeInTheDocument();
     expect(screen.queryByTestId('digital-no-return-note')).not.toBeInTheDocument();
+  });
+});
+
+describe('MarketplaceOrderActions return policy', () => {
+  function renderBuyer(overrides: Partial<MarketplaceOrder>) {
+    const order = createOrderFixture('completed', { fulfillment: 'shipping', ...overrides });
+    render(
+      <MarketplaceOrderActions order={order} isBuyer canEditReview={false} actOnOrder={vi.fn(async () => true)} />,
+    );
+  }
+
+  it('offers no return on a final sale and says why', () => {
+    renderBuyer({ returnPolicy: { acceptsReturns: false, returnWindowDays: null } });
+
+    expect(screen.queryByRole('button', { name: 'Request return' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('return-closed-note')).toHaveTextContent(
+      "Final sale: the seller doesn't accept returns on this item.",
+    );
+  });
+
+  it('offers no return after the return window', async () => {
+    renderBuyer({ returnPolicy: { acceptsReturns: true, returnWindowDays: 14 } });
+
+    expect(await screen.findByTestId('return-closed-note')).toHaveTextContent(
+      'The return window for this order has closed.',
+    );
+    expect(screen.queryByRole('button', { name: 'Request return' })).not.toBeInTheDocument();
+  });
+
+  it('keeps Request return inside the window', () => {
+    vi.useFakeTimers({ now: new Date('2026-08-20T12:00:00.000Z'), toFake: ['Date'] });
+    try {
+      renderBuyer({ returnPolicy: { acceptsReturns: true, returnWindowDays: 14 } });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(screen.getByRole('button', { name: 'Request return' })).toBeInTheDocument();
+    expect(screen.queryByTestId('return-closed-note')).not.toBeInTheDocument();
   });
 });
 

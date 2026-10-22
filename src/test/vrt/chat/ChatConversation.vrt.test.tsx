@@ -37,6 +37,8 @@ const scene = vi.hoisted(() => ({
   hasMore: false,
   showNote: true,
   inboxStatus: 'ready' as 'ready' | 'disabled',
+  // The phone keyboard: browsers here have none, so the scene sets what the visual viewport reports.
+  keyboardHeight: 0,
 }));
 
 vi.mock('next/navigation', () => ({
@@ -67,6 +69,17 @@ vi.mock('@/hooks/useChatIdentity/useChatIdentity', () => ({
     identityState: scene.identityState,
     inboxStatus: scene.inboxStatus,
     retry: async () => {},
+  }),
+}));
+
+vi.mock('@/hooks/useKeyboardViewport/useKeyboardViewport', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/useKeyboardViewport/useKeyboardViewport')>()),
+  useKeyboardViewport: () => ({
+    isKeyboardVisible: scene.keyboardHeight > 0,
+    keyboardHeight: scene.keyboardHeight,
+    keyboardTop: window.innerHeight - scene.keyboardHeight,
+    viewportHeight: window.innerHeight - scene.keyboardHeight,
+    viewportOffsetTop: 0,
   }),
 }));
 
@@ -198,6 +211,7 @@ describe('Chat conversation — visual regression', () => {
     scene.hasMore = false;
     scene.showNote = true;
     scene.inboxStatus = 'ready';
+    scene.keyboardHeight = 0;
   });
 
   it('renders a thread with every delivery state and a listing context at desktop viewport', async () => {
@@ -260,6 +274,32 @@ describe('Chat conversation — visual regression', () => {
     });
     await expect.element(screen.getByText('Not sent')).toBeInTheDocument();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-conversation-mobile');
+  });
+
+  it('renders an order thread pinned above the open keyboard at mobile viewport', async () => {
+    scene.messages = [
+      message({
+        id: 'k1',
+        direction: 'received',
+        body: 'Hello from latent space, this is a test message.',
+        sent_at: VRT_FROZEN_NOW_MS - 3 * MINUTE_MS,
+      }),
+    ];
+    scene.conversation = { ...conversation(), last_context: { orderId: ORDER_ID } };
+    scene.query = `order=${ORDER_ID}`;
+    scene.inboxStatus = 'disabled';
+    scene.keyboardHeight = 320;
+
+    const screen = await renderForVRT(<ChatConversation peerPubky={PEER} />, {
+      viewport: VRT_VIEWPORT_MOBILE,
+      disableHover: true,
+    });
+    await expect.element(screen.getByText('Hello from latent space, this is a test message.')).toBeInTheDocument();
+    const root = screen.getByTestId(VRT_ROOT_TESTID).element() as HTMLElement;
+    const frame = root.querySelector<HTMLElement>('[data-surface="chat-conversation"]');
+    expect(frame?.getBoundingClientRect().bottom, 'the frame ends at the keyboard').toBe(window.innerHeight - 320);
+    expect(root.querySelector('[data-testid="chat-no-inbox-note"]'), 'notes under the composer wait').toBeNull();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-conversation-keyboard-mobile');
   });
 
   it('renders an order thread with older history, a lagging clock and the note dismissed at desktop viewport', async () => {

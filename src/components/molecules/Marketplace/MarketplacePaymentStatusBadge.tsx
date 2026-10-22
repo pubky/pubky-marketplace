@@ -7,6 +7,7 @@ import {
   PAYMENT_CONFIRMED_ON_CHAIN_LABEL,
   PAYMENT_SELLER_CONFIRMED_LABEL,
 } from '@/libs/commerce/bitcoin-buyer-status';
+import { isCancelledNotLapsed } from '@/libs/commerce/checkout-hold';
 import { type BuyerVisiblePaymentStatus, buyerVisiblePaymentStatus } from '@/libs/commerce/locks-payment';
 import { isPaykitOrder, observedPaymentRail, PAYMENT_RAIL_BADGE } from '@/libs/commerce/paykit-rail';
 import { USDT_PHASE_BADGE_LABEL, usdtSettlementPhase } from '@/libs/commerce/usdt-buyer-status';
@@ -42,11 +43,15 @@ export function MarketplacePaymentStatusBadge({
   const usdtBadge = usdtPhase !== null && usdtPhase !== 'awaiting' ? USDT_PHASE_BADGE_LABEL[usdtPhase] : null;
   // A reorged USDT payment stays paid but is not settled, so it never wears the confirmed check.
   const settled = visibleStatus === 'confirmed' && usdtPhase !== 'rechecking';
+  // A cancel expires the payment too: a stated reason other than a lapse the service
+  // applied (Pay by, an idle checkout) reads as cancelled; an order with no reason
+  // keeps the expired window it always showed (#359).
+  const buyerCancelledUnpaid = visibleStatus === 'expired' && isCancelledNotLapsed(order);
   const visibleStatusLabel =
     seenBadge ??
     paidBitcoinBadge ??
     usdtBadge ??
-    (isTerminal && visibleStatus === 'awaiting_entitlement'
+    (isTerminal && (visibleStatus === 'awaiting_entitlement' || buyerCancelledUnpaid)
       ? order.state === 'cancelled'
         ? 'Order cancelled'
         : 'Not paid'

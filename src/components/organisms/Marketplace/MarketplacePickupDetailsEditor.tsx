@@ -143,7 +143,7 @@ export const MarketplacePickupDetailsEditor = forwardRef<
       data-testid="pickup-details-editor"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        {/* Copy adapted from Igor's PR 22 listing-form note (credited prior
+        {/* Copy adapted from the PR 22 (icota) listing-form note (credited prior
             art), reworded for the sealed meeting-point model. */}
         <Typography as="p" className="text-xs text-muted-foreground">
           Buyers see only that this listing offers pickup. The meeting point below is revealed to a buyer on the order

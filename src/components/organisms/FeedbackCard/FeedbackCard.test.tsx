@@ -167,7 +167,7 @@ describe('FeedbackCard', () => {
       mockUseAuthStore.mockReturnValue({ currentUserPubky: mockPubky } as never);
       mockUseLiveQuery.mockReturnValue({
         id: mockPubky,
-        name: 'Miguel Medeiros',
+        name: 'Maya Mitchell',
         image: 'avatar.jpg',
       } as never);
 
@@ -179,15 +179,15 @@ describe('FeedbackCard', () => {
 
       const avatarWithFallback = screen.getByTestId('avatar-with-fallback');
       expect(avatarWithFallback).toHaveAttribute('data-avatar-url', `https://cdn.example.com/avatar/${mockPubky}`);
-      expect(avatarWithFallback).toHaveAttribute('data-name', 'Miguel Medeiros');
+      expect(avatarWithFallback).toHaveAttribute('data-name', 'Maya Mitchell');
 
-      expect(screen.getByTestId('avatar-image')).toHaveAttribute('alt', 'Miguel Medeiros');
+      expect(screen.getByTestId('avatar-image')).toHaveAttribute('alt', 'Maya Mitchell');
     });
 
     it('renders with authenticated user without avatar image', async () => {
       mockUseAuthStore.mockReturnValue({ currentUserPubky: mockPubky } as never);
       mockUseLiveQuery.mockReturnValue({
-        name: 'Miguel Medeiros',
+        name: 'Maya Mitchell',
         image: null,
       } as never);
 
@@ -279,7 +279,7 @@ describe('FeedbackCard', () => {
     it('shows avatar image when user has image', async () => {
       mockUseAuthStore.mockReturnValue({ currentUserPubky: mockPubky } as never);
       mockUseLiveQuery.mockReturnValue({
-        name: 'Miguel',
+        name: 'Maya',
         image: 'has-image.jpg',
       } as never);
 
@@ -293,7 +293,7 @@ describe('FeedbackCard', () => {
     it('shows avatar fallback when user has no image', async () => {
       mockUseAuthStore.mockReturnValue({ currentUserPubky: mockPubky } as never);
       mockUseLiveQuery.mockReturnValue({
-        name: 'Miguel',
+        name: 'Maya',
         image: null,
       } as never);
 
@@ -309,7 +309,7 @@ describe('FeedbackCard', () => {
       const mockGetAvatarUrl = vi.mocked(FileController.getAvatarUrl);
       mockUseAuthStore.mockReturnValue({ currentUserPubky: mockPubky } as never);
       mockUseLiveQuery.mockReturnValue({
-        name: 'Miguel',
+        name: 'Maya',
         image: null,
       } as never);
 
@@ -328,7 +328,7 @@ describe('FeedbackCard', () => {
       mockUseAuthStore.mockReturnValue({ currentUserPubky: mockPubky } as never);
       mockUseLiveQuery.mockReturnValue({
         id: mockPubky,
-        name: 'Miguel',
+        name: 'Maya',
         image: 'avatar.jpg',
       } as never);
 
@@ -404,7 +404,7 @@ describe('FeedbackCard', () => {
     it('applies correct avatar container classes', async () => {
       mockUseAuthStore.mockReturnValue({ currentUserPubky: mockPubky } as never);
       mockUseLiveQuery.mockReturnValue({
-        name: 'Miguel',
+        name: 'Maya',
         image: null,
       } as never);
 
@@ -421,7 +421,7 @@ describe('FeedbackCard', () => {
     it('fetches user details when currentUserPubky is available', async () => {
       mockUseAuthStore.mockReturnValue({ currentUserPubky: mockPubky } as never);
       mockUseCurrentUserProfile.mockReturnValue({
-        userDetails: { name: 'Miguel', image: null },
+        userDetails: { name: 'Maya', image: null },
         currentUserPubky: mockPubky,
       } as never);
 
@@ -467,7 +467,7 @@ describe('FeedbackCard - Snapshots', () => {
     mockUseAuthStore.mockReturnValue({ currentUserPubky: mockPubky } as never);
     mockUseLiveQuery.mockReturnValue({
       id: mockPubky,
-      name: 'Miguel Medeiros',
+      name: 'Maya Mitchell',
       image: 'avatar.jpg',
     } as never);
 
@@ -483,7 +483,7 @@ describe('FeedbackCard - Snapshots', () => {
   it('matches snapshot with authenticated user without avatar', async () => {
     mockUseAuthStore.mockReturnValue({ currentUserPubky: mockPubky } as never);
     mockUseLiveQuery.mockReturnValue({
-      name: 'Miguel',
+      name: 'Maya',
       image: null,
     } as never);
 

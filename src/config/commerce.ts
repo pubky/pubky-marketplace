@@ -3,13 +3,18 @@ import {
   getCommerceAdapterMode,
   getCommercePollIntervalMs,
   getLocksUrl,
+  getMarketplaceTrustedAttestors,
   getMarketplaceUrl,
   getPaykitServerApi,
   getPaykitSetupCreatorParam,
   getPaykitSetupUrl,
   getUsdtPaymentsEnabled,
 } from '@/libs/runtime-config/runtime-config';
-import type { CommerceAdapterMode, PaykitServerApi } from '@/libs/runtime-config/runtime-config.schema';
+import type {
+  CommerceAdapterMode,
+  MarketplaceTrustedAttestor,
+  PaykitServerApi,
+} from '@/libs/runtime-config/runtime-config.schema';
 
 export {
   type CommerceAdapterMode,
@@ -124,27 +129,87 @@ export const COMMERCE_REVIEW_TEXT_MAX_CHARS = 5_000;
 export const COMMERCE_REVIEW_EDIT_WINDOW_SECONDS = 24 * 60 * 60;
 
 /**
- * The attestor pubkys this client TRUSTS for the "Verified purchase" label
+ * The review attestors every build TRUSTS for the "Verified purchase" label
  * (ADR 0024 §3: the signature proves key possession, never legitimacy —
  * verifiers pin attestor identities out of band, and this list is that
  * pinning). Nexus indexes every cryptographically verified review and names
- * its attestor; display trust is decided here. Entries cover each deployed
- * transaction service — the staging Railway project
- * `pubky-marketplace-staging` and the production project
- * `pubky-marketplace-production` — both operated by the marketplace operator.
+ * its attestor; display trust is decided here. Each deployment adds its own
+ * transaction service's key through `PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS`
+ * (see `docs/environment.md`); this compiled list holds only keys every
+ * deployment of the Shop should trust.
+ *
+ * Only Pubky Market's production attestor belongs here. A staging attestor
+ * signs test purchases, so it is trusted only by the staging deployment, through
+ * its runtime config. `validFrom` predates the production deployment, so no
+ * attestation the key has issued falls outside the window.
  */
-export const MARKETPLACE_TRUSTED_ATTESTORS: readonly string[] = [
-  // pubky-marketplace-staging (Railway), current key (rotated 12 Oct 2026)
-  'rhmo67eonanguhd3imztepbdkpm3z7nyt8u1n1bjymkmegjipfto',
-  // pubky-marketplace-staging (Railway), earlier key
-  'ws343aqzmcahagojhmhkbri8odqz9iqg61woxbkh9fd3bxhqomdy',
-  // pubky-marketplace-production (Railway)
-  'szhtpayftdz3mpkoyyk3zesuad11ufuudqqrc73s35w1tfju7gxy',
+export const MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS: readonly MarketplaceTrustedAttestor[] = [
+  { pubky: 'pstmi1bgg6dnrwmfabo9eqycm91esxx338awz1r5feaiub49934o', label: 'Pubky Market', validFrom: '2026-10-01' },
 ];
 
-/** Whether an attestor pubky is on this client's pinned trust list. */
-export function isTrustedMarketplaceAttestor(attestorId: string | null): boolean {
-  return attestorId !== null && MARKETPLACE_TRUSTED_ATTESTORS.includes(attestorId);
+/** The effective trust list: the compiled defaults plus this deployment's runtime entries. */
+export function marketplaceTrustedAttestors(): readonly MarketplaceTrustedAttestor[] {
+  return [...MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS, ...getMarketplaceTrustedAttestors()];
+}
+
+/**
+ * The trust-list entry that vouches for an attestation by `attestorId` made
+ * at `attestedAt`, or null. The window is `[validFrom, validUntil)`.
+ *
+ * The attestation's time is its `iat` claim: the purchase-attestation spec
+ * requires it (a positive integer, seconds since the epoch) and the
+ * transaction service sets it to the issuance instant. `completed_on` is the
+ * order's completion day, not when the key signed, so it is not used. `iat`
+ * is asserted by the key holder, so a window protects against a retired
+ * key's later use, not against a thief who backdates; a compromised key
+ * still needs removing from the list.
+ *
+ * Indexed reviews the index serves without `iat` use
+ * {@link trustedMarketplaceAttestorAtRecordTime}. Legacy aggregate counts (no
+ * per-review time at all) pass the current time, so a retired key's reviews
+ * drop out of the count rather than a compromised key's later ones counting.
+ */
+export function trustedMarketplaceAttestorAt(
+  attestorId: string | null,
+  attestedAt: Date,
+): MarketplaceTrustedAttestor | null {
+  if (attestorId === null) return null;
+  const at = attestedAt.getTime();
+  if (Number.isNaN(at)) return null;
+  return (
+    marketplaceTrustedAttestors().find(
+      (entry) =>
+        entry.pubky === attestorId &&
+        Date.parse(entry.validFrom) <= at &&
+        (entry.validUntil === undefined || at < Date.parse(entry.validUntil)),
+    ) ?? null
+  );
+}
+
+/**
+ * The trust-list entry that vouches for an indexed review served without an
+ * attestation `iat` (an index before release IX2, or a review it has not
+ * re-read yet), judged by the review record's `createdAt`. Reviews with
+ * `iat` use {@link trustedMarketplaceAttestorAt} (see
+ * `indexedReviewTrustedAttestor`).
+ *
+ * `createdAt` is written by the reviewer, so it fails closed: an entry with a
+ * `validUntil` never vouches here, since whoever holds a retired key could
+ * backdate a review into its window. `validFrom` is still checked, because
+ * backdating gains nothing against it.
+ */
+export function trustedMarketplaceAttestorAtRecordTime(
+  attestorId: string | null,
+  recordCreatedAt: Date,
+): MarketplaceTrustedAttestor | null {
+  if (attestorId === null) return null;
+  const at = recordCreatedAt.getTime();
+  if (Number.isNaN(at)) return null;
+  return (
+    marketplaceTrustedAttestors().find(
+      (entry) => entry.pubky === attestorId && entry.validUntil === undefined && Date.parse(entry.validFrom) <= at,
+    ) ?? null
+  );
 }
 
 /** Page size for marketplace review lists (listing and shop surfaces). */
@@ -212,3 +277,15 @@ export const COMMERCE_SAVED_SEARCH_NAME_MAX_CHARS = 60;
 
 /** Saved searches storable per account. */
 export const COMMERCE_SAVED_SEARCH_MAX_PER_OWNER = 20;
+
+/** Shortest gap between two shop re-reads a buyer's tab triggers by coming back into focus. */
+export const COMMERCE_SHOP_FOCUS_REVALIDATE_MIN_MS = 15_000;
+
+/** Wait after a seller's shop event before re-reading it, so a burst (or the replay on connect) reads once. */
+export const COMMERCE_SHOP_EVENT_DEBOUNCE_MS = 500;
+
+/** First wait before reconnecting a seller's shop event stream after it failed or ended; doubles per failure in a row. */
+export const COMMERCE_SHOP_EVENT_RECONNECT_MS = 5_000;
+
+/** Longest wait between reconnects of a seller's shop event stream. */
+export const COMMERCE_SHOP_EVENT_RECONNECT_MAX_MS = 60_000;

@@ -595,7 +595,7 @@ export function MarketplaceListingForm({
               name={CREATE_MARKETPLACE_LISTING_FIELDS.COUNTRY_CODE}
               control={form.control}
               label="Country"
-              placeholder="US"
+              placeholder="Two-letter code"
               disabled={isPublishing}
             />
             <ControlledInputField
@@ -1059,6 +1059,13 @@ export function MarketplaceListingForm({
             publishMinimumMet={canPublish}
             onSelectRequired={(item) => {
               navigateToSection(listingChecklistSection(item));
+              // A section can be long (Item is), so a field the item names is brought into view itself.
+              const fieldName = listingChecklistField(item);
+              const field = fieldName ? document.getElementById(fieldName) : null;
+              if (field) {
+                field.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+                field.focus({ preventScroll: true });
+              }
               const guard = document.getElementById('listing-publish-guard');
               if (guard && typeof guard.focus === 'function' && isPublishGuardChecklistItem(item)) {
                 guard.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1374,10 +1381,18 @@ function listingChecklistSection(item: string): ListingFormSectionId {
     return 'listing-section-item';
   }
   if (item === 'Price') return 'listing-section-price';
-  if (item === 'Country' || item === 'Shipping details' || item === 'Choose shipping or pickup') {
+  // The item's country sits in the Item section with its region.
+  if (item === 'Country') return 'listing-section-item';
+  if (item === 'Shipping details' || item === 'Choose shipping or pickup') {
     return 'listing-section-shipping';
   }
   return 'listing-section-review';
+}
+
+/** The input a Required to publish item names, when it is one field; it is scrolled to and focused. */
+function listingChecklistField(item: string): string | null {
+  if (item === 'Country') return CREATE_MARKETPLACE_LISTING_FIELDS.COUNTRY_CODE;
+  return null;
 }
 
 function isPublishGuardChecklistItem(item: string): boolean {

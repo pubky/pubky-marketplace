@@ -22,6 +22,7 @@ import {
   orderAnchorId,
   readLegacyOrderFragment,
   readLinkedOrderId,
+  readStaysOnOrder,
 } from '@/libs/commerce/activity-links';
 import {
   bitcoinPaymentHasBeenSeen,
@@ -53,6 +54,7 @@ import {
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { listingIdFromOrder } from '@/libs/commerce/listing-aggregate';
 import { buyerVisiblePaymentStatus } from '@/libs/commerce/locks-payment';
+import { deliveredCompletionNote } from '@/libs/commerce/order-returns';
 import { buyerShipmentTracking } from '@/libs/commerce/order-tracking';
 import { observedPaymentRail } from '@/libs/commerce/paykit-rail';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
@@ -82,8 +84,10 @@ import { MarketplaceOrderDigitalPanel } from '@/organisms/Marketplace/Marketplac
 import { MarketplaceOrderReference } from '@/organisms/Marketplace/MarketplaceOrderReference';
 import { MarketplacePaymentStatusCard } from '@/organisms/Marketplace/MarketplacePaymentStatusCard';
 import { MarketplaceReauthDialog } from '@/organisms/Marketplace/MarketplaceReauthDialog';
+import { MarketplaceReturnStatus } from '@/organisms/Marketplace/MarketplaceReturnStatus';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSellerDigitalPanel } from '@/organisms/Marketplace/MarketplaceSellerDigitalPanel';
+import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
 import { MarketplaceUsdtPaymentSummary } from '@/organisms/Marketplace/MarketplaceUsdtPaymentSummary';
 import { MarketplaceUsdtRefundAddress } from '@/organisms/Marketplace/MarketplaceUsdtRefundAddress';
 import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
@@ -103,7 +107,9 @@ const ORDER_TABS: { id: OrdersTab; label: string }[] = [
 
 export function MarketplaceOrders() {
   const router = useRouter();
-  const anchorOrderId = readLinkedOrderId(useSearchParams());
+  const searchParams = useSearchParams();
+  const anchorOrderId = readLinkedOrderId(searchParams);
+  const staysOnOrder = readStaysOnOrder(searchParams);
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const receiptsPublicationStatus = useCommerceStore((state) => state.receiptsPublicationStatus);
   const { orders, isLoading, error, needsSession, refresh, advancePayment, actOnOrder, adapterMode } =
@@ -115,6 +121,7 @@ export function MarketplaceOrders() {
   const tabListRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Partial<Record<OrdersTab, HTMLButtonElement | null>>>({});
   const redirectedOrderRef = useRef<string | null>(null);
+  const scrolledAnchorRef = useRef<string | null>(null);
   const [legacyOrderId, setLegacyOrderId] = useState<string | null>(null);
   const nowMs = useNowMs(orders.some(({ order }) => order.state === 'pending_payment' && Boolean(order.holdExpiresAt)));
   const buyerCheckouts = orders.filter(({ order }) => isBuyerCheckoutInProgress(order, currentUserPubky));
@@ -162,26 +169,34 @@ export function MarketplaceOrders() {
     if (!anchorId) return;
     const view = orders.find((candidate) => candidate.order.id === anchorId);
     if (!view) return;
-    if (!isOrderInTab(view, activeTab, currentUserPubky)) {
+    // A checkout in progress sits above the tabs, in its own list (#363).
+    const inCheckoutList = isBuyerCheckoutInProgress(view.order, currentUserPubky);
+    if (!inCheckoutList && !isOrderInTab(view, activeTab, currentUserPubky)) {
       if (activeTab !== 'all') {
         setActiveTab('all');
         setHasSelectedTab(true);
       }
       return;
     }
-    document.getElementById(orderAnchorId(anchorId))?.scrollIntoView({ block: 'center' });
+    // Once per anchor: the orders poll would otherwise pull the page back to this order every few
+    // seconds, under the reader's scroll or an open sheet with the keyboard up.
+    if (scrolledAnchorRef.current === anchorId) return;
+    const anchor = document.getElementById(orderAnchorId(anchorId));
+    if (!anchor) return;
+    scrolledAnchorRef.current = anchorId;
+    anchor.scrollIntoView({ block: 'center' });
   }, [activeTab, anchorOrderId, currentUserPubky, isLoading, orders]);
 
   useEffect(() => {
     if (isLoading) return;
     const id = anchorOrderId;
-    if (!id || redirectedOrderRef.current === id) return;
+    if (!id || staysOnOrder || redirectedOrderRef.current === id) return;
     const view = orders.find((candidate) => candidate.order.id === id);
     if (view && isBuyerCheckoutInProgress(view.order, currentUserPubky)) {
       redirectedOrderRef.current = id;
       router.replace(getMarketplaceCheckoutRoute(id));
     }
-  }, [anchorOrderId, currentUserPubky, isLoading, orders, router]);
+  }, [anchorOrderId, currentUserPubky, isLoading, orders, router, staysOnOrder]);
 
   useEffect(() => {
     if (hasSelectedTab || !historyOrders.length) return;
@@ -218,6 +233,7 @@ export function MarketplaceOrders() {
       showRightSidebar={false}
       showLeftMobileButton={false}
       showRightMobileButton={false}
+      disableMainContentOverflow
       className="pb-28"
     >
       <Container overrideDefaults className="flex w-full flex-col gap-6" data-surface="marketplace-orders">
@@ -248,10 +264,13 @@ export function MarketplaceOrders() {
         ) : isLoading ? (
           <Skeleton className="h-48 w-full" />
         ) : needsSession && error ? (
+          // A missing or expired marketplace session is not an empty history:
+          // the orders load once the session is approved again.
           <MarketplaceEmptyState
             icon={ReceiptText}
-            title="No orders yet"
-            description="Your purchases and sales will appear here."
+            title="Approve the marketplace to see your orders"
+            description="Your purchases and sales show here after one approval."
+            action={<MarketplaceSessionConnectDialog triggerLabel="Approve" onConnected={refresh} />}
           />
         ) : error ? (
           <div role="alert" className="rounded-md border border-destructive/40 p-4">
@@ -296,7 +315,7 @@ export function MarketplaceOrders() {
                   Checkout in progress
                 </Heading>
                 {buyerCheckouts.map(({ order, payment }) => (
-                  <Card key={order.id} className="rounded-md p-0">
+                  <Card key={order.id} id={orderAnchorId(order.id)} className="scroll-mt-24 rounded-md p-0">
                     <CardContent className="grid min-w-0 gap-4 p-6">
                       <MarketplaceOrderReference order={order} isBuyer showPlacedAt />
                       <MarketplaceCheckoutStatusLabels
@@ -605,16 +624,16 @@ export function MarketplaceOrders() {
                             )}
                             {order.state === 'delivered' && order.fulfillment !== 'digital' && (
                               <Typography as="p" className="mt-2 text-sm text-muted-foreground">
-                                Completes automatically after the return window unless a return is requested.
+                                {deliveredCompletionNote(order)}
                               </Typography>
                             )}
-                            {order.returnRequest && (
-                              <Typography as="p" className="mt-2 text-sm text-muted-foreground">
-                                Return {order.returnRequest.state}: {order.returnRequest.reason}
-                              </Typography>
-                            )}
+                            <MarketplaceReturnStatus order={order} isBuyer={isBuyer} actOnOrder={actOnOrder} />
                             {refundRecord && (
-                              <Typography as="p" className="mt-2 text-sm text-brand" data-testid="order-refund-record">
+                              <Typography
+                                as="p"
+                                className="mt-2 text-sm [overflow-wrap:anywhere] text-brand"
+                                data-testid="order-refund-record"
+                              >
                                 {/* Only ever externally evidenced: Paykit Server cannot spend, so
                               the app records the seller's transaction evidence and never
                               claims it moved funds itself. */}
@@ -704,7 +723,7 @@ export function MarketplaceOrders() {
           />
         )}
 
-        <MarketplaceMyReviews />
+        <MarketplaceMyReviews orders={orders.map(({ order }) => order)} />
       </Container>
     </ContentLayout>
   );
@@ -742,7 +761,9 @@ function MarketplaceOrderBitcoinAmount({ order }: { order: MarketplaceOrder }): 
     return (
       <Typography as="span" className="text-sm font-normal">
         Locked Bitcoin amount: {formatBitcoinAmount(quote.quotedSats)}
-        {isMarketplaceBitcoinQuoteExpired(quote.expiresAt) ? ' · Bitcoin quote expired' : ''}
+        {order.state === 'pending_payment' && isMarketplaceBitcoinQuoteExpired(quote.expiresAt)
+          ? ' · Bitcoin quote expired'
+          : ''}
       </Typography>
     );
   }

@@ -212,7 +212,7 @@ const view = vi.hoisted(() => ({
   listing: undefined as unknown,
   shop: undefined as unknown,
   projection: null as unknown,
-  reputation: { status: 'new_seller' as const } as unknown,
+  listingRating: null as unknown,
   fetchFails: false,
   currentUserPubky: 'u'.repeat(52) as string | null,
   listingTags: [] as unknown[],
@@ -282,7 +282,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     ...createMarketplaceVrtCommerceController(),
     getListing: () => view.listing,
     getShop: () => view.shop,
-    getOrFetchShop: () => Promise.resolve(null),
+    refreshShopOrGetCached: () => Promise.resolve(null),
     getPublicListingAvailability: () =>
       Promise.resolve(
         view.publicStock
@@ -299,7 +299,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     // the visual outcome only, so the call resolves without side effects.
     ensureListingRegistered: () => Promise.resolve(false),
     canRegisterListings: () => true,
-    fetchSellerReputation: () => Promise.resolve(view.reputation),
+    fetchListingRating: () => Promise.resolve(view.listingRating),
     fetchSellerReviews: () => Promise.resolve({ status: 'unavailable' }),
     fetchListingReviews: () => Promise.resolve({ status: 'unavailable' }),
     fetchSellerPaymentBadges: () => Promise.resolve(view.paymentBadges),
@@ -414,7 +414,7 @@ async function setView(overrides: Partial<typeof view>) {
   view.listing = undefined;
   view.shop = shop;
   view.projection = null;
-  view.reputation = { status: 'new_seller' };
+  view.listingRating = null;
   view.fetchFails = false;
   view.currentUserPubky = 'u'.repeat(52);
   view.listingTags = [];
@@ -466,23 +466,56 @@ describe('Marketplace listing detail — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-media-gallery-desktop');
   });
 
+  it('renders a tapped photo full screen at mobile viewport', async () => {
+    const { seller, galleryListing, fixedPriceProjection } = await fixtures;
+    await setView({ listing: galleryListing, projection: fixedPriceProjection });
+
+    const screen = await renderForVRT(<MarketplaceListing sellerPubky={seller} listingId="boots_01" />, {
+      viewport: VRT_VIEWPORT_MOBILE,
+    });
+    await screen.getByTestId('listing-photo-open').click();
+    await expect.element(screen.getByTestId('listing-photo-viewer')).toBeVisible();
+    await expect.element(screen.getByRole('button', { name: 'Close photos' })).toBeVisible();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-photo-viewer-mobile');
+  });
+
   it('renders the seller block with the shop avatar at desktop viewport', async () => {
     const { seller, fixedPriceListing, fixedPriceProjection, brandedShop } = await fixtures;
     await setView({
       listing: fixedPriceListing,
       projection: fixedPriceProjection,
       shop: brandedShop,
-      reputation: {
-        status: 'rated',
-        summary: {
-          count: 18,
-          verifiedCount: 14,
-          avg: 4.8,
-          histogram: [0, 0, 1, 3, 14],
-          responseCount: 5,
-          editedLateCount: 0,
-          attestors: {},
-          lastReviewedAt: '2026-08-20T12:00:00.000Z',
+      listingRating: { avg: 4.8, count: 18, verifiedCount: 14 },
+    });
+
+    const screen = await renderForVRT(<MarketplaceListing sellerPubky={seller} listingId="boots_01" />, {
+      viewport: VRT_VIEWPORT_DESKTOP,
+    });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-shop-avatar-desktop');
+  });
+
+  it("renders the product's counted rating with its buyers and orders at desktop viewport", async () => {
+    const { seller, fixedPriceListing, fixedPriceProjection, brandedShop } = await fixtures;
+    await setView({
+      listing: fixedPriceListing,
+      projection: fixedPriceProjection,
+      shop: brandedShop,
+      // The index's exact figure over the trusted attestor windows.
+      listingRating: {
+        avg: 3.9,
+        count: 18,
+        verifiedCount: 14,
+        scoped: {
+          orders: 4,
+          buyers: 3,
+          sumBuyerMeans: 13.8,
+          weightedSum: 18,
+          weightTotal: 4,
+          histogram: [0, 0, 0, 2, 2],
+          firstIat: Date.parse('2026-08-01T00:00:00Z') / 1000,
+          lastIat: Date.parse('2026-08-10T00:00:00Z') / 1000,
+          sellerBuyers: null,
+          sumSellerBuyerMeans: null,
         },
       },
     });
@@ -490,7 +523,8 @@ describe('Marketplace listing detail — visual regression', () => {
     const screen = await renderForVRT(<MarketplaceListing sellerPubky={seller} listingId="boots_01" />, {
       viewport: VRT_VIEWPORT_DESKTOP,
     });
-    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-shop-avatar-desktop');
+    await expect.element(screen.getByText('3 buyers · 4 orders')).toBeVisible();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-product-rating-counted-desktop');
   });
 
   it('renders the Report listing dialog with the pubky.app reasons at desktop viewport', async () => {

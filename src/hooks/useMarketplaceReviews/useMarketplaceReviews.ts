@@ -1,10 +1,38 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import type { CommerceIndexedReviewsResult, CommerceSellerReputationOverview } from '@/application/commerce/commerce';
 import { MARKETPLACE_REVIEWS_PAGE_SIZE } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import type { CommerceIndexedReview } from '@/models/commerce/commerce.schema';
+import { countedSnippetReputation } from '@/libs/commerce/review-counting';
+import type { CommerceIndexedReview, CommerceReputationSnippet } from '@/models/commerce/commerce.schema';
+
+/**
+ * One product's own rating for its listing page: `undefined` while loading,
+ * `null` when it has none (the page shows "No rating yet"), `unavailable`
+ * when the index did not answer (the page shows nothing).
+ */
+export function useListingRating(sellerPubky: string, listingId: string) {
+  const [rating, setRating] = useState<CommerceReputationSnippet | null | 'unavailable' | undefined>(undefined);
+
+  useEffect(() => {
+    let active = true;
+    setRating(undefined);
+    CommerceController.fetchListingRating(sellerPubky, listingId)
+      .then((result) => {
+        if (active) setRating(result);
+      })
+      .catch(() => {
+        if (active) setRating('unavailable');
+      });
+    return () => {
+      active = false;
+    };
+  }, [sellerPubky, listingId]);
+
+  return rating;
+}
 
 /**
  * The seller's public reputation overview for rating headers.
@@ -44,6 +72,20 @@ export function useSellerReputation(sellerPubky: string, options?: { enabled?: b
   }, [sellerPubky, enabled]);
 
   return overview;
+}
+
+/**
+ * How many of the seller's indexed listings this device holds have counted
+ * buyer reviews (trusted buckets, card rule): the L of the storefront's
+ * "Products rated 4.6 across L listings". Counts only what the catalog
+ * cache holds, so it never over-counts; 0 while loading.
+ */
+export function useSellerRatedListingCount(sellerPubky: string): number {
+  const entries = useLiveQuery(() => CommerceController.getCatalogEntriesBySeller(sellerPubky), [sellerPubky]);
+  return (entries ?? []).filter((entry) => {
+    const counted = entry.listing_reputation ? countedSnippetReputation(entry.listing_reputation) : null;
+    return counted !== null && counted.buyers > 0;
+  }).length;
 }
 
 export interface MarketplaceReviewsTarget {

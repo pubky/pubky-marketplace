@@ -29,7 +29,7 @@ This charter records the operating rules used on the marketplace work. It is a p
    Rationale: implementer reports are claims until the coordinator checks lint, typecheck, targeted tests, status, and key artifacts.
 
 9. **Use live deployed-stack proofs for deployment claims.**  
-   Rationale: local mocks cannot prove Railway/Vercel env, homeserver grants, relays, processor callbacks, or Nexus replay behavior.
+   Rationale: local mocks cannot prove hosted environment variables, homeserver grants, relays, processor callbacks, or Nexus replay behavior.
 
 10. **Never substitute stubs, mocks, TODOs, or placeholder behavior for product work.**  
     Rationale: the project already distinguishes deterministic test doubles from shipped behavior; blurring that boundary makes the ledger false.
@@ -50,10 +50,10 @@ This charter records the operating rules used on the marketplace work. It is a p
     Rationale: the step-up design kept the safe public-SDK path and rejected the wider token-to-session path.
 
 16. **Do not deploy without a rollback path named first.**  
-    Rationale: Vercel and Railway changes were bounded only when the previous deployment/redeploy path was known before action.
+    Rationale: Hosting changes were bounded only when the previous deployment/redeploy path was known before action.
 
 17. **Keep deploys service-scoped.**  
-    Rationale: Railway stacks have independent services and volumes; rolling one service should not imply resetting another.
+    Rationale: Multi-service stacks have independent services and volumes; rolling one service should not imply resetting another.
 
 18. **State the data/volume consequence before destructive operations.**  
     Rationale: replay cursors, Postgres migrations, Lock Server identity, Paykit creator records, Fulcrum, and bitcoind state are coupled.
@@ -80,7 +80,7 @@ This charter records the operating rules used on the marketplace work. It is a p
     Rationale: future maintainers need provenance for what changed, what proof ran, and which gaps remain.
 
 26. **Keep secrets named, not printed.**  
-    Rationale: handoffs need to say `Railway variable PAYKIT_REQUEST_SIGNING_KEY`, not expose the value.
+    Rationale: handoffs need to say `hosting variable PAYKIT_REQUEST_SIGNING_KEY`, not expose the value.
 
 27. **Prefer source-of-truth docs over chat memory.**  
     Rationale: the current state lives in `docs/ecommerce/status.md`, deploy runbooks, ADRs, and the active plan.

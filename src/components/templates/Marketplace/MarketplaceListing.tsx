@@ -28,13 +28,14 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode, isDurableCommerceMode, isTransactionalCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useCommerceFavorite } from '@/hooks/useCommerceFavorite/useCommerceFavorite';
+import { useLiveSellerShop } from '@/hooks/useLiveSellerShop/useLiveSellerShop';
 import { useMarketplaceCart } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import { useMarketplaceMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
 import { useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplaceOrders';
 import { useMarketplaceProjection } from '@/hooks/useMarketplaceProjection/useMarketplaceProjection';
 import { useMarketplacePublicAvailability } from '@/hooks/useMarketplacePublicAvailability/useMarketplacePublicAvailability';
-import { useSellerReputation } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
+import { useListingRating } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
 import { useMeasurementSystem } from '@/hooks/useMeasurementSystem/useMeasurementSystem';
 import { useRegionAvailability } from '@/hooks/useRegionAvailability/useRegionAvailability';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
@@ -78,6 +79,7 @@ import { SellerStatusBadge } from '@/molecules/Marketplace/SellerStatusBadge';
 import { MarketplaceFulfillmentBadge } from '@/molecules/MarketplaceFulfillmentBadge/MarketplaceFulfillmentBadge';
 import { MarketplacePaymentMethodBadges } from '@/molecules/MarketplacePaymentMethodBadges/MarketplacePaymentMethodBadges';
 import { MarketplaceSellerIdentity } from '@/molecules/MarketplaceSellerIdentity/MarketplaceSellerIdentity';
+import { MarketplaceSnippetRating } from '@/molecules/MarketplaceSnippetRating/MarketplaceSnippetRating';
 import { ChatEntryButton } from '@/organisms/Chat/ChatEntryButton';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DialogReportPost } from '@/organisms/DialogReportPost/DialogReportPost';
@@ -127,7 +129,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const negotiation = useMarketplaceProjection(sellerPubky, listingId);
   const publicStock = useMarketplacePublicAvailability(sellerPubky, listingId, negotiation.needsSession);
   const soldOutVariants = listingSoldOutVariantIds(negotiation.projection ?? publicStock);
-  const sellerReputation = useSellerReputation(sellerPubky);
+  const listingRating = useListingRating(sellerPubky, listingId);
   const paymentBadges = useSellerPaymentBadges(sellerPubky);
   const cart = useMarketplaceCart();
   const orders = useMarketplaceOrders();
@@ -143,9 +145,6 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     }
     let active = true;
     setIsFetchSettled(false);
-    // Best-effort: a direct visit may not have the seller's shop cached, and
-    // it carries the shop name, vacation notice and destination countries.
-    void CommerceController.getOrFetchShop(sellerPubky).catch(() => undefined);
     CommerceController.getOrFetchListing(sellerPubky, listingId)
       .catch(async (fetchError: unknown) => {
         let confirmedRemoved = false;
@@ -167,6 +166,11 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
       active = false;
     };
   }, [adapterMode, listingId, sellerPubky]);
+
+  // Best-effort: a direct visit may not have the seller's shop cached, and it carries the shop
+  // name, vacation notice and destination countries. A seller's later change (seller type,
+  // country) repaints the shop below and lifts or sets the EU fence.
+  useLiveSellerShop(sellerPubky, { enabled: adapterMode !== 'sandbox' });
 
   const listing = useLiveQuery(() => CommerceController.getListing(sellerPubky, listingId), [sellerPubky, listingId]);
   const madeToOrderVariants = madeToOrderVariantIds(
@@ -370,9 +374,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
       classNameWrapperContent="overflow-visible lg:overflow-visible"
     >
       <Container overrideDefaults className="flex w-full flex-col gap-6">
-        <div className="sticky top-24 z-(--z-sticky-subnav) bg-background after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-16 after:bg-linear-to-b after:from-background/80 after:to-transparent after:content-[''] lg:top-(--header-offset-main)">
-          <MarketplaceSectionNav className="mb-0" />
-        </div>
+        <MarketplaceSectionNav className="mb-0 after:h-16" />
         <div className="flex w-full items-center justify-between gap-2">
           <Link
             href={APP_ROUTES.MARKETPLACE}
@@ -456,6 +458,17 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
               <Heading level={1} size="xl" className="text-3xl leading-none sm:text-5xl sm:leading-none">
                 {record.title}
               </Heading>
+              {listingRating !== undefined && listingRating !== 'unavailable' && (
+                <div className="mt-2" data-testid="marketplace-listing-rating">
+                  {listingRating !== null && listingRating.count > 0 ? (
+                    <MarketplaceSnippetRating snippet={listingRating} emptyClassName="text-sm text-muted-foreground" />
+                  ) : (
+                    <Typography as="p" className="text-sm text-muted-foreground">
+                      No rating yet
+                    </Typography>
+                  )}
+                </div>
+              )}
               <Typography as="p" className="mt-1 text-3xl font-bold text-brand">
                 {record.sale.format === 'auction'
                   ? negotiation.projection?.auction?.bidCount
@@ -690,7 +703,6 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                     displayName={sellerDisplayName}
                     avatarUrl={shopAvatarUrl}
                     avatarAlt={`${shop?.record.name ?? 'Shop'} avatar`}
-                    reputation={sellerReputation}
                   />
                   <div className="mt-2 flex items-center gap-2">
                     <SellerStatusBadge declaration={declaration} />

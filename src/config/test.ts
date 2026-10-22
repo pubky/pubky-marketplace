@@ -4,6 +4,7 @@ import 'fake-indexeddb/auto';
 import { cleanup } from '@testing-library/react';
 import { expect, vi } from 'vitest';
 import { afterAll, afterEach, beforeAll, beforeEach } from 'vitest';
+import { TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
 
 // =============================================================================
 // IMPORTANT: Set environment variables BEFORE importing any app code
@@ -32,6 +33,7 @@ process.env.PUBKY_RUNTIME_MODERATED_TAGS = '["nudity"]';
 process.env.PUBKY_RUNTIME_EXCHANGE_RATE_API = 'https://api1.blocktank.to/api/fx/rates/btc';
 process.env.PUBKY_RUNTIME_HOMEGATE_URL = 'https://localhost:5000/';
 process.env.PUBKY_RUNTIME_DEFAULT_HTTP_RELAY = 'http://localhost:15412/inbox/';
+process.env.PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS = JSON.stringify([TEST_TRUSTED_ATTESTOR]);
 process.env.NEXT_PUBLIC_APP_VERSION = '0.0.0-test';
 
 // Chatwoot configuration (required for feedback feature)

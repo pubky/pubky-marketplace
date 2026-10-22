@@ -35,15 +35,53 @@ export type NexusListingState = 'active' | 'paused' | 'ended' | 'removed';
  * verified and labeled-unverified alike (ratified D5). Absence of the whole
  * object means "no indexed reviews", the explicit New-seller state — never
  * to be rendered as 0.0.
+ *
+ * `buckets` and `unverified_count` carry the counting rules v2 figures
+ * (index release IX2); older indexes omit both.
  */
 export type NexusReputationSnippet = {
   avg: number;
   count: number;
   verified_count: number;
+  buckets?: Record<string, NexusReputationBucket>;
+  unverified_count?: number;
+};
+
+/**
+ * The counting rules v2 figures of one set of counted reviews: one
+ * attestor's verified reviews of a scope that carry an attestation `iat`,
+ * are not superseded and are not excluded by moderation (a trust bucket), or
+ * the exact figure over `attestors=` windows. `orders` counts distinct
+ * `(attestor, order_ref)`; `histogram[0]` holds 1-star counts. The
+ * `seller_*` fields appear only on the buyer-reviewing-seller subject scope.
+ */
+export type NexusReputationBucket = {
+  orders: number;
+  buyers: number;
+  sum_buyer_means: number;
+  weighted_sum: number;
+  weight_total: number;
+  histogram: [number, number, number, number, number];
+  first_iat: number | null;
+  last_iat: number | null;
+  seller_buyers?: number;
+  sum_seller_buyer_means?: number;
 };
 
 /** Review direction as serialized by pubky-app-specs. */
 export type NexusReviewRole = 'buyer_reviewing_seller' | 'seller_reviewing_buyer';
+
+/**
+ * How the index's moderation treats a review. `text_hidden`: the moderator
+ * hid the text and the review still counts. `excluded`: the review is fraud
+ * and leaves every aggregate. `reason` is the moderator's label.
+ */
+export type NexusReviewModerationState = 'text_hidden' | 'excluded';
+
+export type NexusReviewModeration = {
+  state: NexusReviewModerationState;
+  reason: string;
+};
 
 /**
  * One indexed marketplace review as served inside `GET v0/shop/{seller}/reviews`
@@ -72,11 +110,23 @@ export type NexusReviewDetails = {
   verified: boolean;
   attestor_id: string | null;
   order_ref: string | null;
+  /**
+   * The attestation's `iat` (seconds) and price weight (1–5); `null` when
+   * the review is unverified. Indexes before IX2 omit both.
+   */
+  iat?: number | null;
+  price_weight?: number | null;
   edited_late: boolean;
   created_at: string;
   updated_at: string;
   revision: number;
   indexed_at: number;
+  /**
+   * `null` when the review is not moderated; `text` is `""` whenever it is
+   * set. Indexes older than review moderation omit the field, which means
+   * the same as `null`.
+   */
+  moderation?: NexusReviewModeration | null;
 };
 
 /**
@@ -121,6 +171,10 @@ export type NexusReputationSummary = {
   edited_late_count: number;
   attestors: Record<string, number>;
   last_reviewed_at: string | null;
+  buckets?: Record<string, NexusReputationBucket>;
+  unverified_count?: number;
+  /** The exact figure over the request's `attestors=` windows; present only with the parameter. */
+  scoped?: NexusReputationBucket;
 };
 
 export type NexusListingCondition = 'new' | 'like_new' | 'excellent' | 'good' | 'fair' | 'for_parts';
@@ -196,6 +250,12 @@ export type NexusListingDetails = {
   reputation?: NexusReputationSnippet;
   /** Listing-scoped reputation (buyer reviews of this listing). Same absence semantics. */
   listing_reputation?: NexusReputationSnippet;
+  /**
+   * Single-listing projection only, with `attestors=`: the exact figures of
+   * the seller's and of this listing's counted reviews inside the windows.
+   */
+  scoped_reputation?: NexusReputationBucket;
+  scoped_listing_reputation?: NexusReputationBucket;
 };
 
 /**
@@ -232,6 +292,8 @@ export type TListingStreamParams = {
 export type TListingDetailsParams = {
   seller_id: string;
   listing_id: string;
+  /** Trusted attestor windows (`attestorWindowsParam`); adds the `scoped_*` figures. */
+  attestors?: string;
 };
 
 /**
@@ -275,6 +337,12 @@ export type TShopReviewsParams = {
 export type TShopReputationParams = {
   seller_id: string;
   role?: NexusReviewRole;
+  /**
+   * `<pubky>:<from>:<until>,…` (seconds over the attestation `iat`, either
+   * end may be empty, at most 20 entries; empty is a 400). Adds `scoped`.
+   * Indexes before IX2 ignore it.
+   */
+  attestors?: string;
 };
 
 /** Path/query params for `GET v0/listing/{seller_id}/{listing_id}/reviews`. */

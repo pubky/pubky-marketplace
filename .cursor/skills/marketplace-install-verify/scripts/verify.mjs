@@ -407,7 +407,7 @@ async function probeInbox(host, origin, inboxUrl) {
       `shop.inbox.reachable.${host}`,
       'inbox service is not up yet',
       describe(pings),
-      `deploy the pubky/inbox service at ${inboxUrl} (owner: the inbox team, Matthew); until then a stranger's first message is found only when the recipient opens the thread, and chat starts pinging by itself once the inbox answers`,
+      `deploy the pubky/inbox service at ${inboxUrl} (owner: the inbox team); until then a stranger's first message is found only when the recipient opens the thread, and chat starts pinging by itself once the inbox answers`,
     );
     return;
   }

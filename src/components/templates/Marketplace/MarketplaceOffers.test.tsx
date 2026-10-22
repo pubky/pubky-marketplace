@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
@@ -9,6 +9,7 @@ import {
   isLinkedOfferMissing,
   loadOfferListings,
   MarketplaceOffers,
+  OFFER_LISTING_RETRY_MS,
   offerIsOpen,
   OfferListingSummary,
   offerStateLabel,
@@ -125,6 +126,48 @@ describe('Marketplace offers UX', () => {
       `/marketplace/listing/${seller}/boots`,
     );
     expect(screen.getByRole('img', { name: 'Vintage boots thumbnail' })).toBeInTheDocument();
+  });
+
+  it("keeps an offer's listing and thumbnail on screen across offers polls", async () => {
+    const listing = asInvalid<CommerceListingRecord>({
+      title: 'Vintage boots',
+      media: [{ id: 'm1', type: 'image', url: 'https://example.com/boots.jpg', altText: 'Boots' }],
+    });
+    getManyListings.mockResolvedValue(new Map([[`${seller}:boots`, { record: listing }]]));
+    offerView.offers = [offer];
+    const view = render(<MarketplaceOffers />);
+    await screen.findByRole('img', { name: 'Vintage boots thumbnail' });
+    getManyListings.mockClear();
+
+    // A poll returns the same offers as new objects.
+    offerView.offers = [{ ...offer }];
+    view.rerender(<MarketplaceOffers />);
+
+    expect(screen.getByRole('img', { name: 'Vintage boots thumbnail' })).toBeInTheDocument();
+    expect(screen.queryByText('Loading listing…')).toBeNull();
+    expect(getManyListings).not.toHaveBeenCalled();
+  });
+
+  it("retries an offer's listing that failed to load, without the offers changing", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const listing = asInvalid<CommerceListingRecord>({ title: 'Healed boots', media: [] });
+      getManyListings.mockResolvedValue(new Map());
+      getOrFetchListing.mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce(listing);
+      offerView.offers = [offer];
+      render(<MarketplaceOffers />);
+      expect(await screen.findByText('Listing details unavailable')).toBeInTheDocument();
+
+      await act(() => vi.advanceTimersByTimeAsync(OFFER_LISTING_RETRY_MS));
+
+      expect(await screen.findByText('Healed boots')).toBeInTheDocument();
+      expect(getOrFetchListing).toHaveBeenCalledTimes(2);
+      // Loaded now: no further retries.
+      await act(() => vi.advanceTimersByTimeAsync(OFFER_LISTING_RETRY_MS * 2));
+      expect(getOrFetchListing).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('uses local listings without fetching', async () => {

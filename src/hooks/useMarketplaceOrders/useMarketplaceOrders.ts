@@ -155,6 +155,16 @@ export function useMarketplaceOrders() {
           });
           return false;
         }
+        // A second tab that submitted the same listings loses to the first: the
+        // service refuses the repeat on the unique key (`INVARIANT_VIOLATION`) or
+        // on the already-reviewed check (`INVALID_STATE`). When the order now
+        // shows these reviews, the first tab's command did the work, and
+        // that tab publishes the records, so this one publishes nothing.
+        if (kind === 'review.create' && ['INVARIANT_VIOLATION', 'INVALID_STATE'].includes(response.error.code)) {
+          const fresh = await readOrders();
+          const current = fresh?.find((view) => view.order.id === order.id)?.order;
+          if (current && orderShowsCommandResult(current, kind, payload)) return true;
+        }
         if (isPaymentNotFinalRefusal(response)) {
           toast({ variant: 'error', description: PAYMENT_NOT_FINAL_COPY });
           return false;
@@ -209,12 +219,17 @@ export function useMarketplaceOrders() {
  */
 async function publishReviewRecord(order: MarketplaceOrder, result: unknown): Promise<void> {
   try {
-    const published = await CommerceController.publishOwnMarketplaceReview(
+    const published = await CommerceController.publishOwnMarketplaceReviews(
       order,
       (result ?? {}) as Record<string, unknown>,
     );
-    if (published === null) return; // No attestation issued: review stays service-only.
-    toast({ description: 'Review published to your homeserver with its purchase attestation.' });
+    if (published.length === 0) return; // No attestation issued: review stays service-only.
+    toast({
+      description:
+        published.length === 1
+          ? 'Review published to your homeserver with its purchase attestation.'
+          : `${published.length} reviews published to your homeserver with their purchase attestations.`,
+    });
   } catch {
     toast({
       variant: 'error',
@@ -236,6 +251,7 @@ async function loadOrders(
   // mid-flight is retried whenever this surface loads. Best-effort — a
   // failure keeps the row pending and is logged inside the application.
   void CommerceController.resumeOwnReviewPublications().catch(() => undefined);
+  void CommerceController.resumeOwnReviewRemovals().catch(() => undefined);
   void CommerceController.sweepOwnAuctionReserves().catch(() => undefined);
   // Same outbox semantics for own review-RESPONSE records (subject-only
   // responses published to the responder's homeserver).

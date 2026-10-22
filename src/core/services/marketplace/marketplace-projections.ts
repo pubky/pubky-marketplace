@@ -664,6 +664,12 @@ export const marketplaceOrderProjectionSchema = z
     // null when the seller left one unset (the service default applies).
     deliveryAssumeDays: z.number().int().positive().nullish(),
     autoCompleteDays: z.number().int().positive().nullish(),
+    // The listing's return policy frozen on the order when its payment
+    // started; null when none was captured (the service then takes any return).
+    returnPolicy: z
+      .object({ acceptsReturns: z.boolean(), returnWindowDays: z.number().int().positive().nullable() })
+      .nullish()
+      .catch(null),
     nextActor: z
       .enum(['buyer', 'seller', 'none'])
       .nullable()
@@ -693,13 +699,21 @@ export const marketplaceOrderProjectionSchema = z
         state: z.enum(['requested', 'approved', 'received', 'refunded']),
         reason: z.string(),
         requestedAmountMinor: z.number().int().positive(),
+        // Where `return.cancel` sends the order back to; absent on older returns.
+        requestedFrom: z.enum(['delivered', 'completed']).optional().catch(undefined),
         requestedAt: z.string(),
         updatedAt: z.string(),
       })
       .nullable()
       .optional(),
     externalRefund: z
-      .object({ amountMinor: z.number().int().positive(), transactionId: z.string(), recordedAt: z.string() })
+      .object({
+        amountMinor: z.number().int().positive(),
+        transactionId: z.string(),
+        recordedAt: z.string(),
+        // USDT millionths Arbitrum shows reaching the refund address, when the service checked it.
+        receivedUnits: z.number().int().nonnegative().nullish().catch(null),
+      })
       .nullable()
       .optional(),
     // PayPal refund notifications (service 94ecb0d). Display-only flags: a
@@ -714,9 +728,18 @@ export const marketplaceOrderProjectionSchema = z
           id: z.uuid(),
           reviewerPubky: commercePubkySchema,
           subjectPubky: commercePubkySchema,
+          /** The listing a buyer's item review rates; absent on orders read from a service without per-item reviews. */
+          listingAggregateId: z.string().optional(),
           rating: z.number().int().min(1).max(5),
           text: z.string(),
+          /** The buyer's per-order seller ratings, on every item review of the order; null when unrated. */
+          shipping: z.number().int().min(1).max(5).nullish(),
+          communication: z.number().int().min(1).max(5).nullish(),
           createdAt: z.string(),
+          updatedAt: z.string().optional(),
+          // Only the author's own view carries it, and only when set (`review.withdraw`).
+          // Absent on an older service and on every other viewer's rows: not removed.
+          publicRemoved: z.boolean().optional().catch(undefined),
         }),
       )
       .optional(),

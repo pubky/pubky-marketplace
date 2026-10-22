@@ -26,6 +26,7 @@ import { formatDateTime } from '@/libs/utils/dateTime';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
+import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
 import {
   getWatchAlertDetail,
   getWatchAlertHeadline,
@@ -115,6 +116,7 @@ export function MarketplaceNotifications() {
       showRightSidebar={false}
       showLeftMobileButton={false}
       showRightMobileButton={false}
+      disableMainContentOverflow
       className="pb-28"
     >
       <Container overrideDefaults className="flex w-full flex-col gap-6" data-surface="marketplace-transaction-history">
@@ -190,10 +192,13 @@ export function MarketplaceNotifications() {
         {isLoading ? (
           <Skeleton className="h-32 w-full" />
         ) : needsSession && error ? (
+          // A missing or expired marketplace session is not an empty history:
+          // the list loads once the session is approved again.
           <MarketplaceEmptyState
             icon={Bell}
-            title="No commerce updates"
-            description="Updates about your marketplace activity will appear here."
+            title="Approve the marketplace to see your updates"
+            description="Your order and payment updates show here after one approval."
+            action={<MarketplaceSessionConnectDialog triggerLabel="Approve" />}
           />
         ) : error ? (
           <div role="alert" className="rounded-md border border-destructive/40 p-4">

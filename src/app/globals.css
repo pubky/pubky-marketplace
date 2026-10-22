@@ -376,6 +376,15 @@ body {
   --z-sticky-subnav: 15;
 
   /**
+   * Top offset of the sticky marketplace section nav
+   * - Mobile: below the full-chrome MobileHeader (--header-offset-mobile)
+   * - Desktop (lg+): below the site header (--header-offset-main)
+   * - Embedded: no host chrome to clear, only the safe-area inset (see the
+   *   html[data-shop-embedded] rule below)
+   */
+  --marketplace-subnav-top: var(--header-offset-mobile);
+
+  /**
    * Z-index for mobile-specific UI elements
    * - Ensures mobile header and menu appear above sticky headers
    * - Used by: MobileHeader, ProfilePageMobileMenu
@@ -399,6 +408,12 @@ body {
    * - Used for: Main content area
    */
   --container-max-width: 1200px;
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --marketplace-subnav-top: var(--header-offset-main);
+  }
 }
 
 @layer base {
@@ -1122,13 +1137,33 @@ body {
 /*
  * Embedded in a host app (see EmbeddedDocumentFlag): the host owns the page chrome, so nothing sits
  * above the content to offset sticky elements from. The two header offsets collapse, and the
- * marketplace sub-navigation's mobile offset (Tailwind `top-24`, a fixed 96px) follows.
+ * marketplace sub-navigation pins to the top of the frame, below any safe-area inset the host passes through.
  */
 html[data-shop-embedded] {
   --header-offset-main: 0px;
   --header-offset-mobile: 0px;
+  --marketplace-subnav-top: env(safe-area-inset-top, 0px);
 }
 
-html[data-shop-embedded] .sticky.top-24 {
-  top: 0;
+/*
+ * Phones: MobileHeader slides away while the page scrolls down (`data-mobile-header-collapsed`), so what
+ * sticks under it moves up into the space it leaves and follows it back on scroll up.
+ */
+@media (width < 64rem) {
+  html[data-mobile-header-collapsed] {
+    --header-offset-mobile: 0px;
+  }
+
+  /* The tab bars under the header on Hot, Profile and Settings (MobileTabBar) stick at the header's height. */
+  html[data-mobile-header-collapsed] .top-\(--header-height-settings\),
+  html[data-mobile-header-collapsed] .top-\(--header-height-mobile\) {
+    top: 0;
+  }
+
+  .top-\(--marketplace-subnav-top\),
+  .top-\(--header-offset-mobile\),
+  .top-\(--header-height-settings\),
+  .top-\(--header-height-mobile\) {
+    transition: top 200ms;
+  }
 }

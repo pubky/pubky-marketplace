@@ -4,7 +4,7 @@ import { assertSameOrigin, BffError } from './bff';
 import type { MarketplaceGrantConfig } from './config';
 
 const config = {
-  allowedOrigins: ['https://pubky.app', 'https://staging.pubky.app', 'https://pubky-marketplace-staging.vercel.app'],
+  allowedOrigins: ['https://pubky.app', 'https://staging.pubky.app', 'https://shop-staging-example.vercel.app'],
 } as MarketplaceGrantConfig;
 
 function request(origin: string | null, fetchSite = 'same-origin'): Request {
@@ -18,7 +18,7 @@ describe('assertSameOrigin for the embedded Shop', () => {
     vi.unstubAllEnvs();
   });
 
-  it.each(['https://pubky.app', 'https://staging.pubky.app', 'https://pubky-marketplace-staging.vercel.app'])(
+  it.each(['https://pubky.app', 'https://staging.pubky.app', 'https://shop-staging-example.vercel.app'])(
     'accepts a same-origin request from %s',
     (origin) => {
       vi.stubEnv('NODE_ENV', 'production');

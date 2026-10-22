@@ -8,7 +8,7 @@ import { MarketplaceOrderActions } from './MarketplaceOrderActions';
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getMarketplaceBandConsent: vi.fn(async () => null),
-    getOwnMarketplaceReview: vi.fn(async () => null),
+    getOwnMarketplaceOrderReviews: vi.fn(async () => []),
     commitMarkReady: vi.fn(async () => ({ ok: true })),
     commitConfirmPickup: vi.fn(async () => ({ ok: true })),
     executeMarketplaceCommand: vi.fn(async () => ({ ok: true })),
@@ -20,7 +20,8 @@ vi.mock('@/controllers/commerce/commerce', () => ({
 
 vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
 
-const NOT_FINAL = "Wait to ship: this USDT payment isn't final on Arbitrum yet. This usually takes a few minutes.";
+const NOT_FINAL =
+  "Wait to ship: this USDT payment isn't final on Arbitrum yet. This usually takes about 15–20 minutes.";
 
 function renderActions(order: MarketplaceOrder, isBuyer: boolean) {
   return render(

@@ -232,7 +232,13 @@ export function useMarketplaceFirstMediaUrl(uris: readonly string[]): string | n
 export function useMarketplaceMediaUrls(uris: readonly string[]): readonly (string | null)[] {
   const urisKey = uris.join('\u0000');
   const urisRef = useLatest(uris);
-  const [urls, setUrls] = useState<readonly (string | null)[]>(() => uris.map(getSynchronousMediaUrl));
+  // Resolved URLs belong to the list they were resolved for. Until the effect resolves a changed list
+  // (a seller added photos), answer from the new list itself, so a caller never reads past the end.
+  const [resolved, setResolved] = useState<{ key: string; urls: readonly (string | null)[] }>(() => ({
+    key: urisKey,
+    urls: uris.map(getSynchronousMediaUrl),
+  }));
+  const urls = resolved.key === urisKey ? resolved.urls : uris.map(getSynchronousMediaUrl);
   useRetainedBlobUrls(urls);
 
   useEffect(() => {
@@ -240,10 +246,10 @@ export function useMarketplaceMediaUrls(uris: readonly string[]): readonly (stri
     let active = true;
     void Promise.all(urisSnapshot.map((uri) => resolveMarketplaceMediaUrlAsync(uri)))
       .then((resolvedUrls) => {
-        if (active) setUrls(resolvedUrls);
+        if (active) setResolved({ key: urisKey, urls: resolvedUrls });
       })
       .catch(() => {
-        if (active) setUrls(urisSnapshot.map(() => null));
+        if (active) setResolved({ key: urisKey, urls: urisSnapshot.map(() => null) });
       });
 
     return () => {

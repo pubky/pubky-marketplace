@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useKeyboardViewport } from './useKeyboardViewport';
+import { measureFrameViewport, useKeyboardViewport } from './useKeyboardViewport';
 
 const listeners = new Map<string, Set<EventListener>>();
 const mockVisualViewport = {
@@ -21,6 +21,7 @@ function dispatchViewportEvent(eventName: string) {
 }
 
 describe('useKeyboardViewport', () => {
+  let field: HTMLInputElement;
   let originalVisualViewport: typeof window.visualViewport;
   let originalInnerHeight: number;
 
@@ -32,6 +33,10 @@ describe('useKeyboardViewport', () => {
 
     mockVisualViewport.height = 800;
     mockVisualViewport.offsetTop = 0;
+    // The keyboard only counts while a text field has focus.
+    field = document.createElement('input');
+    document.body.append(field);
+    field.focus();
 
     Object.defineProperty(window, 'innerHeight', {
       configurable: true,
@@ -46,6 +51,7 @@ describe('useKeyboardViewport', () => {
   });
 
   afterEach(() => {
+    field.remove();
     Object.defineProperty(window, 'innerHeight', {
       configurable: true,
       writable: true,
@@ -68,6 +74,21 @@ describe('useKeyboardViewport', () => {
       viewportHeight: 800,
       viewportOffsetTop: 0,
     });
+  });
+
+  it('detects the iOS keyboard, where innerHeight shrinks with the visual viewport', () => {
+    // iPhone 16, Safari: the layout viewport stays 695 while innerHeight drops to 490.
+    Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 490 });
+    const clientHeight = vi.spyOn(document.documentElement, 'clientHeight', 'get').mockReturnValue(695);
+    mockVisualViewport.height = 365;
+    mockVisualViewport.offsetTop = 245;
+
+    const { result } = renderHook(() => useKeyboardViewport());
+
+    expect(result.current.isKeyboardVisible).toBe(true);
+    expect(result.current.viewportHeight).toBe(365);
+    expect(result.current.viewportOffsetTop).toBe(245);
+    clientHeight.mockRestore();
   });
 
   it('returns visible state with keyboard measurements', () => {
@@ -160,6 +181,15 @@ describe('useKeyboardViewport', () => {
     expect(result.current.keyboardTop).toBe(800);
   });
 
+  it('does not take a pinch-zoom for the keyboard: nothing editable has focus', () => {
+    field.blur();
+    mockVisualViewport.height = 500;
+
+    const { result } = renderHook(() => useKeyboardViewport());
+
+    expect(result.current.isKeyboardVisible).toBe(false);
+  });
+
   it('cleans up viewport listeners on unmount', () => {
     const { unmount } = renderHook(() => useKeyboardViewport());
 
@@ -167,5 +197,41 @@ describe('useKeyboardViewport', () => {
 
     expect(mockVisualViewport.removeEventListener).toHaveBeenCalledWith('resize', expect.any(Function));
     expect(mockVisualViewport.removeEventListener).toHaveBeenCalledWith('scroll', expect.any(Function));
+  });
+});
+
+describe('measureFrameViewport (the Shop framed by pubky.app)', () => {
+  // A Pixel's host page: 914px layout, the Shop frame from 128px down, 686px tall.
+  const frame = { hostLayoutHeight: 914, frameTop: 128, frameHeight: 686, threshold: 150 };
+
+  it('finds the keyboard in the host viewport, which the frame alone never sees', () => {
+    const state = measureFrameViewport({ ...frame, hostViewport: { height: 498, pageTop: 0 }, focusedInput: true });
+
+    expect(state).toEqual({
+      isKeyboardVisible: true,
+      // Visible frame part: 0 to 498 - 128 = 370; the rest of the 686px frame is under the keyboard.
+      keyboardHeight: 316,
+      keyboardTop: 370,
+      viewportHeight: 370,
+      viewportOffsetTop: 0,
+    });
+  });
+
+  it('follows the host viewport when the host page scrolls the frame top out of view (iOS)', () => {
+    const state = measureFrameViewport({ ...frame, hostViewport: { height: 400, pageTop: 200 }, focusedInput: true });
+
+    expect(state.viewportOffsetTop).toBe(72);
+    expect(state.viewportHeight).toBe(400);
+    expect(state.keyboardTop).toBe(472);
+  });
+
+  it('is no keyboard without a focused text field, or with the host viewport at full height', () => {
+    expect(
+      measureFrameViewport({ ...frame, hostViewport: { height: 498, pageTop: 0 }, focusedInput: false })
+        .isKeyboardVisible,
+    ).toBe(false);
+    const closed = measureFrameViewport({ ...frame, hostViewport: { height: 914, pageTop: 0 }, focusedInput: true });
+    expect(closed.isKeyboardVisible).toBe(false);
+    expect(closed.viewportHeight).toBe(686);
   });
 });

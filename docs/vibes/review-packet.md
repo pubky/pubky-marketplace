@@ -63,9 +63,9 @@ Reusable packet for reviewing Shop as a Vibes experiment. Fill with repository o
 
 **Review history**
 
-- Static toast copy rule shipped in production 2026-09-09 as part of merge `4607a692c` on `marketplace/pr25-ux`. Opus round 1 was FIX-FIRST because three tests still asserted the old raw-message behavior; drop refusals were not classified. Round 2 was SHIP. The non-gating cleanup batch centralized the static fallback in `src/libs/commerce/failure-messages.ts`, removed dead `generic`, added real AppError sentinels, and added preservation tests (`148db15ed`, `91e041c9c`, deployed after the `4607a692c` build); parent proof recorded TSC 0, ESLint 0, and 806 unit tests. Deploys: `pubky-marketplace-production-ccat1hufk` / `shop.pubky.app`; staging `pubky-marketplace-staging-k7uzbc06f`.
-- DM `sent_at` wire format shipped 2026-09-09 as `c694b192` on `pr25-ux`. The Kimi audit was SHIP with four non-gating findings, all fixed in `c694b192`: VRT fixture drift, a tightened emit-schema maximum, legacy ISO rows normalized on read, and a Paykit test asserting the normalized value. Production deploy was `pubky-marketplace-production-371i2l41j`, staging `gm8z9ndvp`; it was then superseded by the `4607a692c` deploy above.
-- Shop shipped two UX fixes on 2026-09-09 at `e6ffcf6e` on `marketplace/pr25-ux`: `/` now redirects to `/marketplace` (production `pubky-marketplace-production-fg6z17e36`, alias `shop.pubky.app`; staging `pubky-marketplace-staging-1iabskwrx`), and Bitcoin auto-hides unless both `bitcoin_available` and `bitcoin_offer_available` are true. The auto-hide is hop 3 of a 3-hop contract: paykit-server publication on `/health/ready` is in progress (hop 1), while marketplace-service consumption/caching and payment-config `503` avoidance during Paykit outages is implemented but under review (hop 2); both are undeployed, so an omitted field defaults to `true` and behavior is unchanged. Fixture commit `71c2ece6` was necessary because VRT mocks bypass the Zod default; run the marketplace VRT subset when touching the payment schema.
+- Static toast copy rule shipped in production 2026-09-09 as part of merge `4607a692c` on `marketplace/pr25-ux`. Opus round 1 was FIX-FIRST because three tests still asserted the old raw-message behavior; drop refusals were not classified. Round 2 was SHIP. The non-gating cleanup batch centralized the static fallback in `src/libs/commerce/failure-messages.ts`, removed dead `generic`, added real AppError sentinels, and added preservation tests (`148db15ed`, `91e041c9c`, deployed after the `4607a692c` build); parent proof recorded TSC 0, ESLint 0, and 806 unit tests. Deploys: `<production deployment>` / `shop.pubky.app`; staging `<staging deployment>`.
+- DM `sent_at` wire format shipped 2026-09-09 as `c694b192` on `pr25-ux`. The Kimi audit was SHIP with four non-gating findings, all fixed in `c694b192`: VRT fixture drift, a tightened emit-schema maximum, legacy ISO rows normalized on read, and a Paykit test asserting the normalized value. Production deploy was `<production deployment>`, staging `gm8z9ndvp`; it was then superseded by the `4607a692c` deploy above.
+- Shop shipped two UX fixes on 2026-09-09 at `e6ffcf6e` on `marketplace/pr25-ux`: `/` now redirects to `/marketplace` (production `<production deployment>`, alias `shop.pubky.app`; staging `<staging deployment>`), and Bitcoin auto-hides unless both `bitcoin_available` and `bitcoin_offer_available` are true. The auto-hide is hop 3 of a 3-hop contract: paykit-server publication on `/health/ready` is in progress (hop 1), while marketplace-service consumption/caching and payment-config `503` avoidance during Paykit outages is implemented but under review (hop 2); both are undeployed, so an omitted field defaults to `true` and behavior is unchanged. Fixture commit `71c2ece6` was necessary because VRT mocks bypass the Zod default; run the marketplace VRT subset when touching the payment schema.
 
 **Known gaps**
 
@@ -76,7 +76,7 @@ Reusable packet for reviewing Shop as a Vibes experiment. Fill with repository o
 
 **Live URLs**
 
-- Client `383b6d3e` (Wave 7) is on `https://shop.pubky.app` via Vercel project `pubky-marketplace-production`. Staging Shop is `https://pubky-marketplace-staging.vercel.app`. marketplace-service `462ed54` on `main` is deployed to staging and production; production `/health` reports `pickup_available:true`, while staging reports false because it is sandbox.
+- Client `383b6d3e` (Wave 7) is on `https://shop.pubky.app` from the production Shop deployment. Staging Shop is `<staging Shop URL>`. marketplace-service `462ed54` on `main` is deployed to staging and production; production `/health` reports `pickup_available:true`, while staging reports false because it is sandbox.
 
 **Single-approval sign-in**
 
@@ -84,8 +84,8 @@ Reusable packet for reviewing Shop as a Vibes experiment. Fill with repository o
 - Commits: feature `c213ae9f`; tests `454828c5`; fixer round `454828c5..3e737732` (8 commits); cleanup batch `e482e603..8881f90f` (5 commits); N-1 follow-up `ac593082`.
 - Review record: round 1 Kimi SHIP on the security lens plus Opus FIX-FIRST (5 P1, 4 P2, 3 P3); all findings were closed; round 2 Kimi SHIP plus Opus SHIP; cleanup batch Opus SHIP; N-1 fix Opus SHIP.
 - Pinned behavior: marketplace outage does not block sign-in; bridged and direct ceremonies share one single-flight guard; joined dialogs show that approval is already in progress; closing a joined dialog does not cancel the owner; wrong-identity step-up is rejected before the marketplace POST and preserves the signed-in user's valid bearer; and every uncommitted sign-in failure removes any newly minted bearer from memory, `localStorage`, and the commerce store. The marketplace capability string is echoed but not stored; see the marketplace-service record.
-- Deployments: staging `pubky-marketplace-staging.vercel.app` at 19:33 on 2026-09-08; production `shop.pubky.app` and `pubky-marketplace-production.vercel.app` at 19:37; the `ac593082` N-1 fix deployed 2026-09-08 evening.
-- Process gap: between 12:53 and 19:37, the P1 credential-leak fix and session-fixation fix were pushed to GitHub but not deployed to Vercel; production continued serving the 07:47 build (`383b6d3e`). Push is not deploy: every merge to `pr25-ux` that changes `src/` must be followed by `vercel --prod --yes` (or `npx vercel --prod --yes`) from `mp-ux` (staging) and `mp-prod-deploy` (production), with the deploy timestamp recorded.
+- Deployments: staging `<staging Shop host>` at 19:33 on 2026-09-08; production `shop.pubky.app` and `<production Shop host>` at 19:37; the `ac593082` N-1 fix deployed 2026-09-08 evening.
+- Process gap: between 12:53 and 19:37, the P1 credential-leak fix and session-fixation fix were pushed to GitHub but not deployed; production continued serving the 07:47 build (`383b6d3e`). Push is not deploy: every merge to `pr25-ux` that changes `src/` must be followed by a deploy to both staging and production, with the deploy timestamp recorded.
 
 **Known gaps**
 
@@ -103,7 +103,7 @@ Reusable packet for reviewing Shop as a Vibes experiment. Fill with repository o
 
 **What broke**
 
-- Wave 4 cutover took `shop.pubky.app` offline for about two hours: Vercel minted a new TXT verification token after detach, and a second attach invalidated the published record (`790ca03e`).
+- Wave 4 cutover took `shop.pubky.app` offline for about two hours: the hosting provider minted a new DNS verification token after detach, and a second attach invalidated the published record (`790ca03e`).
 - Wave 7.1 required one fix round: key rotation could stall past 100 rows; a reveal without a pinned snapshot stamped the withdrawal window; and the confirm path could panic.
 - Wave 7.2a required one fix round because a malformed-response excerpt could reach logs/Sentry. A later pass (`9e18155c`) made body excerpts opt-in for all `parseResponseOrThrow` callers and closed a session-mint salvage hole before it shipped. Wave 7.2b required two: fixtures and seed data marked auctions as pickup, a defect the old VRT tolerance hid; the listing form was not capability-gated; and the create-mode editor was unreachable. Pickup refusal toasts were later mapped to static copy (`7561200b`) so a refusal cannot render the address.
 
@@ -125,7 +125,7 @@ Reusable packet for reviewing Shop as a Vibes experiment. Fill with repository o
 
 **Live URLs**
 
-- Unchanged from 2026-09-06: production alias `https://pubky-marketplace-production.vercel.app`; `https://shop.pubky.app` still staging until cutover; marketplace-service production `https://marketplace-service-production-ce23.up.railway.app`; Nexus production `https://nexusd-production-95a0.up.railway.app`. Money rails remain `locks-paykit` testnet.
+- Unchanged from 2026-09-06: production alias `<production Shop URL>`; `https://shop.pubky.app` still staging until cutover; marketplace-service production `<production service URL>`; Nexus production `<previous marketplace Nexus URL>`. Money rails remain `locks-paykit` testnet.
 
 **What users did (server-side facts only)**
 
@@ -154,25 +154,22 @@ Reusable packet for reviewing Shop as a Vibes experiment. Fill with repository o
 **Open Decisions**
 
 - Wave 7 local pickup (owner-recorded, design in progress): buyer may cancel if pickup terms change after payment; seller may delete details; one meeting point per order; pickup off without the encryption key; either party confirms handover, no automatic delivery; no pickup details on sandbox deployments; returns re-choose pickup or shipping with optional seller label.
-- Mainnet money, PayPal real purchase, Shippo live API, production `/priv` durability, messaging backup key, upstream bridge / TXT / cutover, Igor's $8.76 overpayment: still open as of 2026-09-06.
+- Mainnet money, PayPal real purchase, Shippo live API, production `/priv` durability, messaging backup key, upstream bridge / TXT / cutover, the $8.76 overpayment: still open as of 2026-09-06.
 
 ## Week Ending 2026-09-06
 
 **Live URLs**
 
-- Public production alias: `https://pubky-marketplace-production.vercel.app` on Vercel project
-  `pubky-marketplace-production`, deployment `EAqqVuQq1BkstYJwwciMS3C981tv`.
-- Production app target after cutover: `https://shop.pubky.app`; currently attached to Vercel staging project
-  `pubky-marketplace-staging`, deployment `3tPXUhr9Zb5voJqjYRuuGfyz6fZP`.
-- Production marketplace service: `https://marketplace-service-production-ce23.up.railway.app`.
-- Production marketplace Nexus: `https://nexusd-production-95a0.up.railway.app`.
+- Public production alias: `<production Shop URL>`.
+- Production app target after cutover: `https://shop.pubky.app`; currently attached to the staging deployment.
+- Production marketplace service: `<production service URL>`.
+- Production marketplace Nexus: `<previous marketplace Nexus URL>`.
 - Existing deployed staging app: `https://shop.pubky.app` before cutover.
-- Payment rails are reused from `pubky-marketplace-staging`; money rails stay testnet/regtest. Wave 6 client
-  (`6554dd1f..420856c1`) was deployed 2026-09-06 17:52 to `pubky-marketplace-production.vercel.app`,
+- Payment rails are reused from the staging stack; money rails stay testnet/regtest. Wave 6 client
+  (`6554dd1f..420856c1`) was deployed 2026-09-06 17:52 to `<production Shop host>`,
   `shop.pubky.app`, and `shop-rehearsal.pubky.app`; all three remain `locks-paykit`.
-- Bridge rehearsal: `bridge.pubky.app` for Vercel project `pubky-app-bridge-rehearsal` and
-  `shop-rehearsal.pubky.app` for Vercel project `shop-bridge-rehearsal`; both are attached but pending
-  `_vercel.pubky.app` TXT verification.
+- Bridge rehearsal: `bridge.pubky.app` and `shop-rehearsal.pubky.app`; both are attached but pending DNS
+  verification.
 
 **What users did (server-side facts only)**
 
@@ -194,7 +191,7 @@ Reusable packet for reviewing Shop as a Vibes experiment. Fill with repository o
 **What broke**
 
 - Production client env initially set `PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE=unavailable`; it was corrected to `locks-paykit` and redeployed on 2026-09-05.
-- Upstream shared sign-in remained blocked by PR review state in the plan narrative, though the local plan todos later record #2483/#2484 P1s as fixed at PR heads and awaiting upstream re-review. Same-site bridge rehearsal is deployed, but the rehearsal domains still need `_vercel.pubky.app` TXT records because the apex belongs to another Vercel team.
+- Upstream shared sign-in remained blocked by PR review state in the plan narrative, though the local plan todos later record #2483/#2484 P1s as fixed at PR heads and awaiting upstream re-review. Same-site bridge rehearsal is deployed, but the rehearsal domains still need DNS verification records because the apex belongs to another hosting account.
 - The VRT ledger remained 143/144 because Messaging firefox-mobile had a load-order flake that passed standalone.
 - Shippo labels remained unproven against Shippo's live API.
 - The fiat-verifier return-origin shape was inconsistent in the plan: the todos say per-request `return_origin` is being implemented, while Wave 1 text still describes the single-valued redirect as a staging limitation unless support exists.
@@ -234,7 +231,7 @@ Reusable packet for reviewing Shop as a Vibes experiment. Fill with repository o
 - Production `/priv` durability: still open. Needs T+1h, T+1d, and T+7d production cadence.
 - Messaging backup key: still open. The ledger says the multi-device backup-key decision is unmade.
 - Upstream bridge deployment, rehearsal TXT verification, and `shop.pubky.app` cutover: still open.
-- Igor's $8.76 overpayment: user call.
+- The $8.76 overpayment: user call.
 
 ## Sources
 

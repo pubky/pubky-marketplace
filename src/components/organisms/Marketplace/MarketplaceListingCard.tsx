@@ -18,7 +18,7 @@ import { formatCommerceCondition, formatCommerceMoney } from '@/libs/commerce/fo
 import { cn } from '@/libs/utils/utils';
 import { MarketplaceCategoryIcon } from '@/molecules/Marketplace/MarketplaceCategoryIcon';
 import { MarketplaceFulfillmentBadge } from '@/molecules/MarketplaceFulfillmentBadge/MarketplaceFulfillmentBadge';
-import { MarketplaceStarRating } from '@/molecules/MarketplaceStarRating/MarketplaceStarRating';
+import { MarketplaceSnippetRating } from '@/molecules/MarketplaceSnippetRating/MarketplaceSnippetRating';
 import { MarketplaceCardPrice } from '@/organisms/Marketplace/MarketplaceCardPrice';
 import type { CommerceLayout } from '@/stores/commerce/commerce.types';
 
@@ -190,13 +190,8 @@ export function MarketplaceListingCard({ listing, shopName, layout = 'grid', ind
             <Typography as="p" className="truncate text-base text-secondary-foreground">
               {shopName ?? `${listing.sellerId.slice(0, 8)}…`}
             </Typography>
-            {listing.reputation !== null && listing.reputation.count > 0 ? (
-              <MarketplaceStarRating
-                rating={listing.reputation.avg}
-                count={listing.reputation.count}
-                verifiedCount={listing.reputation.verifiedCount}
-                size="sm"
-              />
+            {listing.listingReputation !== null && listing.listingReputation.count > 0 ? (
+              <MarketplaceSnippetRating snippet={listing.listingReputation} />
             ) : (
               <Typography as="p" className="text-xs text-secondary-foreground">
                 No rating yet

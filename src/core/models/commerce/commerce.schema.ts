@@ -124,6 +124,48 @@ export interface CommerceReputationSnippet {
   avg: number;
   count: number;
   verifiedCount: number;
+  /**
+   * Counted reviews per attestor pubky (counting rules v2). Absent when the
+   * index predates trust buckets, and on entries cached before the model
+   * carried them: the caller then has no counted figures to show.
+   */
+  buckets?: Record<string, CommerceReputationBucket>;
+  /** Reviews whose attestation did not verify. Absent with `buckets`. */
+  unverifiedCount?: number;
+  /**
+   * The index's exact figure over the attestor windows a listing details
+   * request named (`attestors=`). Only a single listing read carries it;
+   * catalog snippets never do.
+   */
+  scoped?: CommerceReputationBucket;
+}
+
+/**
+ * The counting rules v2 figures of one set of counted reviews: one
+ * attestor's reviews of a scope (a trust bucket), or the index's exact
+ * figure for a set of attestor windows. Every field is a sum or a count, so
+ * buckets add up; summing buckets counts a buyer once per attestor.
+ *
+ * - item rating = `sumBuyerMeans / buyers` (mean over buyers of each
+ *   buyer's mean overall stars)
+ * - seller rating (RV2) = `sumSellerBuyerMeans / sellerBuyers`, seller scope
+ *   only
+ */
+export interface CommerceReputationBucket {
+  /** Distinct attested orders. */
+  orders: number;
+  buyers: number;
+  sumBuyerMeans: number;
+  weightedSum: number;
+  weightTotal: number;
+  /** Overall-star histogram of the counted reviews; index 0 holds 1-star counts. */
+  histogram: [number, number, number, number, number];
+  /** Earliest and latest attestation `iat` (seconds); null only when nothing counts. */
+  firstIat: number | null;
+  lastIat: number | null;
+  /** Buyers with a seller rating, and the sum of their mean seller scores. Null outside the seller scope. */
+  sellerBuyers: number | null;
+  sumSellerBuyerMeans: number | null;
 }
 
 /**
@@ -271,7 +313,7 @@ export const commerceListingProjectionTableSchema = [
  * "the embedded attestation verifiably covers this review".
  */
 export interface CommerceReviewModelSchema {
-  /** `${owner_id}:${review_id}` — one living review per (listing, subject, role). */
+  /** `${owner_id}:${review_id}` — one review per (listing, subject, role, order). */
   id: string;
   owner_id: string;
   review_id: string;
@@ -332,11 +374,13 @@ export const commerceReviewResponseTableSchema = ['&id', 'owner_id', 'review_id'
  * Ed25519 signature verified against `attestorId`, and its claims bind to
  * this review" — a cryptographic fact recorded at ingest. Whether
  * `attestorId` is a TRUSTED attestor is this client's policy (see
- * `isTrustedMarketplaceAttestor`); unverified reviews render labeled, never
+ * `indexedReviewTrustedAttestor`); unverified reviews render labeled, never
  * hidden (ratified D5).
  */
 export interface CommerceIndexedReview {
   reviewId: string;
+  /** The review record's canonical URI on the reviewer's homeserver. */
+  uri: string;
   reviewerId: string;
   subjectId: string;
   listingOwnerId: string;
@@ -346,11 +390,31 @@ export interface CommerceIndexedReview {
   text: string;
   verified: boolean;
   attestorId: string | null;
+  /**
+   * The attestation's `iat` (seconds), which the trust window is checked
+   * against. Null when the review is unverified or the index has not read
+   * it yet; absent when the index predates serving it.
+   */
+  iat?: number | null;
+  /** The attestation's price weight (1–5); null or absent exactly when `iat` is. */
+  priceWeight?: number | null;
   editedLate: boolean;
   createdAt: string;
   updatedAt: string;
   revision: number;
+  /** The index's moderation of the review; null when it is not moderated. */
+  moderation: CommerceIndexedReviewModeration | null;
   response: CommerceIndexedReviewResponse | null;
+}
+
+/**
+ * Index moderation of a review. `text_hidden` keeps the rating and hides the
+ * text; `excluded` (fraud) also leaves the review out of every aggregate.
+ * `reason` is the moderator's label.
+ */
+export interface CommerceIndexedReviewModeration {
+  state: 'text_hidden' | 'excluded';
+  reason: string;
 }
 
 /** The subject's response joined beneath an indexed review (ratified D7). */
@@ -377,6 +441,15 @@ export interface CommerceReputationSummary {
   editedLateCount: number;
   attestors: Record<string, number>;
   lastReviewedAt: string | null;
+  /** Counted reviews per attestor pubky; absent when the index predates trust buckets. */
+  buckets?: Record<string, CommerceReputationBucket>;
+  unverifiedCount?: number;
+  /**
+   * The index's exact figure over the trusted attestor windows the request
+   * named (`attestors=`), one buyer counted once across attestors. Absent
+   * when the request named none or the index predates the parameter.
+   */
+  scoped?: CommerceReputationBucket;
 }
 
 export type CommerceSyncJobOperation = 'publish' | 'update' | 'remove';

@@ -18,7 +18,7 @@ export const PASSPORT_CALLBACK_SCRIPT = `(function () {
   if (status && known) {
     status.textContent =
       outcome === 'success'
-        ? 'Approved in Pubky Passport. Return to Pubky Shop to continue.'
+        ? 'Approved in Pubky Passport. Return to Pubky Market to continue.'
         : outcome === 'cancel'
           ? 'Cancelled in Pubky Passport.'
           : 'Pubky Passport could not approve the request.';
@@ -52,8 +52,8 @@ a{color:oklch(0.928 0.23 123.978);font-weight:600}
 </head>
 <body>
 <main>
-<p id="passport-return-status">You can close this window and return to Pubky Shop.</p>
-<p><a href="${returnPath}">Return to Pubky Shop</a></p>
+<p id="passport-return-status">You can close this window and return to Pubky Market.</p>
+<p><a href="${returnPath}">Return to Pubky Market</a></p>
 </main>
 <script>${PASSPORT_CALLBACK_SCRIPT}</script>
 </body>

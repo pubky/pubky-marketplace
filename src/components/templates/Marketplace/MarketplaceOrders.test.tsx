@@ -378,6 +378,8 @@ describe('MarketplaceOrders tabs', () => {
     expect(screen.getByTestId('order-refund-record')).toHaveTextContent(
       'Refunded in full (Items ₿1,000 · Shipping ₿0 · Payment code ₿255 = Total ₿1,255). Reference: txid-canary-refund',
     );
+    // Hashes and addresses break anywhere, so the line can't make the page scroll sideways on a phone.
+    expect(screen.getByTestId('order-refund-record')).toHaveClass('[overflow-wrap:anywhere]');
   });
 
   it('explains a cancelled PayPal reversal on the reopened order', () => {
@@ -479,14 +481,16 @@ describe('MarketplaceOrders tabs', () => {
     expect(screen.getAllByTestId('payment-status')).toHaveLength(3);
   });
 
-  it('shows the orders empty state before marketplace approval', () => {
+  it('asks to approve the marketplace instead of saying there are no orders', () => {
     ordersState.needsSession = true;
     ordersState.error = 'A marketplace session is required.';
 
     render(<MarketplaceOrders />);
 
-    expect(screen.getByText('No orders yet')).toBeInTheDocument();
-    expect(screen.getByText('Your purchases and sales will appear here.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Approve the marketplace to see your orders' })).toBeInTheDocument();
+    expect(screen.getByText('Your purchases and sales show here after one approval.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(screen.queryByText('No orders yet')).not.toBeInTheDocument();
   });
 
   it('shows reserved checkout copy on Continue checkout, not a payment deadline on Orders', () => {
@@ -1107,8 +1111,8 @@ describe('MarketplaceOrders tabs', () => {
   // Quote values are the live capture of 2026-09-14 (`orders.wire.ts`); the
   // lock expired at 2026-09-13T20:15:09.050Z, so the clock is pinned on each
   // side of that instant instead of trusting the wall clock.
-  const lockedQuoteOrder = () =>
-    orderView('paid', 'Locked quote boots', 'seller', {
+  const lockedQuoteOrder = (state: 'paid' | 'pending_payment' = 'paid') =>
+    orderView(state, 'Locked quote boots', 'seller', {
       paymentMethod: 'bitcoin',
       bitcoinQuote: {
         quotedSats: 2_588,
@@ -1134,9 +1138,9 @@ describe('MarketplaceOrders tabs', () => {
     expect(screen.queryByText(/≈ ₿/)).not.toBeInTheDocument();
   });
 
-  it('marks the locked Bitcoin quote expired once the lock has lapsed', async () => {
+  it('marks the locked Bitcoin quote expired once the lock has lapsed on an unpaid order', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-13T20:15:09.051Z'));
-    ordersState.orders = [lockedQuoteOrder()];
+    ordersState.orders = [lockedQuoteOrder('pending_payment')];
 
     render(<MarketplaceOrders />);
     await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
@@ -1144,6 +1148,17 @@ describe('MarketplaceOrders tabs', () => {
     expect(screen.getByText(/Locked Bitcoin amount: ₿2,588/)).toBeInTheDocument();
     expect(screen.getByText(/ · Bitcoin quote expired/)).toBeInTheDocument();
     expect(screen.queryByText(/≈ ₿/)).not.toBeInTheDocument();
+  });
+
+  it('keeps a paid order final once its quote window has passed (#364)', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-13T20:15:09.051Z'));
+    ordersState.orders = [lockedQuoteOrder('paid')];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
+
+    expect(screen.getByText(/Locked Bitcoin amount: ₿2,588/)).toBeInTheDocument();
+    expect(screen.queryByText(/Bitcoin quote expired/)).not.toBeInTheDocument();
   });
 
   it('shows items, shipping, and the payment code on the order and its receipt', async () => {
@@ -1363,6 +1378,22 @@ describe('MarketplaceOrders digital cards (digital delivery design §3 "After pa
     expect(within(card).getByText(/Completes automatically after the return window/)).toBeInTheDocument();
     expect(within(card).queryByText('Delivered · ready to download')).not.toBeInTheDocument();
   });
+
+  it('says a delivered final-sale order completes after its auto-complete period, with no return clause', () => {
+    ordersState.orders = [
+      orderView('delivered', 'Final boots', 'buyer', {
+        nextActor: 'none',
+        returnPolicy: { acceptsReturns: false, returnWindowDays: null },
+        autoCompleteDays: 7,
+      }),
+    ];
+
+    render(<MarketplaceOrders />);
+
+    const card = screen.getByText(/Final boots/).closest('[data-slot="card"]') as HTMLElement;
+    expect(within(card).getByText('Completes automatically 7 days after delivery.')).toBeInTheDocument();
+    expect(within(card).queryByText(/unless a return is requested/)).not.toBeInTheDocument();
+  });
 });
 
 describe('MarketplaceOrders seen checkpoint', () => {
@@ -1422,6 +1453,20 @@ describe('MarketplaceOrders Activity link to an order no section lists', () => {
     expect(card).not.toBeNull();
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
     expect(scrollIntoView.mock.contexts.some((element) => element === card)).toBe(true);
+  });
+
+  it('scrolls to the linked order once, not again on each orders poll', async () => {
+    window.history.replaceState(null, '', '/marketplace/orders?order=test-unpaid-sold-lamp');
+
+    const view = render(<MarketplaceOrders />);
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+
+    // A poll hands back the same orders as new objects.
+    ordersState.orders = ordersState.orders.map((order) => ({ ...(order as object) }));
+    view.rerender(<MarketplaceOrders />);
+
+    await screen.findByTestId('marketplace-linked-order');
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the unpaid cancel out of the page without an Activity link', () => {
@@ -1495,6 +1540,17 @@ describe('MarketplaceOrders links shared before #292', () => {
     expect(window.location.pathname).toBe('/marketplace/orders');
     expect(window.location.hash).toBe('');
     expect(routerReplace).not.toHaveBeenCalled();
+  });
+
+  it('stays on an unpaid order opened from its own checkout card (#363)', async () => {
+    window.history.replaceState(null, '', '/marketplace/orders?order=test-unpaid-offer-boots&view=order');
+
+    render(<MarketplaceOrders />);
+
+    expect((await screen.findAllByText('Unpaid offer boots')).length).toBeGreaterThan(0);
+    expect(routerReplace).not.toHaveBeenCalled();
+    await waitFor(() => expect(Element.prototype.scrollIntoView).toHaveBeenCalled());
+    expect(document.getElementById('order-test-unpaid-offer-boots')).not.toBeNull();
   });
 
   // Next appends the fragment of the document load to every later in-app visit to Orders,
