@@ -35,6 +35,7 @@ describe('Chat inbox', () => {
     render(<Chat />);
 
     const nav = screen.getByRole('navigation', { name: 'Market sections' });
+    expect(screen.getByRole('link', { name: 'Browse market' })).toBeInTheDocument();
     const inbox = document.querySelector('[data-surface="chat-inbox"]');
     expect(inbox).not.toBeNull();
     // The bar comes before the inbox heading, as on every other Market tab.
@@ -47,6 +48,8 @@ describe('Chat inbox', () => {
       render(<Chat />);
 
       expect(screen.queryByRole('navigation', { name: 'Market sections' })).not.toBeInTheDocument();
+      // The empty inbox's Browse market link would lead to the same unavailable page.
+      expect(screen.queryByRole('link', { name: 'Browse market' })).not.toBeInTheDocument();
       expect(document.querySelector('[data-surface="chat-inbox"]')).not.toBeNull();
     } finally {
       commerce.mode = 'transaction-service';
