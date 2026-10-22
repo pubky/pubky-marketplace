@@ -3,10 +3,10 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import type { UseMarketplaceDropClaimResult } from '@/hooks/useMarketplaceDropClaim/useMarketplaceDropClaim';
 import type { CommerceDropRecord } from '@/libs/commerce/marketplace-records';
 import {
+  BUYING_FROM_BLOCKED_SHOP_MESSAGE,
   COMMERCE_BLOCKED_MESSAGE,
   COMMERCE_UNKNOWN_REGION_MESSAGE,
   PAID_UNLOCKS_BLOCKED_MESSAGE,
-  SELLING_BLOCKED_COUNTRY_MESSAGE,
 } from '@/libs/commerce/region-modes';
 import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
 import { useClientRegionStore } from '@/stores/client-region/client-region.store';
@@ -167,7 +167,7 @@ describe('DropClaimPanel under the region modes', () => {
     stubClientRegion('CH');
     renderPanel({ sellerStatus: 'private', location: { countryCode: 'US' } });
 
-    expect(await screen.findByTestId('drop-claim-blocked')).toHaveTextContent(SELLING_BLOCKED_COUNTRY_MESSAGE);
+    expect(await screen.findByTestId('drop-claim-blocked')).toHaveTextContent(BUYING_FROM_BLOCKED_SHOP_MESSAGE);
     expect(screen.getByRole('button', { name: 'Claim one' })).toBeDisabled();
   });
 

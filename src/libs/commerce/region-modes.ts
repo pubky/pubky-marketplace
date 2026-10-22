@@ -198,6 +198,8 @@ export const SELLING_BLOCKED_MESSAGE = "Selling isn't available in your region y
 export const COMMERCE_UNKNOWN_REGION_MESSAGE = "We can't tell where you are, so buying and selling are paused.";
 export const PAID_UNLOCKS_BLOCKED_MESSAGE = "Paid unlocks aren't available in your region yet.";
 export const SELLING_BLOCKED_COUNTRY_MESSAGE = "Selling isn't available from this country yet.";
+/** The buyer's side of a shop in a blocked country: the line says buying, not selling. */
+export const BUYING_FROM_BLOCKED_SHOP_MESSAGE = "Buying from this shop isn't available yet.";
 
 export const COMMERCE_BLOCKED_INFO_LABEL = 'About this limit';
 export const COMMERCE_BLOCKED_INFO = 'You can still browse the Market. Everything else in Pubky works as usual.';
@@ -205,6 +207,13 @@ export const COMMERCE_UNKNOWN_REGION_INFO =
   "Buying and selling depend on where you are, and we couldn't read your location. You can still browse the Market. Everything else in Pubky works as usual.";
 
 export const BACK_TO_MARKET_LABEL = 'Back to the Market';
+
+/** Said under the shop country field while the visitor's region can't be shown to be outside the block. */
+export const SHOP_COUNTRY_LOCKED_MESSAGE =
+  'You can change your shop country only from a region where selling is offered.';
+export const SHOP_COUNTRY_LOCKED_UNKNOWN_MESSAGE =
+  "We can't tell where you are, so your shop country can't be changed right now.";
+export const SHOP_COUNTRY_CHECKING_MESSAGE = 'Checking where you are before your shop country can be changed.';
 
 /** Said after the selling line when the seller's own shop country is the reason, with a link to the field. */
 export const SELLING_MOVED_PREFIX = "If you've moved, ";

@@ -3,11 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { DIGITAL_REGION_MESSAGE, REGION_UNAVAILABLE_MESSAGE } from '@/libs/commerce/eu-region';
 import {
+  BUYING_FROM_BLOCKED_SHOP_MESSAGE,
   COMMERCE_BLOCKED_INFO,
   COMMERCE_BLOCKED_MESSAGE,
   COMMERCE_UNKNOWN_REGION_MESSAGE,
   PAID_UNLOCKS_BLOCKED_MESSAGE,
-  SELLING_BLOCKED_COUNTRY_MESSAGE,
 } from '@/libs/commerce/region-modes';
 import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
 import { resetRegionState, setRegionModes, stubClientRegion } from '@/test-utils/region-modes';
@@ -96,7 +96,7 @@ describe('useRegionAvailability under the region modes', () => {
     stubClientRegion('CH');
     const { result } = run({ shop: { sellerStatus: 'private', location: { countryCode: 'US' } } });
     await waitFor(() => expect(result.current.blockedNotice).not.toBeNull());
-    expect(result.current.blockedNotice?.message).toBe(SELLING_BLOCKED_COUNTRY_MESSAGE);
+    expect(result.current.blockedNotice?.message).toBe(BUYING_FROM_BLOCKED_SHOP_MESSAGE);
   });
 
   it('does not block the seller looking at their own listing for their shop country', async () => {

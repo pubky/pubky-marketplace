@@ -12,7 +12,7 @@ import { MarketplaceMyShop } from './MarketplaceMyShop';
 
 const LAUNCH = 'EU=blocked,GB=blocked,US=blocked';
 
-const view = vi.hoisted(() => ({ shopCountry: null as string | null, loading: false }));
+const view = vi.hoisted(() => ({ shopCountry: null as string | null, loading: false, countryLocked: false }));
 
 const imageSlot = {
   previewUrl: null,
@@ -60,6 +60,8 @@ vi.mock('@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings', () => (
     isSaving: false,
     hasShop: true,
     countryBlocked: false,
+    countryLocked: view.countryLocked,
+    countryLockedMessage: view.countryLocked ? 'The country is locked.' : null,
     avatar: imageSlot,
     banner: imageSlot,
     submit: vi.fn(async () => false),
@@ -70,6 +72,7 @@ beforeEach(() => {
   resetRegionState();
   view.shopCountry = null;
   view.loading = false;
+  view.countryLocked = false;
   window.history.replaceState(null, '', '/');
 });
 afterEach(() => {
@@ -101,6 +104,20 @@ describe('My storefront in a blocked region', () => {
     expect(notice).toHaveTextContent(SELLING_BLOCKED_MESSAGE);
     expect(screen.getByTestId('selling-unavailable-hint')).toHaveTextContent(SELLING_PAUSED_NOTE);
     expect(screen.getByLabelText('Country')).toBeEnabled();
+  });
+
+  it('does not point a blocked-region seller with a blocked shop country at a country field they cannot change', async () => {
+    setRegionModes(LAUNCH);
+    stubClientRegion('US');
+    view.shopCountry = 'GB';
+    view.countryLocked = true;
+    render(<MarketplaceMyShop />);
+
+    const notice = await screen.findByTestId('storefront-selling-unavailable');
+    expect(notice).toHaveTextContent(SELLING_BLOCKED_MESSAGE);
+    expect(screen.queryByTestId('selling-unavailable-hint')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Country')).toBeDisabled();
+    expect(screen.getByTestId('shop-settings-country-locked')).toHaveTextContent('The country is locked.');
   });
 
   it('says nothing for a seller from an open country with an open shop country', async () => {

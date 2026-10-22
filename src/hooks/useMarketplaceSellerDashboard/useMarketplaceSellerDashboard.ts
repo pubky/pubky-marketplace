@@ -13,6 +13,7 @@ import { useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplac
 import { cacheProjection } from '@/hooks/useMarketplaceProjection/useMarketplaceProjection';
 import { useMeasurementSystem } from '@/hooks/useMeasurementSystem/useMeasurementSystem';
 import { isAuctionSaleEnded } from '@/libs/commerce/auction-phase';
+import { isLiveAuction } from '@/libs/commerce/auction-removal';
 import {
   contentfulListingDrafts,
   formatListingDraftAge,
@@ -126,7 +127,11 @@ export function useMarketplaceSellerDashboard() {
   const revenue = sumMoneyByAsset(revenueOrders.map(({ order }) => ({ money: order.total, quantity: 1 })));
 
   const updateListingState = async (listingIds: string[], state: 'active' | 'paused') => {
-    const selected = (localListings ?? []).filter(({ id }) => listingIds.includes(id));
+    // Pausing pulls the terms bidders acted on, which the listing page refuses for a live auction too.
+    const selected = (localListings ?? []).filter(
+      ({ id, record }) => listingIds.includes(id) && !(state === 'paused' && isLiveAuction(record, Date.now())),
+    );
+    if (selected.length === 0) return false;
     if (state === 'active') {
       // Read at call time: the dashboard calls this straight from the session
       // dialog's onConnected, before a re-render would refresh a selector value.

@@ -2,11 +2,11 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  BUYING_FROM_BLOCKED_SHOP_MESSAGE,
   COMMERCE_BLOCKED_INFO,
   COMMERCE_BLOCKED_MESSAGE,
   COMMERCE_UNKNOWN_REGION_MESSAGE,
   PAID_UNLOCKS_BLOCKED_MESSAGE,
-  SELLING_BLOCKED_COUNTRY_MESSAGE,
 } from '@/libs/commerce/region-modes';
 import type { CommerceReputationSnippet } from '@/models/commerce/commerce.schema';
 import type { MarketplaceOffer } from '@/services/marketplace/marketplace';
@@ -372,7 +372,9 @@ describe('MarketplaceListing under the region modes', () => {
     view.listing = acceptingOffers();
     renderListing();
 
-    expect(await screen.findByTestId('marketplace-listing-blocked')).toHaveTextContent(SELLING_BLOCKED_COUNTRY_MESSAGE);
+    expect(await screen.findByTestId('marketplace-listing-blocked')).toHaveTextContent(
+      BUYING_FROM_BLOCKED_SHOP_MESSAGE,
+    );
     expect(buyButton()).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Make offer' })).toBeDisabled();
   });

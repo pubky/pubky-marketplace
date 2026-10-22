@@ -2,9 +2,9 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import {
+  BUYING_FROM_BLOCKED_SHOP_MESSAGE,
   COMMERCE_BLOCKED_MESSAGE,
   COMMERCE_UNKNOWN_REGION_MESSAGE,
-  SELLING_BLOCKED_COUNTRY_MESSAGE,
 } from '@/libs/commerce/region-modes';
 import { useClientRegionStore } from '@/stores/client-region/client-region.store';
 import { setHeavySuiteBudgets } from '@/test-utils/load-budget';
@@ -532,7 +532,7 @@ describe('MarketplaceCheckout under the region modes', () => {
     render(<MarketplaceCheckout />);
 
     expect(await screen.findByTestId('marketplace-checkout-blocked')).toHaveTextContent(
-      SELLING_BLOCKED_COUNTRY_MESSAGE,
+      BUYING_FROM_BLOCKED_SHOP_MESSAGE,
     );
     expect(paymentMethods()).not.toBeInTheDocument();
   });

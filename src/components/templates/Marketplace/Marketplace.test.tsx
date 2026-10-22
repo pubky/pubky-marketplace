@@ -1,14 +1,16 @@
 import { renderToString } from 'react-dom/server';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
 import {
   buildFeatureDiscoveryDeviceStorageKey,
   FEATURE_DISCOVERY_STORAGE_PREFIX,
   MARKETPLACE_PROMO_STORAGE_ID,
 } from '@/config/featureDiscovery';
+import { useClientRegionStore } from '@/stores/client-region/client-region.store';
 import { createCommerceShopFixture } from '@/test/fixtures/commerce/commerce';
+import { resetRegionState, setRegionModes, stubClientRegion } from '@/test-utils/region-modes';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { Marketplace } from './Marketplace';
 
@@ -323,6 +325,45 @@ describe('Marketplace', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Sell an item' }));
     expect(routerPush).toHaveBeenCalledWith(MARKETPLACE_ROUTES.SELL);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  describe('in a blocked region', () => {
+    const LAUNCH = 'EU=blocked,GB=blocked,US=blocked';
+
+    afterEach(() => resetRegionState());
+
+    it('offers no Sell an item to a visitor whose region is blocked', async () => {
+      setRegionModes(LAUNCH);
+      stubClientRegion('BG');
+      render(<Marketplace />);
+
+      await waitFor(() => expect(useClientRegionStore.getState().status).toBe('ready'));
+      expect(screen.queryByRole('button', { name: 'Sell an item' })).not.toBeInTheDocument();
+    });
+
+    it('offers no Sell an item to a visitor whose region cannot be told', async () => {
+      setRegionModes(LAUNCH);
+      stubClientRegion(null);
+      render(<Marketplace />);
+
+      await waitFor(() => expect(useClientRegionStore.getState().status).toBe('ready'));
+      expect(screen.queryByRole('button', { name: 'Sell an item' })).not.toBeInTheDocument();
+    });
+
+    it('keeps Sell an item for a visitor outside the block', async () => {
+      setRegionModes(LAUNCH);
+      stubClientRegion('CH');
+      render(<Marketplace />);
+
+      expect(await screen.findByRole('button', { name: 'Sell an item' })).toBeInTheDocument();
+    });
+
+    it('keeps Sell an item while no region is blocked', () => {
+      setRegionModes('none');
+      render(<Marketplace />);
+
+      expect(screen.getByRole('button', { name: 'Sell an item' })).toBeInTheDocument();
+    });
   });
 
   it('gates section navigation through the existing auth flow', async () => {

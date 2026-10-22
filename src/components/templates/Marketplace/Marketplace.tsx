@@ -26,6 +26,7 @@ import { useMarketplacePromoDismissal } from '@/hooks/useMarketplacePromoDismiss
 import { useMarketplaceSellingAccess } from '@/hooks/useMarketplaceSellingAccess/useMarketplaceSellingAccess';
 import { useMarketplaceWatchDetection } from '@/hooks/useMarketplaceWatchDetection/useMarketplaceWatchDetection';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
+import { useSellingAvailability } from '@/hooks/useSellingAvailability/useSellingAvailability';
 import type { CommerceShopRecord } from '@/libs/commerce/marketplace-records';
 import { paymentFilterUnavailableCopy } from '@/libs/commerce/payment-method-filter';
 import { removeMarketplacePromoPrepaintStyle } from '@/libs/commerce/promo-prepaint';
@@ -53,6 +54,7 @@ export function Marketplace({
   const router = useRouter();
   const { requireAuth } = useRequireAuth();
   const sellingAccess = useMarketplaceSellingAccess();
+  const selling = useSellingAvailability();
   const [showSellingApproval, setShowSellingApproval] = useState(false);
   const query = useCommerceStore((state) => state.query);
   const setQuery = useCommerceStore((state) => state.setQuery);
@@ -256,19 +258,21 @@ export function Marketplace({
               </div>
             }
             sellControl={
-              <Button
-                size="sm"
-                className="ml-auto rounded-full text-xs font-bold"
-                onClick={() =>
-                  requireAuth(() => {
-                    if (sellingAccess.checkAccess()) router.push(MARKETPLACE_ROUTES.SELL);
-                    else setShowSellingApproval(true);
-                  })
-                }
-              >
-                <Store className="size-4" />
-                Sell an item
-              </Button>
+              selling.held ? undefined : (
+                <Button
+                  size="sm"
+                  className="ml-auto rounded-full text-xs font-bold"
+                  onClick={() =>
+                    requireAuth(() => {
+                      if (sellingAccess.checkAccess()) router.push(MARKETPLACE_ROUTES.SELL);
+                      else setShowSellingApproval(true);
+                    })
+                  }
+                >
+                  <Store className="size-4" />
+                  Sell an item
+                </Button>
+              )
             }
           />
 

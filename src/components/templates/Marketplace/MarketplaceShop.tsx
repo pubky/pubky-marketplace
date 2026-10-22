@@ -23,6 +23,7 @@ import {
 } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { useMarketplaceMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { useSellerPaymentBadges } from '@/hooks/useSellerPaymentBadges/useSellerPaymentBadges';
+import { useSellingAvailability } from '@/hooks/useSellingAvailability/useSellingAvailability';
 import { sellerDeclaration } from '@/libs/commerce/eu-region';
 import { resolveSellerDeliveryTerms, sellerDeliveryTermsCopy } from '@/libs/commerce/seller-delivery-terms';
 import { formatShipsToCountries, shopShipsToCountries } from '@/libs/commerce/ships-to';
@@ -263,6 +264,9 @@ function ShopListingsGrid({
   shopName?: string;
   isOwner: boolean;
 }) {
+  const selling = useSellingAvailability();
+  // An owner who can't sell from here is not pointed at Sell: it only leads to the block page.
+  const canPublish = isOwner && !selling.held;
   if (listings.length === 0) {
     return (
       <div className="flex min-h-64 flex-col items-center justify-center rounded-md bg-card/40 p-6 text-center">
@@ -271,11 +275,15 @@ function ShopListingsGrid({
           {isOwner ? 'No listings yet' : 'No listings from this seller yet'}
         </Heading>
         <Typography as="p" className="mt-2 text-muted-foreground">
-          {isOwner ? 'Publish your first item to fill this page.' : 'Check back later or browse the marketplace.'}
+          {canPublish
+            ? 'Publish your first item to fill this page.'
+            : isOwner && selling.sellingMessage
+              ? selling.sellingMessage
+              : 'Check back later or browse the marketplace.'}
         </Typography>
         <Button asChild className="mt-6 rounded-full">
-          <Link href={isOwner ? MARKETPLACE_ROUTES.SELL : APP_ROUTES.MARKETPLACE} overrideDefaults>
-            {isOwner ? 'Sell an item' : 'Browse the market'}
+          <Link href={canPublish ? MARKETPLACE_ROUTES.SELL : APP_ROUTES.MARKETPLACE} overrideDefaults>
+            {canPublish ? 'Sell an item' : 'Browse the market'}
           </Link>
         </Button>
       </div>

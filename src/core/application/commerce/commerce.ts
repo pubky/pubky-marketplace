@@ -36,6 +36,12 @@ import {
   verifyOwnOrderReceipt,
   verifyOwnReviewAttestation,
 } from '@/libs/commerce/attestation';
+import { isAuctionSaleEnded } from '@/libs/commerce/auction-phase';
+import {
+  AUCTION_HAS_BIDS_MESSAGE,
+  AUCTION_HAS_BIDS_REFUSAL,
+  bidsBlockingDelete,
+} from '@/libs/commerce/auction-removal';
 import { decodeConnectorRecipientKey, sealConnectorAddress } from '@/libs/commerce/connector-address-envelope';
 import {
   sealDeliveryAddressForSellers,
@@ -537,6 +543,8 @@ function reviewsResult(payload: unknown, page: CommerceReviewsPage): CommerceInd
 type CommerceListingWithProjection = CommerceListingModelSchema & {
   /** What a buyer can take now; `null` while unknown, and for made-to-order stock, which has no count. */
   purchasableQuantity: number | null;
+  /** The service holds a projection of this listing, so it is registered for checkout (a sold one included). */
+  registeredWithService: boolean;
 };
 
 function applyInventoryProjection(
@@ -546,12 +554,14 @@ function applyInventoryProjection(
   const recordQuantity = listing.record.variants
     .filter(({ enabled }) => enabled)
     .reduce((total, variant) => total + variant.quantity, 0);
+  const registeredWithService = projection != null;
   if (!projection || projection.listing_revision !== listing.revision || projection.made_to_order) {
-    return { ...listing, purchasableQuantity: null };
+    return { ...listing, purchasableQuantity: null, registeredWithService };
   }
   return {
     ...listing,
     purchasableQuantity: Math.min(recordQuantity, projection.available_quantity),
+    registeredWithService,
   };
 }
 
@@ -5688,6 +5698,34 @@ export class CommerceApplication {
    * cleanup — a media file that outlives its record is unreferenced bytes,
    * not a live listing, so media failures never block the deletion.
    */
+  /**
+   * A listing is a homeserver record the service can only follow, so the check that keeps an auction
+   * with bids from being deleted out from under its bidders has to run here, before the DELETE. The
+   * service's bid count is the authority; where it can't be read the delete waits, because an auction
+   * that has not ended may have bids this device does not know of. Nothing is asked for a listing that
+   * is not an auction, an auction that has ended, or a deployment without a transaction service.
+   */
+  private static async assertNoLiveAuctionBids(
+    ownerPubky: string,
+    listingId: string,
+    local: CommerceListingModelSchema | null | undefined,
+  ): Promise<void> {
+    if (!local || local.record.sale.format !== 'auction') return;
+    if (!isDurableCommerceMode(getCommerceAdapterMode())) return;
+    if (isAuctionSaleEnded(local.record.sale, Date.now())) return;
+    const projection = await MarketplaceGatewayService.getListing(
+      ownerPubky,
+      buildMarketplaceListingAggregateId(ownerPubky, listingId),
+    );
+    const bids = bidsBlockingDelete(projection?.auction, false);
+    if (bids === 0) return;
+    throw Err.client(ClientErrorCode.CONFLICT, AUCTION_HAS_BIDS_MESSAGE, {
+      service: ErrorService.Marketplace,
+      operation: 'commitDeleteListing',
+      context: { refusal: AUCTION_HAS_BIDS_REFUSAL, bidCount: bids },
+    });
+  }
+
   static async commitDeleteListing(ownerPubky: string, listingId: string): Promise<void> {
     const compositeListingId = `${ownerPubky}:${listingId}`;
     const local = await LocalCommerceService.getListing(compositeListingId);
@@ -5700,6 +5738,8 @@ export class CommerceApplication {
       payload: { url },
       now: Date.now(),
     });
+
+    await this.assertNoLiveAuctionBids(ownerPubky, listingId, local);
 
     const attempt = this.beginListingRegistration(ownerPubky, listingId);
     this.assertListingRegistrationFence(attempt);

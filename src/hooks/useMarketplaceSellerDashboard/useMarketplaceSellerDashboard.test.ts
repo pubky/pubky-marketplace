@@ -705,6 +705,70 @@ describe('useMarketplaceSellerDashboard bulk activate', () => {
     expect(CommerceController.commitUpsertListing).toHaveBeenCalledWith(expect.objectContaining({ state: 'paused' }));
   });
 
+  describe('pausing an auction', () => {
+    const auction = (endsAt: string) => {
+      const record = createCommerceListingFixture({ listingId: 'lamp_01', state: 'active', revision: 2 });
+      record.sale = {
+        format: 'auction',
+        startingPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+        minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
+        startsAt: '2026-07-01T00:00:00.000Z',
+        endsAt,
+        antiSnipingWindowSeconds: 120,
+        antiSnipingExtensionSeconds: 120,
+      };
+      return record;
+    };
+    const pauseBoth = async () => {
+      const { result } = renderHook(() => useMarketplaceSellerDashboard());
+      let updated: boolean | undefined;
+      await act(async () => {
+        updated = await result.current.updateListingState([`${OWNER}:boots_01`, `${OWNER}:lamp_01`], 'paused');
+      });
+      return updated;
+    };
+    const boots = createCommerceListingFixture({ listingId: 'boots_01', state: 'active', revision: 2 });
+
+    it('leaves an auction that has not ended live, and pauses the rest of the selection', async () => {
+      localListings = [
+        { id: `${OWNER}:boots_01`, state: 'active', record: boots },
+        { id: `${OWNER}:lamp_01`, state: 'active', record: auction('2099-01-01T00:00:00.000Z') },
+      ];
+
+      expect(await pauseBoth()).toBe(true);
+
+      expect(CommerceController.commitUpsertListing).toHaveBeenCalledTimes(1);
+      expect(CommerceController.commitUpsertListing).toHaveBeenCalledWith(
+        expect.objectContaining({ listingId: 'boots_01', state: 'paused' }),
+      );
+    });
+
+    it('writes nothing when the only listing selected is an auction that has not ended', async () => {
+      localListings = [{ id: `${OWNER}:lamp_01`, state: 'active', record: auction('2099-01-01T00:00:00.000Z') }];
+      const { result } = renderHook(() => useMarketplaceSellerDashboard());
+      let updated: boolean | undefined;
+      await act(async () => {
+        updated = await result.current.updateListingState([`${OWNER}:lamp_01`], 'paused');
+      });
+
+      expect(updated).toBe(false);
+      expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+      expect(toast).not.toHaveBeenCalled();
+    });
+
+    it('pauses an auction that has ended', async () => {
+      localListings = [{ id: `${OWNER}:lamp_01`, state: 'active', record: auction('2026-08-01T00:00:00.000Z') }];
+      const { result } = renderHook(() => useMarketplaceSellerDashboard());
+      await act(async () => {
+        await result.current.updateListingState([`${OWNER}:lamp_01`], 'paused');
+      });
+
+      expect(CommerceController.commitUpsertListing).toHaveBeenCalledWith(
+        expect.objectContaining({ listingId: 'lamp_01', state: 'paused' }),
+      );
+    });
+  });
+
   it('activates once every guard passes', async () => {
     expect(await update('active')).toBe(true);
     expect(CommerceController.commitUpsertListing).toHaveBeenCalledWith(expect.objectContaining({ state: 'active' }));

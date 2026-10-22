@@ -55,7 +55,12 @@ export function MarketplaceMyShop() {
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <MarketplaceSectionNav />
         <BackToMyShop />
-        <SellingUnavailableNotice selling={selling} testId="storefront-selling-unavailable" onShopSettings />
+        <SellingUnavailableNotice
+          selling={selling}
+          testId="storefront-selling-unavailable"
+          onShopSettings
+          countryLocked={settings.countryLocked}
+        />
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <Heading level={1} size="xl" className="text-4xl sm:text-6xl">

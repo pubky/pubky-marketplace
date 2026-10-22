@@ -4,10 +4,12 @@ import {
   type ClientRegionState,
   digitalBlockedMessage,
   evaluateCommerceAvailability,
+  evaluateShopCountryChange,
   INERT_COMMERCE_AVAILABILITY,
   shopCountryCode,
 } from './commerce-availability';
 import {
+  BUYING_FROM_BLOCKED_SHOP_MESSAGE,
   COMMERCE_BLOCKED_INFO,
   COMMERCE_BLOCKED_MESSAGE,
   COMMERCE_UNKNOWN_REGION_INFO,
@@ -15,8 +17,10 @@ import {
   createRegionPolicy,
   PAID_UNLOCKS_BLOCKED_MESSAGE,
   parseRegionModes,
-  SELLING_BLOCKED_COUNTRY_MESSAGE,
   SELLING_BLOCKED_MESSAGE,
+  SHOP_COUNTRY_CHECKING_MESSAGE,
+  SHOP_COUNTRY_LOCKED_MESSAGE,
+  SHOP_COUNTRY_LOCKED_UNKNOWN_MESSAGE,
 } from './region-modes';
 
 function policyOf(raw: string) {
@@ -117,7 +121,7 @@ describe('evaluateCommerceAvailability', () => {
   it('blocks commerce for a seller whose shop is in a blocked country, with the country line', () => {
     expect(
       evaluateCommerceAvailability(LAUNCH, { declaredCountry: null, sellerCountry: 'US', client: ready('CH') }),
-    ).toMatchObject({ blocked: true, source: 'seller', message: SELLING_BLOCKED_COUNTRY_MESSAGE });
+    ).toMatchObject({ blocked: true, source: 'seller', message: BUYING_FROM_BLOCKED_SHOP_MESSAGE });
     expect(
       evaluateCommerceAvailability(LAUNCH, {
         declaredCountry: null,
@@ -192,5 +196,52 @@ describe('addressCountryDefault', () => {
 
   it('takes the IP country of a nuanced region in a mixed policy, which buys under today’s rules', () => {
     expect(addressCountryDefault(policyOf('EU=nuanced,GB=nuanced,US=blocked'), ready('DE'), 'US')).toBe('DE');
+  });
+});
+
+describe('evaluateShopCountryChange', () => {
+  it('is open while no region is blocked or the visitor region is not read', () => {
+    expect(evaluateShopCountryChange(policyOf('none'), ready('US'))).toEqual({ status: 'open' });
+    expect(evaluateShopCountryChange(policyOf('EU=nuanced'), ready('DE'))).toEqual({ status: 'open' });
+    expect(evaluateShopCountryChange(LAUNCH, { status: 'off' })).toEqual({ status: 'open' });
+  });
+
+  it('waits while the visitor region is being read', () => {
+    expect(evaluateShopCountryChange(LAUNCH, { status: 'loading' })).toEqual({
+      status: 'checking',
+      message: SHOP_COUNTRY_CHECKING_MESSAGE,
+    });
+  });
+
+  it('locks the country for a visitor inside the block', () => {
+    for (const country of ['US', 'GB', 'DE', 'FR']) {
+      expect(evaluateShopCountryChange(LAUNCH, ready(country))).toEqual({
+        status: 'locked',
+        cause: 'ip',
+        message: SHOP_COUNTRY_LOCKED_MESSAGE,
+      });
+    }
+  });
+
+  it('opens the country for a visitor outside the block', () => {
+    for (const country of ['CH', 'NO']) {
+      expect(evaluateShopCountryChange(LAUNCH, ready(country))).toEqual({ status: 'open' });
+    }
+  });
+
+  it('locks the country for a visitor region that is unknown or could not be read, where unknown visitors are blocked', () => {
+    for (const client of [ready(null), { status: 'failed' } as const]) {
+      expect(evaluateShopCountryChange(LAUNCH, client)).toEqual({
+        status: 'locked',
+        cause: 'unknown',
+        message: SHOP_COUNTRY_LOCKED_UNKNOWN_MESSAGE,
+      });
+    }
+  });
+
+  it('opens the country for an unknown visitor region where unknown visitors are not blocked', () => {
+    const policy = policyOf('US=blocked,UNKNOWN=open');
+    expect(evaluateShopCountryChange(policy, ready(null))).toEqual({ status: 'open' });
+    expect(evaluateShopCountryChange(policy, { status: 'failed' })).toEqual({ status: 'open' });
   });
 });

@@ -135,7 +135,10 @@ export function useMarketplaceSellerPaymentConfig() {
         Logger.error('Failed to save the payment configuration', { error });
         // A refusal for the seller's region carries the service code and reason in the error context.
         const regionRefusal = isAppError(error)
-          ? marketplaceRegionRefusalMessage({ code: error.context?.serviceCode, reason: error.context?.reason })
+          ? marketplaceRegionRefusalMessage(
+              { code: error.context?.serviceCode, reason: error.context?.reason },
+              'seller',
+            )
           : null;
         toast({
           variant: 'error',

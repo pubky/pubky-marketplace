@@ -13,6 +13,7 @@ import {
 } from './failure-messages';
 import { LOCKS_REGION_REFUSAL_STATUS, locksSubmitRefusalMessage } from './locks-submit-refusal';
 import {
+  BUYING_FROM_BLOCKED_SHOP_MESSAGE,
   COMMERCE_BLOCKED_MESSAGE,
   COMMERCE_UNKNOWN_REGION_MESSAGE,
   PAID_UNLOCKS_BLOCKED_MESSAGE,
@@ -27,6 +28,7 @@ describe('the sentences the service refusals for blocked regions map to', () => 
     expect(COMMERCE_UNKNOWN_REGION_MESSAGE).toBe("We can't tell where you are, so buying and selling are paused.");
     expect(PAID_UNLOCKS_BLOCKED_MESSAGE).toBe("Paid unlocks aren't available in your region yet.");
     expect(SELLING_BLOCKED_COUNTRY_MESSAGE).toBe("Selling isn't available from this country yet.");
+    expect(BUYING_FROM_BLOCKED_SHOP_MESSAGE).toBe("Buying from this shop isn't available yet.");
   });
 
   describe('marketplaceRegionRefusalMessage', () => {
@@ -40,8 +42,15 @@ describe('the sentences the service refusals for blocked regions map to', () => 
       expect(marketplaceRegionRefusalMessage({ code: 'COMMERCE_UNAVAILABLE_IN_REGION', reason })).toBe(message);
     });
 
+    it('tells the seller, not the buyer, that selling is unavailable from the shop country', () => {
+      const refusal = { code: 'SELLER_UNAVAILABLE_IN_REGION', reason: 'seller_region_blocked' };
+      expect(marketplaceRegionRefusalMessage(refusal, 'seller')).toBe(SELLING_BLOCKED_COUNTRY_MESSAGE);
+      expect(marketplaceRegionRefusalMessage(refusal, 'buyer')).toBe(BUYING_FROM_BLOCKED_SHOP_MESSAGE);
+      expect(marketplaceRegionRefusalMessage(refusal)).toBe(BUYING_FROM_BLOCKED_SHOP_MESSAGE);
+    });
+
     it.each([
-      ['seller_region_blocked', SELLING_BLOCKED_COUNTRY_MESSAGE],
+      ['seller_region_blocked', BUYING_FROM_BLOCKED_SHOP_MESSAGE],
       ['seller_ip_blocked', SELLING_BLOCKED_MESSAGE],
       ['private_seller_reconfirmation_required', SELLER_LIMIT_MESSAGE],
       ['business_seller', REGION_UNAVAILABLE_MESSAGE],
@@ -80,7 +89,7 @@ describe('the sentences the service refusals for blocked regions map to', () => 
       ['buyer_region_blocked', COMMERCE_BLOCKED_MESSAGE],
       ['buyer_ip_blocked', COMMERCE_BLOCKED_MESSAGE],
       ['buyer_region_unknown', COMMERCE_UNKNOWN_REGION_MESSAGE],
-      ['seller_region_blocked', SELLING_BLOCKED_COUNTRY_MESSAGE],
+      ['seller_region_blocked', BUYING_FROM_BLOCKED_SHOP_MESSAGE],
       ['seller_ip_blocked', SELLING_BLOCKED_MESSAGE],
     ])('maps the reason %s', (reason, message) => {
       expect(MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.get(reason)).toBe(message);

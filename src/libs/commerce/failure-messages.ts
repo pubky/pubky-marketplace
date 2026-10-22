@@ -2,6 +2,7 @@ import { CHECKOUT_HOLD_COPY } from '@/libs/commerce/checkout-hold';
 import { DIGITAL_REGION_MESSAGE, REGION_UNAVAILABLE_MESSAGE, SELLER_LIMIT_MESSAGE } from '@/libs/commerce/eu-region';
 import { PAYKIT_OUTAGE_COPY } from '@/libs/commerce/paykit-rail';
 import {
+  BUYING_FROM_BLOCKED_SHOP_MESSAGE,
   COMMERCE_BLOCKED_MESSAGE,
   COMMERCE_UNKNOWN_REGION_MESSAGE,
   SELLING_BLOCKED_COUNTRY_MESSAGE,
@@ -281,7 +282,7 @@ export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, str
   ['buyer_region_blocked', COMMERCE_BLOCKED_MESSAGE],
   ['buyer_ip_blocked', COMMERCE_BLOCKED_MESSAGE],
   ['buyer_region_unknown', COMMERCE_UNKNOWN_REGION_MESSAGE],
-  ['seller_region_blocked', SELLING_BLOCKED_COUNTRY_MESSAGE],
+  ['seller_region_blocked', BUYING_FROM_BLOCKED_SHOP_MESSAGE],
   ['seller_ip_blocked', SELLING_BLOCKED_MESSAGE],
   ['COMMERCE_UNAVAILABLE_IN_REGION', COMMERCE_BLOCKED_MESSAGE],
   ['SELLER_UNAVAILABLE_IN_REGION', SELLING_BLOCKED_MESSAGE],
@@ -527,9 +528,14 @@ const LISTING_NOT_ACTIVE_REASON_MESSAGES: ReadonlyMap<string, string> = new Map(
  * Copy for the service's regional refusals (legal launch plan C3, C3b, C4 and the blocked regions), or
  * null for any other failure: a seller who does not sell to the EU or UK, a private seller who must
  * re-confirm, a seller at the annual limit, digital items for EU and UK buyers, and commerce blocked
- * for a buyer's or a seller's region.
+ * for a buyer's or a seller's region. A shop in a blocked country is refused with one reason whoever asks,
+ * so the copy follows the `audience`: the seller is told selling isn't available from the country, the
+ * buyer that buying from the shop isn't.
  */
-export function marketplaceRegionRefusalMessage(error: { code?: unknown; reason?: unknown }): string | null {
+export function marketplaceRegionRefusalMessage(
+  error: { code?: unknown; reason?: unknown },
+  audience: 'buyer' | 'seller' = 'buyer',
+): string | null {
   switch (error.code) {
     case 'COMMERCE_UNAVAILABLE_IN_REGION':
       return error.reason === 'buyer_region_unknown' ? COMMERCE_UNKNOWN_REGION_MESSAGE : COMMERCE_BLOCKED_MESSAGE;
@@ -538,7 +544,7 @@ export function marketplaceRegionRefusalMessage(error: { code?: unknown; reason?
         case 'private_seller_reconfirmation_required':
           return SELLER_LIMIT_MESSAGE;
         case 'seller_region_blocked':
-          return SELLING_BLOCKED_COUNTRY_MESSAGE;
+          return audience === 'seller' ? SELLING_BLOCKED_COUNTRY_MESSAGE : BUYING_FROM_BLOCKED_SHOP_MESSAGE;
         case 'seller_ip_blocked':
           return SELLING_BLOCKED_MESSAGE;
         default:

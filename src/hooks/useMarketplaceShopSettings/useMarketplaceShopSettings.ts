@@ -6,7 +6,9 @@ import { useForm, useWatch } from 'react-hook-form';
 import { COMMERCE_CONTRACT_VERSION } from '@/config/commerce';
 import { IMAGE_MAX_RAW_SIZE } from '@/config/images';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { useClientRegion } from '@/hooks/useClientRegion/useClientRegion';
 import { useMarketplaceMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
+import { evaluateShopCountryChange } from '@/libs/commerce/commerce-availability';
 import {
   MARKETPLACE_FAILURE_MESSAGES,
   marketplaceErrorCode,
@@ -41,6 +43,10 @@ export function sellerStatusConfirmedAtToPublish(input: {
   if (input.status !== 'private') return undefined;
   if (input.confirmed || input.previousStatus !== 'private') return input.now;
   return input.previousConfirmedAt;
+}
+
+function normalizeCountryCode(code: string | null | undefined): string {
+  return (code ?? '').trim().toUpperCase();
 }
 
 export type ShopImageSlotError = 'invalid-type' | 'too-large';
@@ -239,6 +245,11 @@ export function useMarketplaceShopSettings() {
 
   const countryCode = useWatch({ control: form.control, name: 'countryCode' });
   const countryBlocked = getRegionPolicy().modeOf(countryCode) === 'blocked';
+  const client = useClientRegion();
+  const countryChange = evaluateShopCountryChange(getRegionPolicy(), client);
+  const savedCountry = normalizeCountryCode(existingRecord?.location.countryCode);
+  // A shop that already has a country keeps it while the visitor can't be shown to be outside the block.
+  const countryLockedMessage = savedCountry !== '' && countryChange.status !== 'open' ? countryChange.message : null;
 
   const submit = async () => {
     if (!currentUserPubky || isLoading || loadError || isSaving) return false;
@@ -247,6 +258,10 @@ export function useMarketplaceShopSettings() {
     await form.handleSubmit(async (data) => {
       if (getRegionPolicy().modeOf(data.countryCode) === 'blocked') {
         form.setError('countryCode', { type: 'region', message: SELLING_BLOCKED_COUNTRY_MESSAGE });
+        return;
+      }
+      if (countryLockedMessage !== null && normalizeCountryCode(data.countryCode) !== savedCountry) {
+        form.setError('countryCode', { type: 'region', message: countryLockedMessage });
         return;
       }
       const now = new Date().toISOString();
@@ -345,6 +360,10 @@ export function useMarketplaceShopSettings() {
     hasShop: revision > 0,
     /** The country typed in the form is in a blocked region, so selling from it is refused. */
     countryBlocked,
+    /** The shop country can't be changed from where the visitor is (or is still being checked). */
+    countryLocked: countryLockedMessage !== null,
+    /** Why the country is locked, or null. */
+    countryLockedMessage,
     avatar: avatar.slot,
     banner: banner.slot,
     submit,

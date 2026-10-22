@@ -2,7 +2,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { REGION_UNAVAILABLE_MESSAGE } from '@/libs/commerce/eu-region';
-import { COMMERCE_BLOCKED_MESSAGE, SELLING_BLOCKED_COUNTRY_MESSAGE } from '@/libs/commerce/region-modes';
+import { BUYING_FROM_BLOCKED_SHOP_MESSAGE, COMMERCE_BLOCKED_MESSAGE } from '@/libs/commerce/region-modes';
 import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
 import { resetRegionState, setRegionModes, stubClientRegion } from '@/test-utils/region-modes';
 import { useCheckoutRegion } from './useCheckoutRegion';
@@ -71,7 +71,7 @@ describe('useCheckoutRegion under the region modes', () => {
     const { result } = region([SELLER_CH, SELLER_US]);
     await waitFor(() => expect(result.current.commerce.blocked).toBe(true));
     expect(result.current.blocked).toBe(true);
-    expect(result.current.commerce.message).toBe(SELLING_BLOCKED_COUNTRY_MESSAGE);
+    expect(result.current.commerce.message).toBe(BUYING_FROM_BLOCKED_SHOP_MESSAGE);
   });
 
   it('blocks Pay for a remembered blocked country', async () => {

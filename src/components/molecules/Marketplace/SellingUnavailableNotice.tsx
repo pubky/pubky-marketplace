@@ -25,16 +25,21 @@ export const SHOP_COUNTRY_FIELD_ROUTE = `${MARKETPLACE_ROUTES.MY_SHOP}#countryCo
 export function SellingUnavailableHint({
   selling,
   onShopSettings = false,
+  countryLocked = false,
   className,
 }: {
   selling: CommerceAvailability;
   onShopSettings?: boolean;
+  /** The country field below can't be changed from here, so the hint must not point at it. */
+  countryLocked?: boolean;
   className?: string;
 }) {
   let hint: React.ReactNode = null;
   if (selling.source === 'declared') {
     hint = onShopSettings ? (
-      SELLING_MOVED_ON_SHOP_SETTINGS
+      countryLocked ? null : (
+        SELLING_MOVED_ON_SHOP_SETTINGS
+      )
     ) : (
       <>
         {SELLING_MOVED_PREFIX}
@@ -67,10 +72,12 @@ export function SellingUnavailableNotice({
   selling,
   testId,
   onShopSettings = false,
+  countryLocked = false,
 }: {
   selling: CommerceAvailability;
   testId: string;
   onShopSettings?: boolean;
+  countryLocked?: boolean;
 }) {
   if (!selling.blocked || !selling.sellingMessage || !selling.info) return null;
   return (
@@ -81,7 +88,7 @@ export function SellingUnavailableNotice({
         </Typography>
         <InfoHint label={COMMERCE_BLOCKED_INFO_LABEL}>{selling.info}</InfoHint>
       </div>
-      <SellingUnavailableHint selling={selling} onShopSettings={onShopSettings} />
+      <SellingUnavailableHint selling={selling} onShopSettings={onShopSettings} countryLocked={countryLocked} />
     </div>
   );
 }

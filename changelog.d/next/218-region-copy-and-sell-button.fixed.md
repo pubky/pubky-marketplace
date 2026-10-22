@@ -1,0 +1,1 @@
+A buyer looking at a shop in a blocked country now reads "Buying from this shop isn't available yet.", and a visitor who can't sell from their region no longer sees "Sell an item" on the Market page or on their own empty shop page (pubky-marketplace #218).

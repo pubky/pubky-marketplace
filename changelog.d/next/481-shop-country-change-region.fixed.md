@@ -1,0 +1,1 @@
+A shop's country can now be changed only from a region outside the block: from a blocked or unknown region the country field is read-only and a changed country is refused, so changing it never moves a shop out of the block from inside it (pubky-marketplace #481).

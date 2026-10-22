@@ -125,9 +125,20 @@ function MarketplaceShopSettingsLoaded({ settings, onSaved }: MarketplaceShopSet
               control={settings.form.control}
               label="Country"
               placeholder="Two-letter code"
+              disabled={settings.countryLocked}
             />
             <ControlledInputField name="region" control={settings.form.control} label="Region" />
           </div>
+          {settings.countryLockedMessage && (
+            <Typography
+              as="p"
+              role="status"
+              className="-mt-2 text-sm text-muted-foreground"
+              data-testid="shop-settings-country-locked"
+            >
+              {settings.countryLockedMessage}
+            </Typography>
+          )}
           {settings.countryBlocked && !settings.form.formState.errors.countryCode && (
             <Typography
               as="p"
