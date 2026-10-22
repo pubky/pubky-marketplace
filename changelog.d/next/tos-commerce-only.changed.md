@@ -1,0 +1,1 @@
+The Terms of Service now cover Pubky Shop and state that buying, selling and paid unlocks of digital content are not available in the EU (including each member state), the UK and the US, while the rest of the Platform stays available there. Prohibited Jurisdictions stay the sanctions list plus Russia and Belarus. The Stripe mentions are removed.
