@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addressCountryDefault,
   type ClientRegionState,
   digitalBlockedMessage,
   evaluateCommerceAvailability,
@@ -165,5 +166,31 @@ describe('shopCountryCode', () => {
     expect(shopCountryCode({})).toBeNull();
     expect(shopCountryCode(null)).toBeNull();
     expect(shopCountryCode(undefined)).toBeNull();
+  });
+});
+
+describe('addressCountryDefault', () => {
+  const NUANCED = policyOf('EU=nuanced,GB=nuanced');
+
+  it('keeps the browser country while no region is blocked, as before', () => {
+    expect(addressCountryDefault(NUANCED, { status: 'off' }, 'GB')).toBe('GB');
+    expect(addressCountryDefault(policyOf('none'), { status: 'off' }, 'US')).toBe('US');
+  });
+
+  it('never takes the browser country where a region is blocked: an en-GB browser in Switzerland is not in GB', () => {
+    expect(addressCountryDefault(LAUNCH, ready('CH'), 'GB')).toBe('CH');
+    expect(addressCountryDefault(LAUNCH, ready('CH'), 'US')).toBe('CH');
+  });
+
+  it('starts empty, so the buyer chooses, when the IP country is blocked, unknown, failed or still unread', () => {
+    expect(addressCountryDefault(LAUNCH, ready('GB'), 'GB')).toBe('');
+    expect(addressCountryDefault(LAUNCH, ready('DE'), 'DE')).toBe('');
+    expect(addressCountryDefault(LAUNCH, ready(null), 'GB')).toBe('');
+    expect(addressCountryDefault(LAUNCH, { status: 'failed' }, 'GB')).toBe('');
+    expect(addressCountryDefault(LAUNCH, { status: 'loading' }, 'GB')).toBe('');
+  });
+
+  it('takes the IP country of a nuanced region in a mixed policy, which buys under today’s rules', () => {
+    expect(addressCountryDefault(policyOf('EU=nuanced,GB=nuanced,US=blocked'), ready('DE'), 'US')).toBe('DE');
   });
 });

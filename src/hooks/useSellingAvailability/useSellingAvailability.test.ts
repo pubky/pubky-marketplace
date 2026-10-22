@@ -67,16 +67,6 @@ describe('useSellingAvailability', () => {
     expect(result.current).toMatchObject({ active: true, blocked: false, held: false });
   });
 
-  it('ignores the shop country when asked to, and reads no shop', async () => {
-    setRegionModes(LAUNCH);
-    stubClientRegion('CH');
-    ownShopIn('DE');
-    const { result } = renderHook(() => useSellingAvailability({ byShopCountry: false }));
-    await waitFor(() => expect(result.current.checking).toBe(false));
-    expect(result.current.blocked).toBe(false);
-    expect(CommerceController.getShop).not.toHaveBeenCalled();
-  });
-
   it('lets a seller with no shop yet sell from an open country', async () => {
     setRegionModes(LAUNCH);
     stubClientRegion('CH');

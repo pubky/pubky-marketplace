@@ -50,3 +50,63 @@ describe('ClientRegionController.ensureLoaded', () => {
     expect(useClientRegionStore.getState()).toMatchObject({ status: 'ready', country: 'GB' });
   });
 });
+
+describe('ClientRegionController.refresh', () => {
+  beforeEach(() => vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-22T12:00:00Z') }));
+  afterEach(() => vi.useRealTimers());
+
+  it('is the first read before the page has one', async () => {
+    const fetchStub = stubClientRegion('CH');
+    await ClientRegionController.refresh();
+    expect(fetchStub).toHaveBeenCalledTimes(1);
+    expect(useClientRegionStore.getState()).toMatchObject({ status: 'ready', country: 'CH' });
+  });
+
+  it('replaces the country with the new answer when the visitor comes back, without a loading state', async () => {
+    stubClientRegion('GB');
+    await ClientRegionController.ensureLoaded();
+    expect(useClientRegionStore.getState().country).toBe('GB');
+
+    vi.setSystemTime(new Date('2026-10-22T12:01:00Z'));
+    const fetchStub = stubClientRegion('CH');
+    const statuses: string[] = [];
+    const unsubscribe = useClientRegionStore.subscribe((state) => statuses.push(state.status));
+    await ClientRegionController.refresh();
+    unsubscribe();
+
+    expect(fetchStub).toHaveBeenCalledTimes(1);
+    expect(useClientRegionStore.getState()).toMatchObject({ status: 'ready', country: 'CH' });
+    expect(statuses).not.toContain('loading');
+  });
+
+  it('answers a focus and a visibility event that arrive together with one read', async () => {
+    stubClientRegion('GB');
+    await ClientRegionController.ensureLoaded();
+
+    vi.setSystemTime(new Date('2026-10-22T12:01:00Z'));
+    const fetchStub = stubClientRegion('CH');
+    await Promise.all([ClientRegionController.refresh(), ClientRegionController.refresh()]);
+    expect(fetchStub).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the last answer when the new read fails', async () => {
+    stubClientRegion('CH');
+    await ClientRegionController.ensureLoaded();
+
+    vi.setSystemTime(new Date('2026-10-22T12:01:00Z'));
+    stubClientRegion('fail');
+    await ClientRegionController.refresh();
+    expect(useClientRegionStore.getState()).toMatchObject({ status: 'ready', country: 'CH' });
+  });
+
+  it('retries a failed first read', async () => {
+    stubClientRegion('fail');
+    await ClientRegionController.ensureLoaded();
+    expect(useClientRegionStore.getState().status).toBe('failed');
+
+    const fetchStub = stubClientRegion('CH');
+    await ClientRegionController.refresh();
+    expect(fetchStub).toHaveBeenCalledTimes(1);
+    expect(useClientRegionStore.getState()).toMatchObject({ status: 'ready', country: 'CH' });
+  });
+});

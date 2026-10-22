@@ -114,7 +114,12 @@ export function MarketplaceOffers() {
         </div>
 
         {commerce.blocked && commerce.message && commerce.info && (
-          <CommerceBlockedNotice message={commerce.message} info={commerce.info} testId="marketplace-offers-blocked" />
+          <CommerceBlockedNotice
+            message={commerce.message}
+            info={commerce.info}
+            source={commerce.source}
+            testId="marketplace-offers-blocked"
+          />
         )}
 
         {offers.isLoading ? (

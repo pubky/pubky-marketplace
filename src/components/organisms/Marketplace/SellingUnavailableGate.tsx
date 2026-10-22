@@ -11,23 +11,18 @@ import { Link } from '@/atoms/Link/Link';
 import { useSellingAvailability } from '@/hooks/useSellingAvailability/useSellingAvailability';
 import { BACK_TO_MARKET_LABEL, COMMERCE_BLOCKED_INFO_LABEL } from '@/libs/commerce/region-modes';
 import { InfoHint } from '@/molecules/InfoHint/InfoHint';
+import { SellingUnavailableHint } from '@/molecules/Marketplace/SellingUnavailableNotice';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 
 /**
  * Wraps a seller page (the studio, Sell, drops, store connections, Get paid). Where selling is
- * blocked it shows the one line, the info icon and a way back to the Market instead of the page;
+ * blocked it shows the one line, the info icon, the way out (update the shop country, when that is
+ * the reason) and a way back to the Market instead of the page;
  * everywhere else it renders the page untouched. While the visitor's region is still being read it
  * shows nothing rather than flashing the studio.
  */
-export function SellingUnavailableGate({
-  children,
-  byShopCountry = true,
-}: {
-  children: ReactNode;
-  /** Off for the page where the seller changes the shop country, so a blocked shop country is no dead end. */
-  byShopCountry?: boolean;
-}) {
-  const selling = useSellingAvailability({ byShopCountry });
+export function SellingUnavailableGate({ children }: { children: ReactNode }) {
+  const selling = useSellingAvailability();
 
   if (!selling.held) return <>{children}</>;
 
@@ -50,6 +45,7 @@ export function SellingUnavailableGate({
                 </Heading>
                 <InfoHint label={COMMERCE_BLOCKED_INFO_LABEL}>{selling.info}</InfoHint>
               </div>
+              <SellingUnavailableHint selling={selling} />
               <Button asChild variant="secondary" className="rounded-full">
                 <Link href={APP_ROUTES.MARKETPLACE} overrideDefaults>
                   {BACK_TO_MARKET_LABEL}

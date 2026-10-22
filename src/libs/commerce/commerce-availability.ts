@@ -107,3 +107,16 @@ export function digitalBlockedMessage(availability: CommerceAvailability): strin
 export function shopCountryCode(shop: { location?: { countryCode?: string } } | null | undefined): string | null {
   return shop?.location?.countryCode ?? null;
 }
+
+/**
+ * The country a new delivery address starts with. Where no region is blocked it is the browser's, as
+ * before. Where one is, the browser's language says nothing about where the buyer is (`en-GB` is read
+ * as the United Kingdom by someone in Switzerland), and a wrong guess ends in a refusal at Pay, so the
+ * address starts with the country the visitor's IP is in when that is not blocked, and otherwise with
+ * none: the buyer picks it. While the IP country is still being read there is none yet.
+ */
+export function addressCountryDefault(policy: RegionPolicy, client: ClientRegionState, browserCountry: string): string {
+  if (!policy.usesClientRegion) return browserCountry;
+  if (client.status !== 'ready' || client.country === null) return '';
+  return policy.modeOf(client.country) === 'blocked' ? '' : client.country;
+}

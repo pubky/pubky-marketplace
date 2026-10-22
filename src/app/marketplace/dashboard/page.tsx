@@ -1,6 +1,5 @@
 import { gatedMarketplaceMetadata } from '@/app/marketplace/gated-metadata';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
-import { SellingUnavailableGate } from '@/organisms/Marketplace/SellingUnavailableGate';
 import { MarketplaceDashboard } from '@/templates/Marketplace/MarketplaceDashboard';
 
 export function generateMetadata() {
@@ -12,9 +11,5 @@ export function generateMetadata() {
 }
 
 export default function MarketplaceDashboardPage() {
-  return (
-    <SellingUnavailableGate>
-      <MarketplaceDashboard />
-    </SellingUnavailableGate>
-  );
+  return <MarketplaceDashboard />;
 }

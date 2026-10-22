@@ -70,6 +70,9 @@ const REGION_SURFACES = [
   'src/core/stores/client-region/client-region.store.ts',
   'src/components/organisms/Marketplace/SellingUnavailableGate.tsx',
   'src/components/molecules/Marketplace/CommerceBlockedNotice.tsx',
+  'src/components/molecules/Marketplace/DeclaredCountryChange.tsx',
+  'src/components/molecules/Marketplace/SellingUnavailableNotice.tsx',
+  'src/hooks/useDefaultAddressCountry/useDefaultAddressCountry.ts',
   'src/libs/commerce/commerce-availability.ts',
 ].map((relative) => path.join(ROOT, relative));
 const CLIENT_REGION_PARSER = path.join(SRC, 'libs', 'commerce', 'client-region.ts');
@@ -91,6 +94,21 @@ describe('region rules stay inside the Market', () => {
       .filter((file) => reachable.has(file))
       .map((file) => path.relative(ROOT, file));
     expect(leaked).toEqual([]);
+  });
+
+  it('never holds an existing order for region: the orders page reaches none of the commerce holds', () => {
+    const ordersPage = path.join(SRC, 'app', 'marketplace', 'orders', 'page.tsx');
+    expect(existsSync(ordersPage)).toBe(true);
+    const reachable = reachableFrom([ordersPage]);
+    const holds = [
+      'src/hooks/useCommerceAvailability/useCommerceAvailability.ts',
+      'src/hooks/useSellingAvailability/useSellingAvailability.ts',
+      'src/hooks/useRegionAvailability/useRegionAvailability.ts',
+      'src/hooks/useCheckoutRegion/useCheckoutRegion.ts',
+      'src/components/organisms/Marketplace/SellingUnavailableGate.tsx',
+      'src/components/molecules/Marketplace/CommerceBlockedNotice.tsx',
+    ].map((relative) => path.join(ROOT, relative));
+    expect(holds.filter((file) => reachable.has(file)).map((file) => path.relative(ROOT, file))).toEqual([]);
   });
 
   it('keeps the client-region route out of everything but its own handler', () => {

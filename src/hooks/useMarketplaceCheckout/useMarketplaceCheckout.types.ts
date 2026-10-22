@@ -54,7 +54,11 @@ export const marketplaceCheckoutSchema = z
       }
       refinePostalAddressFields(data, context);
       if (!/^[A-Za-z]{2}$/.test(data.countryCode)) {
-        context.addIssue({ code: 'custom', path: ['countryCode'], message: 'Use a two-letter country code.' });
+        context.addIssue({
+          code: 'custom',
+          path: ['countryCode'],
+          message: data.countryCode === '' ? 'Choose your country.' : 'Use a two-letter country code.',
+        });
       } else {
         const destinationError = destinationCountryError(data.countryCode, data.shipsTo ?? SHIPS_TO_ANYWHERE);
         if (destinationError) context.addIssue({ code: 'custom', path: ['countryCode'], message: destinationError });

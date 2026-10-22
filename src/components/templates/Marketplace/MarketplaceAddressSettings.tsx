@@ -15,6 +15,7 @@ import { Link } from '@/atoms/Link/Link';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
 import { MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE } from '@/config/commerce-copy';
+import { useDefaultAddressCountry } from '@/hooks/useDefaultAddressCountry/useDefaultAddressCountry';
 import {
   bareDeliveryAddressId,
   useMarketplaceAddressBook,
@@ -24,7 +25,6 @@ import {
   marketplaceAddressFormDefaults,
   marketplaceAddressFormSchema,
 } from '@/hooks/useMarketplaceAddressBook/useMarketplaceAddressBook.types';
-import { browserAddressCountry } from '@/libs/commerce/postal-address';
 import type { CommerceDeliveryAddressModelSchema } from '@/models/commerce/commerce.schema';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { MarketplaceAddressFields } from '@/molecules/MarketplaceAddressFields/MarketplaceAddressFields';
@@ -35,6 +35,7 @@ export function MarketplaceAddressSettings() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { addresses, isLoading, save, remove, setDefault } = useMarketplaceAddressBook();
+  const defaultAddressCountry = useDefaultAddressCountry();
   const returnTo = searchParams.get('returnTo');
   const returnPath = returnTo && matchMarketplaceDropRoute(returnTo) ? returnTo : null;
   // null: list only; 'new': creating; otherwise the composite id being edited.
@@ -46,7 +47,7 @@ export function MarketplaceAddressSettings() {
   });
 
   const beginCreate = () => {
-    form.reset({ ...marketplaceAddressFormDefaults, countryCode: browserAddressCountry() });
+    form.reset({ ...marketplaceAddressFormDefaults, countryCode: defaultAddressCountry });
     setEditingId('new');
   };
 

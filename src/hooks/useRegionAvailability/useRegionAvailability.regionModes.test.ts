@@ -57,7 +57,11 @@ describe('useRegionAvailability under the region modes', () => {
     expect(result.current.blockedNotice).toBeNull();
 
     await waitFor(() => expect(result.current.commerce.blocked).toBe(true));
-    expect(result.current.blockedNotice).toEqual({ message: COMMERCE_BLOCKED_MESSAGE, info: COMMERCE_BLOCKED_INFO });
+    expect(result.current.blockedNotice).toEqual({
+      message: COMMERCE_BLOCKED_MESSAGE,
+      info: COMMERCE_BLOCKED_INFO,
+      source: 'ip',
+    });
     expect(result.current).toMatchObject({ refusal: null, needsCountry: false, enabled: true });
   });
 

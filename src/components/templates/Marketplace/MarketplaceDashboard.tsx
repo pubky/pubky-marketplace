@@ -16,6 +16,7 @@ import {
   Play,
   Plug,
   Plus,
+  ReceiptText,
   ShoppingBag,
   Store,
   TrendingUp,
@@ -41,11 +42,13 @@ import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useM
 import { useMarketplaceSellerDashboard } from '@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard';
 import { useNowMs } from '@/hooks/useNowMs/useNowMs';
 import { useSellerPaymentMethodGate } from '@/hooks/useSellerPaymentMethodGate/useSellerPaymentMethodGate';
+import { useSellingAvailability } from '@/hooks/useSellingAvailability/useSellingAvailability';
 import { listingDisplayState } from '@/libs/commerce/auction-phase';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { listingPublishNeedsMarketplaceSession } from '@/libs/commerce/listing-publish-guards';
 import { formatListingStock } from '@/libs/commerce/unlimited-stock';
 import { isListingRegistrationPending } from '@/models/commerce/commerce.schema';
+import { SellingUnavailableNotice } from '@/molecules/Marketplace/SellingUnavailableNotice';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
@@ -57,6 +60,9 @@ export function MarketplaceDashboard() {
   const dashboard = useMarketplaceSellerDashboard();
   const isMobile = useIsMobile({ breakpoint: 'md' });
   const router = useRouter();
+  const selling = useSellingAvailability();
+  // Blocked, or still reading the region: everything that publishes or sets up selling is off, the rest stays.
+  const sellingHeld = selling.held;
   const [selected, setSelected] = useState<string[]>([]);
   const [showSellingApproval, setShowSellingApproval] = useState(false);
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
@@ -173,12 +179,14 @@ export function MarketplaceDashboard() {
             Manage your listings, shop, orders, and offers.
           </Typography>
         </div>
+        <SellingUnavailableNotice selling={selling} testId="dashboard-selling-unavailable" />
         <nav aria-label="Shop actions" className="flex flex-wrap items-center gap-2">
           <SellAnItemControl
             size="sm"
             needsApproval={needsSellingApproval}
             approvalVisible={showSellingApproval}
             onRequestApproval={() => setShowSellingApproval(true)}
+            disabled={sellingHeld}
           />
           <Button asChild variant="secondary" size="sm" className="rounded-full text-xs font-bold">
             <Link href={MARKETPLACE_ROUTES.MY_SHOP} overrideDefaults>
@@ -186,30 +194,32 @@ export function MarketplaceDashboard() {
               Storefront
             </Link>
           </Button>
-          <Button asChild variant="secondary" size="sm" className="rounded-full text-xs font-bold">
-            <Link href={MARKETPLACE_ROUTES.INVENTORY} overrideDefaults>
-              <Package className="size-4" />
-              Inventory
-            </Link>
-          </Button>
+          {sellingHeld && (
+            <Button asChild variant="secondary" size="sm" className="rounded-full text-xs font-bold">
+              <Link href={MARKETPLACE_ROUTES.ORDERS} overrideDefaults>
+                <ReceiptText className="size-4" aria-hidden="true" />
+                Orders
+              </Link>
+            </Button>
+          )}
+          <SellingNavLink held={sellingHeld} href={MARKETPLACE_ROUTES.INVENTORY}>
+            <Package className="size-4" />
+            Inventory
+          </SellingNavLink>
           <Button asChild variant="secondary" size="sm" className="rounded-full text-xs font-bold">
             <Link href={MARKETPLACE_ROUTES.SETTINGS_SHIPPING} overrideDefaults>
               <Truck className="size-4" aria-hidden="true" />
               Shipping presets
             </Link>
           </Button>
-          <Button asChild variant="secondary" size="sm" className="rounded-full text-xs font-bold">
-            <Link href={MARKETPLACE_ROUTES.SETTINGS} overrideDefaults>
-              <Wallet className="size-4" aria-hidden="true" />
-              Payment settings
-            </Link>
-          </Button>
-          <Button asChild variant="secondary" size="sm" className="rounded-full text-xs font-bold">
-            <Link href={MARKETPLACE_ROUTES.SETTINGS_STORE_CONNECTIONS} overrideDefaults>
-              <Plug className="size-4" aria-hidden="true" />
-              Store connections
-            </Link>
-          </Button>
+          <SellingNavLink held={sellingHeld} href={MARKETPLACE_ROUTES.SETTINGS}>
+            <Wallet className="size-4" aria-hidden="true" />
+            Payment settings
+          </SellingNavLink>
+          <SellingNavLink held={sellingHeld} href={MARKETPLACE_ROUTES.SETTINGS_STORE_CONNECTIONS}>
+            <Plug className="size-4" aria-hidden="true" />
+            Store connections
+          </SellingNavLink>
         </nav>
 
         {dashboard.isLoading ? (
@@ -298,6 +308,7 @@ export function MarketplaceDashboard() {
                             <Button
                               size="sm"
                               className="rounded-full"
+                              disabled={sellingHeld}
                               onClick={() => {
                                 dashboard.resumeListingDraft(draft.listingId);
                                 router.push(MARKETPLACE_ROUTES.SELL);
@@ -450,7 +461,7 @@ export function MarketplaceDashboard() {
                         size="sm"
                         variant="secondary"
                         className="rounded-full max-sm:has-[>svg]:px-3"
-                        disabled={!selected.length}
+                        disabled={!selected.length || sellingHeld}
                         onClick={() => updateListingState(selected, 'active')}
                       >
                         <Play className="size-4" />
@@ -487,6 +498,7 @@ export function MarketplaceDashboard() {
                             needsApproval={needsSellingApproval}
                             approvalVisible={showSellingApproval}
                             onRequestApproval={() => setShowSellingApproval(true)}
+                            disabled={sellingHeld}
                           />
                         </div>
                       </div>
@@ -562,20 +574,27 @@ export function MarketplaceDashboard() {
                                   </td>
                                   <td className="p-3">
                                     <div className="flex flex-wrap gap-1">
-                                      <Button asChild size="sm" variant="ghost" className="rounded-full">
-                                        <Link
-                                          href={getMarketplaceListingEditRoute(listing.seller_id, listing.listing_id)}
-                                          overrideDefaults
-                                        >
+                                      {sellingHeld ? (
+                                        <Button size="sm" variant="ghost" className="rounded-full" disabled>
                                           <PencilLine className="size-4" />
                                           Edit
-                                        </Link>
-                                      </Button>
+                                        </Button>
+                                      ) : (
+                                        <Button asChild size="sm" variant="ghost" className="rounded-full">
+                                          <Link
+                                            href={getMarketplaceListingEditRoute(listing.seller_id, listing.listing_id)}
+                                            overrideDefaults
+                                          >
+                                            <PencilLine className="size-4" />
+                                            Edit
+                                          </Link>
+                                        </Button>
+                                      )}
                                       <Button
                                         size="sm"
                                         variant="ghost"
                                         className="rounded-full"
-                                        disabled={duplicatingId === listing.listing_id}
+                                        disabled={sellingHeld || duplicatingId === listing.listing_id}
                                         onClick={() => {
                                           void requestDuplicate(listing.listing_id);
                                         }}
@@ -588,6 +607,7 @@ export function MarketplaceDashboard() {
                                           size="sm"
                                           variant="secondary"
                                           className="rounded-full"
+                                          disabled={sellingHeld}
                                           onClick={() => void dashboard.retryListingRegistration(listing.listing_id)}
                                         >
                                           Register for checkout
@@ -674,6 +694,24 @@ export function MarketplaceDashboard() {
   );
 }
 
+/** A selling page's link in the shop actions: a plain link, or off while selling is held. */
+function SellingNavLink({ held, href, children }: { held: boolean; href: string; children: React.ReactNode }) {
+  if (held) {
+    return (
+      <Button variant="secondary" size="sm" className="rounded-full text-xs font-bold" disabled>
+        {children}
+      </Button>
+    );
+  }
+  return (
+    <Button asChild variant="secondary" size="sm" className="rounded-full text-xs font-bold">
+      <Link href={href} overrideDefaults>
+        {children}
+      </Link>
+    </Button>
+  );
+}
+
 function SellAnItemControl({
   label = 'Sell an item',
   variant = 'default',
@@ -681,6 +719,7 @@ function SellAnItemControl({
   needsApproval,
   approvalVisible,
   onRequestApproval,
+  disabled = false,
 }: {
   label?: string;
   variant?: 'default' | 'secondary';
@@ -688,10 +727,21 @@ function SellAnItemControl({
   needsApproval: boolean;
   approvalVisible: boolean;
   onRequestApproval: () => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
-      {needsApproval ? (
+      {disabled ? (
+        <Button
+          variant={variant}
+          size={size}
+          className={size === 'sm' ? 'rounded-full text-xs font-bold' : 'rounded-full'}
+          disabled
+        >
+          <Plus className="size-4" aria-hidden="true" />
+          {label}
+        </Button>
+      ) : needsApproval ? (
         <Button
           variant={variant}
           size={size}
