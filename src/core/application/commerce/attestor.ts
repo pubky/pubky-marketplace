@@ -13,7 +13,6 @@ import {
   verifiedAttestorAnnotationOutcomes,
   verifiedAttestorProfileKeyWindows,
 } from '@/libs/commerce/attestor-records';
-import { isAppError, isNotFound } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import { NexusMarketplaceService } from '@/services/nexus/marketplace/marketplace';
@@ -99,6 +98,7 @@ export class CommerceAttestorApplication {
   private static async fetchProfile(attestorId: string): Promise<boolean> {
     try {
       const payload = await NexusMarketplaceService.fetchAttestorProfile({ attestor_id: attestorId });
+      if (payload === null) return false;
       const record = CommerceRecordNormalizer.nexusAttestorProfileRecord(payload);
       const windows = record === null ? null : verifiedAttestorProfileKeyWindows(attestorId, record);
       if (windows === null) {
@@ -108,9 +108,7 @@ export class CommerceAttestorApplication {
       setAttestorProfileKeyWindows(attestorId, windows);
       return true;
     } catch (error) {
-      if (!(isAppError(error) && isNotFound(error))) {
-        Logger.warn('An attestor profile could not be read; the configured trust windows stay', { attestorId, error });
-      }
+      Logger.warn('An attestor profile could not be read; the configured trust windows stay', { attestorId, error });
       return false;
     }
   }
@@ -162,6 +160,10 @@ export class CommerceAttestorApplication {
         attestor_id: attestorId,
         order_refs: orderRefs,
       });
+      if (payload === null) {
+        this.annotationsUnsupported = true;
+        return;
+      }
       const records = CommerceRecordNormalizer.nexusAttestorAnnotationRecords(payload);
       if (records === null || records.length !== orderRefs.length) {
         Logger.warn('An attestor annotations answer is not aligned with the request; showing no notes for it', {
@@ -180,10 +182,6 @@ export class CommerceAttestorApplication {
         if (found.length > 0) into.set(reviewOutcomeKey(attestorId, orderRef), found);
       });
     } catch (error) {
-      if (isAppError(error) && isNotFound(error)) {
-        this.annotationsUnsupported = true;
-        return;
-      }
       Logger.warn('Attestor annotations could not be read; showing no notes for them', { attestorId, error });
     }
   }

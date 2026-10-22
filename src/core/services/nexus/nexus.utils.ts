@@ -1,7 +1,7 @@
 import { getCdnUrl, getNexusUrl } from '@/config/nexus';
 import { httpResponseToError, safeFetch } from '@/libs/error/error.http';
 import { ErrorService } from '@/libs/error/error.types';
-import { HttpMethod, JSON_HEADERS } from '@/libs/http/http.types';
+import { HttpMethod, HttpStatusCode, JSON_HEADERS } from '@/libs/http/http.types';
 import { withIoDeadline } from '@/libs/http/io-deadline';
 import { PARSE_JSON_WITH_BODY_EXCERPT, parseResponseOrThrow } from '@/libs/http/response.utils';
 import { nexusQueryClient } from './nexus.query-client';
@@ -92,6 +92,41 @@ export async function fetchNexus<T>({
       ErrorService.Nexus,
       FETCH_NEXUS_OPERATION,
     );
+    if (!response.ok) {
+      throw httpResponseToError(response, ErrorService.Nexus, FETCH_NEXUS_OPERATION, url);
+    }
+    return parseResponseOrThrow<T>(
+      response,
+      ErrorService.Nexus,
+      FETCH_NEXUS_OPERATION,
+      url,
+      PARSE_JSON_WITH_BODY_EXCERPT,
+    );
+  };
+  return timeoutMs === undefined
+    ? fetchAndRead()
+    : withIoDeadline(fetchAndRead, { service: ErrorService.Nexus, operation: FETCH_NEXUS_OPERATION, timeoutMs });
+}
+
+/**
+ * Like {@link fetchNexus} (one attempt, no retry) for a route whose absence is
+ * an ordinary answer: a 404 resolves to `null` instead of an error. No
+ * `AppError` is built for it, so nothing is logged or reported for a missing
+ * record or a route the index does not serve. Every other failure throws as
+ * `fetchNexus` does.
+ */
+export async function fetchNexusIfFound<T>({
+  url,
+  timeoutMs,
+}: Pick<TFetchNexusParams, 'url' | 'timeoutMs'>): Promise<T | null> {
+  const fetchAndRead = async (signal?: AbortSignal): Promise<T | null> => {
+    const response = await safeFetch(
+      url,
+      { ...createFetchOptions(), ...(signal ? { signal } : {}) },
+      ErrorService.Nexus,
+      FETCH_NEXUS_OPERATION,
+    );
+    if (response.status === HttpStatusCode.NOT_FOUND) return null;
     if (!response.ok) {
       throw httpResponseToError(response, ErrorService.Nexus, FETCH_NEXUS_OPERATION, url);
     }

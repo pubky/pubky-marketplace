@@ -8,8 +8,7 @@ import {
 } from '@/config/commerce';
 import { attestorProfileKeyWindows } from '@/libs/commerce/attestor-key-windows';
 import { reviewOutcomeKey } from '@/libs/commerce/attestor-records';
-import { httpStatusCodeToError } from '@/libs/error/error.http';
-import { ErrorService } from '@/libs/error/error.types';
+import { Logger } from '@/libs/logger/logger';
 import type { MarketplaceTrustedAttestor } from '@/libs/runtime-config/runtime-config.schema';
 import { NexusMarketplaceService } from '@/services/nexus/marketplace/marketplace';
 import {
@@ -30,8 +29,6 @@ vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
 
 const FROM = '2026-01-01T00:00:00Z';
 const refOf = (index: number) => index.toString(16).padStart(64, '0');
-const notFound = () =>
-  httpStatusCodeToError(404, 'Not found', ErrorService.Nexus, 'fetchNexus', 'v0/marketplace/attestor');
 
 const attestor = createAttestorTestKey();
 
@@ -91,9 +88,11 @@ describe('CommerceAttestorApplication.loadKeyWindows', () => {
     expect(attestorProfileKeyWindows()).toEqual([]);
 
     CommerceAttestorApplication.resetSession();
-    read.mockRejectedValueOnce(notFound());
+    const warn = vi.spyOn(Logger, 'warn');
+    read.mockResolvedValue(null);
     await expect(CommerceAttestorApplication.loadKeyWindows()).resolves.toBeUndefined();
     expect(attestorProfileKeyWindows()).toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it('reads once per session while fresh, shares a read in flight, and asks a failed one again later', async () => {
@@ -290,13 +289,15 @@ describe('CommerceAttestorApplication.fetchOutcomes', () => {
   });
 
   it('answers an empty map on a 404 without an error, and does not ask an index without the route again', async () => {
-    const read = vi.spyOn(NexusMarketplaceService, 'fetchAttestorAnnotations').mockRejectedValue(notFound());
+    const warn = vi.spyOn(Logger, 'warn');
+    const read = vi.spyOn(NexusMarketplaceService, 'fetchAttestorAnnotations').mockResolvedValue(null);
     const orders = [{ attestorId: attestor.pubky, orderRef: refOf(1) }];
 
     await expect(CommerceAttestorApplication.fetchOutcomes(orders)).resolves.toEqual(new Map());
     await expect(CommerceAttestorApplication.fetchOutcomes(orders)).resolves.toEqual(new Map());
 
     expect(read).toHaveBeenCalledTimes(1);
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it('answers an empty map when every entry is null (an attestor that has published nothing)', async () => {

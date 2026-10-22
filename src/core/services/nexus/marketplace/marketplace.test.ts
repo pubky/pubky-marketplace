@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS } from '@/config/commerce';
 import { getNexusUrl } from '@/config/nexus';
-import { fetchNexus, queryNexus } from '@/services/nexus/nexus.utils';
+import { fetchNexusIfFound, queryNexus } from '@/services/nexus/nexus.utils';
 import { createNexusListingDetailsFixture } from '@/test/fixtures/commerce/commerce';
 import { NexusMarketplaceService } from './marketplace';
 import { marketplaceApi } from './marketplace.api';
@@ -11,7 +11,7 @@ vi.mock('@/services/nexus/nexus.utils', async (importOriginal) => {
   return {
     ...actual,
     queryNexus: vi.fn(),
-    fetchNexus: vi.fn(),
+    fetchNexusIfFound: vi.fn(),
   };
 });
 
@@ -29,7 +29,7 @@ vi.mock('@/config/nexus', async (importOriginal) => {
 });
 
 const mockQueryNexus = vi.mocked(queryNexus);
-const mockFetchNexus = vi.mocked(fetchNexus);
+const mockFetchNexus = vi.mocked(fetchNexusIfFound);
 
 describe('Marketplace API', () => {
   afterEach(() => {
@@ -140,7 +140,7 @@ describe('NexusMarketplaceService attestor reads', () => {
     vi.clearAllMocks();
   });
 
-  it('reads the profile in one bounded attempt, without the retrying query', async () => {
+  it('reads the profile in one bounded attempt, answering null for a missing route, without the retrying query', async () => {
     mockFetchNexus.mockResolvedValue({ attestor_id: ATTESTOR });
 
     await NexusMarketplaceService.fetchAttestorProfile({ attestor_id: ATTESTOR });
