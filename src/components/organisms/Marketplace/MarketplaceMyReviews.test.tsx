@@ -6,6 +6,7 @@ import { REVIEW_PENDING_COPY, REVIEW_REMOVAL_COPY } from '@/config/commerce-copy
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import { toast } from '@/molecules/Toaster/use-toast';
+import { LocalCommerceService } from '@/services/local/commerce/commerce';
 import { marketplaceOrderSchema } from '@/services/marketplace/marketplace-projections';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { createOrderFixture, ORDER_FIXTURE_BUYER, ORDER_FIXTURE_SELLER } from '@/test/fixtures/commerce/orders';
@@ -73,26 +74,47 @@ describe('MarketplaceMyReviews', () => {
   });
 
   it('shows the local rows first, then an edit made on another device once the homeserver read lands', async () => {
-    const get = vi
-      .spyOn(CommerceController, 'getOwnMarketplaceReviews')
-      .mockResolvedValueOnce([ownReview('Before the edit.')])
-      .mockResolvedValue([ownReview('Edited on my phone.')]);
+    const orderId = 'order-edited-elsewhere';
+    const before = ownReview('Before the edit.', { reviewId: 'EDITED1', orderId });
+    await LocalCommerceService.upsertOwnReview(before);
     let finishRefresh = () => {};
     const refresh = vi.spyOn(CommerceController, 'refreshOwnMarketplaceReviews').mockImplementation(
       () =>
         new Promise<number>((resolve) => {
-          finishRefresh = () => resolve(1);
+          finishRefresh = () => {
+            void LocalCommerceService.upsertOwnReview({
+              ...before,
+              record: { ...before.record, text: 'Edited on my phone.' },
+            }).then(() => resolve(1));
+          };
         }),
     );
+    const reviewed = { ...order, id: orderId };
 
-    render(<MarketplaceMyReviews orders={[order]} />);
+    render(<MarketplaceMyReviews orders={[reviewed]} />);
 
     expect(await screen.findByText('Before the edit.')).toBeInTheDocument();
-    await waitFor(() => expect(refresh).toHaveBeenCalledWith([order]));
+    await waitFor(() => expect(refresh).toHaveBeenCalledWith([reviewed]));
     finishRefresh();
     expect(await screen.findByText('Edited on my phone.')).toBeInTheDocument();
     expect(screen.queryByText('Before the edit.')).not.toBeInTheDocument();
-    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows a review another surface restores into an empty local database, without a reload', async () => {
+    const orderId = 'order-restored-by-card';
+    vi.spyOn(CommerceController, 'refreshOwnMarketplaceReviews').mockResolvedValue(0);
+    const reviewed = { ...order, id: orderId };
+
+    const { container } = render(<MarketplaceMyReviews orders={[reviewed]} />);
+    await waitFor(() => expect(CommerceController.refreshOwnMarketplaceReviews).toHaveBeenCalled());
+    expect(container).toBeEmptyDOMElement();
+
+    await LocalCommerceService.upsertOwnReview(
+      ownReview('Restored by the order card.', { reviewId: 'RESTORED1', orderId }),
+    );
+
+    expect(await screen.findByText('Restored by the order card.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: REVIEW_REMOVAL_COPY.action })).toBeInTheDocument();
   });
 
   it('reads the homeserver once per set of reviewed orders, not on every poll', async () => {
