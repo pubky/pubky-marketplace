@@ -49,11 +49,7 @@ import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
-import {
-  getDigitalRegionBlockEnabled,
-  getEuFenceEnabled,
-  getMarketplaceGrantSessionEnabled,
-} from '@/libs/runtime-config/runtime-config';
+import { getMarketplaceGrantSessionEnabled, getRegionPolicy } from '@/libs/runtime-config/runtime-config';
 import type { CommerceIndexedReview, CommerceListingProjectionModelSchema } from '@/models/commerce/commerce.schema';
 import type { Pubky } from '@/models/models.types';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
@@ -676,12 +672,12 @@ export class CommerceController {
   }
 
   /**
-   * The commands that sell carry the buyer's country in clear text while either region flag is
-   * on (the EU fence, the digital hold). A command that already names one keeps it; otherwise
-   * the device's remembered country is added when there is one.
+   * The commands that sell carry the buyer's country in clear text while any region is nuanced or
+   * blocked (the EU fence, the digital hold, the blocked state). A command that already names one
+   * keeps it; otherwise the device's remembered country is added when there is one.
    */
   private static withBuyerCountry(input: unknown): unknown {
-    if (!getEuFenceEnabled() && !getDigitalRegionBlockEnabled()) return input;
+    if (getRegionPolicy().allOpen) return input;
     const country = useBuyerCountryStore.getState().country;
     if (!country || typeof input !== 'object' || input === null) return input;
     const command = input as { kind?: unknown; payload?: unknown };
@@ -1657,7 +1653,7 @@ export class CommerceController {
   static async commitCreateMarketplaceCheckout(rawInput: CommerceCheckoutFulfillmentInput) {
     const country = useBuyerCountryStore.getState().country;
     const input =
-      (getEuFenceEnabled() || getDigitalRegionBlockEnabled()) && country && rawInput.buyerCountry === undefined
+      !getRegionPolicy().allOpen && country && rawInput.buyerCountry === undefined
         ? { ...rawInput, buyerCountry: country }
         : rawInput;
     const response = await CommerceApplication.commitCreateMarketplaceCheckout(this.getCurrentUserPubky(), input);
