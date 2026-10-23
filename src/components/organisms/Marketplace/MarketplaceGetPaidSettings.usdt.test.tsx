@@ -250,7 +250,8 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       expect(within(panel).getByRole('button', { name: /Add USDT in Bitkit/ })).toBeEnabled();
       expect(screen.queryByRole('button', { name: /Set up Bitkit payments/ })).not.toBeInTheDocument();
       expect(screen.getByTestId('payment-method-status-usdt')).toHaveTextContent('Not set up');
-      expect(panel).toHaveTextContent(/can cancel a buyer's pending Bitcoin request that has not been accepted yet/);
+      expect(panel).toHaveTextContent('Reconnect to share a USDT address.');
+      expect(panel).not.toHaveTextContent(/new Bitcoin account/);
       expect(panel).not.toHaveTextContent(/stays the same/);
     });
 
@@ -261,7 +262,8 @@ describe('MarketplaceGetPaidSettings USDT', () => {
 
       const panel = await screen.findByTestId('usdt-readiness-reconnect');
       expect(panel).toHaveTextContent("USDT needs Bitkit. Pubky Ring can't share a USDT address.");
-      expect(panel).toHaveTextContent(/can cancel a buyer's pending Bitcoin request that has not been accepted yet/);
+      expect(panel).toHaveTextContent('Reconnect to share a USDT address.');
+      expect(panel).not.toHaveTextContent(/new Bitcoin account/);
     });
 
     it('uses neutral wording when the sign-in does not identify a signer', async () => {
@@ -271,7 +273,8 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       const panel = await screen.findByTestId('usdt-readiness-reconnect');
       expect(panel).toHaveTextContent('USDT needs Bitkit to share a USDT address.');
       expect(panel).not.toHaveTextContent(/Ring|Passport/);
-      expect(panel).toHaveTextContent(/can cancel a buyer's pending Bitcoin request that has not been accepted yet/);
+      expect(panel).toHaveTextContent('Reconnect to share a USDT address.');
+      expect(panel).not.toHaveTextContent(/new Bitcoin account/);
     });
 
     it('offers Set up Bitkit payments for a seller with no Paykit account', async () => {
@@ -468,6 +471,12 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       const iframe = await openReconnect();
 
       expect(mocked.getPaykitReconnectUrl).toHaveBeenCalledTimes(1);
+      expect(mocked.getPaykitReconnectUrl).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        expect.any(String),
+        'USDT',
+      );
       expect(mocked.getPaykitSetupUrl).not.toHaveBeenCalled();
       expect(iframe).not.toHaveAttribute('scrolling', 'no');
       expect(iframe).toHaveClass('h-48', 'w-full');
@@ -479,10 +488,9 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       expect(url.hash).toBe('#embed');
       expect(screen.getByRole('heading', { name: 'Add USDT in Bitkit' })).toBeInTheDocument();
       const dialog = within(screen.getByRole('dialog', { name: 'Add USDT in Bitkit' }));
-      expect(dialog.getByText(/Bitkit also gives Paykit a new Bitcoin account/)).toBeInTheDocument();
-      expect(
-        dialog.getByText(/can cancel a buyer's pending Bitcoin request that has not been accepted yet/),
-      ).toBeInTheDocument();
+      // Adding USDT keeps the Bitcoin account (paykit-server#111), so its warning stays out.
+      expect(dialog.queryByText(/new Bitcoin account/)).not.toBeInTheDocument();
+      expect(dialog.queryByText(/can cancel a buyer's pending Bitcoin request/)).not.toBeInTheDocument();
       expect(screen.queryByText(/stay the same/)).not.toBeInTheDocument();
       expect(screen.getByText(/tap Continue with Bitkit, to share a USDT address/)).toBeInTheDocument();
     });

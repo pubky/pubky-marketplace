@@ -381,6 +381,14 @@ describe('LocksGatewayService', () => {
       expect([...new URL(built).searchParams.keys()]).toEqual(['creator', 'return_to', 'state']);
     });
 
+    // `asset=USDT` asks Bitkit for the USDT address alone and keeps the Bitcoin
+    // account (paykit-server#111).
+    it('adds asset=USDT for a USDT-only reconnect', () => {
+      const built = new URL(LocksGatewayService.buildPaykitReconnectUrl(returnTo, 'opaque-state', creator, 'USDT'));
+      expect([...built.searchParams.keys()]).toEqual(['creator', 'return_to', 'state', 'asset']);
+      expect(built.searchParams.get('asset')).toBe('USDT');
+    });
+
     it('always sends creator, even where the setup URL deliberately omits it', () => {
       paykitSetupConfig.creatorParam = false;
       try {

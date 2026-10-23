@@ -1841,10 +1841,14 @@ export class CommerceController {
     );
   }
 
-  /** Bitkit reconnect URL: adds a USDT address to an existing Paykit account. */
-  static getPaykitReconnectUrl(returnTo: unknown, state: unknown, creator: unknown): string {
+  /**
+   * Bitkit reconnect URL for an existing Paykit account. `asset: 'USDT'` adds a
+   * USDT address alone; without it the reconnect also shares a Bitcoin account.
+   */
+  static getPaykitReconnectUrl(returnTo: unknown, state: unknown, creator: unknown, asset?: unknown): string {
     return CommerceApplication.getPaykitReconnectUrl(
       ...this.paykitSetupArguments('getPaykitReconnectUrl', 'reconnect', returnTo, state, creator),
+      asset === 'USDT' ? asset : undefined,
     );
   }
 
