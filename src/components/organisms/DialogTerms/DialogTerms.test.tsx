@@ -161,10 +161,22 @@ describe('DialogTerms - regional availability', () => {
     const { container } = render(<DialogTerms />);
     const text = container.textContent ?? '';
 
-    expect(text).toContain('PUBKY SHOP AND PUBKY MARKETPLACE');
+    expect(text).toContain('PUBKY SHOP AND PUBKY MARKET');
     expect(text).toContain('We are not the PayPal merchant of record for the sale.');
     expect(text).toContain('PayPal, Bitkit, and similar tools are Third-Party Materials.');
     expect(text).not.toMatch(/stripe/i);
+  });
+
+  it('names the product Pubky Market, never Pubky Marketplace', () => {
+    const { container } = render(<DialogTerms />);
+    const text = container.textContent ?? '';
+
+    expect(text).toContain('What Pubky Market is:');
+    expect(text).toContain('Pubky Market is the name we use for commerce on Pubky.');
+    expect(text).toContain('"Pubky Market" means the concept of commerce among Pubky identities.');
+    expect(text).toContain('Pubky Market is not a separate product or a second set of Terms.');
+    expect(text).not.toMatch(/Pubky Marketplace/i);
+    expect(text).not.toContain('PUBKY MARKETPLACE');
   });
 });
 

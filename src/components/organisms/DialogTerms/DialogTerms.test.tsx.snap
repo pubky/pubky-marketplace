@@ -632,7 +632,7 @@ exports[`DialogTerms - Snapshots > matches snapshot for default DialogTerms 1`] 
           class="text-muted-foreground text-base font-normal"
           data-testid="typography"
         >
-          PUBKY SHOP AND PUBKY MARKETPLACE
+          PUBKY SHOP AND PUBKY MARKET
         </p>
         <p
           class="text-muted-foreground text-base font-normal italic"
@@ -655,10 +655,10 @@ exports[`DialogTerms - Snapshots > matches snapshot for default DialogTerms 1`] 
           data-testid="typography"
         >
           <strong>
-            What Pubky Marketplace is:
+            What Pubky Market is:
           </strong>
           <br />
-          Pubky Marketplace is the name we use for commerce on Pubky. These Terms govern Pubky Shop. They do not automatically govern some other operator’s marketplace.
+          Pubky Market is the name we use for commerce on Pubky. These Terms govern Pubky Shop. They do not automatically govern some other operator’s marketplace.
         </p>
         <p
           class="text-muted-foreground text-base font-normal"
@@ -1185,9 +1185,9 @@ exports[`DialogTerms - Snapshots > matches snapshot for default DialogTerms 1`] 
           <li>
             "
             <strong>
-              Pubky Marketplace
+              Pubky Market
             </strong>
-            " means the concept of commerce among Pubky identities. Pubky Shop is the Synonym-operated instance of that concept. Pubky Marketplace is not a separate product or a second set of Terms.
+            " means the concept of commerce among Pubky identities. Pubky Shop is the Synonym-operated instance of that concept. Pubky Market is not a separate product or a second set of Terms.
           </li>
           <li>
             "
