@@ -58,17 +58,19 @@ export function resetGrantTest() {
   vi.spyOn(BootstrapApplication, 'initialize').mockResolvedValue(asOpaque({}));
 }
 
-export async function approve(session: Session, signer: 'ring' | 'bitkit' | 'passport' = 'ring') {
+/**
+ * Starts a grant sign-in and returns its approval. `unknown` is a QR scanned by
+ * an app the Shop cannot identify; `ring` and `bitkit` are an Authorize button
+ * tapped on this device.
+ */
+export async function approve(session: Session, signer: 'ring' | 'bitkit' | 'passport' | 'unknown' = 'ring') {
   vi.spyOn(AuthApplication, 'generateGrantAuthUrl').mockResolvedValue({
     authorizationUrl: 'pubkyauth://signin_grant',
     awaitApproval: Promise.resolve(session),
     cancelAuthFlow: vi.fn(),
   });
-  const flow =
-    signer === 'ring'
-      ? await AuthController.getAuthUrl()
-      : signer === 'bitkit'
-        ? await AuthController.getGrantAuthUrl()
-        : await AuthController.getPassportGrantAuthUrl();
+  if (signer === 'passport') return (await AuthController.getPassportGrantAuthUrl()).awaitApproval;
+  const flow = await AuthController.getAuthUrl();
+  if (signer !== 'unknown') AuthController.noteSignInSigner(signer);
   return flow.awaitApproval;
 }

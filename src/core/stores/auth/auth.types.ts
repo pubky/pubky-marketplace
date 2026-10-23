@@ -1,8 +1,11 @@
 import { Session } from '@synonymdev/pubky';
 import type { Pubky } from '@/models/models.types';
 
-/** The signer that approved a grant-backed session. */
-export type GrantSigner = 'bitkit' | 'passport' | 'ring' | 'local-key' | 'host';
+/**
+ * The signer that approved a grant-backed session. `unknown` is a sign-in QR
+ * scanned by Pubky Ring or Bitkit, which the Shop cannot tell apart.
+ */
+export type GrantSigner = 'bitkit' | 'passport' | 'ring' | 'local-key' | 'host' | 'unknown';
 
 export interface AuthInitParams {
   sessionOwner?: 'shop' | 'host' | null;

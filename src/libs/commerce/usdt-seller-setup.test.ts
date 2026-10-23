@@ -91,13 +91,14 @@ describe('deriveUsdtSellerReadiness', () => {
     { signer: 'passport', copy: "USDT needs Bitkit. Pubky Passport can't share a USDT address." },
     { signer: 'bitkit', copy: 'USDT needs a USDT address in Bitkit.' },
     { signer: 'host', copy: 'USDT needs Bitkit to share a USDT address.' },
+    { signer: 'unknown', copy: 'USDT needs Bitkit to share a USDT address.' },
     { signer: 'local-key', copy: 'USDT needs Bitkit to share a USDT address.' },
     { signer: null, copy: 'USDT needs Bitkit to share a USDT address.' },
   ] as const)('words the not-ready copy for a $signer sign-in', ({ signer, copy }) => {
     expect(usdtNeedsBitkitCopy(signer)).toBe(copy);
   });
 
-  it.each(['bitkit', 'host', 'local-key', null] as const)(
+  it.each(['bitkit', 'host', 'unknown', 'local-key', null] as const)(
     'never mentions Ring or Passport for a %s sign-in',
     (signer) => {
       expect(usdtNeedsBitkitCopy(signer)).not.toMatch(/Ring|Passport/);

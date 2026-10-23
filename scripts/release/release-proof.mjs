@@ -174,7 +174,14 @@ const signedInAs = (page, key, timeout = 180_000) =>
 // (v0.6.51, storage namespace); every read below takes the new key first.
 // Up to v0.6.48 /sign-in shows the Ring and Bitkit QRs side by side. From #135 (v0.6.49) it shows one
 // QR with a "Sign-in app" toggle (Pubky Ring | Bitkit); each copy button renders only for its signer.
+// The next release shows one QR both apps approve, labelled "Copy authentication link", with no toggle.
 const SIGNER_OF_LABEL = { 'Copy authentication link': 'Pubky Ring', 'Copy Bitkit authentication link': 'Bitkit' };
+async function labelOnPage(page, label) {
+  if (label !== 'Copy Bitkit authentication link') return label;
+  const hasBitkitQr = (await page.getByRole('button', { name: label }).count()) > 0;
+  const hasToggle = (await page.getByRole('group', { name: 'Sign-in app' }).count()) > 0;
+  return hasBitkitQr || hasToggle ? label : 'Copy authentication link';
+}
 async function showSigner(page, label) {
   const toggle = page.getByRole('group', { name: 'Sign-in app' }).first();
   if (!(await toggle.count())) return;
@@ -188,7 +195,8 @@ async function showSigner(page, label) {
     return;
   await toggle.getByRole('radio', { name: SIGNER_OF_LABEL[label] }).first().click();
 }
-async function qrLive(page, label) {
+async function qrLive(page, requestedLabel) {
+  const label = await labelOnPage(page, requestedLabel);
   await showSigner(page, label);
   await page.waitForFunction(
     (value) => {
@@ -212,8 +220,9 @@ async function bothQrsLive(page) {
   return ring && bitkit;
 }
 
-async function copyQrUrl(page, label) {
-  await qrLive(page, label);
+async function copyQrUrl(page, requestedLabel) {
+  await qrLive(page, requestedLabel);
+  const label = await labelOnPage(page, requestedLabel);
   await page.evaluate(() => navigator.clipboard.writeText(''));
   await page.getByRole('button', { name: label }).first().click();
   const handle = await page.waitForFunction(

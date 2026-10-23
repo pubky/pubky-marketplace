@@ -95,6 +95,27 @@ describe('QrCodeSlot', () => {
     expect(screen.getByRole('img', { name: 'Pubky Ring' })).toHaveAttribute('width', '24');
   });
 
+  it('shows the Pubky Ring and Bitkit marks together, inside the same badge as a single logo', () => {
+    render(<QrCodeSlot {...baseProps} logo="both" />);
+
+    const ringLogo = screen.getByRole('img', { name: 'Pubky Ring' });
+    const bitkitLogo = screen.getByRole('img', { name: 'Bitkit' });
+    expect(ringLogo.parentElement).toBe(bitkitLogo.parentElement);
+    expect(ringLogo.closest('.size-12')).not.toBeNull();
+    expect(ringLogo).toHaveAttribute('width', '18');
+    expect(bitkitLogo).toHaveAttribute('width', '18');
+  });
+
+  it.each([
+    ['ring', 'Pubky Ring', 'Bitkit'],
+    ['bitkit', 'Bitkit', 'Pubky Ring'],
+  ] as const)('shows only the %s mark for a single-signer QR', (logo, shown, hidden) => {
+    render(<QrCodeSlot {...baseProps} logo={logo} />);
+
+    expect(screen.getByRole('img', { name: shown })).toHaveAttribute('width', '24');
+    expect(screen.queryByRole('img', { name: hidden })).not.toBeInTheDocument();
+  });
+
   it('omits hover transitions on active QR by default', () => {
     render(<QrCodeSlot {...baseProps} />);
 

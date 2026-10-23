@@ -1,0 +1,1 @@
+The sign-in page now shows one QR code for Pubky Ring and Bitkit, with the Pubky Ring and Bitkit logos on it and one line, "Scan with Pubky Ring or Bitkit.", instead of a separate QR for each app. On a phone there is an Authorize button for each app, and each opens its own app. "Sign in without keys" still appears under the QR when your deploy asks for private-data keys.
