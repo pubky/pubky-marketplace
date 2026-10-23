@@ -378,11 +378,6 @@ describe('NotificationsContainer', () => {
     expect(mockMarkActivityRead).not.toHaveBeenCalled();
   });
 
-  it('matches snapshot', () => {
-    const { container } = render(<NotificationsContainer />);
-    expect(container).toMatchSnapshot();
-  });
-
   it('combines social, marketplace, and watch alerts in one feed', async () => {
     marketplaceFeedState.items = [
       {

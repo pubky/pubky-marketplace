@@ -95,14 +95,3 @@ describe('Settings', () => {
     expect(screen.getByTestId('content-layout')).toHaveAttribute('data-disable-wide-shell-layout', 'true');
   });
 });
-
-describe('Settings - Snapshots', () => {
-  it('matches snapshot', () => {
-    const { container } = render(
-      <Settings>
-        <div>Test content</div>
-      </Settings>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});

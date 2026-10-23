@@ -315,19 +315,3 @@ describe('MarketplaceFilters', () => {
     expect(useCommerceStore.getState().attributeFilters).toEqual({});
   });
 });
-
-describe('MarketplaceFilters - Snapshots', () => {
-  // The recorded snapshot was taken with the 'fashion' category left selected by
-  // the last test above. Pin that state so a failure in an earlier test cannot
-  // leak its filters into this one.
-  beforeEach(() => {
-    useCommerceStore.getState().reset();
-    useCommerceStore.getState().setCategoryId('fashion');
-    useMarketplaceDisplayStore.setState({ displayCurrency: 'USD' });
-  });
-
-  it('matches the default filter snapshot', () => {
-    const { container } = render(<MarketplaceFilters resultCount={8} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});

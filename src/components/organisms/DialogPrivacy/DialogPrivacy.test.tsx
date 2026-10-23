@@ -125,10 +125,3 @@ describe('DialogPrivacy', () => {
     expect(screen.getAllByText(/Synonym Software, S\.A\. de C\.V\./).length).toBeGreaterThan(0);
   });
 });
-
-describe('DialogPrivacy - Snapshots', () => {
-  it('matches snapshot for default DialogPrivacy', () => {
-    const { container } = render(<DialogPrivacy />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});

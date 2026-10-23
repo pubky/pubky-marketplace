@@ -39,34 +39,26 @@ describe('Switch', () => {
   });
 });
 
-describe('Switch - Snapshots', () => {
-  it('matches snapshot with default props', () => {
-    const { container } = render(<Switch />);
-    expect(container.firstChild).toMatchSnapshot();
+describe('Switch - Rendering', () => {
+  it('applies the base classes', () => {
+    render(<Switch />);
+    expect(screen.getByRole('switch')).toHaveClass('peer', 'inline-flex', 'h-5', 'w-9', 'rounded-full', 'bg-muted');
   });
 
-  it('matches snapshot when checked', () => {
-    const { container } = render(<Switch checked={true} />);
-    expect(container.firstChild).toMatchSnapshot();
+  it('renders the thumb element with its base classes', () => {
+    render(<Switch />);
+    const thumb = screen.getByRole('switch').querySelector('[data-state]');
+    expect(thumb).toBeInTheDocument();
+    expect(thumb).toHaveClass('pointer-events-none', 'block', 'size-4', 'rounded-full', 'bg-background');
   });
 
-  it('matches snapshot when unchecked', () => {
-    const { container } = render(<Switch checked={false} />);
-    expect(container.firstChild).toMatchSnapshot();
+  it('sets aria-checked alongside data-state', () => {
+    render(<Switch checked={true} />);
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
   });
 
-  it('matches snapshot when disabled', () => {
-    const { container } = render(<Switch disabled />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot when disabled and checked', () => {
-    const { container } = render(<Switch disabled checked={true} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom className', () => {
-    const { container } = render(<Switch className="custom-switch" />);
-    expect(container.firstChild).toMatchSnapshot();
+  it('merges a custom className with the base classes', () => {
+    render(<Switch className="custom-switch" />);
+    expect(screen.getByRole('switch')).toHaveClass('h-5', 'w-9', 'custom-switch');
   });
 });

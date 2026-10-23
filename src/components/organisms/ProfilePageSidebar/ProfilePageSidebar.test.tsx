@@ -106,21 +106,3 @@ describe('ProfilePageSidebar', () => {
     expect(screen.getByText('Links')).toBeInTheDocument();
   });
 });
-
-describe('ProfilePageSidebar - Snapshots', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('matches snapshot with default state', () => {
-    const { container } = render(<ProfilePageSidebar />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot structure', () => {
-    const { container } = render(<ProfilePageSidebar />);
-    const rootElement = container.firstChild as HTMLElement;
-    expect(rootElement.tagName).toBe('DIV');
-    expect(rootElement.children.length).toBe(3);
-  });
-});

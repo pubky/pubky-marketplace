@@ -104,9 +104,9 @@ afterEach(() => {
 });
 
 describe('DialogCropImage', () => {
-  it('matches snapshot with image loaded', async () => {
+  it('enables the Done button once the image is loaded and cropped', async () => {
     const props = createDefaultProps();
-    const { container } = render(<DialogCropImage {...props} />);
+    render(<DialogCropImage {...props} />);
 
     triggerCropComplete();
 
@@ -114,8 +114,6 @@ describe('DialogCropImage', () => {
       const doneButton = screen.getByRole('button', { name: 'Done' });
       expect(doneButton).not.toBeDisabled();
     });
-
-    expect(container.firstChild).toMatchSnapshot();
   });
 
   it('invokes crop callback when Done is clicked', async () => {

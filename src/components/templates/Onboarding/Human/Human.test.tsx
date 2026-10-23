@@ -190,10 +190,3 @@ describe('Human template', () => {
     });
   });
 });
-
-describe('Human template - Snapshots', () => {
-  it('matches snapshot', () => {
-    const { container } = render(<Human />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});

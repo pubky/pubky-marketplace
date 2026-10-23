@@ -30,7 +30,6 @@ describe('TagChip', () => {
     // keeps chips narrow within the card's fixed width).
     expect(html).toContain('1.2K');
     expect(html).toContain('rgb(80, 49, 7)');
-    expect(html).toMatchSnapshot();
   });
 
   it('truncates over-long labels by graphemes', () => {

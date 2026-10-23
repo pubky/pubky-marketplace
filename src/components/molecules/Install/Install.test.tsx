@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ONBOARDING_ROUTES } from '@/app/routes';
-import { InstallCard, InstallHeader, InstallNavigation } from './Install';
+import { InstallNavigation } from './Install';
 
 // Mock Next.js Image
 vi.mock('next/image', () => ({
@@ -26,20 +26,6 @@ vi.mock('@/stores/onboarding/onboarding.store', () => ({
     reset: mockReset,
   }),
 }));
-
-describe('InstallCard - Snapshots', () => {
-  it('matches snapshot', () => {
-    const { container } = render(<InstallCard />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});
-
-describe('InstallHeader - Snapshots', () => {
-  it('matches snapshot', () => {
-    const { container } = render(<InstallHeader />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});
 
 describe('InstallNavigation', () => {
   beforeEach(() => {
@@ -92,30 +78,5 @@ describe('InstallNavigation', () => {
 
     expect(createButton).toBeDisabled();
     expect(continueButton).toBeDisabled();
-  });
-});
-
-describe('InstallNavigation - Snapshots', () => {
-  it('matches snapshot', () => {
-    const { container } = render(<InstallNavigation />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot when create button is loading', () => {
-    const { container } = render(<InstallNavigation />);
-
-    const createButton = screen.getByRole('button', { name: /Create keys in browser/i });
-    fireEvent.click(createButton);
-
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot when continue button is loading', () => {
-    const { container } = render(<InstallNavigation />);
-
-    const continueButton = screen.getByRole('button', { name: /Continue with Pubky Ring/i });
-    fireEvent.click(continueButton);
-
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

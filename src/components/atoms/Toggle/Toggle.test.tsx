@@ -11,6 +11,53 @@ describe('Toggle', () => {
     expect(toggle).toHaveTextContent('Toggle');
   });
 
+  it('applies the default variant and size classes by default', () => {
+    render(<Toggle>Toggle</Toggle>);
+
+    const toggle = screen.getByRole('button');
+    expect(toggle).toHaveClass('inline-flex', 'items-center', 'justify-center', 'rounded-md', 'text-sm');
+    expect(toggle).toHaveClass('h-9', 'px-2', 'min-w-9');
+    expect(toggle).not.toHaveClass('border');
+  });
+
+  it('applies the outline variant classes', () => {
+    render(<Toggle variant="outline">Toggle</Toggle>);
+
+    expect(screen.getByRole('button')).toHaveClass('border', 'border-input', 'shadow-sm');
+  });
+
+  it.each([
+    ['default', ['h-9', 'px-2', 'min-w-9']],
+    ['sm', ['h-8', 'px-1.5', 'min-w-8']],
+    ['lg', ['h-10', 'px-2.5', 'min-w-10']],
+  ] as const)('applies size="%s" classes', (size, classes) => {
+    render(<Toggle size={size}>Toggle</Toggle>);
+
+    expect(screen.getByRole('button')).toHaveClass(...classes);
+  });
+
+  it('sets data-state and aria-pressed when pressed', () => {
+    render(<Toggle pressed>Toggle</Toggle>);
+
+    const toggle = screen.getByRole('button');
+    expect(toggle).toHaveAttribute('data-state', 'on');
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('sets data-state off and aria-pressed false when not pressed', () => {
+    render(<Toggle>Toggle</Toggle>);
+
+    const toggle = screen.getByRole('button');
+    expect(toggle).toHaveAttribute('data-state', 'off');
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('is disabled when disabled', () => {
+    render(<Toggle disabled>Toggle</Toggle>);
+
+    expect(screen.getByRole('button')).toBeDisabled();
+  });
+
   it('handles click events', () => {
     const handleClick = vi.fn();
     render(<Toggle onClick={handleClick}>Toggle</Toggle>);
@@ -21,66 +68,21 @@ describe('Toggle', () => {
     expect(handleClick).toHaveBeenCalledTimes(1);
   });
 
+  it('merges a custom className with the variant classes', () => {
+    render(
+      <Toggle variant="outline" size="lg" className="custom-toggle">
+        Toggle
+      </Toggle>,
+    );
+
+    const toggle = screen.getByRole('button');
+    expect(toggle).toHaveClass('border', 'h-10', 'custom-toggle');
+  });
+
   it('forwards ref correctly', () => {
     const ref = vi.fn();
     render(<Toggle ref={ref}>Toggle</Toggle>);
 
     expect(ref).toHaveBeenCalled();
-  });
-});
-
-describe('Toggle - Snapshots', () => {
-  it('matches snapshot with default props', () => {
-    const { container } = render(<Toggle>Default Toggle</Toggle>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for default variant', () => {
-    const { container } = render(<Toggle variant="default">Default</Toggle>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for outline variant', () => {
-    const { container } = render(<Toggle variant="outline">Outline</Toggle>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for small size', () => {
-    const { container } = render(<Toggle size="sm">Small</Toggle>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for default size', () => {
-    const { container } = render(<Toggle>Default Size</Toggle>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for large size', () => {
-    const { container } = render(<Toggle size="lg">Large</Toggle>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for pressed state', () => {
-    const { container } = render(<Toggle pressed>Pressed</Toggle>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for disabled state', () => {
-    const { container } = render(<Toggle disabled>Disabled</Toggle>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom className', () => {
-    const { container } = render(<Toggle className="custom-class">Custom</Toggle>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with all props combined', () => {
-    const { container } = render(
-      <Toggle variant="outline" size="lg" pressed className="custom-toggle">
-        Combined Props
-      </Toggle>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

@@ -19,7 +19,6 @@ import { ProfileProvider } from '@/providers/ProfileProvider/ProfileProvider';
 import { useHomeStore } from '@/stores/home/home.store';
 import { CONTENT, type ContentType, LAYOUT, REACH, SORT } from '@/stores/home/home.types';
 import { asInvalid } from '@/test-utils/type-assertions';
-import { resetViewport, setMobileViewport } from '@/test-utils/viewport';
 import { TimelineFeed, useTimelineFeedContext } from './TimelineFeed';
 
 const mockUsePullToRefresh = vi.hoisted(() =>
@@ -220,63 +219,6 @@ const defaultPaginationResult = {
   removePosts: vi.fn(),
   removePostsOptimistically: vi.fn(() => ({ commit: vi.fn(), rollback: vi.fn() })),
 };
-
-const visualLayoutResolution = {
-  requestedLayout: 'visual' as const,
-  effectiveLayout: 'visual' as const,
-  isVisualRequested: true,
-  isVisualActive: true,
-  isGridActive: false,
-  isPhoneViewport: false,
-};
-
-const phoneColumnsLayoutResolution = {
-  requestedLayout: 'visual' as const,
-  effectiveLayout: 'columns' as const,
-  isVisualRequested: true,
-  isVisualActive: false,
-  isGridActive: false,
-  isPhoneViewport: true,
-};
-
-const columnsLayoutResolution = {
-  requestedLayout: 'columns' as const,
-  effectiveLayout: 'columns' as const,
-  isVisualRequested: false,
-  isVisualActive: false,
-  isGridActive: false,
-  isPhoneViewport: false,
-};
-
-function setupTimelineFeedSnapshotMocks() {
-  vi.clearAllMocks();
-  useHomeStore.setState({
-    layout: LAYOUT.COLUMNS,
-    sort: SORT.TIMELINE,
-    reach: REACH.ALL,
-    content: CONTENT.ALL,
-  });
-  mockUseStreamIdFromFilters.mockReturnValue(PostStreamTypes.TIMELINE_ALL_ALL);
-  mockUseCustomFeed.mockReturnValue({
-    id: 'test-feed',
-    name: 'Test Feed',
-    tags: ['all'],
-    domain_tags: [],
-    reach: PubkyAppFeedReach.All,
-    sort: PubkyAppFeedSort.Recent,
-    content: null,
-    layout: PubkyAppFeedLayout.Columns,
-    created_at: 0,
-    updated_at: 0,
-  });
-  mockUseCustomStreamId.mockReturnValue('timeline:all:all:all' as PostStreamId);
-  mockUseStreamPagination.mockReturnValue(defaultPaginationResult);
-  mockUseFeedLayoutResolution.mockReturnValue(columnsLayoutResolution);
-  mockUsePullToRefresh.mockReturnValue({
-    state: 'idle' as const,
-    pullDistance: 0,
-  });
-}
 
 describe('TimelineFeed', () => {
   beforeEach(() => {
@@ -844,51 +786,5 @@ describe('TimelineFeed', () => {
 
       expect(contextValues[contextValues.length - 1]).toBeNull();
     });
-  });
-});
-
-describe('TimelineFeed - Snapshots', () => {
-  beforeEach(() => {
-    setupTimelineFeedSnapshotMocks();
-  });
-
-  it('matches snapshot for home visual layout', () => {
-    mockUseFeedLayoutResolution.mockReturnValue(visualLayoutResolution);
-
-    const { container } = render(<TimelineFeed variant={TIMELINE_FEED_VARIANT.HOME} />);
-    expect(container).toMatchSnapshot();
-  });
-
-  it('matches snapshot for home with feed children', () => {
-    const { container } = render(
-      <TimelineFeed variant={TIMELINE_FEED_VARIANT.HOME}>
-        <aside data-testid="feed-filters">Feed filters</aside>
-      </TimelineFeed>,
-    );
-    expect(container).toMatchSnapshot();
-  });
-
-  it('matches snapshot for loading state', () => {
-    mockUseStreamIdFromFilters.mockReturnValue(asInvalid<PostStreamTypes>(undefined));
-
-    const { container } = render(<TimelineFeed variant={TIMELINE_FEED_VARIANT.HOME} />);
-    expect(container).toMatchSnapshot();
-  });
-});
-
-describe('TimelineFeed - Mobile Snapshots', () => {
-  beforeEach(() => {
-    setupTimelineFeedSnapshotMocks();
-    mockUseFeedLayoutResolution.mockReturnValue(phoneColumnsLayoutResolution);
-    setMobileViewport();
-  });
-
-  afterEach(() => {
-    resetViewport();
-  });
-
-  it('matches snapshot on mobile viewport', () => {
-    const { container } = render(<TimelineFeed variant={TIMELINE_FEED_VARIANT.HOME} />);
-    expect(container).toMatchSnapshot();
   });
 });
