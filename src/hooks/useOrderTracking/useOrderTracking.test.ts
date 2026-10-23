@@ -84,6 +84,23 @@ describe('useOrderTracking', () => {
     expect(commit).toHaveBeenLastCalledWith(expect.any(String), expect.any(Number), 'Correio da Aldeia', 'CA-0001');
   });
 
+  it('requires a carrier before saving, and never defaults one', async () => {
+    const { result } = renderHook(() => withErrors(useOrderTracking(shippedWithoutNumber, vi.fn())));
+    await act(async () => {
+      result.current.form.setValue('carrierChoice', '');
+      result.current.form.setValue('trackingNumber', 'X-1234');
+    });
+
+    let succeeded = true;
+    await act(async () => {
+      succeeded = await result.current.submit();
+    });
+
+    expect(succeeded).toBe(false);
+    expect(commit).not.toHaveBeenCalled();
+    expect(result.current.form.formState.errors.carrierChoice?.message).toBe('Select a carrier.');
+  });
+
   it('refuses an empty tracking number without calling the service', async () => {
     const { result } = renderHook(() => withErrors(useOrderTracking(shippedWithoutNumber, vi.fn())));
 

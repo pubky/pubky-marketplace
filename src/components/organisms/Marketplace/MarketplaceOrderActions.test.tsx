@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ComponentProps } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AwaitingReleaseReview } from '@/application/commerce/commerce';
 import { COMMERCE_REVIEW_EDIT_WINDOW_SECONDS } from '@/config/commerce';
@@ -1252,6 +1253,13 @@ describe('MarketplaceOrderActions digital orders in an inconsistent shipped stat
 });
 
 describe('MarketplaceOrderActions shipment tracking', () => {
+  beforeEach(() => {
+    HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
+    HTMLElement.prototype.setPointerCapture = vi.fn();
+    HTMLElement.prototype.releasePointerCapture = vi.fn();
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+  });
+
   const shippedWith = (carrier: string, trackingNumber: string) =>
     createOrderFixture('shipped', {
       fulfillment: 'shipping',
@@ -1287,9 +1295,10 @@ describe('MarketplaceOrderActions shipment tracking', () => {
     expect(screen.queryByRole('button', { name: /tracking/i })).not.toBeInTheDocument();
   });
 
-  it('lets the seller mark an order shipped with the tracking number left empty', async () => {
-    const user = userEvent.setup();
-    const actOnOrder = vi.fn(async () => true);
+  const markShipped = async (
+    user: ReturnType<typeof userEvent.setup>,
+    actOnOrder: ComponentProps<typeof MarketplaceOrderActions>['actOnOrder'],
+  ) => {
     render(
       <MarketplaceOrderActions
         order={createOrderFixture('paid', { fulfillment: 'shipping' })}
@@ -1298,13 +1307,43 @@ describe('MarketplaceOrderActions shipment tracking', () => {
         actOnOrder={actOnOrder}
       />,
     );
-
     await user.click(screen.getByRole('button', { name: 'Mark shipped' }));
+  };
+
+  it('starts the ship form on "Select carrier" with no carrier preselected', async () => {
+    const user = userEvent.setup();
+    await markShipped(
+      user,
+      vi.fn(async () => true),
+    );
+
+    expect(screen.getByRole('combobox', { name: 'Carrier' })).toHaveTextContent('Select carrier');
+    expect(screen.queryByText('USPS')).not.toBeInTheDocument();
+  });
+
+  it('asks for a carrier before the order can be marked shipped', async () => {
+    const user = userEvent.setup();
+    const actOnOrder = vi.fn(async () => true);
+    await markShipped(user, actOnOrder);
+
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    expect(await screen.findByText('Select a carrier.')).toBeInTheDocument();
+    expect(actOnOrder).not.toHaveBeenCalled();
+  });
+
+  it('lets the seller mark an order shipped with the tracking number left empty', async () => {
+    const user = userEvent.setup();
+    const actOnOrder = vi.fn(async () => true);
+    await markShipped(user, actOnOrder);
+
     expect(screen.getByLabelText('Tracking number (optional)')).toBeInTheDocument();
+    await user.click(screen.getByRole('combobox', { name: 'Carrier' }));
+    await user.click(screen.getByRole('option', { name: 'Royal Mail' }));
     await user.click(screen.getByRole('button', { name: 'Confirm' }));
 
     await waitFor(() =>
-      expect(actOnOrder).toHaveBeenCalledWith(expect.anything(), 'fulfillment.ship', { carrier: 'USPS' }),
+      expect(actOnOrder).toHaveBeenCalledWith(expect.anything(), 'fulfillment.ship', { carrier: 'Royal Mail' }),
     );
   });
 });

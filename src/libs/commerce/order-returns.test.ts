@@ -42,9 +42,48 @@ describe('deliveredCompletionNote', () => {
     );
   });
 
-  it('keeps the return note when returns are accepted or no policy was frozen', () => {
-    const note = 'Completes automatically after the return window unless a return is requested.';
-    expect(deliveredCompletionNote({ returnPolicy: { acceptsReturns: true, returnWindowDays: 14 } })).toBe(note);
+  it('names the auto-complete period and the separate return window when returns are accepted', () => {
+    expect(
+      deliveredCompletionNote({
+        returnPolicy: { acceptsReturns: true, returnWindowDays: 30 },
+        autoCompleteDays: 14,
+      }),
+    ).toBe(
+      'Completes automatically 14 days after delivery unless a return is requested. A return can be requested within 30 days of delivery, even after the order completes.',
+    );
+  });
+
+  it('only says a return outlasts completion when the window is longer than the auto-complete period', () => {
+    expect(
+      deliveredCompletionNote({
+        returnPolicy: { acceptsReturns: true, returnWindowDays: 7 },
+        autoCompleteDays: 14,
+      }),
+    ).toBe(
+      'Completes automatically 14 days after delivery unless a return is requested. A return can be requested within 7 days of delivery.',
+    );
+    expect(
+      deliveredCompletionNote({
+        returnPolicy: { acceptsReturns: true, returnWindowDays: 14 },
+        autoCompleteDays: 14,
+      }),
+    ).toBe(
+      'Completes automatically 14 days after delivery unless a return is requested. A return can be requested within 14 days of delivery.',
+    );
+    expect(
+      deliveredCompletionNote({
+        returnPolicy: { acceptsReturns: true, returnWindowDays: 2 },
+        autoCompleteDays: 1,
+      }),
+    ).toBe(
+      'Completes automatically 1 day after delivery unless a return is requested. A return can be requested within 2 days of delivery, even after the order completes.',
+    );
+  });
+
+  it('falls back to the default auto-complete period and leaves the window out when none was frozen', () => {
+    const note = 'Completes automatically 14 days after delivery unless a return is requested.';
     expect(deliveredCompletionNote({ returnPolicy: null })).toBe(note);
+    expect(deliveredCompletionNote({})).toBe(note);
+    expect(deliveredCompletionNote({ returnPolicy: { acceptsReturns: true, returnWindowDays: null } })).toBe(note);
   });
 });
