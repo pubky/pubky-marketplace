@@ -159,11 +159,31 @@ export type NexusReviewView = {
  */
 export type NexusReviewSort = 'newest' | 'value' | 'rating_desc' | 'rating_asc';
 
+/** The viewer's follow reach a review stream keeps reviewers from (IX4). */
+export type NexusReviewReach = 'following' | 'friends' | 'wot';
+
+/**
+ * The reviewer filters of a review stream (IX4), shared by the seller and
+ * listing streams. `reach` and `tagged_by_viewer` need `viewer_id` (the index
+ * answers 400 without it); `depth` (1 to 3, default 2) needs `reach=wot`;
+ * `tagged_by_viewer` takes 1 to 5 comma-separated labels and combines with
+ * `reach` (both must hold). `attestors` is `<pubky>:<from>:<until>,…` and
+ * filters the list itself to reviews those windows cover.
+ */
+export type NexusReviewFilterParams = {
+  viewer_id?: string;
+  reach?: NexusReviewReach;
+  depth?: number;
+  tagged_by_viewer?: string;
+  attestors?: string;
+};
+
 /**
  * What an index served over every match of a filtered or sorted review
  * stream, under counting rules v2 (IX4). The seller-scope fields come with
  * the seller stream only. The Shop's sort does not read it: header figures
- * stay the counted figures of the whole scope.
+ * stay the counted figures of the whole scope. A reviewer filter does: the
+ * header then shows these figures.
  */
 export type NexusReviewsMatched = {
   buyers: number;
@@ -360,7 +380,7 @@ export type TShopReviewsParams = {
   skip?: number;
   limit?: number;
   sort?: NexusReviewSort;
-};
+} & NexusReviewFilterParams;
 
 /** Path/query params for `GET v0/shop/{seller_id}/reputation`. */
 export type TShopReputationParams = {
@@ -381,7 +401,7 @@ export type TListingReviewsParams = {
   skip?: number;
   limit?: number;
   sort?: NexusReviewSort;
-};
+} & NexusReviewFilterParams;
 
 /** The kinds of outcome an attestor records against an attested order. */
 export type NexusAttestorOutcomeKind = 'refunded' | 'returned';

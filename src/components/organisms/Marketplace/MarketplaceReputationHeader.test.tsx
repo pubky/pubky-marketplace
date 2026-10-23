@@ -219,3 +219,97 @@ describe('MarketplaceReputationHeader counted figures', () => {
     expect(screen.queryByText(/buyers/)).not.toBeInTheDocument();
   });
 });
+
+describe('MarketplaceReputationHeader under a reviewer filter', () => {
+  beforeEach(() => {
+    reputation.value = rated({ buckets: { [TEST_TRUSTED_ATTESTOR.pubky]: bucket() }, scoped: bucket() });
+    reputation.ratedListings = 2;
+  });
+
+  const following = { kind: 'following' } as const;
+
+  it('replaces the unfiltered figures with the matched ones and the people they come from', () => {
+    render(
+      <MarketplaceReputationHeader
+        sellerPubky={SELLER}
+        variant="full"
+        filterSummary={{ state: 'ready', filter: following, matched: { buyers: 3, orders: 4, avg: 4.8 } }}
+      />,
+    );
+
+    const header = screen.getByTestId('marketplace-reputation-header');
+    expect(header).toHaveAttribute('data-filtered', 'true');
+    expect(header).toHaveTextContent('from 3 people you follow');
+    expect(screen.getByRole('img', { name: 'Rated 4.8 out of 5' })).toBeVisible();
+    expect(header.textContent).not.toContain('4.7');
+    expect(header.textContent).not.toContain('Weighted');
+    expect(screen.queryByTestId('marketplace-reputation-products')).not.toBeInTheDocument();
+  });
+
+  it('adds the matched seller rating above the products line', () => {
+    render(
+      <MarketplaceReputationHeader
+        sellerPubky={SELLER}
+        variant="full"
+        filterSummary={{
+          state: 'ready',
+          filter: { kind: 'wot' },
+          matched: { buyers: 3, orders: 4, avg: 4.8, sellerBuyers: 2, sellerAvg: 4.2 },
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('marketplace-reputation-seller-rating')).toHaveTextContent(
+      'seller rating from 2 people in your network',
+    );
+    expect(screen.getByTestId('marketplace-review-filter-rating')).toHaveTextContent(
+      'products rated from 3 people in your network',
+    );
+    expect(screen.getByRole('img', { name: 'Rated 4.2 out of 5' })).toBeVisible();
+    expect(screen.getByRole('img', { name: 'Rated 4.8 out of 5' })).toBeVisible();
+  });
+
+  it('says no reviews from them, never 0.0 and never the figure of everyone, when nobody matched', () => {
+    render(
+      <MarketplaceReputationHeader
+        sellerPubky={SELLER}
+        variant="full"
+        filterSummary={{ state: 'ready', filter: following, matched: { buyers: 0, orders: 0, avg: null } }}
+      />,
+    );
+
+    const header = screen.getByTestId('marketplace-reputation-header');
+    expect(header).toHaveTextContent('No reviews from people you follow');
+    expect(header.textContent).not.toContain('0.0');
+    expect(header.textContent).not.toContain('4.7');
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  });
+
+  it('holds the place while the index has not answered, and says when it cannot score the filter', () => {
+    const { rerender } = render(
+      <MarketplaceReputationHeader
+        sellerPubky={SELLER}
+        variant="full"
+        filterSummary={{ state: 'loading', filter: following }}
+      />,
+    );
+    expect(screen.getByTestId('marketplace-review-filter-rating-loading')).toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+
+    rerender(
+      <MarketplaceReputationHeader
+        sellerPubky={SELLER}
+        variant="full"
+        filterSummary={{ state: 'unscored', filter: following }}
+      />,
+    );
+    expect(screen.getByTestId('marketplace-reputation-header')).toHaveTextContent('No rating for this filter');
+  });
+
+  it('shows the unfiltered figures again once there is no filter summary', () => {
+    render(<MarketplaceReputationHeader sellerPubky={SELLER} variant="full" filterSummary={null} />);
+
+    expect(screen.getByTestId('marketplace-reputation-seller-rating')).toHaveTextContent('4.7seller rating · 2 buyers');
+    expect(screen.getByTestId('marketplace-reputation-header')).not.toHaveAttribute('data-filtered');
+  });
+});

@@ -1187,7 +1187,10 @@ export class CommerceController {
   /** A page of indexed reviews about a seller, with joined responses. */
   static async fetchSellerReviews(sellerPubky: unknown, page: CommerceReviewsPage = {}) {
     await CommerceAttestorApplication.loadKeyWindows();
-    return await CommerceApplication.fetchSellerReviews(CommerceRecordNormalizer.pubky(sellerPubky), page);
+    return await CommerceApplication.fetchSellerReviews(
+      CommerceRecordNormalizer.pubky(sellerPubky),
+      this.reviewsPage(page),
+    );
   }
 
   /** A page of indexed buyer reviews of one listing, with joined responses. */
@@ -1196,8 +1199,16 @@ export class CommerceController {
     return await CommerceApplication.fetchListingReviews(
       CommerceRecordNormalizer.pubky(sellerPubky),
       CommerceRecordNormalizer.entityId(listingId),
-      page,
+      this.reviewsPage(page),
     );
+  }
+
+  /** The page with its reviewer filter's viewer validated as a pubky before it reaches the index. */
+  private static reviewsPage(page: CommerceReviewsPage): CommerceReviewsPage {
+    const { filter } = page;
+    return filter === undefined
+      ? page
+      : { ...page, filter: { ...filter, viewerId: CommerceRecordNormalizer.pubky(filter.viewerId) } };
   }
 
   /**

@@ -2,8 +2,11 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { TagController } from '@/controllers/tag/tag';
+import type { MarketplaceReviewsState } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
 import { setAttestorProfileKeyWindows } from '@/libs/commerce/attestor-key-windows';
 import { type ReviewOutcome, reviewOutcomeKey } from '@/libs/commerce/attestor-records';
+import type { MarketplaceReviewFilter } from '@/libs/commerce/review-filter';
 import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
 import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
 import type { CommerceIndexedReview } from '@/models/commerce/commerce.schema';
@@ -44,6 +47,10 @@ const listed = vi.hoisted(
     isReordering: boolean;
     hasMore: boolean;
     setSort: (sort: string) => void;
+    filter: MarketplaceReviewFilter;
+    filtersAvailable: boolean;
+    filterRejected: boolean;
+    setFilter: (filter: MarketplaceReviewFilter) => void;
   } => ({
     reviews: null,
     sort: 'newest',
@@ -51,22 +58,31 @@ const listed = vi.hoisted(
     isReordering: false,
     hasMore: false,
     setSort: () => undefined,
+    filter: { kind: 'all' },
+    filtersAvailable: false,
+    filterRejected: false,
+    setFilter: () => undefined,
   }),
 );
 
-vi.mock('@/hooks/useMarketplaceReviews/useMarketplaceReviews', () => ({
-  useMarketplaceReviews: () => ({
+function listedState(): MarketplaceReviewsState {
+  return {
     status: 'ok',
     reviews: listed.isReordering ? [] : (listed.reviews ?? [REVIEW]),
     isFetching: false,
     isReordering: listed.isReordering,
     hasMore: listed.hasMore,
     loadMore: vi.fn(),
-    sort: listed.sort,
-    setSort: (sort: string) => listed.setSort(sort),
+    sort: listed.sort as MarketplaceReviewsState['sort'],
+    setSort: (sort) => listed.setSort(sort),
     sortSupported: listed.sortSupported,
-  }),
-}));
+    filter: listed.filter,
+    setFilter: (filter) => listed.setFilter(filter),
+    filtersAvailable: listed.filtersAvailable,
+    filterSummary: null,
+    filterRejected: listed.filterRejected,
+  };
+}
 
 const reportDialog = vi.hoisted((): { review: unknown } => ({ review: null }));
 
@@ -101,7 +117,7 @@ describe('MarketplaceReviewsSection reviewer link', () => {
   });
 
   it('links the reviewer to their Shop profile while social link-out is off', () => {
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} />);
+    render(<MarketplaceReviewsSection reviews={listedState()} />);
 
     expect(screen.getByRole('link', { name: `${REVIEWER.slice(0, 8)}…` })).toHaveAttribute(
       'href',
@@ -112,7 +128,7 @@ describe('MarketplaceReviewsSection reviewer link', () => {
 
   it('links the reviewer to their shop, with their profile on the social host beside it, while on', () => {
     setSocialHost('https://pubky.app');
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} />);
+    render(<MarketplaceReviewsSection reviews={listedState()} />);
 
     expect(screen.getByRole('link', { name: `${REVIEWER.slice(0, 8)}…` })).toHaveAttribute(
       'href',
@@ -145,7 +161,7 @@ describe('MarketplaceReviewsSection on a storefront', () => {
       }),
     );
 
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} />);
+    render(<MarketplaceReviewsSection reviews={listedState()} />);
 
     expect(await screen.findByRole('link', { name: 'Rangefinder camera' })).toHaveAttribute(
       'href',
@@ -159,7 +175,7 @@ describe('MarketplaceReviewsSection on a storefront', () => {
     const lookup = vi.spyOn(CommerceController, 'getOrFetchListingIfFound').mockResolvedValue(null);
     const strictFetch = vi.spyOn(CommerceController, 'fetchListing');
 
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} />);
+    render(<MarketplaceReviewsSection reviews={listedState()} />);
 
     await vi.waitFor(() => expect(lookup).toHaveBeenCalledWith(SELLER, 'rangefinder_camera'));
     expect(strictFetch).not.toHaveBeenCalled();
@@ -170,7 +186,7 @@ describe('MarketplaceReviewsSection on a storefront', () => {
   it('shows no listing on a listing page', () => {
     const lookup = vi.spyOn(CommerceController, 'getOrFetchListingIfFound');
 
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     expect(lookup).not.toHaveBeenCalled();
   });
@@ -187,7 +203,7 @@ describe('MarketplaceReviewsSection verification badge', () => {
 
   function renderReview(overrides: Partial<CommerceIndexedReview>) {
     listed.reviews = [{ ...REVIEW, ...overrides }];
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
   }
 
   it('names the trusted attestor on the badge', () => {
@@ -245,7 +261,7 @@ describe('MarketplaceReviewsSection moderation', () => {
     listed.reviews = [
       { ...REVIEW, ratingOverall: 2, text: '', moderation: { state: 'text_hidden', reason: 'hatespeech' } },
     ];
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     expect(screen.getByText('Hidden by Pubky Market moderation · Reason: Hate speech')).toBeInTheDocument();
     expect(screen.getByLabelText('Rated 2.0 out of 5')).toBeInTheDocument();
@@ -254,7 +270,7 @@ describe('MarketplaceReviewsSection moderation', () => {
 
   it('shows the neutral reason for a moderator label this build does not know', () => {
     listed.reviews = [{ ...REVIEW, text: '', moderation: { state: 'text_hidden', reason: 'new_label' } }];
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     expect(
       screen.getByText('Hidden by Pubky Market moderation · Reason: Breaks the Pubky Market rules'),
@@ -264,7 +280,7 @@ describe('MarketplaceReviewsSection moderation', () => {
 
   it('never shows text on a moderated review, even if the index sent some', () => {
     listed.reviews = [{ ...REVIEW, moderation: { state: 'text_hidden', reason: 'hatespeech' } }];
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     expect(screen.queryByText('Exactly as described.')).not.toBeInTheDocument();
   });
@@ -279,7 +295,7 @@ describe('MarketplaceReviewsSection moderation', () => {
       },
       REVIEW,
     ];
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     const group = screen.getByTestId('marketplace-reviews-not-counted');
     expect(within(group).getByText('1 not counted')).toBeInTheDocument();
@@ -293,7 +309,7 @@ describe('MarketplaceReviewsSection moderation', () => {
 
   it('shows only the not-counted group when every review is excluded', () => {
     listed.reviews = [{ ...REVIEW, text: '', moderation: { state: 'excluded', reason: 'review_fraud' } }];
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     expect(screen.getByText('1 not counted')).toBeInTheDocument();
     expect(screen.queryByText('No reviews yet')).not.toBeInTheDocument();
@@ -302,7 +318,7 @@ describe('MarketplaceReviewsSection moderation', () => {
   it('treats a review the index sent without a moderation field as not moderated', () => {
     const { moderation: _omitted, ...legacy } = REVIEW;
     listed.reviews = [legacy as CommerceIndexedReview];
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     expect(screen.getByText('Exactly as described.')).toBeInTheDocument();
     expect(screen.queryByTestId('marketplace-review-moderated')).not.toBeInTheDocument();
@@ -340,7 +356,7 @@ describe('MarketplaceReviewsSection counting', () => {
       { ...REVIEW, reviewId: '8Z8CWH8NVYQY39ZEBFGKQWWEK2', text: 'Unknown key.', attestorId: 'x'.repeat(52) },
       REVIEW,
     ];
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     const group = screen.getByTestId('marketplace-reviews-not-counted');
     expect(within(group).getByText('2 not counted')).toBeInTheDocument();
@@ -365,7 +381,7 @@ describe('MarketplaceReviewsSection counting', () => {
         iat: Date.parse('2026-10-13T12:00:00Z') / 1000,
       },
     ];
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     const [counted] = reviewItems();
     expect(counted).toHaveTextContent('Exactly as described.');
@@ -378,7 +394,7 @@ describe('MarketplaceReviewsSection counting', () => {
   it('falls back to the fail-closed record time for an entry without iat', () => {
     retireTrustedKey('2026-10-12');
     listed.reviews = [{ ...REVIEW, createdAt: '2026-09-15T12:00:00.000Z', iat: null }];
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     expect(screen.getByText('1 not counted')).toBeInTheDocument();
     expect(screen.getByText('Attested (unrecognized attestor)')).toBeInTheDocument();
@@ -386,7 +402,7 @@ describe('MarketplaceReviewsSection counting', () => {
 
   it('counts a review whose text moderation hid', () => {
     listed.reviews = [{ ...REVIEW, text: '', moderation: { state: 'text_hidden', reason: 'hatespeech' } }];
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     expect(screen.queryByTestId('marketplace-reviews-not-counted')).not.toBeInTheDocument();
   });
@@ -417,7 +433,7 @@ describe('MarketplaceReviewsSection sort', () => {
 
   it('shows the sort to a signed-out visitor, on Newest, above the list', () => {
     useAuthStore.setState({ currentUserPubky: null });
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     const sort = screen.getByRole('combobox', { name: 'Sort reviews' });
     expect(sort).toHaveTextContent('Newest');
@@ -427,7 +443,7 @@ describe('MarketplaceReviewsSection sort', () => {
 
   it('offers Newest, Highest-value purchases, Highest rated and Lowest rated', async () => {
     const user = userEvent.setup();
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     await user.click(screen.getByRole('combobox', { name: 'Sort reviews' }));
 
@@ -447,7 +463,7 @@ describe('MarketplaceReviewsSection sort', () => {
     const setSort = vi.fn();
     listed.setSort = setSort;
     const user = userEvent.setup();
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     await user.click(screen.getByRole('combobox', { name: 'Sort reviews' }));
     await user.click(await screen.findByRole('option', { name: label }));
@@ -457,14 +473,14 @@ describe('MarketplaceReviewsSection sort', () => {
 
   it('shows the chosen order on the control', () => {
     listed.sort = 'rating_asc';
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     expect(screen.getByRole('combobox', { name: 'Sort reviews' })).toHaveTextContent('Lowest rated');
   });
 
   it('hides the sort when the index cannot sort', () => {
     listed.sortSupported = false;
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     expect(screen.queryByRole('combobox', { name: 'Sort reviews' })).not.toBeInTheDocument();
     expect(screen.getByText('Exactly as described.')).toBeInTheDocument();
@@ -472,19 +488,19 @@ describe('MarketplaceReviewsSection sort', () => {
 
   it('offers no sort for a single review, until another page may exist', () => {
     listed.reviews = [REVIEW];
-    const { unmount } = render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    const { unmount } = render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
     expect(screen.queryByRole('combobox', { name: 'Sort reviews' })).not.toBeInTheDocument();
     unmount();
 
     listed.hasMore = true;
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
     expect(screen.getByRole('combobox', { name: 'Sort reviews' })).toBeInTheDocument();
   });
 
   it('keeps the control and shows a list skeleton, not "No reviews yet", while a new order loads', () => {
     listed.isReordering = true;
     listed.sort = 'value';
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     expect(screen.getByRole('combobox', { name: 'Sort reviews' })).toHaveTextContent('Highest-value purchases');
     expect(screen.getByTestId('marketplace-reviews-list-skeleton')).toBeInTheDocument();
@@ -512,7 +528,7 @@ describe('MarketplaceReviewsSection sort', () => {
       },
       { ...REVIEW, reviewId: 'r4', ratingOverall: 4, verified: false, attestorId: null, text: 'Unverified four.' },
     ];
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     const group = screen.getByTestId('marketplace-reviews-not-counted');
     expect(within(group).getByText('2 not counted')).toBeInTheDocument();
@@ -531,6 +547,176 @@ describe('MarketplaceReviewsSection sort', () => {
   });
 });
 
+describe('MarketplaceReviewsSection reviewer chips', () => {
+  const VIEWER = 'v'.repeat(52);
+  const SECOND: CommerceIndexedReview = { ...REVIEW, reviewId: '8Z8CWH8NVYQY39ZEBFGKQWWEKH', text: 'Second review.' };
+
+  beforeEach(() => {
+    listed.reviews = [REVIEW, SECOND];
+    listed.filtersAvailable = true;
+    listed.setFilter = vi.fn();
+    vi.spyOn(TagController, 'getViewerUserTagLabels').mockResolvedValue([]);
+    useAuthStore.setState({ currentUserPubky: VIEWER });
+  });
+
+  afterEach(() => {
+    listed.reviews = null;
+    listed.filter = { kind: 'all' };
+    listed.filtersAvailable = false;
+    listed.filterRejected = false;
+    listed.hasMore = false;
+    listed.isReordering = false;
+    listed.setFilter = () => undefined;
+  });
+
+  const renderSection = () =>
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
+
+  it('offers All, People I follow, My network and Tagged by me to a signed-in viewer, above the list', () => {
+    renderSection();
+
+    const chips = screen.getByRole('group', { name: 'Filter reviews' });
+    expect(within(chips).getByRole('radio', { name: 'All' })).toBeChecked();
+    expect(within(chips).getByRole('radio', { name: 'People I follow' })).not.toBeChecked();
+    expect(within(chips).getByRole('radio', { name: 'My network' })).not.toBeChecked();
+    expect(within(chips).getByRole('button', { name: /Tagged by me/ })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('combobox', { name: 'Sort reviews' })).toBeInTheDocument();
+    const firstReview = document.querySelector('[data-cy="marketplace-review-item"]') as HTMLElement;
+    expect(chips.compareDocumentPosition(firstReview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('offers no chips to a signed-out visitor, who keeps the sort', () => {
+    listed.filtersAvailable = false;
+    useAuthStore.setState({ currentUserPubky: null });
+    renderSection();
+
+    expect(screen.queryByTestId('marketplace-reviews-filter')).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Sort reviews' })).toBeInTheDocument();
+  });
+
+  it('offers no chips once the index showed it cannot filter, and still lists the reviews', () => {
+    listed.filtersAvailable = false;
+    renderSection();
+
+    expect(screen.queryByTestId('marketplace-reviews-filter')).not.toBeInTheDocument();
+    expect(screen.getByText('Exactly as described.')).toBeInTheDocument();
+  });
+
+  it('offers no chips on a seller with no review at all', () => {
+    listed.reviews = [];
+    renderSection();
+
+    expect(screen.queryByTestId('marketplace-reviews-filter')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['People I follow', { kind: 'following' }],
+    ['My network', { kind: 'wot' }],
+  ])('chooses %s as its filter', async (name, expected) => {
+    const user = userEvent.setup();
+    renderSection();
+
+    await user.click(screen.getByRole('radio', { name }));
+
+    expect(listed.setFilter).toHaveBeenCalledWith(expected);
+  });
+
+  it('marks the active chip, and choosing it again returns to All', async () => {
+    listed.filter = { kind: 'following' };
+    const user = userEvent.setup();
+    renderSection();
+
+    expect(screen.getByRole('radio', { name: 'People I follow' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'All' })).not.toBeChecked();
+
+    await user.click(screen.getByRole('radio', { name: 'People I follow' }));
+
+    expect(listed.setFilter).toHaveBeenCalledWith({ kind: 'all' });
+  });
+
+  it('marks Tagged by me with the number of labels while labels are applied', () => {
+    listed.filter = { kind: 'tagged', labels: ['bitcoin', 'camera'] };
+    renderSection();
+
+    const tagged = screen.getByRole('button', { name: /Tagged by me/ });
+    expect(tagged).toHaveAttribute('aria-pressed', 'true');
+    expect(tagged).toHaveTextContent('Tagged by me· 2');
+    expect(screen.getByRole('radio', { name: 'All' })).not.toBeChecked();
+  });
+
+  it('says so, with the index note and a way back, when a filter matches no review', async () => {
+    listed.filter = { kind: 'wot' };
+    listed.reviews = [];
+    const user = userEvent.setup();
+    renderSection();
+
+    const notice = screen.getByTestId('marketplace-reviews-filter-notice');
+    expect(notice).toHaveTextContent('No reviews match this filter.');
+    expect(notice).toHaveTextContent('people on other homeservers are not included');
+    expect(screen.queryByText('No reviews yet')).not.toBeInTheDocument();
+    expect(screen.getByTestId('marketplace-reviews-filter')).toBeInTheDocument();
+
+    await user.click(within(notice).getByRole('button', { name: 'Show all reviews' }));
+
+    expect(listed.setFilter).toHaveBeenCalledWith({ kind: 'all' });
+  });
+
+  it('shows the index refusal instead of a list, and keeps the chips', async () => {
+    listed.filter = { kind: 'tagged', labels: ['bad'] };
+    listed.reviews = [];
+    listed.filterRejected = true;
+    const user = userEvent.setup();
+    renderSection();
+
+    expect(screen.getByTestId('marketplace-reviews-filter-notice')).toHaveTextContent(
+      'The review index could not apply this filter',
+    );
+    expect(screen.queryByTestId('marketplace-reviews-not-counted')).not.toBeInTheDocument();
+    expect(screen.getByTestId('marketplace-reviews-filter')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Show all reviews' }));
+
+    expect(listed.setFilter).toHaveBeenCalledWith({ kind: 'all' });
+  });
+
+  it('shows a skeleton, with the chips kept, while a new filter loads', () => {
+    listed.filter = { kind: 'following' };
+    listed.isReordering = true;
+    renderSection();
+
+    expect(screen.getByTestId('marketplace-reviews-list-skeleton')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'People I follow' })).toBeChecked();
+    expect(screen.queryByTestId('marketplace-reviews-filter-notice')).not.toBeInTheDocument();
+  });
+
+  it('keeps the moderation placeholder and the not-counted group as they are under a chip', () => {
+    listed.filter = { kind: 'following' };
+    listed.reviews = [
+      { ...REVIEW, reviewId: 'r5', text: 'Five stars.' },
+      { ...REVIEW, reviewId: 'r2', text: '', moderation: { state: 'text_hidden', reason: 'hatespeech' } },
+      { ...REVIEW, reviewId: 'r1', text: '', moderation: { state: 'excluded', reason: 'review_fraud' } },
+    ];
+    renderSection();
+
+    const group = screen.getByTestId('marketplace-reviews-not-counted');
+    expect(within(group).getByText('1 not counted')).toBeInTheDocument();
+    expect(within(group).getByText('Excluded by Pubky Market moderation (fraud)')).toBeInTheDocument();
+    expect(screen.getByText('Hidden by Pubky Market moderation · Reason: Hate speech')).toBeInTheDocument();
+  });
+
+  it('applies the picked labels from the Tagged by me picker', async () => {
+    const user = userEvent.setup();
+    renderSection();
+
+    await user.click(screen.getByRole('button', { name: /Tagged by me/ }));
+    await user.type(await screen.findByLabelText('Add a tag'), 'Camera{Enter}');
+    await user.click(screen.getByTestId('marketplace-review-tag-apply'));
+
+    expect(listed.setFilter).toHaveBeenCalledWith({ kind: 'tagged', labels: ['camera'] });
+    await waitFor(() => expect(screen.queryByTestId('marketplace-review-tag-picker')).not.toBeInTheDocument());
+  });
+});
+
 describe('MarketplaceReviewsSection Report review', () => {
   afterEach(() => {
     listed.reviews = null;
@@ -539,7 +725,7 @@ describe('MarketplaceReviewsSection Report review', () => {
   it('offers Report review in the review menu and opens the report dialog with the review as its target', async () => {
     useAuthStore.setState({ currentUserPubky: 'r'.repeat(52) });
     const user = userEvent.setup();
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     await user.click(screen.getByRole('button', { name: 'Review actions' }));
     await user.click(await screen.findByRole('menuitem', { name: 'Report review' }));
@@ -555,7 +741,7 @@ describe('MarketplaceReviewsSection Report review', () => {
 
   it("doesn't offer the reviewer a report of their own review", () => {
     useAuthStore.setState({ currentUserPubky: REVIEWER });
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     expect(screen.queryByRole('button', { name: 'Review actions' })).not.toBeInTheDocument();
   });
@@ -606,7 +792,7 @@ describe('MarketplaceReviewsSection attestor notes', () => {
     vi.spyOn(CommerceController, 'fetchReviewOutcomes').mockResolvedValue(
       outcomesOf([[ORDER_REF, [{ kind: 'refunded', on: '2026-10-14' }]]]),
     );
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     const note = await screen.findByTestId('marketplace-review-outcome-refunded');
 
@@ -630,7 +816,7 @@ describe('MarketplaceReviewsSection attestor notes', () => {
         ],
       ]),
     );
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     await waitFor(() => expect(screen.getAllByTestId('marketplace-review-outcome-returned')).toHaveLength(2));
     const [first, second] = reviewItems() as [HTMLElement, HTMLElement];
@@ -643,7 +829,7 @@ describe('MarketplaceReviewsSection attestor notes', () => {
   it('shows no note, and no error, when the index has none or has no such route', async () => {
     listed.reviews = [attested()];
     const read = vi.spyOn(CommerceController, 'fetchReviewOutcomes').mockResolvedValue(new Map());
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
 
@@ -657,7 +843,7 @@ describe('MarketplaceReviewsSection attestor notes', () => {
       attested({ reviewId: 'r2', attestorId: 'x'.repeat(52), text: 'Unknown key.' }),
     ];
     const read = vi.spyOn(CommerceController, 'fetchReviewOutcomes').mockResolvedValue(new Map());
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     expect(await screen.findByText('Unverified.')).toBeInTheDocument();
     expect(read).not.toHaveBeenCalled();
@@ -669,7 +855,7 @@ describe('MarketplaceReviewsSection attestor notes', () => {
     const read = vi
       .spyOn(CommerceController, 'fetchReviewOutcomes')
       .mockResolvedValue(outcomesOf([[ORDER_REF, [{ kind: 'refunded', on: '2026-10-14' }]]]));
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
     await screen.findByTestId('marketplace-review-outcome-refunded');
     expect(screen.queryByTestId('marketplace-reviews-not-counted')).not.toBeInTheDocument();
 
@@ -700,7 +886,7 @@ describe('MarketplaceReviewsSection attestor notes', () => {
       attested({ reviewId: 'r4', ratingOverall: 4, verified: false, attestorId: null, orderRef: null, text: 'Four.' }),
     ];
     const read = vi.spyOn(CommerceController, 'fetchReviewOutcomes').mockResolvedValue(new Map());
-    const { unmount } = render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    const { unmount } = render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
     await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
     const without = shape();
     expect(without.map(({ rating }) => rating)).toEqual([
@@ -716,7 +902,7 @@ describe('MarketplaceReviewsSection attestor notes', () => {
         [OTHER_ORDER_REF, [{ kind: 'returned', on: '2026-10-12' }]],
       ]),
     );
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+    render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
     await waitFor(() => expect(screen.getAllByTestId(/marketplace-review-outcome-/)).toHaveLength(2));
 
     expect(shape()).toEqual(without);

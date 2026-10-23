@@ -48,6 +48,7 @@ import type {
   CommerceReputationBucket,
   CommerceReputationSnippet,
   CommerceReputationSummary,
+  CommerceReviewMatch,
   CommerceSavedSearchParams,
 } from '@/models/commerce/commerce.schema';
 import type { NexusListingDetails, NexusReputationBucket } from '@/services/nexus/marketplace/marketplace.types';
@@ -321,14 +322,29 @@ const nexusReviewEntriesSchema = z.array(
 );
 
 /**
+ * What an index served over every counted match of a filtered or sorted
+ * stream (IX4). Read only for a reviewer filter, whose header shows it, and
+ * read apart from the reviews: a malformed `matched` costs the figures, never
+ * the list.
+ */
+const nexusReviewMatchedSchema = z.object({
+  buyers: nexusCountSchema,
+  orders: nexusCountSchema,
+  avg: z.number().min(0).max(5).nullable(),
+  seller_buyers: nexusCountSchema.optional(),
+  seller_avg: z.number().min(0).max(5).nullable().optional(),
+});
+
+/**
  * A review stream is a bare list until a filter or sort parameter is sent
  * (and always from an index before IX4), then the `{reviews, matched}`
- * envelope. `matched` is not read here: header figures stay the counted
- * figures of the whole scope, so a malformed `matched` never costs the list.
+ * envelope.
  */
 const nexusReviewStreamSchema = z.union([
-  nexusReviewEntriesSchema.transform((reviews) => ({ reviews, envelope: false })),
-  z.object({ reviews: nexusReviewEntriesSchema }).transform(({ reviews }) => ({ reviews, envelope: true })),
+  nexusReviewEntriesSchema.transform((reviews) => ({ reviews, envelope: false, matched: undefined })),
+  z
+    .object({ reviews: nexusReviewEntriesSchema, matched: z.unknown().optional() })
+    .transform(({ reviews, matched }) => ({ reviews, envelope: true, matched })),
 ]);
 
 const nexusAttestorRecordEntrySchema = z.object({ record: z.record(z.string(), z.unknown()) });
@@ -509,10 +525,30 @@ export class CommerceRecordNormalizer {
   /**
    * `nexusReviewStream` for either answer shape, also telling which one the
    * index served: `envelope` is true only for the `{reviews, matched}` form,
-   * which an index answers when it honoured a sort or filter parameter.
+   * which an index answers when it honoured a sort or filter parameter, and
+   * carrying its `matched` figures (null for a bare list or a malformed
+   * `matched`).
    */
-  static nexusReviewPage(input: unknown): { reviews: CommerceIndexedReview[]; envelope: boolean } {
-    const { reviews: entries, envelope } = this.parse(nexusReviewStreamSchema, input, 'nexusReviewStream');
+  static nexusReviewPage(input: unknown): {
+    reviews: CommerceIndexedReview[];
+    envelope: boolean;
+    matched: CommerceReviewMatch | null;
+  } {
+    const {
+      reviews: entries,
+      envelope,
+      matched: rawMatched,
+    } = this.parse(nexusReviewStreamSchema, input, 'nexusReviewStream');
+    const parsedMatched = nexusReviewMatchedSchema.safeParse(rawMatched);
+    const matched: CommerceReviewMatch | null = parsedMatched.success
+      ? {
+          buyers: parsedMatched.data.buyers,
+          orders: parsedMatched.data.orders,
+          avg: parsedMatched.data.avg,
+          ...(parsedMatched.data.seller_buyers !== undefined && { sellerBuyers: parsedMatched.data.seller_buyers }),
+          ...(parsedMatched.data.seller_avg !== undefined && { sellerAvg: parsedMatched.data.seller_avg }),
+        }
+      : null;
     const reviews: CommerceIndexedReview[] = entries.map(({ review, response }) => ({
       reviewId: review.review_id,
       uri: this.reviewUri(review.reviewer_id, review.review_id),
@@ -545,7 +581,7 @@ export class CommerceRecordNormalizer {
               revision: response.revision,
             },
     }));
-    return { reviews, envelope };
+    return { reviews, envelope, matched };
   }
 
   /**

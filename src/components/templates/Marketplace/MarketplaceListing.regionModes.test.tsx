@@ -191,6 +191,7 @@ vi.mock('@/hooks/useMarketplaceProjection/useMarketplaceProjection', () => ({
 
 vi.mock('@/hooks/useMarketplaceReviews/useMarketplaceReviews', () => ({
   useListingRating: () => listingRating.value,
+  useMarketplaceReviews: () => ({ filterSummary: null }),
 }));
 
 vi.mock('@/hooks/useMeasurementSystem/useMeasurementSystem', () => ({

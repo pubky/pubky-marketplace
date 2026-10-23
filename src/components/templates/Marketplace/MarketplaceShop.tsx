@@ -22,6 +22,7 @@ import {
   type MarketplaceCatalogItem,
 } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { useMarketplaceMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
+import { useMarketplaceReviews } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
 import { useSellerPaymentBadges } from '@/hooks/useSellerPaymentBadges/useSellerPaymentBadges';
 import { useSellingAvailability } from '@/hooks/useSellingAvailability/useSellingAvailability';
 import { sellerDeclaration } from '@/libs/commerce/eu-region';
@@ -42,6 +43,8 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const isOwner = currentUserPubky === sellerPubky;
   const paymentBadges = useSellerPaymentBadges(sellerPubky);
+  // One list for the review section and the rating header, so a reviewer chip changes both.
+  const reviews = useMarketplaceReviews({ sellerPubky });
   const profileRoute = getProfileRoute(PROFILE_ROUTES.PROFILE, sellerPubky);
   // With social link-out on, profiles live on the social host; plain <a>, same tab.
   const socialProfileUrl = getSocialHostUrl(profileRoute);
@@ -115,7 +118,12 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
               }
               afterLocation={
                 <>
-                  <MarketplaceReputationHeader sellerPubky={sellerPubky} variant="full" className="mt-3" />
+                  <MarketplaceReputationHeader
+                    sellerPubky={sellerPubky}
+                    variant="full"
+                    filterSummary={reviews.filterSummary}
+                    className="mt-3"
+                  />
                   <MarketplacePaymentMethodBadges
                     methods={paymentBadges}
                     className="mt-3"
@@ -193,7 +201,7 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
 
             {/* The section styles its own container and renders NOTHING when no
                 review index serves this deployment — no empty card shell. */}
-            <MarketplaceReviewsSection sellerPubky={sellerPubky} className="rounded-md bg-card p-5" />
+            <MarketplaceReviewsSection reviews={reviews} className="rounded-md bg-card p-5" />
           </>
         ) : (
           <>
@@ -212,7 +220,12 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
                       ? 'Add a shop name, description, and images to personalize your storefront.'
                       : 'This seller hasn\u2019t set up a shop profile yet. Their owner-signed listings are below.'}
                   </Typography>
-                  <MarketplaceReputationHeader sellerPubky={sellerPubky} variant="full" className="mt-3" />
+                  <MarketplaceReputationHeader
+                    sellerPubky={sellerPubky}
+                    variant="full"
+                    filterSummary={reviews.filterSummary}
+                    className="mt-3"
+                  />
                   <MarketplacePaymentMethodBadges
                     methods={paymentBadges}
                     className="mt-3"
@@ -247,7 +260,7 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
 
             <ShopListingsGrid listings={listings} isOwner={isOwner} />
 
-            <MarketplaceReviewsSection sellerPubky={sellerPubky} className="rounded-md bg-card p-5" />
+            <MarketplaceReviewsSection reviews={reviews} className="rounded-md bg-card p-5" />
           </>
         )}
       </Container>

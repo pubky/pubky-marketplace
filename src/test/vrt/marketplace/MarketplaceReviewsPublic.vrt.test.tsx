@@ -6,7 +6,7 @@ import { renderForVRT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { MarketplaceListingCard } from '@/organisms/Marketplace/MarketplaceListingCard';
 import { MarketplaceReputationHeader } from '@/organisms/Marketplace/MarketplaceReputationHeader';
-import { MarketplaceReviewsSection } from '@/organisms/Marketplace/MarketplaceReviewsSection';
+import { ReviewsSection, ReviewsWithHeader } from '@/test-utils/marketplace-reviews';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { setSocialHost } from '@/test-utils/social-host';
 import { TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
@@ -31,26 +31,41 @@ const BUYER_C = 'c'.repeat(52);
 const controllerState = vi.hoisted(() => ({
   reputation: { status: 'unavailable' } as unknown,
   reviews: [] as unknown[],
+  filtered: [] as unknown[],
+  matched: null as unknown,
+  filterOutcome: 'ok' as 'ok' | 'rejected',
   ownResponse: null as unknown,
   listing: null as unknown,
   catalogEntries: [] as unknown[],
   outcomes: new Map<string, { kind: 'refunded' | 'returned'; on: string }[]>(),
 }));
 
+interface ReviewsPageRequest {
+  sort?: string;
+  filter?: unknown;
+}
+
+/** What the mocked index answers: the filtered page and matched figures once a chip sends a filter. */
+function reviewsAnswer(page: ReviewsPageRequest) {
+  if (page.filter !== undefined && controllerState.filterOutcome === 'rejected') return { status: 'rejected' };
+  const filtered = page.filter !== undefined;
+  return {
+    status: 'ok',
+    reviews: filtered ? controllerState.filtered : controllerState.reviews,
+    sortApplied: page.sort !== undefined,
+    filterApplied: filtered,
+    matched: filtered ? controllerState.matched : null,
+  };
+}
+
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     ...createMarketplaceVrtCommerceController(),
     fetchSellerReputation: vi.fn(async () => controllerState.reputation),
-    fetchSellerReviews: vi.fn(async (_seller: string, page: { sort?: string }) => ({
-      status: 'ok',
-      reviews: controllerState.reviews,
-      sortApplied: page.sort !== undefined,
-    })),
-    fetchListingReviews: vi.fn(async (_seller: string, _listing: string, page: { sort?: string }) => ({
-      status: 'ok',
-      reviews: controllerState.reviews,
-      sortApplied: page.sort !== undefined,
-    })),
+    fetchSellerReviews: vi.fn(async (_seller: string, page: ReviewsPageRequest) => reviewsAnswer(page)),
+    fetchListingReviews: vi.fn(async (_seller: string, _listing: string, page: ReviewsPageRequest) =>
+      reviewsAnswer(page),
+    ),
     fetchReviewOutcomes: vi.fn(async () => controllerState.outcomes),
     getOwnMarketplaceReviewResponse: vi.fn(async () => controllerState.ownResponse),
     getOrFetchListingIfFound: vi.fn(async () => controllerState.listing),
@@ -383,6 +398,9 @@ beforeEach(async () => {
   useAuthStore.setState({ currentUserPubky: null });
   controllerState.reputation = { status: 'unavailable' };
   controllerState.reviews = [];
+  controllerState.filtered = [];
+  controllerState.matched = null;
+  controllerState.filterOutcome = 'ok';
   controllerState.ownResponse = null;
   controllerState.listing = null;
   controllerState.catalogEntries = [];
@@ -519,7 +537,7 @@ describe('Marketplace public reviews — visual regression', () => {
     controllerState.reviews = REVIEW_SPECTRUM;
     const screen = await renderForVRT(
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
-        <MarketplaceReviewsSection sellerPubky={SELLER} />
+        <ReviewsSection sellerPubky={SELLER} />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
@@ -536,7 +554,7 @@ describe('Marketplace public reviews — visual regression', () => {
     try {
       const screen = await renderForVRT(
         <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
-          <MarketplaceReviewsSection sellerPubky={SELLER} />
+          <ReviewsSection sellerPubky={SELLER} />
         </main>,
         { viewport: VRT_VIEWPORT_DESKTOP },
       );
@@ -554,7 +572,7 @@ describe('Marketplace public reviews — visual regression', () => {
     controllerState.reviews = REVIEW_SPECTRUM;
     const screen = await renderForVRT(
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
-        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+        <ReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
@@ -573,7 +591,7 @@ describe('Marketplace public reviews — visual regression', () => {
     controllerState.reviews = REVIEW_SPECTRUM;
     const screen = await renderForVRT(
       <main className="flex w-full flex-col gap-6 px-4 py-8">
-        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+        <ReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
       </main>,
       { viewport: VRT_VIEWPORT_MOBILE },
     );
@@ -585,7 +603,7 @@ describe('Marketplace public reviews — visual regression', () => {
     controllerState.reviews = REVIEW_SPECTRUM;
     const screen = await renderForVRT(
       <main className="flex w-full flex-col gap-6 px-4 py-8">
-        <MarketplaceReviewsSection sellerPubky={SELLER} />
+        <ReviewsSection sellerPubky={SELLER} />
       </main>,
       { viewport: VRT_VIEWPORT_MOBILE },
     );
@@ -613,7 +631,7 @@ describe('Marketplace public reviews — visual regression', () => {
     ];
     const screen = await renderForVRT(
       <main className="flex w-full flex-col gap-6 px-4 py-8">
-        <MarketplaceReviewsSection sellerPubky={SELLER} />
+        <ReviewsSection sellerPubky={SELLER} />
       </main>,
       { viewport: VRT_VIEWPORT_MOBILE },
     );
@@ -626,7 +644,7 @@ describe('Marketplace public reviews — visual regression', () => {
     annotate([{ kind: 'refunded', on: '2026-10-14' }]);
     const screen = await renderForVRT(
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
-        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+        <ReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
@@ -639,7 +657,7 @@ describe('Marketplace public reviews — visual regression', () => {
     annotate([{ kind: 'returned', on: '2026-10-12' }]);
     const screen = await renderForVRT(
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
-        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+        <ReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
@@ -655,7 +673,7 @@ describe('Marketplace public reviews — visual regression', () => {
     ]);
     const screen = await renderForVRT(
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
-        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+        <ReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
@@ -672,7 +690,7 @@ describe('Marketplace public reviews — visual regression', () => {
     ]);
     const screen = await renderForVRT(
       <main className="flex w-full flex-col gap-6 px-4 py-8">
-        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+        <ReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
       </main>,
       { viewport: VRT_VIEWPORT_MOBILE },
     );
@@ -685,7 +703,7 @@ describe('Marketplace public reviews — visual regression', () => {
     controllerState.reviews = MODERATED_REVIEWS;
     const screen = await renderForVRT(
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
-        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+        <ReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
@@ -698,7 +716,7 @@ describe('Marketplace public reviews — visual regression', () => {
     controllerState.reviews = MODERATED_REVIEWS;
     const screen = await renderForVRT(
       <main className="flex w-full flex-col gap-6 px-4 py-8">
-        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+        <ReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
       </main>,
       { viewport: VRT_VIEWPORT_MOBILE },
     );
@@ -710,7 +728,7 @@ describe('Marketplace public reviews — visual regression', () => {
     controllerState.reviews = [indexedReview()];
     const screen = await renderForVRT(
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
-        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+        <ReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
@@ -728,7 +746,7 @@ describe('Marketplace public reviews — visual regression', () => {
     controllerState.reviews = [];
     const screen = await renderForVRT(
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
-        <MarketplaceReviewsSection sellerPubky={SELLER} />
+        <ReviewsSection sellerPubky={SELLER} />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
@@ -741,7 +759,7 @@ describe('Marketplace public reviews — visual regression', () => {
     useAuthStore.setState({ currentUserPubky: SELLER });
     const screen = await renderForVRT(
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
-        <MarketplaceReviewsSection sellerPubky={SELLER} />
+        <ReviewsSection sellerPubky={SELLER} />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
@@ -753,5 +771,127 @@ describe('Marketplace public reviews — visual regression', () => {
       }
     });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-section-composer-desktop');
+  });
+  describe('reviewer filter chips', () => {
+    const VIEWER = 'r'.repeat(52);
+
+    const chipRow = (name: RegExp | string) => document.querySelector(`[data-testid="${name}"]`);
+
+    async function renderFiltered(options: { viewport: typeof VRT_VIEWPORT_DESKTOP; width: string; header: boolean }) {
+      useAuthStore.setState({ currentUserPubky: VIEWER });
+      controllerState.reputation = countedSummary;
+      controllerState.reviews = REVIEW_SPECTRUM;
+      const { TagController } = await import('@/controllers/tag/tag');
+      vi.spyOn(TagController, 'getViewerUserTagLabels').mockResolvedValue(['trusted', 'fast-shipping', 'local']);
+      return await renderForVRT(
+        <main className={options.width}>
+          {options.header ? (
+            <ReviewsWithHeader sellerPubky={SELLER} />
+          ) : (
+            <ReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+          )}
+        </main>,
+        { viewport: options.viewport },
+      );
+    }
+
+    const desktop = {
+      viewport: VRT_VIEWPORT_DESKTOP,
+      width: 'mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10',
+    };
+    const mobile = { viewport: VRT_VIEWPORT_MOBILE, width: 'flex w-full flex-col gap-6 px-4 py-8' };
+
+    async function choose(screen: Awaited<ReturnType<typeof renderForVRT>>, chip: string, appliedText: string) {
+      await waitForText('Verified purchase');
+      await screen.getByRole('radio', { name: chip }).click();
+      await waitForText(appliedText);
+    }
+
+    it('renders the chips beside the sort control, with All active, at desktop viewport', async () => {
+      const screen = await renderFiltered({ ...desktop, header: false });
+      await waitForText('Verified purchase');
+      await vi.waitFor(() => {
+        if (!chipRow('marketplace-reviews-filter')) throw new Error('The chips have not rendered yet.');
+      });
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-filter-chips-desktop');
+    });
+
+    it('renders the chips above the list at mobile viewport', async () => {
+      const screen = await renderFiltered({ ...mobile, header: false });
+      await waitForText('Verified purchase');
+      await vi.waitFor(() => {
+        if (!chipRow('marketplace-reviews-filter')) throw new Error('The chips have not rendered yet.');
+      });
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-filter-chips-mobile');
+    });
+
+    it('renders People I follow with the matched figure in the storefront header at desktop viewport', async () => {
+      controllerState.filtered = [
+        indexedReview({ reviewId: '8Z8CWH8NVYQY39ZEBFGKQWWEKJ', text: 'Followed buyer here.' }),
+      ];
+      controllerState.matched = { buyers: 3, orders: 4, avg: 4.8, sellerBuyers: 2, sellerAvg: 4.5 };
+      const screen = await renderFiltered({ ...desktop, header: true });
+      await choose(screen, 'People I follow', 'from 3 people you follow');
+      await waitForText('Followed buyer here.');
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-filter-following-desktop');
+    });
+
+    it('renders My network with the matched figure in the storefront header at mobile viewport', async () => {
+      controllerState.filtered = [
+        indexedReview({ reviewId: '8Z8CWH8NVYQY39ZEBFGKQWWEKJ', text: 'Network buyer here.' }),
+      ];
+      controllerState.matched = { buyers: 1, orders: 1, avg: 4, sellerBuyers: 1, sellerAvg: 4 };
+      const screen = await renderFiltered({ ...mobile, header: true });
+      await choose(screen, 'My network', 'from 1 person in your network');
+      await waitForText('Network buyer here.');
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-filter-network-mobile');
+    });
+
+    it('renders the Tagged by me picker open, with the tags the viewer uses, at desktop viewport', async () => {
+      const screen = await renderFiltered({ ...desktop, header: false });
+      await waitForText('Verified purchase');
+      await screen.getByRole('button', { name: /Tagged by me/ }).click();
+      await waitForText('Reviewers you tagged');
+      await screen.getByRole('button', { name: 'trusted' }).click();
+      await vi.waitFor(() => {
+        if (!document.querySelector('[data-testid="marketplace-review-tag-selected"]')) {
+          throw new Error('The tag has not been picked yet.');
+        }
+      });
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-filter-tagged-picker-desktop');
+    });
+
+    it('renders Tagged by me applied, with its count and the matched figure, at desktop viewport', async () => {
+      controllerState.filtered = [
+        indexedReview({ reviewId: '8Z8CWH8NVYQY39ZEBFGKQWWEKJ', text: 'Tagged buyer here.' }),
+      ];
+      controllerState.matched = { buyers: 2, orders: 2, avg: 4.5 };
+      const screen = await renderFiltered({ ...desktop, header: true });
+      await waitForText('Verified purchase');
+      await screen.getByRole('button', { name: /Tagged by me/ }).click();
+      await waitForText('Reviewers you tagged');
+      await screen.getByRole('button', { name: 'trusted' }).click();
+      await screen.getByTestId('marketplace-review-tag-apply').click();
+      await waitForText('from 2 people you tagged');
+      await waitForText('Tagged buyer here.');
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-filter-tagged-desktop');
+    });
+
+    it('renders the empty state with a way back when nobody matched at desktop viewport', async () => {
+      controllerState.filtered = [];
+      controllerState.matched = { buyers: 0, orders: 0, avg: null };
+      const screen = await renderFiltered({ ...desktop, header: true });
+      await choose(screen, 'People I follow', 'No reviews from people you follow');
+      await waitForText('No reviews match this filter.');
+      await waitForText('Show all reviews');
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-filter-empty-desktop');
+    });
+
+    it('renders the index refusal of a filter at mobile viewport', async () => {
+      controllerState.filterOutcome = 'rejected';
+      const screen = await renderFiltered({ ...mobile, header: false });
+      await choose(screen, 'My network', 'could not apply this filter');
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-filter-rejected-mobile');
+    });
   });
 });
