@@ -551,7 +551,7 @@ export const APP_RUNTIME_DEFAULTS = {
   marketplaceTrustedAttestors: [] as MarketplaceTrustedAttestor[],
   preludeSdkTimeoutMs: 5_000,
   previewImage: '/preview.webp',
-  siteName: 'Pubky App',
+  siteName: 'Pubky Market',
   locale: 'en_US',
   author: 'Pubky Team',
   keywords: 'pubky, social media, decentralized, key, pkarr, pubky core',
