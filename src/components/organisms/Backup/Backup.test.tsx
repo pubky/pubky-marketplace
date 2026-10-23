@@ -1,48 +1,42 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createZustandLikeHook } from '@/test-utils/stores';
 import { BackupNavigation, BackupPageHeader } from './Backup';
 
-// Mock Next.js router
-const mockPush = vi.fn();
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({
-    push: mockPush,
-  }),
-}));
-
-// Mock atoms
-vi.mock('@/atoms/Button/Button', () => {
+const { mockClearSecrets, mockOnboardingState, mockPush, mockReplace } = vi.hoisted(() => {
+  // Mutable snapshot: tests change hasHydrated / secretKey before rendering.
+  const mockOnboardingState = {
+    hasHydrated: true,
+    secretKey: 'test-secret-key' as string | null,
+    mnemonic: 'test-mnemonic' as string | null,
+    clearSecrets: () => {},
+  };
+  // Like the real store action: the secrets are gone once it returns.
+  const mockClearSecrets = vi.fn(() => {
+    mockOnboardingState.secretKey = null;
+    mockOnboardingState.mnemonic = null;
+  });
+  mockOnboardingState.clearSecrets = mockClearSecrets;
   return {
-    Button: ({
-      children,
-      className,
-      onClick,
-      disabled,
-      variant,
-      size,
-    }: {
-      children: React.ReactNode;
-      className?: string;
-      onClick?: () => void;
-      disabled?: boolean;
-      variant?: string;
-      size?: string;
-    }) => (
-      <button
-        data-testid="button"
-        className={className}
-        onClick={onClick}
-        disabled={disabled}
-        data-variant={variant}
-        data-size={size}
-      >
-        {children}
-      </button>
-    ),
+    mockClearSecrets,
+    mockOnboardingState,
+    mockPush: vi.fn(),
+    mockReplace: vi.fn(),
   };
 });
 
+vi.mock('@/stores/onboarding/onboarding.store', () => ({
+  useOnboardingStore: createZustandLikeHook(mockOnboardingState),
+}));
+
+// Mock Next.js router (one stable router, as in the app)
+vi.mock('next/navigation', () => {
+  const router = { push: mockPush, replace: mockReplace };
+  return { useRouter: () => router };
+});
+
+// Mock atoms (Button and Dialog stay real so the skip dialog behaves as in the app)
 vi.mock('@/atoms/Container/Container', () => {
   return {
     Container: ({ children, className }: { children: React.ReactNode; className?: string }) => (
@@ -128,6 +122,9 @@ vi.mock('@/app/routes', () => ({
 describe('BackupNavigation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockOnboardingState.hasHydrated = true;
+    mockOnboardingState.secretKey = 'test-secret-key';
+    mockOnboardingState.mnemonic = 'test-mnemonic';
   });
 
   it('matches snapshot for default BackupNavigation', () => {
@@ -154,20 +151,105 @@ describe('BackupNavigation', () => {
     expect(continueButton).toHaveAttribute('data-loading', 'true');
   });
 
-  it('navigates to profile on continue button click', () => {
-    render(<BackupNavigation />);
-
-    const continueButton = screen.getByTestId('continue-button');
-    fireEvent.click(continueButton);
-
-    expect(mockPush).toHaveBeenCalledWith('/profile');
-  });
-
   it('renders back button and disables it', () => {
     render(<BackupNavigation />);
 
     expect(screen.queryByTestId('back-button')).toBeInTheDocument();
     expect(screen.queryByTestId('back-button')).toBeDisabled();
+  });
+
+  it('continue navigates to profile without clearing the secrets', () => {
+    render(<BackupNavigation />);
+
+    fireEvent.click(screen.getByTestId('continue-button'));
+
+    expect(mockPush).toHaveBeenCalledTimes(1);
+    expect(mockPush).toHaveBeenCalledWith('/profile');
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(mockClearSecrets).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('opens the skip backup dialog from the skip button', () => {
+    render(<BackupNavigation />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Skip backup' }));
+
+    expect(screen.getByRole('dialog', { name: 'Skip backup?' })).toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('clears the secrets and replaces the backup step with profile when skipping is confirmed', () => {
+    const { rerender } = render(<BackupNavigation />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Skip backup' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Skip and delete phrase' }));
+    // The mocked store does not notify subscribers, so render again to see the cleared secrets.
+    rerender(<BackupNavigation />);
+
+    expect(mockClearSecrets).toHaveBeenCalledTimes(1);
+    expect(mockOnboardingState.secretKey).toBeNull();
+    expect(mockOnboardingState.mnemonic).toBeNull();
+    // Both the confirm handler and the missing-secret check replace the step, so the count is not pinned.
+    expect(mockReplace).toHaveBeenCalledWith('/profile');
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('keeps the secrets and stays on the backup step when skipping is cancelled', () => {
+    render(<BackupNavigation />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Skip backup' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(mockClearSecrets).not.toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it('stays on the backup step while the secret key is present', () => {
+    render(<BackupNavigation />);
+
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('moves on to the profile step when the loaded store holds no secret key', () => {
+    mockOnboardingState.secretKey = null;
+
+    render(<BackupNavigation />);
+
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith('/profile');
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('waits for the store to load before checking for the secret key', () => {
+    mockOnboardingState.hasHydrated = false;
+    mockOnboardingState.secretKey = null;
+
+    const { rerender } = render(<BackupNavigation />);
+
+    expect(mockReplace).not.toHaveBeenCalled();
+
+    mockOnboardingState.hasHydrated = true;
+    rerender(<BackupNavigation />);
+
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith('/profile');
+  });
+
+  it('stays on the backup step when the loaded store restores the secret key', () => {
+    mockOnboardingState.hasHydrated = false;
+    mockOnboardingState.secretKey = null;
+
+    const { rerender } = render(<BackupNavigation />);
+
+    mockOnboardingState.hasHydrated = true;
+    mockOnboardingState.secretKey = 'test-secret-key';
+    rerender(<BackupNavigation />);
+
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 });
 

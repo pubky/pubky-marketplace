@@ -1,0 +1,1 @@
+Onboarding's backup step has a Skip backup option that deletes the recovery phrase from the browser. A recovery phrase that was not backed up is removed from the browser the first time the Shop loads after it is 24 hours old, counted from sign-up, or from when it was created if sign-up never finishes.

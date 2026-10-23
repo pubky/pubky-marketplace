@@ -2,6 +2,7 @@ import { type ZustandSet } from '../stores.types';
 import {
   type OnboardingActions,
   OnboardingActionTypes,
+  onboardingClearedSecrets,
   onboardingInitialState,
   type OnboardingStore,
   TOnboardingSecrets,
@@ -20,11 +21,19 @@ export const createOnboardingActions = (set: ZustandSet<OnboardingStore>): Onboa
   },
 
   setSecrets: (secrets: TOnboardingSecrets) => {
-    set({ ...secrets }, false, OnboardingActionTypes.SET_SECRETS);
+    set({ ...secrets, secretsSavedAt: Date.now() }, false, OnboardingActionTypes.SET_SECRETS);
   },
 
   clearSecrets: () => {
-    set({ secretKey: null, mnemonic: null }, false, OnboardingActionTypes.CLEAR_SECRETS);
+    set({ ...onboardingClearedSecrets }, false, OnboardingActionTypes.CLEAR_SECRETS);
+  },
+
+  restartSecretsLifetime: () => {
+    set(
+      (state) => (state.secretKey || state.mnemonic ? { secretsSavedAt: Date.now() } : state),
+      false,
+      OnboardingActionTypes.RESTART_SECRETS_LIFETIME,
+    );
   },
 
   setHydrated: (hasHydrated: boolean) => {
