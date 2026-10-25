@@ -75,6 +75,14 @@ describe('TextareaField', () => {
     expect(screen.getByTestId('typography')).toHaveAttribute('id', 'details-message');
   });
 
+  it('renders the message without an id or describedby when the field has no id', () => {
+    render(<TextareaField value="" message="Details are required." />);
+
+    expect(screen.getByTestId('textarea')).not.toHaveAttribute('aria-describedby');
+    expect(screen.getByTestId('typography')).not.toHaveAttribute('id');
+    expect(screen.getByTestId('typography')).toHaveTextContent('Details are required.');
+  });
+
   it('renders with required value prop', () => {
     render(<TextareaField value="Test content" />);
     expect(screen.getByTestId('container')).toBeInTheDocument();

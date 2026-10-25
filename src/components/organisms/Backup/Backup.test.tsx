@@ -1,7 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { BackupNavigation } from './Backup';
+import { BackupNavigation, BackupPageHeader } from './Backup';
 
 // Mock Next.js router
 const mockPush = vi.fn();
@@ -163,5 +163,19 @@ describe('BackupNavigation', () => {
 
     expect(screen.queryByTestId('back-button')).toBeInTheDocument();
     expect(screen.queryByTestId('back-button')).toBeDisabled();
+  });
+});
+
+describe('BackupPageHeader', () => {
+  it('renders a large title with the highlighted pubky and the subtitle', () => {
+    render(<BackupPageHeader />);
+
+    const title = screen.getByTestId('page-title');
+    expect(title).toHaveAttribute('data-size', 'large');
+    expect(title).toHaveTextContent('Back up your pubky.');
+    expect(screen.getByText('pubky.')).toHaveClass('text-brand');
+    expect(screen.getByTestId('page-subtitle')).toHaveTextContent(
+      'You need a backup to restore access to your account later.',
+    );
   });
 });

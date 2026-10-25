@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Edit, FileText, Flag, Key, Link, MegaphoneOff, Trash, UserRoundPlus } from 'lucide-react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MENU_VARIANT } from '@/config/ui';
@@ -312,5 +312,54 @@ describe('PostMenuActionsContent', () => {
     );
 
     expect(screen.queryByText('Copy text of post')).not.toBeInTheDocument();
+  });
+
+  it('renders sheet actions as buttons that run the action and then complete', async () => {
+    const onCopyLink = vi.fn();
+    const onActionComplete = vi.fn();
+    mockUsePostMenuActions.mockReturnValue({
+      menuItems: [
+        {
+          id: POST_MENU_ACTION_IDS.COPY_LINK,
+          label: 'Copy link to post',
+          icon: Link,
+          onClick: onCopyLink,
+          variant: POST_MENU_ACTION_VARIANTS.DEFAULT,
+        },
+        {
+          id: POST_MENU_ACTION_IDS.DELETE,
+          label: 'Delete post',
+          icon: Trash,
+          onClick: vi.fn(),
+          variant: POST_MENU_ACTION_VARIANTS.DESTRUCTIVE,
+          disabled: true,
+        },
+      ],
+      isLoading: false,
+    });
+
+    render(
+      <PostMenuActionsContent
+        postId="pk:test123:post456"
+        variant={MENU_VARIANT.SHEET}
+        onActionComplete={onActionComplete}
+        onReportClick={vi.fn()}
+        onEditClick={vi.fn()}
+        onDeleteClick={vi.fn()}
+        isDeleting={false}
+      />,
+    );
+
+    expect(screen.queryByTestId('dropdown-menu-item')).not.toBeInTheDocument();
+    const [copyLink, deletePost] = screen.getAllByTestId('menu-button');
+    expect(copyLink).toHaveTextContent('Copy link to post');
+    expect(screen.getByText('Copy link to post')).toHaveClass('text-muted-foreground');
+    expect(deletePost).toBeDisabled();
+    expect(screen.getByText('Delete post')).toHaveClass('text-destructive');
+
+    fireEvent.click(copyLink);
+
+    expect(onCopyLink).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onActionComplete).toHaveBeenCalledTimes(1));
   });
 });

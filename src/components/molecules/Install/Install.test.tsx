@@ -1,7 +1,11 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ONBOARDING_ROUTES } from '@/app/routes';
-import { InstallNavigation } from './Install';
+import { InstallCard, InstallHeader, InstallNavigation } from './Install';
+
+vi.mock('@/organisms/DialogDownloadPubkyRing/DialogDownloadPubkyRing', () => ({
+  DialogDownloadPubkyRing: ({ store }: { store: string }) => <button type="button">{`Download for ${store}`}</button>,
+}));
 
 // Mock Next.js Image
 vi.mock('next/image', () => ({
@@ -26,6 +30,32 @@ vi.mock('@/stores/onboarding/onboarding.store', () => ({
     reset: mockReset,
   }),
 }));
+
+describe('InstallHeader', () => {
+  it('renders the Pubky Ring title and subtitle', () => {
+    render(<InstallHeader />);
+
+    expect(screen.getByRole('heading', { name: 'Install Pubky Ring.' })).toBeInTheDocument();
+    expect(screen.getByText('Pubky Ring.')).toHaveClass('text-brand');
+    expect(
+      screen.getByText('Pubky Ring is a keychain for your identity keys in the Pubky ecosystem.'),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('InstallCard', () => {
+  it('renders the Pubky Ring logo, instructions and both store download buttons', () => {
+    render(<InstallCard />);
+
+    expect(screen.getByRole('img', { name: 'Keyring' })).toHaveAttribute('src', '/images/keyring.webp');
+    expect(screen.getByRole('img', { name: 'Pubky Ring' })).toHaveAttribute('src', '/images/logo-pubky-ring.svg');
+    expect(
+      screen.getByText('Download and install the mobile app. Then continue to the next step.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download for apple' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download for android' })).toBeInTheDocument();
+  });
+});
 
 describe('InstallNavigation', () => {
   beforeEach(() => {

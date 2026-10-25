@@ -64,6 +64,7 @@ describe('HotTagsCardsSection', () => {
   beforeEach(() => {
     mockPush.mockClear();
     mockUseHotTags.mockClear();
+    mockUseIsMobile.mockImplementation(() => false);
     mockUseBulkUserAvatars.mockImplementation(() => ({
       getUsersWithAvatars: vi.fn((_userIds: Pubky[]): UserWithAvatar[] => []),
     }));
@@ -136,6 +137,21 @@ describe('HotTagsCardsSection', () => {
     expect(screen.getByTestId('hot-tags-card-skeleton-0')).toBeInTheDocument();
     expect(screen.getByTestId('hot-tags-card-skeleton-1')).toBeInTheDocument();
     expect(screen.getByTestId('hot-tags-card-skeleton-2')).toBeInTheDocument();
+  });
+
+  it.each([
+    { viewport: 'mobile (< sm)', below: ['sm', 'xl'], maxAvatars: 2 },
+    { viewport: 'tablet (sm to xl)', below: ['xl'], maxAvatars: 4 },
+    { viewport: 'wide (≥ xl)', below: [], maxAvatars: 6 },
+  ])('limits avatars per card to $maxAvatars on $viewport', ({ below, maxAvatars }) => {
+    mockUseIsMobile.mockImplementation((options) => below.includes(options?.breakpoint ?? ''));
+    mockUseHotTags.mockReturnValue({ rawTags: [], isLoading: true, error: null });
+
+    render(<HotTagsCardsSection />);
+
+    // Each skeleton card renders one avatar row for mobile and one for wider layouts.
+    const avatars = screen.getByTestId('hot-tags-card-skeleton-0').querySelectorAll('.size-7.rounded-full');
+    expect(avatars).toHaveLength(maxAvatars * 2);
   });
 
   it('excludes muted taggers from avatar bulk fetch and HotTagCard taggers', () => {

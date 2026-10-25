@@ -162,6 +162,27 @@ describe('UserListItem - followButtonVariant', () => {
     expect(unfollowContainer).toHaveClass('group-hover:flex');
   });
 
+  it('labels the icon button as Unfollow with a check icon when following', () => {
+    render(<UserListItem user={{ ...mockUser, isFollowing: true }} variant="compact" onFollowClick={vi.fn()} />);
+
+    const unfollowButton = screen.getByRole('button', { name: 'Unfollow Test User' });
+    expect(unfollowButton.querySelector('.lucide-check')).toBeInTheDocument();
+    expect(unfollowButton.querySelector('.lucide-user-minus')).toHaveClass('hidden', 'group-hover:block');
+    expect(unfollowButton.querySelector('.lucide-user-round-plus')).not.toBeInTheDocument();
+  });
+
+  it.each([{ isLoading: true }, { isStatusLoading: true }])(
+    'shows a disabled spinner on the icon button while %o',
+    (loadingProps) => {
+      render(<UserListItem user={mockUser} variant="compact" onFollowClick={vi.fn()} {...loadingProps} />);
+
+      const followButton = screen.getByRole('button', { name: 'Follow Test User' });
+      expect(followButton).toBeDisabled();
+      expect(followButton.querySelector('.animate-spin')).toBeInTheDocument();
+      expect(followButton.querySelector('.lucide-user-round-plus')).not.toBeInTheDocument();
+    },
+  );
+
   it('defaults to icon variant for MeButton when isCurrentUser', () => {
     render(<UserListItem user={mockUser} variant="compact" isCurrentUser />);
 
