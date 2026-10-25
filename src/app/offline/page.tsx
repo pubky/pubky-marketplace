@@ -1,10 +1,13 @@
+import { getSiteName } from '@/config/metadata';
 import { Metadata } from '@/molecules/Metadata/Metadata';
 
-export const metadata = Metadata({
-  title: 'Offline - Pubky App',
-  description: 'You are currently offline.',
-  robots: false,
-});
+export function generateMetadata() {
+  return Metadata({
+    title: `Offline - ${getSiteName()}`,
+    description: 'You are currently offline.',
+    robots: false,
+  });
+}
 
 export default function Offline() {
   return (
