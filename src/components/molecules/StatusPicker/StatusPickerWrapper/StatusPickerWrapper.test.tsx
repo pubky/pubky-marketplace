@@ -24,9 +24,12 @@ vi.mock('../StatusPickerContent/StatusPickerContent', () => ({
   ),
 }));
 
-// Mock useIsMobile hook
+const { mockUseIsMobile } = vi.hoisted(() => ({
+  mockUseIsMobile: vi.fn(() => false),
+}));
+
 vi.mock('@/hooks/useIsMobile/useIsMobile', () => ({
-  useIsMobile: () => false,
+  useIsMobile: () => mockUseIsMobile(),
 }));
 
 describe('StatusPickerWrapper', () => {
@@ -34,6 +37,7 @@ describe('StatusPickerWrapper', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseIsMobile.mockReturnValue(false);
   });
 
   describe('Rendering', () => {
@@ -162,24 +166,33 @@ describe('StatusPickerWrapper', () => {
   });
 
   describe('Mobile Behavior', () => {
-    it('uses Sheet component on mobile', async () => {
-      // Mock useIsMobile to return true
-      vi.doMock('@/hooks/useIsMobile/useIsMobile', () => ({
-        useIsMobile: () => true,
-      }));
+    it('uses a Popover without the Sheet title on desktop', async () => {
+      render(<StatusPickerWrapper emoji="🌴" status="vacationing" />);
 
-      // Re-import to get the mocked version
-      const { StatusPickerWrapper: MobileStatusPicker } = await import('./StatusPickerWrapper');
+      fireEvent.click(screen.getByText('🌴').closest('button')!);
 
-      render(<MobileStatusPicker emoji="🌴" status="vacationing" onStatusChange={mockOnStatusChange} />);
-
-      const triggerButton = screen.getByText('🌴').closest('button');
-      fireEvent.click(triggerButton!);
-
-      // On mobile, it should use Sheet instead of Popover
-      // The exact implementation depends on how Sheet renders
       await waitFor(() => {
-        expect(screen.getByTestId('status-picker-content')).toBeInTheDocument();
+        expect(document.querySelector('[data-slot="popover-content"]')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Select Status')).not.toBeInTheDocument();
+    });
+
+    it('uses a titled bottom Sheet instead of the Popover on mobile', async () => {
+      mockUseIsMobile.mockReturnValue(true);
+      render(<StatusPickerWrapper emoji="🌴" status="vacationing" onStatusChange={mockOnStatusChange} />);
+
+      fireEvent.click(screen.getByText('🌴').closest('button')!);
+
+      const sheet = await screen.findByRole('dialog', { name: 'Select Status' });
+      expect(sheet).toHaveAccessibleDescription('Choose a status to display on your profile');
+      expect(sheet).toContainElement(screen.getByTestId('status-picker-content'));
+      expect(document.querySelector('[data-slot="popover-content"]')).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId('select-status-away'));
+
+      expect(mockOnStatusChange).toHaveBeenCalledWith('away');
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog', { name: 'Select Status' })).not.toBeInTheDocument();
       });
     });
   });
