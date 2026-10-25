@@ -587,6 +587,33 @@ describe('PostText', () => {
       expect(screen.queryByRole('button', { name: 'Show full post content' })).not.toBeInTheDocument();
     });
 
+    it('ends a truncated article preview on its last heading with an ellipsis', () => {
+      const content = [
+        '# Article Title',
+        '## Introduction',
+        'Some introductory text here.',
+        '### Details',
+        'More detailed content.',
+        '#### Sub-details',
+        'Even more specific information.',
+      ].join('\n\n');
+      render(<PostText content={content} isArticle />);
+
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Article Title$/);
+      expect(screen.getByRole('heading', { level: 4 })).toHaveTextContent(/^Sub-details\.\.\.$/);
+      expect(screen.queryByText('Even more specific information.')).not.toBeInTheDocument();
+    });
+
+    it('appends the ellipsis after inline formatting at the end of the last heading', () => {
+      const content = ['# One', '## Two', 'P1', '### Three', 'P2', '#### Four *em*', 'Hidden'].join('\n\n');
+      render(<PostText content={content} isArticle />);
+
+      const heading = screen.getByRole('heading', { level: 4 });
+      expect(heading).toHaveTextContent(/^Four em\.\.\.$/);
+      expect(heading.querySelector('em')).toHaveTextContent(/^em$/);
+      expect(screen.queryByText('Hidden')).not.toBeInTheDocument();
+    });
+
     it('truncates article previews that only contain a long code block', () => {
       const content = ['```js', 'Line 1', 'Line 2', 'Line 3', 'Line 4', 'Line 5', 'Line 6', 'Line 7', '```'].join('\n');
       const { container } = render(<PostText content={content} isArticle />);
@@ -999,6 +1026,36 @@ describe('PostText', () => {
       // The displayed text should contain the first 500 chars
       const expectedStart = longContent.slice(0, 100);
       expect(container.textContent).toContain(expectedStart);
+    });
+  });
+
+  describe('Structured (whole-JSON) post bodies', () => {
+    it('renders a JSON-object body as a labeled structured block, verbatim and pretty-printed', () => {
+      render(<PostText content='{"lock_title":"Robot boxing","teaser_description":"news!"}' />);
+
+      expect(screen.getByText('Structured data')).toBeInTheDocument();
+      const block = screen.getByText(/"lock_title": "Robot boxing"/);
+      expect(block.tagName).toBe('PRE');
+      expect(block).toHaveTextContent('"teaser_description": "news!"');
+    });
+
+    it('collapses a long structured body behind Show more and expands in place', () => {
+      const bigObject = Object.fromEntries(Array.from({ length: 30 }, (_, index) => [`key_${index}`, index]));
+      render(<PostText content={JSON.stringify(bigObject)} />);
+
+      const pre = screen.getByText(/"key_0": 0/);
+      expect(pre).not.toHaveTextContent('"key_29"');
+      expect(pre).toHaveTextContent('…');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Show full structured post content' }));
+      expect(screen.getByText(/"key_0": 0/)).toHaveTextContent('"key_29": 29');
+    });
+
+    it('does not treat ordinary text mentioning JSON as structured', () => {
+      render(<PostText content='look at this: {"a":1}' />);
+
+      expect(screen.queryByText('Structured data')).not.toBeInTheDocument();
+      expect(screen.getByText(/look at this/)).toBeInTheDocument();
     });
   });
 });
