@@ -151,3 +151,108 @@ describe('Button', () => {
     expect(button).toHaveClass('rounded-full');
   });
 });
+
+describe('Button - Attributes and refs', () => {
+  it('forwards ref correctly', () => {
+    const ref = React.createRef<HTMLButtonElement>();
+    render(<Button ref={ref}>Button</Button>);
+    expect(ref.current).toBeInstanceOf(HTMLButtonElement);
+  });
+
+  it('forwards ref correctly with asChild', () => {
+    const ref = React.createRef<HTMLAnchorElement>();
+    render(
+      <Button asChild>
+        <a ref={ref} href="/test">
+          Link Button
+        </a>
+      </Button>,
+    );
+    expect(ref.current).toBeInstanceOf(HTMLAnchorElement);
+  });
+
+  it('has correct data attributes', () => {
+    render(
+      <Button variant="secondary" size="lg">
+        Test
+      </Button>,
+    );
+    const button = screen.getByRole('button');
+    expect(button).toHaveAttribute('data-slot', 'button');
+    expect(button).toHaveAttribute('data-variant', 'secondary');
+    expect(button).toHaveAttribute('data-size', 'lg');
+  });
+
+  it('supports accessibility attributes', () => {
+    render(
+      <Button aria-label="Close dialog" role="button">
+        ×
+      </Button>,
+    );
+    const button = screen.getByRole('button');
+    expect(button).toHaveAttribute('aria-label', 'Close dialog');
+  });
+
+  it('handles focus states correctly', () => {
+    render(<Button tabIndex={0}>Focusable Button</Button>);
+    const button = screen.getByRole('button');
+    expect(button).toHaveAttribute('tabIndex', '0');
+    expect(button).toHaveClass('focus-visible:border-ring', 'focus-visible:ring-ring/50');
+  });
+
+  it('handles hover states correctly', () => {
+    render(<Button variant="default">Hover Button</Button>);
+    const button = screen.getByRole('button');
+    expect(button).toHaveClass('hover:!bg-brand/30');
+  });
+
+  it('handles invalid states correctly', () => {
+    render(<Button aria-invalid="true">Invalid Button</Button>);
+    const button = screen.getByRole('button');
+    expect(button).toHaveAttribute('aria-invalid', 'true');
+    expect(button).toHaveClass('aria-invalid:ring-destructive/40', 'aria-invalid:border-destructive');
+  });
+
+  it('renders with icons correctly', () => {
+    render(
+      <Button>
+        <span>🎉</span>
+        <span>New Feature</span>
+      </Button>,
+    );
+    expect(screen.getByText('🎉')).toBeInTheDocument();
+    expect(screen.getByText('New Feature')).toBeInTheDocument();
+  });
+
+  it('applies all base classes correctly', () => {
+    render(<Button>Base Classes Test</Button>);
+    const button = screen.getByRole('button');
+    expect(button).toHaveClass(
+      'inline-flex',
+      'items-center',
+      'justify-center',
+      'whitespace-nowrap',
+      'text-sm',
+      'transition-all',
+      'disabled:pointer-events-none',
+      'disabled:opacity-50',
+      'shrink-0',
+      'outline-none',
+      'font-semibold',
+      'cursor-pointer',
+      'rounded-full',
+      'border',
+      'shadow-xs',
+    );
+  });
+
+  it('forwards additional props', () => {
+    render(
+      <Button data-testid="button" data-custom="test">
+        Test
+      </Button>,
+    );
+    const button = screen.getByTestId('button');
+    expect(button).toHaveAttribute('data-custom', 'test');
+  });
+});
