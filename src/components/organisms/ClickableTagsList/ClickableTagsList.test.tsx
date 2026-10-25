@@ -205,6 +205,7 @@ describe('ClickableTagsList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockIsAuthenticated = true;
+    mockUseIsMobile.mockReturnValue(false);
     mockIsViewerTagger.mockImplementation((tag: TagWithAvatars) => tag.relationship ?? false);
     useAuthStore.setState({ setShowSignInDialog: vi.fn() });
   });
@@ -216,6 +217,18 @@ describe('ClickableTagsList', () => {
       expect(getPostTagButton('bitcoin', 5)).toBeInTheDocument();
       expect(getPostTagButton('ethereum', 3)).toBeInTheDocument();
       expect(getPostTagButton('web3', 10)).toBeInTheDocument();
+    });
+
+    it('wraps tags with taggers in the hover popover on desktop only', () => {
+      const { unmount } = render(<ClickableTagsList taggedId="post-123" taggedKind={TagKind.POST} tags={mockTags} />);
+      expect(document.querySelectorAll('[data-slot="popover-trigger"]')).toHaveLength(3);
+      unmount();
+
+      mockUseIsMobile.mockReturnValue(true);
+      render(<ClickableTagsList taggedId="post-123" taggedKind={TagKind.POST} tags={mockTags} />);
+
+      expect(getPostTagButton('bitcoin', 5)).toBeInTheDocument();
+      expect(document.querySelector('[data-slot="popover-trigger"]')).not.toBeInTheDocument();
     });
 
     it('limits visible tags without constraining the add-tag input', () => {

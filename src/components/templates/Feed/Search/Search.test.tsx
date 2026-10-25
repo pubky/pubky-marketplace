@@ -87,11 +87,21 @@ describe('Search', () => {
     expect(screen.queryByTestId('search-header')).not.toBeInTheDocument();
   });
 
-  it('renders the mobile SearchInput', () => {
-    render(<Search />);
+  it.each([
+    { isMobile: false, tags: ['pubky'], autoFocus: 'false' },
+    { isMobile: false, tags: [], autoFocus: 'true' },
+    { isMobile: true, tags: ['pubky'], autoFocus: 'true' },
+  ])(
+    'renders the SearchInput with autoFocus=$autoFocus when isMobile=$isMobile and tags=$tags',
+    ({ isMobile, tags, autoFocus }) => {
+      mockUseIsMobile.mockReturnValue(isMobile);
+      mockUseSearchTags.mockReturnValue(tags);
 
-    expect(screen.getByTestId('search-input')).toBeInTheDocument();
-  });
+      render(<Search />);
+
+      expect(screen.getByTestId('search-input')).toHaveAttribute('data-auto-focus', autoFocus);
+    },
+  );
 
   it('does not render a ContentLayout shell (hoisted into (feeds)/layout.tsx)', () => {
     render(<Search />);
