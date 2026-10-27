@@ -1537,6 +1537,19 @@ describe('MarketplaceListingForm digital delivery (digital delivery design §2)'
     expect(deliveryBox('Digital delivery')).toBeDisabled();
   });
 
+  it('turns Preorder off when the format is an auction', async () => {
+    const formRef: { current: UseFormReturn<CreateMarketplaceListingData> | null } = { current: null };
+    render(
+      <FormHarness
+        defaultValues={{ saleFormat: 'auction', preorder: true, preorderShipsFrom: '2026-12-01' }}
+        formRef={formRef}
+      />,
+    );
+
+    await waitFor(() => expect(formRef.current?.getValues('preorder')).toBe(false));
+    expect(screen.queryByText('Preorder')).not.toBeInTheDocument();
+  });
+
   it('ships auctions only', async () => {
     render(<FormHarness fulfillment="shipping_and_digital" defaultValues={{ saleFormat: 'auction' }} />);
 

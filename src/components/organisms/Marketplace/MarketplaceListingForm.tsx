@@ -284,9 +284,14 @@ export function MarketplaceListingForm({
   // Auctions are shipping-only (local pickup design §A2 — an auction order
   // has no checkout step to express a pickup choice), so switching the format
   // to auction coerces fulfillment back to shipping; the schema backstops it.
+  // A preorder is Buy now only and its toggle hides on an auction, so the
+  // switch turns it off too.
   useEffect(() => {
     if (saleFormat === 'auction' && form.getValues(CREATE_MARKETPLACE_LISTING_FIELDS.FULFILLMENT) !== 'shipping') {
       form.setValue(CREATE_MARKETPLACE_LISTING_FIELDS.FULFILLMENT, 'shipping', { shouldValidate: true });
+    }
+    if (saleFormat === 'auction' && form.getValues(CREATE_MARKETPLACE_LISTING_FIELDS.PREORDER)) {
+      form.setValue(CREATE_MARKETPLACE_LISTING_FIELDS.PREORDER, false, { shouldValidate: true });
     }
   }, [saleFormat, form]);
   // A deployment without pickup cannot publish it either — drop a pickup
