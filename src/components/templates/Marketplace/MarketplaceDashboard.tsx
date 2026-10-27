@@ -51,7 +51,6 @@ import {
 } from '@/libs/commerce/auction-removal';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { listingPublishNeedsMarketplaceSession } from '@/libs/commerce/listing-publish-guards';
-import { formatListingStock } from '@/libs/commerce/unlimited-stock';
 import { isListingRegistrationPending } from '@/models/commerce/commerce.schema';
 import { SellingUnavailableNotice } from '@/molecules/Marketplace/SellingUnavailableNotice';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
@@ -577,9 +576,7 @@ export function MarketplaceDashboard() {
                                     </Badge>
                                   </td>
                                   <td className="p-3">{listing.format.replace('_', ' ')}</td>
-                                  <td className="p-3">
-                                    {formatListingStock(listing.record, listing.purchasableQuantity)}
-                                  </td>
+                                  <td className="p-3">{dashboard.listingStockLabel(listing)}</td>
                                   <td className="p-3">
                                     {/* The record's own price money: the model row's
                                     `price_minor` has no exponent column, and

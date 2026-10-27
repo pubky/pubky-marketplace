@@ -24,18 +24,25 @@ import {
 } from '@/libs/commerce/listing-drafts';
 import { listingPublishBlockToast } from '@/libs/commerce/listing-publish-guards';
 import { sumMoneyByAsset } from '@/libs/commerce/pricing';
-import { countableStockQuantity, isUnlimitedStock, UNLIMITED_STOCK_LABEL } from '@/libs/commerce/unlimited-stock';
+import {
+  countableStockQuantity,
+  formatListingStock,
+  isUnlimitedStock,
+  UNLIMITED_STOCK_LABEL,
+} from '@/libs/commerce/unlimited-stock';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
 const REVENUE_ORDER_STATES = ['paid', 'processing', 'shipped', 'delivered', 'completed'] as const;
 
-/** Shown in place of the stock total while the service has not yet answered for a live listing. */
-export const STOCK_UNKNOWN_LABEL = '—';
+/** Shown in place of a listing's stock, and the stock total, while the service has not yet answered for it. */
+const STOCK_UNKNOWN_LABEL = '—';
 
 /** What the service said when the dashboard last read a listing: it holds a projection, or it holds none. */
 type ServiceRead = 'registered' | 'unregistered';
+
+type LocalListing = Awaited<ReturnType<typeof CommerceController.getListingsBySeller>>[number];
 
 export function useMarketplaceSellerDashboard() {
   const [nowMs, setNowMs] = useState(0);
@@ -85,8 +92,15 @@ export function useMarketplaceSellerDashboard() {
     const retry = () => {
       if (stockReadFailed.current) setStockRetry((attempt) => attempt + 1);
     };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') retry();
+    };
     window.addEventListener('focus', retry);
-    return () => window.removeEventListener('focus', retry);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', retry);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, []);
   const stockKey = [
     currentUserPubky,
@@ -132,20 +146,23 @@ export function useMarketplaceSellerDashboard() {
     !durable || listing.registeredWithService || serviceReads.has(listing.id);
   // Offered only once the service said it holds no projection: before that the dashboard does not know.
   const canOfferRegistration = (listing: { id: string }) => !durable || serviceReads.get(listing.id) === 'unregistered';
-  const stockKnown = activeListings.every(serviceAnswered);
+  const hasUnlimitedStock = (listing: LocalListing) =>
+    listing.record.variants.some((variant) => isUnlimitedStock(listing.record, variant.quantity));
+  // Unlimited stock is the record's own setting; a finite count is the service's, so it waits for an answer.
+  const isStockKnown = (listing: LocalListing) => hasUnlimitedStock(listing) || serviceAnswered(listing);
+  const listingStockLabel = (listing: LocalListing) =>
+    isStockKnown(listing) ? formatListingStock(listing.record, listing.purchasableQuantity) : STOCK_UNKNOWN_LABEL;
+  const stockKnown = activeListings.every(isStockKnown);
   const finiteInventory = activeListings.reduce((total, listing) => {
     const record = listing.record;
-    const unlimited = record.variants.some((variant) => isUnlimitedStock(record, variant.quantity));
-    if (unlimited) return total + countableStockQuantity(record);
+    if (hasUnlimitedStock(listing)) return total + countableStockQuantity(record);
     return (
       total +
       (listing.purchasableQuantity ??
         record.variants.reduce((sum, variant) => sum + (variant.enabled ? variant.quantity : 0), 0))
     );
   }, 0);
-  const unlimitedActive = activeListings.some((listing) =>
-    listing.record.variants.some((variant) => isUnlimitedStock(listing.record, variant.quantity)),
-  );
+  const unlimitedActive = activeListings.some(hasUnlimitedStock);
   const totalInventory = !stockKnown
     ? STOCK_UNKNOWN_LABEL
     : finiteInventory === 0 && unlimitedActive
@@ -320,6 +337,7 @@ export function useMarketplaceSellerDashboard() {
     updateListingState,
     retryListingRegistration,
     canOfferRegistration,
+    listingStockLabel,
     duplicateListing,
     hasUnsavedListingDraft,
     unfinishedDrafts,

@@ -32,33 +32,42 @@ vi.mock('@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl', async () => {
 
 vi.mock('@/hooks/useIsMobile/useIsMobile', () => ({ useIsMobile: () => false }));
 
-vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', () => ({
-  useMarketplaceSellerDashboard: () => ({
-    listings: view.listings,
-    nowMs: Date.parse('2026-10-22T12:00:00.000Z'),
-    sellerOrders: [],
-    offers: [],
-    isLoading: false,
-    needsSession: false,
-    sessionError: null,
-    metrics: { activeListings: 1, totalInventory: 4, lowStock: 0, paidOrders: 1, revenue: [], openOffers: 0 },
-    actionNeeded: {
-      ordersToShip: view.ordersToShip,
-      offersAwaitingReply: 0,
-      expiringAuctions: 0,
-      total: view.ordersToShip,
-    },
-    updateListingState: dashboardFns.updateListingState,
-    duplicateListing: vi.fn(async () => true),
-    hasUnsavedListingDraft: vi.fn(async () => null),
-    unfinishedDrafts: view.unfinishedDrafts,
-    discardListingDraft: dashboardFns.discardListingDraft,
-    resumeListingDraft: dashboardFns.resumeListingDraft,
-    retryListingRegistration: vi.fn(),
-    canOfferRegistration: () => true,
-    exportCsv: async () => new TextEncoder().encode('record_uri,seller_pubky\r\n'),
-  }),
-}));
+vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', async () => {
+  const { formatListingStock } = await vi.importActual<typeof import('@/libs/commerce/unlimited-stock')>(
+    '@/libs/commerce/unlimited-stock',
+  );
+  return {
+    useMarketplaceSellerDashboard: () => ({
+      listings: view.listings,
+      nowMs: Date.parse('2026-10-22T12:00:00.000Z'),
+      sellerOrders: [],
+      offers: [],
+      isLoading: false,
+      needsSession: false,
+      sessionError: null,
+      metrics: { activeListings: 1, totalInventory: 4, lowStock: 0, paidOrders: 1, revenue: [], openOffers: 0 },
+      actionNeeded: {
+        ordersToShip: view.ordersToShip,
+        offersAwaitingReply: 0,
+        expiringAuctions: 0,
+        total: view.ordersToShip,
+      },
+      updateListingState: dashboardFns.updateListingState,
+      duplicateListing: vi.fn(async () => true),
+      hasUnsavedListingDraft: vi.fn(async () => null),
+      unfinishedDrafts: view.unfinishedDrafts,
+      discardListingDraft: dashboardFns.discardListingDraft,
+      resumeListingDraft: dashboardFns.resumeListingDraft,
+      retryListingRegistration: vi.fn(),
+      canOfferRegistration: () => true,
+      listingStockLabel: (listing: {
+        record: Parameters<typeof formatListingStock>[0];
+        purchasableQuantity?: number | null;
+      }) => formatListingStock(listing.record, listing.purchasableQuantity ?? null),
+      exportCsv: async () => new TextEncoder().encode('record_uri,seller_pubky\r\n'),
+    }),
+  };
+});
 
 vi.mock('@/organisms/Marketplace/MarketplaceSectionNav', () => ({ MarketplaceSectionNav: () => null }));
 
