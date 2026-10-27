@@ -51,8 +51,10 @@ export function useMarketplaceSellerDashboard() {
   const catalogRefreshGeneration = useRef(0);
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const measurementSystem = useMeasurementSystem();
+  // Async on purpose: Dexie only follows reads past an `await` (the cached projections behind each row's
+  // stock) when the querier is itself an async function, so a cached answer from the service re-renders.
   const localListings = useLiveQuery(
-    () => (currentUserPubky ? CommerceController.getListingsBySeller(currentUserPubky) : []),
+    async () => (currentUserPubky ? await CommerceController.getListingsBySeller(currentUserPubky) : []),
     [currentUserPubky],
   );
   useEffect(() => {
