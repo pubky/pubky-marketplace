@@ -1536,7 +1536,15 @@ function MarketplaceCartCheckout() {
                           </Typography>
                         )}
                         {region.refusal && <RegionRefusal message={region.refusal} testId="checkout-region-refusal" />}
-                        <CheckoutSaleTerms sellerPubkys={checkoutSellers} declarations={region.declarations} />
+                        <CheckoutSaleTerms
+                          sellerPubkys={checkoutSellers}
+                          declarations={region.declarations}
+                          preorders={checkoutItems.flatMap(({ listing }) =>
+                            listing.record.sale.format === 'fixed_price' && listing.record.preorder
+                              ? [{ title: listing.record.title, preorder: listing.record.preorder }]
+                              : [],
+                          )}
+                        />
                         {!canPay && (
                           <Typography id="checkout-pay-reason" as="p" className="text-xs text-muted-foreground">
                             {payDisabledReason}

@@ -207,6 +207,7 @@ describe('MarketplaceNotificationNormalizer.toDeepLink', () => {
     order_shipped: MARKETPLACE_ROUTES.ORDERS,
     tracking_updated: MARKETPLACE_ROUTES.ORDERS,
     order_delivery_assumed: MARKETPLACE_ROUTES.ORDERS,
+    order_preorder_overdue: MARKETPLACE_ROUTES.ORDERS,
     order_delivered: MARKETPLACE_ROUTES.ORDERS,
     order_completed: MARKETPLACE_ROUTES.ORDERS,
     return_updated: MARKETPLACE_ROUTES.ORDERS,

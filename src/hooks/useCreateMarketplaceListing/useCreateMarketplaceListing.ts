@@ -67,6 +67,7 @@ import {
   fulfillmentMethodsFromForm,
   fulfillmentRequiresShipping,
   listingAttributeFormField,
+  preorderFromFormData,
 } from './useCreateMarketplaceListing.types';
 
 /** Publishing a listing that ships needs the seller's delivery key published; other fulfilments never read it. */
@@ -765,6 +766,7 @@ function buildListingRecord(
       returnWindowDays,
       buyerPaysReturnShipping: true,
     },
+    preorder: preorderFromFormData(data),
     adultOnly: false,
   });
 }

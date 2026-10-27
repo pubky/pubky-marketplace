@@ -347,6 +347,7 @@ export const marketplaceNotificationSchema = z
       'order_shipped',
       'tracking_updated',
       'order_delivery_assumed',
+      'order_preorder_overdue',
       'order_delivered',
       'order_completed',
       'return_updated',
@@ -674,6 +675,20 @@ export const marketplaceOrderProjectionSchema = z
       .object({ acceptsReturns: z.boolean(), returnWindowDays: z.number().int().positive().nullable() })
       .nullish()
       .catch(null),
+    // The preorder frozen on the order when its payment started: ships from a
+    // UTC date, and from `shipBy` an order still paid may be cancelled by the
+    // buyer alone. Null on an order without a preorder line.
+    preorder: z
+      .object({
+        shipsFrom: z.string(),
+        graceDays: z.number().int().positive(),
+        shipBy: z.string(),
+        overdueAt: z.string().nullable(),
+      })
+      .nullish()
+      .catch(null),
+    // A preorder the buyer cancelled for lateness: the seller owes the refund.
+    refundDue: z.boolean().optional(),
     nextActor: z
       .enum(['buyer', 'seller', 'none'])
       .nullable()

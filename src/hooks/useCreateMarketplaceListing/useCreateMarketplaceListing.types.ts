@@ -12,7 +12,14 @@ import {
   resolveCommerceCategory,
 } from '@/config/taxonomy/taxonomy';
 import { DIGITAL_DELIVERY_COPY } from '@/libs/commerce/digital';
-import { commerceListingFulfillmentMethods, type CommerceListingRecord } from '@/libs/commerce/marketplace-records';
+import {
+  COMMERCE_PREORDER_DEFAULT_GRACE_DAYS,
+  COMMERCE_PREORDER_MAX_GRACE_DAYS,
+  COMMERCE_PREORDER_MAX_LEAD_DAYS,
+  COMMERCE_PREORDER_MIN_GRACE_DAYS,
+  commerceListingFulfillmentMethods,
+  type CommerceListingRecord,
+} from '@/libs/commerce/marketplace-records';
 import {
   amountInputSchemaForAsset,
   amountInputToMoney,
@@ -58,6 +65,9 @@ export const CREATE_MARKETPLACE_LISTING_FIELDS = {
   PACKAGE_WIDTH: 'packageWidth',
   PACKAGE_HEIGHT: 'packageHeight',
   RETURN_DAYS: 'returnDays',
+  PREORDER: 'preorder',
+  PREORDER_SHIPS_FROM: 'preorderShipsFrom',
+  PREORDER_GRACE_DAYS: 'preorderGraceDays',
 } as const;
 
 /** Canonical record bounds — the form validates converted values against these. */
@@ -336,9 +346,14 @@ export const createMarketplaceListingSchema = z
     packageWidth: z.string().trim(),
     packageHeight: z.string().trim(),
     returnDays: z.enum(['none', '14', '30']),
+    /** The item sells before stock exists and ships on or after `preorderShipsFrom`. */
+    preorder: z.boolean(),
+    preorderShipsFrom: z.string().trim(),
+    preorderGraceDays: z.string().trim(),
   })
   .superRefine((data, context) => {
     validateCategoryAndAttributes(data, context);
+    if (data.preorder) validatePreorder(data, context);
     validateMoneyField(data.price, data.currency, [CREATE_MARKETPLACE_LISTING_FIELDS.PRICE], context);
     if (data.saleFormat === 'auction' && data.reservePrice !== '') {
       validateMoneyField(data.reservePrice, data.currency, [CREATE_MARKETPLACE_LISTING_FIELDS.RESERVE_PRICE], context);
@@ -460,6 +475,63 @@ export const createMarketplaceListingSchema = z
     }
   });
 
+/** Today's date in UTC, `YYYY-MM-DD`, shifted by `days`. */
+export function utcDateFromToday(days: number, now: Date = new Date()): string {
+  const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + days));
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * A preorder is a Buy now sale of a physical item that ships from a date
+ * after today and at most 90 days out (UTC), with 1 to 30 grace days. The
+ * service checks the same window when the listing is published.
+ */
+function validatePreorder(data: CreateMarketplaceListingData, context: z.RefinementCtx) {
+  if (data.saleFormat !== 'fixed_price') {
+    context.addIssue({
+      code: 'custom',
+      path: [CREATE_MARKETPLACE_LISTING_FIELDS.PREORDER],
+      message: 'Preorders are for Buy now listings.',
+    });
+  }
+  if (fulfillmentFlags(data.fulfillment).digital) {
+    context.addIssue({
+      code: 'custom',
+      path: [CREATE_MARKETPLACE_LISTING_FIELDS.PREORDER],
+      message: 'Preorders are for physical items.',
+    });
+  }
+  const shipsFrom = data.preorderShipsFrom;
+  if (
+    !z.iso.date().safeParse(shipsFrom).success ||
+    shipsFrom <= utcDateFromToday(0) ||
+    shipsFrom > utcDateFromToday(COMMERCE_PREORDER_MAX_LEAD_DAYS)
+  ) {
+    context.addIssue({
+      code: 'custom',
+      path: [CREATE_MARKETPLACE_LISTING_FIELDS.PREORDER_SHIPS_FROM],
+      message: `Pick a ships-from date after today and within ${COMMERCE_PREORDER_MAX_LEAD_DAYS} days.`,
+    });
+  }
+  const graceDays = Number(data.preorderGraceDays);
+  if (
+    !/^\d+$/.test(data.preorderGraceDays) ||
+    graceDays < COMMERCE_PREORDER_MIN_GRACE_DAYS ||
+    graceDays > COMMERCE_PREORDER_MAX_GRACE_DAYS
+  ) {
+    context.addIssue({
+      code: 'custom',
+      path: [CREATE_MARKETPLACE_LISTING_FIELDS.PREORDER_GRACE_DAYS],
+      message: `Enter ${COMMERCE_PREORDER_MIN_GRACE_DAYS} to ${COMMERCE_PREORDER_MAX_GRACE_DAYS} grace days.`,
+    });
+  }
+}
+
+/** The record's `preorder` for the form's values; undefined when the listing sells stock on hand. */
+export function preorderFromFormData(data: CreateMarketplaceListingData): CommerceListingRecord['preorder'] {
+  return data.preorder ? { shipsFrom: data.preorderShipsFrom, graceDays: Number(data.preorderGraceDays) } : undefined;
+}
+
 export const createMarketplaceListingDraftSchema = z
   .object({
     title: z.string(),
@@ -511,6 +583,9 @@ export const createMarketplaceListingDraftSchema = z
     packageWidth: z.string(),
     packageHeight: z.string(),
     returnDays: z.enum(['none', '14', '30']),
+    preorder: z.boolean(),
+    preorderShipsFrom: z.string(),
+    preorderGraceDays: z.string(),
     /** Legacy single-photo drafts carried one alt text; tolerated so they still hydrate. */
     altText: z.string(),
     /** Legacy drafts stored package fields as raw millimeters/grams; tolerated and converted on restore. */
@@ -655,6 +730,9 @@ export const createMarketplaceListingDefaults: CreateMarketplaceListingData = {
   packageWidth: '',
   packageHeight: '',
   returnDays: 'none',
+  preorder: false,
+  preorderShipsFrom: '',
+  preorderGraceDays: String(COMMERCE_PREORDER_DEFAULT_GRACE_DAYS),
 };
 
 /**
@@ -696,6 +774,9 @@ const PUBLISH_CHECKLIST_LABELS: Record<string, string> = {
   [CREATE_MARKETPLACE_LISTING_FIELDS.COUNTRY_CODE]: 'Country',
   [CREATE_MARKETPLACE_LISTING_FIELDS.VARIANTS]: 'Inventory',
   [CREATE_MARKETPLACE_LISTING_FIELDS.FULFILLMENT]: 'Choose shipping or pickup',
+  [CREATE_MARKETPLACE_LISTING_FIELDS.PREORDER]: 'Preorder',
+  [CREATE_MARKETPLACE_LISTING_FIELDS.PREORDER_SHIPS_FROM]: 'Preorder ships-from date',
+  [CREATE_MARKETPLACE_LISTING_FIELDS.PREORDER_GRACE_DAYS]: 'Preorder grace days',
 };
 
 /**

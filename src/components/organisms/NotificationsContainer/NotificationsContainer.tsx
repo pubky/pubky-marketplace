@@ -50,6 +50,7 @@ const MARKETPLACE_TAB_NOTIFICATION_TYPES = {
   order_shipped: true,
   tracking_updated: true,
   order_delivery_assumed: true,
+  order_preorder_overdue: true,
   order_delivered: true,
   order_completed: true,
   return_updated: true,

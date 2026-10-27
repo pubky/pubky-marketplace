@@ -18,9 +18,11 @@ import {
   isCreateMarketplaceListingPublishReady,
   type ListingFulfillment,
   listingFulfillmentSchema,
+  preorderFromFormData,
   PUBLISH_PACKAGE_FIELDS,
   PUBLISH_REQUIRED_FIELDS,
   UNLIMITED_STOCK_FORM_MESSAGE,
+  utcDateFromToday,
 } from './useCreateMarketplaceListing.types';
 
 /**
@@ -29,6 +31,46 @@ import {
  * resolvable category that requires no attributes and a country.
  */
 const formDefaults = { ...createMarketplaceListingDefaults, categoryId: 'fashion', countryCode: 'CH' };
+
+describe('preorder fields', () => {
+  const shippable = {
+    ...formDefaults,
+    title: 'Vintage leather boots',
+    description: 'Well cared for boots with light wear.',
+    price: '125.00',
+    shippingPrice: '12.00',
+    packageWeight: '1200',
+    packageLength: '35.0',
+    packageWidth: '25.0',
+    packageHeight: '15.0',
+    preorder: true,
+    preorderShipsFrom: utcDateFromToday(14),
+    preorderGraceDays: '7',
+  } satisfies CreateMarketplaceListingData;
+
+  const issuePaths = (values: CreateMarketplaceListingData) => {
+    const parsed = createMarketplaceListingSchema.safeParse(values);
+    return parsed.success ? [] : parsed.error.issues.map((issue) => issue.path.join('.'));
+  };
+
+  it('publishes a Buy now preorder that ships within 90 days and writes it to the record', () => {
+    expect(issuePaths(shippable)).toEqual([]);
+    expect(preorderFromFormData(shippable)).toEqual({ shipsFrom: shippable.preorderShipsFrom, graceDays: 7 });
+    expect(preorderFromFormData({ ...shippable, preorder: false })).toBeUndefined();
+  });
+
+  it('refuses a ships-from date today or past 90 days, and grace outside 1 to 30', () => {
+    expect(issuePaths({ ...shippable, preorderShipsFrom: utcDateFromToday(0) })).toEqual(['preorderShipsFrom']);
+    expect(issuePaths({ ...shippable, preorderShipsFrom: utcDateFromToday(91) })).toEqual(['preorderShipsFrom']);
+    expect(issuePaths({ ...shippable, preorderGraceDays: '0' })).toEqual(['preorderGraceDays']);
+    expect(issuePaths({ ...shippable, preorderGraceDays: '31' })).toEqual(['preorderGraceDays']);
+  });
+
+  it('refuses a preorder on an auction or a digital item', () => {
+    expect(issuePaths({ ...shippable, saleFormat: 'auction', reservePrice: '' })).toContain('preorder');
+    expect(issuePaths({ ...shippable, fulfillment: 'shipping_and_digital' })).toContain('preorder');
+  });
+});
 
 describe('createMarketplaceListingSchema', () => {
   it('defaults to physical shipping and final sale', () => {

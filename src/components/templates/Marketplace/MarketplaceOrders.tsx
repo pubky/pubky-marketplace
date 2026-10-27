@@ -57,6 +57,7 @@ import { buyerVisiblePaymentStatus } from '@/libs/commerce/locks-payment';
 import { deliveredCompletionNote } from '@/libs/commerce/order-returns';
 import { buyerShipmentTracking } from '@/libs/commerce/order-tracking';
 import { observedPaymentRail } from '@/libs/commerce/paykit-rail';
+import { PREORDER_COPY } from '@/libs/commerce/preorder';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import {
   REFUND_ORDER_NOTICES,
@@ -614,6 +615,27 @@ export function MarketplaceOrders() {
                                 })()}
                               </div>
                             )}
+                            {order.preorder && ['paid', 'processing'].includes(order.state) && (
+                              <Typography
+                                as="p"
+                                className="mt-2 text-sm text-muted-foreground"
+                                data-testid="order-preorder-terms"
+                              >
+                                {isBuyer
+                                  ? PREORDER_COPY.orderShipsFrom(order.preorder)
+                                  : PREORDER_COPY.sellerShipBy(order.preorder)}
+                              </Typography>
+                            )}
+                            {order.refundDue && (
+                              <div
+                                className="mt-3 rounded-md bg-amber-500/10 p-3"
+                                data-testid="order-preorder-refund-due"
+                              >
+                                <Typography as="p" className="text-sm text-foreground">
+                                  {isBuyer ? PREORDER_COPY.buyerRefundDue : PREORDER_COPY.refundDueHint}
+                                </Typography>
+                              </div>
+                            )}
                             {order.deliveryAssumed && (
                               <div className="mt-3 rounded-md bg-brand/5 p-3">
                                 <Typography as="p" className="text-sm text-foreground">
@@ -882,6 +904,8 @@ function isOrderWaitingOnOtherSide(
 function orderStateLabel(order: MarketplaceOrder): string {
   const refund = refundStateLabel(order);
   if (refund) return refund;
+  if (order.refundDue) return PREORDER_COPY.refundDue;
+  if (order.state === 'paid' && order.preorder?.overdueAt) return PREORDER_COPY.overdue;
   if (
     order.fulfillment === 'digital' &&
     order.state === 'delivered' &&

@@ -1130,6 +1130,46 @@ exports[`MarketplaceListingForm - Snapshots > matches the physical listing form 
               </div>
             </div>
             <div
+              class="flex flex-col gap-3"
+              data-cy="marketplace-listing-preorder"
+            >
+              <div
+                class="flex items-center gap-2"
+              >
+                <button
+                  aria-checked="false"
+                  aria-describedby="listing-preorder-hint"
+                  class="peer h-4 w-4 shrink-0 rounded border border-input bg-white/5 shadow-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:border-brand data-[state=checked]:bg-brand"
+                  data-state="unchecked"
+                  id="listing-preorder"
+                  role="checkbox"
+                  type="button"
+                  value="on"
+                />
+                <input
+                  aria-hidden="true"
+                  style="position: absolute; pointer-events: none; opacity: 0; margin: 0px; transform: translateX(-100%); width: 0px; height: 0px;"
+                  tabindex="-1"
+                  type="checkbox"
+                  value="on"
+                />
+                <label
+                  class="flex items-center gap-2 font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 cursor-pointer text-sm"
+                  data-slot="label"
+                  for="listing-preorder"
+                >
+                  Preorder
+                </label>
+              </div>
+              <p
+                class="font-medium text-sm text-muted-foreground"
+                data-testid="typography"
+                id="listing-preorder-hint"
+              >
+                Take orders before you have stock. Buyers pay now; you ship from the date you set. If an order has not shipped by the end of the grace days, the buyer can cancel and you refund them.
+              </p>
+            </div>
+            <div
               class="flex items-center justify-between gap-4"
             >
               <div>

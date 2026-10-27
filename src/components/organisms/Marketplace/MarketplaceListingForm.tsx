@@ -202,6 +202,7 @@ export function MarketplaceListingForm({
   const { presets, saveFromFields } = useMarketplaceShippingPresets();
   const [saveDeliveryPreset, setSaveDeliveryPreset] = useState(false);
   const freeShipping = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.FREE_SHIPPING });
+  const preorder = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.PREORDER });
   const watchedListingFields = useWatch({
     control: form.control,
     name: CREATE_MARKETPLACE_LISTING_SCHEMA_KEYS,
@@ -675,6 +676,51 @@ export function MarketplaceListingForm({
               />
             )}
           </div>
+          {saleFormat === 'fixed_price' && (
+            <div className="flex flex-col gap-3" data-cy="marketplace-listing-preorder">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="listing-preorder"
+                  checked={preorder}
+                  disabled={isPublishing}
+                  onCheckedChange={(checked) =>
+                    form.setValue(CREATE_MARKETPLACE_LISTING_FIELDS.PREORDER, checked === true, {
+                      shouldValidate: true,
+                    })
+                  }
+                  aria-describedby="listing-preorder-hint"
+                />
+                <Label htmlFor="listing-preorder" className="cursor-pointer text-sm">
+                  Preorder
+                </Label>
+              </div>
+              <Typography as="p" id="listing-preorder-hint" className="text-sm text-muted-foreground">
+                Take orders before you have stock. Buyers pay now; you ship from the date you set. If an order has not
+                shipped by the end of the grace days, the buyer can cancel and you refund them.
+              </Typography>
+              {preorder && (
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <ControlledInputField
+                    name={CREATE_MARKETPLACE_LISTING_FIELDS.PREORDER_SHIPS_FROM}
+                    control={form.control}
+                    type="date"
+                    markRequired
+                    label="Ships from"
+                    disabled={isPublishing}
+                    dataCy="marketplace-listing-preorder-ships-from"
+                  />
+                  <ControlledInputField
+                    name={CREATE_MARKETPLACE_LISTING_FIELDS.PREORDER_GRACE_DAYS}
+                    control={form.control}
+                    label="Grace days"
+                    placeholder="7"
+                    disabled={isPublishing}
+                    dataCy="marketplace-listing-preorder-grace-days"
+                  />
+                </div>
+              )}
+            </div>
+          )}
           {currency === 'BTC' && (
             <Typography as="p" className="text-sm text-muted-foreground">
               Bitcoin prices are entered in whole base units: 150000 publishes as ₿150,000.
@@ -1393,7 +1439,7 @@ function listingChecklistSection(item: string): ListingFormSectionId {
   if (item === 'Title' || item === 'Description' || item === 'Category' || item === 'Required item specifics') {
     return 'listing-section-item';
   }
-  if (item === 'Price') return 'listing-section-price';
+  if (item === 'Price' || item.startsWith('Preorder')) return 'listing-section-price';
   // The item's country sits in the Item section with its region.
   if (item === 'Country') return 'listing-section-item';
   if (item === 'Shipping details' || item === 'Choose shipping or pickup') {

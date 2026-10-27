@@ -544,6 +544,33 @@ describe('Marketplace sell studio — visual regression', () => {
     );
   });
 
+  it('renders a preorder with its ships-from date and grace days at desktop viewport', async () => {
+    view.drafts = [
+      {
+        ...draftFixture,
+        data: {
+          ...draftFixture.data,
+          form: {
+            ...draftFixture.data.form,
+            saleFormat: 'fixed_price',
+            preorder: true,
+            preorderShipsFrom: '2026-12-01',
+            preorderGraceDays: '7',
+          },
+        },
+      },
+    ];
+    view.mediaItems = [];
+
+    const screen = await renderForVRT(<MarketplaceSell />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await resumeAutosavedDraft(screen);
+    await vi.waitFor(() => {
+      const input = screen.container.querySelector<HTMLInputElement>('#preorderShipsFrom');
+      if (input?.value !== '2026-12-01') throw new Error('The preorder has not populated the form yet.');
+    });
+    await expect(await expectVrtSurface('listing-section-price')).toMatchScreenshot('sell-preorder-desktop');
+  });
+
   it('renders the form with additional variants added at desktop viewport', async () => {
     view.drafts = [];
     view.mediaItems = [];

@@ -37,8 +37,8 @@ interface InputFieldProps {
   dataCy?: string;
   inputClassName?: React.HTMLAttributes<HTMLInputElement>['className'];
   autoComplete?: string;
-  /** Defaults to `text`; `password` masks a secret (such as a store key) as it is typed. */
-  type?: 'text' | 'password';
+  /** Defaults to `text`; `password` masks a secret (such as a store key) as it is typed; `date` picks a `YYYY-MM-DD` day. */
+  type?: 'text' | 'password' | 'date';
   role?: React.AriaRole;
   'aria-expanded'?: boolean;
   'aria-controls'?: string;

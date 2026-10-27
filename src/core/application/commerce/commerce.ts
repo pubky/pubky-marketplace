@@ -76,6 +76,7 @@ import { locksAdmissionView } from '@/libs/commerce/locks-lifecycle';
 import { lockPolicyCreator, toBareLockResource } from '@/libs/commerce/locks-payment';
 import {
   assertReserveFreePublicRecord,
+  COMMERCE_PREORDER_DEFAULT_GRACE_DAYS,
   type CommerceDigitalLock,
   type CommerceDropRecord,
   commerceListingFulfillmentMethods,
@@ -6228,6 +6229,12 @@ export class CommerceApplication {
                 reservePrice: null,
               }
             : undefined,
+        preorder: listing.preorder
+          ? {
+              shipsFrom: listing.preorder.shipsFrom,
+              graceDays: listing.preorder.graceDays ?? COMMERCE_PREORDER_DEFAULT_GRACE_DAYS,
+            }
+          : undefined,
       },
     });
     const response = await send(command);

@@ -97,6 +97,8 @@ function getBaseActionText(type: MarketplaceNotification['type']): string {
       return 'updated the tracking for your order';
     case 'order_delivery_assumed':
       return 'marked an order delivered automatically';
+    case 'order_preorder_overdue':
+      return 'flagged a preorder that has not shipped in time';
     case 'order_delivered':
       return 'confirmed delivery of an order';
     case 'order_completed':

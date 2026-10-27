@@ -23,6 +23,7 @@ import {
   fulfillmentMethodsFromForm,
   fulfillmentRequiresShipping,
   listingAttributeFormField,
+  preorderFromFormData,
 } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing.types';
 import {
   useListingMediaManager,
@@ -361,6 +362,9 @@ export function formDataFromRecord(
       ? dimensionInputFromMillimeters(record.package.heightMillimeters, measurementSystem)
       : '',
     returnDays,
+    preorder: record.preorder !== undefined,
+    preorderShipsFrom: record.preorder?.shipsFrom ?? '',
+    preorderGraceDays: String(record.preorder?.graceDays ?? createMarketplaceListingDefaults.preorderGraceDays),
   };
 }
 
@@ -432,5 +436,6 @@ function buildUpdatedRecord(
       returnWindowDays,
       buyerPaysReturnShipping: true,
     },
+    preorder: preorderFromFormData(data),
   });
 }

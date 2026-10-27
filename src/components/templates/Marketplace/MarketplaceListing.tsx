@@ -70,6 +70,7 @@ import {
   commerceVariantUnitPrice,
 } from '@/libs/commerce/marketplace-records';
 import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
+import { PREORDER_COPY } from '@/libs/commerce/preorder';
 import { formatShipsToCountries, shopShipsToCountries } from '@/libs/commerce/ships-to';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { formatPackageDimensions, formatWeight } from '@/libs/commerce/units';
@@ -281,6 +282,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   // The methods the service sells this listing by (digital delivery design
   // §6 A1–A3). A Locks listing publishes digital delivery only.
   const methods = commerceListingFulfillmentMethods(record.fulfillmentMethods);
+  const preorder = record.sale.format === 'fixed_price' ? record.preorder : undefined;
   const offersDigital = methods.includes('digital');
   const shipsItem = methods.includes('shipping');
   // Offers settle through shipping or pickup (§6 B7, B8): a digital listing
@@ -440,6 +442,11 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                 {offersDigital && (
                   <Badge variant="secondary" data-testid="marketplace-listing-digital-badge">
                     {digitalDeliveryBadgeLabel(negotiation.projection?.digitalDelivery ?? null)}
+                  </Badge>
+                )}
+                {preorder && (
+                  <Badge variant="secondary" data-testid="marketplace-listing-preorder-badge">
+                    {PREORDER_COPY.badge(preorder.shipsFrom)}
                   </Badge>
                 )}
                 {isSoldOut && record.sale.format === 'fixed_price' && <Badge variant="outline">Sold out</Badge>}
@@ -605,7 +612,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                       onClick={availabilityNeedsSession ? beginPurchase : addSelectedVariantToCart}
                     >
                       <ShoppingCart className="size-4" />
-                      Buy
+                      {preorder ? PREORDER_COPY.buyLabel : 'Buy'}
                     </Button>
                   )}
                   {((projectionIsReserved && !viewerHoldOrder && !viewerOfferHold) || publicHold) && (

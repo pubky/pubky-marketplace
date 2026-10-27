@@ -462,6 +462,35 @@ export const commerceReturnPolicySchema = z
     }
   });
 
+/** Grace days a preorder takes when the seller leaves them out (the service default). */
+export const COMMERCE_PREORDER_DEFAULT_GRACE_DAYS = 7;
+export const COMMERCE_PREORDER_MIN_GRACE_DAYS = 1;
+export const COMMERCE_PREORDER_MAX_GRACE_DAYS = 30;
+/** The furthest out a preorder's ships-from date may be when it is published. */
+export const COMMERCE_PREORDER_MAX_LEAD_DAYS = 90;
+
+/**
+ * A preorder on a fixed-price physical listing: the buyer pays now and the
+ * seller ships on or after `shipsFrom` (a UTC date). When the order is still
+ * unshipped `graceDays` after that date, the buyer may cancel it alone and
+ * the seller owes the refund.
+ */
+export const commerceListingPreorderSchema = z
+  .object({
+    shipsFrom: z.iso.date(),
+    graceDays: z.number().int().min(COMMERCE_PREORDER_MIN_GRACE_DAYS).max(COMMERCE_PREORDER_MAX_GRACE_DAYS).optional(),
+  })
+  .passthrough();
+
+export type CommerceListingPreorder = z.infer<typeof commerceListingPreorderSchema>;
+
+/** When the buyer may cancel an unshipped preorder alone: the start (UTC) of the day `graceDays` after `shipsFrom`. */
+export function commercePreorderShipBy(preorder: CommerceListingPreorder): Date {
+  const shipBy = new Date(`${preorder.shipsFrom}T00:00:00.000Z`);
+  shipBy.setUTCDate(shipBy.getUTCDate() + (preorder.graceDays ?? COMMERCE_PREORDER_DEFAULT_GRACE_DAYS));
+  return shipBy;
+}
+
 export const commerceDigitalLockSchema = z
   .object({
     policyUri: locksPublicUriSchema,
@@ -654,6 +683,7 @@ const commerceListingRecordSchemaInner = commercePublicRecordBaseSchema
     shippingOptions: z.array(commerceShippingOptionSchema).max(20),
     returnPolicy: commerceReturnPolicySchema,
     digitalLock: commerceDigitalLockSchema.optional(),
+    preorder: commerceListingPreorderSchema.optional(),
     adultOnly: z.boolean(),
   })
   .passthrough()
@@ -731,6 +761,13 @@ const commerceListingRecordSchemaInner = commercePublicRecordBaseSchema
 
     const hasPhysical = listing.fulfillmentMethods.includes('physical');
     const hasDigital = listing.fulfillmentMethods.includes('digital');
+    if (listing.preorder !== undefined && (listing.sale.format !== 'fixed_price' || hasDigital)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A preorder must be a fixed-price physical listing',
+        path: ['preorder'],
+      });
+    }
     if (hasPhysical && listing.package === undefined) {
       context.addIssue({
         code: 'custom',

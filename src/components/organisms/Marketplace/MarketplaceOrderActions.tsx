@@ -38,6 +38,7 @@ import {
 } from '@/libs/commerce/order-reviews';
 import { buyerCancelOffered, observedPaymentRail, paykitCheckoutCancellable } from '@/libs/commerce/paykit-rail';
 import { formatUsdt } from '@/libs/commerce/payment-options';
+import { PREORDER_COPY, preorderLateCancelOpen } from '@/libs/commerce/preorder';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import { isUsdtFulfilmentBlocked, PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
 import { formatUsdtRefundAmount, isUsdtRefundOrder, USDT_REFUND_COPY } from '@/libs/commerce/usdt-refund';
@@ -202,6 +203,8 @@ export function MarketplaceOrderActions({
   // Digital orders are never shipped or returned (digital delivery design §6 E1–E4).
   const isDigital = order.fulfillment === 'digital';
   const cancelOffered = buyerCancelOffered(order);
+  // A preorder still unshipped at its ship-by date: the buyer's cancel takes effect at once.
+  const preorderLate = nowMs !== null && preorderLateCancelOpen(order, new Date(nowMs));
   // The listing's frozen return policy: no return on a final sale, none after the window.
   const returnClosure = orderReturnClosure(order, nowMs);
   const returnable = isBuyer && !isDigital && ['delivered', 'completed'].includes(order.state) && !order.returnRequest;
@@ -277,11 +280,14 @@ export function MarketplaceOrderActions({
         toast({ variant: 'info', title: DIGITAL_SELLER_COPY.refundNote });
       }
       if (actionType === 'cancel') {
-        // An unpaid checkout is cancelled at once; a paid order waits for the seller (#348).
+        // An unpaid checkout is cancelled at once; a paid order waits for the seller (#348), unless it is
+        // a preorder past its ship-by date.
         toast(
           order.state === 'pending_payment'
             ? { title: 'Checkout cancelled' }
-            : { variant: 'info', title: 'Cancellation requested' },
+            : preorderLate
+              ? { title: 'Order cancelled' }
+              : { variant: 'info', title: 'Cancellation requested' },
         );
       }
       setOpen(false);
@@ -409,7 +415,7 @@ export function MarketplaceOrderActions({
             disabled={awaitingUsdtRefundAddress}
             onClick={() => begin('refund')}
           >
-            Record refund
+            {order.refundDue ? `${PREORDER_COPY.refundDue} · record refund` : 'Record refund'}
           </Button>
         )}
         {reviewable && ownReview === undefined && (
@@ -457,9 +463,15 @@ export function MarketplaceOrderActions({
             size={cancelButtonSize}
             variant="destructive-soft"
             className={cn('rounded-full sm:order-first', cancelFullWidth && 'w-full')}
-            onClick={() => begin('cancel')}
+            onClick={() =>
+              begin('cancel', preorderLate ? { action: 'cancel', reason: PREORDER_COPY.lateCancelReason } : undefined)
+            }
           >
-            {order.state === 'pending_payment' ? 'Cancel checkout' : 'Cancel order'}
+            {order.state === 'pending_payment'
+              ? 'Cancel checkout'
+              : preorderLate
+                ? PREORDER_COPY.buyerLateCancel
+                : 'Cancel order'}
           </Button>
         )}
       </div>

@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { namedPrivateSellerNotice, PRIVATE_SELLER_NOTICE, ROLE_STATEMENT } from '@/libs/commerce/eu-region';
+import { PREORDER_COPY } from '@/libs/commerce/preorder';
 import { CheckoutSaleTerms } from './CheckoutSaleTerms';
 
 vi.mock('@/hooks/useMarketplaceSellerSummary/useMarketplaceSellerSummary', () => ({
@@ -38,5 +39,18 @@ describe('CheckoutSaleTerms', () => {
       namedPrivateSellerNotice('Shop a'),
       namedPrivateSellerNotice('Shop b'),
     ]);
+  });
+
+  it('names when a preorder ships and when it can be cancelled for a refund', () => {
+    render(
+      <CheckoutSaleTerms
+        sellerPubkys={['a']}
+        declarations={{ a: 'trader' }}
+        preorders={[{ title: 'Boots', preorder: { shipsFrom: '2026-12-01', graceDays: 7 } }]}
+      />,
+    );
+    expect(screen.getByTestId('checkout-preorder-terms').textContent).toBe(
+      PREORDER_COPY.checkoutTerms({ shipsFrom: '2026-12-01', graceDays: 7 }),
+    );
   });
 });

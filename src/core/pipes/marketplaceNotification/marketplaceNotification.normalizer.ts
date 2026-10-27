@@ -107,6 +107,7 @@ export class MarketplaceNotificationNormalizer {
       case 'order_shipped':
       case 'tracking_updated':
       case 'order_delivery_assumed':
+      case 'order_preorder_overdue':
       case 'order_delivered':
       case 'order_completed':
       case 'return_updated':

@@ -95,6 +95,15 @@ const registerListingPayloadSchema = z
     // own price. Absent registers one implicit row at the listing price.
     // `quantity` above stays the sum of every record variant.
     variants: z.array(registerVariantSchema).min(1).max(COMMERCE_LISTING_MAX_VARIANTS).optional(),
+    // The record's preorder: ships on or after `shipsFrom` (a UTC date), and
+    // the buyer may cancel alone `graceDays` after it if nothing shipped.
+    preorder: z
+      .object({
+        shipsFrom: z.iso.date(),
+        graceDays: z.number().int().min(1).max(30),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((payload, context) => {
