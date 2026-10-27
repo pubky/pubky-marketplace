@@ -457,6 +457,82 @@ describe('useMarketplaceShopSettings', () => {
     );
   });
 
+  describe('unsaved edits', () => {
+    async function loadPublishedShop() {
+      vi.mocked(CommerceController.refreshShop).mockResolvedValue({
+        ...publishedShop,
+        avatarUrl: AVATAR_MEDIA_URL,
+        bannerUrl: BANNER_MEDIA_URL,
+      });
+      const hook = renderHook(() => useMarketplaceShopSettings());
+      await waitFor(() => expect(hook.result.current.hasShop).toBe(true));
+      return hook;
+    }
+
+    it('is clean after the published shop loads, and while nothing has been typed', async () => {
+      const { result } = await loadPublishedShop();
+      expect(result.current.isDirty).toBe(false);
+    });
+
+    it('is clean for a new shop until the seller types, then dirty', async () => {
+      const { result } = renderHook(() => useMarketplaceShopSettings());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(result.current.isDirty).toBe(false);
+
+      act(() => result.current.form.setValue('name', 'Satoshi Vintage', { shouldDirty: true }));
+
+      expect(result.current.isDirty).toBe(true);
+    });
+
+    it('is dirty for a field edit and clean again once it is saved', async () => {
+      const { result } = await loadPublishedShop();
+
+      act(() => result.current.form.setValue('bio', 'A new description.', { shouldDirty: true }));
+      expect(result.current.isDirty).toBe(true);
+
+      await act(() => result.current.submit());
+
+      expect(CommerceController.commitUpsertShop).toHaveBeenCalledOnce();
+      expect(result.current.isDirty).toBe(false);
+    });
+
+    it('stays dirty when the save fails, so leaving still asks', async () => {
+      const { result } = await loadPublishedShop();
+      vi.mocked(CommerceController.commitUpsertShop).mockRejectedValueOnce(new Error('offline'));
+
+      act(() => result.current.form.setValue('bio', 'A new description.', { shouldDirty: true }));
+      await act(() => result.current.submit());
+
+      expect(result.current.isDirty).toBe(true);
+    });
+
+    it('is dirty while a picked image or a removed image waits to be saved, and clean after the save', async () => {
+      const { result } = await loadPublishedShop();
+
+      act(() => result.current.avatar.onInputChange(changeEvent(imageFile('avatar.png'))));
+      expect(result.current.isDirty).toBe(true);
+      await act(() => result.current.submit());
+      expect(result.current.isDirty).toBe(false);
+
+      act(() => result.current.banner.remove());
+      expect(result.current.isDirty).toBe(true);
+      await act(() => result.current.submit());
+      expect(result.current.isDirty).toBe(false);
+    });
+
+    it('stays dirty when the image uploaded but the shop record did not save', async () => {
+      const { result } = await loadPublishedShop();
+      vi.mocked(CommerceController.commitUpsertShop).mockRejectedValueOnce(new Error('offline'));
+      vi.mocked(CommerceController.commitCreateMedia).mockResolvedValueOnce(BANNER_MEDIA_URL);
+
+      act(() => result.current.avatar.onInputChange(changeEvent(imageFile('avatar.png'))));
+      await act(() => result.current.submit());
+
+      expect(CommerceController.commitCreateMedia).toHaveBeenCalledOnce();
+      expect(result.current.isDirty).toBe(true);
+    });
+  });
+
   it('rejects non-image and oversized files without staging them', async () => {
     const { result } = renderHook(() => useMarketplaceShopSettings());
     await waitFor(() => expect(result.current.isLoading).toBe(false));

@@ -51,6 +51,7 @@ vi.mock('@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings', () => (
       reload: load.reload,
       isSaving: false,
       hasShop: false,
+      isDirty: form.formState.isDirty,
       avatar: imageSlot(null),
       banner: imageSlot(null),
       submit: vi.fn(async () => false),
@@ -132,6 +133,56 @@ describe('MarketplaceMyShop', () => {
         'Buyers see “Ships to: Switzerland and Liechtenstein”, and checkout only accepts delivery addresses there. Pickup is not affected.',
       ),
     );
+  });
+
+  it('asks before a click on a link takes the seller away with unsaved edits, and lets them keep editing', async () => {
+    const user = userEvent.setup();
+    render(<MarketplaceMyShop />);
+    const link = screen.getByRole('link', { name: /View public storefront/ });
+    const followed = vi.fn();
+    const onLinkClick = (event: Event) => {
+      if (event.target === link) followed();
+    };
+    document.addEventListener('click', onLinkClick);
+
+    await user.click(link);
+    expect(screen.queryByTestId('unsaved-changes-dialog')).not.toBeInTheDocument();
+    expect(followed).toHaveBeenCalledTimes(1);
+
+    await user.type(screen.getByLabelText('Shop name'), 'Satoshi Vintage');
+    followed.mockClear();
+    await user.click(link);
+
+    const dialog = await screen.findByTestId('unsaved-changes-dialog');
+    expect(dialog).toHaveTextContent('Leave without saving?');
+    expect(dialog).toHaveTextContent('You have unsaved changes to your storefront.');
+    expect(followed).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Keep editing' }));
+    await waitFor(() => expect(screen.queryByTestId('unsaved-changes-dialog')).not.toBeInTheDocument());
+    expect(screen.getByLabelText('Shop name')).toHaveValue('Satoshi Vintage');
+    expect(followed).not.toHaveBeenCalled();
+    document.removeEventListener('click', onLinkClick);
+  });
+
+  it('follows the link once the seller chooses to discard the unsaved edits', async () => {
+    const user = userEvent.setup();
+    render(<MarketplaceMyShop />);
+    const link = screen.getByRole('link', { name: /View public storefront/ });
+    const followed = vi.fn();
+    await user.type(screen.getByLabelText('Shop name'), 'Satoshi Vintage');
+    const onLinkClick = (event: Event) => {
+      if (event.target === link) followed();
+    };
+    document.addEventListener('click', onLinkClick);
+
+    await user.click(link);
+    const dialog = await screen.findByTestId('unsaved-changes-dialog');
+    expect(followed).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole('button', { name: 'Discard changes' }));
+
+    await waitFor(() => expect(followed).toHaveBeenCalledTimes(1));
+    document.removeEventListener('click', onLinkClick);
   });
 
   it('offers a retry instead of an editable replacement shop when loading fails', async () => {

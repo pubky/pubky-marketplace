@@ -170,6 +170,10 @@ Helpers such as **`getIconFromUrl`** and **`getLabelFromUrl`** live in **`@/libs
 
 Component tests must use **real** `lucide-react` and `@/icons` implementations (no `vi.mock('lucide-react')` / `vi.mock('@/icons')` for icons). See `docs/component-testing.md` — _Icon components: Always Real_.
 
+## Unsaved changes
+
+A settings form that is not auto-saved guards its edits with [`useUnsavedChangesGuard`](../src/hooks/useUnsavedChangesGuard/useUnsavedChangesGuard.ts) and [`UnsavedChangesDialog`](../src/components/molecules/Marketplace/UnsavedChangesDialog.tsx): pass the form's dirty flag (for a form with images, include them, as `useMarketplaceShopSettings().isDirty` does). While dirty, closing or reloading the tab asks through the browser, and a click on a link to another page of the site is held back until the seller chooses Keep editing or Discard changes. Hash-only links, new-tab links, downloads and modifier-clicks are not held back. The browser's Back button cannot be intercepted by an app-router page, so it is not covered. The Storefront page (`MarketplaceMyShop`) uses it.
+
 ## Toasts
 
 Stack: atom [`Toast`](../src/components/atoms/Toast/Toast.tsx) + [`Toast.variants.ts`](../src/components/atoms/Toast/Toast.variants.ts) + [`Toast.icons.tsx`](../src/components/atoms/Toast/Toast.icons.tsx), molecule [`Toaster`](../src/components/molecules/Toaster/Toaster.tsx), API [`toast()`](../src/components/molecules/Toaster/use-toast.ts) / `useToast()`. `<Toaster />` is mounted in the app layout.
