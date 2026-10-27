@@ -231,6 +231,7 @@ describe('MarketplaceGrantSessionService.revoke', () => {
       method: 'DELETE',
       headers: { authorization: `Bearer ${MINTED.token}` },
       cache: 'no-store',
+      keepalive: true,
     });
   });
 

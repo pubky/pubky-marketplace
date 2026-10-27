@@ -25,6 +25,7 @@ import {
   SESSION_FLOW_TIMEOUT_MS,
 } from './marketplace-session';
 import { marketplaceSessionIdSchema } from './marketplace-session-id';
+import { revokeHeldMarketplaceSessions } from './marketplace-session-revocation';
 
 const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
@@ -284,26 +285,31 @@ export class MarketplaceInventorySessionService {
 
   /**
    * Sign-out and account switch: no Studio bearer may stay at rest for the
-   * user who is leaving, whichever tab persisted it. The only path that
-   * removes a record it did not write.
+   * user who is leaving, whichever tab persisted it, and none may stay valid
+   * at the service: the in-memory bearer and the persisted one are both
+   * revoked there. The only path that removes a record it did not write.
    */
   static clearForSignOut(): void {
     const ended = this.session;
+    const persisted = this.persistedBearer();
     this.session = null;
     this.removePersistedSession();
+    revokeHeldMarketplaceSessions([ended, persisted]);
     if (!ended) return;
     this.notifySessionEnded({ reason: 'cleared', issuedAt: ended.issuedAt });
   }
 
   /**
    * Account switch without a sign-out: the Studio bearer of any account but
-   * `keepPubky` goes from memory and from rest, whichever tab persisted it.
-   * A Studio bearer `keepPubky` holds is persisted again if the departed
-   * record had kept it out of the slot.
+   * `keepPubky` goes from memory, from rest and from the service, whichever
+   * tab persisted it. A Studio bearer `keepPubky` holds is persisted again if
+   * the departed record had kept it out of the slot.
    */
   static clearOtherAccounts(keepPubky: string): void {
-    if (this.session && this.session.pubky !== keepPubky) this.clearSession('cleared');
+    const departedMemory = this.session && this.session.pubky !== keepPubky ? this.session : null;
+    if (departedMemory) this.clearSession('cleared');
     const stored = this.persistedBearer();
+    revokeHeldMarketplaceSessions([departedMemory, stored && stored.pubky !== keepPubky ? stored : null]);
     if (!stored || stored.pubky === keepPubky) return;
     this.removePersistedSession();
     if (this.session) {
@@ -348,15 +354,25 @@ export class MarketplaceInventorySessionService {
   }
 
   /** The bearer, account and expiry of the persisted record, or null when there is none to compare. */
-  private static persistedBearer(): { token: string; pubky: unknown; expiresAtMs: number } | null {
+  private static persistedBearer(): {
+    token: string;
+    pubky: unknown;
+    sessionId: unknown;
+    expiresAtMs: number;
+  } | null {
     const raw = this.readStorage();
     if (raw === null) return null;
     const value = this.parseJson(raw);
     if (typeof value !== 'object' || value === null) return null;
-    const { token, pubky, expiresAt } = value as { token?: unknown; pubky?: unknown; expiresAt?: unknown };
+    const { token, pubky, sessionId, expiresAt } = value as {
+      token?: unknown;
+      pubky?: unknown;
+      sessionId?: unknown;
+      expiresAt?: unknown;
+    };
     if (typeof token !== 'string') return null;
     const expiresAtMs = typeof expiresAt === 'string' ? Date.parse(expiresAt) : Number.NaN;
-    return { token, pubky, expiresAtMs: Number.isNaN(expiresAtMs) ? 0 : expiresAtMs };
+    return { token, pubky, sessionId, expiresAtMs: Number.isNaN(expiresAtMs) ? 0 : expiresAtMs };
   }
 
   /** Removes the persisted record only when it still carries `token`. */
