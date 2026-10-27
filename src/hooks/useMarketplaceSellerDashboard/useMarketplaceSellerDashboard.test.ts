@@ -20,6 +20,7 @@ let localListings: Array<{
   format?: string;
   price_minor?: number;
   currency?: string;
+  registeredWithService?: boolean;
 }> = [];
 const adapter = vi.hoisted(() => ({ durable: false }));
 
@@ -839,5 +840,92 @@ describe('useMarketplaceSellerDashboard stock', () => {
     rerender();
     await waitFor(() => expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(2));
     ordersState.orders = [];
+  });
+
+  function startDurableDashboard() {
+    vi.clearAllMocks();
+    adapter.durable = true;
+    currentUserPubky = OWNER;
+    listingDraftRows = [];
+    const record = createCommerceListingFixture({ listingId: 'guide_01' });
+    const listing = { id: `${OWNER}:guide_01`, registeredWithService: false };
+    localListings = [{ ...listing, listing_id: 'guide_01', state: 'active', record }];
+    useCommerceStore.setState({
+      marketplaceSession: {
+        pubky: OWNER,
+        capabilities: '/pub/pubky.app/:rw',
+        issuedAt: '2026-10-15T00:00:00.000Z',
+        expiresAt: '2026-11-15T00:00:00.000Z',
+      },
+    });
+    vi.mocked(CommerceController.getListingsBySeller).mockResolvedValue(localListings as never);
+    return listing;
+  }
+
+  it('shows no stock total and offers no registration until the service has answered for a listing', async () => {
+    const listing = startDurableDashboard();
+    let answer: (projection: null) => void = () => undefined;
+    vi.mocked(CommerceController.getMarketplaceListingProjection).mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+
+    const { result } = renderHook(() => useMarketplaceSellerDashboard());
+
+    await waitFor(() => expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalled());
+    expect(result.current.metrics.totalInventory).toBe('—');
+    expect(result.current.canOfferRegistration(listing)).toBe(false);
+
+    await act(async () => answer(null));
+
+    await waitFor(() => expect(result.current.canOfferRegistration(listing)).toBe(true));
+    expect(result.current.metrics.totalInventory).not.toBe('—');
+  });
+
+  it('does not offer registration for a listing the service holds, and knows its stock', async () => {
+    const listing = startDurableDashboard();
+    vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(
+      createListingProjectionFixture({ aggregateId: `listing:${OWNER}_guide_01`, availableQuantity: 0 }),
+    );
+
+    const { result } = renderHook(() => useMarketplaceSellerDashboard());
+
+    await waitFor(() => expect(result.current.metrics.totalInventory).not.toBe('—'));
+    expect(result.current.canOfferRegistration(listing)).toBe(false);
+  });
+
+  it("reads again when the tab regains focus after a failed read, instead of keeping the record's numbers", async () => {
+    const listing = startDurableDashboard();
+    vi.mocked(CommerceController.getMarketplaceListingProjection)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue(null);
+
+    const { result } = renderHook(() => useMarketplaceSellerDashboard());
+
+    await waitFor(() => expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(1));
+    expect(result.current.metrics.totalInventory).toBe('—');
+    expect(result.current.canOfferRegistration(listing)).toBe(false);
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.canOfferRegistration(listing)).toBe(true));
+  });
+
+  it('does not refetch on focus while every read succeeded', async () => {
+    startDurableDashboard();
+    vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(null);
+
+    const { result } = renderHook(() => useMarketplaceSellerDashboard());
+    await waitFor(() => expect(result.current.metrics.totalInventory).not.toBe('—'));
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(1);
   });
 });

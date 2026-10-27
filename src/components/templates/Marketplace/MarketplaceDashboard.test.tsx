@@ -38,6 +38,7 @@ const dashboardState = vi.hoisted(() => ({
   unfinishedDrafts: [] as Array<{ listingId: string; title: string; updatedAt: number; ageLabel: string }>,
   needsSession: false,
   sessionError: null as string | null,
+  registrationOffered: true,
 }));
 
 vi.mock('next/navigation', () => ({
@@ -77,6 +78,7 @@ vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', (
     unfinishedDrafts: dashboardState.unfinishedDrafts,
     discardListingDraft: dashboardFns.discardListingDraft,
     resumeListingDraft: dashboardFns.resumeListingDraft,
+    canOfferRegistration: () => dashboardState.registrationOffered,
     exportCsv: async () => new TextEncoder().encode('record_uri,seller_pubky\r\n'),
   }),
 }));
@@ -603,6 +605,17 @@ describe('MarketplaceDashboard state changes without a marketplace session', () 
 describe('MarketplaceDashboard registration for checkout', () => {
   beforeEach(() => {
     viewport.isMobile = false;
+    dashboardState.registrationOffered = true;
+  });
+
+  it('offers nothing until the service has answered for the listing', () => {
+    dashboardState.listings = [{ ...listing({ title: 'Boots' }), registeredWithService: false }];
+    dashboardState.registrationOffered = false;
+
+    render(<MarketplaceDashboard />);
+
+    expect(screen.getByRole('row', { name: /Boots/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Register for checkout' })).not.toBeInTheDocument();
   });
 
   it('offers Register for checkout for a listing the service does not hold', () => {

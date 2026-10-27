@@ -55,6 +55,7 @@ vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', (
     discardListingDraft: dashboardFns.discardListingDraft,
     resumeListingDraft: dashboardFns.resumeListingDraft,
     retryListingRegistration: vi.fn(),
+    canOfferRegistration: () => true,
     exportCsv: async () => new TextEncoder().encode('record_uri,seller_pubky\r\n'),
   }),
 }));

@@ -31,6 +31,12 @@ import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
 const REVENUE_ORDER_STATES = ['paid', 'processing', 'shipped', 'delivered', 'completed'] as const;
 
+/** Shown in place of the stock total while the service has not yet answered for a live listing. */
+export const STOCK_UNKNOWN_LABEL = '—';
+
+/** What the service said when the dashboard last read a listing: it holds a projection, or it holds none. */
+type ServiceRead = 'registered' | 'unregistered';
+
 export function useMarketplaceSellerDashboard() {
   const [nowMs, setNowMs] = useState(0);
   const [catalogFetchState, setCatalogFetchState] = useState<'idle' | 'loading' | 'settled' | 'error'>('idle');
@@ -70,9 +76,22 @@ export function useMarketplaceSellerDashboard() {
   // It is read again whenever a seller order moves or the session changes.
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
   const stockRefreshed = useRef<string | null>(null);
+  const [serviceReads, setServiceReads] = useState<ReadonlyMap<string, ServiceRead>>(new Map());
+  // A read that failed (offline, a session the service had not yet accepted) is tried again when the tab
+  // regains focus, instead of leaving the dashboard on the record's own numbers until a reload.
+  const [stockRetry, setStockRetry] = useState(0);
+  const stockReadFailed = useRef(false);
+  useEffect(() => {
+    const retry = () => {
+      if (stockReadFailed.current) setStockRetry((attempt) => attempt + 1);
+    };
+    window.addEventListener('focus', retry);
+    return () => window.removeEventListener('focus', retry);
+  }, []);
   const stockKey = [
     currentUserPubky,
     marketplaceSession?.issuedAt,
+    stockRetry,
     ...sellerOrders.map(({ order }) => `${order.id}:${order.revision}:${order.state}`),
   ].join('|');
   useEffect(() => {
@@ -81,13 +100,15 @@ export function useMarketplaceSellerDashboard() {
     if (stockRefreshed.current === stockKey) return;
     stockRefreshed.current = stockKey;
     const sellerPubky = currentUserPubky;
+    stockReadFailed.current = false;
     void (async () => {
       for (const listing of await CommerceController.getListingsBySeller(sellerPubky)) {
         try {
           const projection = await CommerceController.getMarketplaceListingProjection(sellerPubky, listing.listing_id);
           if (projection) await cacheProjection(projection);
+          setServiceReads((reads) => new Map(reads).set(listing.id, projection ? 'registered' : 'unregistered'));
         } catch {
-          // The column keeps the record's count until the next refresh.
+          stockReadFailed.current = true;
         }
       }
     })();
@@ -105,6 +126,13 @@ export function useMarketplaceSellerDashboard() {
   const offersAwaitingReply = sellerOffers.filter(
     ({ state, offeredBy }) => (state === 'pending' || state === 'countered') && offeredBy !== currentUserPubky,
   ).length;
+  const durable = isDurableCommerceMode(getCommerceAdapterMode());
+  // Whether the service has told this dashboard about the listing: a cached projection, or an answer just now.
+  const serviceAnswered = (listing: { id: string; registeredWithService: boolean }) =>
+    !durable || listing.registeredWithService || serviceReads.has(listing.id);
+  // Offered only once the service said it holds no projection: before that the dashboard does not know.
+  const canOfferRegistration = (listing: { id: string }) => !durable || serviceReads.get(listing.id) === 'unregistered';
+  const stockKnown = activeListings.every(serviceAnswered);
   const finiteInventory = activeListings.reduce((total, listing) => {
     const record = listing.record;
     const unlimited = record.variants.some((variant) => isUnlimitedStock(record, variant.quantity));
@@ -118,7 +146,11 @@ export function useMarketplaceSellerDashboard() {
   const unlimitedActive = activeListings.some((listing) =>
     listing.record.variants.some((variant) => isUnlimitedStock(listing.record, variant.quantity)),
   );
-  const totalInventory = finiteInventory === 0 && unlimitedActive ? UNLIMITED_STOCK_LABEL : finiteInventory;
+  const totalInventory = !stockKnown
+    ? STOCK_UNKNOWN_LABEL
+    : finiteInventory === 0 && unlimitedActive
+      ? UNLIMITED_STOCK_LABEL
+      : finiteInventory;
   // One revenue figure per pricing asset: minor units of different assets
   // (USD cents, bitcoin base units) are never summed into one false number.
   const revenueOrders = sellerOrders.filter(({ order }) =>
@@ -287,6 +319,7 @@ export function useMarketplaceSellerDashboard() {
     },
     updateListingState,
     retryListingRegistration,
+    canOfferRegistration,
     duplicateListing,
     hasUnsavedListingDraft,
     unfinishedDrafts,

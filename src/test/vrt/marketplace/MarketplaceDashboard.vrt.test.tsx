@@ -175,6 +175,7 @@ vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', (
     unfinishedDrafts: view.unfinishedDrafts,
     discardListingDraft: vi.fn(async () => undefined),
     resumeListingDraft: vi.fn(),
+    canOfferRegistration: () => true,
     exportCsv: async () => new TextEncoder().encode('record_uri,seller_pubky\r\n'),
   }),
 }));

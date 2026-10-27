@@ -620,17 +620,19 @@ export function MarketplaceDashboard() {
                                         <Copy className="size-4" />
                                         Duplicate
                                       </Button>
-                                      {isListingRegistrationPending(listing) && !listing.registeredWithService && (
-                                        <Button
-                                          size="sm"
-                                          variant="secondary"
-                                          className="rounded-full"
-                                          disabled={sellingHeld}
-                                          onClick={() => void dashboard.retryListingRegistration(listing.listing_id)}
-                                        >
-                                          Register for checkout
-                                        </Button>
-                                      )}
+                                      {isListingRegistrationPending(listing) &&
+                                        !listing.registeredWithService &&
+                                        dashboard.canOfferRegistration(listing) && (
+                                          <Button
+                                            size="sm"
+                                            variant="secondary"
+                                            className="rounded-full"
+                                            disabled={sellingHeld}
+                                            onClick={() => void dashboard.retryListingRegistration(listing.listing_id)}
+                                          >
+                                            Register for checkout
+                                          </Button>
+                                        )}
                                     </div>
                                   </td>
                                 </tr>
