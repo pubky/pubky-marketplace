@@ -208,7 +208,8 @@ describe('the seller studio in a blocked region', () => {
     await renderStudio();
 
     const notice = await screen.findByTestId('dashboard-selling-unavailable');
-    expect(notice).toHaveTextContent("Selling isn't available in your region yet.");
+    expect(notice).toHaveTextContent("Your shop country is United Kingdom, where selling isn't available yet.");
+    expect(notice).not.toHaveTextContent('in your region');
     expect(within(notice).getByRole('link', { name: 'update your shop country' })).toHaveAttribute(
       'href',
       '/marketplace/storefront#countryCode',

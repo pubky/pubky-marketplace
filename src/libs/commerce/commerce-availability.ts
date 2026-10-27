@@ -13,6 +13,7 @@ import {
   SHOP_COUNTRY_LOCKED_MESSAGE,
   SHOP_COUNTRY_LOCKED_UNKNOWN_MESSAGE,
 } from './region-modes';
+import { countryDisplayName } from './ships-to';
 
 /** Where the visitor's IP country stands: asked, answered (country or unknown), or not asked at all. */
 export type ClientRegionState =
@@ -41,6 +42,11 @@ export interface CommerceAvailability {
   info: string | null;
 }
 
+/** The selling line when the seller's own shop country is the blocked one: it names the country, since the seller's region may be fine. */
+export function shopCountryBlockedMessage(countryCode: string): string {
+  return `Your shop country is ${countryDisplayName(countryCode)}, where selling isn't available yet.`;
+}
+
 export const INERT_COMMERCE_AVAILABILITY: CommerceAvailability = {
   active: false,
   checking: false,
@@ -56,7 +62,7 @@ export const INERT_COMMERCE_AVAILABILITY: CommerceAvailability = {
  * What the blocked-region policy says about commerce for one visitor.
  *
  * `declaredCountry` is what the visitor said (the buyer's remembered country) or the shop's own
- * country for a seller. `sellerCountry` is the country of the shop being bought from. Both only ever
+ * country for a seller, who passes `declaredIs: 'shop'` so the selling line names that country. `sellerCountry` is the country of the shop being bought from. Both only ever
  * add a block; the IP country decides whether a visitor from an open country is let through.
  * Nothing is active, and nothing is evaluated, unless the policy blocks a region.
  */
@@ -64,6 +70,7 @@ export function evaluateCommerceAvailability(
   policy: RegionPolicy,
   input: {
     declaredCountry: string | null | undefined;
+    declaredIs?: 'shop';
     sellerCountry?: string | null;
     client: ClientRegionState;
   },
@@ -95,7 +102,11 @@ export function evaluateCommerceAvailability(
       : cause === 'seller'
         ? BUYING_FROM_BLOCKED_SHOP_MESSAGE
         : COMMERCE_BLOCKED_MESSAGE,
-    sellingMessage: unknown ? COMMERCE_UNKNOWN_REGION_MESSAGE : SELLING_BLOCKED_MESSAGE,
+    sellingMessage: unknown
+      ? COMMERCE_UNKNOWN_REGION_MESSAGE
+      : cause === 'declared' && input.declaredIs === 'shop' && input.declaredCountry
+        ? shopCountryBlockedMessage(input.declaredCountry.trim().toUpperCase())
+        : SELLING_BLOCKED_MESSAGE,
     info: unknown ? COMMERCE_UNKNOWN_REGION_INFO : COMMERCE_BLOCKED_INFO,
   };
 }

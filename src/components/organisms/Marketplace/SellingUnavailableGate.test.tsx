@@ -69,7 +69,9 @@ describe('SellingUnavailableGate', () => {
     ownShopIn('DE');
     renderGate();
 
-    expect(await screen.findByTestId('selling-unavailable')).toHaveTextContent(SELLING_BLOCKED_MESSAGE);
+    expect(await screen.findByTestId('selling-unavailable')).toHaveTextContent(
+      "Your shop country is Germany, where selling isn't available yet.",
+    );
     expect(screen.queryByText('the seller studio')).not.toBeInTheDocument();
   });
 
@@ -80,9 +82,10 @@ describe('SellingUnavailableGate', () => {
     renderGate();
 
     const gate = await screen.findByTestId('selling-unavailable');
-    expect(gate).toHaveTextContent(SELLING_BLOCKED_MESSAGE);
+    expect(gate).toHaveTextContent("Your shop country is United Kingdom, where selling isn't available yet.");
+    expect(gate).not.toHaveTextContent(SELLING_BLOCKED_MESSAGE);
     expect(screen.getByTestId('selling-unavailable-hint')).toHaveTextContent(
-      "If you've moved, update your shop country.",
+      "If that isn't where you sell from, update your shop country.",
     );
     expect(screen.getByRole('link', { name: 'update your shop country' })).toHaveAttribute(
       'href',

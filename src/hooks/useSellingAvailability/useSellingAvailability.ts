@@ -20,5 +20,9 @@ export function useSellingAvailability(): CommerceAvailability {
     () => (policy.usesClientRegion && currentUserPubky ? CommerceController.getShop(currentUserPubky) : null),
     [policy.usesClientRegion, currentUserPubky],
   );
-  return evaluateCommerceAvailability(policy, { declaredCountry: shop?.record.location.countryCode, client });
+  return evaluateCommerceAvailability(policy, {
+    declaredCountry: shop?.record.location.countryCode,
+    declaredIs: 'shop',
+    client,
+  });
 }
