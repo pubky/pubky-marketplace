@@ -162,6 +162,28 @@ describe('useCreateMarketplaceListing', () => {
     vi.useRealTimers();
   });
 
+  it('publishes a typed UK country as its ISO code GB', async () => {
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    act(() => {
+      result.current.form.setValue('title', 'Vintage leather boots');
+      result.current.form.setValue('description', 'Well cared for boots with light wear.');
+      result.current.form.setValue('categoryId', 'fashion-men-footwear-boots');
+      result.current.form.setValue('attrSize', 'US 9');
+      result.current.form.setValue('price', '125.00');
+      result.current.form.setValue('fulfillment', 'pickup');
+      result.current.form.setValue('countryCode', 'uk');
+    });
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(CommerceController.commitUpsertListing).toHaveBeenCalledOnce();
+    expect(vi.mocked(CommerceController.commitUpsertListing).mock.calls[0][0]).toMatchObject({
+      location: { countryCode: 'GB', region: undefined },
+    });
+  });
+
   it('uploads every prepared photo and publishes a schema-valid owner listing in media order', async () => {
     const { result } = renderHook(() => useCreateMarketplaceListing());
     act(() => {

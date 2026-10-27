@@ -54,6 +54,35 @@ describe('marketplaceShopSettingsDefaults', () => {
       sellerStatus: 'private',
     });
 
-    expect(messages.countryCode).toEqual(['Use a two-letter country code.']);
+    expect(messages.countryCode).toEqual(['"USA" is not a country code. Use a two-letter code like CH or US.']);
+  });
+
+  it.each(['ZZ', 'XX', 'AA', 'QQ', 'EU', 'JJ'])(
+    'refuses %s: two letters are not enough, it must be a real country',
+    (code) => {
+      const messages = issueMessages({
+        ...marketplaceShopSettingsDefaults,
+        name: 'Quiet Shop',
+        countryCode: code,
+        shippingPolicy: 'Ships.',
+        returnPolicy: 'Returns.',
+        sellerStatus: 'private',
+      });
+
+      expect(messages.countryCode).toEqual([`"${code}" is not a country code. Use a two-letter code like CH or US.`]);
+    },
+  );
+
+  it.each(['CF', 'cf', ' ch ', 'US', 'UK'])('accepts %j, which names a real country', (code) => {
+    const messages = issueMessages({
+      ...marketplaceShopSettingsDefaults,
+      name: 'Quiet Shop',
+      countryCode: code,
+      shippingPolicy: 'Ships.',
+      returnPolicy: 'Returns.',
+      sellerStatus: 'private',
+    });
+
+    expect(messages.countryCode).toBeUndefined();
   });
 });

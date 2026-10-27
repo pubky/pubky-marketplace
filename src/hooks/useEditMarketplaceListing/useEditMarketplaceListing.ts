@@ -43,6 +43,7 @@ import {
   type ListingCurrencyChoice,
   listingCurrencyChoiceForAsset,
 } from '@/libs/commerce/pricing';
+import { publishedCountryCode } from '@/libs/commerce/ships-to';
 import type { CommerceMoney } from '@/libs/commerce/transaction-contracts';
 import { dimensionInputFromMillimeters, type MeasurementSystem, weightInputFromGrams } from '@/libs/commerce/units';
 import { stockFormFields } from '@/libs/commerce/unlimited-stock';
@@ -399,7 +400,7 @@ function buildUpdatedRecord(
     condition: data.condition,
     tags: deriveTags(data.title),
     location: {
-      countryCode: data.countryCode.toUpperCase(),
+      countryCode: publishedCountryCode(data.countryCode),
       region: data.region || undefined,
     },
     media,
