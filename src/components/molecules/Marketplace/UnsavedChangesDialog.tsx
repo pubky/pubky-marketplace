@@ -11,9 +11,9 @@ import {
   AlertDialogTitle,
 } from '@/atoms/AlertDialog/AlertDialog';
 
-export const UNSAVED_CHANGES_TITLE = 'Leave without saving?';
-export const UNSAVED_CHANGES_STAY_LABEL = 'Keep editing';
-export const UNSAVED_CHANGES_LEAVE_LABEL = 'Discard changes';
+const UNSAVED_CHANGES_TITLE = 'Leave without saving?';
+const UNSAVED_CHANGES_STAY_LABEL = 'Keep editing';
+const UNSAVED_CHANGES_LEAVE_LABEL = 'Discard changes';
 
 /** Asks before a click takes the seller away from a form with unsaved edits. */
 export function UnsavedChangesDialog({

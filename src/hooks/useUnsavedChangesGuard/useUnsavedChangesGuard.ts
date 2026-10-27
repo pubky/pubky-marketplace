@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-export interface UnsavedChangesGuard {
+interface UnsavedChangesGuard {
   /** A link the visitor clicked while edits were unsaved, held back until they choose; null otherwise. */
   pendingLink: HTMLAnchorElement | null;
   /** Keep editing: the held-back link is dropped. */
