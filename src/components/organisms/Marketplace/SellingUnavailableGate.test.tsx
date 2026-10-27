@@ -94,6 +94,21 @@ describe('SellingUnavailableGate', () => {
     expect(screen.getByRole('link', { name: BACK_TO_MARKET_LABEL })).toBeInTheDocument();
   });
 
+  it('names a blocked shop country without linking to the field when the seller is inside the block too', async () => {
+    setRegionModes(LAUNCH);
+    stubClientRegion('US');
+    ownShopIn('GB');
+    renderGate();
+
+    const gate = await screen.findByTestId('selling-unavailable');
+    await waitFor(() =>
+      expect(gate).toHaveTextContent("Your shop country is United Kingdom, where selling isn't available yet."),
+    );
+    expect(screen.queryByRole('link', { name: 'update your shop country' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('selling-unavailable-hint')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: BACK_TO_MARKET_LABEL })).toBeInTheDocument();
+  });
+
   it('does not suggest a new shop country when only the visitor region is the reason', async () => {
     setRegionModes(LAUNCH);
     stubClientRegion('US');

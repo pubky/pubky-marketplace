@@ -40,7 +40,7 @@ export function SellingUnavailableHint({
       countryLocked ? null : (
         SELLING_MOVED_ON_SHOP_SETTINGS
       )
-    ) : (
+    ) : countryLocked || selling.shopCountryLocked ? null : (
       <>
         {SELLING_MOVED_PREFIX}
         <Link href={SHOP_COUNTRY_FIELD_ROUTE} overrideDefaults className="font-medium underline underline-offset-2">

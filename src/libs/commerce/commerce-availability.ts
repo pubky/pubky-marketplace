@@ -40,6 +40,11 @@ export interface CommerceAvailability {
   sellingMessage: string | null;
   /** What sits behind the info icon next to either line. */
   info: string | null;
+  /**
+   * The seller's own shop country is the reason, and their region keeps it as it is (the shop country
+   * can only be changed from outside the block), so nothing may point them at the field.
+   */
+  shopCountryLocked?: boolean;
 }
 
 /** The selling line when the seller's own shop country is the blocked one: it names the country, since the seller's region may be fine. */
@@ -108,6 +113,9 @@ export function evaluateCommerceAvailability(
         ? shopCountryBlockedMessage(input.declaredCountry.trim().toUpperCase())
         : SELLING_BLOCKED_MESSAGE,
     info: unknown ? COMMERCE_UNKNOWN_REGION_INFO : COMMERCE_BLOCKED_INFO,
+    ...(cause === 'declared' && input.declaredIs === 'shop'
+      ? { shopCountryLocked: evaluateShopCountryChange(policy, client).status !== 'open' }
+      : {}),
   };
 }
 
