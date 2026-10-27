@@ -862,6 +862,36 @@ describe('useMarketplaceSellerDashboard stock', () => {
     return listing;
   }
 
+  it('reads the stock of a listing that arrives after the first read, and nothing more while the listings stay the same', async () => {
+    startDurableDashboard();
+    vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(null);
+    const { result, rerender } = renderHook(() => useMarketplaceSellerDashboard());
+    await waitFor(() => expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(1));
+
+    localListings = [...localListings];
+    rerender();
+    await act(async () => undefined);
+    expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(1);
+
+    const synced = { id: `${OWNER}:guide_02`, registeredWithService: false };
+    localListings = [
+      ...localListings,
+      {
+        ...synced,
+        listing_id: 'guide_02',
+        state: 'active',
+        record: createCommerceListingFixture({ listingId: 'guide_02' }),
+      },
+    ];
+    vi.mocked(CommerceController.getListingsBySeller).mockResolvedValue(localListings as never);
+    rerender();
+
+    await waitFor(() =>
+      expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledWith(OWNER, 'guide_02'),
+    );
+    await waitFor(() => expect(result.current.canOfferRegistration(synced)).toBe(true));
+  });
+
   it('shows no stock total and offers no registration until the service has answered for a listing', async () => {
     const listing = startDurableDashboard();
     let answer: (projection: null) => void = () => undefined;

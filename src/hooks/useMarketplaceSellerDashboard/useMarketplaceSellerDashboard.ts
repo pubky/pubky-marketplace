@@ -79,7 +79,7 @@ export function useMarketplaceSellerDashboard() {
   const sellerOffers = offers.offers.filter(({ sellerPubky }) => sellerPubky === currentUserPubky);
   // The Inventory column shows the service's count, which moves with each
   // sale; the cached projection is only refreshed where a listing is opened.
-  // It is read again whenever a seller order moves or the session changes.
+  // It is read again whenever a seller order moves, the session changes, or a listing arrives or changes revision.
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
   const stockRefreshed = useRef<string | null>(null);
   // Listings the service said it holds no projection for. A projection it does hold is cached instead, and the
@@ -107,6 +107,7 @@ export function useMarketplaceSellerDashboard() {
     currentUserPubky,
     marketplaceSession?.issuedAt,
     stockRetry,
+    ...(localListings ?? []).map((listing) => `${listing.id}:${listing.revision}`),
     ...sellerOrders.map(({ order }) => `${order.id}:${order.revision}:${order.state}`),
   ].join('|');
   useEffect(() => {
