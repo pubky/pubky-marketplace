@@ -114,7 +114,10 @@ describe('My storefront in a blocked region', () => {
     render(<MarketplaceMyShop />);
 
     const notice = await screen.findByTestId('storefront-selling-unavailable');
-    expect(notice).toHaveTextContent("Your shop country is United Kingdom, where selling isn't available yet.");
+    // Until the shop record has loaded, only the region is known and the line carries the region's paused note.
+    await waitFor(() =>
+      expect(notice).toHaveTextContent("Your shop country is United Kingdom, where selling isn't available yet."),
+    );
     expect(screen.queryByTestId('selling-unavailable-hint')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Country')).toBeDisabled();
     expect(screen.getByTestId('shop-settings-country-locked')).toHaveTextContent('The country is locked.');
