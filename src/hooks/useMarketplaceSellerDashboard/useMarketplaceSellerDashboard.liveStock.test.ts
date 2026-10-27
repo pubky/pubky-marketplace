@@ -45,7 +45,7 @@ describe('useMarketplaceSellerDashboard stock from the local database', () => {
     vi.restoreAllMocks();
   });
 
-  it("shows a sold listing's service count as soon as the service answers, without a reload", async () => {
+  it("shows a sold listing's service count as soon as the service answers, never the record's own count", async () => {
     const record = createCommerceListingFixture({ listingId: 'cage_01' });
     await LocalCommerceService.upsertListing(record, 'synced');
     vi.spyOn(CommerceController, 'getMarketplaceListingProjection').mockResolvedValue(
@@ -59,10 +59,24 @@ describe('useMarketplaceSellerDashboard stock from the local database', () => {
       }),
     );
 
-    const { result } = renderHook(() => useMarketplaceSellerDashboard());
+    // The local re-read lands a moment after the service answers, as it does in a browser.
+    const readListings = CommerceController.getListingsBySeller.bind(CommerceController);
+    vi.spyOn(CommerceController, 'getListingsBySeller').mockImplementation(async (seller) => {
+      const listings = await readListings(seller);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return listings;
+    });
+    const shown: string[] = [];
+    const { result } = renderHook(() => {
+      const dashboard = useMarketplaceSellerDashboard();
+      const [listing] = dashboard.listings;
+      if (listing) shown.push(dashboard.listingStockLabel(listing));
+      return dashboard;
+    });
 
     await waitFor(() => expect(result.current.listings).toHaveLength(1));
     await waitFor(() => expect(result.current.listingStockLabel(result.current.listings[0])).toBe('0'));
     expect(result.current.metrics.totalInventory).toBe(0);
+    expect(shown).not.toContain('1');
   });
 });

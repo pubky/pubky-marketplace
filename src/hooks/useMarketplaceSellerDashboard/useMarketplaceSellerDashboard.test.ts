@@ -883,15 +883,21 @@ describe('useMarketplaceSellerDashboard stock', () => {
     expect(result.current.metrics.totalInventory).not.toBe('—');
   });
 
-  it('does not offer registration for a listing the service holds, and knows its stock', async () => {
+  it('does not offer registration for a listing the service holds, and knows its stock once it is cached', async () => {
     const listing = startDurableDashboard();
     vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(
       createListingProjectionFixture({ aggregateId: `listing:${OWNER}_guide_01`, availableQuantity: 0 }),
     );
+    vi.mocked(CommerceController.cacheMarketplaceListingProjection).mockImplementation(async () => {
+      localListings = localListings.map((row) => ({ ...row, registeredWithService: true }));
+    });
 
-    const { result } = renderHook(() => useMarketplaceSellerDashboard());
+    const { result, rerender } = renderHook(() => useMarketplaceSellerDashboard());
 
-    await waitFor(() => expect(result.current.metrics.totalInventory).not.toBe('—'));
+    await waitFor(() => expect(CommerceController.cacheMarketplaceListingProjection).toHaveBeenCalled());
+    expect(result.current.metrics.totalInventory).toBe('—');
+    rerender();
+    expect(result.current.metrics.totalInventory).not.toBe('—');
     expect(result.current.canOfferRegistration(listing)).toBe(false);
   });
 

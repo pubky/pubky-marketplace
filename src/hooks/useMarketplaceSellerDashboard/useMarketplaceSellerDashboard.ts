@@ -39,9 +39,6 @@ const REVENUE_ORDER_STATES = ['paid', 'processing', 'shipped', 'delivered', 'com
 /** Shown in place of a listing's stock, and the stock total, while the service has not yet answered for it. */
 const STOCK_UNKNOWN_LABEL = '—';
 
-/** What the service said when the dashboard last read a listing: it holds a projection, or it holds none. */
-type ServiceRead = 'registered' | 'unregistered';
-
 type LocalListing = Awaited<ReturnType<typeof CommerceController.getListingsBySeller>>[number];
 
 export function useMarketplaceSellerDashboard() {
@@ -85,7 +82,9 @@ export function useMarketplaceSellerDashboard() {
   // It is read again whenever a seller order moves or the session changes.
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
   const stockRefreshed = useRef<string | null>(null);
-  const [serviceReads, setServiceReads] = useState<ReadonlyMap<string, ServiceRead>>(new Map());
+  // Listings the service said it holds no projection for. A projection it does hold is cached instead, and the
+  // listings query reads it from there.
+  const [unregisteredIds, setUnregisteredIds] = useState<ReadonlySet<string>>(new Set());
   // A read that failed (offline, a session the service had not yet accepted) is tried again when the tab
   // regains focus, instead of leaving the dashboard on the record's own numbers until a reload.
   const [stockRetry, setStockRetry] = useState(0);
@@ -122,7 +121,13 @@ export function useMarketplaceSellerDashboard() {
         try {
           const projection = await CommerceController.getMarketplaceListingProjection(sellerPubky, listing.listing_id);
           if (projection) await cacheProjection(projection);
-          setServiceReads((reads) => new Map(reads).set(listing.id, projection ? 'registered' : 'unregistered'));
+          setUnregisteredIds((ids) => {
+            if (ids.has(listing.id) === !projection) return ids;
+            const next = new Set(ids);
+            if (projection) next.delete(listing.id);
+            else next.add(listing.id);
+            return next;
+          });
         } catch {
           stockReadFailed.current = true;
         }
@@ -143,11 +148,13 @@ export function useMarketplaceSellerDashboard() {
     ({ state, offeredBy }) => (state === 'pending' || state === 'countered') && offeredBy !== currentUserPubky,
   ).length;
   const durable = isDurableCommerceMode(getCommerceAdapterMode());
-  // Whether the service has told this dashboard about the listing: a cached projection, or an answer just now.
+  // Whether the service has told this dashboard about the listing: a projection the listings query has read from
+  // the cache (never earlier, so the row can't show the record's own count in between), or an answer that it
+  // holds none.
   const serviceAnswered = (listing: { id: string; registeredWithService: boolean }) =>
-    !durable || listing.registeredWithService || serviceReads.has(listing.id);
+    !durable || listing.registeredWithService || unregisteredIds.has(listing.id);
   // Offered only once the service said it holds no projection: before that the dashboard does not know.
-  const canOfferRegistration = (listing: { id: string }) => !durable || serviceReads.get(listing.id) === 'unregistered';
+  const canOfferRegistration = (listing: { id: string }) => !durable || unregisteredIds.has(listing.id);
   const hasUnlimitedStock = (listing: LocalListing) =>
     listing.record.variants.some((variant) => isUnlimitedStock(listing.record, variant.quantity));
   // Unlimited stock is the record's own setting; a finite count is the service's, so it waits for an answer.
