@@ -179,10 +179,3 @@ describe('DialogTerms - regional availability', () => {
     expect(text).not.toContain('PUBKY MARKETPLACE');
   });
 });
-
-describe('DialogTerms - Snapshots', () => {
-  it('matches snapshot for default DialogTerms', () => {
-    const { container } = render(<DialogTerms />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});

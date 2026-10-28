@@ -161,15 +161,3 @@ describe('DialogReportPostIssueStep', () => {
     expect(mockOnOpenChange).not.toHaveBeenCalled();
   });
 });
-
-describe('DialogReportPostIssueStep - Snapshots', () => {
-  const mockOnSelectIssueType = vi.fn();
-  const mockOnCancel = vi.fn();
-
-  it('matches snapshot', () => {
-    const { container } = renderWithDialog(
-      <DialogReportPostIssueStep onSelectIssueType={mockOnSelectIssueType} onCancel={mockOnCancel} />,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});

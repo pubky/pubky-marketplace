@@ -49,10 +49,3 @@ describe('TaggedSection', () => {
     expect(screen.getByTestId('tagged-list')).toBeInTheDocument();
   });
 });
-
-describe('TaggedSection - Snapshots', () => {
-  it('matches snapshot', () => {
-    const { container } = render(<TaggedSection {...defaultProps} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});

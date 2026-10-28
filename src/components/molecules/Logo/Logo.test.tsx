@@ -57,6 +57,34 @@ describe('Logo', () => {
     expect(image).toHaveAttribute('src', '/pubky-logo.svg');
   });
 
+  it('uses the fixed default size classes and no inline size at the default dimensions', () => {
+    vi.mocked(usePathname).mockReturnValue('/home');
+
+    render(<Logo className="custom-logo-style" />);
+
+    const image = screen.getByTestId('logo-image');
+    const link = image.closest('a')!;
+    expect(link).toHaveClass('min-h-[36px]', 'min-w-[109px]', 'custom-logo-style');
+    expect(link.style.minWidth).toBe('');
+    expect(image).toHaveClass('h-[36px]', 'w-[109px]');
+    expect(image).toHaveAttribute('width', '109');
+    expect(image).toHaveAttribute('height', '36');
+  });
+
+  it('sizes a custom-dimension logo inline instead of with the default classes', () => {
+    vi.mocked(usePathname).mockReturnValue('/home');
+
+    render(<Logo width={200} height={80} />);
+
+    const image = screen.getByTestId('logo-image');
+    const link = image.closest('a')!;
+    expect(link).not.toHaveClass('min-h-[36px]', 'min-w-[109px]');
+    expect(link).toHaveStyle({ minWidth: '200px', minHeight: '80px' });
+    expect(image).not.toHaveClass('h-[36px]', 'w-[109px]');
+    expect(image).toHaveAttribute('width', '200');
+    expect(image).toHaveAttribute('height', '80');
+  });
+
   it('scrolls to top when clicking logo on /home', () => {
     vi.mocked(usePathname).mockReturnValue('/home');
 
@@ -148,28 +176,5 @@ describe('Logo - social link-out', () => {
     vi.mocked(usePathname).mockReturnValue('/sign-in');
     render(<Logo />);
     expect(screen.getByTestId('logo-image').closest('a')).toHaveAttribute('href', '/');
-  });
-});
-
-describe('Logo - Snapshots', () => {
-  it('matches snapshot for default Logo', () => {
-    vi.mocked(usePathname).mockReturnValue('/home');
-
-    const { container } = render(<Logo />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for Logo with custom dimensions', () => {
-    vi.mocked(usePathname).mockReturnValue('/home');
-
-    const { container } = render(<Logo width={200} height={80} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for Logo with custom className', () => {
-    vi.mocked(usePathname).mockReturnValue('/home');
-
-    const { container } = render(<Logo className="custom-logo-style" />);
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

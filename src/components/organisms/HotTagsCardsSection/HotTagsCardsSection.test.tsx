@@ -1,9 +1,8 @@
 import { render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UserWithAvatar } from '@/hooks/useBulkUserAvatars/useBulkUserAvatars.types';
 import type { UseMutedUsersResult } from '@/hooks/useMutedUsers/useMutedUsers.types';
 import type { Pubky } from '@/models/models.types';
-import { resetViewport, setMobileViewport } from '@/test-utils/viewport';
 import { HotTagsCardsSection } from './HotTagsCardsSection';
 
 const mockUseBulkUserAvatars = vi.hoisted(() =>
@@ -61,46 +60,11 @@ vi.mock('@/config/tags', () => ({
   HOT_TAGS_FEATURED_COUNT: 3,
 }));
 
-const snapshotTaggers: UserWithAvatar[] = [
-  { id: 'user1' as Pubky, name: 'Alice', avatarUrl: 'https://example.com/avatar1.png' },
-  { id: 'user2' as Pubky, name: 'Bob', avatarUrl: 'https://example.com/avatar2.png' },
-  { id: 'user3' as Pubky, name: 'Charlie', avatarUrl: 'https://example.com/avatar3.png' },
-  { id: 'user4' as Pubky, name: 'Dave', avatarUrl: 'https://example.com/avatar4.png' },
-  { id: 'user5' as Pubky, name: 'Eve', avatarUrl: 'https://example.com/avatar5.png' },
-];
-
-const snapshotRawTags = [
-  { label: 'bitcoin', tagged_count: 16, taggers_id: ['user1', 'user2', 'user3', 'user4', 'user5'] },
-  { label: 'keys', tagged_count: 176, taggers_id: ['user1', 'user2', 'user3', 'user4', 'user5'] },
-  { label: 'pubky', tagged_count: 149, taggers_id: ['user1', 'user2', 'user3', 'user4', 'user5'] },
-];
-
-function mockDesktopViewportBreakpoints() {
-  mockUseIsMobile.mockImplementation((options?: { breakpoint?: string }) => {
-    if (options?.breakpoint === 'sm') return false;
-    if (options?.breakpoint === 'xl') return true;
-    return false;
-  });
-}
-
-function mockMobileViewportBreakpoints() {
-  mockUseIsMobile.mockImplementation((options?: { breakpoint?: string }) => {
-    if (options?.breakpoint === 'sm') return true;
-    if (options?.breakpoint === 'xl') return true;
-    return true;
-  });
-}
-
-function setupSnapshotTaggers() {
-  mockUseBulkUserAvatars.mockImplementation(() => ({
-    getUsersWithAvatars: vi.fn((_userIds: Pubky[]): UserWithAvatar[] => snapshotTaggers),
-  }));
-}
-
 describe('HotTagsCardsSection', () => {
   beforeEach(() => {
     mockPush.mockClear();
     mockUseHotTags.mockClear();
+    mockUseIsMobile.mockImplementation(() => false);
     mockUseBulkUserAvatars.mockImplementation(() => ({
       getUsersWithAvatars: vi.fn((_userIds: Pubky[]): UserWithAvatar[] => []),
     }));
@@ -175,6 +139,21 @@ describe('HotTagsCardsSection', () => {
     expect(screen.getByTestId('hot-tags-card-skeleton-2')).toBeInTheDocument();
   });
 
+  it.each([
+    { viewport: 'mobile (< sm)', below: ['sm', 'xl'], maxAvatars: 2 },
+    { viewport: 'tablet (sm to xl)', below: ['xl'], maxAvatars: 4 },
+    { viewport: 'wide (≥ xl)', below: [], maxAvatars: 6 },
+  ])('limits avatars per card to $maxAvatars on $viewport', ({ below, maxAvatars }) => {
+    mockUseIsMobile.mockImplementation((options) => below.includes(options?.breakpoint ?? ''));
+    mockUseHotTags.mockReturnValue({ rawTags: [], isLoading: true, error: null });
+
+    render(<HotTagsCardsSection />);
+
+    // Each skeleton card renders one avatar row for mobile and one for wider layouts.
+    const avatars = screen.getByTestId('hot-tags-card-skeleton-0').querySelectorAll('.size-7.rounded-full');
+    expect(avatars).toHaveLength(maxAvatars * 2);
+  });
+
   it('excludes muted taggers from avatar bulk fetch and HotTagCard taggers', () => {
     mockUseMutedUsers.mockImplementation(
       (): UseMutedUsersResult => ({
@@ -202,44 +181,5 @@ describe('HotTagsCardsSection', () => {
 
     expect(mockUseBulkUserAvatars).toHaveBeenCalledWith(['visible-author']);
     expect(getUsersWithAvatars).toHaveBeenCalledWith(['visible-author']);
-  });
-});
-
-describe('HotTagsCardsSection - Snapshots', () => {
-  beforeEach(() => {
-    mockDesktopViewportBreakpoints();
-    setupSnapshotTaggers();
-    mockUseHotTags.mockReturnValue({
-      rawTags: snapshotRawTags,
-      isLoading: false,
-      error: null,
-    });
-  });
-
-  it('matches snapshot with featured tags', () => {
-    const { container } = render(<HotTagsCardsSection />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});
-
-describe('HotTagsCardsSection - Mobile Snapshots', () => {
-  beforeEach(() => {
-    mockMobileViewportBreakpoints();
-    setMobileViewport();
-    setupSnapshotTaggers();
-    mockUseHotTags.mockReturnValue({
-      rawTags: snapshotRawTags,
-      isLoading: false,
-      error: null,
-    });
-  });
-
-  afterEach(() => {
-    resetViewport();
-  });
-
-  it('matches snapshot on mobile viewport', () => {
-    const { container } = render(<HotTagsCardsSection />);
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

@@ -1,6 +1,10 @@
 # Component Testing
 
-Rules and patterns for unit tests and snapshot tests for UI components.
+Rules and patterns for unit tests for UI components.
+
+Behaviour and prop contracts belong in unit tests; appearance belongs in VRT
+(`docs/visual-regression-testing.md`). Snapshot tests (`toMatchSnapshot`) were
+removed — do not add new ones.
 
 ## File Naming
 
@@ -41,122 +45,54 @@ it('handles hover states correctly', () => {
 });
 ```
 
-## Snapshot Test Structure
+### Prop Mapping (atoms and primitives)
 
-### Organization
-
-All snapshot tests should be in a separate describe block using the pattern `ComponentName - Snapshots`:
+For atoms and other primitives where props map to elements or classes, assert
+the mapping directly: `as="h2"` renders an `h2`, `variant="destructive"` sets
+`data-variant`, `size="lg"` applies its size class. Prefer `data-*` attributes
+and roles over class names where the component exposes them; assert a class
+only when it is the contract (a CVA variant, a passthrough `className`). Cover
+the default variant as well as the named ones. Do not rely on VRT alone for
+these contracts — a variant that only appears off-screen is never captured.
 
 ```typescript
-describe('Button - Snapshots', () => {
-  // All snapshot tests here
+it.each([
+  ['default', ['h-9', 'px-2', 'min-w-9']],
+  ['sm', ['h-8', 'px-1.5', 'min-w-8']],
+  ['lg', ['h-10', 'px-2.5', 'min-w-10']],
+] as const)('applies size="%s" classes', (size, classes) => {
+  render(<Toggle size={size}>Toggle</Toggle>);
+  expect(screen.getByRole('button')).toHaveClass(...classes);
+});
+
+it.each(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const)('renders as <%s> when as="%s"', (as) => {
+  render(<Typography as={as}>Text</Typography>);
+  expect(screen.getByTestId('typography').tagName).toBe(as.toUpperCase());
 });
 ```
 
-### Coverage
+### Viewport-Dependent Components
 
-Create snapshot tests for all meaningful prop combinations — sizes, variants, and states:
+When a component branches on `useIsMobile` (directly or via a child), assert
+the branch by mocking the hook — desktop and mobile each get a targeted test:
 
 ```typescript
-it('matches snapshot for small size', () => {
-  const { container } = render(<Button size="sm">Small</Button>);
-  expect(container.firstChild).toMatchSnapshot();
+it('renders a bottom sheet on mobile', () => {
+  mockUseIsMobile.mockReturnValue(true);
+  render(<ProfileMenuActions userId="pk:test123" trigger={<button>Menu</button>} />);
+  expect(screen.getByTestId('sheet')).toBeInTheDocument();
 });
 ```
 
-### Snapshot Rules
-
-**Max one expect per snapshot test.** Each snapshot test should contain exactly one `expect().toMatchSnapshot()` call.
-
-**Never render the exact same element for multiple snapshot tests.** Vary props, children, or state to ensure each snapshot is unique.
-
-### Mobile Snapshot Tests
-
-Add mobile-viewport snapshot tests for **organism** and **template** components when viewport-aware JavaScript can change the rendered HTML. This includes:
-
-- **Direct** `useIsMobile` usage in the component (or `useFeedLayoutResolution`, which uses `useIsMobile` internally).
-- **Indirect** usage: the component renders a child (molecule or organism) that calls `useIsMobile` — e.g. `ProfilePageHeader` → `StatusPickerWrapper`, `PostHeader` → `PostHeaderTimestamp`, `ClickableTagsList` → `PostTagPopoverWrapper`.
-
-Do not add mobile snapshots for components whose responsive behaviour is CSS-only (`lg:hidden`, etc.) — those produce identical HTML to desktop and add noise without coverage value.
-
-Atoms and molecules do not require mobile snapshots.
-
-#### Organisation
-
-Mobile snapshot tests live in a separate describe block using the pattern `ComponentName - Mobile Snapshots`, placed after the desktop `ComponentName - Snapshots` block:
-
-```typescript
-describe('PostMenuActions - Mobile Snapshots', () => {
-  // Mobile snapshot tests here
-});
-```
-
-#### Viewport helper
-
-Use `setMobileViewport()` and `resetViewport()` from `@/test-utils/viewport`. These resize the jsdom window so viewport-aware hooks (e.g. `useIsMobile`, which reads `window.innerWidth`) render their mobile layout.
-
-The mobile viewport is **390×844** (iPhone 12 Pro), matching `cypress/cypress.config.mobile.ts`. jsdom defaults to 1024×768, so desktop snapshots capture the desktop layout without any extra setup.
-
-#### `beforeEach` and `afterEach`
-
-Call `setMobileViewport()` in `beforeEach` **before** rendering, and `resetViewport()` in `afterEach` so later tests in the file are not left on a mobile-sized window.
-
-If the test file mocks `useIsMobile`, also set the mock to return `true` in the mobile `beforeEach`. Resizing the window alone has no effect when the hook is stubbed — the mobile snapshot would otherwise match desktop and miss JS-driven layout branches (e.g. `Sheet` instead of `Popover`).
-
-If the test file mocks `useFeedLayoutResolution`, set `isPhoneViewport: true` in the mobile `beforeEach` alongside `setMobileViewport()`.
-
-#### Indirect `useIsMobile` via children
-
-When an organism or template renders a child that calls `useIsMobile`, it needs mobile snapshot coverage even if the parent never imports the hook.
-
-**Do not stub those children in snapshot tests.** A passthrough mock (e.g. `PostTagPopoverWrapper: ({ children }) => children`) hides the mobile/desktop branch. Use the real child implementation in snapshot tests, or `vi.importActual` for that module, and mock only its non-viewport dependencies (data hooks, router, etc.).
-
-If the child calls `useIsMobile` and the test file does not mock the hook at the parent level, `setMobileViewport()` drives the real hook inside the child. If the hook is mocked anywhere in the file, set `mockReturnValue(true)` in the mobile `beforeEach` so the child receives the mobile branch too.
-
-```typescript
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetViewport, setMobileViewport } from '@/test-utils/viewport';
-
-const mockUseIsMobile = vi.fn(() => false);
-
-vi.mock('@/hooks/useIsMobile/useIsMobile', () => ({
-  useIsMobile: () => mockUseIsMobile(),
-}));
-
-describe('PostMenuActions - Mobile Snapshots', () => {
-  beforeEach(() => {
-    // Replicate any mock-state setup from the desktop snapshot describe (if present)
-    mockUseIsMobile.mockReturnValue(true); // required when useIsMobile is mocked
-    setMobileViewport();
-  });
-
-  afterEach(() => {
-    resetViewport();
-  });
-
-  it('matches snapshot on mobile viewport', () => {
-    const { container } = render(<PostMenuActions postId="pk:test123:post456" trigger={<button>Menu</button>} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});
-```
-
-**Replicate mock setup from the desktop snapshot describe.** If the `ComponentName - Snapshots` block has a `beforeEach` that resets hooks, stores, or module-level mock state, copy that setup into the mobile `beforeEach` before `mockUseIsMobile.mockReturnValue(true)` and `setMobileViewport()`. A mobile snapshot test must use the same render call (component, props, wrappers, or in-file render helpers) as the first desktop snapshot test.
-
-**Nested describe blocks.** If the desktop snapshot describe is nested inside a parent `describe` whose `beforeEach` sets up mocks (e.g. `usePostNavigation`), the mobile describe may sit outside that parent — in that case, include those mock setups explicitly in the mobile `beforeEach`.
-
-#### Coverage
-
-Add **one** mobile snapshot per covered component, mirroring the first (simplest) desktop snapshot. Do not duplicate every desktop variant on mobile.
-
-When the hook is unmocked, `setMobileViewport()` drives the real `useIsMobile` implementation. When the test file mocks `useIsMobile`, also call `mockReturnValue(true)` in the mobile `beforeEach` — resizing the window alone has no effect on a stubbed hook.
+Do not stub the viewport-aware child with a passthrough mock — that hides the
+branch. Mobile appearance (390×844) is covered by VRT, not by jsdom window
+resizing.
 
 ## Test Optimization
 
-- Unit tests should focus on functional behavior and logic
-- Snapshot tests should focus on visual/structure differences
-- Avoid checking the same attributes in both unit and snapshot tests
-- Exception: overlapping checks are acceptable for the single sanity test
+- Unit tests should focus on functional behavior, prop contracts, and logic
+- Appearance (layout, styling, responsive behaviour) is owned by VRT — do not
+  duplicate it with structural assertions beyond the prop contract
 
 ## Mocking Rules
 
@@ -197,15 +133,14 @@ ESLint bans both `as any` and `as unknown as T` in every `*.test.{ts,tsx}` file 
 
 Route every cast in a test through a named helper from `src/test-utils` instead. See `src/test-utils/README.md` for the full list, but in short:
 
-| Situation                                                            | Helper                                                                 |
-| -------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Partial Zustand store double                                         | `mockAuthStore({...})`, `mockHomeStore({...})`, etc.                   |
-| Partial React synthetic event                                        | `mockKeyboardEvent({...})`, `mockDragEvent({...})`, etc.               |
-| Partial `@synonymdev/pubky` `Session` / `Keypair`                    | `mockSession({...})` / `mockKeypair({...})`                            |
-| Partial `fetch` `Response`                                           | `mockResponse({...})`                                                  |
-| Deliberately invalid input to exercise a runtime guard               | `asInvalid<T>(value)`                                                  |
-| Opaque external SDK type with no constructor and no dedicated helper | `asOpaque<T>(value)`                                                   |
-| Mobile viewport for organism/template snapshot tests                 | `setMobileViewport()` / `resetViewport()` from `@/test-utils/viewport` |
+| Situation                                                            | Helper                                                   |
+| -------------------------------------------------------------------- | -------------------------------------------------------- |
+| Partial Zustand store double                                         | `mockAuthStore({...})`, `mockHomeStore({...})`, etc.     |
+| Partial React synthetic event                                        | `mockKeyboardEvent({...})`, `mockDragEvent({...})`, etc. |
+| Partial `@synonymdev/pubky` `Session` / `Keypair`                    | `mockSession({...})` / `mockKeypair({...})`              |
+| Partial `fetch` `Response`                                           | `mockResponse({...})`                                    |
+| Deliberately invalid input to exercise a runtime guard               | `asInvalid<T>(value)`                                    |
+| Opaque external SDK type with no constructor and no dedicated helper | `asOpaque<T>(value)`                                     |
 
 Each helper takes a `Partial<T>` (or a named `T` type parameter) and buries the cast in one place, so the shape of the argument you pass is still type-checked and every remaining escape hatch is greppable.
 
@@ -236,7 +171,7 @@ A single-step widening cast like `value as unknown` or `[] as unknown[]` (inside
 
 ### Icon Components: Always Real
 
-Stock Lucide icons imported from `lucide-react` and custom SVG icons from `@/icons` (`src/libs/icons/icons.tsx`) should **always** use real implementations in tests—do not `vi.mock('lucide-react')` or `vi.mock('@/icons')` to stub icons. This ensures snapshots capture actual SVG output and visual regression tests detect icon changes.
+Stock Lucide icons imported from `lucide-react` and custom SVG icons from `@/icons` (`src/libs/icons/icons.tsx`) should **always** use real implementations in tests—do not `vi.mock('lucide-react')` or `vi.mock('@/icons')` to stub icons. This ensures visual regression tests capture real SVG output and detect icon changes.
 
 Application import conventions (where to import icons, URL helpers, and what not to do) are documented in **`docs/components.md`** — _Icons (Lucide and custom)_.
 
@@ -247,10 +182,6 @@ Radix UI components (`Dialog`, `Sheet`, `DropdownMenu`, `Popover`, `Tooltip`, `A
 - Tests validate actual behavior and context requirements
 - Portal rendering works correctly
 - Accessibility attributes are properly applied
-
-### Radix UI ID Normalization
-
-A global snapshot serializer in `src/config/test.ts` automatically normalizes Radix dynamic IDs (`radix-_r_0_`, etc.) to `radix-normalized`. No manual intervention is required.
 
 ## Deterministic Time Testing
 
@@ -275,34 +206,18 @@ describe('PostTimestamp', () => {
 });
 ```
 
-## Snapshot File Location
-
-Snapshot files are stored in `__snapshots__/` directories alongside test files:
-
-```
-src/components/atoms/Button/
-├── Button.test.tsx
-└── __snapshots__/
-    └── Button.test.tsx.snap
-```
-
 ## Running Tests
 
 ```bash
 npm test                             # All tests
 npm test -- ComponentName.test.tsx   # Specific component
-npm run test:snapshots               # Only snapshot tests (desktop and mobile)
-npm run test:update-snapshots        # Update snapshots
-npx vitest run -t "Mobile Snapshots" # Only mobile snapshot tests
 ```
 
 ## Testing Workflow
 
 1. Run tests after creating new test files
-2. When adding new snapshot tests, update snapshots with `-u`
-3. New organism or template components that use `useIsMobile` directly or indirectly (see [Mobile Snapshot Tests](#mobile-snapshot-tests)): add both desktop (`ComponentName - Snapshots`) and mobile (`ComponentName - Mobile Snapshots`) snapshot coverage
-4. Verify all tests pass before committing
-5. Review generated snapshot files to ensure they capture expected output
+2. For atoms and primitives, assert the prop mapping directly — see [Prop Mapping](#prop-mapping-atoms-and-primitives)
+3. Verify all tests pass before committing
 
 ## Complete Example
 
@@ -318,6 +233,16 @@ describe('Button', () => {
     const button = screen.getByRole('button');
     expect(button).toBeInTheDocument();
     expect(button).toHaveAttribute('data-slot', 'button');
+    expect(button).toHaveAttribute('data-variant', 'default');
+  });
+
+  it.each([
+    ['default', ['h-10', 'px-4']],
+    ['sm', ['h-8', 'px-3']],
+    ['lg', ['h-12', 'px-6']],
+  ] as const)('applies size="%s" classes', (size, classes) => {
+    render(<Button size={size}>Button</Button>);
+    expect(screen.getByRole('button')).toHaveClass(...classes);
   });
 
   it('handles click events', () => {
@@ -327,28 +252,4 @@ describe('Button', () => {
     expect(handleClick).toHaveBeenCalledTimes(1);
   });
 });
-
-describe('Button - Snapshots', () => {
-  it('matches snapshot for small size', () => {
-    const { container } = render(<Button size="sm">Small</Button>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for large size', () => {
-    const { container } = render(<Button size="lg">Large</Button>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for secondary variant', () => {
-    const { container } = render(<Button variant="secondary">Secondary</Button>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for disabled state', () => {
-    const { container } = render(<Button disabled>Disabled</Button>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});
 ```
-
-`Button` is an atom — desktop snapshots only. Organisms and templates with direct or indirect `useIsMobile` (or `useFeedLayoutResolution`) additionally require a `ComponentName - Mobile Snapshots` block; see [Mobile Snapshot Tests](#mobile-snapshot-tests).

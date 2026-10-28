@@ -2,7 +2,7 @@ import '@testing-library/jest-dom';
 import '@testing-library/jest-dom/vitest';
 import 'fake-indexeddb/auto';
 import { cleanup } from '@testing-library/react';
-import { expect, vi } from 'vitest';
+import { vi } from 'vitest';
 import { afterAll, afterEach, beforeAll, beforeEach } from 'vitest';
 import { TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
 
@@ -47,11 +47,12 @@ process.env.SUPPORT_ACCOUNT_ID = '123';
 
 const { db } = await import('@/database/franky/franky');
 
-// Global snapshot serializer to normalize Radix UI generated IDs
-// This ensures snapshot tests are consistent across test runs
-// See: https://github.com/pubky/pubky-app/issues/1101
-const { radixIdSerializer } = await import('@/libs/utils/utils');
-expect.addSnapshotSerializer(radixIdSerializer);
+// Load @/config/posts before any test file registers a partial
+// `vi.mock('pubky-app-specs')` factory: the real module must already be in the
+// registry or those mocks strip exports such as `getValidMimeTypes` that
+// @/config/posts needs at import time. (Previously this happened as a side
+// effect of importing @/libs/utils/utils for the snapshot serializer.)
+await import('@/config/posts');
 
 const { resetAttestorKeyWindows } = await import('@/libs/commerce/attestor-key-windows');
 

@@ -275,21 +275,3 @@ describe('DialogNewPost', () => {
     expect(vi.mocked(DialogContent).mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ avoidKeyboard: true }));
   });
 });
-
-describe('DialogNewPost - Snapshots', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('matches snapshot with default props', () => {
-    const onOpenChangeAction = vi.fn();
-    const { container } = render(<DialogNewPost open={false} onOpenChangeAction={onOpenChangeAction} />);
-    expect(container).toMatchSnapshot();
-  });
-
-  it('matches snapshot with open prop', () => {
-    const onOpenChangeAction = vi.fn();
-    const { container } = render(<DialogNewPost open={true} onOpenChangeAction={onOpenChangeAction} />);
-    expect(container).toMatchSnapshot();
-  });
-});

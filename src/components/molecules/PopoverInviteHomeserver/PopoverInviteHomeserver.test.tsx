@@ -1,5 +1,6 @@
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { getEmailLink, getTelegramLink, getTwitterLink } from '@/config/externalLinks';
 import { PopoverInviteHomeserver } from './PopoverInviteHomeserver';
 
 vi.mock('@/atoms/Popover/Popover', () => {
@@ -89,14 +90,43 @@ vi.mock('@/atoms/Typography/Typography', () => {
   };
 });
 
-describe('PopoverInviteHomeserver - Snapshots', () => {
-  it('matches snapshot for default PopoverInviteHomeserver', () => {
-    const { container } = render(<PopoverInviteHomeserver />);
-    expect(container.firstChild).toMatchSnapshot();
+describe('PopoverInviteHomeserver', () => {
+  it('renders a ghost icon button as the popover trigger', () => {
+    render(<PopoverInviteHomeserver />);
+
+    const trigger = screen.getByTestId('popover-trigger');
+    const button = screen.getByTestId('button-ghost');
+    expect(trigger).toContainElement(button);
+    expect(button).toHaveAttribute('data-size', 'icon');
+    expect(screen.getByTestId('circle-help-icon')).toBeInTheDocument();
   });
 
-  it('matches snapshot for PopoverInviteHomeserver with custom className', () => {
-    const { container } = render(<PopoverInviteHomeserver className="custom-homeserver-style" />);
-    expect(container.firstChild).toMatchSnapshot();
+  it('applies the default hover class and merges a custom className', () => {
+    const { rerender } = render(<PopoverInviteHomeserver />);
+    expect(screen.getByTestId('button-ghost')).toHaveClass('hover:bg-brand/10');
+
+    rerender(<PopoverInviteHomeserver className="custom-homeserver-style" />);
+    expect(screen.getByTestId('button-ghost')).toHaveClass('custom-homeserver-style');
+  });
+
+  it('renders the invite explanation in the popover content', () => {
+    render(<PopoverInviteHomeserver />);
+
+    const content = screen.getByTestId('popover-content');
+    expect(content).toContainElement(screen.getByTestId('heading-4'));
+    expect(screen.getByTestId('heading-4')).toHaveTextContent("Don't have an invite yet?");
+    expect(content).toHaveTextContent('Ask the Pubky team for your invite code');
+  });
+
+  it('renders the email, twitter and telegram contact links', () => {
+    render(<PopoverInviteHomeserver />);
+
+    const links = screen.getAllByTestId('link');
+    expect(links).toHaveLength(3);
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      getEmailLink(),
+      getTwitterLink(),
+      getTelegramLink(),
+    ]);
   });
 });

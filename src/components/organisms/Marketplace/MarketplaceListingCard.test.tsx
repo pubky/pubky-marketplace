@@ -311,32 +311,3 @@ describe('MarketplaceListingCard', () => {
     ).toBeInTheDocument();
   });
 });
-
-describe('MarketplaceListingCard - Snapshots', () => {
-  it('matches the fixed-price listing snapshot', () => {
-    const { container } = render(<MarketplaceListingCard listing={catalogItem()} shopName="Satoshi Vintage" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches the auction listing snapshot rendered from an index entry', () => {
-    const listing = catalogItemFromCatalogEntry(
-      createCommerceCatalogEntryFixture({
-        id: `${'y'.repeat(52)}:rangefinder_camera`,
-        listing_id: 'rangefinder_camera',
-        title: '35mm rangefinder camera',
-        category_id: 'electronics-cameras-film',
-        condition: 'excellent',
-        sale_format: 'auction',
-        price: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
-        auction: {
-          startsAt: '2026-08-19T20:00:00.000Z',
-          endsAt: '2026-08-29T20:00:00.000Z',
-          buyNowPrice: { amountMinor: 12_500, currency: 'USD', exponent: 2 },
-          minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
-        },
-      }),
-    );
-    const { container } = render(<MarketplaceListingCard listing={listing} shopName="Proof of Film" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});

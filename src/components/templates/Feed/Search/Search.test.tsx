@@ -1,6 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetViewport, setMobileViewport } from '@/test-utils/viewport';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Search } from './Search';
 
 const { mockUseIsMobile, mockUseSearchTags } = vi.hoisted(() => ({
@@ -88,11 +87,21 @@ describe('Search', () => {
     expect(screen.queryByTestId('search-header')).not.toBeInTheDocument();
   });
 
-  it('renders the mobile SearchInput', () => {
-    render(<Search />);
+  it.each([
+    { isMobile: false, tags: ['pubky'], autoFocus: 'false' },
+    { isMobile: false, tags: [], autoFocus: 'true' },
+    { isMobile: true, tags: ['pubky'], autoFocus: 'true' },
+  ])(
+    'renders the SearchInput with autoFocus=$autoFocus when isMobile=$isMobile and tags=$tags',
+    ({ isMobile, tags, autoFocus }) => {
+      mockUseIsMobile.mockReturnValue(isMobile);
+      mockUseSearchTags.mockReturnValue(tags);
 
-    expect(screen.getByTestId('search-input')).toBeInTheDocument();
-  });
+      render(<Search />);
+
+      expect(screen.getByTestId('search-input')).toHaveAttribute('data-auto-focus', autoFocus);
+    },
+  );
 
   it('does not render a ContentLayout shell (hoisted into (feeds)/layout.tsx)', () => {
     render(<Search />);
@@ -102,38 +111,5 @@ describe('Search', () => {
   it('does not render DialogWelcome (removed as stray import)', () => {
     render(<Search />);
     expect(screen.queryByTestId('dialog-welcome')).not.toBeInTheDocument();
-  });
-});
-
-describe('Search - Snapshots', () => {
-  beforeEach(() => {
-    mockUseIsMobile.mockReturnValue(false);
-  });
-
-  it('matches snapshot with tags present', () => {
-    mockUseSearchTags.mockReturnValue(['pubky']);
-    const { container } = render(<Search />);
-    expect(container).toMatchSnapshot();
-  });
-
-  it('matches snapshot with no tags', () => {
-    mockUseSearchTags.mockReturnValue([]);
-    const { container } = render(<Search />);
-    expect(container).toMatchSnapshot();
-  });
-});
-
-describe('Search - Mobile Snapshots', () => {
-  beforeEach(() => {
-    mockUseIsMobile.mockReturnValue(true);
-    setMobileViewport();
-  });
-  afterEach(() => {
-    resetViewport();
-  });
-  it('matches snapshot on mobile viewport', () => {
-    mockUseSearchTags.mockReturnValue(['pubky']);
-    const { container } = render(<Search />);
-    expect(container).toMatchSnapshot();
   });
 });

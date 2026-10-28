@@ -21,8 +21,12 @@ vi.mock('@/hooks/useIsTouchDevice/useIsTouchDevice', () => ({
   useIsTouchDevice: () => false,
 }));
 
+const { mockUseIsMobile } = vi.hoisted(() => ({
+  mockUseIsMobile: vi.fn(() => false),
+}));
+
 vi.mock('@/hooks/useIsMobile/useIsMobile', () => ({
-  useIsMobile: () => false,
+  useIsMobile: () => mockUseIsMobile(),
 }));
 
 vi.mock('@/hooks/usePostTaggers/usePostTaggers', () => ({
@@ -55,6 +59,7 @@ describe('PostTagPopoverWrapper', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
+    mockUseIsMobile.mockReturnValue(false);
     mockTaggersByLabel = new Map();
     mockTaggerStates = new Map();
   });
@@ -74,6 +79,26 @@ describe('PostTagPopoverWrapper', () => {
     expect(screen.queryByTestId('popover')).not.toBeInTheDocument();
   });
 
+  it('renders children without the hover popover on mobile even with taggers', async () => {
+    mockUseIsMobile.mockReturnValue(true);
+    render(
+      <PostTagPopoverWrapper taggers={mockTaggers} taggersCount={10}>
+        <button data-testid="trigger">Tag</button>
+      </PostTagPopoverWrapper>,
+    );
+
+    const trigger = screen.getByTestId('trigger');
+    expect(trigger).not.toHaveAttribute('data-slot', 'popover-trigger');
+
+    fireEvent.mouseEnter(trigger);
+    await act(async () => {
+      vi.advanceTimersByTime(POPOVER_HOVER_DELAY);
+    });
+
+    expect(screen.queryByTestId('avatar-Alice')).not.toBeInTheDocument();
+    expect(screen.queryByText('+7')).not.toBeInTheDocument();
+  });
+
   it('shows avatars on hover after delay', async () => {
     render(
       <PostTagPopoverWrapper taggers={mockTaggers} taggersCount={3}>
@@ -81,6 +106,7 @@ describe('PostTagPopoverWrapper', () => {
       </PostTagPopoverWrapper>,
     );
 
+    expect(screen.getByTestId('trigger')).toHaveAttribute('data-slot', 'popover-trigger');
     fireEvent.mouseEnter(screen.getByTestId('trigger'));
     await act(async () => {
       vi.advanceTimersByTime(POPOVER_HOVER_DELAY);
@@ -146,46 +172,5 @@ describe('PostTagPopoverWrapper', () => {
     });
 
     expect(mockFetchAllTaggers).toHaveBeenCalledWith('bitcoin', ['user1', 'user2', 'user3'], 10);
-  });
-});
-
-describe('PostTagPopoverWrapper - Snapshots', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('matches snapshot with taggers (trigger only, closed state)', () => {
-    const { container } = render(
-      <PostTagPopoverWrapper taggers={mockTaggers} taggersCount={3}>
-        <button>Tag</button>
-      </PostTagPopoverWrapper>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with taggers (open state: avatars + overflow)', async () => {
-    const { container } = render(
-      <PostTagPopoverWrapper taggers={mockTaggers} taggersCount={10}>
-        <button data-testid="trigger">Tag</button>
-      </PostTagPopoverWrapper>,
-    );
-    fireEvent.mouseEnter(screen.getByTestId('trigger'));
-    await act(async () => {
-      vi.advanceTimersByTime(POPOVER_HOVER_DELAY);
-    });
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with no taggers', () => {
-    const { container } = render(
-      <PostTagPopoverWrapper taggers={[]} taggersCount={0}>
-        <button>Tag</button>
-      </PostTagPopoverWrapper>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

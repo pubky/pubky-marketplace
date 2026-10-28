@@ -88,10 +88,3 @@ describe('DialogAge', () => {
     expect(screen.getByText(/You can only use Pubky if you are over 18 years old/)).toBeInTheDocument();
   });
 });
-
-describe('DialogAge - Snapshots', () => {
-  it('matches snapshot for default DialogAge', () => {
-    const { container } = render(<DialogAge />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});

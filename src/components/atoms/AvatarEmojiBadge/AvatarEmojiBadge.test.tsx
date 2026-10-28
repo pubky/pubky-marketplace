@@ -13,8 +13,16 @@ describe('AvatarEmojiBadge', () => {
     expect(screen.getByText('🚀')).toBeInTheDocument();
   });
 
-  it('matches snapshot', () => {
-    const { container } = render(<AvatarEmojiBadge emoji="🌴" />);
-    expect(container.firstChild).toMatchSnapshot();
+  it('applies the badge positioning and size classes', () => {
+    render(<AvatarEmojiBadge emoji="🌴" />);
+    expect(screen.getByText('🌴')).toHaveClass(
+      'absolute',
+      '-right-1',
+      '-bottom-1',
+      'flex',
+      'size-10',
+      'items-center',
+      'justify-center',
+    );
   });
 });

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ActionSection } from './ActionSection';
 
@@ -20,63 +20,40 @@ describe('ActionSection', () => {
     expect(backButton).toBeInTheDocument();
     expect(backButton).toHaveTextContent('Back');
   });
-});
 
-describe('ActionSection - Snapshots', () => {
-  it('matches snapshot with default props', () => {
-    const { container } = render(<ActionSection />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom className', () => {
-    const { container } = render(<ActionSection className="custom-actions" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with children', () => {
-    const { container } = render(
-      <ActionSection>
-        <div>Custom content</div>
+  it('defaults actions to the secondary variant and forwards id, icon, className, disabled and clicks', () => {
+    const onSave = vi.fn();
+    render(
+      <ActionSection
+        actions={[
+          { id: 'save', label: 'Save', onClick: onSave, icon: <svg data-testid="save-icon" />, className: 'w-40' },
+          { label: 'Delete', onClick: vi.fn(), disabled: true },
+        ]}
+      >
+        <p>Section body</p>
       </ActionSection>,
     );
-    expect(container.firstChild).toMatchSnapshot();
+
+    const save = screen.getByRole('button', { name: 'Save' });
+    expect(save).toHaveAttribute('id', 'save');
+    expect(save).toHaveAttribute('data-variant', 'secondary');
+    expect(save).toHaveClass('rounded-full', 'w-40');
+    expect(save).toContainElement(screen.getByTestId('save-icon'));
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+    expect(screen.getByText('Section body')).toBeInTheDocument();
+
+    fireEvent.click(save);
+    expect(onSave).toHaveBeenCalledTimes(1);
   });
 
-  it('matches snapshot with single action', () => {
-    const mockAction = vi.fn();
-
-    const { container } = render(<ActionSection actions={[{ label: 'Single Action', onClick: mockAction }]} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with multiple actions', () => {
-    const mockAction = vi.fn();
-
-    const { container } = render(
-      <ActionSection
-        actions={[
-          { label: 'Continue', onClick: mockAction, variant: 'default' as const },
-          { label: 'Back', onClick: mockAction, variant: 'outline' as const },
-        ]}
-      />,
+  it('renders only the children when there are no actions', () => {
+    render(
+      <ActionSection>
+        <p>Section body</p>
+      </ActionSection>,
     );
-    expect(container.firstChild).toMatchSnapshot();
-  });
 
-  it('matches snapshot with action containing icon', () => {
-    const mockAction = vi.fn();
-
-    const { container } = render(
-      <ActionSection
-        actions={[
-          {
-            label: 'Action with Icon',
-            icon: <span>🚀</span>,
-            onClick: mockAction,
-          },
-        ]}
-      />,
-    );
-    expect(container.firstChild).toMatchSnapshot();
+    expect(screen.getByText('Section body')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 });

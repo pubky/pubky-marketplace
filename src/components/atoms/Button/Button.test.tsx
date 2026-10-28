@@ -152,76 +152,7 @@ describe('Button', () => {
   });
 });
 
-describe('Button - Snapshots', () => {
-  it('matches snapshot with default props', () => {
-    const { container } = render(<Button>Default Button</Button>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for default variant', () => {
-    const { container } = render(<Button>Default</Button>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for secondary variant', () => {
-    const { container } = render(<Button variant="secondary">Secondary</Button>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for outline variant', () => {
-    const { container } = render(<Button variant="outline">Outline</Button>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for ghost variant', () => {
-    const { container } = render(<Button variant="ghost">Ghost</Button>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for brand variant', () => {
-    const { container } = render(<Button variant="brand">Brand</Button>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for small size', () => {
-    const { container } = render(<Button size="sm">Small</Button>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for default size', () => {
-    const { container } = render(<Button>Default Size</Button>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for large size', () => {
-    const { container } = render(<Button size="lg">Large</Button>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for icon size', () => {
-    const { container } = render(<Button size="icon">🔍</Button>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for disabled state', () => {
-    const { container } = render(<Button disabled>Disabled</Button>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom className', () => {
-    const { container } = render(<Button className="custom-class">Custom</Button>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for asChild prop', () => {
-    const { container } = render(
-      <Button asChild>
-        <a href="/test">Link Button</a>
-      </Button>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
+describe('Button - Attributes and refs', () => {
   it('forwards ref correctly', () => {
     const ref = React.createRef<HTMLButtonElement>();
     render(<Button ref={ref}>Button</Button>);
@@ -323,19 +254,5 @@ describe('Button - Snapshots', () => {
     );
     const button = screen.getByTestId('button');
     expect(button).toHaveAttribute('data-custom', 'test');
-  });
-
-  it('matches snapshot with overrideDefaults and custom className', () => {
-    const { container } = render(
-      <Button overrideDefaults className="custom-override-class">
-        Override
-      </Button>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with overrideDefaults and no className', () => {
-    const { container } = render(<Button overrideDefaults>Clean</Button>);
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

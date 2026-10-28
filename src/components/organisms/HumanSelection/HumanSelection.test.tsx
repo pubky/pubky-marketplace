@@ -52,13 +52,6 @@ describe('HumanSelection', () => {
     expect(screen.getByText('invite code.')).toBeInTheDocument();
   });
 
-  it('matches snapshot', () => {
-    const { container } = render(
-      <HumanSelection onClick={() => {}} onInviteCodeClick={() => {}} onDevMode={() => {}} />,
-    );
-    expect(container).toMatchSnapshot();
-  });
-
   it('offers Pubky Passport sign-up with Google beside the verification cards', () => {
     passport.isAvailable = true;
     render(<HumanSelection onClick={() => {}} onInviteCodeClick={() => {}} onDevMode={() => {}} />);

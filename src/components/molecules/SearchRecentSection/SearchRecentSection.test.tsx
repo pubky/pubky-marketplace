@@ -198,33 +198,4 @@ describe('SearchRecentSection', () => {
 
     expect(onTagClick).toHaveBeenCalledWith(mockTags[0].tag);
   });
-
-  describe('SearchRecentSection - Snapshots', () => {
-    it('matches snapshot with users and tags', () => {
-      const { container } = render(
-        <SearchRecentSection
-          users={mockUsers}
-          tags={mockTags}
-          onUserClick={vi.fn()}
-          onTagClick={vi.fn()}
-          onClearAll={vi.fn()}
-        />,
-      );
-      expect(container.firstChild).toMatchSnapshot();
-    });
-
-    it('matches snapshot with only users', () => {
-      const { container } = render(
-        <SearchRecentSection users={mockUsers} tags={[]} onUserClick={vi.fn()} onTagClick={vi.fn()} />,
-      );
-      expect(container.firstChild).toMatchSnapshot();
-    });
-
-    it('matches snapshot with only tags', () => {
-      const { container } = render(
-        <SearchRecentSection users={[]} tags={mockTags} onUserClick={vi.fn()} onTagClick={vi.fn()} />,
-      );
-      expect(container.firstChild).toMatchSnapshot();
-    });
-  });
 });

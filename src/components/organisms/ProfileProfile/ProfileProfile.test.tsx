@@ -230,9 +230,4 @@ describe('ProfileProfile', () => {
 
     expect(mockPush).toHaveBeenCalledWith(AUTH_ROUTES.LOGOUT);
   });
-
-  it('matches snapshot', () => {
-    const { container } = render(<ProfileProfile />);
-    expect(container).toMatchSnapshot();
-  });
 });

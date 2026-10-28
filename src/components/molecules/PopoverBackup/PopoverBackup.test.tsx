@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { PopoverBackup } from './PopoverBackup';
 
@@ -79,14 +79,29 @@ vi.mock('@/atoms/Typography/Typography', () => {
   };
 });
 
-describe('PopoverBackup - Snapshots', () => {
-  it('matches snapshot for default PopoverBackup', () => {
-    const { container } = render(<PopoverBackup />);
-    expect(container.firstChild).toMatchSnapshot();
+describe('PopoverBackup', () => {
+  it('renders a ghost icon button as the popover trigger', () => {
+    render(<PopoverBackup />);
+
+    const trigger = screen.getByTestId('popover-trigger');
+    const button = screen.getByTestId('button-ghost');
+    expect(trigger).toContainElement(button);
+    expect(button).toHaveAttribute('data-size', 'icon');
+    expect(screen.getByTestId('circle-help-icon')).toBeInTheDocument();
   });
 
-  it('matches snapshot for PopoverBackup with custom className', () => {
-    const { container } = render(<PopoverBackup className="custom-backup-style" />);
-    expect(container.firstChild).toMatchSnapshot();
+  it('renders the explanation heading and text in the popover content', () => {
+    render(<PopoverBackup />);
+
+    const content = screen.getByTestId('popover-content');
+    expect(content).toContainElement(screen.getByTestId('heading-4'));
+    expect(screen.getByTestId('heading-4')).toHaveTextContent('Why is this important?');
+    expect(screen.getByTestId('typography')).toHaveTextContent(/secret seed for your pubky is like a master password/);
+  });
+
+  it('merges a custom className onto the trigger button', () => {
+    render(<PopoverBackup className="custom-backup-style" />);
+
+    expect(screen.getByTestId('button-ghost')).toHaveClass('hover:bg-white/10', 'custom-backup-style');
   });
 });

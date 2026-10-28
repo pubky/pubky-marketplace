@@ -1,6 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetViewport, setMobileViewport } from '@/test-utils/viewport';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContentLayout } from './ContentLayout';
 
 const mockUseCustomFeed = vi.fn();
@@ -501,42 +500,6 @@ describe('ContentLayout - Custom Feed Layout Override', () => {
     expect(screen.queryByTestId('button-filters-right')).not.toBeInTheDocument();
   });
 
-  it('matches snapshot when custom feed layout is wide', () => {
-    mockUseCustomFeed.mockReturnValue({ layout: 'wide' });
-
-    const { container } = render(
-      <ContentLayout
-        feedVariant="custom"
-        showLeftSidebar={true}
-        leftSidebarContent={<div>Left Sidebar</div>}
-        leftDrawerContent={<div>Left Drawer</div>}
-        showRightSidebar={true}
-        rightSidebarContent={<div>Right Sidebar</div>}
-        rightDrawerContent={<div>Right Drawer</div>}
-      >
-        <div>Test Content</div>
-      </ContentLayout>,
-    );
-    expect(container).toMatchSnapshot();
-  });
-
-  it('matches snapshot when custom feed layout is columns', () => {
-    mockUseCustomFeed.mockReturnValue({ layout: 'columns' });
-
-    const { container } = render(
-      <ContentLayout
-        feedVariant="custom"
-        showLeftSidebar={true}
-        leftSidebarContent={<div>Left Sidebar</div>}
-        showRightSidebar={true}
-        rightSidebarContent={<div>Right Sidebar</div>}
-      >
-        <div>Test Content</div>
-      </ContentLayout>,
-    );
-    expect(container).toMatchSnapshot();
-  });
-
   it('falls back to home store layout when no custom feed exists', () => {
     mockUseCustomFeed.mockReturnValue(undefined);
 
@@ -556,103 +519,5 @@ describe('ContentLayout - Custom Feed Layout Override', () => {
     expect(leftElements.length).toBeGreaterThan(0);
     const rightElements = screen.queryAllByText('Right Sidebar');
     expect(rightElements.length).toBeGreaterThan(0);
-  });
-});
-
-const drawerSnapshotProps = {
-  leftDrawerContent: <div data-testid="left-drawer-desktop">Desktop drawer</div>,
-  leftDrawerContentMobile: <div data-testid="left-drawer-mobile">Mobile drawer</div>,
-};
-
-describe('ContentLayout - Snapshots', () => {
-  beforeEach(() => {
-    mockUseIsMobile.mockReturnValue(false);
-  });
-
-  it('matches snapshot with default props', () => {
-    const { container } = render(
-      <ContentLayout {...drawerSnapshotProps}>
-        <div>Test Content</div>
-      </ContentLayout>,
-    );
-    expect(container).toMatchSnapshot();
-  });
-
-  it('matches snapshot with showLeftSidebar false', () => {
-    const { container } = render(
-      <ContentLayout showLeftSidebar={false}>
-        <div>Test Content</div>
-      </ContentLayout>,
-    );
-    expect(container).toMatchSnapshot();
-  });
-
-  it('matches snapshot with showRightSidebar false', () => {
-    const { container } = render(
-      <ContentLayout showRightSidebar={false}>
-        <div>Test Content</div>
-      </ContentLayout>,
-    );
-    expect(container).toMatchSnapshot();
-  });
-
-  it('matches snapshot with both sidebars hidden', () => {
-    const { container } = render(
-      <ContentLayout showLeftSidebar={false} showRightSidebar={false}>
-        <div>Test Content</div>
-      </ContentLayout>,
-    );
-    expect(container).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom className', () => {
-    const { container } = render(
-      <ContentLayout className="custom-layout">
-        <div>Test Content</div>
-      </ContentLayout>,
-    );
-    expect(container).toMatchSnapshot();
-  });
-
-  it('matches snapshot with complex children', () => {
-    const { container } = render(
-      <ContentLayout>
-        <div>
-          <h1>Title</h1>
-          <p>Description</p>
-          <button>Action</button>
-        </div>
-      </ContentLayout>,
-    );
-    expect(container).toMatchSnapshot();
-  });
-
-  it('matches snapshot with renderMobileHeader false', () => {
-    const { container } = render(
-      <ContentLayout renderMobileHeader={false}>
-        <div>Test Content</div>
-      </ContentLayout>,
-    );
-    expect(container).toMatchSnapshot();
-  });
-});
-
-describe('ContentLayout - Mobile Snapshots', () => {
-  beforeEach(() => {
-    mockUseIsMobile.mockReturnValue(true);
-    setMobileViewport();
-  });
-
-  afterEach(() => {
-    resetViewport();
-  });
-
-  it('matches snapshot on mobile viewport', () => {
-    const { container } = render(
-      <ContentLayout {...drawerSnapshotProps}>
-        <div>Test Content</div>
-      </ContentLayout>,
-    );
-    expect(container).toMatchSnapshot();
   });
 });

@@ -49,11 +49,6 @@ describe('HomeFeedRightSidebar', () => {
     expect(screen.getByTestId('hot-tags')).toBeInTheDocument();
     expect(screen.getByTestId('feedback-card')).toBeInTheDocument();
   });
-
-  it('matches snapshot', () => {
-    const { container } = render(<HomeFeedRightSidebar />);
-    expect(container).toMatchSnapshot();
-  });
 });
 
 describe('HomeFeedRightDrawer', () => {
@@ -65,11 +60,6 @@ describe('HomeFeedRightDrawer', () => {
     expect(screen.getByTestId('hot-tags')).toBeInTheDocument();
     expect(screen.getByTestId('feedback-card')).toBeInTheDocument();
   });
-
-  it('matches snapshot', () => {
-    const { container } = render(<HomeFeedRightDrawer />);
-    expect(container).toMatchSnapshot();
-  });
 });
 
 describe('HomeFeedRightDrawerMobile', () => {
@@ -77,11 +67,6 @@ describe('HomeFeedRightDrawerMobile', () => {
     render(<HomeFeedRightDrawerMobile />);
 
     expect(screen.getByTestId('feed-section')).toBeInTheDocument();
-  });
-
-  it('matches snapshot', () => {
-    const { container } = render(<HomeFeedRightDrawerMobile />);
-    expect(container).toMatchSnapshot();
   });
 });
 
@@ -92,11 +77,6 @@ describe('HotFeedRightSidebar', () => {
     expect(screen.getByTestId('who-to-follow')).toBeInTheDocument();
     expect(screen.getByTestId('feedback-card')).toBeInTheDocument();
   });
-
-  it('matches snapshot', () => {
-    const { container } = render(<HotFeedRightSidebar />);
-    expect(container).toMatchSnapshot();
-  });
 });
 
 describe('HotFeedRightDrawer', () => {
@@ -105,10 +85,5 @@ describe('HotFeedRightDrawer', () => {
 
     expect(screen.getByTestId('who-to-follow')).toBeInTheDocument();
     expect(screen.getByTestId('feedback-card')).toBeInTheDocument();
-  });
-
-  it('matches snapshot', () => {
-    const { container } = render(<HotFeedRightDrawer />);
-    expect(container).toMatchSnapshot();
   });
 });

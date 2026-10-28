@@ -668,49 +668,6 @@ describe('MobileFooter', () => {
   });
 });
 
-describe('MobileFooter - Snapshots', () => {
-  beforeEach(async () => {
-    vi.clearAllMocks();
-    vi.mocked(usePathname).mockReturnValue('/home');
-    mockSelectUnread.mockReturnValue(0);
-    mockCurrentUserPubky = 'pk:test-user-pubky';
-    collectionsDiscoveryMock.showCollectionsNew = false;
-    mockIsPublicRoute = false;
-    mockIsCoreExploreRoute = false;
-    vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: false, keyboardOffset: 0 });
-  });
-
-  it('matches snapshot with default props', () => {
-    const { container } = render(<MobileFooter />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom className', () => {
-    const { container } = render(<MobileFooter className="custom-footer" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with different active path', () => {
-    vi.mocked(usePathname).mockReturnValue('/search');
-    const { container } = render(<MobileFooter />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for navigation links', () => {
-    render(<MobileFooter />);
-
-    const homeLink = document.querySelector('.lucide-house')?.closest('a');
-    expect(homeLink).toMatchSnapshot();
-  });
-
-  it('matches snapshot for account menu trigger', () => {
-    render(<MobileFooter />);
-
-    const accountMenu = screen.getByTestId('avatar-with-fallback').closest('button');
-    expect(accountMenu).toMatchSnapshot();
-  });
-});
-
 it('does not expose account navigation for a retained legacy identity with no grant session', () => {
   mockCurrentUserPubky = 'legacy-pubky';
   mockHasSession = false;

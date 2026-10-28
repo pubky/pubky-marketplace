@@ -61,10 +61,3 @@ describe('Account sign-out copy', () => {
     expect(screen.queryByText(SIGN_OUT_COPY.host)).not.toBeInTheDocument();
   });
 });
-
-describe('Account - Snapshots', () => {
-  it('matches snapshot', () => {
-    const { container } = render(<Account />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});

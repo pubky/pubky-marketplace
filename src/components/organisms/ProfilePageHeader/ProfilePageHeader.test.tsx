@@ -1,9 +1,20 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FOLLOW_ACTIONS } from '@/hooks/useFollowUser/useFollowUser.types';
-import { resetViewport, setMobileViewport } from '@/test-utils/viewport';
 import { ProfilePageHeader } from './ProfilePageHeader';
 import { ProfilePageHeaderProps } from './ProfilePageHeader.types';
+
+const { mockUseIsMobile } = vi.hoisted(() => ({
+  mockUseIsMobile: vi.fn(() => false),
+}));
+
+vi.mock('@/hooks/useIsMobile/useIsMobile', () => ({
+  useIsMobile: () => mockUseIsMobile(),
+}));
+
+beforeEach(() => {
+  mockUseIsMobile.mockReturnValue(false);
+});
 
 // The Message button navigates via the app router and gates on auth.
 vi.mock('next/navigation', () => ({
@@ -266,25 +277,26 @@ describe('ProfilePageHeader', () => {
   });
 });
 
-describe('ProfilePageHeader - Snapshots', () => {
-  it('matches snapshot', () => {
-    const { container } = render(<ProfilePageHeader {...mockProps} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});
+describe('ProfilePageHeader - Status picker', () => {
+  const openStatusPicker = () => fireEvent.click(screen.getByRole('button', { name: /Vacationing/ }));
 
-describe('ProfilePageHeader - Mobile Snapshots', () => {
-  beforeEach(() => {
-    setMobileViewport();
-  });
+  it('opens the status picker in a Popover on desktop', async () => {
+    render(<ProfilePageHeader {...mockProps} />);
+    openStatusPicker();
 
-  afterEach(() => {
-    resetViewport();
+    await waitFor(() => {
+      expect(document.querySelector('[data-slot="popover-content"]')).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('dialog', { name: 'Select Status' })).not.toBeInTheDocument();
   });
 
-  it('matches snapshot on mobile viewport', () => {
-    const { container } = render(<ProfilePageHeader {...mockProps} />);
-    expect(container.firstChild).toMatchSnapshot();
+  it('opens the status picker in a Sheet on mobile', async () => {
+    mockUseIsMobile.mockReturnValue(true);
+    render(<ProfilePageHeader {...mockProps} />);
+    openStatusPicker();
+
+    expect(await screen.findByRole('dialog', { name: 'Select Status' })).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="popover-content"]')).not.toBeInTheDocument();
   });
 });
 

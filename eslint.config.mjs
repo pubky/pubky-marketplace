@@ -22,7 +22,6 @@ const eslintConfig = [
       '**/dist/**',
       '**/.turbo/**',
       '**/coverage/**',
-      '**/__snapshots__/**',
       '*.config.js',
       '*.config.mjs',
       '*.config.ts',

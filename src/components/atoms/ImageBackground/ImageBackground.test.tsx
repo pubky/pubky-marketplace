@@ -29,46 +29,40 @@ describe('ImageBackground', () => {
   });
 });
 
-describe('ImageBackground - Snapshots', () => {
-  it('matches snapshot with default props', () => {
-    const { container } = render(<ImageBackground image="/bg-image.jpg" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom className', () => {
-    const { container } = render(<ImageBackground image="/custom-bg.jpg" className="custom-bg" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with JPG image', () => {
-    const { container } = render(<ImageBackground image="/background.jpg" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with PNG image', () => {
-    const { container } = render(<ImageBackground image="/background.png" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with SVG image', () => {
-    const { container } = render(<ImageBackground image="/background.svg" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with id prop', () => {
-    const { container } = render(<ImageBackground image="/bg.jpg" id="background-id" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with data-testid prop', () => {
-    const { container } = render(<ImageBackground image="/bg.jpg" data-testid="custom-bg" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshots for image and mobileImages props', () => {
-    const { container: withImageContainer } = render(
-      <ImageBackground image="/bg.jpg" mobileImage="/bg-mobile.jpg" className="custom-bg" />,
+describe('ImageBackground - Rendering', () => {
+  it('applies the base classes by default', () => {
+    render(<ImageBackground image="/bg-image.jpg" />);
+    expect(screen.getByTestId('image-background')).toHaveClass(
+      'fixed',
+      'inset-0',
+      'bg-cover',
+      'bg-center',
+      'bg-no-repeat',
+      '-z-10',
     );
-    expect(withImageContainer.firstChild).toMatchSnapshot();
+  });
+
+  it('sets the image as the background style', () => {
+    render(<ImageBackground image="/background.jpg" />);
+    expect(screen.getByTestId('image-background')).toHaveStyle({ backgroundImage: 'url(/background.jpg)' });
+  });
+
+  it('merges a custom className with the base classes', () => {
+    render(<ImageBackground image="/custom-bg.jpg" className="custom-bg" />);
+    expect(screen.getByTestId('image-background')).toHaveClass('fixed', 'custom-bg');
+  });
+
+  it('passes through html attributes', () => {
+    render(<ImageBackground image="/bg.jpg" id="background-id" />);
+    expect(screen.getByTestId('image-background')).toHaveAttribute('id', 'background-id');
+  });
+
+  it('renders a mobile and a desktop background when mobileImage is provided', () => {
+    render(<ImageBackground image="/bg-desktop.jpg" mobileImage="/bg-mobile.jpg" data-testid="image-background" />);
+    const [mobile, desktop] = screen.getAllByTestId('image-background');
+    expect(mobile).toHaveClass('lg:hidden');
+    expect(mobile).toHaveStyle({ backgroundImage: 'url(/bg-mobile.jpg)' });
+    expect(desktop).toHaveClass('hidden', 'lg:block');
+    expect(desktop).toHaveStyle({ backgroundImage: 'url(/bg-desktop.jpg)' });
   });
 });

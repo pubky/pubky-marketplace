@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ONBOARDING_ROUTES } from '@/app/routes';
 import { InstallCard, InstallHeader, InstallNavigation } from './Install';
 
+vi.mock('@/organisms/DialogDownloadPubkyRing/DialogDownloadPubkyRing', () => ({
+  DialogDownloadPubkyRing: ({ store }: { store: string }) => <button type="button">{`Download for ${store}`}</button>,
+}));
+
 // Mock Next.js Image
 vi.mock('next/image', () => ({
   __esModule: true,
@@ -27,17 +31,29 @@ vi.mock('@/stores/onboarding/onboarding.store', () => ({
   }),
 }));
 
-describe('InstallCard - Snapshots', () => {
-  it('matches snapshot', () => {
-    const { container } = render(<InstallCard />);
-    expect(container.firstChild).toMatchSnapshot();
+describe('InstallHeader', () => {
+  it('renders the Pubky Ring title and subtitle', () => {
+    render(<InstallHeader />);
+
+    expect(screen.getByRole('heading', { name: 'Install Pubky Ring.' })).toBeInTheDocument();
+    expect(screen.getByText('Pubky Ring.')).toHaveClass('text-brand');
+    expect(
+      screen.getByText('Pubky Ring is a keychain for your identity keys in the Pubky ecosystem.'),
+    ).toBeInTheDocument();
   });
 });
 
-describe('InstallHeader - Snapshots', () => {
-  it('matches snapshot', () => {
-    const { container } = render(<InstallHeader />);
-    expect(container.firstChild).toMatchSnapshot();
+describe('InstallCard', () => {
+  it('renders the Pubky Ring logo, instructions and both store download buttons', () => {
+    render(<InstallCard />);
+
+    expect(screen.getByRole('img', { name: 'Keyring' })).toHaveAttribute('src', '/images/keyring.webp');
+    expect(screen.getByRole('img', { name: 'Pubky Ring' })).toHaveAttribute('src', '/images/logo-pubky-ring.svg');
+    expect(
+      screen.getByText('Download and install the mobile app. Then continue to the next step.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download for apple' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download for android' })).toBeInTheDocument();
   });
 });
 
@@ -92,30 +108,5 @@ describe('InstallNavigation', () => {
 
     expect(createButton).toBeDisabled();
     expect(continueButton).toBeDisabled();
-  });
-});
-
-describe('InstallNavigation - Snapshots', () => {
-  it('matches snapshot', () => {
-    const { container } = render(<InstallNavigation />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot when create button is loading', () => {
-    const { container } = render(<InstallNavigation />);
-
-    const createButton = screen.getByRole('button', { name: /Create keys in browser/i });
-    fireEvent.click(createButton);
-
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot when continue button is loading', () => {
-    const { container } = render(<InstallNavigation />);
-
-    const continueButton = screen.getByRole('button', { name: /Continue with Pubky Ring/i });
-    fireEvent.click(continueButton);
-
-    expect(container.firstChild).toMatchSnapshot();
   });
 });
