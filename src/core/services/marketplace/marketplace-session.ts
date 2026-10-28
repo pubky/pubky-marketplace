@@ -16,10 +16,7 @@ import { httpResponseToError, safeFetch } from '@/libs/error/error.http';
 import { ErrorService } from '@/libs/error/error.types';
 import { isAppError, isRetryable } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
-import {
-  getMarketplaceGrantFlowEnabled,
-  getMarketplaceGrantSessionEnabled,
-} from '@/libs/runtime-config/runtime-config';
+import { getMarketplaceGrantFlowEnabled } from '@/libs/runtime-config/runtime-config';
 import { sleep } from '@/libs/utils/utils';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import {
@@ -27,7 +24,6 @@ import {
   clearMarketplaceBffSessionConfirmed,
   pairMarketplaceBffSession,
 } from './marketplace-grant-client';
-import { MarketplaceGrantSessionService } from './marketplace-grant-session';
 import { resetMarketplaceNotificationDiagnostics } from './marketplace-notification-diagnostics';
 import {
   LEGACY_SHOP_SIGN_IN_GRANT,
@@ -38,6 +34,7 @@ import {
   sessionReplacementRejection,
 } from './marketplace-session-grant';
 import { marketplaceSessionIdSchema } from './marketplace-session-id';
+import { revokeHeldMarketplaceSessions } from './marketplace-session-revocation';
 
 /** Every grant a purchase-session writer may have persisted. */
 const MARKETPLACE_RESTORABLE_GRANTS = [
@@ -462,18 +459,19 @@ export class MarketplaceSessionService {
 
   /**
    * Sign-out and account switch: the user leaves, so no purchase bearer may
-   * stay at rest for this browser, whichever tab persisted it. The only path
-   * that removes a record it did not write.
+   * stay at rest for this browser, whichever tab persisted it, and none may
+   * stay valid at the service: the in-memory bearer and the persisted one (a
+   * newer one another tab wrote) are both revoked there. The only path that
+   * removes a record it did not write.
    */
   static clearForSignOut(options?: { confirmBff?: boolean }): void | Promise<void> {
     const ended = this.session;
+    const persisted = this.persistedBearer();
     this.session = null;
     resetMarketplaceNotificationDiagnostics();
     this.removePersistedSession();
     if (ended) this.notifySessionEnded({ reason: 'cleared', issuedAt: ended.issuedAt });
-    if (ended?.sessionId && getMarketplaceGrantSessionEnabled()) {
-      void MarketplaceGrantSessionService.revoke({ token: ended.token, sessionId: ended.sessionId });
-    }
+    revokeHeldMarketplaceSessions([ended, persisted]);
     if (options?.confirmBff) return clearMarketplaceBffSessionConfirmed();
     if (getMarketplaceGrantFlowEnabled()) void clearMarketplaceBffSession();
   }
@@ -481,13 +479,17 @@ export class MarketplaceSessionService {
   /**
    * Account switch without a sign-out (a sign-in ceremony for another
    * account): the account that left owns nothing here any more, so its
-   * bearer goes from memory and from rest, whichever tab persisted it. A
-   * bearer `keepPubky` already holds (the ceremony may have minted one) stays,
-   * and is persisted again if the departed record had kept it out of the slot.
+   * bearer goes from memory, from rest and from the service, whichever tab
+   * persisted it. A bearer `keepPubky` already holds (the ceremony may have
+   * minted one) stays, and is persisted again if the departed record had kept
+   * it out of the slot.
    */
   static clearOtherAccounts(keepPubky: string): void {
-    if (this.session && this.session.pubky !== keepPubky) this.clearSession('cleared');
+    const departedMemory = this.session && this.session.pubky !== keepPubky ? this.session : null;
+    if (departedMemory) this.clearSession('cleared');
     const stored = this.persistedBearer();
+    const departedStored = stored && stored.pubky !== keepPubky ? stored : null;
+    revokeHeldMarketplaceSessions([departedMemory, departedStored]);
     if (!stored || stored.pubky === keepPubky) return;
     this.removePersistedSession();
     if (getMarketplaceGrantFlowEnabled() && typeof stored.sessionId === 'string') {

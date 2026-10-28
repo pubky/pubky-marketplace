@@ -81,6 +81,17 @@ async function reloadedService() {
 
 let fetchSpy: MockInstance<typeof fetch>;
 
+const SERVICE = 'http://127.0.0.1:8080';
+
+function serviceRevokes(): Array<{ url: string; bearer: string }> {
+  return fetchSpy.mock.calls
+    .filter(([url, init]) => init?.method === 'DELETE' && String(url).includes('/v1/auth/sessions/'))
+    .map(([url, init]) => ({
+      url: String(url),
+      bearer: String((init?.headers as Record<string, string>).authorization),
+    }));
+}
+
 describe('inventory-session persistence: a tab only removes the record it owns', () => {
   beforeEach(() => {
     MarketplaceInventorySessionService.clearForSignOut();
@@ -201,5 +212,44 @@ describe('inventory-session persistence: a tab only removes the record it owns',
 
     expect(MarketplaceInventorySessionService.getActiveSession()).toBeNull();
     expect(stored()).toBeNull();
+  });
+
+  it('sign-out revokes the Studio bearer in memory and the one another tab persisted, once each', async () => {
+    await thisTabHolds(HOUR);
+    otherTabPersists(24 * HOUR);
+    fetchSpy.mockClear();
+
+    MarketplaceInventorySessionService.clearForSignOut();
+
+    expect(serviceRevokes()).toEqual([
+      { url: `${SERVICE}/v1/auth/sessions/${THIS_TAB.sessionId}`, bearer: `Bearer ${THIS_TAB.token}` },
+      { url: `${SERVICE}/v1/auth/sessions/${OTHER_TAB.sessionId}`, bearer: `Bearer ${OTHER_TAB.token}` },
+    ]);
+  });
+
+  it('sign-out revokes a Studio bearer that is only at rest', () => {
+    otherTabPersists(24 * HOUR);
+    fetchSpy.mockClear();
+
+    MarketplaceInventorySessionService.clearForSignOut();
+
+    expect(serviceRevokes()).toEqual([
+      { url: `${SERVICE}/v1/auth/sessions/${OTHER_TAB.sessionId}`, bearer: `Bearer ${OTHER_TAB.token}` },
+    ]);
+    expect(stored()).toBeNull();
+  });
+
+  it('an account switch revokes the departed account’s Studio bearer and keeps the staying one', async () => {
+    otherTabPersists(24 * HOUR, OTHER_ACCOUNT);
+    fetchSpy.mockClear();
+    MarketplaceInventorySessionService.clearOtherAccounts(PUBKY);
+    expect(serviceRevokes().map(({ bearer }) => bearer)).toEqual([`Bearer ${OTHER_TAB.token}`]);
+    expect(stored()).toBeNull();
+
+    await thisTabHolds(HOUR);
+    fetchSpy.mockClear();
+    MarketplaceInventorySessionService.clearOtherAccounts(PUBKY);
+    expect(serviceRevokes()).toEqual([]);
+    expect(MarketplaceInventorySessionService.getActiveSession()).toMatchObject({ token: THIS_TAB.token });
   });
 });

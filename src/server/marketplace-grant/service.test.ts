@@ -3,7 +3,13 @@ import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z, ZodError } from 'zod';
 import type { MarketplaceGrantConfig } from './config';
-import { claimGrantResult, getGrantStatus, GrantServiceError, verifyMarketplaceSession } from './service';
+import {
+  claimGrantResult,
+  getGrantStatus,
+  GrantServiceError,
+  revokeMarketplaceSession,
+  verifyMarketplaceSession,
+} from './service';
 
 /**
  * `GET /v1/auth/sessions` ids created 17–20 Sep 2026. Captured in
@@ -313,5 +319,34 @@ describe('marketplace grant claim heartbeats', () => {
       'fetch:claim',
       'heartbeat',
     ]);
+  });
+});
+
+describe('marketplace service session revoke', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('deletes the session with its own bearer and a bounded wait', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+    await revokeMarketplaceSession(config, bearer, sessionId);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://service.example/v1/auth/sessions/${sessionId}`,
+      expect.objectContaining({
+        method: 'DELETE',
+        headers: { authorization: `Bearer ${bearer}` },
+        signal: expect.any(AbortSignal),
+      }),
+    );
+  });
+
+  it('reports a refusal so the caller can note it', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 401 }));
+    await expect(revokeMarketplaceSession(config, bearer, sessionId)).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('sends nothing for a malformed bearer or session id', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+    await revokeMarketplaceSession(config, 'short', sessionId);
+    await revokeMarketplaceSession(config, bearer, '../sessions');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

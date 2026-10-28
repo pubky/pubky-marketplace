@@ -48,8 +48,21 @@ function stored(): string | null {
 
 let fetchSpy: MockInstance<typeof fetch>;
 
-function bffDeletes(): string[] {
+function deletes(): string[] {
   return fetchSpy.mock.calls.filter(([, init]) => init?.method === 'DELETE').map(([url]) => String(url));
+}
+
+function bffDeletes(): string[] {
+  return deletes().filter((url) => url.includes('/api/marketplace/session'));
+}
+
+function serviceRevokes(): Array<{ url: string; bearer: string }> {
+  return fetchSpy.mock.calls
+    .filter(([url, init]) => init?.method === 'DELETE' && String(url).includes('/v1/auth/sessions/'))
+    .map(([url, init]) => ({
+      url: String(url),
+      bearer: String((init?.headers as Record<string, string>).authorization),
+    }));
 }
 
 describe('purchase-session persistence: a tab only removes the record it owns', () => {
@@ -172,6 +185,82 @@ describe('purchase-session persistence: a tab only removes the record it owns', 
     expect(bffDeletes()).toEqual(['/api/marketplace/session']);
   });
 
+  it('sign-out revokes both the bearer in memory and the newer one another tab persisted', () => {
+    thisTabHolds(HOUR);
+    otherTabPersists(24 * HOUR);
+    fetchSpy.mockClear();
+
+    MarketplaceSessionService.clearForSignOut();
+
+    expect(serviceRevokes()).toEqual([
+      {
+        url: `http://127.0.0.1:8080/v1/auth/sessions/${THIS_TAB.sessionId}`,
+        bearer: `Bearer ${THIS_TAB.token}`,
+      },
+      {
+        url: `http://127.0.0.1:8080/v1/auth/sessions/${OTHER_TAB.sessionId}`,
+        bearer: `Bearer ${OTHER_TAB.token}`,
+      },
+    ]);
+  });
+
+  it('sign-out revokes a persisted bearer this tab never restored into memory', () => {
+    otherTabPersists(24 * HOUR);
+    fetchSpy.mockClear();
+
+    MarketplaceSessionService.clearForSignOut();
+
+    expect(serviceRevokes()).toEqual([
+      {
+        url: `http://127.0.0.1:8080/v1/auth/sessions/${OTHER_TAB.sessionId}`,
+        bearer: `Bearer ${OTHER_TAB.token}`,
+      },
+    ]);
+    expect(stored()).toBeNull();
+  });
+
+  it('sign-out revokes one bearer once when memory and the slot hold the same one', () => {
+    thisTabHolds(HOUR);
+    fetchSpy.mockClear();
+
+    MarketplaceSessionService.clearForSignOut();
+
+    expect(serviceRevokes().map(({ bearer }) => bearer)).toEqual([`Bearer ${THIS_TAB.token}`]);
+  });
+
+  it('sign-out does not call the service for a persisted bearer that has no session id or has expired', () => {
+    window.localStorage.setItem(
+      MARKETPLACE_SESSION_STORAGE_KEY,
+      JSON.stringify({ token: OTHER_TAB.token, pubky: PUBKY, capabilities: parity, expiresAt: iso(Date.now() + HOUR) }),
+    );
+    fetchSpy.mockClear();
+    MarketplaceSessionService.clearForSignOut();
+    expect(serviceRevokes()).toEqual([]);
+
+    window.localStorage.setItem(
+      MARKETPLACE_SESSION_STORAGE_KEY,
+      JSON.stringify({
+        ...OTHER_TAB,
+        pubky: PUBKY,
+        capabilities: parity,
+        expiresAt: iso(Date.now() - HOUR),
+      }),
+    );
+    MarketplaceSessionService.clearForSignOut();
+    expect(serviceRevokes()).toEqual([]);
+  });
+
+  it('sign-out without the grant flow still revokes at the service and leaves the BFF alone', () => {
+    config.grantFlow = false;
+    thisTabHolds(HOUR);
+    fetchSpy.mockClear();
+
+    MarketplaceSessionService.clearForSignOut();
+
+    expect(serviceRevokes()).toHaveLength(1);
+    expect(bffDeletes()).toEqual([]);
+  });
+
   it('confirmed sign-out clears local state immediately and waits for one BFF acknowledgement', async () => {
     thisTabHolds(HOUR);
     let complete!: (response: Response) => void;
@@ -249,6 +338,21 @@ describe('purchase-session persistence: a tab only removes the record it owns', 
 
     expect(stored()).toBeNull();
     expect(bffDeletes()).toEqual([`/api/marketplace/session?session_id=${OTHER_TAB.sessionId}`]);
+    expect(serviceRevokes().map(({ bearer }) => bearer)).toEqual([`Bearer ${OTHER_TAB.token}`]);
+  });
+
+  it('an account switch revokes the departed account’s bearer in memory and keeps the staying account’s', () => {
+    thisTabHolds(HOUR);
+    fetchSpy.mockClear();
+
+    MarketplaceSessionService.clearOtherAccounts('z'.repeat(52));
+    expect(serviceRevokes().map(({ bearer }) => bearer)).toEqual([`Bearer ${THIS_TAB.token}`]);
+
+    thisTabHolds(HOUR);
+    fetchSpy.mockClear();
+    MarketplaceSessionService.clearOtherAccounts(PUBKY);
+    expect(serviceRevokes()).toEqual([]);
+    expect(MarketplaceSessionService.getActiveSession()).toMatchObject({ token: THIS_TAB.token });
   });
 
   it('an account switch persists the new account’s bearer that a later-expiring departed record kept out', () => {
