@@ -62,6 +62,7 @@ vi.mock('@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings', () => (
     countryBlocked: false,
     countryLocked: view.countryLocked,
     countryLockedMessage: view.countryLocked ? 'The country is locked.' : null,
+    isDirty: false,
     avatar: imageSlot,
     banner: imageSlot,
     submit: vi.fn(async () => false),

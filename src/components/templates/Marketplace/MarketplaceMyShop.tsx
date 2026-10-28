@@ -11,8 +11,10 @@ import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useMarketplaceShopSettings } from '@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings';
 import { useSellingAvailability } from '@/hooks/useSellingAvailability/useSellingAvailability';
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard/useUnsavedChangesGuard';
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
 import { SellingUnavailableNotice } from '@/molecules/Marketplace/SellingUnavailableNotice';
+import { UnsavedChangesDialog } from '@/molecules/Marketplace/UnsavedChangesDialog';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceShopSettingsFormView } from '@/organisms/Marketplace/MarketplaceShopSettingsForm';
@@ -23,6 +25,7 @@ export function MarketplaceMyShop() {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const settings = useMarketplaceShopSettings();
   const selling = useSellingAvailability();
+  const leaveGuard = useUnsavedChangesGuard(settings.isDirty);
   const [name, bio, countryCode, region, vacationMode] = useWatch({
     control: settings.form.control,
     name: ['name', 'bio', 'countryCode', 'region', 'vacationMode'],
@@ -103,6 +106,12 @@ export function MarketplaceMyShop() {
 
         <MarketplaceShopSettingsFormView settings={settings} />
       </Container>
+      <UnsavedChangesDialog
+        open={leaveGuard.pendingLink !== null}
+        subject="storefront"
+        onStay={leaveGuard.stay}
+        onLeave={leaveGuard.leave}
+      />
     </ContentLayout>
   );
 }
