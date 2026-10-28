@@ -2,8 +2,10 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { DIGITAL_RELEASE_REFUSAL_COPY, DIGITAL_SELLER_COPY } from '@/libs/commerce/digital';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import { createOrderFixture } from '@/test/fixtures/commerce/orders';
+import { asOpaque } from '@/test-utils/type-assertions';
 import { MarketplaceSellerDigitalPanel } from './MarketplaceSellerDigitalPanel';
 
 vi.mock('@/controllers/commerce/commerce', () => ({
@@ -11,6 +13,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     fetchOrderDeliveryEmail: vi.fn(),
     fetchOrderDigitalEvidence: vi.fn(),
     commitDeliverDigital: vi.fn(),
+    commitReleaseDigital: vi.fn(),
   },
 }));
 
@@ -194,5 +197,55 @@ describe('MarketplaceSellerDigitalPanel (digital delivery design §3 "Seller\u20
 
     expect(screen.getByRole('button', { name: 'Show email' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Mark emailed' })).not.toBeInTheDocument();
+  });
+
+  it('offers Release to buyer on a paid order whose purchase waits for the seller, and releases it', async () => {
+    const user = userEvent.setup();
+    const onChanged = vi.fn();
+    vi.mocked(CommerceController.commitReleaseDigital).mockResolvedValue(
+      asOpaque({ ok: true, result: { kind: 'order', order: sellerOrder('delivered', ['file']) } }),
+    );
+    const order = { ...sellerOrder('paid', ['file']), digitalRelease: 'seller' as const, digitalReleasedAt: null };
+    render(<MarketplaceSellerDigitalPanel order={order} onChanged={onChanged} />);
+
+    expect(screen.getByTestId('seller-digital-release-pending')).toHaveTextContent(DIGITAL_SELLER_COPY.releasePending);
+    await user.click(screen.getByRole('button', { name: DIGITAL_SELLER_COPY.release }));
+
+    expect(CommerceController.commitReleaseDigital).toHaveBeenCalledWith(order.id, order.revision);
+    expect(await screen.findByText(DIGITAL_SELLER_COPY.released)).toBeInTheDocument();
+    expect(onChanged).toHaveBeenCalled();
+  });
+
+  it('says why a release was refused', async () => {
+    const user = userEvent.setup();
+    vi.mocked(CommerceController.commitReleaseDigital).mockResolvedValue(
+      asOpaque({ ok: false, error: { code: 'INVALID_STATE', reason: 'not_awaiting_release', message: 'x' } }),
+    );
+    const order = { ...sellerOrder('paid', ['text']), digitalRelease: 'seller' as const, digitalReleasedAt: null };
+    render(<MarketplaceSellerDigitalPanel order={order} />);
+    await user.click(screen.getByRole('button', { name: DIGITAL_SELLER_COPY.release }));
+
+    expect(await screen.findByText(DIGITAL_RELEASE_REFUSAL_COPY.not_awaiting)).toBeInTheDocument();
+  });
+
+  it('offers no release once released, released at payment, or taken back', () => {
+    for (const order of [
+      {
+        ...sellerOrder('paid', ['file']),
+        digitalRelease: 'seller' as const,
+        digitalReleasedAt: '2026-10-28T09:00:00Z',
+      },
+      { ...sellerOrder('paid', ['file']), digitalRelease: 'payment' as const },
+      {
+        ...sellerOrder('paid', ['file']),
+        digitalRelease: 'seller' as const,
+        digitalReleasedAt: null,
+        paymentReversedAt: '2026-10-28T09:00:00Z',
+      },
+    ]) {
+      const { unmount } = render(<MarketplaceSellerDigitalPanel order={order} />);
+      expect(screen.queryByRole('button', { name: DIGITAL_SELLER_COPY.release })).not.toBeInTheDocument();
+      unmount();
+    }
   });
 });

@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { DIGITAL_ORDER_COPY } from '@/libs/commerce/digital';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -296,5 +297,19 @@ describe('MarketplaceOrderDigitalPanel (digital delivery design §3 "After payme
     render(<MarketplaceOrderDigitalPanel order={digitalOrder('delivered', ['message'])} />);
     expect(screen.getByText('The seller marked this delivered. Check your messages.')).toBeInTheDocument();
     await waitFor(() => expect(CommerceController.fetchOrderDeliveryEmail).not.toHaveBeenCalled());
+  });
+
+  it('tells the buyer of a paid purchase that waits for the seller’s release, and reads nothing', () => {
+    render(
+      <MarketplaceOrderDigitalPanel
+        order={digitalOrder('paid', ['file', 'text'], { digitalRelease: 'seller', digitalReleasedAt: null })}
+      />,
+    );
+    expect(screen.getAllByTestId('order-digital-awaiting-release')).toHaveLength(2);
+    expect(screen.getAllByTestId('order-digital-awaiting-release')[0]).toHaveTextContent(
+      DIGITAL_ORDER_COPY.awaitingRelease,
+    );
+    expect(screen.queryByRole('button', { name: DIGITAL_ORDER_COPY.download })).not.toBeInTheDocument();
+    expect(CommerceController.fetchOrderDigitalDelivery).not.toHaveBeenCalled();
   });
 });

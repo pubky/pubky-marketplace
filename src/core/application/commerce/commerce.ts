@@ -51,6 +51,7 @@ import {
 import {
   DIGITAL_DELIVERY_COPY,
   type DigitalFileOpenFailure,
+  hasInstantDigitalLines,
   type MarketplaceDigitalDeliveryCapability,
   type MarketplaceDigitalDeliveryChannel,
   type MarketplaceDigitalDeliveryInput,
@@ -1364,6 +1365,28 @@ export class CommerceApplication {
   }
 
   /**
+   * `fulfillment.release_digital`: the seller releases a paid order's instant
+   * lines when they wait for the seller's release. `expectedRevision` is the
+   * order's current revision, so a racing buyer cancel request has one winner.
+   */
+  static async commitReleaseDigital(
+    actorPubky: string,
+    input: { orderId: string; expectedRevision: number },
+  ): Promise<MarketplaceCommandResponse> {
+    this.assertDigitalDeployment('commitReleaseDigital');
+    const command = CommerceRecordNormalizer.marketplaceCommand({
+      version: 1,
+      commandId: crypto.randomUUID(),
+      aggregateId: buildMarketplaceOrderAggregateId(input.orderId),
+      expectedRevision: input.expectedRevision,
+      issuedAt: new Date().toISOString(),
+      kind: 'fulfillment.release_digital',
+      payload: { orderId: input.orderId },
+    });
+    return await this.executeMarketplaceCommand(actorPubky, command);
+  }
+
+  /**
    * `fulfillment.mark_ready` (§A6): the seller arms a paid pickup order for
    * handover (`paid` → `ready_for_pickup`). `expectedRevision` is the
    * order's current revision.
@@ -1850,8 +1873,8 @@ export class CommerceApplication {
     return await MarketplaceGatewayService.getPayment(actorPubky, paymentId);
   }
 
-  static async confirmBitcoinPayment(actorPubky: string, orderId: string, reason?: string) {
-    return await MarketplaceGatewayService.confirmBitcoinPayment(actorPubky, orderId, reason);
+  static async confirmBitcoinPayment(actorPubky: string, orderId: string, reason?: string, releaseDigital = false) {
+    return await MarketplaceGatewayService.confirmBitcoinPayment(actorPubky, orderId, reason, releaseDigital);
   }
 
   /**
@@ -1878,12 +1901,17 @@ export class CommerceApplication {
         const order = await MarketplaceGatewayService.getOrder(sellerPubky, row.id, { signal });
         const rail = order ? autoConfirmableRail(order, sellerPubky) : null;
         if (rail !== null && !isStillEnabled()) break;
+        const releaseDigital = order !== null && hasInstantDigitalLines(order);
         if (rail === 'paykit') {
-          await MarketplaceGatewayService.confirmBitcoinPayment(sellerPubky, row.id, SELLER_AUTO_CONFIRM_REASON, {
-            signal,
-          });
+          await MarketplaceGatewayService.confirmBitcoinPayment(
+            sellerPubky,
+            row.id,
+            SELLER_AUTO_CONFIRM_REASON,
+            releaseDigital,
+            { signal },
+          );
         } else if (rail === 'paypal') {
-          await MarketplaceGatewayService.confirmFiatReceived(sellerPubky, row.id, { signal });
+          await MarketplaceGatewayService.confirmFiatReceived(sellerPubky, row.id, releaseDigital, { signal });
         } else {
           continue;
         }
@@ -2033,8 +2061,8 @@ export class CommerceApplication {
     return await MarketplaceGatewayService.markFiatPaid(actorPubky, orderId, transactionRef);
   }
 
-  static async confirmFiatReceived(actorPubky: string, orderId: string) {
-    return await MarketplaceGatewayService.confirmFiatReceived(actorPubky, orderId);
+  static async confirmFiatReceived(actorPubky: string, orderId: string, releaseDigital = false) {
+    return await MarketplaceGatewayService.confirmFiatReceived(actorPubky, orderId, releaseDigital);
   }
 
   static async getMarketplaceReceipt(actorPubky: string, receiptId: string) {

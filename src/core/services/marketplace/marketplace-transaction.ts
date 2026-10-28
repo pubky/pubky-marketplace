@@ -153,6 +153,7 @@ const TRANSACTION_SERVICE_COMMAND_KINDS: ReadonlySet<MarketplaceCommand['kind']>
   'digital_delivery.clear',
   'order.set_delivery_email',
   'fulfillment.deliver_digital',
+  'fulfillment.release_digital',
   'fulfillment.mark_ready',
   'fulfillment.confirm_pickup',
   'order.cancel_request',
@@ -1242,17 +1243,21 @@ export class MarketplaceTransactionService {
     return this.parseOrderEnvelope('markFiatPaid', raw);
   }
 
-  /** `POST /v0/orders/{id}/fiat/confirm-received` — the seller's confirmation pays a PayPal order. */
+  /**
+   * `POST /v0/orders/{id}/fiat/confirm-received` — the seller's confirmation pays a PayPal order.
+   * `releaseDigital` also releases its instant digital lines when they wait for the seller.
+   */
   static async confirmFiatReceived(
     actor: string,
     orderId: string,
+    releaseDigital = false,
     options: { signal?: AbortSignal } = {},
   ): Promise<MarketplaceOrder> {
     const raw = await this.paymentMethodRequest(
       'confirmFiatReceived',
       actor,
       `/v0/orders/${encodeURIComponent(orderId)}/fiat/confirm-received`,
-      { method: 'POST', body: {}, signal: options.signal },
+      { method: 'POST', body: releaseDigital ? { releaseDigital: true } : {}, signal: options.signal },
     );
     return this.parseOrderEnvelope('confirmFiatReceived', raw);
   }
@@ -1261,13 +1266,18 @@ export class MarketplaceTransactionService {
     actor: string,
     orderId: string,
     reason?: string,
+    releaseDigital = false,
     options: { signal?: AbortSignal } = {},
   ): Promise<{ order: MarketplaceOrder | null; confirmation: z.infer<typeof sellerPaymentConfirmationSchema> }> {
     const raw = await this.paymentMethodRequest(
       'confirmBitcoinPayment',
       actor,
       `/v0/orders/${encodeURIComponent(orderId)}/confirm-bitcoin-payment`,
-      { method: 'POST', body: reason ? { reason } : {}, signal: options.signal },
+      {
+        method: 'POST',
+        body: { ...(reason ? { reason } : {}), ...(releaseDigital ? { releaseDigital: true } : {}) },
+        signal: options.signal,
+      },
     );
     const parsed = this.parseProjection(
       'confirmBitcoinPayment',

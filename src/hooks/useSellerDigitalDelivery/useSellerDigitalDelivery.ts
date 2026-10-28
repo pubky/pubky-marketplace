@@ -3,9 +3,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import {
+  awaitsSellerRelease,
   classifyDigitalDeliverRefusal,
+  classifyDigitalReleaseRefusal,
   DIGITAL_DELIVER_REFUSAL_COPY,
   DIGITAL_READ_REFUSAL_COPY,
+  DIGITAL_RELEASE_REFUSAL_COPY,
   DIGITAL_SELLER_COPY,
   digitalEvidenceLines,
   digitalOrderManualChannels,
@@ -79,7 +82,7 @@ export function useSellerDigitalDelivery(order: MarketplaceOrder, onChanged?: ()
         if (!current) return;
         setEvidence(
           read.orderId === order.id
-            ? { status: 'ready', lines: digitalEvidenceLines(read, order.lines) }
+            ? { status: 'ready', lines: digitalEvidenceLines(read, order.lines, order) }
             : { status: 'failed' },
         );
       })
@@ -145,8 +148,34 @@ export function useSellerDigitalDelivery(order: MarketplaceOrder, onChanged?: ()
     }
   };
 
+  const release = async (): Promise<boolean> => {
+    setActing(true);
+    setMessage(null);
+    try {
+      const response = await CommerceController.commitReleaseDigital(order.id, order.revision);
+      if (!response.ok) {
+        const refusal = classifyDigitalReleaseRefusal(response.error, order.state);
+        setMessage(refusal ? DIGITAL_RELEASE_REFUSAL_COPY[refusal] : DIGITAL_SELLER_COPY.releaseFailed);
+        if (refusal === 'changed' || refusal === 'not_awaiting') await onChanged?.();
+        return false;
+      }
+      setMessage(DIGITAL_SELLER_COPY.released);
+      setEvidenceAttempt((value) => value + 1);
+      await onChanged?.();
+      return true;
+    } catch {
+      setMessage(DIGITAL_SELLER_COPY.releaseFailed);
+      return false;
+    } finally {
+      setActing(false);
+    }
+  };
+
   return {
     channels: digitalOrderManualChannels(order.lines),
+    /** The paid order's instant lines wait for this seller's release. */
+    awaitsRelease: order.state === 'paid' && order.receiptId !== null && awaitsSellerRelease(order),
+    release,
     // Hidden in the same render the order stops entitling the read, before the effect clears it.
     email: entitled ? storedEmail : HIDDEN,
     showEmail,

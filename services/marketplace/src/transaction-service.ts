@@ -1155,6 +1155,7 @@ export class MarketplaceTransactionService {
       case 'digital_delivery.clear':
       case 'order.set_delivery_email':
       case 'fulfillment.deliver_digital':
+      case 'fulfillment.release_digital':
         // The prototype seals and releases nothing: it refuses digital
         // delivery the way an unkeyed durable service does (§6 B5).
         return failure('INVALID_STATE', 'Digital delivery is unavailable on this deployment.', {

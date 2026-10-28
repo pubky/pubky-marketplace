@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { marketplaceListingProjectionSchema } from '@/core/services/marketplace/marketplace-projections';
 import { serviceListingProjectionWire as serviceListingSample } from '@/test/fixtures/commerce/listing-projection.wire';
 import {
+  awaitsSellerRelease,
   bindOrderDigitalLine,
   classifyDeliveryEmailChangeRefusal,
   classifyDigitalCheckoutRefusal,
   classifyDigitalDeliverRefusal,
   classifyDigitalDeliverySetupRefusal,
   classifyDigitalReadRefusal,
+  classifyDigitalReleaseRefusal,
   DELIVERY_EMAIL_CHANGE_COPY,
   DELIVERY_EMAIL_MAX_CHARS,
   DIGITAL_CHECKOUT_COPY,
@@ -30,10 +32,12 @@ import {
   digitalOrderManualChannels,
   digitalPaymentTakenBack,
   formatDigitalFileSize,
+  hasInstantDigitalLines,
   isDigitalDeliveryLink,
   isDigitalOrderEnded,
   isInstantDigitalDeliveryKind,
   isWellFormedDeliveryEmail,
+  type MarketplaceDigitalDeliveryKind,
   marketplaceListingDigitalDeliveryFieldSchema,
   marketplaceOrderDeliveryEmailSchema,
   marketplaceOrderDigitalDeliverySchema,
@@ -617,6 +621,45 @@ describe('seller delivery evidence (§3 "Seller\u2019s orders")', () => {
       expect.stringMatching(/^Marked delivered Sep 26, \d\d:\d\d$/),
     ]);
     expect(digitalEvidenceLines(none, [{ digitalKind: 'email' }])).toEqual([]);
+  });
+
+  it('reports nothing for a purchase that waits for the seller, then the seller’s release', () => {
+    const at = '2026-09-26T13:02:00.000Z';
+    expect(digitalEvidenceLines(none, [{ digitalKind: 'file' }], { digitalRelease: 'seller' })).toEqual([]);
+    expect(
+      digitalEvidenceLines(none, [{ digitalKind: 'file' }], { digitalRelease: 'seller', digitalReleasedAt: at }),
+    ).toEqual([expect.stringMatching(/^Released by you Sep 26, \d\d:\d\d · not opened yet$/)]);
+    expect(
+      digitalEvidenceLines(none, [{ digitalKind: 'file' }], { digitalRelease: 'payment', digitalReleasedAt: at }),
+    ).toEqual(['Delivered automatically · not opened yet']);
+  });
+});
+
+describe('seller release (DIGITAL_RELEASE)', () => {
+  it('waits only for an order frozen as seller-released and not released yet', () => {
+    expect(awaitsSellerRelease({ digitalRelease: 'seller', digitalReleasedAt: null })).toBe(true);
+    expect(awaitsSellerRelease({ digitalRelease: 'seller', digitalReleasedAt: '2026-10-28T09:00:00Z' })).toBe(false);
+    expect(awaitsSellerRelease({ digitalRelease: 'payment', digitalReleasedAt: null })).toBe(false);
+    expect(awaitsSellerRelease({})).toBe(false);
+  });
+
+  it('knows which digital orders carry a line opened on the order page', () => {
+    const line = (digitalKind: MarketplaceDigitalDeliveryKind) => ({ digitalKind });
+    expect(hasInstantDigitalLines({ fulfillment: 'digital', lines: [line('email'), line('file')] })).toBe(true);
+    expect(hasInstantDigitalLines({ fulfillment: 'digital', lines: [line('email'), line('message')] })).toBe(false);
+    expect(hasInstantDigitalLines({ fulfillment: 'shipping', lines: [line('text')] })).toBe(false);
+  });
+
+  it.each([
+    [{ code: 'INVALID_STATE', reason: 'not_awaiting_release' }, 'paid', 'not_awaiting'],
+    [{ code: 'INVALID_STATE', reason: 'payment_reversed' }, 'paid', 'taken_back'],
+    [{ code: 'INVALID_STATE', reason: 'payment_refunded' }, 'paid', 'taken_back'],
+    [{ code: 'INVALID_STATE' }, 'cancel_requested', 'cancel_requested'],
+    [{ code: 'UNAUTHORIZED' }, 'paid', 'not_seller'],
+    [{ code: 'REVISION_CONFLICT' }, 'paid', 'changed'],
+    [{ code: 'INTERNAL' }, 'paid', null],
+  ] as const)('classifies a refused release %o on a %s order as %s', (error, state, expected) => {
+    expect(classifyDigitalReleaseRefusal(error, state)).toBe(expected);
   });
 });
 

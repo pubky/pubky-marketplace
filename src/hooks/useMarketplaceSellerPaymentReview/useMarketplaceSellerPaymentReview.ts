@@ -35,7 +35,7 @@ export function useMarketplaceSellerPaymentReview(
   const [error, setError] = useState<string | null>(null);
   const intent = useRef<{ orderId: string; body: string; key: string } | null>(null);
 
-  const confirm = async (orderId: string, reason?: string): Promise<boolean> => {
+  const confirm = async (orderId: string, reason?: string, releaseDigital = false): Promise<boolean> => {
     if (isSubmitting) return false;
     const parsedInput = sellerPaymentConfirmationInputSchema.safeParse({ reason });
     if (!parsedInput.success) {
@@ -47,7 +47,7 @@ export function useMarketplaceSellerPaymentReview(
     setIsSubmitting(true);
     setError(null);
     try {
-      await CommerceController.confirmBitcoinPayment(orderId, parsedInput.data.reason);
+      await CommerceController.confirmBitcoinPayment(orderId, parsedInput.data.reason, releaseDigital);
       await onChanged();
       return true;
     } catch (actionError) {

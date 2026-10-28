@@ -327,6 +327,7 @@ export function digitalDeliveryVersionLine(delivery: MarketplaceSellerDigitalDel
 export const DIGITAL_READ_REFUSALS = [
   'digital_delivery_unavailable',
   'not_paid',
+  'not_released',
   'delivery_ended',
   'payment_reversed',
   'payment_refunded',
@@ -346,6 +347,7 @@ export function classifyDigitalReadRefusal(reason: unknown): DigitalReadRefusal 
 export const DIGITAL_READ_REFUSAL_COPY: Readonly<Record<DigitalReadRefusal | 'not_found' | 'failed', string>> = {
   digital_delivery_unavailable: DIGITAL_DELIVERY_COPY.unavailable,
   not_paid: 'Available as soon as payment is confirmed.',
+  not_released: 'Available as soon as the seller releases it.',
   delivery_ended: 'This order was refunded or cancelled, so the download is no longer available.',
   payment_reversed: 'The payment was reversed, so the download is disabled.',
   payment_refunded: 'PayPal refunded this payment, so the download is no longer available.',
@@ -621,6 +623,7 @@ export const DIGITAL_ORDER_COPY = {
   copy: 'Copy',
   copied: 'Copied',
   notPaid: DIGITAL_READ_REFUSAL_COPY.not_paid,
+  awaitingRelease: 'Paid. The seller releases this to you once they’ve confirmed your payment.',
   ended: DIGITAL_READ_REFUSAL_COPY.delivery_ended,
   emailMissing: 'Enter your email so the seller can deliver.',
   emailLabel: 'Email for delivery',
@@ -652,6 +655,31 @@ export function digitalPaymentTakenBack(order: {
   if (order.paymentReversedAt) return 'payment_reversed';
   if (order.externalRefund && !isDigitalOrderEnded(order.state)) return 'payment_refunded';
   return null;
+}
+
+/** Whether a digital order has a line the buyer opens on the order page (file, link, text). */
+export function hasInstantDigitalLines(order: {
+  fulfillment?: string | null;
+  lines: ReadonlyArray<{ digitalKind?: MarketplaceDigitalDeliveryKind }>;
+}): boolean {
+  return (
+    order.fulfillment === 'digital' &&
+    order.lines.some(
+      (line) => line.digitalKind === 'file' || line.digitalKind === 'link' || line.digitalKind === 'text',
+    )
+  );
+}
+
+/**
+ * Whether a paid order's instant lines (file, link, text) still wait for the
+ * seller's release (the service's `DIGITAL_RELEASE=seller`). An order paid
+ * before the service froze who releases it, or released at payment, never waits.
+ */
+export function awaitsSellerRelease(order: {
+  digitalRelease?: 'seller' | 'payment' | null;
+  digitalReleasedAt?: string | null;
+}): boolean {
+  return order.digitalRelease === 'seller' && !order.digitalReleasedAt;
 }
 
 /** "The seller will email this to …", or once marked emailed, when and what to check. */
@@ -727,7 +755,46 @@ export const DIGITAL_SELLER_COPY = {
   deliverFailed: "This couldn't be marked. Try again.",
   evidenceFailed: "The delivery record couldn't be loaded.",
   evidenceRetry: 'Retry',
+  release: 'Release to buyer',
+  releasePending: 'The buyer can open this purchase once you release it.',
+  released: 'Released. The buyer has been told their purchase is ready.',
+  releaseFailed: "This couldn't be released. Try again.",
 } as const;
+
+/** Why the service refused `fulfillment.release_digital`. */
+export type DigitalReleaseRefusal = 'not_seller' | 'cancel_requested' | 'not_awaiting' | 'taken_back' | 'changed';
+
+/** Classifies a refused `fulfillment.release_digital` from its reason, then its code and the order's state. */
+export function classifyDigitalReleaseRefusal(
+  error: { code: string; reason?: unknown },
+  orderState: string,
+): DigitalReleaseRefusal | null {
+  switch (error.reason) {
+    case 'not_awaiting_release':
+      return 'not_awaiting';
+    case 'payment_reversed':
+    case 'payment_refunded':
+      return 'taken_back';
+  }
+  switch (error.code) {
+    case 'UNAUTHORIZED':
+      return 'not_seller';
+    case 'REVISION_CONFLICT':
+      return 'changed';
+    case 'INVALID_STATE':
+      return orderState === 'cancel_requested' ? 'cancel_requested' : 'not_awaiting';
+    default:
+      return null;
+  }
+}
+
+export const DIGITAL_RELEASE_REFUSAL_COPY: Readonly<Record<DigitalReleaseRefusal, string>> = {
+  not_seller: 'Only the seller can release this purchase.',
+  cancel_requested: 'This order has a cancellation request. Approve or decline it first.',
+  not_awaiting: 'Nothing in this order is waiting for your release.',
+  taken_back: 'The payment was refunded or reversed, so this can’t be released.',
+  changed: 'This order changed. Refresh to see the latest.',
+};
 
 export const DIGITAL_DELIVER_REFUSAL_COPY: Readonly<Record<DigitalDeliverRefusal, string>> = {
   not_seller: 'Only the seller can mark this delivered.',
@@ -801,13 +868,22 @@ function formatEvidenceTime(value: string): string {
 export function digitalEvidenceLines(
   evidence: MarketplaceOrderDigitalEvidence,
   lines: ReadonlyArray<{ digitalKind?: MarketplaceDigitalDeliveryKind }>,
+  release: { digitalRelease?: 'seller' | 'payment' | null; digitalReleasedAt?: string | null } = {},
 ): string[] {
   const out: string[] = [];
-  if (lines.some((line) => line.digitalKind !== undefined && isInstantDigitalDeliveryKind(line.digitalKind))) {
+  const hasInstant = lines.some(
+    (line) => line.digitalKind !== undefined && isInstantDigitalDeliveryKind(line.digitalKind),
+  );
+  // An unreleased purchase has no delivery to report yet; the panel says it waits for the seller.
+  if (hasInstant && !awaitsSellerRelease(release)) {
+    const delivered =
+      release.digitalRelease === 'seller' && release.digitalReleasedAt
+        ? `Released by you ${formatEvidenceTime(release.digitalReleasedAt)}`
+        : 'Delivered automatically';
     out.push(
       evidence.firstOpenedAt
-        ? `Delivered automatically · first opened ${formatEvidenceTime(evidence.firstOpenedAt)} · opened ${evidence.openCount} ${evidence.openCount === 1 ? 'time' : 'times'}`
-        : 'Delivered automatically · not opened yet',
+        ? `${delivered} · first opened ${formatEvidenceTime(evidence.firstOpenedAt)} · opened ${evidence.openCount} ${evidence.openCount === 1 ? 'time' : 'times'}`
+        : `${delivered} · not opened yet`,
     );
   }
   if (evidence.emailedAt) out.push(`Marked emailed ${formatEvidenceTime(evidence.emailedAt)}`);

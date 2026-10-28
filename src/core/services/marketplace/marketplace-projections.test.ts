@@ -734,6 +734,17 @@ describe('marketplace order projection — seller-confirmed payment', () => {
     );
   });
 
+  it('reads who releases a digital purchase and when', () => {
+    const parsed = marketplaceOrderSchema.parse(
+      wire({ digital_release: 'seller', digital_released_at: '2026-10-28T09:05:00.000Z' }),
+    );
+    expect(parsed.digitalRelease).toBe('seller');
+    expect(parsed.digitalReleasedAt).toBe('2026-10-28T09:05:00.000Z');
+    const malformed = marketplaceOrderSchema.parse(wire({ digital_release: 'buyer', digital_released_at: false }));
+    expect(malformed.digitalRelease).toBeNull();
+    expect(malformed.digitalReleasedAt).toBeNull();
+  });
+
   it('reads an older service without the fields, and drops a malformed value without failing the order', () => {
     const older = marketplaceOrderSchema.parse(wire({}));
     expect(older.paymentConfirmation ?? null).toBeNull();

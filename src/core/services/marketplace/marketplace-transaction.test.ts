@@ -454,8 +454,8 @@ describe('MarketplaceTransactionService.execute', () => {
 
     await MarketplaceTransactionService.getOrders(ACTOR, { signal });
     await MarketplaceTransactionService.getOrder(ACTOR, wireOrder.id, { signal });
-    await MarketplaceTransactionService.confirmFiatReceived(ACTOR, wireOrder.id, { signal });
-    await MarketplaceTransactionService.confirmBitcoinPayment(ACTOR, wireOrder.id, undefined, { signal });
+    await MarketplaceTransactionService.confirmFiatReceived(ACTOR, wireOrder.id, false, { signal });
+    await MarketplaceTransactionService.confirmBitcoinPayment(ACTOR, wireOrder.id, undefined, false, { signal });
 
     expect(vi.mocked(fetch).mock.calls.map(([, init]) => (init as RequestInit).signal)).toEqual([
       signal,

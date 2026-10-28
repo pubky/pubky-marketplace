@@ -26,6 +26,7 @@ const NOTIFICATION_TYPE_UNREAD = {
   bitcoin_payment_seen: true,
   usdt_payment_seen: true,
   paypal_payment_seen: false,
+  digital_released: true,
   bitcoin_prepare_voided: false,
   order_cancelled: false,
   order_cancelled_terms_change: true,

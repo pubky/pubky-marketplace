@@ -1165,8 +1165,9 @@ export class CommerceController {
   }
 
   /** Seller's PayPal receipt confirmation — this is what pays the order. */
-  static async confirmFiatReceived(orderId: string) {
-    return await CommerceApplication.confirmFiatReceived(this.getCurrentUserPubky(), orderId);
+  /** `releaseDigital` also releases the order's instant digital lines when they wait for the seller. */
+  static async confirmFiatReceived(orderId: string, releaseDigital = false) {
+    return await CommerceApplication.confirmFiatReceived(this.getCurrentUserPubky(), orderId, releaseDigital);
   }
 
   /**
@@ -1391,11 +1392,12 @@ export class CommerceController {
     );
   }
 
-  static async confirmBitcoinPayment(orderId: unknown, reason?: string) {
+  static async confirmBitcoinPayment(orderId: unknown, reason?: string, releaseDigital = false) {
     return await CommerceApplication.confirmBitcoinPayment(
       this.getCurrentUserPubky(),
       CommerceRecordNormalizer.entityId(orderId),
       reason,
+      releaseDigital,
     );
   }
 
@@ -1644,6 +1646,14 @@ export class CommerceController {
       orderId: CommerceRecordNormalizer.entityId(orderId),
       expectedRevision: this.pickupOrderRevision(expectedRevision),
       deliveryEmail: deliveryEmail.trim(),
+    });
+  }
+
+  /** `fulfillment.release_digital`: the seller releases a paid order's instant lines to the buyer. */
+  static async commitReleaseDigital(orderId: unknown, expectedRevision: unknown) {
+    return await CommerceApplication.commitReleaseDigital(this.getCurrentUserPubky(), {
+      orderId: CommerceRecordNormalizer.entityId(orderId),
+      expectedRevision: this.pickupOrderRevision(expectedRevision),
     });
   }
 

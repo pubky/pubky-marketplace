@@ -103,6 +103,7 @@ export class MarketplaceNotificationNormalizer {
       case 'bitcoin_payment_seen':
       case 'usdt_payment_seen':
       case 'paypal_payment_seen':
+      case 'digital_released':
       case 'bitcoin_prepare_voided':
       case 'order_cancelled':
       case 'order_cancelled_terms_change':

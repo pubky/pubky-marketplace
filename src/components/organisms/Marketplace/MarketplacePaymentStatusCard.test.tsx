@@ -552,6 +552,52 @@ describe('MarketplacePaymentStatusCard', () => {
     expect(screen.getByTestId('paypal-seen-expired-buyer')).toHaveTextContent('Message the seller');
   });
 
+  it('confirms and releases a digital purchase in one step', () => {
+    const digitalLines = (order: ReturnType<typeof createOrderFixture>) =>
+      order.lines.map((line) => ({ ...line, fulfillment: 'digital' as const, digitalKind: 'file' as const }));
+    const paykitPayment = createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' });
+    const bitcoin = createOrderFixture('pending_payment', {
+      paymentId: paykitPayment.id,
+      paymentMethod: 'bitcoin',
+      fulfillment: 'digital',
+      paykitRequestState: 'awaiting_seller_confirmation',
+      paykitObservation: { amountMatched: true },
+    });
+    const { unmount } = render(
+      <MarketplacePaymentStatusCard
+        order={{ ...bitcoin, lines: digitalLines(bitcoin) }}
+        payment={paykitPayment}
+        isBuyer={false}
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Confirm payment and release' })).toBeInTheDocument();
+    unmount();
+
+    const paypal = createOrderFixture('pending_payment', {
+      paymentMethod: 'paypal',
+      fiatCheckoutUrl: 'https://www.paypal.com/checkout',
+      fulfillment: 'digital',
+      paymentConfirmation: 'seller',
+      gatewayPaymentSeenAt: '2026-10-28T09:00:00.000Z',
+    });
+    render(
+      <MarketplacePaymentStatusCard
+        order={{ ...paypal, lines: digitalLines(paypal) }}
+        payment={createPaymentFixture('awaiting_entitlement')}
+        isBuyer={false}
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />,
+    );
+    expect(
+      within(screen.getByTestId('seller-paypal-confirm')).getByRole('button', { name: 'Confirm payment and release' }),
+    ).toBeInTheDocument();
+  });
+
   it('explains when Bitcoin is temporarily unavailable while other methods remain available', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: ['paypal'],

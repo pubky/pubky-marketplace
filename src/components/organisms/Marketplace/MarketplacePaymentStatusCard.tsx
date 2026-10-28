@@ -67,6 +67,7 @@ import {
   refundRequiredCopyForRole,
   UNBOUND_BACK_CANCEL_REASON,
 } from '@/libs/commerce/checkout-hold';
+import { hasInstantDigitalLines } from '@/libs/commerce/digital';
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import {
@@ -287,7 +288,9 @@ export function MarketplacePaymentStatusCard({
     buyerWallet.recheck();
   };
   const reviewRail = paymentReviewRail(order);
-  const sellerReview = useMarketplaceSellerPaymentReviewForm(order.id, onPaymentChanged, reviewRail);
+  // A digital order's instant lines are released in the same step as the seller's confirmation.
+  const releasesOnConfirm = hasInstantDigitalLines(order);
+  const sellerReview = useMarketplaceSellerPaymentReviewForm(order.id, onPaymentChanged, reviewRail, releasesOnConfirm);
   const [paypalTransactionRef, setPaypalTransactionRef] = useState('');
   const [isReleasingHold, setIsReleasingHold] = useState(false);
   const [releaseHoldError, setReleaseHoldError] = useState<string | null>(null);
@@ -466,6 +469,7 @@ export function MarketplacePaymentStatusCard({
             prompt={rail === 'usdt' ? sellerUsdtConfirmPrompt(order) : sellerBitcoinConfirmPrompt(order)}
             observation={order.paykitObservation ?? null}
             deadline={order.paykitSellerConfirmationDeadline}
+            releasesDigital={releasesOnConfirm}
             form={sellerReview.confirmForm}
             isSubmitting={sellerReview.isSubmitting}
             error={sellerReview.error}
@@ -1226,6 +1230,9 @@ function BuyerUsdtPaymentProgress({
   );
 }
 
+/** The seller's confirm button on a digital order: the confirmation also releases the purchase. */
+const CONFIRM_AND_RELEASE_LABEL = 'Confirm payment and release';
+
 const PAYPAL_SEEN_BUYER_COPY =
   'The seller checks their PayPal account and confirms receipt, then your order is paid. You don\u2019t need to pay again.';
 
@@ -1341,7 +1348,7 @@ function SellerPaypalConfirmation({
         ) : (
           <CheckCircle2 className="size-4" />
         )}
-        Confirm payment received
+        {hasInstantDigitalLines(order) ? CONFIRM_AND_RELEASE_LABEL : 'Confirm payment received'}
       </Button>
     </div>
   );
@@ -1351,6 +1358,7 @@ function SellerBitcoinConfirmationReview({
   prompt,
   observation,
   deadline,
+  releasesDigital,
   form,
   isSubmitting,
   error,
@@ -1359,6 +1367,7 @@ function SellerBitcoinConfirmationReview({
   prompt: string;
   observation: MarketplaceOrder['paykitObservation'] | null;
   deadline?: string | null;
+  releasesDigital: boolean;
   form: UseFormReturn<SellerPaymentConfirmationForm, unknown, SellerPaymentConfirmationSubmission>;
   isSubmitting: boolean;
   error: string | null;
@@ -1425,7 +1434,7 @@ function SellerBitcoinConfirmationReview({
       )}
       <Button className="w-fit rounded-full" disabled={isSubmitting} onClick={onConfirm}>
         {isSubmitting ? <LoaderCircle className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
-        Confirm payment received
+        {releasesDigital ? CONFIRM_AND_RELEASE_LABEL : 'Confirm payment received'}
       </Button>
     </section>
   );
