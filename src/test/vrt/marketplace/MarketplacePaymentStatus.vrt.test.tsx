@@ -1108,3 +1108,109 @@ describe('Marketplace payment status card — USDT orders', () => {
     });
   });
 });
+
+describe('Marketplace payment status card — seller-confirmed payment', () => {
+  const PAYPAL_URL = 'https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=seller%40example.com';
+  // Seen ten minutes before the frozen clock, so the seller window has about 23 hours 50 minutes left.
+  const SEEN_AT = new Date(VRT_FROZEN_NOW_MS - 10 * MINUTE_MS).toISOString();
+  const SELLER_WINDOW_END = new Date(VRT_FROZEN_NOW_MS - 10 * MINUTE_MS + 24 * HOUR_MS).toISOString();
+
+  it('tells the buyer PayPal reported their payment and the seller confirms it', async () => {
+    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
+    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+      deployEnv: 'production',
+      orderOverrides: {
+        paymentMethod: 'paypal',
+        fiatCheckoutUrl: PAYPAL_URL,
+        paymentConfirmation: 'seller',
+        gatewayPaymentSeenAt: SEEN_AT,
+        fiatTransactionRef: '7XP31449AB123456C',
+        holdExpiresAt: SELLER_WINDOW_END,
+        holdSource: 'bind',
+      },
+    });
+    await expect.element(screen.getByText('PayPal reported your payment')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Continue to PayPal/ }).elements()).toHaveLength(0);
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-paypal-seen-buyer-desktop');
+    view.locks.enabled = true;
+  });
+
+  it('asks the seller to confirm the payment PayPal reported', async () => {
+    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
+    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+      deployEnv: 'production',
+      isBuyer: false,
+      orderOverrides: {
+        paymentMethod: 'paypal',
+        fiatCheckoutUrl: PAYPAL_URL,
+        paymentConfirmation: 'seller',
+        gatewayPaymentSeenAt: SEEN_AT,
+        fiatTransactionRef: '7XP31449AB123456C',
+        holdExpiresAt: SELLER_WINDOW_END,
+      },
+    });
+    await expect.element(screen.getByRole('button', { name: 'Confirm payment received' })).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-paypal-seen-seller-desktop');
+    view.locks.enabled = true;
+  });
+
+  it('tells a seller-confirmed seller what happens before PayPal reports the payment', async () => {
+    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
+    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+      deployEnv: 'production',
+      isBuyer: false,
+      orderOverrides: { paymentMethod: 'paypal', fiatCheckoutUrl: PAYPAL_URL, paymentConfirmation: 'seller' },
+    });
+    await expect.element(screen.getByTestId('seller-paypal-awaiting')).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'payment-status-paypal-seller-confirms-awaiting-desktop',
+    );
+    view.locks.enabled = true;
+  });
+
+  const usdtWaiting = {
+    ...USDT_ORDER_FIELDS,
+    paymentMethod: 'paykit',
+    acceptedAssets: ['BTC', 'USDT'],
+    paymentFinality: 'pending',
+    paymentConfirmation: 'seller',
+    paykitRequestState: 'awaiting_seller_confirmation',
+    paykitSellerConfirmationEnteredAt: SEEN_AT,
+    paykitSellerConfirmationDeadline: SELLER_WINDOW_END,
+    holdExpiresAt: SELLER_WINDOW_END,
+  };
+
+  it('tells the buyer their USDT payment waits for the seller', async () => {
+    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+      adapter: 'paykit',
+      deployEnv: 'production',
+      paykitServerApi: 'upstream',
+      orderOverrides: usdtWaiting,
+    });
+    await expect.element(screen.getByTestId('usdt-phase-copy')).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-usdt-seen-buyer-desktop');
+  });
+
+  it('asks the seller to confirm a USDT payment that waits for them', async () => {
+    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+      adapter: 'paykit',
+      deployEnv: 'production',
+      paykitServerApi: 'upstream',
+      isBuyer: false,
+      orderOverrides: {
+        ...usdtWaiting,
+        paykitObservation: {
+          txid: USDT_RESOLVE_TX_HASH,
+          asset: 'USDT',
+          observedUnits: 137_000_000,
+          confirmations: 3,
+          amountMatched: true,
+          disappeared: false,
+          observedAt: SEEN_AT,
+        },
+      },
+    });
+    await expect.element(screen.getByTestId('seller-bitcoin-confirm-prompt')).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-usdt-seen-seller-desktop');
+  });
+});
