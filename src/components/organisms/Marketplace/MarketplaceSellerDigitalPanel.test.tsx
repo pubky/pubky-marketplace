@@ -283,6 +283,24 @@ describe('MarketplaceSellerDigitalPanel (digital delivery design §3 "Seller\u20
     }
   });
 
+  it('keeps the delivery an older service recorded after the order is refunded', async () => {
+    vi.mocked(CommerceController.fetchOrderDigitalEvidence).mockResolvedValue({
+      orderId: base.id,
+      deliveredAt: '2026-09-26T13:01:00.000Z',
+      firstOpenedAt: null,
+      openCount: 0,
+      emailedAt: null,
+      messageDeliveredAt: null,
+    });
+    const order = {
+      ...sellerOrder('refunded_external', ['file']),
+      digitalRelease: 'seller' as const,
+      digitalReleasedAt: null,
+    };
+    render(<MarketplaceSellerDigitalPanel order={order} />);
+    expect(await screen.findByText('Delivered automatically · not opened yet')).toBeInTheDocument();
+  });
+
   it('refreshes the order when the service says the payment was taken back', async () => {
     const user = userEvent.setup();
     const onChanged = vi.fn();

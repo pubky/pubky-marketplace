@@ -691,20 +691,16 @@ export function awaitsSellerRelease(order: {
 
 /**
  * Whether a seller-mode order's instant lines reached the buyer: released by
- * the seller, or moved on to delivered/completed by a service binary from
- * before the release existed. An order that ended unreleased never did.
+ * the seller, or delivered by a service binary from before the release existed
+ * (`deliveredAt`, the service's `digital_delivered_at`, stamped only when the
+ * order reached delivered and never cleared, so it holds after a refund). An
+ * order that ended unreleased has neither.
  */
-function instantLinesReleased(order: {
-  state: string;
-  digitalRelease?: 'seller' | 'payment' | null;
-  digitalReleasedAt?: string | null;
-}): boolean {
-  return (
-    order.digitalRelease !== 'seller' ||
-    Boolean(order.digitalReleasedAt) ||
-    order.state === 'delivered' ||
-    order.state === 'completed'
-  );
+function instantLinesReleased(
+  evidence: Pick<MarketplaceOrderDigitalEvidence, 'deliveredAt'>,
+  release: { digitalRelease?: 'seller' | 'payment' | null; digitalReleasedAt?: string | null },
+): boolean {
+  return release.digitalRelease !== 'seller' || Boolean(release.digitalReleasedAt) || Boolean(evidence.deliveredAt);
 }
 
 /** "The seller will email this to …", or once marked emailed, when and what to check. */
@@ -893,7 +889,7 @@ function formatEvidenceTime(value: string): string {
 export function digitalEvidenceLines(
   evidence: MarketplaceOrderDigitalEvidence,
   lines: ReadonlyArray<{ digitalKind?: MarketplaceDigitalDeliveryKind }>,
-  release: { state: string; digitalRelease?: 'seller' | 'payment' | null; digitalReleasedAt?: string | null },
+  release: { digitalRelease?: 'seller' | 'payment' | null; digitalReleasedAt?: string | null },
 ): string[] {
   const out: string[] = [];
   const hasInstant = lines.some(
@@ -901,7 +897,7 @@ export function digitalEvidenceLines(
   );
   // An unreleased purchase has no delivery to report: the panel says it waits
   // for the seller, or the order ended before it was released.
-  if (hasInstant && instantLinesReleased(release)) {
+  if (hasInstant && instantLinesReleased(evidence, release)) {
     const delivered =
       release.digitalRelease === 'seller' && release.digitalReleasedAt
         ? `Released by you ${formatEvidenceTime(release.digitalReleasedAt)}`

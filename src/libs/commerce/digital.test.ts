@@ -609,40 +609,40 @@ describe('seller delivery evidence (§3 "Seller\u2019s orders")', () => {
 
   it('writes the instant line, then each manual mark', () => {
     const at = '2026-09-26T13:02:00.000Z';
-    expect(digitalEvidenceLines(none, [{ digitalKind: 'file' }], PAID)).toEqual([
+    expect(digitalEvidenceLines(none, [{ digitalKind: 'file' }], {})).toEqual([
       'Delivered automatically · not opened yet',
     ]);
-    expect(digitalEvidenceLines({ ...none, firstOpenedAt: at, openCount: 1 }, [{ digitalKind: 'text' }], PAID)).toEqual(
-      [expect.stringMatching(/^Delivered automatically · first opened Sep 26, \d\d:\d\d · opened 1 time$/)],
-    );
+    expect(digitalEvidenceLines({ ...none, firstOpenedAt: at, openCount: 1 }, [{ digitalKind: 'text' }], {})).toEqual([
+      expect.stringMatching(/^Delivered automatically · first opened Sep 26, \d\d:\d\d · opened 1 time$/),
+    ]);
     expect(
       digitalEvidenceLines(
         { ...none, emailedAt: at, messageDeliveredAt: at },
         [{ digitalKind: 'email' }, { digitalKind: 'message' }],
-        PAID,
+        {},
       ),
     ).toEqual([
       expect.stringMatching(/^Marked emailed Sep 26, \d\d:\d\d$/),
       expect.stringMatching(/^Marked delivered Sep 26, \d\d:\d\d$/),
     ]);
-    expect(digitalEvidenceLines(none, [{ digitalKind: 'email' }], PAID)).toEqual([]);
+    expect(digitalEvidenceLines(none, [{ digitalKind: 'email' }], {})).toEqual([]);
   });
 
-  it('never calls a purchase that ended unreleased delivered, but keeps a legacy delivery', () => {
+  it('reports a seller-mode delivery only when the service stamped one, whatever the order state', () => {
     const unreleased = { digitalRelease: 'seller' as const, digitalReleasedAt: null };
-    for (const state of ['cancelled', 'refunded_external', 'closed']) {
-      expect(digitalEvidenceLines(none, [{ digitalKind: 'file' }], { state, ...unreleased })).toEqual([]);
-    }
-    for (const state of ['delivered', 'completed']) {
-      expect(digitalEvidenceLines(none, [{ digitalKind: 'file' }], { state, ...unreleased })).toEqual([
-        'Delivered automatically · not opened yet',
-      ]);
-    }
+    // Ended before the release: no delivery was ever stamped.
+    expect(digitalEvidenceLines(none, [{ digitalKind: 'file' }], unreleased)).toEqual([]);
+    // Delivered by a service binary from before the release existed, and
+    // possibly refunded or closed since: the stamp stays.
+    const delivered = { ...none, deliveredAt: '2026-09-26T13:01:00.000Z' };
+    expect(digitalEvidenceLines(delivered, [{ digitalKind: 'file' }], unreleased)).toEqual([
+      'Delivered automatically · not opened yet',
+    ]);
   });
 
   it('reports nothing for a purchase that waits for the seller, then the seller’s release', () => {
     const at = '2026-09-26T13:02:00.000Z';
-    expect(digitalEvidenceLines(none, [{ digitalKind: 'file' }], { ...PAID, digitalRelease: 'seller' })).toEqual([]);
+    expect(digitalEvidenceLines(none, [{ digitalKind: 'file' }], { digitalRelease: 'seller' })).toEqual([]);
     expect(
       digitalEvidenceLines(none, [{ digitalKind: 'file' }], {
         ...PAID,

@@ -40,6 +40,29 @@ const appError = (message: string, reason?: string) =>
   });
 
 describe('useMarketplaceOrderPayment', () => {
+  it.each([
+    ['file', true],
+    ['email', false],
+  ] as const)(
+    'confirms a received PayPal payment with releaseDigital for a %s line: %s',
+    async (digitalKind, releaseDigital) => {
+      vi.mocked(CommerceController.confirmFiatReceived).mockReset();
+      vi.mocked(CommerceController.confirmFiatReceived).mockResolvedValue(createOrderFixture('paid'));
+      const base = createOrderFixture('pending_payment', { paymentMethod: 'paypal', fulfillment: 'digital' });
+      const order = {
+        ...base,
+        lines: base.lines.map((line) => ({ ...line, fulfillment: 'digital' as const, digitalKind })),
+      };
+      const onPaymentChanged = vi.fn();
+      const { result } = renderHook(() => useMarketplaceOrderPayment({ order, enabled: false, onPaymentChanged }));
+
+      await act(() => result.current.confirmReceived());
+
+      expect(CommerceController.confirmFiatReceived).toHaveBeenCalledTimes(1);
+      expect(CommerceController.confirmFiatReceived).toHaveBeenCalledWith(order.id, releaseDigital);
+    },
+  );
+
   it('uses static copy when loading seller payment configuration fails', async () => {
     vi.mocked(CommerceController.getSellerPaymentConfig).mockRejectedValueOnce(
       appError('SENTINEL_ORDER_PAYMENT_CONFIG'),
