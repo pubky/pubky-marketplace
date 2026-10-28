@@ -169,6 +169,30 @@ describe('useEditMarketplaceListing', () => {
     });
   });
 
+  it('republishes a listing saved with UK as GB, and a typed uk as GB', async () => {
+    vi.mocked(CommerceController.getOrFetchListing).mockResolvedValue(
+      structuredClone({ ...publishedRecord, location: { countryCode: 'UK', region: 'London' } }),
+    );
+    const { result } = renderHook(() => useEditMarketplaceListing(OWNER, LISTING_ID));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.form.getValues('countryCode')).toBe('UK');
+
+    await act(async () => {
+      await result.current.submit();
+    });
+    expect(vi.mocked(CommerceController.commitUpsertListing).mock.calls[0][0]).toMatchObject({
+      location: { countryCode: 'GB', region: 'London' },
+    });
+
+    act(() => result.current.form.setValue('countryCode', 'uk'));
+    await act(async () => {
+      await result.current.submit();
+    });
+    expect(vi.mocked(CommerceController.commitUpsertListing).mock.calls[1][0]).toMatchObject({
+      location: { countryCode: 'GB' },
+    });
+  });
+
   it('reports an acked edit whose read-back lags as saved and pending, never as failed', async () => {
     vi.mocked(CommerceController.commitUpsertListing).mockResolvedValueOnce({ registered: false, verified: false });
     const { result } = renderHook(() => useEditMarketplaceListing(OWNER, LISTING_ID));

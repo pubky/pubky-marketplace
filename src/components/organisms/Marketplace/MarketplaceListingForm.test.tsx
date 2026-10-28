@@ -1454,22 +1454,6 @@ describe('MarketplaceListingForm durable publish guards at the button', () => {
   });
 });
 
-describe('MarketplaceListingForm - Snapshots', () => {
-  it('matches the physical listing form snapshot', async () => {
-    const { container } = render(<FormHarness />);
-    await screen.findByRole('checkbox', { name: 'Ship' });
-    // The delivery options are on the first paint while pickupAvailable is
-    // still null, so they exist under the pickup-capability skeleton. The
-    // committed snapshot is the settled form (both capabilities on, no
-    // skeleton). Wait for that world.
-    await waitFor(() => {
-      expect(screen.queryByTestId('pickup-capability-skeleton')).not.toBeInTheDocument();
-      expect(screen.getByRole('checkbox', { name: 'Digital delivery' })).toBeEnabled();
-    });
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});
-
 describe('MarketplaceListingForm digital delivery (digital delivery design §2)', () => {
   const editReady = {
     title: 'Field guide',

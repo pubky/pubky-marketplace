@@ -1,6 +1,6 @@
-import { render } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetViewport, setMobileViewport } from '@/test-utils/viewport';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MENU_VARIANT } from '@/config/ui';
 import { ProfileMenuActions } from './ProfileMenuActions';
 
 vi.mock('@/atoms/DropdownMenu/DropdownMenu', () => {
@@ -134,33 +134,53 @@ vi.mock('@/atoms/Container/Container', () => {
   };
 });
 
-describe('ProfileMenuActions - Snapshots', () => {
+describe('ProfileMenuActions', () => {
+  const trigger = <button>Menu</button>;
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseIsMobile.mockReturnValue(false);
   });
 
-  it('matches snapshot for desktop dropdown', () => {
-    const trigger = <button>Menu</button>;
-    const { container } = render(<ProfileMenuActions userId="pk:test123" trigger={trigger} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});
+  it('renders the trigger inside a dropdown menu on desktop', () => {
+    render(<ProfileMenuActions userId="pk:test123" trigger={trigger} />);
 
-describe('ProfileMenuActions - Mobile Snapshots', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+    expect(screen.getByTestId('dropdown-menu')).toBeInTheDocument();
+    expect(screen.queryByTestId('sheet')).not.toBeInTheDocument();
+    expect(screen.getByTestId('dropdown-trigger')).toContainElement(screen.getByRole('button', { name: 'Menu' }));
+  });
+
+  it('renders the menu content with the dropdown variant and user id on desktop', () => {
+    render(<ProfileMenuActions userId="pk:test123" trigger={trigger} />);
+
+    expect(screen.getByTestId('dropdown-content')).toHaveAttribute('data-align', 'end');
+    const content = screen.getByTestId('profile-menu-actions-content');
+    expect(content).toHaveAttribute('data-user-id', 'pk:test123');
+    expect(content).toHaveAttribute('data-variant', MENU_VARIANT.DROPDOWN);
+  });
+
+  it('requires auth when opening the menu and closes on action complete', () => {
+    render(<ProfileMenuActions userId="pk:test123" trigger={trigger} />);
+
+    fireEvent.click(screen.getByTestId('dropdown-open-trigger'));
+    expect(mockRequireAuth).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('dropdown-menu')).toHaveAttribute('data-open', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.getByTestId('dropdown-menu')).toHaveAttribute('data-open', 'false');
+  });
+
+  it('renders a bottom sheet with the sheet variant on mobile', () => {
     mockUseIsMobile.mockReturnValue(true);
-    setMobileViewport();
-  });
+    render(<ProfileMenuActions userId="pk:test123" trigger={trigger} />);
 
-  afterEach(() => {
-    resetViewport();
-  });
+    expect(screen.getByTestId('sheet')).toBeInTheDocument();
+    expect(screen.queryByTestId('dropdown-menu')).not.toBeInTheDocument();
+    expect(screen.getByTestId('sheet-content')).toHaveAttribute('data-side', 'bottom');
+    expect(screen.getByTestId('sheet-title')).toHaveTextContent('Profile Actions');
 
-  it('matches snapshot on mobile viewport', () => {
-    const trigger = <button>Menu</button>;
-    const { container } = render(<ProfileMenuActions userId="pk:test123" trigger={trigger} />);
-    expect(container.firstChild).toMatchSnapshot();
+    const content = screen.getByTestId('profile-menu-actions-content');
+    expect(content).toHaveAttribute('data-user-id', 'pk:test123');
+    expect(content).toHaveAttribute('data-variant', MENU_VARIANT.SHEET);
   });
 });

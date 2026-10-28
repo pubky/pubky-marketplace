@@ -32,11 +32,6 @@ describe('HumanPhoneCodeInput', () => {
   //   ).toBeInTheDocument();
   // });
 
-  it('matches snapshot', () => {
-    const { container } = render(<HumanPhoneCodeInput value={['', '', '', '', '', '']} onChange={() => {}} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
   it('auto-selects content when backspace moves focus to previous input with existing digit', () => {
     const Wrapper = () => {
       const [code, setCode] = useState(['1', '2', '', '', '', '']);

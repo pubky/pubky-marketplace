@@ -31,44 +31,59 @@ describe('Checkbox', () => {
   });
 });
 
-describe('Checkbox - Snapshots', () => {
-  it('matches snapshot with default props', () => {
+describe('Checkbox - Rendering', () => {
+  it('applies the base classes', () => {
+    render(<Checkbox />);
+    expect(screen.getByRole('checkbox')).toHaveClass('peer', 'h-4', 'w-4', 'rounded', 'border', 'border-input');
+  });
+
+  it('is unchecked by default', () => {
+    render(<Checkbox />);
+    const checkbox = screen.getByRole('checkbox');
+    expect(checkbox).toHaveAttribute('data-state', 'unchecked');
+    expect(checkbox).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('sets data-state and aria-checked when checked', () => {
+    render(<Checkbox checked={true} />);
+    const checkbox = screen.getByRole('checkbox');
+    expect(checkbox).toHaveAttribute('data-state', 'checked');
+    expect(checkbox).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('is disabled when disabled', () => {
+    render(<Checkbox disabled />);
+    expect(screen.getByRole('checkbox')).toBeDisabled();
+  });
+
+  it('associates the label with the checkbox via htmlFor', () => {
+    render(<Checkbox label="Test label" />);
+    const checkbox = screen.getByRole('checkbox');
+    const label = screen.getByText('Test label');
+    expect(label.tagName).toBe('LABEL');
+    expect(label).toHaveAttribute('for', checkbox.id);
+    expect(checkbox.id).not.toBe('');
+  });
+
+  it('uses a provided id for the label association', () => {
+    render(<Checkbox id="custom-checkbox" label="Test label" />);
+    expect(screen.getByRole('checkbox')).toHaveAttribute('id', 'custom-checkbox');
+    expect(screen.getByText('Test label')).toHaveAttribute('for', 'custom-checkbox');
+  });
+
+  it('renders the description when provided', () => {
+    render(<Checkbox label="Label" description="Description text" />);
+    expect(screen.getByText('Description text')).toBeInTheDocument();
+  });
+
+  it('renders no label or description elements without the props', () => {
     const { container } = render(<Checkbox />);
-    expect(container.firstChild).toMatchSnapshot();
+    expect(container.querySelector('label')).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox')).toBeInTheDocument();
   });
 
-  it('matches snapshot when checked', () => {
-    const { container } = render(<Checkbox checked={true} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot when unchecked', () => {
-    const { container } = render(<Checkbox checked={false} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot when disabled', () => {
-    const { container } = render(<Checkbox disabled />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot when disabled and checked', () => {
-    const { container } = render(<Checkbox disabled checked={true} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with label', () => {
-    const { container } = render(<Checkbox label="Test label" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with label and description', () => {
-    const { container } = render(<Checkbox label="Label" description="Description text" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with label, description and checked', () => {
-    const { container } = render(<Checkbox label="Checked label" description="Description text" checked={true} />);
-    expect(container.firstChild).toMatchSnapshot();
+  it('merges a custom className with the base classes', () => {
+    render(<Checkbox className="custom-checkbox" />);
+    expect(screen.getByRole('checkbox')).toHaveClass('h-4', 'w-4', 'custom-checkbox');
   });
 });

@@ -204,6 +204,33 @@ describe('the shop country of a shop that already has one', () => {
     expect(CommerceController.commitUpsertShop).toHaveBeenCalledWith(expect.objectContaining({ name: 'Renamed Shop' }));
   });
 
+  it('lets a shop whose saved code names no country be given a real one from a blocked region', async () => {
+    setRegionModes(LAUNCH);
+    stubClientRegion('DE');
+    const hook = await loadExistingSeller('ZZ');
+    await waitFor(() => expect(hook.result.current.isLoading).toBe(false));
+    expect(hook.result.current.countryLocked).toBe(false);
+    expect(hook.result.current.countryLockedMessage).toBeNull();
+
+    setCountry(hook, 'CH');
+    expect(await save(hook)).toBe(true);
+
+    expect(savedCountry()).toBe('CH');
+  });
+
+  it('keeps a saved UK locked from a blocked region, since it names a country (GB)', async () => {
+    setRegionModes(LAUNCH);
+    stubClientRegion('DE');
+    const hook = await loadExistingSeller('UK');
+    await waitFor(() => expect(hook.result.current.countryLockedMessage).toBe(SHOP_COUNTRY_LOCKED_MESSAGE));
+
+    setCountry(hook, 'CH');
+    expect(await save(hook)).toBe(false);
+
+    expect(hook.result.current.countryLocked).toBe(true);
+    expect(CommerceController.commitUpsertShop).not.toHaveBeenCalled();
+  });
+
   it('moves a blocked shop country to an open one from a visitor region outside the block', async () => {
     setRegionModes(LAUNCH);
     stubClientRegion('CH');

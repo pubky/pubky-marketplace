@@ -141,6 +141,7 @@ import type { MarketplacePrivKeysResult } from '@/libs/commerce/priv-keys';
 import { attestorWindowsParam } from '@/libs/commerce/review-counting';
 import type { MarketplaceReviewSortParam } from '@/libs/commerce/review-sort';
 import { createCommerceSandboxCatalog } from '@/libs/commerce/sandbox-catalog';
+import { isAssignedCountryCode, publishedCountryCode } from '@/libs/commerce/ships-to';
 import {
   buildMarketplaceCheckoutAggregateId,
   buildMarketplaceDropAggregateId,
@@ -5076,9 +5077,16 @@ export class CommerceApplication {
     profile,
     location,
   }: TCommitCreateDefaultShopParams): Promise<void> {
-    const shipsFrom =
-      location ??
-      (await LocalCommerceService.getListingsBySeller(ownerPubky)).find((row) => row.record.location)?.record.location;
+    // Listings published before the country field was checked may carry UK or a code that names no country:
+    // the shop takes the ISO code of the first real country, or none.
+    const namesCountry = (candidate: CommerceShopRecord['location'] | undefined) =>
+      candidate !== undefined && isAssignedCountryCode(publishedCountryCode(candidate.countryCode));
+    const source = namesCountry(location)
+      ? location
+      : (await LocalCommerceService.getListingsBySeller(ownerPubky))
+          .map((row) => row.record.location)
+          .find(namesCountry);
+    const shipsFrom = source ? { ...source, countryCode: publishedCountryCode(source.countryCode) } : undefined;
     // Nothing says where this shop is, so it would fall back to the default country. A blocked default
     // must not be published for the seller: they choose a country in shop settings instead.
     if (!shipsFrom && getRegionPolicy().modeOf(DEFAULT_SHOP_COUNTRY_CODE) === 'blocked') return;

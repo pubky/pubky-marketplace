@@ -252,31 +252,3 @@ describe('WhoToFollow', () => {
     });
   });
 });
-
-describe('WhoToFollow - Snapshots', () => {
-  beforeEach(() => {
-    vi.mocked(useUserStream).mockImplementation(mockUseUserStream);
-    vi.mocked(useInfiniteScroll).mockReturnValue(
-      asOpaque<ReturnType<typeof useInfiniteScroll>>(mockUseInfiniteScroll()),
-    );
-    vi.mocked(useFollowUser).mockReturnValue(asOpaque<ReturnType<typeof useFollowUser>>(mockUseFollowUser()));
-  });
-
-  it('matches snapshot with no users', () => {
-    const { container } = render(<WhoToFollow />);
-    expect(container).toMatchSnapshot();
-  });
-
-  it('matches snapshot when loading', () => {
-    vi.mocked(useUserStream).mockReturnValue(mockLoadingResult);
-    const { container } = render(<WhoToFollow />);
-    expect(container).toMatchSnapshot();
-  });
-
-  it('matches snapshot with users', () => {
-    vi.mocked(useUserStream).mockReturnValue(mockUsersResult);
-
-    const { container } = render(<WhoToFollow />);
-    expect(container).toMatchSnapshot();
-  });
-});

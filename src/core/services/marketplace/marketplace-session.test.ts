@@ -618,7 +618,7 @@ describe('MarketplaceSessionService', () => {
   });
 });
 
-describe('MarketplaceSessionService sign-out revoke (grant sessions)', () => {
+describe('MarketplaceSessionService sign-out revoke', () => {
   const SESSION_ID = '22222222-2222-4222-8222-222222222222';
 
   afterEach(() => {
@@ -626,11 +626,11 @@ describe('MarketplaceSessionService sign-out revoke (grant sessions)', () => {
     vi.unstubAllGlobals();
   });
 
-  function holdSession() {
+  function holdSession(sessionId?: string) {
     MarketplaceSessionService.establishClaimedGrantSession(
       {
         token: TOKEN,
-        sessionId: SESSION_ID,
+        sessionId,
         pubky: PUBKY,
         capabilities: MARKETPLACE_SESSION_GRANT,
         expiresAt: inOneDay(),
@@ -639,21 +639,47 @@ describe('MarketplaceSessionService sign-out revoke (grant sessions)', () => {
     );
   }
 
-  it('revokes the session at the service on sign-out when grant sessions are on', () => {
-    config.grantSessions = true;
+  function revokeCall() {
+    return [
+      `http://127.0.0.1:8080/v1/auth/sessions/${SESSION_ID}`,
+      {
+        method: 'DELETE',
+        headers: { authorization: `Bearer ${TOKEN}` },
+        cache: 'no-store',
+        keepalive: true,
+      },
+    ];
+  }
+
+  it.each([
+    ['grant sessions on', true],
+    ['grant sessions off', false],
+  ])('revokes the session at the service on sign-out with %s', (_label, grantSessions) => {
+    config.grantSessions = grantSessions;
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
-    holdSession();
+    holdSession(SESSION_ID);
     MarketplaceSessionService.clearForSignOut();
-    expect(fetchMock).toHaveBeenCalledWith(`http://127.0.0.1:8080/v1/auth/sessions/${SESSION_ID}`, {
-      method: 'DELETE',
-      headers: { authorization: `Bearer ${TOKEN}` },
-      cache: 'no-store',
-    });
+    expect(fetchMock.mock.calls).toEqual([revokeCall()]);
     expect(MarketplaceSessionService.getActiveSession()).toBeNull();
   });
 
-  it('leaves the service session alone with the flag off', () => {
+  it('revokes a session that Ring approval minted through the auth-token exchange', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      String(url).endsWith('/v1/auth/sessions')
+        ? sessionResponse(inOneDay(), TOKEN, MARKETPLACE_SESSION_GRANT, SESSION_ID)
+        : new Response(null, { status: 204 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    await MarketplaceSessionService.establishWithAuthToken(new Uint8Array([1]), PUBKY, [MARKETPLACE_SESSION_GRANT]);
+    fetchMock.mockClear();
+
+    MarketplaceSessionService.clearForSignOut();
+
+    expect(fetchMock.mock.calls).toEqual([revokeCall()]);
+  });
+
+  it('has nothing to revoke for a session the service issued without an id', () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
     holdSession();

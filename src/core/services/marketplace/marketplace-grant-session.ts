@@ -140,13 +140,16 @@ export class MarketplaceGrantSessionService {
   /**
    * Revokes a marketplace session at the service. Best effort: sign-out must
    * not wait on or fail with the network, and the service TTL still bounds a
-   * session this call could not reach.
+   * session this call could not reach. `keepalive` lets the request finish
+   * when the page is torn down right after sign-out (the host navigating away
+   * from an embedded Shop, a tab closing).
    */
   static async revoke({ token, sessionId }: { token: string; sessionId: string }): Promise<void> {
     await fetch(`${getMarketplaceUrl()}/v1/auth/sessions/${encodeURIComponent(sessionId)}`, {
       method: 'DELETE',
       headers: { authorization: `Bearer ${token}` },
       cache: 'no-store',
+      keepalive: true,
     }).catch(() => {
       Logger.warn('Could not revoke the marketplace session at sign-out');
     });

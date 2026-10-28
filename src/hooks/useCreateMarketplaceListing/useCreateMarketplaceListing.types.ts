@@ -26,6 +26,7 @@ import {
   assetForListingCurrency,
   type ListingCurrencyChoice,
 } from '@/libs/commerce/pricing';
+import { countryFieldError } from '@/libs/commerce/ships-to';
 import { gramsFromWeightInput, type MeasurementSystem, millimetersFromDimensionInput } from '@/libs/commerce/units';
 import { isUnlimitedStockSentinel, UNLIMITED_STOCK_RESERVED_MESSAGE } from '@/libs/commerce/unlimited-stock';
 
@@ -324,7 +325,11 @@ export const createMarketplaceListingSchema = z
     countryCode: z
       .string()
       .trim()
-      .regex(/^[A-Za-z]{2}$/, 'Enter a two-letter country code.'),
+      .min(1, 'Enter a two-letter country code.')
+      .superRefine((value, context) => {
+        const message = value === '' ? null : countryFieldError(value);
+        if (message) context.addIssue({ code: 'custom', message });
+      }),
     region: z.string().trim().max(100, 'Region is too long.'),
     saleFormat: z.enum(['fixed_price', 'auction']),
     currency: z.enum(LISTING_CURRENCY_CODES),

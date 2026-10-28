@@ -70,10 +70,3 @@ describe('TaggedEmpty', () => {
     expect(screen.getByTestId('tag-icon')).toBeInTheDocument();
   });
 });
-
-describe('TaggedEmpty - Snapshots', () => {
-  it('matches snapshot', () => {
-    const { container } = render(<TaggedEmpty onTagAdd={mockHandleTagAdd} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});

@@ -23,70 +23,53 @@ describe('Card', () => {
     expect(screen.getByText('Card Content')).toBeInTheDocument();
     expect(screen.getByText('Card Footer')).toBeInTheDocument();
   });
-});
 
-describe('Card - Snapshots', () => {
-  it('matches snapshot with default props', () => {
-    const { container } = render(<Card>Card content</Card>);
-    expect(container.firstChild).toMatchSnapshot();
+  it('renders with the card data-slot, data-testid and base classes by default', () => {
+    render(<Card>Card content</Card>);
+    const card = screen.getByTestId('card');
+    expect(card).toHaveAttribute('data-slot', 'card');
+    expect(card).toHaveClass('flex', 'flex-col', 'gap-6', 'rounded-xl', 'bg-card', 'shadow-sm');
   });
 
-  it('matches snapshot with custom className', () => {
-    const { container } = render(<Card className="custom-card">Custom Card</Card>);
-    expect(container.firstChild).toMatchSnapshot();
+  it('merges a custom className with the base classes', () => {
+    render(<Card className="custom-card">Card content</Card>);
+    expect(screen.getByTestId('card')).toHaveClass('rounded-xl', 'bg-card', 'custom-card');
   });
 
-  it('matches snapshot for CardHeader', () => {
-    const { container } = render(<CardHeader>Header Content</CardHeader>);
-    expect(container.firstChild).toMatchSnapshot();
+  it('forwards extra props to the root element', () => {
+    render(<Card aria-label="Product card">Card content</Card>);
+    expect(screen.getByTestId('card')).toHaveAttribute('aria-label', 'Product card');
   });
 
-  it('matches snapshot for CardTitle', () => {
-    const { container } = render(<CardTitle>Card Title</CardTitle>);
-    expect(container.firstChild).toMatchSnapshot();
+  it.each([
+    ['CardHeader', 'card-header', <CardHeader key="c">Header</CardHeader>],
+    ['CardTitle', 'card-title', <CardTitle key="c">Title</CardTitle>],
+    ['CardDescription', 'card-description', <CardDescription key="c">Description</CardDescription>],
+    ['CardAction', 'card-action', <CardAction key="c">Action</CardAction>],
+    ['CardContent', 'card-content', <CardContent key="c">Content</CardContent>],
+    ['CardFooter', 'card-footer', <CardFooter key="c">Footer</CardFooter>],
+  ])('%s renders its data-slot', (name, slot, element) => {
+    const { container } = render(element);
+    expect(container.querySelector(`[data-slot="${slot}"]`)).toBeInTheDocument();
   });
 
-  it('matches snapshot for CardDescription', () => {
-    const { container } = render(<CardDescription>Card Description</CardDescription>);
-    expect(container.firstChild).toMatchSnapshot();
+  it('applies the CardTitle base classes', () => {
+    const { container } = render(<CardTitle>Title</CardTitle>);
+    expect(container.querySelector('[data-slot="card-title"]')).toHaveClass('leading-none', 'font-semibold');
   });
 
-  it('matches snapshot for CardContent', () => {
-    const { container } = render(<CardContent>Card Content</CardContent>);
-    expect(container.firstChild).toMatchSnapshot();
+  it('applies the CardDescription base classes', () => {
+    const { container } = render(<CardDescription>Description</CardDescription>);
+    expect(container.querySelector('[data-slot="card-description"]')).toHaveClass('text-sm', 'text-muted-foreground');
   });
 
-  it('matches snapshot for CardFooter', () => {
-    const { container } = render(<CardFooter>Card Footer</CardFooter>);
-    expect(container.firstChild).toMatchSnapshot();
+  it('applies the CardContent base classes', () => {
+    const { container } = render(<CardContent>Content</CardContent>);
+    expect(container.querySelector('[data-slot="card-content"]')).toHaveClass('px-6');
   });
 
-  it('matches snapshot for CardAction', () => {
-    const { container } = render(<CardAction>Action</CardAction>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for complete card structure', () => {
-    const { container } = render(
-      <Card>
-        <CardHeader>
-          <CardTitle>Card Title</CardTitle>
-          <CardDescription>Card Description</CardDescription>
-          <CardAction>Action</CardAction>
-        </CardHeader>
-        <CardContent>Card Content</CardContent>
-        <CardFooter>Card Footer</CardFooter>
-      </Card>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for minimal card structure', () => {
-    const { container } = render(
-      <Card>
-        <CardContent>Minimal Content</CardContent>
-      </Card>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
+  it('merges className on sub-components', () => {
+    const { container } = render(<CardHeader className="custom-header">Header</CardHeader>);
+    expect(container.querySelector('[data-slot="card-header"]')).toHaveClass('px-6', 'custom-header');
   });
 });

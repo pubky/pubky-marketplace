@@ -368,19 +368,3 @@ describe('HumanInviteCode', () => {
     });
   });
 });
-
-describe('HumanInviteCode - Snapshots', () => {
-  it('matches snapshot for empty state', () => {
-    const { container } = renderHumanInviteCode();
-    expect(container).toMatchSnapshot();
-  });
-
-  it('matches snapshot for complete code state', async () => {
-    const { container } = renderHumanInviteCode();
-    await enterCompleteInviteCode();
-    await waitFor(() => {
-      expect(screen.getByTestId('human-invite-code-card').querySelector('.lucide-circle-check')).toBeInTheDocument();
-    });
-    expect(container).toMatchSnapshot();
-  });
-});

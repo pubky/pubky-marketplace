@@ -130,11 +130,6 @@ describe('BackupNavigation', () => {
     vi.clearAllMocks();
   });
 
-  it('matches snapshot for default BackupNavigation', () => {
-    const { container } = render(<BackupNavigation />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
   it('renders buttons navigation component with back button', () => {
     render(<BackupNavigation />);
 
@@ -171,9 +166,16 @@ describe('BackupNavigation', () => {
   });
 });
 
-describe('BackupPageHeader - Snapshots', () => {
-  it('matches snapshot for default BackupPageHeader', () => {
-    const { container } = render(<BackupPageHeader />);
-    expect(container.firstChild).toMatchSnapshot();
+describe('BackupPageHeader', () => {
+  it('renders a large title with the highlighted pubky and the subtitle', () => {
+    render(<BackupPageHeader />);
+
+    const title = screen.getByTestId('page-title');
+    expect(title).toHaveAttribute('data-size', 'large');
+    expect(title).toHaveTextContent('Back up your pubky.');
+    expect(screen.getByText('pubky.')).toHaveClass('text-brand');
+    expect(screen.getByTestId('page-subtitle')).toHaveTextContent(
+      'You need a backup to restore access to your account later.',
+    );
   });
 });

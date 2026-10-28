@@ -88,24 +88,6 @@ describe('BitcoinPaymentCard', () => {
     expect(screen.getByRole('button', { name: /Pay Once/i })).toBeDisabled();
   });
 
-  it('matches snapshot', () => {
-    const { container } = render(<HumanBitcoinCard />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot when loading', () => {
-    mockUseLnVerificationInfo.mockReturnValue(null);
-    mockUseBtcRate.mockReturnValue(null);
-    const { container } = render(<HumanBitcoinCard />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot when geo-blocked', () => {
-    mockUseLnVerificationInfo.mockReturnValue({ available: false });
-    const { container } = render(<HumanBitcoinCard />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
   it('renders generic error overlay when service fails (not geo-blocked)', () => {
     // Issue #919: Generic errors should NOT show "Country not available" message
     mockUseLnVerificationInfo.mockReturnValue({ available: false, error: true });

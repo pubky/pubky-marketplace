@@ -2,7 +2,7 @@
   "strictness": 2,
   "commentTypes": ["logic", "syntax", "style"],
   "triggerOnUpdates": false,
-  "ignorePatterns": "**/__snapshots__/**\n**/*.generated.*\ndist/**\nnode_modules/**\npublic/sw.js\npublic/sw.js.map\n**/*.snap",
+  "ignorePatterns": "**/*.generated.*\ndist/**\nnode_modules/**\npublic/sw.js\npublic/sw.js.map",
   "excludeAuthors": ["dependabot[bot]"],
   "instructions": "This is a local-first decentralized social app using Dexie (IndexedDB), Zustand, Next.js, Tailwind CSS, Shadcn UI. Architecture enforcement is critical: check layer boundary violations (controllers->application->services->models). Modules must be imported through the tsconfig path aliases (for example @/hooks/*, @/controllers/*, @/services/*, @/models/*, @/stores/*) and point at concrete source modules. Config: @/config/<module> only (no aggregate src/config/index.ts). Routes: @/app/routes for route tables and helpers. Review .greptile/rules.md for recurring patterns and docs/architecture.md for the full architecture reference.",
   "rules": [

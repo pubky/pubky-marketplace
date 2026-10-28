@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { createMarketplaceListingSchema } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing.types';
+import { countryFieldError, publishedCountryCode } from '@/libs/commerce/ships-to';
 import {
   currencyExponent,
   type ImportSettings,
@@ -44,7 +45,10 @@ export const importSettingsFormSchema = z
       .string()
       .trim()
       .min(1, 'Choose where your listings ship from.')
-      .regex(/^[A-Za-z]{2}$/, 'Enter a two-letter country code.'),
+      .superRefine((value, context) => {
+        const message = value === '' ? null : countryFieldError(value);
+        if (message) context.addIssue({ code: 'custom', message });
+      }),
     [IMPORT_SETTINGS_FIELDS.CONDITION]: listingShape.condition,
     [IMPORT_SETTINGS_FIELDS.SHIPPING_MODE]: z
       .enum(['', 'free', 'flat'])
@@ -132,7 +136,7 @@ export function toImportSettings(data: ImportSettingsFormData): ImportSettings {
   const unmanagedStock = /^[1-9]\d*$/.test(data.unmanagedStock.trim()) ? Number(data.unmanagedStock) : 1;
   return {
     currency: data.currency,
-    countryCode: /^[A-Za-z]{2}$/.test(country) ? country.toUpperCase() : null,
+    countryCode: country !== '' && countryFieldError(country) === null ? publishedCountryCode(country) : null,
     condition: data.condition,
     shipping,
     useCsvQuantities: data.useCsvQuantities,

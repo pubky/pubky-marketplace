@@ -1,5 +1,6 @@
-import { render } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { ONBOARDING_ROUTES } from '@/app/routes';
 import { HomeserverFooter, HomeserverHeader, HomeserverNavigation } from './Homeserver';
 
 // Mock Next.js router
@@ -79,41 +80,71 @@ vi.mock('@/atoms/PageSubtitle/PageSubtitle', () => {
   };
 });
 
-describe('Homeserver Components - Snapshots', () => {
-  describe('HomeserverHeader - Snapshots', () => {
-    it('matches snapshot for default HomeserverHeader', () => {
-      const { container } = render(<HomeserverHeader />);
-      expect(container.firstChild).toMatchSnapshot();
-    });
+describe('HomeserverHeader', () => {
+  it('renders the large page title and subtitle inside the page header', () => {
+    render(<HomeserverHeader />);
+
+    const header = screen.getByTestId('page-header');
+    const title = screen.getByTestId('page-title');
+    expect(header).toContainElement(title);
+    expect(title).toHaveAttribute('data-size', 'large');
+    expect(title).toHaveTextContent('Choose homeserver.');
+    expect(screen.getByTestId('page-subtitle')).toHaveTextContent(
+      'Enter your invite code to access the Pubky homeserver.',
+    );
+  });
+});
+
+describe('HomeserverFooter', () => {
+  it('renders the terms, privacy and age dialogs', () => {
+    render(<HomeserverFooter />);
+
+    expect(screen.getByTestId('dialog-terms')).toBeInTheDocument();
+    expect(screen.getByTestId('dialog-privacy')).toBeInTheDocument();
+    expect(screen.getByTestId('dialog-age')).toBeInTheDocument();
+  });
+});
+
+describe('HomeserverNavigation', () => {
+  const defaultProps = {
+    continueButtonDisabled: false,
+    onHandleContinueButton: vi.fn(),
+    continueText: 'Continue',
+  };
+
+  it('renders the navigation buttons', () => {
+    render(<HomeserverNavigation {...defaultProps} />);
+
+    expect(screen.getByTestId('back-button')).toBeInTheDocument();
+    expect(screen.getByTestId('continue-button')).toBeEnabled();
   });
 
-  describe('HomeserverFooter - Snapshots', () => {
-    it('matches snapshot for default HomeserverFooter', () => {
-      const { container } = render(<HomeserverFooter />);
-      expect(container.firstChild).toMatchSnapshot();
-    });
+  it('disables the continue button when continueButtonDisabled', () => {
+    render(<HomeserverNavigation {...defaultProps} continueButtonDisabled={true} />);
+
+    expect(screen.getByTestId('continue-button')).toBeDisabled();
   });
 
-  describe('HomeserverNavigation - Snapshots', () => {
-    const defaultProps = {
-      continueButtonDisabled: false,
-      onHandleContinueButton: vi.fn(),
-      continueText: 'Continue',
-    };
+  it('renders custom continue text', () => {
+    render(<HomeserverNavigation {...defaultProps} continueText="Join Server" />);
 
-    it('matches snapshot for default HomeserverNavigation', () => {
-      const { container } = render(<HomeserverNavigation {...defaultProps} />);
-      expect(container.firstChild).toMatchSnapshot();
-    });
+    expect(screen.getByTestId('continue-button')).toHaveTextContent('Join Server');
+  });
 
-    it('matches snapshot for HomeserverNavigation with disabled continue button', () => {
-      const { container } = render(<HomeserverNavigation {...defaultProps} continueButtonDisabled={true} />);
-      expect(container.firstChild).toMatchSnapshot();
-    });
+  it('calls onHandleContinueButton when the continue button is clicked', () => {
+    const onHandleContinueButton = vi.fn();
+    render(<HomeserverNavigation {...defaultProps} onHandleContinueButton={onHandleContinueButton} />);
 
-    it('matches snapshot for HomeserverNavigation with custom continue text', () => {
-      const { container } = render(<HomeserverNavigation {...defaultProps} continueText="Join Server" />);
-      expect(container.firstChild).toMatchSnapshot();
-    });
+    fireEvent.click(screen.getByTestId('continue-button'));
+
+    expect(onHandleContinueButton).toHaveBeenCalledTimes(1);
+  });
+
+  it('navigates back to the backup route when the back button is clicked', () => {
+    render(<HomeserverNavigation {...defaultProps} />);
+
+    fireEvent.click(screen.getByTestId('back-button'));
+
+    expect(mockPush).toHaveBeenCalledWith(ONBOARDING_ROUTES.BACKUP);
   });
 });

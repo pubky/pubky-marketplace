@@ -8,6 +8,7 @@ import {
   commerceShippingOptionSchema,
   commerceVariantSchema,
 } from '@/libs/commerce/marketplace-records';
+import { countryFieldError, publishedCountryCode } from '@/libs/commerce/ships-to';
 import { listingStockRefusal } from '@/libs/commerce/unlimited-stock';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import { PHOTO_REQUIRED_MESSAGE } from '@/pipes/commerce/import-publish-failure';
@@ -148,17 +149,24 @@ function mapShipping(row: CanonicalImportRow): CommerceListingRecord['shippingOp
   return row.shippingOptions.map((option) => commerceShippingOptionSchema.parse(option));
 }
 
+/** The ISO code an imported country is published as (UK becomes GB); a code that names no country is refused. */
+function importedCountryCode(value: string): string {
+  const refusal = countryFieldError(value);
+  if (refusal) throw new Error(refusal);
+  return publishedCountryCode(value);
+}
+
 function mapLocation(row: CanonicalImportRow): CommerceListingRecord['location'] {
   const fromJson = asObject(parseJsonField(row.extraFields.location_json));
   if (fromJson && typeof fromJson.countryCode === 'string') {
     return {
-      countryCode: fromJson.countryCode,
+      countryCode: importedCountryCode(fromJson.countryCode),
       ...(typeof fromJson.region === 'string' ? { region: fromJson.region } : {}),
     };
   }
   const country = row.extraFields.country_code;
-  if (typeof country === 'string' && country.length === 2) {
-    return { countryCode: country.toUpperCase() };
+  if (typeof country === 'string' && country.trim() !== '') {
+    return { countryCode: importedCountryCode(country) };
   }
   throw new Error('A country_code extra field is required when record_json is absent.');
 }
@@ -272,6 +280,7 @@ function fromRecordJson(rows: readonly CanonicalImportRow[], ownerPubky: string)
     sale: overlaySale(base.sale, first),
     shippingOptions,
     returnPolicy: asObject(first.returnPolicy) ? mapReturnPolicy(first.returnPolicy) : base.returnPolicy,
+    location: { ...base.location, countryCode: importedCountryCode(base.location.countryCode) },
   });
   if (stableJson(overlaid) === stableJson(base)) return base;
   return commerceListingRecordSchema.parse({

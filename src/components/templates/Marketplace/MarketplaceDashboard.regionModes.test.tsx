@@ -32,32 +32,42 @@ vi.mock('@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl', async () => {
 
 vi.mock('@/hooks/useIsMobile/useIsMobile', () => ({ useIsMobile: () => false }));
 
-vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', () => ({
-  useMarketplaceSellerDashboard: () => ({
-    listings: view.listings,
-    nowMs: Date.parse('2026-10-22T12:00:00.000Z'),
-    sellerOrders: [],
-    offers: [],
-    isLoading: false,
-    needsSession: false,
-    sessionError: null,
-    metrics: { activeListings: 1, totalInventory: 4, lowStock: 0, paidOrders: 1, revenue: [], openOffers: 0 },
-    actionNeeded: {
-      ordersToShip: view.ordersToShip,
-      offersAwaitingReply: 0,
-      expiringAuctions: 0,
-      total: view.ordersToShip,
-    },
-    updateListingState: dashboardFns.updateListingState,
-    duplicateListing: vi.fn(async () => true),
-    hasUnsavedListingDraft: vi.fn(async () => null),
-    unfinishedDrafts: view.unfinishedDrafts,
-    discardListingDraft: dashboardFns.discardListingDraft,
-    resumeListingDraft: dashboardFns.resumeListingDraft,
-    retryListingRegistration: vi.fn(),
-    exportCsv: async () => new TextEncoder().encode('record_uri,seller_pubky\r\n'),
-  }),
-}));
+vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', async () => {
+  const { formatListingStock } = await vi.importActual<typeof import('@/libs/commerce/unlimited-stock')>(
+    '@/libs/commerce/unlimited-stock',
+  );
+  return {
+    useMarketplaceSellerDashboard: () => ({
+      listings: view.listings,
+      nowMs: Date.parse('2026-10-22T12:00:00.000Z'),
+      sellerOrders: [],
+      offers: [],
+      isLoading: false,
+      needsSession: false,
+      sessionError: null,
+      metrics: { activeListings: 1, totalInventory: 4, lowStock: 0, paidOrders: 1, revenue: [], openOffers: 0 },
+      actionNeeded: {
+        ordersToShip: view.ordersToShip,
+        offersAwaitingReply: 0,
+        expiringAuctions: 0,
+        total: view.ordersToShip,
+      },
+      updateListingState: dashboardFns.updateListingState,
+      duplicateListing: vi.fn(async () => true),
+      hasUnsavedListingDraft: vi.fn(async () => null),
+      unfinishedDrafts: view.unfinishedDrafts,
+      discardListingDraft: dashboardFns.discardListingDraft,
+      resumeListingDraft: dashboardFns.resumeListingDraft,
+      retryListingRegistration: vi.fn(),
+      canOfferRegistration: () => true,
+      listingStockLabel: (listing: {
+        record: Parameters<typeof formatListingStock>[0];
+        purchasableQuantity?: number | null;
+      }) => formatListingStock(listing.record, listing.purchasableQuantity ?? null),
+      exportCsv: async () => new TextEncoder().encode('record_uri,seller_pubky\r\n'),
+    }),
+  };
+});
 
 vi.mock('@/organisms/Marketplace/MarketplaceSectionNav', () => ({ MarketplaceSectionNav: () => null }));
 
@@ -208,12 +218,26 @@ describe('the seller studio in a blocked region', () => {
     await renderStudio();
 
     const notice = await screen.findByTestId('dashboard-selling-unavailable');
-    expect(notice).toHaveTextContent("Selling isn't available in your region yet.");
+    expect(notice).toHaveTextContent("Your shop country is United Kingdom, where selling isn't available yet.");
+    expect(notice).not.toHaveTextContent('in your region');
     expect(within(notice).getByRole('link', { name: 'update your shop country' })).toHaveAttribute(
       'href',
       '/marketplace/storefront#countryCode',
     );
     expect(screen.getByRole('button', { name: /Sell an item/ })).toBeDisabled();
+  });
+
+  it('names a blocked shop country without linking to the locked field when the seller is inside the block too', async () => {
+    setRegionModes(LAUNCH);
+    stubClientRegion('US');
+    view.shopCountry = 'GB';
+    await renderStudio();
+
+    const notice = await screen.findByTestId('dashboard-selling-unavailable');
+    await waitFor(() =>
+      expect(notice).toHaveTextContent("Your shop country is United Kingdom, where selling isn't available yet."),
+    );
+    expect(within(notice).queryByRole('link', { name: 'update your shop country' })).not.toBeInTheDocument();
   });
 
   it('opens up for a seller from an open country with an open shop country', async () => {

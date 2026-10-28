@@ -21,8 +21,6 @@
     "test": "vitest run --project unit",
     "test:watch": "vitest --project unit",
     "test:coverage": "vitest run --project unit --coverage",
-    "test:snapshots": "vitest run --project unit --reporter=verbose --testNamePattern=\"[Ss]napshots?\"",
-    "test:update-snapshots": "vitest run --project unit --update --testNamePattern=\"[Ss]napshots?\"",
     "test:vrt": "bash scripts/vrt-linux.sh",
     "vrt:linux": "bash scripts/vrt-linux.sh",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\" --ignore-path .prettierignore",

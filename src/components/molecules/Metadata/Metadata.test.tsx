@@ -22,16 +22,29 @@ describe('Metadata - site name', () => {
   });
 });
 
-describe('Metadata - Snapshots', () => {
-  it('matches snapshot for default metadata configuration', () => {
-    const result = Metadata({
+describe('Metadata - fields', () => {
+  it('fills keywords, authors, creators, Open Graph and robots from the defaults', () => {
+    const result = Metadata({ title: 'Test Title', description: 'Test Description' });
+
+    expect(result.title).toBe('Test Title');
+    expect(result.keywords).toBe('pubky, social media, decentralized, key, pkarr, pubky core');
+    expect(result.authors).toEqual([{ name: 'Pubky Team' }]);
+    expect(result.creator).toBe('Pubky Team');
+    expect(result.twitter.creator).toBe('@getpubky');
+    expect(result.twitter.site).toBe('https://pubky.app');
+    expect(result.openGraph).toMatchObject({
       title: 'Test Title',
       description: 'Test Description',
+      url: 'https://pubky.app',
+      locale: 'en_US',
+      type: 'website',
+      images: [{ url: '/preview.webp', width: 1200, height: 630, alt: 'Test Title' }],
     });
-    expect(result).toMatchSnapshot();
+    expect(result.twitter.images).toEqual(['/preview.webp']);
+    expect(result.robots).toEqual({ index: true, follow: true });
   });
 
-  it('matches snapshot for metadata with custom parameters', () => {
+  it('uses the custom values passed in', () => {
     const result = Metadata({
       title: 'Custom Title',
       description: 'Custom Description',
@@ -42,52 +55,62 @@ describe('Metadata - Snapshots', () => {
       locale: 'it_IT',
       author: 'Custom Author',
       keywords: 'custom, keywords',
+      creator: '@custom',
+      site: 'https://custom-site.com',
       robots: false,
     });
-    expect(result).toMatchSnapshot();
-  });
 
-  it('matches snapshot for metadata with minimal configuration', () => {
-    const result = Metadata({
-      title: 'Minimal',
-      description: 'Minimal description',
+    expect(result.keywords).toBe('custom, keywords');
+    expect(result.authors).toEqual([{ name: 'Custom Author' }]);
+    expect(result.creator).toBe('Custom Author');
+    expect(result.twitter.creator).toBe('@custom');
+    expect(result.twitter.site).toBe('https://custom-site.com');
+    expect(result.openGraph).toMatchObject({
+      url: 'https://custom-url.com',
+      siteName: 'Custom Site',
+      locale: 'it_IT',
+      type: 'article',
+      images: [{ url: '/custom-image.jpg', alt: 'Custom Title' }],
     });
-    expect(result).toMatchSnapshot();
+    expect(result.twitter.images).toEqual(['/custom-image.jpg']);
+    expect(result.alternates.canonical).toBe('https://custom-url.com');
+    expect(result.robots).toEqual({ index: false, follow: false });
+    expect(result.applicationName).toBe('Pubky Market');
   });
 
-  it('matches snapshot for metadata with image', () => {
-    const result = Metadata({
-      title: 'Image Test',
-      description: 'Testing custom image',
-      image: '/image.jpg',
-    });
-    expect(result).toMatchSnapshot();
+  it('keeps an empty title and emits no description for empty strings', () => {
+    const result = Metadata({ title: '', description: '' });
+
+    expect(result.title).toBe('');
+    expect(result.openGraph.title).toBe('');
+    expect(result.twitter.title).toBe('');
+    expect(result.openGraph.images?.[0].alt).toBe('');
+    expect(result.description).toBeNull();
   });
 
-  it('matches snapshot with empty strings', () => {
-    const result = Metadata({
-      title: '',
-      description: '',
-    });
-    expect(result).toMatchSnapshot();
-  });
-
-  it('matches snapshot with long title and description', () => {
+  it('passes a very long title and description through untruncated', () => {
     const longTitle = 'A'.repeat(1000);
     const longDescription = 'B'.repeat(1000);
-    const result = Metadata({
-      title: longTitle,
-      description: longDescription,
-    });
-    expect(result).toMatchSnapshot();
+    const result = Metadata({ title: longTitle, description: longDescription });
+
+    expect(result.title).toBe(longTitle);
+    expect(result.openGraph.title).toBe(longTitle);
+    expect(result.twitter.title).toBe(longTitle);
+    expect(result.description).toBe(longDescription);
+    expect(result.openGraph.description).toBe(longDescription);
   });
 
-  it('matches snapshot with special characters', () => {
-    const result = Metadata({
-      title: 'Special chars: <>&"\'',
-      description: 'More special: ©®™€£¥',
-    });
-    expect(result).toMatchSnapshot();
+  it('passes special characters through unescaped', () => {
+    const title = 'Special chars: <>&"\'';
+    const description = 'More special: ©®™€£¥';
+    const result = Metadata({ title, description });
+
+    expect(result.title).toBe(title);
+    expect(result.openGraph.title).toBe(title);
+    expect(result.openGraph.images?.[0].alt).toBe(title);
+    expect(result.twitter.title).toBe(title);
+    expect(result.description).toBe(description);
+    expect(result.twitter.description).toBe(description);
   });
 });
 

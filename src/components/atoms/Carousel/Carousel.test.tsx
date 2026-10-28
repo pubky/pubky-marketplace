@@ -254,6 +254,67 @@ describe('Carousel', () => {
     expect(useEmblaCarousel).toHaveBeenCalledWith(expect.objectContaining({ axis: 'y' }), undefined);
   });
 
+  it('lays out content, slides and buttons horizontally by default', () => {
+    render(
+      <Carousel>
+        <CarouselContent data-testid="track">
+          <CarouselItem>Slide 1</CarouselItem>
+        </CarouselContent>
+        <CarouselPrevious />
+        <CarouselNext />
+      </Carousel>,
+    );
+
+    expect(screen.getByTestId('track')).toHaveClass('-ml-4');
+    expect(screen.getByTestId('track')).not.toHaveClass('flex-col');
+    expect(screen.getByRole('group')).toHaveClass('pl-4');
+    expect(screen.getByRole('button', { name: 'Previous slide' })).toHaveClass('top-1/2', '-left-16');
+    expect(screen.getByRole('button', { name: 'Next slide' })).toHaveClass('top-1/2', '-right-16');
+    expect(screen.getByRole('button', { name: 'Previous slide' })).not.toHaveClass('rotate-90');
+  });
+
+  it('stacks content and rotates the buttons above and below in vertical orientation', () => {
+    render(
+      <Carousel orientation="vertical">
+        <CarouselContent data-testid="track">
+          <CarouselItem>Slide 1</CarouselItem>
+        </CarouselContent>
+        <CarouselPrevious />
+        <CarouselNext />
+      </Carousel>,
+    );
+
+    expect(screen.getByTestId('track')).toHaveClass('-mt-4', 'flex-col');
+    expect(screen.getByRole('group')).toHaveClass('pt-4');
+    expect(screen.getByRole('group')).not.toHaveClass('pl-4');
+    const previous = screen.getByRole('button', { name: 'Previous slide' });
+    const next = screen.getByRole('button', { name: 'Next slide' });
+    expect(previous).toHaveClass('-top-16', 'left-1/2', 'rotate-90');
+    expect(previous).not.toHaveClass('-left-16');
+    expect(next).toHaveClass('-bottom-16', 'left-1/2', 'rotate-90');
+    expect(next).not.toHaveClass('-right-16');
+  });
+
+  it('defaults the navigation buttons to the secondary icon button and accepts overrides', () => {
+    render(
+      <Carousel>
+        <CarouselContent>
+          <CarouselItem>Slide 1</CarouselItem>
+        </CarouselContent>
+        <CarouselPrevious />
+        <CarouselNext variant="outline" size="lg" className="custom-next" />
+      </Carousel>,
+    );
+
+    const previous = screen.getByRole('button', { name: 'Previous slide' });
+    const next = screen.getByRole('button', { name: 'Next slide' });
+    expect(previous).toHaveAttribute('data-variant', 'secondary');
+    expect(previous).toHaveAttribute('data-size', 'icon');
+    expect(next).toHaveAttribute('data-variant', 'outline');
+    expect(next).toHaveAttribute('data-size', 'lg');
+    expect(next).toHaveClass('custom-next', 'absolute');
+  });
+
   it('calls setApi when api is available', () => {
     const setApiMock = vi.fn();
 
@@ -290,202 +351,5 @@ describe('Carousel', () => {
     }).toThrow('useCarousel must be used within a <Carousel />');
 
     consoleSpy.mockRestore();
-  });
-});
-
-describe('Carousel - Snapshots', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockCanScrollPrev.mockReturnValue(true);
-    mockCanScrollNext.mockReturnValue(true);
-  });
-
-  it('matches snapshot with default props', () => {
-    const { container } = render(
-      <Carousel>
-        <CarouselContent>
-          <CarouselItem>Slide 1</CarouselItem>
-        </CarouselContent>
-      </Carousel>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with multiple slides', () => {
-    const { container } = render(
-      <Carousel>
-        <CarouselContent>
-          <CarouselItem>Slide 1</CarouselItem>
-          <CarouselItem>Slide 2</CarouselItem>
-          <CarouselItem>Slide 3</CarouselItem>
-        </CarouselContent>
-      </Carousel>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with navigation buttons', () => {
-    const { container } = render(
-      <Carousel>
-        <CarouselContent>
-          <CarouselItem>Slide 1</CarouselItem>
-        </CarouselContent>
-        <CarouselPrevious />
-        <CarouselNext />
-      </Carousel>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for horizontal orientation', () => {
-    const { container } = render(
-      <Carousel orientation="horizontal">
-        <CarouselContent>
-          <CarouselItem>Slide 1</CarouselItem>
-        </CarouselContent>
-        <CarouselPrevious />
-        <CarouselNext />
-      </Carousel>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for vertical orientation', () => {
-    const { container } = render(
-      <Carousel orientation="vertical">
-        <CarouselContent>
-          <CarouselItem>Slide 1</CarouselItem>
-        </CarouselContent>
-        <CarouselPrevious />
-        <CarouselNext />
-      </Carousel>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom className on Carousel', () => {
-    const { container } = render(
-      <Carousel className="custom-carousel">
-        <CarouselContent>
-          <CarouselItem>Slide 1</CarouselItem>
-        </CarouselContent>
-      </Carousel>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom className on CarouselContent', () => {
-    const { container } = render(
-      <Carousel>
-        <CarouselContent className="custom-content">
-          <CarouselItem>Slide 1</CarouselItem>
-        </CarouselContent>
-      </Carousel>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom className on CarouselItem', () => {
-    const { container } = render(
-      <Carousel>
-        <CarouselContent>
-          <CarouselItem className="custom-item">Slide 1</CarouselItem>
-        </CarouselContent>
-      </Carousel>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with disabled previous button', () => {
-    mockCanScrollPrev.mockReturnValue(false);
-
-    const { container } = render(
-      <Carousel>
-        <CarouselContent>
-          <CarouselItem>Slide 1</CarouselItem>
-        </CarouselContent>
-        <CarouselPrevious />
-      </Carousel>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with disabled next button', () => {
-    mockCanScrollNext.mockReturnValue(false);
-
-    const { container } = render(
-      <Carousel>
-        <CarouselContent>
-          <CarouselItem>Slide 1</CarouselItem>
-        </CarouselContent>
-        <CarouselNext />
-      </Carousel>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with both navigation buttons disabled', () => {
-    mockCanScrollPrev.mockReturnValue(false);
-    mockCanScrollNext.mockReturnValue(false);
-
-    const { container } = render(
-      <Carousel>
-        <CarouselContent>
-          <CarouselItem>Slide 1</CarouselItem>
-        </CarouselContent>
-        <CarouselPrevious />
-        <CarouselNext />
-      </Carousel>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom button variants', () => {
-    const { container } = render(
-      <Carousel>
-        <CarouselContent>
-          <CarouselItem>Slide 1</CarouselItem>
-        </CarouselContent>
-        <CarouselPrevious variant="outline" />
-        <CarouselNext variant="outline" />
-      </Carousel>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom button sizes', () => {
-    const { container } = render(
-      <Carousel>
-        <CarouselContent>
-          <CarouselItem>Slide 1</CarouselItem>
-        </CarouselContent>
-        <CarouselPrevious size="sm" />
-        <CarouselNext size="sm" />
-      </Carousel>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with complex slide content', () => {
-    const { container } = render(
-      <Carousel>
-        <CarouselContent>
-          <CarouselItem>
-            <div className="p-4">
-              <h3>Card Title</h3>
-              <p>Card description</p>
-            </div>
-          </CarouselItem>
-          <CarouselItem>
-            <div className="p-4">
-              <img src="image.jpg" alt="Image" />
-            </div>
-          </CarouselItem>
-        </CarouselContent>
-        <CarouselPrevious />
-        <CarouselNext />
-      </Carousel>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

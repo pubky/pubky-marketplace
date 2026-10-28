@@ -118,6 +118,20 @@ describe('import settings form schema', () => {
     });
   });
 
+  it('takes only a real ships-from country, and imports UK as GB', () => {
+    const complete = { ...importSettingsFormDefaults, shippingMode: 'free' as const };
+    for (const code of ['ZZ', 'XX', 'EU', 'USA']) {
+      const result = importSettingsFormSchema.safeParse({ ...complete, countryCode: code });
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0]?.message).toBe(
+        `"${code}" is not a country code. Use a two-letter code like CH or US.`,
+      );
+      expect(toImportSettings({ ...complete, countryCode: code }).countryCode).toBeNull();
+    }
+    expect(importSettingsFormSchema.safeParse({ ...complete, countryCode: 'uk' }).success).toBe(true);
+    expect(toImportSettings({ ...complete, countryCode: 'uk' }).countryCode).toBe('GB');
+  });
+
   it('requires a flat price in the currency, valid delivery days and a two-letter country', () => {
     const flat = { ...importSettingsFormDefaults, countryCode: 'US', shippingMode: 'flat' as const };
     expect(importSettingsFormSchema.safeParse(flat).success).toBe(false);

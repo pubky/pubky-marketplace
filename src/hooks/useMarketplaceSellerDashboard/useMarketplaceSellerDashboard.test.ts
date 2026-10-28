@@ -20,6 +20,7 @@ let localListings: Array<{
   format?: string;
   price_minor?: number;
   currency?: string;
+  registeredWithService?: boolean;
 }> = [];
 const adapter = vi.hoisted(() => ({ durable: false }));
 
@@ -839,5 +840,206 @@ describe('useMarketplaceSellerDashboard stock', () => {
     rerender();
     await waitFor(() => expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(2));
     ordersState.orders = [];
+  });
+
+  function startDurableDashboard() {
+    vi.clearAllMocks();
+    adapter.durable = true;
+    currentUserPubky = OWNER;
+    listingDraftRows = [];
+    const record = createCommerceListingFixture({ listingId: 'guide_01' });
+    const listing = { id: `${OWNER}:guide_01`, registeredWithService: false };
+    localListings = [{ ...listing, listing_id: 'guide_01', state: 'active', record }];
+    useCommerceStore.setState({
+      marketplaceSession: {
+        pubky: OWNER,
+        capabilities: '/pub/pubky.app/:rw',
+        issuedAt: '2026-10-15T00:00:00.000Z',
+        expiresAt: '2026-11-15T00:00:00.000Z',
+      },
+    });
+    vi.mocked(CommerceController.getListingsBySeller).mockResolvedValue(localListings as never);
+    return listing;
+  }
+
+  it('reads the stock of a listing that arrives after the first read, and nothing more while the listings stay the same', async () => {
+    startDurableDashboard();
+    vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(null);
+    const { result, rerender } = renderHook(() => useMarketplaceSellerDashboard());
+    await waitFor(() => expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(1));
+
+    localListings = [...localListings];
+    rerender();
+    await act(async () => undefined);
+    expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(1);
+
+    const synced = { id: `${OWNER}:guide_02`, registeredWithService: false };
+    localListings = [
+      ...localListings,
+      {
+        ...synced,
+        listing_id: 'guide_02',
+        state: 'active',
+        record: createCommerceListingFixture({ listingId: 'guide_02' }),
+      },
+    ];
+    vi.mocked(CommerceController.getListingsBySeller).mockResolvedValue(localListings as never);
+    rerender();
+
+    await waitFor(() =>
+      expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledWith(OWNER, 'guide_02'),
+    );
+    await waitFor(() => expect(result.current.canOfferRegistration(synced)).toBe(true));
+  });
+
+  it('shows no stock total and offers no registration until the service has answered for a listing', async () => {
+    const listing = startDurableDashboard();
+    let answer: (projection: null) => void = () => undefined;
+    vi.mocked(CommerceController.getMarketplaceListingProjection).mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+
+    const { result } = renderHook(() => useMarketplaceSellerDashboard());
+
+    await waitFor(() => expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalled());
+    expect(result.current.metrics.totalInventory).toBe('—');
+    expect(result.current.canOfferRegistration(listing)).toBe(false);
+
+    await act(async () => answer(null));
+
+    await waitFor(() => expect(result.current.canOfferRegistration(listing)).toBe(true));
+    expect(result.current.metrics.totalInventory).not.toBe('—');
+  });
+
+  it('does not offer registration for a listing the service holds, and knows its stock once it is cached', async () => {
+    const listing = startDurableDashboard();
+    vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(
+      createListingProjectionFixture({ aggregateId: `listing:${OWNER}_guide_01`, availableQuantity: 0 }),
+    );
+    vi.mocked(CommerceController.cacheMarketplaceListingProjection).mockImplementation(async () => {
+      localListings = localListings.map((row) => ({ ...row, registeredWithService: true }));
+    });
+
+    const { result, rerender } = renderHook(() => useMarketplaceSellerDashboard());
+
+    await waitFor(() => expect(CommerceController.cacheMarketplaceListingProjection).toHaveBeenCalled());
+    expect(result.current.metrics.totalInventory).toBe('—');
+    rerender();
+    expect(result.current.metrics.totalInventory).not.toBe('—');
+    expect(result.current.canOfferRegistration(listing)).toBe(false);
+  });
+
+  it("reads again when the tab regains focus after a failed read, instead of keeping the record's numbers", async () => {
+    const listing = startDurableDashboard();
+    vi.mocked(CommerceController.getMarketplaceListingProjection)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue(null);
+
+    const { result } = renderHook(() => useMarketplaceSellerDashboard());
+
+    await waitFor(() => expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(1));
+    expect(result.current.metrics.totalInventory).toBe('—');
+    expect(result.current.canOfferRegistration(listing)).toBe(false);
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.canOfferRegistration(listing)).toBe(true));
+  });
+
+  it('does not refetch on focus while every read succeeded', async () => {
+    startDurableDashboard();
+    vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(null);
+
+    const { result } = renderHook(() => useMarketplaceSellerDashboard());
+    await waitFor(() => expect(result.current.metrics.totalInventory).not.toBe('—'));
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a dash for a listing's stock until the service has answered, then the service's count", async () => {
+    startDurableDashboard();
+    let answer: (projection: ReturnType<typeof createListingProjectionFixture>) => void = () => undefined;
+    vi.mocked(CommerceController.getMarketplaceListingProjection).mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+
+    const { result } = renderHook(() => useMarketplaceSellerDashboard());
+
+    await waitFor(() => expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalled());
+    const [row] = localListings;
+    expect(
+      result.current.listingStockLabel({ ...row, registeredWithService: false, purchasableQuantity: null } as never),
+    ).toBe('—');
+
+    await act(async () =>
+      answer(createListingProjectionFixture({ aggregateId: `listing:${OWNER}_guide_01`, availableQuantity: 0 })),
+    );
+
+    await waitFor(() =>
+      expect(
+        result.current.listingStockLabel({ ...row, registeredWithService: true, purchasableQuantity: 0 } as never),
+      ).toBe('0'),
+    );
+  });
+
+  it('shows an unlimited listing as Unlimited without waiting for the service', async () => {
+    startDurableDashboard();
+    const record = createCommerceListingFixture({
+      listingId: 'guide_01',
+      fulfillmentMethods: ['digital'],
+      package: undefined,
+      shippingOptions: [],
+      variants: [
+        {
+          id: 'file',
+          options: { size: 'pdf' },
+          quantity: COMMERCE_LISTING_MAX_QUANTITY,
+          mediaIds: ['image_01'],
+          enabled: true,
+        },
+      ],
+    });
+    localListings = [
+      { id: `${OWNER}:guide_01`, listing_id: 'guide_01', state: 'active', record, registeredWithService: false },
+    ];
+    vi.mocked(CommerceController.getMarketplaceListingProjection).mockReturnValue(new Promise(() => undefined));
+
+    const { result } = renderHook(() => useMarketplaceSellerDashboard());
+
+    await waitFor(() => expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalled());
+    expect(result.current.listingStockLabel({ ...localListings[0], purchasableQuantity: null } as never)).toBe(
+      'Unlimited',
+    );
+    expect(result.current.metrics.totalInventory).toBe('Unlimited');
+  });
+
+  it('reads again when the tab becomes visible after a failed read', async () => {
+    const listing = startDurableDashboard();
+    vi.mocked(CommerceController.getMarketplaceListingProjection)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue(null);
+
+    const { result } = renderHook(() => useMarketplaceSellerDashboard());
+
+    await waitFor(() => expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(1));
+    expect(result.current.canOfferRegistration(listing)).toBe(false);
+
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    await waitFor(() => expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.canOfferRegistration(listing)).toBe(true));
   });
 });

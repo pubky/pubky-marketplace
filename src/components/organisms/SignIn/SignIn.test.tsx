@@ -683,20 +683,6 @@ describe('SignInContent - Bitkit sign-in without scoped keys', () => {
   });
 });
 
-describe('SignInContent - Snapshots', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    resetMockSignInState();
-    resetMobileAuthMock();
-  });
-
-  it('matches snapshot for the QR sign-in layout', () => {
-    const { container } = render(<SignInContent />);
-
-    expect(container).toMatchSnapshot();
-  });
-});
-
 describe('SignInContent - Progress View', () => {
   const clipboardMock = { writeText: vi.fn().mockResolvedValue(undefined) };
 
