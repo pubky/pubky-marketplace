@@ -73,24 +73,51 @@ function hasReceipt(order: { receiptId?: string | null }): boolean {
   return typeof order.receiptId === 'string' && order.receiptId.length > 0;
 }
 
-function isPaidOrReceiptedState(order: { state: string; receiptId?: string | null }): boolean {
-  return isPaidOrLaterState(order.state) || (order.state === 'cancelled' && hasReceipt(order));
+type OrderPayment = { state?: string | null; resolutionOutcome?: string | null } | null | undefined;
+
+/**
+ * A cancelled order whose payment was reviewed and closed `abandoned` (by the
+ * seller, or after seven days without them): money arrived and was never
+ * applied, so the order has no receipt but the seller may still owe a refund.
+ */
+export function isAbandonedReviewOrder(order: { state: string }, payment: OrderPayment): boolean {
+  return order.state === 'cancelled' && payment?.state === 'expired' && payment.resolutionOutcome === 'abandoned';
 }
 
-/** Buyer history = paid and later, plus cancelled rows that already have a receipt. */
+function isPaidOrReceiptedState(order: { state: string; receiptId?: string | null }, payment?: OrderPayment): boolean {
+  return (
+    isPaidOrLaterState(order.state) ||
+    (order.state === 'cancelled' && hasReceipt(order)) ||
+    isAbandonedReviewOrder(order, payment)
+  );
+}
+
+/** Buyer history = paid and later, plus cancelled rows that already have a receipt or received money. */
 export function isBuyerOrderHistory(
   order: { state: string; buyerPubky: string; receiptId?: string | null },
   buyerPubky: string | null,
+  payment?: OrderPayment,
 ): boolean {
-  return buyerPubky !== null && order.buyerPubky === buyerPubky && isPaidOrReceiptedState(order);
+  return buyerPubky !== null && order.buyerPubky === buyerPubky && isPaidOrReceiptedState(order, payment);
 }
 
-/** Unpaid checkout cancel only. A cancelled paid or pickup order keeps its receipt and stays an Order. */
+/**
+ * Unpaid checkout cancel only. A cancelled paid or pickup order keeps its
+ * receipt and stays an Order, and so does one whose money was reviewed and
+ * abandoned.
+ */
 export function isAbandonedCheckout(
   order: { state: string; buyerPubky: string; receiptId?: string | null },
   buyerPubky: string | null,
+  payment?: OrderPayment,
 ): boolean {
-  return buyerPubky !== null && order.buyerPubky === buyerPubky && order.state === 'cancelled' && !hasReceipt(order);
+  return (
+    buyerPubky !== null &&
+    order.buyerPubky === buyerPubky &&
+    order.state === 'cancelled' &&
+    !hasReceipt(order) &&
+    !isAbandonedReviewOrder(order, payment)
+  );
 }
 
 type SellerOrderRole = {
@@ -165,10 +192,14 @@ export function isSellerPaidOrder(
 export function isSellerSalesOrder(
   order: SellerOrderRole & { receiptId?: string | null },
   currentUserPubky: string | null,
-  payment?: { state?: string | null } | null,
+  payment?: OrderPayment,
 ): boolean {
   if (!isSellerParty(order, currentUserPubky)) return false;
-  return isPaidOrReceiptedState(order) || isSellerBoundBitcoinOrder(order) || isSellerUsdtReviewOrder(order, payment);
+  return (
+    isPaidOrReceiptedState(order, payment) ||
+    isSellerBoundBitcoinOrder(order) ||
+    isSellerUsdtReviewOrder(order, payment)
+  );
 }
 
 /** State pill for an order an Activity link opens but no Orders section lists (a seller's unpaid cancel). */
