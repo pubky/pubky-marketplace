@@ -67,6 +67,7 @@ import {
   refundRequiredCopyForRole,
   UNBOUND_BACK_CANCEL_REASON,
 } from '@/libs/commerce/checkout-hold';
+import { isAbandonedReviewOrder } from '@/libs/commerce/checkout-phase';
 import { hasInstantDigitalLines } from '@/libs/commerce/digital';
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
 import { formatCommerceMoney } from '@/libs/commerce/format';
@@ -297,6 +298,7 @@ export function MarketplacePaymentStatusCard({
   const lateCompletion = isLateCompletionOrder(order);
   const refundRequired = isRefundRequiredPayment(payment);
   const expiredNoLateMoney = isHoldExpiredNoLateMoney(order, payment);
+  const abandonedReview = isAbandonedReviewOrder(order, payment);
   const locksTerminalReason =
     isLocksPaykit && isBuyer && payment?.adapter === 'locks' && locks.admission?.kind === 'expired'
       ? locks.admission.reason
@@ -426,17 +428,23 @@ export function MarketplacePaymentStatusCard({
       {visibleStatus === 'expired' && order.gatewayPaymentSeenAt && !order.receiptId && (
         <PaypalSeenButUnconfirmed order={order} isBuyer={isBuyer} methodPayment={methodPayment} />
       )}
+      {abandonedReview && (
+        <Typography as="p" className="text-sm text-muted-foreground" data-testid="payment-review-abandoned">
+          {abandonedReviewCopy(isBuyer, payment.resolutionBasis)}
+        </Typography>
+      )}
       {visibleStatus === 'expired' &&
         !locksTerminalReason &&
         !isBuyerCancelledUnpaid(order) &&
-        !(order.gatewayPaymentSeenAt && !order.receiptId) && (
+        !(order.gatewayPaymentSeenAt && !order.receiptId) &&
+        !abandonedReview && (
           <Typography as="p" className="text-sm text-muted-foreground">
             {expiredNoLateMoney
               ? CHECKOUT_HOLD_COPY.expiredNoLateMoney
               : 'The marketplace payment window elapsed before a verified payment arrived, so this checkout was not completed. A payment verified after expiry is reconciled manually — never silently applied or discarded.'}
           </Typography>
         )}
-      {visibleStatus === 'expired' && expiredNoLateMoney && isBuyer && isPaykitRail && (
+      {visibleStatus === 'expired' && expiredNoLateMoney && !abandonedReview && isBuyer && isPaykitRail && (
         <Typography as="p" className="text-sm text-muted-foreground" data-testid="bitcoin-pending-payment-note">
           {CHECKOUT_HOLD_COPY.pendingBitcoinPaymentBuyer}
         </Typography>
@@ -444,6 +452,7 @@ export function MarketplacePaymentStatusCard({
       {visibleStatus === 'expired' &&
         isBuyer &&
         isPaykitRail &&
+        !abandonedReview &&
         order.paykitDeliveryState !== 'delivered' &&
         !isBuyerCancelledUnpaid(order) && (
           <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
@@ -1185,6 +1194,21 @@ function BuyerUsdtSellerWindow({ order }: { order: MarketplaceOrder }) {
       </Typography>
     </div>
   );
+}
+
+/**
+ * A payment that arrived but whose manual review ended `abandoned`: the order
+ * was cancelled without it, so the money is owed back. Says who closed the
+ * review: the seller, or the seven days without the seller's decision.
+ */
+function abandonedReviewCopy(isBuyer: boolean, basis: string | null | undefined): string {
+  const closed =
+    basis === 'seller_unresponsive'
+      ? 'its review closed after seven days without the seller\u2019s decision'
+      : 'the seller closed its review without completing the order';
+  return isBuyer
+    ? `Your payment arrived, but ${closed}, so the order was cancelled. The seller owes it back to you.`
+    : `The buyer\u2019s payment arrived, but ${closed}, so the order was cancelled. Return it to the buyer and record the refund.`;
 }
 
 function BuyerUsdtPaymentProgress({

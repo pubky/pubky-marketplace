@@ -305,3 +305,42 @@ describe('MarketplacePaymentStatusCard: seller resolution of a USDT payment in m
     expect(await screen.findByText(NO_ADDRESS_COPY, { selector: '#usdt-resolution-error' })).toBeInTheDocument();
   });
 });
+
+describe('MarketplacePaymentStatusCard: a USDT review that ended abandoned', () => {
+  function abandonedFixtures(basis: 'seller_unresponsive' | 'seller_attestation') {
+    const { order } = createUsdtOrderFixture('final', {
+      state: 'cancelled',
+      receiptId: null,
+      paymentFinality: null,
+      cancellationReason: 'closed after manual review',
+    });
+    const payment = createPaymentFixture('expired', {
+      adapter: 'paykit',
+      reviewReason: 'amount_mismatch',
+      resolutionOutcome: 'abandoned',
+      resolutionBasis: basis,
+    });
+    return { order, payment };
+  }
+
+  it.each([true, false])('says the money arrived and is owed back, never that it is awaited (buyer: %s)', (isBuyer) => {
+    renderCard(abandonedFixtures('seller_unresponsive'), { isBuyer });
+
+    expect(screen.getByTestId('payment-review-abandoned')).toHaveTextContent(
+      isBuyer
+        ? 'Your payment arrived, but its review closed after seven days without the seller’s decision, so the order was cancelled. The seller owes it back to you.'
+        : 'The buyer’s payment arrived, but its review closed after seven days without the seller’s decision, so the order was cancelled. Return it to the buyer and record the refund.',
+    );
+    expect(screen.getByTestId('usdt-phase-copy')).toHaveTextContent(/received but not applied/);
+    expect(screen.queryByText(/before a verified payment arrived/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Waiting for (your|the buyer's) USDT payment/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('usdt-amount-due')).not.toBeInTheDocument();
+  });
+
+  it('names the seller when the seller closed the review', () => {
+    renderCard(abandonedFixtures('seller_attestation'), { isBuyer: true });
+    expect(screen.getByTestId('payment-review-abandoned')).toHaveTextContent(
+      'the seller closed its review without completing the order',
+    );
+  });
+});

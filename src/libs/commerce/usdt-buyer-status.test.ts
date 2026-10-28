@@ -39,6 +39,15 @@ describe('usdtSettlementPhase', () => {
     expect(usdtSettlementPhase(order, createPaymentFixture('manual_review', { adapter: 'paykit' }))).toBe('review');
   });
 
+  it('names a received payment whose review ended abandoned, never as awaited', () => {
+    const { order } = createUsdtOrderFixture('final', { state: 'cancelled', receiptId: null, paymentFinality: null });
+    const abandoned = createPaymentFixture('expired', { resolutionOutcome: 'abandoned' });
+    expect(usdtSettlementPhase(order, abandoned)).toBe('abandoned');
+    expect(usdtPhaseCopy(order, abandoned, true)).toMatch(/^Your USDT payment was received but not applied/);
+    expect(usdtPhaseCopy(order, abandoned, false)).toMatch(/^The buyer's USDT payment was received but not applied/);
+    expect(usdtSettlementPhase(order, createPaymentFixture('expired'))).toBe('awaiting');
+  });
+
   it('is null for every order that is not a USDT order', () => {
     for (const method of ['bitcoin', 'paypal', null] as const) {
       const { order, payment } = createUsdtOrderFixture('final', { paymentMethod: method, paymentAsset: null });
@@ -67,6 +76,8 @@ describe('USDT status copy', () => {
       received: 'USDT payment received. The seller ships once Arbitrum finalizes it.',
       final: 'USDT payment confirmed',
       rechecking: "Your payment is being re-checked on Arbitrum. You don't need to do anything yet.",
+      abandoned:
+        'Your USDT payment was received but not applied to the order. Confirm a refund address so the seller can return it.',
     });
     expect(USDT_SELLER_PHASE_COPY).toEqual({
       awaiting: "Waiting for the buyer's USDT payment",
@@ -74,6 +85,8 @@ describe('USDT status copy', () => {
       received: "Payment received. Don't ship yet: Arbitrum hasn't finalized it. Shipping unlocks on its own.",
       final: 'Payment final. You can ship.',
       rechecking: "The buyer's payment is being re-checked on Arbitrum. Don't ship.",
+      abandoned:
+        "The buyer's USDT payment was received but not applied to the order. Return it to the refund address they confirm, then record the refund.",
     });
   });
 
