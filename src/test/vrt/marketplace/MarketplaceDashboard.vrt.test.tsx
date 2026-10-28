@@ -159,25 +159,35 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', () => ({
-  useMarketplaceSellerDashboard: () => ({
-    listings: view.listings,
-    sellerOrders: [],
-    offers: [],
-    isLoading: view.isLoading,
-    needsSession: false,
-    sessionError: null,
-    metrics: view.metrics,
-    actionNeeded: view.actionNeeded,
-    updateListingState: vi.fn(async () => false),
-    duplicateListing: vi.fn(async () => false),
-    hasUnsavedListingDraft: vi.fn(async () => null),
-    unfinishedDrafts: view.unfinishedDrafts,
-    discardListingDraft: vi.fn(async () => undefined),
-    resumeListingDraft: vi.fn(),
-    exportCsv: async () => new TextEncoder().encode('record_uri,seller_pubky\r\n'),
-  }),
-}));
+vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', async () => {
+  const { formatListingStock } = await vi.importActual<typeof import('@/libs/commerce/unlimited-stock')>(
+    '@/libs/commerce/unlimited-stock',
+  );
+  return {
+    useMarketplaceSellerDashboard: () => ({
+      listings: view.listings,
+      sellerOrders: [],
+      offers: [],
+      isLoading: view.isLoading,
+      needsSession: false,
+      sessionError: null,
+      metrics: view.metrics,
+      actionNeeded: view.actionNeeded,
+      updateListingState: vi.fn(async () => false),
+      duplicateListing: vi.fn(async () => false),
+      hasUnsavedListingDraft: vi.fn(async () => null),
+      unfinishedDrafts: view.unfinishedDrafts,
+      discardListingDraft: vi.fn(async () => undefined),
+      resumeListingDraft: vi.fn(),
+      canOfferRegistration: () => true,
+      listingStockLabel: (listing: {
+        record: Parameters<typeof formatListingStock>[0];
+        purchasableQuantity?: number | null;
+      }) => formatListingStock(listing.record, listing.purchasableQuantity ?? null),
+      exportCsv: async () => new TextEncoder().encode('record_uri,seller_pubky\r\n'),
+    }),
+  };
+});
 
 vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
   ContentLayout: ({ children }: { children: React.ReactNode }) => <main className="w-full py-6">{children}</main>,

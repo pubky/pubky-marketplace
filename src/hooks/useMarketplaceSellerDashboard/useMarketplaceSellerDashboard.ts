@@ -24,12 +24,22 @@ import {
 } from '@/libs/commerce/listing-drafts';
 import { listingPublishBlockToast } from '@/libs/commerce/listing-publish-guards';
 import { sumMoneyByAsset } from '@/libs/commerce/pricing';
-import { countableStockQuantity, isUnlimitedStock, UNLIMITED_STOCK_LABEL } from '@/libs/commerce/unlimited-stock';
+import {
+  countableStockQuantity,
+  formatListingStock,
+  isUnlimitedStock,
+  UNLIMITED_STOCK_LABEL,
+} from '@/libs/commerce/unlimited-stock';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
 const REVENUE_ORDER_STATES = ['paid', 'processing', 'shipped', 'delivered', 'completed'] as const;
+
+/** Shown in place of a listing's stock, and the stock total, while the service has not yet answered for it. */
+const STOCK_UNKNOWN_LABEL = '—';
+
+type LocalListing = Awaited<ReturnType<typeof CommerceController.getListingsBySeller>>[number];
 
 export function useMarketplaceSellerDashboard() {
   const [nowMs, setNowMs] = useState(0);
@@ -38,8 +48,10 @@ export function useMarketplaceSellerDashboard() {
   const catalogRefreshGeneration = useRef(0);
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const measurementSystem = useMeasurementSystem();
+  // Async on purpose: Dexie only follows reads past an `await` (the cached projections behind each row's
+  // stock) when the querier is itself an async function, so a cached answer from the service re-renders.
   const localListings = useLiveQuery(
-    () => (currentUserPubky ? CommerceController.getListingsBySeller(currentUserPubky) : []),
+    async () => (currentUserPubky ? await CommerceController.getListingsBySeller(currentUserPubky) : []),
     [currentUserPubky],
   );
   useEffect(() => {
@@ -67,12 +79,35 @@ export function useMarketplaceSellerDashboard() {
   const sellerOffers = offers.offers.filter(({ sellerPubky }) => sellerPubky === currentUserPubky);
   // The Inventory column shows the service's count, which moves with each
   // sale; the cached projection is only refreshed where a listing is opened.
-  // It is read again whenever a seller order moves or the session changes.
+  // It is read again whenever a seller order moves, the session changes, or a listing arrives or changes revision.
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
   const stockRefreshed = useRef<string | null>(null);
+  // Listings the service said it holds no projection for. A projection it does hold is cached instead, and the
+  // listings query reads it from there.
+  const [unregisteredIds, setUnregisteredIds] = useState<ReadonlySet<string>>(new Set());
+  // A read that failed (offline, a session the service had not yet accepted) is tried again when the tab
+  // regains focus, instead of leaving the dashboard on the record's own numbers until a reload.
+  const [stockRetry, setStockRetry] = useState(0);
+  const stockReadFailed = useRef(false);
+  useEffect(() => {
+    const retry = () => {
+      if (stockReadFailed.current) setStockRetry((attempt) => attempt + 1);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') retry();
+    };
+    window.addEventListener('focus', retry);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', retry);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, []);
   const stockKey = [
     currentUserPubky,
     marketplaceSession?.issuedAt,
+    stockRetry,
+    ...(localListings ?? []).map((listing) => `${listing.id}:${listing.revision}`),
     ...sellerOrders.map(({ order }) => `${order.id}:${order.revision}:${order.state}`),
   ].join('|');
   useEffect(() => {
@@ -81,13 +116,21 @@ export function useMarketplaceSellerDashboard() {
     if (stockRefreshed.current === stockKey) return;
     stockRefreshed.current = stockKey;
     const sellerPubky = currentUserPubky;
+    stockReadFailed.current = false;
     void (async () => {
       for (const listing of await CommerceController.getListingsBySeller(sellerPubky)) {
         try {
           const projection = await CommerceController.getMarketplaceListingProjection(sellerPubky, listing.listing_id);
           if (projection) await cacheProjection(projection);
+          setUnregisteredIds((ids) => {
+            if (ids.has(listing.id) === !projection) return ids;
+            const next = new Set(ids);
+            if (projection) next.delete(listing.id);
+            else next.add(listing.id);
+            return next;
+          });
         } catch {
-          // The column keeps the record's count until the next refresh.
+          stockReadFailed.current = true;
         }
       }
     })();
@@ -105,20 +148,36 @@ export function useMarketplaceSellerDashboard() {
   const offersAwaitingReply = sellerOffers.filter(
     ({ state, offeredBy }) => (state === 'pending' || state === 'countered') && offeredBy !== currentUserPubky,
   ).length;
+  const durable = isDurableCommerceMode(getCommerceAdapterMode());
+  // Whether the service has told this dashboard about the listing: a projection the listings query has read from
+  // the cache (never earlier, so the row can't show the record's own count in between), or an answer that it
+  // holds none.
+  const serviceAnswered = (listing: { id: string; registeredWithService: boolean }) =>
+    !durable || listing.registeredWithService || unregisteredIds.has(listing.id);
+  // Offered only once the service said it holds no projection: before that the dashboard does not know.
+  const canOfferRegistration = (listing: { id: string }) => !durable || unregisteredIds.has(listing.id);
+  const hasUnlimitedStock = (listing: LocalListing) =>
+    listing.record.variants.some((variant) => isUnlimitedStock(listing.record, variant.quantity));
+  // Unlimited stock is the record's own setting; a finite count is the service's, so it waits for an answer.
+  const isStockKnown = (listing: LocalListing) => hasUnlimitedStock(listing) || serviceAnswered(listing);
+  const listingStockLabel = (listing: LocalListing) =>
+    isStockKnown(listing) ? formatListingStock(listing.record, listing.purchasableQuantity) : STOCK_UNKNOWN_LABEL;
+  const stockKnown = activeListings.every(isStockKnown);
   const finiteInventory = activeListings.reduce((total, listing) => {
     const record = listing.record;
-    const unlimited = record.variants.some((variant) => isUnlimitedStock(record, variant.quantity));
-    if (unlimited) return total + countableStockQuantity(record);
+    if (hasUnlimitedStock(listing)) return total + countableStockQuantity(record);
     return (
       total +
       (listing.purchasableQuantity ??
         record.variants.reduce((sum, variant) => sum + (variant.enabled ? variant.quantity : 0), 0))
     );
   }, 0);
-  const unlimitedActive = activeListings.some((listing) =>
-    listing.record.variants.some((variant) => isUnlimitedStock(listing.record, variant.quantity)),
-  );
-  const totalInventory = finiteInventory === 0 && unlimitedActive ? UNLIMITED_STOCK_LABEL : finiteInventory;
+  const unlimitedActive = activeListings.some(hasUnlimitedStock);
+  const totalInventory = !stockKnown
+    ? STOCK_UNKNOWN_LABEL
+    : finiteInventory === 0 && unlimitedActive
+      ? UNLIMITED_STOCK_LABEL
+      : finiteInventory;
   // One revenue figure per pricing asset: minor units of different assets
   // (USD cents, bitcoin base units) are never summed into one false number.
   const revenueOrders = sellerOrders.filter(({ order }) =>
@@ -287,6 +346,8 @@ export function useMarketplaceSellerDashboard() {
     },
     updateListingState,
     retryListingRegistration,
+    canOfferRegistration,
+    listingStockLabel,
     duplicateListing,
     hasUnsavedListingDraft,
     unfinishedDrafts,

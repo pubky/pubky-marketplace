@@ -38,6 +38,8 @@ const dashboardState = vi.hoisted(() => ({
   unfinishedDrafts: [] as Array<{ listingId: string; title: string; updatedAt: number; ageLabel: string }>,
   needsSession: false,
   sessionError: null as string | null,
+  registrationOffered: true,
+  stockUnknown: false,
 }));
 
 vi.mock('next/navigation', () => ({
@@ -60,26 +62,37 @@ vi.mock('@/hooks/useIsMobile/useIsMobile', () => ({
   useIsMobile: () => viewport.isMobile,
 }));
 
-vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', () => ({
-  useMarketplaceSellerDashboard: () => ({
-    listings: dashboardState.listings,
-    nowMs: dashboardState.nowMs,
-    sellerOrders: [],
-    offers: [],
-    isLoading: false,
-    needsSession: dashboardState.needsSession,
-    sessionError: dashboardState.sessionError,
-    metrics: dashboardState.metrics,
-    actionNeeded: dashboardState.actionNeeded,
-    updateListingState: dashboardFns.updateListingState,
-    duplicateListing: dashboardFns.duplicateListing,
-    hasUnsavedListingDraft: dashboardFns.hasUnsavedListingDraft,
-    unfinishedDrafts: dashboardState.unfinishedDrafts,
-    discardListingDraft: dashboardFns.discardListingDraft,
-    resumeListingDraft: dashboardFns.resumeListingDraft,
-    exportCsv: async () => new TextEncoder().encode('record_uri,seller_pubky\r\n'),
-  }),
-}));
+vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', async () => {
+  const { formatListingStock } = await vi.importActual<typeof import('@/libs/commerce/unlimited-stock')>(
+    '@/libs/commerce/unlimited-stock',
+  );
+  return {
+    useMarketplaceSellerDashboard: () => ({
+      listings: dashboardState.listings,
+      nowMs: dashboardState.nowMs,
+      sellerOrders: [],
+      offers: [],
+      isLoading: false,
+      needsSession: dashboardState.needsSession,
+      sessionError: dashboardState.sessionError,
+      metrics: dashboardState.metrics,
+      actionNeeded: dashboardState.actionNeeded,
+      updateListingState: dashboardFns.updateListingState,
+      duplicateListing: dashboardFns.duplicateListing,
+      hasUnsavedListingDraft: dashboardFns.hasUnsavedListingDraft,
+      unfinishedDrafts: dashboardState.unfinishedDrafts,
+      discardListingDraft: dashboardFns.discardListingDraft,
+      resumeListingDraft: dashboardFns.resumeListingDraft,
+      canOfferRegistration: () => dashboardState.registrationOffered,
+      listingStockLabel: (listing: {
+        record: Parameters<typeof formatListingStock>[0];
+        purchasableQuantity?: number | null;
+      }) =>
+        dashboardState.stockUnknown ? '—' : formatListingStock(listing.record, listing.purchasableQuantity ?? null),
+      exportCsv: async () => new TextEncoder().encode('record_uri,seller_pubky\r\n'),
+    }),
+  };
+});
 
 vi.mock('@/organisms/Marketplace/MarketplaceSessionConnectDialog', () => ({
   MarketplaceSessionConnectDialog: ({ triggerLabel, autoOpen }: { triggerLabel?: string; autoOpen?: boolean }) => (
@@ -603,6 +616,28 @@ describe('MarketplaceDashboard state changes without a marketplace session', () 
 describe('MarketplaceDashboard registration for checkout', () => {
   beforeEach(() => {
     viewport.isMobile = false;
+    dashboardState.registrationOffered = true;
+    dashboardState.stockUnknown = false;
+  });
+
+  it("shows the listing's stock as a dash while the service has not answered for it", () => {
+    dashboardState.listings = [{ ...listing({ title: 'Boots' }), registeredWithService: false }];
+    dashboardState.stockUnknown = true;
+
+    render(<MarketplaceDashboard />);
+
+    const cells = within(screen.getByRole('row', { name: /Boots/ })).getAllByRole('cell');
+    expect(cells.map((cell) => cell.textContent)).toContain('—');
+  });
+
+  it('offers nothing until the service has answered for the listing', () => {
+    dashboardState.listings = [{ ...listing({ title: 'Boots' }), registeredWithService: false }];
+    dashboardState.registrationOffered = false;
+
+    render(<MarketplaceDashboard />);
+
+    expect(screen.getByRole('row', { name: /Boots/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Register for checkout' })).not.toBeInTheDocument();
   });
 
   it('offers Register for checkout for a listing the service does not hold', () => {
