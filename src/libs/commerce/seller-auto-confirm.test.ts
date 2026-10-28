@@ -5,7 +5,9 @@ import { autoConfirmableRail, mayAwaitSellerConfirmation } from './seller-auto-c
 
 const SELLER = 's'.repeat(52);
 
-function waitingPaykit(observation: MarketplaceOrder['paykitObservation'] = { amountMatched: true, disappeared: false }) {
+function waitingPaykit(
+  observation: MarketplaceOrder['paykitObservation'] = { amountMatched: true, disappeared: false },
+) {
   return createOrderFixture('pending_payment', {
     sellerPubky: SELLER,
     paymentMethod: 'paykit',
