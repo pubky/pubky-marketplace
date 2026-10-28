@@ -8,7 +8,8 @@ import type { PaymentFinality } from './usdt-settlement-contract';
 
 /**
  * Buyer and seller copy for a USDT order (docs/ecommerce/usdt-payments.md).
- * USDT is paid at verified inclusion; physical fulfilment waits for Arbitrum
+ * USDT is paid at verified inclusion, or at the seller's confirmation on a
+ * seller-confirmed order (`seen` until then); physical fulfilment waits for Arbitrum
  * to finalize. This table is rail-keyed on purpose: the Bitcoin tables in
  * `bitcoin-buyer-status.ts` keep their exact strings and nothing here is a
  * substitution of them.

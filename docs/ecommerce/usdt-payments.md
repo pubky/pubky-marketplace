@@ -94,7 +94,7 @@ The "send it back to the address I paid from" choice appears only when the order
 
 ## Resolving a USDT payment in manual review (W5)
 
-A USDT payment can land in manual review (late, or an amount that does not match). The seller resolves it from the order's payment status card with the same three outcomes and the same endpoint as Bitcoin: `POST /v0/orders/{id}/bitcoin/resolve` with an `Idempotency-Key`, which the service's S6 slice widens from Bitcoin to USDT orders. The seller-confirmation step (`confirm-bitcoin-payment`) stays Bitcoin-only: USDT is paid at inclusion and has no such step.
+A USDT payment can land in manual review (late, or an amount that does not match). The seller resolves it from the order's payment status card with the same three outcomes and the same endpoint as Bitcoin: `POST /v0/orders/{id}/bitcoin/resolve` with an `Idempotency-Key`, which the service's S6 slice widens from Bitcoin to USDT orders. On a seller-confirmed order (`payment_confirmation: seller`, the service's default) an included, on-time transfer of the offered amount waits for the seller instead of paying: both parties see it as _Payment seen_, and the seller confirms it with the same `confirm-bitcoin-payment` step and card as Bitcoin. On an automatic order USDT is paid at inclusion and has no such step.
 
 The panel renders for any order whose projection carries `paymentAsset: "USDT"` (or the `usdt` method), seller only, Paykit payment in `manual_review`, whatever the new-offer flag says: an existing USDT order is never stranded. The Bitcoin panel and its schema are unchanged; the rail picks which one a hook and a card use (`paymentReviewRail`).
 
