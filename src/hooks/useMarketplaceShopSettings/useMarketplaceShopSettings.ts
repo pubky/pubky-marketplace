@@ -16,6 +16,7 @@ import {
 } from '@/libs/commerce/failure-messages';
 import type { CommerceShopRecord } from '@/libs/commerce/marketplace-records';
 import { SELLING_BLOCKED_COUNTRY_MESSAGE } from '@/libs/commerce/region-modes';
+import { isAssignedCountryCode, publishedCountryCode } from '@/libs/commerce/ships-to';
 import { hasHttpStatus, HOMESERVER_WRITE_SCOPE_REMEDY, isHomeserverWriteScopeError } from '@/libs/error/error.utils';
 import { stripImageMetadata } from '@/libs/image/stripImageMetadata';
 import { getRegionPolicy } from '@/libs/runtime-config/runtime-config';
@@ -46,7 +47,7 @@ export function sellerStatusConfirmedAtToPublish(input: {
 }
 
 function normalizeCountryCode(code: string | null | undefined): string {
-  return (code ?? '').trim().toUpperCase();
+  return publishedCountryCode(code ?? '');
 }
 
 export type ShopImageSlotError = 'invalid-type' | 'too-large';
@@ -248,8 +249,11 @@ export function useMarketplaceShopSettings() {
   const client = useClientRegion();
   const countryChange = evaluateShopCountryChange(getRegionPolicy(), client);
   const savedCountry = normalizeCountryCode(existingRecord?.location.countryCode);
-  // A shop that already has a country keeps it while the visitor can't be shown to be outside the block.
-  const countryLockedMessage = savedCountry !== '' && countryChange.status !== 'open' ? countryChange.message : null;
+  // A shop that already has a country keeps it while the visitor can't be shown to be outside the block. A saved
+  // code that names no country (the field once took any two letters) counts as none: the field would refuse it,
+  // so locking it would leave the seller unable to save anything.
+  const countryLockedMessage =
+    isAssignedCountryCode(savedCountry) && countryChange.status !== 'open' ? countryChange.message : null;
 
   const submit = async () => {
     if (!currentUserPubky || isLoading || loadError || isSaving) return false;
@@ -310,7 +314,7 @@ export function useMarketplaceShopSettings() {
           updatedAt: now,
           name: data.name,
           bio: data.bio,
-          location: { countryCode: data.countryCode.toUpperCase(), region: data.region || undefined },
+          location: { countryCode: publishedCountryCode(data.countryCode), region: data.region || undefined },
           avatarUrl,
           bannerUrl,
           shippingPolicy: data.shippingPolicy,

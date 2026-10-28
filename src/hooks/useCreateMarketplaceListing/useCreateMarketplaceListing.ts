@@ -45,6 +45,7 @@ import {
   type CommerceAsset,
   listingCurrencyChoiceForAsset,
 } from '@/libs/commerce/pricing';
+import { publishedCountryCode } from '@/libs/commerce/ships-to';
 import {
   dimensionInputFromMillimeters,
   gramsFromWeightInput,
@@ -732,7 +733,7 @@ function buildListingRecord(
     condition: data.condition,
     tags: deriveTags(data.title),
     location: {
-      countryCode: data.countryCode.toUpperCase(),
+      countryCode: publishedCountryCode(data.countryCode),
       region: data.region || undefined,
     },
     media,

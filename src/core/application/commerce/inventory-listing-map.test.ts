@@ -30,6 +30,51 @@ describe('mapCanonicalRowsToListing', () => {
     }
   });
 
+  it('publishes an imported UK as GB, from the country_code field and from location_json', () => {
+    const record = createCommerceListingFixture();
+    const [row] = listingToCanonicalRows(record);
+    const media_json = JSON.stringify(record.media);
+    for (const extraFields of <Array<Record<string, string>>>[
+      { country_code: 'uk', media_json },
+      { location_json: JSON.stringify({ countryCode: 'UK', region: 'London' }), media_json },
+    ]) {
+      const mapped = mapCanonicalRowsToListing([{ ...row!, extraFields }], record.ownerPubky);
+      expect(mapped.ok).toBe(true);
+      if (mapped.ok) expect(mapped.record.location.countryCode).toBe('GB');
+    }
+  });
+
+  it('publishes UK as GB and refuses a code that names no country in record_json too', () => {
+    const uk = createCommerceListingFixture({ location: { countryCode: 'UK' } });
+    const mapped = mapCanonicalRowsToListing(listingToCanonicalRows(uk), uk.ownerPubky);
+    expect(mapped.ok).toBe(true);
+    if (mapped.ok) {
+      expect(mapped.record.location.countryCode).toBe('GB');
+      expect(mapped.record.revision).toBe(uk.revision + 1);
+    }
+
+    const zz = createCommerceListingFixture({ location: { countryCode: 'ZZ' } });
+    expect(mapCanonicalRowsToListing(listingToCanonicalRows(zz), zz.ownerPubky)).toEqual({
+      ok: false,
+      message: '"ZZ" is not a country code. Use a two-letter code like CH or US.',
+    });
+  });
+
+  it('refuses an imported country code that names no country', () => {
+    const record = createCommerceListingFixture();
+    const [row] = listingToCanonicalRows(record);
+    const media_json = JSON.stringify(record.media);
+    for (const extraFields of <Array<Record<string, string>>>[
+      { country_code: 'ZZ', media_json },
+      { location_json: JSON.stringify({ countryCode: 'ZZ' }), media_json },
+    ]) {
+      expect(mapCanonicalRowsToListing([{ ...row!, extraFields }], record.ownerPubky)).toEqual({
+        ok: false,
+        message: '"ZZ" is not a country code. Use a two-letter code like CH or US.',
+      });
+    }
+  });
+
   it('refuses a row-built listing with no photo using the photo message', () => {
     const record = createCommerceListingFixture();
     const [row] = listingToCanonicalRows(record);

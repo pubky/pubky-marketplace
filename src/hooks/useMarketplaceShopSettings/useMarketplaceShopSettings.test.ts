@@ -132,6 +132,44 @@ describe('useMarketplaceShopSettings', () => {
     expect(result.current.hasShop).toBe(true);
   });
 
+  it('publishes an alias such as UK as its ISO code, so the region policy and the service see GB', async () => {
+    const { result } = renderHook(() => useMarketplaceShopSettings());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => {
+      result.current.form.setValue('name', 'Satoshi Vintage');
+      result.current.form.setValue('countryCode', 'uk');
+      result.current.form.setValue('shippingPolicy', 'Ships within a week.');
+      result.current.form.setValue('returnPolicy', 'Returns within 14 days.');
+      result.current.form.setValue('sellerStatus', 'private');
+    });
+    await act(() => result.current.submit());
+
+    expect(CommerceController.commitUpsertShop).toHaveBeenCalledWith(
+      expect.objectContaining({ location: { countryCode: 'GB', region: undefined } }),
+    );
+  });
+
+  it('refuses a country that is two letters but not a country, and publishes nothing', async () => {
+    const { result } = renderHook(() => useMarketplaceShopSettings());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => {
+      result.current.form.setValue('name', 'Satoshi Vintage');
+      result.current.form.setValue('countryCode', 'ZZ');
+      result.current.form.setValue('shippingPolicy', 'Ships within a week.');
+      result.current.form.setValue('returnPolicy', 'Returns within 14 days.');
+      result.current.form.setValue('sellerStatus', 'private');
+    });
+    const succeeded = await act(() => result.current.submit());
+
+    expect(succeeded).toBe(false);
+    expect(CommerceController.commitUpsertShop).not.toHaveBeenCalled();
+    expect(result.current.form.getFieldState('countryCode').error?.message).toBe(
+      '"ZZ" is not a country code. Use a two-letter code like CH or US.',
+    );
+  });
+
   it('refuses to publish a first shop until the seller has chosen a country and written the policies', async () => {
     const { result } = renderHook(() => useMarketplaceShopSettings());
     await waitFor(() => expect(result.current.isLoading).toBe(false));

@@ -427,6 +427,16 @@ describe('isCreateMarketplaceListingPublishReady', () => {
     expect(createMarketplaceListingPublishChecklist(noCountry, 1)).toEqual(['Country']);
   });
 
+  it.each(['ZZ', 'XX', 'QQ', 'EU', 'Swiss'])('refuses %s as a listing country: it must be a real country', (code) => {
+    const result = createMarketplaceListingSchema.safeParse({ ...physicalReady, countryCode: code });
+    expect(result.success).toBe(false);
+    expect(createMarketplaceListingPublishChecklist({ ...physicalReady, countryCode: code }, 1)).toEqual(['Country']);
+  });
+
+  it.each(['CF', 'ch', 'UK'])('accepts %s as a listing country', (code) => {
+    expect(createMarketplaceListingSchema.safeParse({ ...physicalReady, countryCode: code }).success).toBe(true);
+  });
+
   it('lists description and shipping until they satisfy the schema', () => {
     expect(createMarketplaceListingPublishChecklist({ ...pickupReady, description: '' }, 1)).toContain('Description');
     expect(createMarketplaceListingPublishChecklist({ ...pickupReady, fulfillment: 'shipping' }, 1)).toContain(
