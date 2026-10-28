@@ -275,16 +275,47 @@ describe('MarketplacePaymentStatusCard — one Paykit order after payment', () =
     expect(screen.getByTestId('payment-manual-review-copy')).toHaveTextContent(PAYMENT_RECEIVED_REVIEW_COPY);
   });
 
-  it('offers a seller no Bitcoin confirmation for a USDT payment', () => {
+  it('asks the seller to confirm a USDT payment that waits for them, in USDT', () => {
+    const { order } = createPaykitOrderFixture('paid-usdt');
+    renderCard(
+      {
+        order: {
+          ...order,
+          state: 'pending_payment',
+          paykitRequestState: 'awaiting_seller_confirmation',
+          paymentConfirmation: 'seller',
+          paykitObservation: {
+            txid: `0x${'9f2c'.repeat(16)}`,
+            asset: 'USDT',
+            observedUnits: 137_000_000,
+            confirmations: 1,
+            amountMatched: true,
+            disappeared: false,
+          },
+        },
+        payment: createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' }),
+      },
+      false,
+    );
+
+    expect(screen.getByTestId('seller-bitcoin-confirm-prompt')).toHaveTextContent(
+      'Confirm you received 137.000000 USDT',
+    );
+    expect(screen.getByText('137.000000 USDT', { selector: 'dd' })).toBeInTheDocument();
+    expect(screen.getByTestId('usdt-phase-copy')).toHaveTextContent(USDT_SELLER_PHASE_COPY.seen);
+  });
+
+  it('tells the buyer a USDT payment waits for the seller', () => {
     const { order } = createPaykitOrderFixture('paid-usdt');
     renderCard(
       {
         order: { ...order, state: 'pending_payment', paykitRequestState: 'awaiting_seller_confirmation' },
         payment: createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' }),
       },
-      false,
+      true,
     );
 
+    expect(screen.getByTestId('usdt-phase-copy')).toHaveTextContent(USDT_BUYER_PHASE_COPY.seen);
     expect(screen.queryByTestId('seller-bitcoin-confirm-prompt')).not.toBeInTheDocument();
   });
 });

@@ -336,6 +336,7 @@ export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, str
   ['paykit_unavailable', PAYKIT_OUTAGE_COPY.title],
   ['payment_method_already_bound', 'A payment method is already bound to this checkout.'],
   ['payment_not_awaiting', 'The payment is no longer awaiting a method.'],
+  ['payment_taken_back', 'PayPal reports this payment refunded or reversed, so it can’t be confirmed as received.'],
   ['payments_disabled', 'Payments are disabled on this marketplace.'],
   ['REVISION_CONFLICT', MARKETPLACE_FAILURE_MESSAGES.paymentChanged],
   ['revision_conflict', MARKETPLACE_FAILURE_MESSAGES.paymentChanged],

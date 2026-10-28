@@ -717,6 +717,35 @@ describe('marketplace order projection — PayPal refund notification fields', (
   });
 });
 
+describe('marketplace order projection — seller-confirmed payment', () => {
+  const wire = (values: Record<string, unknown>) => ({
+    ...createOrderFixture('pending_payment'),
+    ...(toCamelCaseWire(values) as Record<string, unknown>),
+  });
+
+  it('reads who confirms the payment and when PayPal reported it', () => {
+    const parsed = marketplaceOrderSchema.parse(
+      wire({ payment_confirmation: 'seller', gateway_payment_seen_at: '2026-10-28T09:00:00.000Z' }),
+    );
+    expect(parsed.paymentConfirmation).toBe('seller');
+    expect(parsed.gatewayPaymentSeenAt).toBe('2026-10-28T09:00:00.000Z');
+    expect(marketplaceOrderSchema.parse(wire({ payment_confirmation: 'automatic' })).paymentConfirmation).toBe(
+      'automatic',
+    );
+  });
+
+  it('reads an older service without the fields, and drops a malformed value without failing the order', () => {
+    const older = marketplaceOrderSchema.parse(wire({}));
+    expect(older.paymentConfirmation ?? null).toBeNull();
+    expect(older.gatewayPaymentSeenAt ?? null).toBeNull();
+    const malformed = marketplaceOrderSchema.parse(
+      wire({ payment_confirmation: 'service', gateway_payment_seen_at: 7 }),
+    );
+    expect(malformed.paymentConfirmation).toBeNull();
+    expect(malformed.gatewayPaymentSeenAt).toBeNull();
+  });
+});
+
 describe('marketplace order projection — seller periods and the optional guarantee version', () => {
   const wire = (values: Record<string, unknown>) => ({
     ...createOrderFixture('shipped'),

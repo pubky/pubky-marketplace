@@ -18,6 +18,8 @@ const ACTION_ACTIVITY_TYPES = new Set<MarketplaceNotification['type']>([
   'payment_refund_required',
   'bitcoin_manual_review',
   'bitcoin_payment_seen',
+  'usdt_payment_seen',
+  'paypal_payment_seen',
   'payment_reversal_cancelled',
 ]);
 
@@ -33,6 +35,8 @@ const ORDER_ACTION_TYPES = new Set<MarketplaceNotification['type']>([
   'payment_refund_required',
   'bitcoin_manual_review',
   'bitcoin_payment_seen',
+  'usdt_payment_seen',
+  'paypal_payment_seen',
   'payment_reversal_cancelled',
 ]);
 

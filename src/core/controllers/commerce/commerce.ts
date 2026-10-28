@@ -63,6 +63,7 @@ import { buyerCountryFor, useBuyerCountryStore } from '@/stores/buyer-country/bu
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import type { CommerceConditionFilter, CommerceSaleFormatFilter, CommerceSort } from '@/stores/commerce/commerce.types';
 import { useNotificationStore } from '@/stores/notification/notification.store';
+import { useSellerPaymentConfirmStore } from '@/stores/seller-payment-confirm/seller-payment-confirm.store';
 
 /** Rates for an order, or why this device could not open the address to quote against. */
 export type ShippingRatesResult =
@@ -1466,6 +1467,28 @@ export class CommerceController {
   /** Whether USDT may be offered: the Shop flag AND the service capability. A failed read rejects. */
   static async fetchUsdtPaymentsAvailable(): Promise<boolean> {
     return await CommerceApplication.fetchUsdtPaymentsAvailable();
+  }
+
+  /** Turns this browser's automatic confirmation of the signed-in seller's matching payments on or off. */
+  static setSellerPaymentAutoConfirm(enabled: boolean): void {
+    useSellerPaymentConfirmStore.getState().setAutoConfirm(this.getCurrentUserPubky(), enabled);
+  }
+
+  /**
+   * One pass of the seller's automatic confirmation, when the signed-in seller
+   * turned it on in this browser and the durable service is in use. Returns the
+   * order ids it confirmed; a signed-out or opted-out session confirms nothing.
+   */
+  static async autoConfirmSellerPayments(): Promise<string[]> {
+    if (!isDurableCommerceMode(getCommerceAdapterMode())) return [];
+    const pubky = useAuthStore.getState().currentUserPubky;
+    if (!pubky || useSellerPaymentConfirmStore.getState().autoConfirmByPubky[pubky] !== true) return [];
+    return await CommerceApplication.autoConfirmSellerPayments(pubky);
+  }
+
+  /** Who marks orders paid on this deployment (`seller` | `automatic`); null when unknown. A failed read rejects. */
+  static async fetchPaymentConfirmationMode(): Promise<'seller' | 'automatic' | null> {
+    return await CommerceApplication.fetchPaymentConfirmationMode();
   }
 
   /**

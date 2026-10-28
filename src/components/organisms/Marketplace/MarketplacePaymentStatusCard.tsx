@@ -68,6 +68,7 @@ import {
   UNBOUND_BACK_CANCEL_REASON,
 } from '@/libs/commerce/checkout-hold';
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
+import { formatCommerceMoney } from '@/libs/commerce/format';
 import {
   LOCKS_ADMISSION_COPY,
   locksAdmissionFailureCopy,
@@ -98,6 +99,7 @@ import {
   bitcoinWalletUnsupportedBody,
   bitcoinWalletUnverifiedBody,
 } from '@/libs/commerce/paykit-wallet';
+import { formatUsdt } from '@/libs/commerce/payment-options';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import { buildMarketplaceOrderAggregateId } from '@/libs/commerce/transaction-commands';
 import {
@@ -106,6 +108,7 @@ import {
   USDT_FINALITY_EXPECTATION_COPY,
   USDT_FUNDS_HINT,
   USDT_WALLET_HINT,
+  usdtAmountLabel,
   usdtFulfilmentWaitsForFinality,
   usdtPhaseCopy,
   usdtSellerReviewCopy,
@@ -450,11 +453,11 @@ export function MarketplacePaymentStatusCard({
 
       {isDurable &&
         isSeller &&
-        mayPayInBitcoin(order) &&
+        (mayPayInBitcoin(order) || rail === 'usdt') &&
         payment.adapter === 'paykit' &&
         order.paykitRequestState === 'awaiting_seller_confirmation' && (
           <SellerBitcoinConfirmationReview
-            prompt={sellerBitcoinConfirmPrompt(order)}
+            prompt={rail === 'usdt' ? sellerUsdtConfirmPrompt(order) : sellerBitcoinConfirmPrompt(order)}
             observation={order.paykitObservation ?? null}
             deadline={order.paykitSellerConfirmationDeadline}
             form={sellerReview.confirmForm}
@@ -751,18 +754,33 @@ export function MarketplacePaymentStatusCard({
           remain as the fallback when no notification arrives. */}
       {usesMethodFlow && isBuyer && order.paymentMethod === 'paypal' && order.fiatCheckoutUrl && (
         <div className="grid gap-4">
-          {formatOrderInstant(order.holdExpiresAt) && (
+          {!order.gatewayPaymentSeenAt && formatOrderInstant(order.holdExpiresAt) && (
             <Typography as="p" className="text-sm text-muted-foreground">
               Pay by {formatOrderInstant(order.holdExpiresAt)} to keep your reservation.
             </Typography>
           )}
-          {order.paymentReportedAt ? (
+          {order.gatewayPaymentSeenAt ? (
+            <div className="grid gap-1" role="status" data-testid="paypal-payment-seen-buyer">
+              <Typography as="p" className="text-sm font-semibold">
+                PayPal reported your payment
+              </Typography>
+              <Typography as="p" className="text-sm text-muted-foreground">
+                {PAYPAL_SEEN_BUYER_COPY}
+                {formatOrderInstant(order.holdExpiresAt)
+                  ? ` Your item stays reserved until ${formatOrderInstant(order.holdExpiresAt)}.`
+                  : ''}
+              </Typography>
+              {checkoutActions}
+            </div>
+          ) : order.paymentReportedAt ? (
             <div className="grid gap-1" role="status">
               <Typography as="p" className="text-sm font-semibold">
                 Payment reported
               </Typography>
               <Typography as="p" className="text-sm text-muted-foreground">
-                Waiting for PayPal or the seller to confirm receipt. You don&rsquo;t need to pay again.
+                {order.paymentConfirmation === 'seller'
+                  ? 'Waiting for the seller to confirm receipt. You don\u2019t need to pay again.'
+                  : 'Waiting for PayPal or the seller to confirm receipt. You don\u2019t need to pay again.'}
               </Typography>
               {order.fiatTransactionRef && (
                 <Typography as="p" className="text-sm break-all text-muted-foreground">
@@ -833,35 +851,7 @@ export function MarketplacePaymentStatusCard({
 
       {/* Seller side: the PayPal receipt confirmation is what pays the order. */}
       {usesMethodFlow && !isBuyer && order.paymentMethod === 'paypal' && (
-        <div className="grid gap-2">
-          {order.paymentReportedAt ? (
-            <>
-              <Typography as="p" className="text-sm text-muted-foreground">
-                The buyer reported a PayPal payment
-                {order.fiatTransactionRef ? ` (ref ${order.fiatTransactionRef})` : ''}. Check your PayPal account;
-                confirming receipt marks this order paid.
-              </Typography>
-              <Button
-                size="sm"
-                className="w-fit rounded-full"
-                disabled={methodPayment.pendingAction !== null}
-                onClick={() => void methodPayment.confirmReceived()}
-              >
-                {methodPayment.pendingAction === 'confirm' ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="size-4" />
-                )}
-                Confirm payment received
-              </Button>
-            </>
-          ) : (
-            <Typography as="p" className="text-sm text-muted-foreground">
-              Awaiting the buyer&rsquo;s PayPal payment. PayPal&rsquo;s notification usually completes the order
-              automatically; if the buyer reports the payment instead, you will be asked to confirm receipt.
-            </Typography>
-          )}
-        </div>
+        <SellerPaypalConfirmation order={order} methodPayment={methodPayment} />
       )}
 
       {isLocksPaykit && isBuyer && isAwaiting && digitalLock && !locks.correlation && (
@@ -1199,6 +1189,74 @@ function BuyerUsdtPaymentProgress({
   );
 }
 
+const PAYPAL_SEEN_BUYER_COPY =
+  'The seller checks their PayPal account and confirms receipt, then your order is paid. You don\u2019t need to pay again.';
+
+/** The amount a Paykit observation saw, on the rail it saw it: Bitcoin in sats, USDT in USDT. */
+function observedAmountFact(observation: NonNullable<MarketplaceOrder['paykitObservation']>): string | null {
+  if (observation.asset === 'USDT') {
+    const units = Number(observation.observedUnits);
+    return Number.isSafeInteger(units) && units >= 0 ? formatUsdt(units) : null;
+  }
+  return observation.observedSats == null ? null : formatBitcoinAmount(observation.observedSats);
+}
+
+function sellerUsdtConfirmPrompt(order: MarketplaceOrder): string {
+  const amount = usdtAmountLabel(order);
+  return amount ? `Confirm you received ${amount}` : 'Confirm you received this USDT payment';
+}
+
+/**
+ * The seller's PayPal step. On a seller-confirmed order PayPal's verified
+ * notification only tells the seller; their confirmation pays the order. On an
+ * automatic order the notification pays it, and the seller confirms only a
+ * payment the buyer reported without one.
+ */
+function SellerPaypalConfirmation({
+  order,
+  methodPayment,
+}: {
+  order: MarketplaceOrder;
+  methodPayment: ReturnType<typeof useMarketplaceOrderPayment>;
+}) {
+  const sellerConfirms = order.paymentConfirmation === 'seller';
+  const reference = order.fiatTransactionRef ? ` (ref ${order.fiatTransactionRef})` : '';
+  const prompt = order.gatewayPaymentSeenAt
+    ? `PayPal reported a payment of ${formatCommerceMoney(order.total)}${reference}. Check your PayPal account; confirming receipt marks this order paid.`
+    : order.paymentReportedAt
+      ? `The buyer reported a PayPal payment${reference}. Check your PayPal account; confirming receipt marks this order paid.`
+      : null;
+  if (!prompt) {
+    return (
+      <Typography as="p" className="text-sm text-muted-foreground" data-testid="seller-paypal-awaiting">
+        {sellerConfirms
+          ? 'Awaiting the buyer\u2019s PayPal payment. When PayPal reports it, you confirm receipt here to mark the order paid.'
+          : 'Awaiting the buyer\u2019s PayPal payment. PayPal\u2019s notification usually completes the order automatically; if the buyer reports the payment instead, you will be asked to confirm receipt.'}
+      </Typography>
+    );
+  }
+  return (
+    <div className="grid gap-2" data-testid="seller-paypal-confirm">
+      <Typography as="p" className="text-sm text-muted-foreground">
+        {prompt}
+      </Typography>
+      <Button
+        size="sm"
+        className="w-fit rounded-full"
+        disabled={methodPayment.pendingAction !== null}
+        onClick={() => void methodPayment.confirmReceived()}
+      >
+        {methodPayment.pendingAction === 'confirm' ? (
+          <LoaderCircle className="size-4 animate-spin" />
+        ) : (
+          <CheckCircle2 className="size-4" />
+        )}
+        Confirm payment received
+      </Button>
+    </div>
+  );
+}
+
 function SellerBitcoinConfirmationReview({
   prompt,
   observation,
@@ -1234,10 +1292,7 @@ function SellerBitcoinConfirmationReview({
       {observation && (
         <dl className="grid gap-2 text-sm sm:grid-cols-2">
           <ReviewFact label="Transaction ID" value={observation.txid} />
-          <ReviewFact
-            label="Observed amount"
-            value={observation.observedSats == null ? null : formatBitcoinAmount(observation.observedSats)}
-          />
+          <ReviewFact label="Observed amount" value={observedAmountFact(observation)} />
           <ReviewFact label="Confirmations" value={observation.confirmations} />
           <ReviewFact label="Amount matched" value={formatBooleanFact(observation.amountMatched)} />
           <ReviewFact label="Payment disappeared" value={formatBooleanFact(observation.disappeared)} />

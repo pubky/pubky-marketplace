@@ -15,7 +15,9 @@ import type { MarketplaceNotification } from '@/services/marketplace/marketplace
  * `refund_destination_confirmed` is from pubky/pubky-marketplace-service#94
  * (`refund.confirm_destination`, USDT orders only, recipient: the seller).
  * `review_waiting` and `review_released` are from pubky/pubky-marketplace-service#186
- * (double-blind reviews behind `REVIEW_BLIND_WINDOW_DAYS`).
+ * (double-blind reviews behind `REVIEW_BLIND_WINDOW_DAYS`). `usdt_payment_seen`
+ * and `paypal_payment_seen` are the seller-confirmed payment notices
+ * (`PAYMENT_CONFIRMATION=seller`).
  *
  * Shop-only types (`message_received`, `order_cancelled_terms_change`) are
  * mapped too, but they are not in this list because that service revision
@@ -44,6 +46,7 @@ export const SERVICE_NOTIFICATION_TYPES = [
   'payment_method_bound',
   'payment_refund_required',
   'payment_reversal_cancelled',
+  'paypal_payment_seen',
   'pickup_details_cleared',
   'pickup_details_updated',
   'pickup_ready',
@@ -54,6 +57,7 @@ export const SERVICE_NOTIFICATION_TYPES = [
   'review_released',
   'review_waiting',
   'tracking_updated',
+  'usdt_payment_seen',
 ] as const;
 
 export type ServiceNotificationType = (typeof SERVICE_NOTIFICATION_TYPES)[number];
@@ -80,6 +84,8 @@ export const MARKETPLACE_ACTIVITY_LABELS = {
   payment_confirmed: 'Payment confirmed',
   bitcoin_manual_review: 'Bitcoin payment needs a decision',
   bitcoin_payment_seen: 'A Bitcoin payment is waiting for your confirmation',
+  usdt_payment_seen: 'A USDT payment is waiting for your confirmation',
+  paypal_payment_seen: 'PayPal reported a payment waiting for your confirmation',
   bitcoin_prepare_voided: 'Bitcoin payment expired',
   order_cancelled: 'Order cancelled',
   order_cancelled_terms_change: 'Order cancelled — pickup terms changed',
@@ -128,9 +134,19 @@ export const BITCOIN_REVIEW_REASON_COPY = {
 
 export type BitcoinNotificationReviewReason = keyof typeof BITCOIN_REVIEW_REASON_COPY;
 
-const BITCOIN_PAYMENT_SEEN_COPY = {
-  label: MARKETPLACE_ACTIVITY_LABELS.bitcoin_payment_seen,
-  action: 'saw a Bitcoin payment waiting for your confirmation',
+const PAYMENT_SEEN_COPY = {
+  bitcoin_payment_seen: {
+    label: MARKETPLACE_ACTIVITY_LABELS.bitcoin_payment_seen,
+    action: 'saw a Bitcoin payment waiting for your confirmation',
+  },
+  usdt_payment_seen: {
+    label: MARKETPLACE_ACTIVITY_LABELS.usdt_payment_seen,
+    action: 'saw a USDT payment waiting for your confirmation',
+  },
+  paypal_payment_seen: {
+    label: MARKETPLACE_ACTIVITY_LABELS.paypal_payment_seen,
+    action: 'reported a PayPal payment waiting for your confirmation',
+  },
 } as const;
 
 export function bitcoinReviewReason(value: string | null | undefined): BitcoinNotificationReviewReason | null {
@@ -145,7 +161,9 @@ export function bitcoinNotificationCopy(notification: {
   type: string;
   reviewReason?: string | null;
 }): { label: string; action: string } | null {
-  if (notification.type === 'bitcoin_payment_seen') return BITCOIN_PAYMENT_SEEN_COPY;
+  if (Object.hasOwn(PAYMENT_SEEN_COPY, notification.type)) {
+    return PAYMENT_SEEN_COPY[notification.type as keyof typeof PAYMENT_SEEN_COPY];
+  }
   const reason = notification.type === 'bitcoin_manual_review' ? bitcoinReviewReason(notification.reviewReason) : null;
   return reason ? BITCOIN_REVIEW_REASON_COPY[reason] : null;
 }

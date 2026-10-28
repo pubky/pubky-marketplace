@@ -628,6 +628,19 @@ export class MarketplaceGatewayService {
     return health.usdtPayments?.available === true;
   }
 
+  /**
+   * Who marks orders paid on the durable service (`/health`
+   * `payment_confirmation`): `seller` when only the seller's confirmation pays
+   * an order, `automatic` when matching money does. Null outside the durable
+   * service and on a service that predates the switch, which pays
+   * automatically.
+   */
+  static async getPaymentConfirmationMode(): Promise<'seller' | 'automatic' | null> {
+    if (!isDurableCommerceMode(getCommerceAdapterMode())) return null;
+    const health = await MarketplaceTransactionService.getHealth();
+    return health.paymentConfirmation ?? null;
+  }
+
   /** The Paykit rail's state from the service's `/health`; unknown outside the durable service. */
   static async getPaykitRailStatus(): Promise<PaykitRailStatus> {
     if (!isDurableCommerceMode(getCommerceAdapterMode())) return 'unknown';
