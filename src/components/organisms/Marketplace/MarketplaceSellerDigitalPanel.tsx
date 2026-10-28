@@ -5,7 +5,12 @@ import { Heading } from '@/atoms/Heading/Heading';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useSellerDigitalDelivery } from '@/hooks/useSellerDigitalDelivery/useSellerDigitalDelivery';
-import { DIGITAL_SELLER_COPY, digitalPaymentTakenBack, isDigitalOrderEnded } from '@/libs/commerce/digital';
+import {
+  DIGITAL_RELEASE_REFUSAL_COPY,
+  DIGITAL_SELLER_COPY,
+  digitalPaymentTakenBack,
+  isDigitalOrderEnded,
+} from '@/libs/commerce/digital';
 import { SETTINGS_SECTION_CONTENT_CLASSNAME } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 
@@ -77,7 +82,7 @@ export function MarketplaceSellerDigitalPanel({
       )}
       {delivery.awaitsRelease && (
         <Typography as="p" className="text-sm text-muted-foreground" data-testid="seller-digital-release-pending">
-          {DIGITAL_SELLER_COPY.releasePending}
+          {takenBack === null ? DIGITAL_SELLER_COPY.releasePending : DIGITAL_RELEASE_REFUSAL_COPY.taken_back}
         </Typography>
       )}
       {email.status === 'loading' && <Skeleton className="h-5 w-64" aria-label="Loading the buyer's email" />}

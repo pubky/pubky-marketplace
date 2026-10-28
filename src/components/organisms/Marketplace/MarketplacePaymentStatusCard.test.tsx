@@ -598,6 +598,51 @@ describe('MarketplacePaymentStatusCard', () => {
     ).toBeInTheDocument();
   });
 
+  it('names the release on a late PayPal confirmation of a digital purchase', () => {
+    const confirmReceived = vi.fn();
+    vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
+      availableMethods: null,
+      paykitAssets: [],
+      bitcoinOfferUnavailable: false,
+      paykitOutage: false,
+      configError: null,
+      deliveryAddress: null,
+      pendingAction: null,
+      bind: vi.fn(),
+      markPaid: vi.fn(),
+      confirmReceived,
+    });
+    const expired = createOrderFixture('cancelled', {
+      paymentMethod: 'paypal',
+      fiatCheckoutUrl: 'https://www.paypal.com/checkout',
+      fulfillment: 'digital',
+      paymentConfirmation: 'seller',
+      gatewayPaymentSeenAt: '2026-10-28T09:00:00.000Z',
+      receiptId: null,
+      cancellationReason: 'payment window elapsed',
+    });
+    render(
+      <MarketplacePaymentStatusCard
+        order={{
+          ...expired,
+          lines: expired.lines.map((line) => ({
+            ...line,
+            fulfillment: 'digital' as const,
+            digitalKind: 'file' as const,
+          })),
+        }}
+        payment={createPaymentFixture('expired')}
+        isBuyer={false}
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />,
+    );
+    const seller = screen.getByTestId('paypal-seen-expired-seller');
+    fireEvent.click(within(seller).getByRole('button', { name: 'Confirm payment and release' }));
+    expect(confirmReceived).toHaveBeenCalledTimes(1);
+  });
+
   it('explains when Bitcoin is temporarily unavailable while other methods remain available', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: ['paypal'],

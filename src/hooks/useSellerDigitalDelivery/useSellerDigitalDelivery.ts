@@ -156,7 +156,7 @@ export function useSellerDigitalDelivery(order: MarketplaceOrder, onChanged?: ()
       if (!response.ok) {
         const refusal = classifyDigitalReleaseRefusal(response.error, order.state);
         setMessage(refusal ? DIGITAL_RELEASE_REFUSAL_COPY[refusal] : DIGITAL_SELLER_COPY.releaseFailed);
-        if (refusal === 'changed' || refusal === 'not_awaiting') await onChanged?.();
+        if (refusal === 'changed' || refusal === 'not_awaiting' || refusal === 'taken_back') await onChanged?.();
         return false;
       }
       setMessage(DIGITAL_SELLER_COPY.released);

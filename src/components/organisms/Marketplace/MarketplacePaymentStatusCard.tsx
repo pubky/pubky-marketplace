@@ -1296,7 +1296,7 @@ function PaypalSeenButUnconfirmed({
           ) : (
             <CheckCircle2 className="size-4" />
           )}
-          Confirm payment received
+          {hasInstantDigitalLines(order) ? CONFIRM_AND_RELEASE_LABEL : 'Confirm payment received'}
         </Button>
       )}
     </div>

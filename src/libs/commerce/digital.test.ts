@@ -48,6 +48,8 @@ import {
 import { marketplaceHealthSchema } from './pickup';
 import { toCamelCaseWire } from './wire-casing';
 
+const PAID = { state: 'paid' } as const;
+
 describe('digital delivery listing projection (§7 input inventory)', () => {
   it('parses the file facts the service projects (model.rs digital_delivery_projection)', () => {
     const wire = {
@@ -607,40 +609,62 @@ describe('seller delivery evidence (§3 "Seller\u2019s orders")', () => {
 
   it('writes the instant line, then each manual mark', () => {
     const at = '2026-09-26T13:02:00.000Z';
-    expect(digitalEvidenceLines(none, [{ digitalKind: 'file' }])).toEqual(['Delivered automatically · not opened yet']);
-    expect(digitalEvidenceLines({ ...none, firstOpenedAt: at, openCount: 1 }, [{ digitalKind: 'text' }])).toEqual([
-      expect.stringMatching(/^Delivered automatically · first opened Sep 26, \d\d:\d\d · opened 1 time$/),
+    expect(digitalEvidenceLines(none, [{ digitalKind: 'file' }], PAID)).toEqual([
+      'Delivered automatically · not opened yet',
     ]);
+    expect(digitalEvidenceLines({ ...none, firstOpenedAt: at, openCount: 1 }, [{ digitalKind: 'text' }], PAID)).toEqual(
+      [expect.stringMatching(/^Delivered automatically · first opened Sep 26, \d\d:\d\d · opened 1 time$/)],
+    );
     expect(
-      digitalEvidenceLines({ ...none, emailedAt: at, messageDeliveredAt: at }, [
-        { digitalKind: 'email' },
-        { digitalKind: 'message' },
-      ]),
+      digitalEvidenceLines(
+        { ...none, emailedAt: at, messageDeliveredAt: at },
+        [{ digitalKind: 'email' }, { digitalKind: 'message' }],
+        PAID,
+      ),
     ).toEqual([
       expect.stringMatching(/^Marked emailed Sep 26, \d\d:\d\d$/),
       expect.stringMatching(/^Marked delivered Sep 26, \d\d:\d\d$/),
     ]);
-    expect(digitalEvidenceLines(none, [{ digitalKind: 'email' }])).toEqual([]);
+    expect(digitalEvidenceLines(none, [{ digitalKind: 'email' }], PAID)).toEqual([]);
   });
 
   it('reports nothing for a purchase that waits for the seller, then the seller’s release', () => {
     const at = '2026-09-26T13:02:00.000Z';
-    expect(digitalEvidenceLines(none, [{ digitalKind: 'file' }], { digitalRelease: 'seller' })).toEqual([]);
+    expect(digitalEvidenceLines(none, [{ digitalKind: 'file' }], { ...PAID, digitalRelease: 'seller' })).toEqual([]);
     expect(
-      digitalEvidenceLines(none, [{ digitalKind: 'file' }], { digitalRelease: 'seller', digitalReleasedAt: at }),
+      digitalEvidenceLines(none, [{ digitalKind: 'file' }], {
+        ...PAID,
+        digitalRelease: 'seller',
+        digitalReleasedAt: at,
+      }),
     ).toEqual([expect.stringMatching(/^Released by you Sep 26, \d\d:\d\d · not opened yet$/)]);
     expect(
-      digitalEvidenceLines(none, [{ digitalKind: 'file' }], { digitalRelease: 'payment', digitalReleasedAt: at }),
+      digitalEvidenceLines(none, [{ digitalKind: 'file' }], {
+        ...PAID,
+        digitalRelease: 'payment',
+        digitalReleasedAt: at,
+      }),
     ).toEqual(['Delivered automatically · not opened yet']);
   });
 });
 
 describe('seller release (DIGITAL_RELEASE)', () => {
   it('waits only for an order frozen as seller-released and not released yet', () => {
-    expect(awaitsSellerRelease({ digitalRelease: 'seller', digitalReleasedAt: null })).toBe(true);
-    expect(awaitsSellerRelease({ digitalRelease: 'seller', digitalReleasedAt: '2026-10-28T09:00:00Z' })).toBe(false);
-    expect(awaitsSellerRelease({ digitalRelease: 'payment', digitalReleasedAt: null })).toBe(false);
-    expect(awaitsSellerRelease({})).toBe(false);
+    expect(awaitsSellerRelease({ ...PAID, digitalRelease: 'seller', digitalReleasedAt: null })).toBe(true);
+    expect(awaitsSellerRelease({ state: 'cancel_requested', digitalRelease: 'seller', digitalReleasedAt: null })).toBe(
+      true,
+    );
+    expect(awaitsSellerRelease({ ...PAID, digitalRelease: 'seller', digitalReleasedAt: '2026-10-28T09:00:00Z' })).toBe(
+      false,
+    );
+    expect(awaitsSellerRelease({ ...PAID, digitalRelease: 'payment', digitalReleasedAt: null })).toBe(false);
+    expect(awaitsSellerRelease(PAID)).toBe(false);
+  });
+
+  it('reads an order delivered without a release stamp as released, as the service does', () => {
+    for (const state of ['delivered', 'completed']) {
+      expect(awaitsSellerRelease({ state, digitalRelease: 'seller', digitalReleasedAt: null })).toBe(false);
+    }
   });
 
   it('knows which digital orders carry a line opened on the order page', () => {

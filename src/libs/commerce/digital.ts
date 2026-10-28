@@ -674,12 +674,19 @@ export function hasInstantDigitalLines(order: {
  * Whether a paid order's instant lines (file, link, text) still wait for the
  * seller's release (the service's `DIGITAL_RELEASE=seller`). An order paid
  * before the service froze who releases it, or released at payment, never waits.
+ * Only a paid order (or one with a cancellation request) waits: the service
+ * reads an order that moved on to delivered without a release as released.
  */
 export function awaitsSellerRelease(order: {
+  state: string;
   digitalRelease?: 'seller' | 'payment' | null;
   digitalReleasedAt?: string | null;
 }): boolean {
-  return order.digitalRelease === 'seller' && !order.digitalReleasedAt;
+  return (
+    order.digitalRelease === 'seller' &&
+    !order.digitalReleasedAt &&
+    (order.state === 'paid' || order.state === 'cancel_requested')
+  );
 }
 
 /** "The seller will email this to …", or once marked emailed, when and what to check. */
@@ -868,7 +875,7 @@ function formatEvidenceTime(value: string): string {
 export function digitalEvidenceLines(
   evidence: MarketplaceOrderDigitalEvidence,
   lines: ReadonlyArray<{ digitalKind?: MarketplaceDigitalDeliveryKind }>,
-  release: { digitalRelease?: 'seller' | 'payment' | null; digitalReleasedAt?: string | null } = {},
+  release: { state: string; digitalRelease?: 'seller' | 'payment' | null; digitalReleasedAt?: string | null },
 ): string[] {
   const out: string[] = [];
   const hasInstant = lines.some(
