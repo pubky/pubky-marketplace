@@ -452,15 +452,18 @@ export class MarketplaceGatewayService {
     return parsed.data;
   }
 
-  static async getOrders(actor: string): Promise<MarketplaceParticipantOrder[]> {
+  static async getOrders(
+    actor: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<MarketplaceParticipantOrder[]> {
     if (isDurableCommerceMode(getCommerceAdapterMode())) {
-      return await MarketplaceTransactionService.getOrders(actor);
+      return await MarketplaceTransactionService.getOrders(actor, options);
     }
     this.assertSandbox();
     const url = `${getMarketplaceUrl()}/v1/orders`;
     const response = await safeFetch(
       url,
-      { method: 'GET', headers: { 'x-pubky-actor': actor } },
+      { method: 'GET', headers: { 'x-pubky-actor': actor }, ...(options.signal ? { signal: options.signal } : {}) },
       ErrorService.Marketplace,
       'getOrders',
     );
@@ -527,9 +530,13 @@ export class MarketplaceGatewayService {
   }
 
   /** One order projection by id — durable service only (used to source a fresh `expected_revision`). */
-  static async getOrder(actor: string, orderId: string): Promise<MarketplaceOrder | null> {
+  static async getOrder(
+    actor: string,
+    orderId: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<MarketplaceOrder | null> {
     this.assertDurableServiceOnly('getOrder');
-    return await MarketplaceTransactionService.getOrder(actor, orderId);
+    return await MarketplaceTransactionService.getOrder(actor, orderId, options);
   }
 
   /**
@@ -697,14 +704,23 @@ export class MarketplaceGatewayService {
     return await MarketplaceTransactionService.markFiatPaid(actor, orderId, transactionRef);
   }
 
-  static async confirmFiatReceived(actor: string, orderId: string): Promise<MarketplaceOrder> {
+  static async confirmFiatReceived(
+    actor: string,
+    orderId: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<MarketplaceOrder> {
     this.assertDurableServiceOnly('confirmFiatReceived');
-    return await MarketplaceTransactionService.confirmFiatReceived(actor, orderId);
+    return await MarketplaceTransactionService.confirmFiatReceived(actor, orderId, options);
   }
 
-  static async confirmBitcoinPayment(actor: string, orderId: string, reason?: string) {
+  static async confirmBitcoinPayment(
+    actor: string,
+    orderId: string,
+    reason?: string,
+    options: { signal?: AbortSignal } = {},
+  ) {
     this.assertDurableServiceOnly('confirmBitcoinPayment');
-    return await MarketplaceTransactionService.confirmBitcoinPayment(actor, orderId, reason);
+    return await MarketplaceTransactionService.confirmBitcoinPayment(actor, orderId, reason, options);
   }
 
   static async resolveBitcoinPayment(

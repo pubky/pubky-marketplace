@@ -23,6 +23,7 @@ export const useSellerPaymentConfirmStore = create<SellerPaymentConfirmStore>()(
             false,
             SellerPaymentConfirmActionTypes.SET_AUTO_CONFIRM,
           ),
+        reset: () => set(sellerPaymentConfirmInitialState, false, SellerPaymentConfirmActionTypes.RESET),
       }),
       {
         name: SELLER_PAYMENT_CONFIRM_PERSIST_KEY,

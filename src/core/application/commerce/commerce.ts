@@ -1860,22 +1860,30 @@ export class CommerceApplication {
    * `autoConfirmableRail`). Each candidate is re-read in full first, and a
    * failed confirmation leaves that order for the seller without stopping the
    * rest. `isStillEnabled` is asked before every confirmation, so a seller who
-   * turns the setting off mid-pass confirms nothing more. Returns the ids it
-   * confirmed.
+   * turns the setting off mid-pass confirms nothing more. Every request carries
+   * `signal`; once it aborts the pass ends, so a request that never answers
+   * cannot hold it open. Returns the ids it confirmed.
    */
-  static async autoConfirmSellerPayments(sellerPubky: string, isStillEnabled: () => boolean): Promise<string[]> {
-    const orders = await MarketplaceGatewayService.getOrders(sellerPubky);
+  static async autoConfirmSellerPayments(
+    sellerPubky: string,
+    isStillEnabled: () => boolean,
+    signal: AbortSignal,
+  ): Promise<string[]> {
+    const orders = await MarketplaceGatewayService.getOrders(sellerPubky, { signal });
     const confirmed: string[] = [];
     for (const row of orders) {
+      if (signal.aborted) break;
       if (!mayAwaitSellerConfirmation(row, sellerPubky)) continue;
       try {
-        const order = await MarketplaceGatewayService.getOrder(sellerPubky, row.id);
+        const order = await MarketplaceGatewayService.getOrder(sellerPubky, row.id, { signal });
         const rail = order ? autoConfirmableRail(order, sellerPubky) : null;
         if (rail !== null && !isStillEnabled()) break;
         if (rail === 'paykit') {
-          await MarketplaceGatewayService.confirmBitcoinPayment(sellerPubky, row.id, SELLER_AUTO_CONFIRM_REASON);
+          await MarketplaceGatewayService.confirmBitcoinPayment(sellerPubky, row.id, SELLER_AUTO_CONFIRM_REASON, {
+            signal,
+          });
         } else if (rail === 'paypal') {
-          await MarketplaceGatewayService.confirmFiatReceived(sellerPubky, row.id);
+          await MarketplaceGatewayService.confirmFiatReceived(sellerPubky, row.id, { signal });
         } else {
           continue;
         }

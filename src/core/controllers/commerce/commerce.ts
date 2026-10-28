@@ -39,6 +39,7 @@ import type { BindDeliveryAddress, PaymentMethodKind } from '@/libs/commerce/pay
 import { resolveCheckoutFulfillment } from '@/libs/commerce/pickup';
 import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-address';
 import type { PrivRecoveryKeyExport } from '@/libs/commerce/priv-recovery-key';
+import { SELLER_AUTO_CONFIRM_PASS_TIMEOUT_MS } from '@/libs/commerce/seller-auto-confirm';
 import type { ShipFromAddress, ShippingParcel, ShippoRate } from '@/libs/commerce/shipping';
 import {
   buildMarketplaceListingAggregateId,
@@ -1488,7 +1489,13 @@ export class CommerceController {
       useAuthStore.getState().currentUserPubky === pubky &&
       useSellerPaymentConfirmStore.getState().autoConfirmByPubky[pubky] === true;
     if (!pubky || !isEnabled()) return [];
-    return await CommerceApplication.autoConfirmSellerPayments(pubky, isEnabled);
+    const pass = new AbortController();
+    const deadline = setTimeout(() => pass.abort(), SELLER_AUTO_CONFIRM_PASS_TIMEOUT_MS);
+    try {
+      return await CommerceApplication.autoConfirmSellerPayments(pubky, isEnabled, pass.signal);
+    } finally {
+      clearTimeout(deadline);
+    }
   }
 
   /**
@@ -1498,7 +1505,13 @@ export class CommerceController {
   static subscribeSellerPaymentAutoConfirmSync(): () => void {
     if (typeof window === 'undefined') return () => {};
     const onStorage = (event: StorageEvent) => {
-      if (event.key !== SELLER_PAYMENT_CONFIRM_PERSIST_KEY) return;
+      // A null key is `localStorage.clear()` in another tab.
+      if (event.key !== null && event.key !== SELLER_PAYMENT_CONFIRM_PERSIST_KEY) return;
+      // Rehydrating from a removed key keeps the old state, so a removal turns it off here too.
+      if (event.newValue === null) {
+        useSellerPaymentConfirmStore.getState().reset();
+        return;
+      }
       void useSellerPaymentConfirmStore.persist.rehydrate();
     };
     window.addEventListener('storage', onStorage);

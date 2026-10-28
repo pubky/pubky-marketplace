@@ -15,6 +15,9 @@ export const SELLER_AUTO_CONFIRM_REASON = 'Confirmed automatically by the seller
 /** How often the seller's open Shop looks for payments waiting for them. */
 export const SELLER_AUTO_CONFIRM_INTERVAL_MS = 30_000;
 
+/** A pass is abandoned after this long, inside the interval, so a request that never answers cannot hold the next one. */
+export const SELLER_AUTO_CONFIRM_PASS_TIMEOUT_MS = 25_000;
+
 export type AutoConfirmRail = 'paykit' | 'paypal';
 
 type AutoConfirmOrder = Pick<

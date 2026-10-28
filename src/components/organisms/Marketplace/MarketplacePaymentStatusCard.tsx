@@ -752,9 +752,14 @@ export function MarketplacePaymentStatusCard({
 
       {/* Bound USDT: the request waits in the buyer's Paykit wallet until it is
           paid. A transfer waiting for the seller is paid: the summary says so. */}
-      {usesMethodFlow && isBuyer && rail === 'usdt' && order.paykitRequestState !== 'awaiting_seller_confirmation' && (
-        <BuyerUsdtPaymentProgress order={order} checkoutActions={checkoutActions} />
-      )}
+      {usesMethodFlow &&
+        isBuyer &&
+        rail === 'usdt' &&
+        (order.paykitRequestState === 'awaiting_seller_confirmation' ? (
+          <BuyerUsdtSellerWindow order={order} />
+        ) : (
+          <BuyerUsdtPaymentProgress order={order} checkoutActions={checkoutActions} />
+        ))}
 
       {/* Bound paypal: hosted checkout; PayPal's verified notification pays
           the order automatically. The buyer report + seller confirmation
@@ -1149,6 +1154,31 @@ function BuyerPaykitPaymentProgress({
           {PAYKIT_USDT_FINALITY_EXPECTATION_COPY}
         </Typography>
       )}
+    </div>
+  );
+}
+
+/** A USDT transfer waiting for the seller: when they confirm by, and that the item is held meanwhile. */
+function BuyerUsdtSellerWindow({ order }: { order: MarketplaceOrder }) {
+  const confirmDeadline = order.paykitSellerConfirmationDeadline ?? order.holdExpiresAt;
+  const nowMs = useNowMs(true);
+  const countdown = holdCountdownCopy(confirmDeadline, nowMs);
+  return (
+    <div className="grid gap-2" data-testid="usdt-payment-seen">
+      <Typography as="p" className="text-sm text-muted-foreground" data-testid="usdt-seller-confirms-by">
+        {sellerConfirmsByCopy(confirmDeadline)}
+        {countdown ? (
+          <>
+            {' '}
+            <span className="font-medium text-foreground tabular-nums" data-testid="usdt-hold-countdown">
+              {countdown}
+            </span>
+          </>
+        ) : null}
+      </Typography>
+      <Typography as="p" className="text-sm text-muted-foreground" data-testid="usdt-seen-hold-copy">
+        {PAYMENT_SEEN_HOLD_COPY}
+      </Typography>
     </div>
   );
 }

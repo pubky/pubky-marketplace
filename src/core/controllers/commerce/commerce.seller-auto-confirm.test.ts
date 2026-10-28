@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceApplication } from '@/application/commerce/commerce';
 import type { CommerceAdapterMode } from '@/config/commerce';
+import { SELLER_AUTO_CONFIRM_PASS_TIMEOUT_MS } from '@/libs/commerce/seller-auto-confirm';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { SELLER_PAYMENT_CONFIRM_PERSIST_KEY } from '@/stores/persistedKeys';
 import { useSellerPaymentConfirmStore } from '@/stores/seller-payment-confirm/seller-payment-confirm.store';
@@ -37,7 +38,7 @@ describe('CommerceController seller auto-confirm', () => {
     CommerceController.setSellerPaymentAutoConfirm(true);
     expect(useSellerPaymentConfirmStore.getState().autoConfirmByPubky).toEqual({ [SELLER]: true });
     await expect(CommerceController.autoConfirmSellerPayments()).resolves.toEqual(['order-1']);
-    expect(pass).toHaveBeenCalledWith(SELLER, expect.any(Function));
+    expect(pass).toHaveBeenCalledWith(SELLER, expect.any(Function), expect.any(AbortSignal));
   });
 
   it('keeps the setting per pubky, so another account on the device is not confirmed for', async () => {
@@ -104,5 +105,41 @@ describe('CommerceController seller auto-confirm', () => {
     unsubscribe();
     window.dispatchEvent(new StorageEvent('storage', { key: SELLER_PAYMENT_CONFIRM_PERSIST_KEY }));
     expect(rehydrate).not.toHaveBeenCalled();
+  });
+
+  it('aborts a pass that outlives its deadline, so a request that never answers cannot hold it', async () => {
+    vi.useFakeTimers();
+    try {
+      let signal: AbortSignal | undefined;
+      vi.spyOn(CommerceApplication, 'autoConfirmSellerPayments').mockImplementation(
+        (_pubky, _check, passSignal) =>
+          new Promise((resolve) => {
+            signal = passSignal;
+            passSignal.addEventListener('abort', () => resolve([]));
+          }),
+      );
+      CommerceController.setSellerPaymentAutoConfirm(true);
+      const result = CommerceController.autoConfirmSellerPayments();
+      await vi.advanceTimersByTimeAsync(SELLER_AUTO_CONFIRM_PASS_TIMEOUT_MS - 1);
+      expect(signal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(signal?.aborted).toBe(true);
+      await expect(result).resolves.toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('turns the setting off here when another tab removes it or clears storage', () => {
+    const unsubscribe = CommerceController.subscribeSellerPaymentAutoConfirmSync();
+    try {
+      for (const key of [SELLER_PAYMENT_CONFIRM_PERSIST_KEY, null]) {
+        CommerceController.setSellerPaymentAutoConfirm(true);
+        window.dispatchEvent(new StorageEvent('storage', { key, newValue: null }));
+        expect(useSellerPaymentConfirmStore.getState().autoConfirmByPubky).toEqual({});
+      }
+    } finally {
+      unsubscribe();
+    }
   });
 });

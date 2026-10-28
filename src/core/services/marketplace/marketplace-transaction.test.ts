@@ -430,6 +430,41 @@ describe('MarketplaceTransactionService.execute', () => {
     expect(JSON.parse(init.body as string)).toEqual(CONFIRM_REFUND_DESTINATION_WIRE_COMMAND);
   });
 
+  it('hands the caller signal to every request of a seller confirmation pass', async () => {
+    await establishSession();
+    const wireOrder = { ...LIVE_ORDERS_WIRE_FIXTURE.orders[0], seller_pubky: ACTOR };
+    const { signal } = new AbortController();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse(200, { orders: [] }))
+      .mockResolvedValueOnce(jsonResponse(200, wireOrder))
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true, order: wireOrder }))
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          ok: true,
+          order: wireOrder,
+          confirmation: {
+            order_id: wireOrder.id,
+            confirmed_by_pubky: ACTOR,
+            confirmed_at: '2026-10-28T09:00:00.000Z',
+            confirmation_basis: 'seller_attestation',
+            confirmation_source: 'seller',
+          },
+        }),
+      );
+
+    await MarketplaceTransactionService.getOrders(ACTOR, { signal });
+    await MarketplaceTransactionService.getOrder(ACTOR, wireOrder.id, { signal });
+    await MarketplaceTransactionService.confirmFiatReceived(ACTOR, wireOrder.id, { signal });
+    await MarketplaceTransactionService.confirmBitcoinPayment(ACTOR, wireOrder.id, undefined, { signal });
+
+    expect(vi.mocked(fetch).mock.calls.map(([, init]) => (init as RequestInit).signal)).toEqual([
+      signal,
+      signal,
+      signal,
+      signal,
+    ]);
+  });
+
   it('fails closed outside transaction-service mode', async () => {
     config.mode = 'sandbox';
 

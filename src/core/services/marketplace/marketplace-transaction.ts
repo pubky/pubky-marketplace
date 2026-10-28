@@ -368,8 +368,11 @@ export class MarketplaceTransactionService {
    * sub-objects. `receipt_id` stays null until payment confirmation issues
    * the durable receipt.
    */
-  static async getOrders(actor: string): Promise<MarketplaceParticipantOrder[]> {
-    const raw = await this.readProjection('getOrders', actor, '/v1/orders');
+  static async getOrders(
+    actor: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<MarketplaceParticipantOrder[]> {
+    const raw = await this.readProjection('getOrders', actor, '/v1/orders', { signal: options.signal });
     return this.parseProjection(
       'getOrders',
       z.object({ orders: z.array(marketplaceParticipantOrderSchema) }),
@@ -407,10 +410,15 @@ export class MarketplaceTransactionService {
   }
 
   /** `GET /v1/orders/{id}`: participant-scoped order read; foreign orders are 404. */
-  static async getOrder(actor: string, orderId: string): Promise<MarketplaceOrder | null> {
+  static async getOrder(
+    actor: string,
+    orderId: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<MarketplaceOrder | null> {
     const raw = await this.readProjection('getOrder', actor, `/v1/orders/${encodeURIComponent(orderId)}`, {
       nullOnNotFound: true,
       noStore: true,
+      signal: options.signal,
     });
     if (raw === null) return null;
     return this.parseProjection('getOrder', marketplaceOrderSchema, raw, 'Marketplace returned an invalid order.');
@@ -1235,12 +1243,16 @@ export class MarketplaceTransactionService {
   }
 
   /** `POST /v0/orders/{id}/fiat/confirm-received` — the seller's confirmation pays a PayPal order. */
-  static async confirmFiatReceived(actor: string, orderId: string): Promise<MarketplaceOrder> {
+  static async confirmFiatReceived(
+    actor: string,
+    orderId: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<MarketplaceOrder> {
     const raw = await this.paymentMethodRequest(
       'confirmFiatReceived',
       actor,
       `/v0/orders/${encodeURIComponent(orderId)}/fiat/confirm-received`,
-      { method: 'POST', body: {} },
+      { method: 'POST', body: {}, signal: options.signal },
     );
     return this.parseOrderEnvelope('confirmFiatReceived', raw);
   }
@@ -1249,12 +1261,13 @@ export class MarketplaceTransactionService {
     actor: string,
     orderId: string,
     reason?: string,
+    options: { signal?: AbortSignal } = {},
   ): Promise<{ order: MarketplaceOrder | null; confirmation: z.infer<typeof sellerPaymentConfirmationSchema> }> {
     const raw = await this.paymentMethodRequest(
       'confirmBitcoinPayment',
       actor,
       `/v0/orders/${encodeURIComponent(orderId)}/confirm-bitcoin-payment`,
-      { method: 'POST', body: reason ? { reason } : {} },
+      { method: 'POST', body: reason ? { reason } : {}, signal: options.signal },
     );
     const parsed = this.parseProjection(
       'confirmBitcoinPayment',
@@ -1307,6 +1320,7 @@ export class MarketplaceTransactionService {
       headers?: Record<string, string>;
       /** The rail a bind chose, so a refusal reads in that rail's copy. */
       boundPaymentMethod?: PaymentMethodKind;
+      signal?: AbortSignal;
     },
   ): Promise<unknown> {
     this.assertTransactionServiceMode(operation);
@@ -1324,6 +1338,7 @@ export class MarketplaceTransactionService {
           ),
         },
         body: JSON.stringify(toSnakeCaseWire(request.body)),
+        ...(request.signal ? { signal: request.signal } : {}),
       },
       ErrorService.Marketplace,
       operation,

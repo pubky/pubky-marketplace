@@ -9,6 +9,8 @@ export interface SellerPaymentConfirmState {
 
 export interface SellerPaymentConfirmActions {
   setAutoConfirm: (pubky: string, enabled: boolean) => void;
+  /** Turns the setting off for every pubky in this browser. */
+  reset: () => void;
 }
 
 export type SellerPaymentConfirmStore = SellerPaymentConfirmState & SellerPaymentConfirmActions;
@@ -19,4 +21,5 @@ export const sellerPaymentConfirmInitialState: SellerPaymentConfirmState = {
 
 export enum SellerPaymentConfirmActionTypes {
   SET_AUTO_CONFIRM = 'sellerPaymentConfirm/setAutoConfirm',
+  RESET = 'sellerPaymentConfirm/reset',
 }

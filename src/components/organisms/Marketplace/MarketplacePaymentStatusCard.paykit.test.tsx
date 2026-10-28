@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useMarketplaceOrderPayment } from '@/hooks/useMarketplaceOrderPayment/useMarketplaceOrderPayment';
-import { PAYMENT_RECEIVED_REVIEW_COPY } from '@/libs/commerce/bitcoin-buyer-status';
+import { PAYMENT_RECEIVED_REVIEW_COPY, PAYMENT_SEEN_HOLD_COPY } from '@/libs/commerce/bitcoin-buyer-status';
 import { APPROVE_IN_BITKIT_FALLBACK_COPY } from '@/libs/commerce/checkout-hold';
 import { PAYMENT_RAIL_BADGE } from '@/libs/commerce/paykit-rail';
 import {
@@ -309,13 +309,20 @@ describe('MarketplacePaymentStatusCard — one Paykit order after payment', () =
     const { order } = createPaykitOrderFixture('paid-usdt');
     renderCard(
       {
-        order: { ...order, state: 'pending_payment', paykitRequestState: 'awaiting_seller_confirmation' },
+        order: {
+          ...order,
+          state: 'pending_payment',
+          paykitRequestState: 'awaiting_seller_confirmation',
+          paykitSellerConfirmationDeadline: '2099-01-02T10:00:00.000Z',
+        },
         payment: createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' }),
       },
       true,
     );
 
     expect(screen.getByTestId('usdt-phase-copy')).toHaveTextContent(USDT_BUYER_PHASE_COPY.seen);
+    expect(screen.getByTestId('usdt-seller-confirms-by')).toHaveTextContent(/^Seller confirms by .+ left$/);
+    expect(screen.getByTestId('usdt-seen-hold-copy')).toHaveTextContent(PAYMENT_SEEN_HOLD_COPY);
     expect(screen.queryByTestId('seller-bitcoin-confirm-prompt')).not.toBeInTheDocument();
     expect(screen.queryByTestId('usdt-payment-awaiting')).not.toBeInTheDocument();
     expect(screen.queryByText(USDT_BUYER_PHASE_COPY.awaiting)).not.toBeInTheDocument();

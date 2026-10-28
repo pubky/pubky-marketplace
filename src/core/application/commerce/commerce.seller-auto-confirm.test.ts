@@ -26,6 +26,8 @@ const short = createOrderFixture('pending_payment', {
 });
 const unrelated = createOrderFixture('paid', { id: '00000000-0000-4000-8000-000000000004', sellerPubky: SELLER });
 
+const live = new AbortController().signal;
+
 describe('CommerceApplication.autoConfirmSellerPayments', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -51,23 +53,23 @@ describe('CommerceApplication.autoConfirmSellerPayments', () => {
   it('confirms, as the seller, each matching payment on its own rail and leaves the rest', async () => {
     const { getOrder, confirmPaykit, confirmPaypal } = stubService();
 
-    await expect(CommerceApplication.autoConfirmSellerPayments(SELLER, () => true)).resolves.toEqual([
+    await expect(CommerceApplication.autoConfirmSellerPayments(SELLER, () => true, live)).resolves.toEqual([
       bitcoin.id,
       paypal.id,
     ]);
     expect(getOrder).toHaveBeenCalledTimes(3);
     expect(getOrder).not.toHaveBeenCalledWith(SELLER, unrelated.id);
     expect(confirmPaykit).toHaveBeenCalledTimes(1);
-    expect(confirmPaykit).toHaveBeenCalledWith(SELLER, bitcoin.id, SELLER_AUTO_CONFIRM_REASON);
+    expect(confirmPaykit).toHaveBeenCalledWith(SELLER, bitcoin.id, SELLER_AUTO_CONFIRM_REASON, { signal: live });
     expect(confirmPaypal).toHaveBeenCalledTimes(1);
-    expect(confirmPaypal).toHaveBeenCalledWith(SELLER, paypal.id);
+    expect(confirmPaypal).toHaveBeenCalledWith(SELLER, paypal.id, { signal: live });
   });
 
   it('keeps going past a confirmation the service refuses', async () => {
     const { confirmPaykit, confirmPaypal } = stubService();
     confirmPaykit.mockRejectedValueOnce(new Error('order_not_awaiting_confirmation'));
 
-    await expect(CommerceApplication.autoConfirmSellerPayments(SELLER, () => true)).resolves.toEqual([paypal.id]);
+    await expect(CommerceApplication.autoConfirmSellerPayments(SELLER, () => true, live)).resolves.toEqual([paypal.id]);
     expect(confirmPaypal).toHaveBeenCalledTimes(1);
   });
 
@@ -79,8 +81,28 @@ describe('CommerceApplication.autoConfirmSellerPayments', () => {
       return { order: null, confirmation: {} as never };
     });
 
-    await expect(CommerceApplication.autoConfirmSellerPayments(SELLER, () => enabled)).resolves.toEqual([bitcoin.id]);
+    await expect(CommerceApplication.autoConfirmSellerPayments(SELLER, () => enabled, live)).resolves.toEqual([
+      bitcoin.id,
+    ]);
     expect(confirmPaykit).toHaveBeenCalledTimes(1);
+    expect(confirmPaypal).not.toHaveBeenCalled();
+  });
+
+  it('ends the pass once its signal aborts, even while a confirmation never answers', async () => {
+    const { confirmPaykit, confirmPaypal } = stubService();
+    const pass = new AbortController();
+    confirmPaykit.mockImplementationOnce(
+      (_actor, _orderId, _reason, options) =>
+        new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+        }),
+    );
+
+    const result = CommerceApplication.autoConfirmSellerPayments(SELLER, () => true, pass.signal);
+    await vi.waitFor(() => expect(confirmPaykit).toHaveBeenCalledTimes(1));
+    pass.abort();
+
+    await expect(result).resolves.toEqual([]);
     expect(confirmPaypal).not.toHaveBeenCalled();
   });
 });

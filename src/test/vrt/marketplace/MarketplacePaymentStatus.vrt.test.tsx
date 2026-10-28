@@ -1215,6 +1215,7 @@ describe('Marketplace payment status card — seller-confirmed payment', () => {
     });
     await expect.element(screen.getByTestId('usdt-phase-copy')).toBeInTheDocument();
     expect(screen.getByTestId('usdt-payment-awaiting').elements()).toHaveLength(0);
+    await expect.element(screen.getByTestId('usdt-seller-confirms-by')).toHaveTextContent(/^Seller confirms by /);
     expect(screen.getByTestId('seller-bitcoin-confirm-prompt').elements()).toHaveLength(0);
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-usdt-seen-buyer-desktop');
   });
