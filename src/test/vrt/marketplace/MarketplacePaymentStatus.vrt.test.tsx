@@ -1168,6 +1168,29 @@ describe('Marketplace payment status card — seller-confirmed payment', () => {
     view.locks.enabled = true;
   });
 
+  it('lets the seller still confirm a PayPal payment the checkout expired on', async () => {
+    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
+    const screen = await renderCard('expired', 'transaction-service', {
+      deployEnv: 'production',
+      isBuyer: false,
+      orderState: 'cancelled',
+      orderOverrides: {
+        paymentMethod: 'paypal',
+        fiatCheckoutUrl: PAYPAL_URL,
+        paymentConfirmation: 'seller',
+        gatewayPaymentSeenAt: SEEN_AT,
+        fiatTransactionRef: '7XP31449AB123456C',
+        receiptId: null,
+        cancellationReason: 'payment window elapsed',
+      },
+    });
+    await expect.element(screen.getByTestId('paypal-seen-expired-seller')).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'payment-status-paypal-seen-expired-seller-desktop',
+    );
+    view.locks.enabled = true;
+  });
+
   const usdtWaiting = {
     ...USDT_ORDER_FIELDS,
     paymentMethod: 'paykit',

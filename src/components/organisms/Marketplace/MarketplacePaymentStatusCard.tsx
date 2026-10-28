@@ -420,13 +420,19 @@ export function MarketplacePaymentStatusCard({
           {isBuyer ? CHECKOUT_HOLD_COPY.cancelledByBuyer : CHECKOUT_HOLD_COPY.cancelledByBuyerSeller}
         </Typography>
       )}
-      {visibleStatus === 'expired' && !locksTerminalReason && !isBuyerCancelledUnpaid(order) && (
-        <Typography as="p" className="text-sm text-muted-foreground">
-          {expiredNoLateMoney
-            ? CHECKOUT_HOLD_COPY.expiredNoLateMoney
-            : 'The marketplace payment window elapsed before a verified payment arrived, so this checkout was not completed. A payment verified after expiry is reconciled manually — never silently applied or discarded.'}
-        </Typography>
+      {visibleStatus === 'expired' && order.gatewayPaymentSeenAt && !order.receiptId && (
+        <PaypalSeenButUnconfirmed order={order} isBuyer={isBuyer} methodPayment={methodPayment} />
       )}
+      {visibleStatus === 'expired' &&
+        !locksTerminalReason &&
+        !isBuyerCancelledUnpaid(order) &&
+        !(order.gatewayPaymentSeenAt && !order.receiptId) && (
+          <Typography as="p" className="text-sm text-muted-foreground">
+            {expiredNoLateMoney
+              ? CHECKOUT_HOLD_COPY.expiredNoLateMoney
+              : 'The marketplace payment window elapsed before a verified payment arrived, so this checkout was not completed. A payment verified after expiry is reconciled manually — never silently applied or discarded.'}
+          </Typography>
+        )}
       {visibleStatus === 'expired' && expiredNoLateMoney && isBuyer && isPaykitRail && (
         <Typography as="p" className="text-sm text-muted-foreground" data-testid="bitcoin-pending-payment-note">
           {CHECKOUT_HOLD_COPY.pendingBitcoinPaymentBuyer}
@@ -1204,6 +1210,58 @@ function observedAmountFact(observation: NonNullable<MarketplaceOrder['paykitObs
 function sellerUsdtConfirmPrompt(order: MarketplaceOrder): string {
   const amount = usdtAmountLabel(order);
   return amount ? `Confirm you received ${amount}` : 'Confirm you received this USDT payment';
+}
+
+/**
+ * A seller-confirmed PayPal order whose seller did not confirm the payment
+ * PayPal reported before the seller window ended, so the checkout expired.
+ * The money is with the seller: the buyer is told to ask them, and the seller
+ * can still confirm it (the service applies it as a late payment) or refund
+ * it in PayPal. Nothing is offered once PayPal reports it refunded or reversed.
+ */
+function PaypalSeenButUnconfirmed({
+  order,
+  isBuyer,
+  methodPayment,
+}: {
+  order: MarketplaceOrder;
+  isBuyer: boolean;
+  methodPayment: ReturnType<typeof useMarketplaceOrderPayment>;
+}) {
+  const takenBack = Boolean(order.externalRefund || order.paymentReversedAt);
+  if (isBuyer) {
+    return (
+      <Typography as="p" className="text-sm text-muted-foreground" data-testid="paypal-seen-expired-buyer">
+        {takenBack
+          ? 'This checkout ended and PayPal reports your payment refunded or reversed.'
+          : 'This checkout ended before the seller confirmed the payment PayPal reported. Message the seller: they can still confirm it, or refund you in PayPal.'}
+      </Typography>
+    );
+  }
+  return (
+    <div className="grid gap-2" data-testid="paypal-seen-expired-seller">
+      <Typography as="p" className="text-sm text-muted-foreground">
+        {takenBack
+          ? 'This checkout ended and PayPal reports the payment refunded or reversed.'
+          : 'This checkout ended before you confirmed the payment PayPal reported. If it is in your PayPal account, confirm it now, or refund the buyer in PayPal.'}
+      </Typography>
+      {!takenBack && (
+        <Button
+          size="sm"
+          className="w-fit rounded-full"
+          disabled={methodPayment.pendingAction !== null}
+          onClick={() => void methodPayment.confirmReceived()}
+        >
+          {methodPayment.pendingAction === 'confirm' ? (
+            <LoaderCircle className="size-4 animate-spin" />
+          ) : (
+            <CheckCircle2 className="size-4" />
+          )}
+          Confirm payment received
+        </Button>
+      )}
+    </div>
+  );
 }
 
 /**

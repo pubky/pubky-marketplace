@@ -500,6 +500,58 @@ describe('MarketplacePaymentStatusCard', () => {
     expect(screen.queryByRole('button', { name: 'Confirm payment received' })).not.toBeInTheDocument();
   });
 
+  it('lets the seller still confirm a reported PayPal payment after the checkout expired, and tells the buyer', () => {
+    const confirmReceived = vi.fn();
+    vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
+      availableMethods: null,
+      paykitAssets: [],
+      bitcoinOfferUnavailable: false,
+      paykitOutage: false,
+      configError: null,
+      deliveryAddress: null,
+      pendingAction: null,
+      bind: vi.fn(),
+      markPaid: vi.fn(),
+      confirmReceived,
+    });
+    const expired = createOrderFixture('cancelled', {
+      paymentMethod: 'paypal',
+      fiatCheckoutUrl: 'https://www.paypal.com/checkout',
+      paymentConfirmation: 'seller',
+      gatewayPaymentSeenAt: '2026-10-28T09:00:00.000Z',
+      receiptId: null,
+      cancellationReason: 'payment window elapsed',
+    });
+    const { unmount } = render(
+      <MarketplacePaymentStatusCard
+        order={expired}
+        payment={createPaymentFixture('expired')}
+        isBuyer={false}
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />,
+    );
+    const seller = screen.getByTestId('paypal-seen-expired-seller');
+    expect(seller).toHaveTextContent('This checkout ended before you confirmed the payment PayPal reported.');
+    fireEvent.click(within(seller).getByRole('button', { name: 'Confirm payment received' }));
+    expect(confirmReceived).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/window elapsed before a verified payment arrived/)).not.toBeInTheDocument();
+    unmount();
+
+    render(
+      <MarketplacePaymentStatusCard
+        order={expired}
+        payment={createPaymentFixture('expired')}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />,
+    );
+    expect(screen.getByTestId('paypal-seen-expired-buyer')).toHaveTextContent('Message the seller');
+  });
+
   it('explains when Bitcoin is temporarily unavailable while other methods remain available', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: ['paypal'],
