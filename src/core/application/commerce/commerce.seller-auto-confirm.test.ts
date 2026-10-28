@@ -51,7 +51,10 @@ describe('CommerceApplication.autoConfirmSellerPayments', () => {
   it('confirms, as the seller, each matching payment on its own rail and leaves the rest', async () => {
     const { getOrder, confirmPaykit, confirmPaypal } = stubService();
 
-    await expect(CommerceApplication.autoConfirmSellerPayments(SELLER)).resolves.toEqual([bitcoin.id, paypal.id]);
+    await expect(CommerceApplication.autoConfirmSellerPayments(SELLER, () => true)).resolves.toEqual([
+      bitcoin.id,
+      paypal.id,
+    ]);
     expect(getOrder).toHaveBeenCalledTimes(3);
     expect(getOrder).not.toHaveBeenCalledWith(SELLER, unrelated.id);
     expect(confirmPaykit).toHaveBeenCalledTimes(1);
@@ -64,7 +67,20 @@ describe('CommerceApplication.autoConfirmSellerPayments', () => {
     const { confirmPaykit, confirmPaypal } = stubService();
     confirmPaykit.mockRejectedValueOnce(new Error('order_not_awaiting_confirmation'));
 
-    await expect(CommerceApplication.autoConfirmSellerPayments(SELLER)).resolves.toEqual([paypal.id]);
+    await expect(CommerceApplication.autoConfirmSellerPayments(SELLER, () => true)).resolves.toEqual([paypal.id]);
     expect(confirmPaypal).toHaveBeenCalledTimes(1);
+  });
+
+  it('confirms nothing more once the seller turns the setting off mid-pass', async () => {
+    const { confirmPaykit, confirmPaypal } = stubService();
+    let enabled = true;
+    confirmPaykit.mockImplementationOnce(async () => {
+      enabled = false;
+      return { order: null, confirmation: {} as never };
+    });
+
+    await expect(CommerceApplication.autoConfirmSellerPayments(SELLER, () => enabled)).resolves.toEqual([bitcoin.id]);
+    expect(confirmPaykit).toHaveBeenCalledTimes(1);
+    expect(confirmPaypal).not.toHaveBeenCalled();
   });
 });

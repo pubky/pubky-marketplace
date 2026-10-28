@@ -30,8 +30,19 @@ export class SellerPaymentConfirmCoordinator extends Coordinator<
     routeToRegex(AUTH_ROUTES.SIGN_IN),
   ];
 
+  private unsubscribeSettingSync: (() => void) | null = null;
+  private passInFlight = false;
+
   private constructor() {
-    super({ initialConfig: { intervalMs: SELLER_AUTO_CONFIRM_INTERVAL_MS, pollOnStart: true } });
+    // Confirmations run only while the seller can see their Shop, whatever
+    // the notification polling's visibility setting says.
+    super({
+      initialConfig: {
+        intervalMs: SELLER_AUTO_CONFIRM_INTERVAL_MS,
+        pollOnStart: true,
+        respectPageVisibility: true,
+      },
+    });
   }
 
   public static getInstance(): SellerPaymentConfirmCoordinator {
@@ -48,17 +59,32 @@ export class SellerPaymentConfirmCoordinator extends Coordinator<
     }
   }
 
+  public async start() {
+    this.unsubscribeSettingSync ??= CommerceController.subscribeSellerPaymentAutoConfirmSync();
+    await super.start();
+  }
+
+  public destroy(): void {
+    this.unsubscribeSettingSync?.();
+    this.unsubscribeSettingSync = null;
+    super.destroy();
+  }
+
   public configure(config: Partial<SellerPaymentConfirmCoordinatorConfig>): void {
     super.configure(config);
     if (config.disabledRoutes) this.disabledRoutes = config.disabledRoutes;
   }
 
   protected async poll(): Promise<void> {
+    if (this.passInFlight) return;
+    this.passInFlight = true;
     try {
       const confirmed = await CommerceController.autoConfirmSellerPayments();
       if (confirmed.length > 0) Logger.info('Confirmed seller payments automatically', { count: confirmed.length });
     } catch (error) {
       Logger.warn('Automatic seller payment confirmation pass failed', { error });
+    } finally {
+      this.passInFlight = false;
     }
   }
 

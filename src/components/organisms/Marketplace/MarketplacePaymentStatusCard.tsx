@@ -750,8 +750,9 @@ export function MarketplacePaymentStatusCard({
         <BuyerBitcoinPaymentProgress order={order} payment={payment} checkoutActions={checkoutActions} />
       )}
 
-      {/* Bound USDT: the request waits in the buyer's Paykit wallet until it is paid. */}
-      {usesMethodFlow && isBuyer && rail === 'usdt' && (
+      {/* Bound USDT: the request waits in the buyer's Paykit wallet until it is
+          paid. A transfer waiting for the seller is paid: the summary says so. */}
+      {usesMethodFlow && isBuyer && rail === 'usdt' && order.paykitRequestState !== 'awaiting_seller_confirmation' && (
         <BuyerUsdtPaymentProgress order={order} checkoutActions={checkoutActions} />
       )}
 
@@ -1201,6 +1202,7 @@ const PAYPAL_SEEN_BUYER_COPY =
 /** The amount a Paykit observation saw, on the rail it saw it: Bitcoin in sats, USDT in USDT. */
 function observedAmountFact(observation: NonNullable<MarketplaceOrder['paykitObservation']>): string | null {
   if (observation.asset === 'USDT') {
+    if (observation.observedUnits == null) return null;
     const units = Number(observation.observedUnits);
     return Number.isSafeInteger(units) && units >= 0 ? formatUsdt(units) : null;
   }

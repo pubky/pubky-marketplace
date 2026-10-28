@@ -317,6 +317,35 @@ describe('MarketplacePaymentStatusCard — one Paykit order after payment', () =
 
     expect(screen.getByTestId('usdt-phase-copy')).toHaveTextContent(USDT_BUYER_PHASE_COPY.seen);
     expect(screen.queryByTestId('seller-bitcoin-confirm-prompt')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('usdt-payment-awaiting')).not.toBeInTheDocument();
+    expect(screen.queryByText(USDT_BUYER_PHASE_COPY.awaiting)).not.toBeInTheDocument();
+  });
+
+  it('shows a USDT observation with no amount as not provided, never as zero', () => {
+    const { order } = createPaykitOrderFixture('paid-usdt');
+    renderCard(
+      {
+        order: {
+          ...order,
+          state: 'pending_payment',
+          paykitRequestState: 'awaiting_seller_confirmation',
+          paymentConfirmation: 'seller',
+          paykitObservation: {
+            txid: `0x${'9f2c'.repeat(16)}`,
+            asset: 'USDT',
+            observedUnits: null,
+            confirmations: 1,
+            amountMatched: true,
+            disappeared: false,
+          },
+        },
+        payment: createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' }),
+      },
+      false,
+    );
+
+    expect(screen.queryByText('0.000000 USDT')).not.toBeInTheDocument();
+    expect(screen.getByText('Observed amount').nextElementSibling).toHaveTextContent('Not provided');
   });
 });
 

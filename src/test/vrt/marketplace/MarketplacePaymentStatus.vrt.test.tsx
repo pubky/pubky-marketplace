@@ -1119,6 +1119,7 @@ describe('Marketplace payment status card — seller-confirmed payment', () => {
     view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
     const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
       deployEnv: 'production',
+      currentUserPubky: (await fixtures).buyer,
       orderOverrides: {
         paymentMethod: 'paypal',
         fiatCheckoutUrl: PAYPAL_URL,
@@ -1131,6 +1132,7 @@ describe('Marketplace payment status card — seller-confirmed payment', () => {
     });
     await expect.element(screen.getByText('PayPal reported your payment')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Continue to PayPal/ }).elements()).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Confirm payment received' }).elements()).toHaveLength(0);
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-paypal-seen-buyer-desktop');
     view.locks.enabled = true;
   });
@@ -1208,9 +1210,12 @@ describe('Marketplace payment status card — seller-confirmed payment', () => {
       adapter: 'paykit',
       deployEnv: 'production',
       paykitServerApi: 'upstream',
+      currentUserPubky: (await fixtures).buyer,
       orderOverrides: usdtWaiting,
     });
     await expect.element(screen.getByTestId('usdt-phase-copy')).toBeInTheDocument();
+    expect(screen.getByTestId('usdt-payment-awaiting').elements()).toHaveLength(0);
+    expect(screen.getByTestId('seller-bitcoin-confirm-prompt').elements()).toHaveLength(0);
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-usdt-seen-buyer-desktop');
   });
 

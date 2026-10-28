@@ -63,6 +63,7 @@ import { buyerCountryFor, useBuyerCountryStore } from '@/stores/buyer-country/bu
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import type { CommerceConditionFilter, CommerceSaleFormatFilter, CommerceSort } from '@/stores/commerce/commerce.types';
 import { useNotificationStore } from '@/stores/notification/notification.store';
+import { SELLER_PAYMENT_CONFIRM_PERSIST_KEY } from '@/stores/persistedKeys';
 import { useSellerPaymentConfirmStore } from '@/stores/seller-payment-confirm/seller-payment-confirm.store';
 
 /** Rates for an order, or why this device could not open the address to quote against. */
@@ -1482,8 +1483,26 @@ export class CommerceController {
   static async autoConfirmSellerPayments(): Promise<string[]> {
     if (!isDurableCommerceMode(getCommerceAdapterMode())) return [];
     const pubky = useAuthStore.getState().currentUserPubky;
-    if (!pubky || useSellerPaymentConfirmStore.getState().autoConfirmByPubky[pubky] !== true) return [];
-    return await CommerceApplication.autoConfirmSellerPayments(pubky);
+    const isEnabled = () =>
+      pubky !== null &&
+      useAuthStore.getState().currentUserPubky === pubky &&
+      useSellerPaymentConfirmStore.getState().autoConfirmByPubky[pubky] === true;
+    if (!pubky || !isEnabled()) return [];
+    return await CommerceApplication.autoConfirmSellerPayments(pubky, isEnabled);
+  }
+
+  /**
+   * Keeps this tab's automatic confirmation setting in step with the seller's
+   * other tabs: a change made in one is read into the others' store at once.
+   */
+  static subscribeSellerPaymentAutoConfirmSync(): () => void {
+    if (typeof window === 'undefined') return () => {};
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== SELLER_PAYMENT_CONFIRM_PERSIST_KEY) return;
+      void useSellerPaymentConfirmStore.persist.rehydrate();
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }
 
   /** Who marks orders paid on this deployment (`seller` | `automatic`); null when unknown. A failed read rejects. */

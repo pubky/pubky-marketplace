@@ -1859,9 +1859,11 @@ export class CommerceApplication {
    * open order of theirs whose payment waits for them and matched (see
    * `autoConfirmableRail`). Each candidate is re-read in full first, and a
    * failed confirmation leaves that order for the seller without stopping the
-   * rest. Returns the ids it confirmed.
+   * rest. `isStillEnabled` is asked before every confirmation, so a seller who
+   * turns the setting off mid-pass confirms nothing more. Returns the ids it
+   * confirmed.
    */
-  static async autoConfirmSellerPayments(sellerPubky: string): Promise<string[]> {
+  static async autoConfirmSellerPayments(sellerPubky: string, isStillEnabled: () => boolean): Promise<string[]> {
     const orders = await MarketplaceGatewayService.getOrders(sellerPubky);
     const confirmed: string[] = [];
     for (const row of orders) {
@@ -1869,6 +1871,7 @@ export class CommerceApplication {
       try {
         const order = await MarketplaceGatewayService.getOrder(sellerPubky, row.id);
         const rail = order ? autoConfirmableRail(order, sellerPubky) : null;
+        if (rail !== null && !isStillEnabled()) break;
         if (rail === 'paykit') {
           await MarketplaceGatewayService.confirmBitcoinPayment(sellerPubky, row.id, SELLER_AUTO_CONFIRM_REASON);
         } else if (rail === 'paypal') {
