@@ -208,12 +208,26 @@ describe('the seller studio in a blocked region', () => {
     await renderStudio();
 
     const notice = await screen.findByTestId('dashboard-selling-unavailable');
-    expect(notice).toHaveTextContent("Selling isn't available in your region yet.");
+    expect(notice).toHaveTextContent("Your shop country is United Kingdom, where selling isn't available yet.");
+    expect(notice).not.toHaveTextContent('in your region');
     expect(within(notice).getByRole('link', { name: 'update your shop country' })).toHaveAttribute(
       'href',
       '/marketplace/storefront#countryCode',
     );
     expect(screen.getByRole('button', { name: /Sell an item/ })).toBeDisabled();
+  });
+
+  it('names a blocked shop country without linking to the locked field when the seller is inside the block too', async () => {
+    setRegionModes(LAUNCH);
+    stubClientRegion('US');
+    view.shopCountry = 'GB';
+    await renderStudio();
+
+    const notice = await screen.findByTestId('dashboard-selling-unavailable');
+    await waitFor(() =>
+      expect(notice).toHaveTextContent("Your shop country is United Kingdom, where selling isn't available yet."),
+    );
+    expect(within(notice).queryByRole('link', { name: 'update your shop country' })).not.toBeInTheDocument();
   });
 
   it('opens up for a seller from an open country with an open shop country', async () => {

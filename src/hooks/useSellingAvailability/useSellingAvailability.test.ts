@@ -55,7 +55,10 @@ describe('useSellingAvailability', () => {
     ownShopIn('DE');
     const { result } = renderHook(() => useSellingAvailability());
     await waitFor(() => expect(result.current.blocked).toBe(true));
-    expect(result.current).toMatchObject({ source: 'declared', sellingMessage: SELLING_BLOCKED_MESSAGE });
+    expect(result.current).toMatchObject({
+      source: 'declared',
+      sellingMessage: "Your shop country is Germany, where selling isn't available yet.",
+    });
   });
 
   it('lets a seller from an open country with an open shop country sell', async () => {

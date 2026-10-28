@@ -215,11 +215,15 @@ export const SHOP_COUNTRY_LOCKED_UNKNOWN_MESSAGE =
   "We can't tell where you are, so your shop country can't be changed right now.";
 export const SHOP_COUNTRY_CHECKING_MESSAGE = 'Checking where you are before your shop country can be changed.';
 
-/** Said after the selling line when the seller's own shop country is the reason, with a link to the field. */
-export const SELLING_MOVED_PREFIX = "If you've moved, ";
+/**
+ * Said after the selling line when the seller's own shop country is the reason, with a link to the field. It
+ * does not assume the seller chose that country: shops saved or published before the country became a required
+ * choice may carry one the seller never picked.
+ */
+export const SELLING_MOVED_PREFIX = "If that isn't where you sell from, ";
 export const SELLING_MOVED_LINK_LABEL = 'update your shop country';
 /** The same hint on the shop settings page, where the field is right below. */
-export const SELLING_MOVED_ON_SHOP_SETTINGS = "If you've moved, update your shop country below.";
+export const SELLING_MOVED_ON_SHOP_SETTINGS = "If that isn't where you sell from, update your shop country below.";
 /** Said on the shop settings page when the visitor's own region is the reason: the details can still change. */
 export const SELLING_PAUSED_NOTE =
   "You can still update your shop here. Selling stays paused until you're in a region where it's offered.";

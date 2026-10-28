@@ -121,17 +121,23 @@ describe('Marketplace my shop — visual regression', () => {
 
   // Where selling is blocked the storefront settings stay open, so the seller can change the shop country.
   it.each([
-    { name: 'declared', declaredCountry: 'GB', ip: 'CH' },
-    { name: 'ip', declaredCountry: 'CH', ip: 'US' },
+    {
+      name: 'declared',
+      declaredCountry: 'GB',
+      ip: 'CH',
+      line: "Your shop country is United Kingdom, where selling isn't available yet.",
+    },
+    { name: 'ip', declaredCountry: 'CH', ip: 'US', line: "Selling isn't available in your region yet." },
   ])(
     'renders the storefront settings with the selling notice, $name case, at desktop viewport',
-    async ({ name, declaredCountry, ip }) => {
+    async ({ name, declaredCountry, ip, line }) => {
       const { evaluateCommerceAvailability } = await import('@/libs/commerce/commerce-availability');
       const { createRegionPolicy, parseRegionModes } = await import('@/libs/commerce/region-modes');
       const parsed = parseRegionModes('EU=blocked,GB=blocked,US=blocked');
       if (!parsed.ok) throw new Error(parsed.error);
       view.selling = evaluateCommerceAvailability(createRegionPolicy(parsed.entries), {
         declaredCountry,
+        declaredIs: 'shop',
         client: { status: 'ready', country: ip },
       });
       view.configured = true;
@@ -139,6 +145,9 @@ describe('Marketplace my shop — visual regression', () => {
       view.withImages = false;
 
       const screen = await renderForVRT(<MarketplaceMyShop />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
+      await vi.waitFor(() => {
+        if (!screen.container.textContent?.includes(line)) throw new Error('The selling notice has not rendered yet.');
+      });
       await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(`my-shop-region-blocked-${name}-desktop`);
     },
   );

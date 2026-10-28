@@ -212,6 +212,7 @@ describe('Marketplace seller dashboard — visual regression', () => {
       if (!parsed.ok) throw new Error(parsed.error);
       view.selling = evaluateCommerceAvailability(createRegionPolicy(parsed.entries), {
         declaredCountry: 'GB',
+        declaredIs: 'shop',
         client: { status: 'ready', country: 'CH' },
       });
       view.listings = listings;
@@ -222,7 +223,11 @@ describe('Marketplace seller dashboard — visual regression', () => {
 
       const screen = await renderForVRT(<MarketplaceDashboard />, { viewport });
       await vi.waitFor(() => {
-        if (!screen.container.textContent?.includes('update your shop country')) {
+        const text = screen.container.textContent ?? '';
+        if (
+          !text.includes('Your shop country is United Kingdom') ||
+          !text.includes("If that isn't where you sell from")
+        ) {
           throw new Error('The selling notice has not rendered yet.');
         }
       });

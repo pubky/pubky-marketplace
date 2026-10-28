@@ -6,6 +6,7 @@ import {
   evaluateCommerceAvailability,
   evaluateShopCountryChange,
   INERT_COMMERCE_AVAILABILITY,
+  shopCountryBlockedMessage,
   shopCountryCode,
 } from './commerce-availability';
 import {
@@ -87,6 +88,43 @@ describe('evaluateCommerceAvailability', () => {
     expect(
       evaluateCommerceAvailability(LAUNCH, { declaredCountry: 'DE', client: { status: 'loading' } }),
     ).toMatchObject({ blocked: true, source: 'declared' });
+  });
+
+  it("names the shop country in the selling line when the seller's own shop country is the blocked one", () => {
+    const result = evaluateCommerceAvailability(LAUNCH, {
+      declaredCountry: 'us',
+      declaredIs: 'shop',
+      client: ready('CH'),
+    });
+    expect(result).toMatchObject({
+      blocked: true,
+      source: 'declared',
+      sellingMessage: shopCountryBlockedMessage('US'),
+    });
+    expect(result.sellingMessage).toBe("Your shop country is United States, where selling isn't available yet.");
+    expect(result.message).toBe(COMMERCE_BLOCKED_MESSAGE);
+  });
+
+  it("marks the shop country locked only when the seller's own region keeps it as it is", () => {
+    expect(
+      evaluateCommerceAvailability(LAUNCH, { declaredCountry: 'GB', declaredIs: 'shop', client: ready('US') }),
+    ).toMatchObject({ source: 'declared', shopCountryLocked: true });
+    expect(
+      evaluateCommerceAvailability(LAUNCH, { declaredCountry: 'GB', declaredIs: 'shop', client: ready('CH') }),
+    ).toMatchObject({ source: 'declared', shopCountryLocked: false });
+    expect(
+      evaluateCommerceAvailability(LAUNCH, { declaredCountry: 'GB', client: ready('US') }).shopCountryLocked,
+    ).toBeUndefined();
+  });
+
+  it('keeps the region line for a seller blocked by where they are, and for a declared buyer country', () => {
+    expect(
+      evaluateCommerceAvailability(LAUNCH, { declaredCountry: 'CH', declaredIs: 'shop', client: ready('US') }),
+    ).toMatchObject({ source: 'ip', sellingMessage: SELLING_BLOCKED_MESSAGE });
+    expect(evaluateCommerceAvailability(LAUNCH, { declaredCountry: 'DE', client: ready('CH') })).toMatchObject({
+      source: 'declared',
+      sellingMessage: SELLING_BLOCKED_MESSAGE,
+    });
   });
 
   it('does not let a declared open country lift an IP block', () => {
