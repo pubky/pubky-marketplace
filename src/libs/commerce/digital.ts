@@ -689,6 +689,24 @@ export function awaitsSellerRelease(order: {
   );
 }
 
+/**
+ * Whether a seller-mode order's instant lines reached the buyer: released by
+ * the seller, or moved on to delivered/completed by a service binary from
+ * before the release existed. An order that ended unreleased never did.
+ */
+function instantLinesReleased(order: {
+  state: string;
+  digitalRelease?: 'seller' | 'payment' | null;
+  digitalReleasedAt?: string | null;
+}): boolean {
+  return (
+    order.digitalRelease !== 'seller' ||
+    Boolean(order.digitalReleasedAt) ||
+    order.state === 'delivered' ||
+    order.state === 'completed'
+  );
+}
+
 /** "The seller will email this to …", or once marked emailed, when and what to check. */
 export function digitalOrderEmailLine(address: string, emailedAt: string | null): string {
   if (!emailedAt) return `The seller will email this to ${address}`;
@@ -881,8 +899,9 @@ export function digitalEvidenceLines(
   const hasInstant = lines.some(
     (line) => line.digitalKind !== undefined && isInstantDigitalDeliveryKind(line.digitalKind),
   );
-  // An unreleased purchase has no delivery to report yet; the panel says it waits for the seller.
-  if (hasInstant && !awaitsSellerRelease(release)) {
+  // An unreleased purchase has no delivery to report: the panel says it waits
+  // for the seller, or the order ended before it was released.
+  if (hasInstant && instantLinesReleased(release)) {
     const delivered =
       release.digitalRelease === 'seller' && release.digitalReleasedAt
         ? `Released by you ${formatEvidenceTime(release.digitalReleasedAt)}`

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
@@ -268,6 +268,18 @@ describe('MarketplaceSellerDigitalPanel (digital delivery design §3 "Seller\u20
       );
       expect(screen.queryByText(DIGITAL_SELLER_COPY.releasePending)).not.toBeInTheDocument();
       unmount();
+    }
+  });
+
+  it('never reports a purchase that ended before its release as delivered', async () => {
+    for (const state of ['cancelled', 'refunded_external'] as const) {
+      const order = { ...sellerOrder(state, ['file']), digitalRelease: 'seller' as const, digitalReleasedAt: null };
+      const { unmount } = render(<MarketplaceSellerDigitalPanel order={order} />);
+      await waitFor(() => expect(CommerceController.fetchOrderDigitalEvidence).toHaveBeenCalled());
+      await act(async () => {});
+      expect(screen.queryByText(/Delivered automatically/)).not.toBeInTheDocument();
+      unmount();
+      vi.mocked(CommerceController.fetchOrderDigitalEvidence).mockClear();
     }
   });
 

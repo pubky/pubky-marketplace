@@ -628,6 +628,18 @@ describe('seller delivery evidence (§3 "Seller\u2019s orders")', () => {
     expect(digitalEvidenceLines(none, [{ digitalKind: 'email' }], PAID)).toEqual([]);
   });
 
+  it('never calls a purchase that ended unreleased delivered, but keeps a legacy delivery', () => {
+    const unreleased = { digitalRelease: 'seller' as const, digitalReleasedAt: null };
+    for (const state of ['cancelled', 'refunded_external', 'closed']) {
+      expect(digitalEvidenceLines(none, [{ digitalKind: 'file' }], { state, ...unreleased })).toEqual([]);
+    }
+    for (const state of ['delivered', 'completed']) {
+      expect(digitalEvidenceLines(none, [{ digitalKind: 'file' }], { state, ...unreleased })).toEqual([
+        'Delivered automatically · not opened yet',
+      ]);
+    }
+  });
+
   it('reports nothing for a purchase that waits for the seller, then the seller’s release', () => {
     const at = '2026-09-26T13:02:00.000Z';
     expect(digitalEvidenceLines(none, [{ digitalKind: 'file' }], { ...PAID, digitalRelease: 'seller' })).toEqual([]);
