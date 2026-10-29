@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import { createOrderFixture } from '@/test/fixtures/commerce/orders';
-import { autoConfirmableRail, mayAwaitSellerConfirmation } from './seller-auto-confirm';
+import { autoConfirmableRail, awaitsSellerConfirmation, mayAwaitSellerConfirmation } from './seller-auto-confirm';
 
 const SELLER = 's'.repeat(52);
 
@@ -67,5 +67,31 @@ describe('mayAwaitSellerConfirmation', () => {
       false,
     );
     expect(mayAwaitSellerConfirmation(waitingPaykit(), 'b'.repeat(52))).toBe(false);
+  });
+});
+
+describe('awaitsSellerConfirmation', () => {
+  const awaiting = { state: 'awaiting_entitlement' };
+  const paypal = (overrides: Partial<MarketplaceOrder>) =>
+    createOrderFixture('pending_payment', { paymentMethod: 'paypal', ...overrides });
+
+  it('is the money a pending order holds for its seller to confirm', () => {
+    expect(awaitsSellerConfirmation(waitingPaykit(), awaiting)).toBe(true);
+    expect(awaitsSellerConfirmation(paypal({ paymentReportedAt: '2026-10-28T18:45:00.000Z' }), awaiting)).toBe(true);
+    expect(awaitsSellerConfirmation(paypal({ gatewayPaymentSeenAt: '2026-10-28T18:45:00.000Z' }), awaiting)).toBe(true);
+  });
+
+  it('is not a hold nobody paid, a paid order, or a payment already decided', () => {
+    expect(awaitsSellerConfirmation(paypal({}), awaiting)).toBe(false);
+    expect(
+      awaitsSellerConfirmation(paypal({ paymentReportedAt: '2026-10-28T18:45:00.000Z' }), { state: 'confirmed' }),
+    ).toBe(false);
+    expect(awaitsSellerConfirmation(waitingPaykit(), { state: 'manual_review' })).toBe(false);
+    expect(
+      awaitsSellerConfirmation(
+        createOrderFixture('paid', { paymentMethod: 'paypal', gatewayPaymentSeenAt: '2026-10-28T18:45:00.000Z' }),
+        awaiting,
+      ),
+    ).toBe(false);
   });
 });

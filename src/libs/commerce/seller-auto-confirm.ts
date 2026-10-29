@@ -70,6 +70,25 @@ export function mayAwaitSellerConfirmation(order: AutoConfirmOrder, sellerPubky:
   );
 }
 
+/**
+ * Whether a pending order's money waits for its seller to confirm it: a Paykit
+ * payment in the seller window (Bitcoin or USDT), or a PayPal payment the buyer
+ * reported or PayPal's verified notification reported. Such an order is still
+ * a reservation, and its card must carry the seller's confirmation, or the
+ * hold lapses with the buyer's money unconfirmed.
+ */
+export function awaitsSellerConfirmation(
+  order: Pick<
+    MarketplaceOrder,
+    'state' | 'paymentMethod' | 'paykitRequestState' | 'paymentReportedAt' | 'gatewayPaymentSeenAt'
+  >,
+  payment: { state?: string | null } | null | undefined,
+): boolean {
+  if (order.state !== 'pending_payment' || payment?.state !== 'awaiting_entitlement') return false;
+  if (order.paykitRequestState === 'awaiting_seller_confirmation') return true;
+  return order.paymentMethod === 'paypal' && Boolean(order.paymentReportedAt || order.gatewayPaymentSeenAt);
+}
+
 /** Shop settings: what a seller-confirmed deployment means for the seller. */
 export const SELLER_CONFIRMS_PAYMENTS_COPY =
   'An order is marked paid only when you confirm it: Bitcoin and USDT once the payment reaches your wallet, PayPal once it is in your PayPal account. Digital items are released when you do. If you don’t confirm a Bitcoin or USDT payment within 24 hours it goes to review; a PayPal checkout you don’t confirm in 24 hours ends, and you can still confirm it later.';

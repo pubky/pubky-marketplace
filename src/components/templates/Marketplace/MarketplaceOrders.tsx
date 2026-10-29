@@ -64,6 +64,7 @@ import {
   refundRecordLine,
   refundStateLabel,
 } from '@/libs/commerce/refund-copy';
+import { awaitsSellerConfirmation } from '@/libs/commerce/seller-auto-confirm';
 import { usdtPaidAsLine } from '@/libs/commerce/usdt-buyer-status';
 import { isUsdtRefundOrder } from '@/libs/commerce/usdt-refund';
 import { takeDocumentFragment } from '@/libs/navigation/document-fragment';
@@ -354,7 +355,9 @@ export function MarketplaceOrders() {
                   Reservations
                 </Heading>
                 {sellerReservations.map(({ order, payment }) => {
-                  const decision = sellerBitcoinDecision(order, payment);
+                  const decision =
+                    sellerBitcoinDecision(order, payment) ??
+                    (awaitsSellerConfirmation(order, payment) ? 'confirm' : null);
                   return (
                     <Card key={order.id} className="rounded-md p-0">
                       <CardContent className="grid min-w-0 gap-4 p-6">
@@ -373,7 +376,7 @@ export function MarketplaceOrders() {
                         <Typography as="p" className="text-sm text-muted-foreground">
                           {decision ? PAYMENT_SEEN_LABEL : sellerReservationCopy(order.holdExpiresAt)}
                         </Typography>
-                        <MarketplaceUsdtPaymentSummary order={order} payment={payment} isBuyer={false} />
+                        {!decision && <MarketplaceUsdtPaymentSummary order={order} payment={payment} isBuyer={false} />}
                         {decision && (
                           <MarketplacePaymentStatusCard
                             order={order}

@@ -4,6 +4,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { CONNECTOR_SHARE_CONSENT_COPY, MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE } from '@/config/commerce-copy';
 import { LISTING_CURRENCY_REGISTRY, LISTING_FIAT_CURRENCY_CODES } from '@/config/currencies';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { getMarketplaceOrderViewRoute } from '@/libs/commerce/activity-links';
 import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
@@ -132,8 +133,10 @@ const navigation = vi.hoisted(() => ({ navigateTop: vi.fn() }));
 
 vi.mock('@/libs/navigation/navigate-top', () => ({ navigateTop: navigation.navigateTop }));
 
+const routerReplace = vi.hoisted(() => vi.fn());
+
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: routerReplace }),
   usePathname: () => '/marketplace/checkout',
   useSearchParams: () => searchParams.current,
 }));
@@ -1238,6 +1241,39 @@ describe('MarketplaceCheckout', () => {
       expect(screen.getByRole('link', { name: 'Handmade leather boots' })).toBeInTheDocument();
       expect(screen.queryByRole('link', { name: 'Vintage boots' })).not.toBeInTheDocument();
       expect(screen.queryByTestId('marketplace-checkout-pay')).not.toBeInTheDocument();
+    });
+
+    it('sends a seller who opens their own sale with ?order= to that order, never the buyer checkout', async () => {
+      routerReplace.mockClear();
+      const payment = createPaymentFixture('awaiting_entitlement');
+      const order = createOrderFixture('pending_payment', {
+        paymentId: payment.id,
+        paymentMethod: 'paypal',
+        paymentReportedAt: '2026-10-28T18:45:00.000Z',
+      });
+      auth.currentUserPubky = order.sellerPubky;
+      view.orders = [{ order, payment }];
+      searchParams.current = new URLSearchParams({ order: order.id });
+
+      render(<MarketplaceCheckout />);
+
+      await waitFor(() => expect(routerReplace).toHaveBeenCalledWith(getMarketplaceOrderViewRoute(order.id)));
+      expect(screen.queryByTestId('marketplace-checkout-paying')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
+      expect(screen.queryByText(/You don.t need to pay again/)).not.toBeInTheDocument();
+    });
+
+    it('keeps the buyer on their own checkout when they open it with ?order=', () => {
+      routerReplace.mockClear();
+      const payment = createPaymentFixture('awaiting_entitlement');
+      const order = createOrderFixture('pending_payment', { paymentId: payment.id, paymentMethod: 'paypal' });
+      view.orders = [{ order, payment }];
+      searchParams.current = new URLSearchParams({ order: order.id });
+
+      render(<MarketplaceCheckout />);
+
+      expect(screen.getByTestId('marketplace-checkout-paying')).toBeInTheDocument();
+      expect(routerReplace).not.toHaveBeenCalled();
     });
 
     it('shows order snapshot items in the checkout overview', async () => {
