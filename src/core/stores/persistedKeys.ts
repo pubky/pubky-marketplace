@@ -14,6 +14,7 @@ export const HOT_PERSIST_KEY = shopStorageKey('hot-store');
 export const SETTINGS_PERSIST_KEY = shopStorageKey('settings-storage');
 export const MARKETPLACE_DISPLAY_PERSIST_KEY = shopStorageKey('marketplace-display-storage');
 export const BUYER_COUNTRY_PERSIST_KEY = shopStorageKey('buyer-country-storage');
+export const SELLER_PAYMENT_CONFIRM_PERSIST_KEY = shopStorageKey('seller-payment-confirm-storage');
 export const MIGRATION_STORE_KEY = 'migration-store';
 
 // List of all persisted store keys (Local storage keys)

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { HandCoins, LoaderCircle, ShoppingCart, WalletCards } from 'lucide-react';
 import { Controller, useWatch } from 'react-hook-form';
 import { APP_ROUTES, getMarketplaceDropRoute, getMarketplaceListingRoute, MARKETPLACE_ROUTES } from '@/app/routes';
@@ -169,6 +169,7 @@ export function MarketplaceCheckout() {
 
 function MarketplaceCartCheckout() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const offerReference = searchParams.get('offer');
   const dropSeller = searchParams.get('seller');
   const dropId = searchParams.get('drop');
@@ -462,7 +463,25 @@ function MarketplaceCartCheckout() {
     settlePaykitRead,
   ]);
 
-  const targetPayingIds = [...new Set([...payingOrderIds, ...(resumeOrderId ? [resumeOrderId] : [])])];
+  // Checkout is the buyer's. A seller who opens it on their own sale (an order
+  // link shared or bookmarked) is sent to that order on Orders, where the
+  // seller's actions are, and never shown the buyer's payment or Cancel.
+  const sellerOwnResumeOrder = resumeOrderId
+    ? orders.orders.find(
+        ({ order }) =>
+          order.id === resumeOrderId &&
+          currentUserPubky !== null &&
+          order.sellerPubky === currentUserPubky &&
+          order.buyerPubky !== currentUserPubky,
+      )
+    : undefined;
+  const sellerOwnResumeOrderId = sellerOwnResumeOrder?.order.id ?? null;
+  useEffect(() => {
+    if (sellerOwnResumeOrderId) router.replace(getMarketplaceOrderViewRoute(sellerOwnResumeOrderId));
+  }, [sellerOwnResumeOrderId, router]);
+  const targetPayingIds = [
+    ...new Set([...payingOrderIds, ...(resumeOrderId && !sellerOwnResumeOrderId ? [resumeOrderId] : [])]),
+  ];
   const focusedPaying = orders.orders.filter((view) => targetPayingIds.includes(view.order.id));
   const showPaying = targetPayingIds.length > 0;
   const allPaymentsConfirmed =

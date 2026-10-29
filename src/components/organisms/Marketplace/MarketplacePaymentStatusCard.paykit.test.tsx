@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useMarketplaceOrderPayment } from '@/hooks/useMarketplaceOrderPayment/useMarketplaceOrderPayment';
-import { PAYMENT_RECEIVED_REVIEW_COPY } from '@/libs/commerce/bitcoin-buyer-status';
+import { PAYMENT_RECEIVED_REVIEW_COPY, PAYMENT_SEEN_HOLD_COPY } from '@/libs/commerce/bitcoin-buyer-status';
 import { APPROVE_IN_BITKIT_FALLBACK_COPY } from '@/libs/commerce/checkout-hold';
 import { PAYMENT_RAIL_BADGE } from '@/libs/commerce/paykit-rail';
 import {
@@ -275,17 +275,84 @@ describe('MarketplacePaymentStatusCard — one Paykit order after payment', () =
     expect(screen.getByTestId('payment-manual-review-copy')).toHaveTextContent(PAYMENT_RECEIVED_REVIEW_COPY);
   });
 
-  it('offers a seller no Bitcoin confirmation for a USDT payment', () => {
+  it('asks the seller to confirm a USDT payment that waits for them, in USDT', () => {
     const { order } = createPaykitOrderFixture('paid-usdt');
     renderCard(
       {
-        order: { ...order, state: 'pending_payment', paykitRequestState: 'awaiting_seller_confirmation' },
+        order: {
+          ...order,
+          state: 'pending_payment',
+          paykitRequestState: 'awaiting_seller_confirmation',
+          paymentConfirmation: 'seller',
+          paykitObservation: {
+            txid: `0x${'9f2c'.repeat(16)}`,
+            asset: 'USDT',
+            observedUnits: 137_000_000,
+            confirmations: 1,
+            amountMatched: true,
+            disappeared: false,
+          },
+        },
         payment: createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' }),
       },
       false,
     );
 
+    expect(screen.getByTestId('seller-bitcoin-confirm-prompt')).toHaveTextContent(
+      'Confirm you received 137.000000 USDT',
+    );
+    expect(screen.getByText('137.000000 USDT', { selector: 'dd' })).toBeInTheDocument();
+    expect(screen.getByTestId('usdt-phase-copy')).toHaveTextContent(USDT_SELLER_PHASE_COPY.seen);
+  });
+
+  it('tells the buyer a USDT payment waits for the seller', () => {
+    const { order } = createPaykitOrderFixture('paid-usdt');
+    renderCard(
+      {
+        order: {
+          ...order,
+          state: 'pending_payment',
+          paykitRequestState: 'awaiting_seller_confirmation',
+          paykitSellerConfirmationDeadline: '2099-01-02T10:00:00.000Z',
+        },
+        payment: createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' }),
+      },
+      true,
+    );
+
+    expect(screen.getByTestId('usdt-phase-copy')).toHaveTextContent(USDT_BUYER_PHASE_COPY.seen);
+    expect(screen.getByTestId('usdt-seller-confirms-by')).toHaveTextContent(/^Seller confirms by .+ left$/);
+    expect(screen.getByTestId('usdt-seen-hold-copy')).toHaveTextContent(PAYMENT_SEEN_HOLD_COPY);
     expect(screen.queryByTestId('seller-bitcoin-confirm-prompt')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('usdt-payment-awaiting')).not.toBeInTheDocument();
+    expect(screen.queryByText(USDT_BUYER_PHASE_COPY.awaiting)).not.toBeInTheDocument();
+  });
+
+  it('shows a USDT observation with no amount as not provided, never as zero', () => {
+    const { order } = createPaykitOrderFixture('paid-usdt');
+    renderCard(
+      {
+        order: {
+          ...order,
+          state: 'pending_payment',
+          paykitRequestState: 'awaiting_seller_confirmation',
+          paymentConfirmation: 'seller',
+          paykitObservation: {
+            txid: `0x${'9f2c'.repeat(16)}`,
+            asset: 'USDT',
+            observedUnits: null,
+            confirmations: 1,
+            amountMatched: true,
+            disappeared: false,
+          },
+        },
+        payment: createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' }),
+      },
+      false,
+    );
+
+    expect(screen.queryByText('0.000000 USDT')).not.toBeInTheDocument();
+    expect(screen.getByText('Observed amount').nextElementSibling).toHaveTextContent('Not provided');
   });
 });
 

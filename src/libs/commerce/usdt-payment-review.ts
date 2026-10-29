@@ -26,8 +26,9 @@ import {
  * - Route, method, `Idempotency-Key` header and the `{ ok, order, resolution }`
  *   response are unchanged: `POST /v0/orders/{id}/bitcoin/resolve`. Its scope
  *   widens from `payment_method = 'bitcoin'` to `'bitcoin'` and `'usdt'`.
- *   `POST /v0/orders/{id}/confirm-bitcoin-payment` stays Bitcoin-only: a USDT
- *   payment is paid at verified inclusion and has no seller-confirmation step.
+ *   `POST /v0/orders/{id}/confirm-bitcoin-payment` confirms a USDT payment too
+ *   on a seller-confirmed order (`payment_confirmation: seller`); on an
+ *   automatic order a USDT payment is paid at verified inclusion.
  * - Outcomes `paid`, `refunded` and `abandoned` and the `reason` note are
  *   unchanged.
  * - On a USDT order `external_refund_reference` of a `refunded` outcome is the

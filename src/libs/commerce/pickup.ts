@@ -267,6 +267,8 @@ export const marketplaceHealthSchema = z
       .passthrough()
       .optional()
       .catch(undefined),
+    // Who marks orders paid on this deployment (`PAYMENT_CONFIRMATION`); absent on older services.
+    paymentConfirmation: z.enum(['seller', 'automatic']).optional().catch(undefined),
     // The last Paykit rail probe: `bitcoinOfferAvailable` is null until one has succeeded.
     paykitRail: z
       .object({

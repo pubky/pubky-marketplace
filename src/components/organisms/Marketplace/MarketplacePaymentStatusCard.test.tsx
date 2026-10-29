@@ -417,6 +417,141 @@ describe('MarketplacePaymentStatusCard', () => {
     expect(screen.queryByText('Confirmed by seller')).not.toBeInTheDocument();
   });
 
+  it('tells the buyer PayPal reported their payment and the seller confirms it', () => {
+    render(
+      <MarketplacePaymentStatusCard
+        order={createOrderFixture('pending_payment', {
+          paymentMethod: 'paypal',
+          fiatCheckoutUrl: 'https://www.paypal.com/checkout',
+          paymentConfirmation: 'seller',
+          gatewayPaymentSeenAt: '2026-10-28T09:00:00.000Z',
+          holdExpiresAt: '2026-10-29T09:00:00.000Z',
+        })}
+        payment={createPaymentFixture('awaiting_entitlement')}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />,
+    );
+    const status = screen.getByTestId('paypal-payment-seen-buyer');
+    expect(status).toHaveTextContent('PayPal reported your payment');
+    expect(status).toHaveTextContent('The seller checks their PayPal account and confirms receipt');
+    expect(status).toHaveTextContent('Your item stays reserved until');
+    expect(screen.queryByRole('link', { name: 'Continue to PayPal' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Pay by /)).not.toBeInTheDocument();
+  });
+
+  it('asks the seller to confirm a payment PayPal reported on a seller-confirmed order', () => {
+    const confirmReceived = vi.fn();
+    vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
+      availableMethods: null,
+      paykitAssets: [],
+      bitcoinOfferUnavailable: false,
+      paykitOutage: false,
+      configError: null,
+      deliveryAddress: null,
+      pendingAction: null,
+      bind: vi.fn(),
+      markPaid: vi.fn(),
+      confirmReceived,
+    });
+    render(
+      <MarketplacePaymentStatusCard
+        order={createOrderFixture('pending_payment', {
+          paymentMethod: 'paypal',
+          fiatCheckoutUrl: 'https://www.paypal.com/checkout',
+          paymentConfirmation: 'seller',
+          gatewayPaymentSeenAt: '2026-10-28T09:00:00.000Z',
+          fiatTransactionRef: '7XP31449AB123456C',
+        })}
+        payment={createPaymentFixture('awaiting_entitlement')}
+        isBuyer={false}
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />,
+    );
+    const prompt = screen.getByTestId('seller-paypal-confirm');
+    expect(prompt).toHaveTextContent(/PayPal reported a payment of .+ \(ref 7XP31449AB123456C\)/);
+    fireEvent.click(within(prompt).getByRole('button', { name: 'Confirm payment received' }));
+    expect(confirmReceived).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['seller', /When PayPal reports it, you confirm receipt here/],
+    ['automatic', /PayPal’s notification usually completes the order automatically/],
+  ] as const)('tells a %s-confirmed seller what happens before PayPal reports', (paymentConfirmation, copy) => {
+    render(
+      <MarketplacePaymentStatusCard
+        order={createOrderFixture('pending_payment', {
+          paymentMethod: 'paypal',
+          fiatCheckoutUrl: 'https://www.paypal.com/checkout',
+          paymentConfirmation,
+        })}
+        payment={createPaymentFixture('awaiting_entitlement')}
+        isBuyer={false}
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />,
+    );
+    expect(screen.getByTestId('seller-paypal-awaiting')).toHaveTextContent(copy);
+    expect(screen.queryByRole('button', { name: 'Confirm payment received' })).not.toBeInTheDocument();
+  });
+
+  it('lets the seller still confirm a reported PayPal payment after the checkout expired, and tells the buyer', () => {
+    const confirmReceived = vi.fn();
+    vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
+      availableMethods: null,
+      paykitAssets: [],
+      bitcoinOfferUnavailable: false,
+      paykitOutage: false,
+      configError: null,
+      deliveryAddress: null,
+      pendingAction: null,
+      bind: vi.fn(),
+      markPaid: vi.fn(),
+      confirmReceived,
+    });
+    const expired = createOrderFixture('cancelled', {
+      paymentMethod: 'paypal',
+      fiatCheckoutUrl: 'https://www.paypal.com/checkout',
+      paymentConfirmation: 'seller',
+      gatewayPaymentSeenAt: '2026-10-28T09:00:00.000Z',
+      receiptId: null,
+      cancellationReason: 'payment window elapsed',
+    });
+    const { unmount } = render(
+      <MarketplacePaymentStatusCard
+        order={expired}
+        payment={createPaymentFixture('expired')}
+        isBuyer={false}
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />,
+    );
+    const seller = screen.getByTestId('paypal-seen-expired-seller');
+    expect(seller).toHaveTextContent('This checkout ended before you confirmed the payment PayPal reported.');
+    fireEvent.click(within(seller).getByRole('button', { name: 'Confirm payment received' }));
+    expect(confirmReceived).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/window elapsed before a verified payment arrived/)).not.toBeInTheDocument();
+    unmount();
+
+    render(
+      <MarketplacePaymentStatusCard
+        order={expired}
+        payment={createPaymentFixture('expired')}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />,
+    );
+    expect(screen.getByTestId('paypal-seen-expired-buyer')).toHaveTextContent('Message the seller');
+  });
+
   it('explains when Bitcoin is temporarily unavailable while other methods remain available', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: ['paypal'],

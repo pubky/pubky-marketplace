@@ -140,6 +140,11 @@ import type { MarketplacePrivKeysResult } from '@/libs/commerce/priv-keys';
 import { attestorWindowsParam } from '@/libs/commerce/review-counting';
 import type { MarketplaceReviewSortParam } from '@/libs/commerce/review-sort';
 import { createCommerceSandboxCatalog } from '@/libs/commerce/sandbox-catalog';
+import {
+  autoConfirmableRail,
+  mayAwaitSellerConfirmation,
+  SELLER_AUTO_CONFIRM_REASON,
+} from '@/libs/commerce/seller-auto-confirm';
 import { isAssignedCountryCode, publishedCountryCode } from '@/libs/commerce/ships-to';
 import {
   buildMarketplaceCheckoutAggregateId,
@@ -1015,6 +1020,11 @@ export class CommerceApplication {
     return await MarketplaceGatewayService.getUsdtPaymentsCapability();
   }
 
+  /** Who marks orders paid on this deployment; null when the service does not say. */
+  static async fetchPaymentConfirmationMode(): Promise<'seller' | 'automatic' | null> {
+    return await MarketplaceGatewayService.getPaymentConfirmationMode();
+  }
+
   /**
    * The paying buyer's per-line pickup-details reveal (§A3): the pinned
    * snapshot recorded at payment, straight from the service's entitled read.
@@ -1842,6 +1852,50 @@ export class CommerceApplication {
 
   static async confirmBitcoinPayment(actorPubky: string, orderId: string, reason?: string) {
     return await MarketplaceGatewayService.confirmBitcoinPayment(actorPubky, orderId, reason);
+  }
+
+  /**
+   * The seller's own automatic confirmation: confirms, as the seller, every
+   * open order of theirs whose payment waits for them and matched (see
+   * `autoConfirmableRail`). Each candidate is re-read in full first, and a
+   * failed confirmation leaves that order for the seller without stopping the
+   * rest. `isStillEnabled` is asked before every confirmation, so a seller who
+   * turns the setting off mid-pass confirms nothing more. Every request carries
+   * `signal`; once it aborts the pass ends, so a request that never answers
+   * cannot hold it open. Returns the ids it confirmed.
+   */
+  static async autoConfirmSellerPayments(
+    sellerPubky: string,
+    isStillEnabled: () => boolean,
+    signal: AbortSignal,
+  ): Promise<string[]> {
+    const orders = await MarketplaceGatewayService.getOrders(sellerPubky, { signal });
+    const confirmed: string[] = [];
+    for (const row of orders) {
+      if (signal.aborted) break;
+      if (!mayAwaitSellerConfirmation(row, sellerPubky)) continue;
+      try {
+        const order = await MarketplaceGatewayService.getOrder(sellerPubky, row.id, { signal });
+        const rail = order ? autoConfirmableRail(order, sellerPubky) : null;
+        if (rail !== null && !isStillEnabled()) break;
+        if (rail === 'paykit') {
+          await MarketplaceGatewayService.confirmBitcoinPayment(sellerPubky, row.id, SELLER_AUTO_CONFIRM_REASON, {
+            signal,
+          });
+        } else if (rail === 'paypal') {
+          await MarketplaceGatewayService.confirmFiatReceived(sellerPubky, row.id, { signal });
+        } else {
+          continue;
+        }
+        confirmed.push(row.id);
+      } catch (error) {
+        Logger.warn('Automatic seller payment confirmation failed; the order stays with the seller', {
+          orderId: row.id,
+          error,
+        });
+      }
+    }
+    return confirmed;
   }
 
   static async resolveBitcoinPayment(

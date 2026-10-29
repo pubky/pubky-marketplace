@@ -8,7 +8,8 @@ import type { PaymentFinality } from './usdt-settlement-contract';
 
 /**
  * Buyer and seller copy for a USDT order (docs/ecommerce/usdt-payments.md).
- * USDT is paid at verified inclusion; physical fulfilment waits for Arbitrum
+ * USDT is paid at verified inclusion, or at the seller's confirmation on a
+ * seller-confirmed order (`seen` until then); physical fulfilment waits for Arbitrum
  * to finalize. This table is rail-keyed on purpose: the Bitcoin tables in
  * `bitcoin-buyer-status.ts` keep their exact strings and nothing here is a
  * substitution of them.
@@ -44,12 +45,13 @@ type UsdtStatusOrder = {
   paymentAsset?: string | null;
   paymentAmountMinor?: number | null;
   paymentFinality?: PaymentFinality | null;
+  paykitRequestState?: string | null;
   total?: CommerceMoney;
 };
 
 type UsdtStatusPayment = { state?: string | null; reviewReason?: string | null } | null;
 
-export type UsdtSettlementPhase = 'awaiting' | 'received' | 'final' | 'rechecking' | 'review';
+export type UsdtSettlementPhase = 'awaiting' | 'seen' | 'received' | 'final' | 'rechecking' | 'review';
 
 /**
  * Shipped and pickup lines wait for Arbitrum finality before the seller acts;
@@ -65,7 +67,8 @@ export function isUsdtOrder(order: { paymentMethod?: string | null; paymentAsset
 }
 
 /**
- * Where a USDT order sits. `received` is paid at verified inclusion with
+ * Where a USDT order sits. `seen` is a transfer that arrived on a
+ * seller-confirmed order and waits for the seller; `received` is paid with
  * finality not yet reported (an absent value fails closed, the same as
  * `pending`); `rechecking` is a reorged payment that stays paid but not final.
  * Null for any order that is not a USDT order.
@@ -73,7 +76,9 @@ export function isUsdtOrder(order: { paymentMethod?: string | null; paymentAsset
 export function usdtSettlementPhase(order: UsdtStatusOrder, payment: UsdtStatusPayment): UsdtSettlementPhase | null {
   if (!isUsdtOrder(order)) return null;
   if (payment?.state === 'manual_review') return 'review';
-  if (payment?.state !== 'confirmed') return 'awaiting';
+  if (payment?.state !== 'confirmed') {
+    return order.paykitRequestState === 'awaiting_seller_confirmation' ? 'seen' : 'awaiting';
+  }
   if (order.paymentFinality === 'final') return 'final';
   if (order.paymentFinality === 'reverted') return 'rechecking';
   return 'received';
@@ -91,6 +96,7 @@ export function isUsdtFulfilmentBlocked(order: UsdtStatusOrder): boolean {
 
 export const USDT_BUYER_PHASE_COPY: Record<Exclude<UsdtSettlementPhase, 'review'>, string> = {
   awaiting: 'Waiting for your USDT payment',
+  seen: 'USDT payment received. The seller confirms it, then your order is paid.',
   received: 'USDT payment received. The seller ships once Arbitrum finalizes it.',
   final: 'USDT payment confirmed',
   rechecking: "Your payment is being re-checked on Arbitrum. You don't need to do anything yet.",
@@ -98,6 +104,7 @@ export const USDT_BUYER_PHASE_COPY: Record<Exclude<UsdtSettlementPhase, 'review'
 
 export const USDT_SELLER_PHASE_COPY: Record<Exclude<UsdtSettlementPhase, 'review'>, string> = {
   awaiting: "Waiting for the buyer's USDT payment",
+  seen: "The buyer's USDT payment arrived. Check it in Bitkit, then confirm it below to mark the order paid.",
   received: "Payment received. Don't ship yet: Arbitrum hasn't finalized it. Shipping unlocks on its own.",
   final: 'Payment final. You can ship.',
   rechecking: "The buyer's payment is being re-checked on Arbitrum. Don't ship.",
@@ -122,6 +129,7 @@ export const USDT_SELLER_REVIEW_COPY = {
 
 export const USDT_PHASE_BADGE_LABEL: Record<UsdtSettlementPhase, string> = {
   awaiting: 'Awaiting payment',
+  seen: 'Payment seen',
   received: 'Payment received',
   final: 'Payment confirmed',
   rechecking: 'Payment being re-checked',

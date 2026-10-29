@@ -63,16 +63,27 @@ describe('USDT status copy', () => {
   it('uses the agreed buyer and seller sentences for each phase', () => {
     expect(USDT_BUYER_PHASE_COPY).toEqual({
       awaiting: 'Waiting for your USDT payment',
+      seen: 'USDT payment received. The seller confirms it, then your order is paid.',
       received: 'USDT payment received. The seller ships once Arbitrum finalizes it.',
       final: 'USDT payment confirmed',
       rechecking: "Your payment is being re-checked on Arbitrum. You don't need to do anything yet.",
     });
     expect(USDT_SELLER_PHASE_COPY).toEqual({
       awaiting: "Waiting for the buyer's USDT payment",
+      seen: "The buyer's USDT payment arrived. Check it in Bitkit, then confirm it below to mark the order paid.",
       received: "Payment received. Don't ship yet: Arbitrum hasn't finalized it. Shipping unlocks on its own.",
       final: 'Payment final. You can ship.',
       rechecking: "The buyer's payment is being re-checked on Arbitrum. Don't ship.",
     });
+  });
+
+  it('reads a seller-confirmed transfer that waits for the seller as seen, not paid', () => {
+    const { order } = createUsdtOrderFixture('received');
+    const waiting = { ...order, paykitRequestState: 'awaiting_seller_confirmation' as const };
+    const payment = createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' });
+    expect(usdtSettlementPhase(waiting, payment)).toBe('seen');
+    expect(usdtSettlementPhase({ ...waiting, paykitRequestState: 'pending' as const }, payment)).toBe('awaiting');
+    expect(USDT_PHASE_BADGE_LABEL.seen).toBe('Payment seen');
   });
 
   it('picks the copy for the viewing party', () => {

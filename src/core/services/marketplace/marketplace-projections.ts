@@ -342,6 +342,10 @@ export const marketplaceNotificationSchema = z
       'payment_confirmed',
       'bitcoin_manual_review',
       'bitcoin_payment_seen',
+      // Seller-confirmed payment: a USDT transfer arrived, or PayPal reported
+      // a payment, and waits for the seller's confirmation.
+      'usdt_payment_seen',
+      'paypal_payment_seen',
       'bitcoin_prepare_voided',
       'order_cancelled',
       'order_shipped',
@@ -783,6 +787,12 @@ export const marketplaceOrderProjectionSchema = z
     ),
     paymentReportedAt: z.string().nullable().optional(),
     fiatTransactionRef: z.string().nullable().optional(),
+    // Who marks the order paid, frozen at its payment start: `seller` when
+    // only the seller's confirmation pays it, `automatic` when a matching
+    // Paykit report or PayPal notification does. Absent on older services.
+    paymentConfirmation: z.enum(['seller', 'automatic']).nullish().catch(null),
+    // When PayPal reported a matching payment the seller has yet to confirm.
+    gatewayPaymentSeenAt: z.string().nullish().catch(null),
     // FX-quoted Bitcoin orders carry the service's exact settlement amount.
     // Older orders and non-FX orders may omit this projection entirely.
     bitcoinQuote: marketplaceBitcoinQuoteSchema.nullable().optional(),
