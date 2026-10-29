@@ -307,12 +307,16 @@ describe('MarketplacePaymentStatusCard: seller resolution of a USDT payment in m
 });
 
 describe('MarketplacePaymentStatusCard: a USDT review that ended abandoned', () => {
-  function abandonedFixtures(basis: 'seller_unresponsive' | 'seller_attestation') {
+  function abandonedFixtures(
+    basis: 'seller_unresponsive' | 'seller_attestation' | null,
+    orderOverrides: Partial<ReturnType<typeof createOrderFixture>> = {},
+  ) {
     const { order } = createUsdtOrderFixture('final', {
       state: 'cancelled',
       receiptId: null,
       paymentFinality: null,
       cancellationReason: 'closed after manual review',
+      ...orderOverrides,
     });
     const payment = createPaymentFixture('expired', {
       adapter: 'paykit',
@@ -342,5 +346,52 @@ describe('MarketplacePaymentStatusCard: a USDT review that ended abandoned', () 
     expect(screen.getByTestId('payment-review-abandoned')).toHaveTextContent(
       'the seller closed its review without completing the order',
     );
+  });
+
+  it('says nothing about who closed the review when the projection does not say', () => {
+    renderCard(abandonedFixtures(null), { isBuyer: true });
+    expect(screen.getByTestId('payment-review-abandoned')).toHaveTextContent(
+      'Your payment arrived, but its review was closed without completing the order',
+    );
+    expect(screen.getByTestId('payment-review-abandoned')).not.toHaveTextContent(/the seller closed/);
+  });
+
+  it('stops asking for an address once the buyer confirmed one', () => {
+    renderCard(abandonedFixtures('seller_unresponsive', { refundDestination: CONFIRMED_DESTINATION }), {
+      isBuyer: true,
+    });
+    expect(screen.getByTestId('usdt-phase-copy')).toHaveTextContent(/returns it to the refund address you confirmed/);
+    expect(screen.queryByText(/Confirm a refund address/)).not.toBeInTheDocument();
+  });
+
+  it('reads as refunded once the seller recorded the refund, not as owed or unpaid', () => {
+    renderCard(
+      abandonedFixtures('seller_unresponsive', {
+        state: 'refunded_external',
+        refundDestination: CONFIRMED_DESTINATION,
+        externalRefund: {
+          amountMinor: 13_600,
+          transactionId: USDT_RESOLVE_TX_HASH,
+          recordedAt: '2026-10-28T19:00:00.000Z',
+        },
+      }),
+      { isBuyer: true },
+    );
+    expect(screen.getByText('Refunded')).toBeInTheDocument();
+    expect(screen.queryByText('Refund due')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('payment-review-abandoned')).not.toBeInTheDocument();
+    expect(screen.queryByText(/before a verified payment arrived/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('usdt-phase-copy')).toHaveTextContent(/recorded its refund/);
+  });
+
+  it('shows what an underpaid transfer sent, never the quote as paid', () => {
+    renderCard(
+      abandonedFixtures('seller_unresponsive', {
+        paykitObservation: { asset: 'USDT', observedUnits: 136_000_000, amountMatched: false },
+      }),
+      { isBuyer: true },
+    );
+    expect(screen.getByTestId('usdt-paid-as')).toHaveTextContent('136.000000 USDT received');
+    expect(screen.queryByText(/paid as 137/)).not.toBeInTheDocument();
   });
 });

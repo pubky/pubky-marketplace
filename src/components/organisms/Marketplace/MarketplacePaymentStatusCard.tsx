@@ -298,7 +298,10 @@ export function MarketplacePaymentStatusCard({
   const lateCompletion = isLateCompletionOrder(order);
   const refundRequired = isRefundRequiredPayment(payment);
   const expiredNoLateMoney = isHoldExpiredNoLateMoney(order, payment);
-  const abandonedReview = isAbandonedReviewOrder(order, payment);
+  // Money a closed review never applied: never "no verified payment arrived",
+  // and owed back until the seller records the refund.
+  const reviewAbandoned = payment?.state === 'expired' && payment.resolutionOutcome === 'abandoned';
+  const abandonedReview = isAbandonedReviewOrder(order, payment) && !order.externalRefund;
   const locksTerminalReason =
     isLocksPaykit && isBuyer && payment?.adapter === 'locks' && locks.admission?.kind === 'expired'
       ? locks.admission.reason
@@ -437,14 +440,14 @@ export function MarketplacePaymentStatusCard({
         !locksTerminalReason &&
         !isBuyerCancelledUnpaid(order) &&
         !(order.gatewayPaymentSeenAt && !order.receiptId) &&
-        !abandonedReview && (
+        !reviewAbandoned && (
           <Typography as="p" className="text-sm text-muted-foreground">
             {expiredNoLateMoney
               ? CHECKOUT_HOLD_COPY.expiredNoLateMoney
               : 'The marketplace payment window elapsed before a verified payment arrived, so this checkout was not completed. A payment verified after expiry is reconciled manually — never silently applied or discarded.'}
           </Typography>
         )}
-      {visibleStatus === 'expired' && expiredNoLateMoney && !abandonedReview && isBuyer && isPaykitRail && (
+      {visibleStatus === 'expired' && expiredNoLateMoney && !reviewAbandoned && isBuyer && isPaykitRail && (
         <Typography as="p" className="text-sm text-muted-foreground" data-testid="bitcoin-pending-payment-note">
           {CHECKOUT_HOLD_COPY.pendingBitcoinPaymentBuyer}
         </Typography>
@@ -452,7 +455,7 @@ export function MarketplacePaymentStatusCard({
       {visibleStatus === 'expired' &&
         isBuyer &&
         isPaykitRail &&
-        !abandonedReview &&
+        !reviewAbandoned &&
         order.paykitDeliveryState !== 'delivered' &&
         !isBuyerCancelledUnpaid(order) && (
           <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
@@ -1205,7 +1208,9 @@ function abandonedReviewCopy(isBuyer: boolean, basis: string | null | undefined)
   const closed =
     basis === 'seller_unresponsive'
       ? 'its review closed after seven days without the seller\u2019s decision'
-      : 'the seller closed its review without completing the order';
+      : basis === 'seller_attestation'
+        ? 'the seller closed its review without completing the order'
+        : 'its review was closed without completing the order';
   return isBuyer
     ? `Your payment arrived, but ${closed}, so the order was cancelled. The seller owes it back to you.`
     : `The buyer\u2019s payment arrived, but ${closed}, so the order was cancelled. Return it to the buyer and record the refund.`;

@@ -132,7 +132,7 @@ afterEach(() => {
 });
 
 /** A USDT order whose underpaid transfer was reviewed and then abandoned after seven days. */
-function abandonedUsdtReview() {
+function abandonedUsdtReview(overrides: Partial<ReturnType<typeof createOrderFixture>> = {}) {
   const base = createOrderFixture('cancelled');
   const order = createUsdtOrderFixture('cancelled', {
     id: '018f47d2-6a27-7c23-a49d-000000000901',
@@ -143,6 +143,7 @@ function abandonedUsdtReview() {
     buyerPubky: ORDER_FIXTURE_BUYER,
     sellerPubky: ORDER_FIXTURE_SELLER,
     lines: [{ ...base.lines[0], title: 'Abandoned USDT boots' }],
+    ...overrides,
   });
   const payment = createPaymentFixture('expired', {
     id: order.paymentId,
@@ -191,5 +192,33 @@ describe('MarketplaceOrders with the real payment card: an abandoned USDT review
     expect(screen.getByTestId('usdt-refund-seller')).toBeInTheDocument();
     expect(screen.queryByText(/before a verified payment arrived/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Waiting for the buyer's USDT payment/)).not.toBeInTheDocument();
+  });
+
+  it('reads as refunded, with no refund still asked for, once the seller recorded it', async () => {
+    ordersState.currentUserPubky = ORDER_FIXTURE_BUYER;
+    ordersState.orders = [
+      abandonedUsdtReview({
+        state: 'refunded_external',
+        refundDestination: {
+          address: '0xd8da6bf26964af9d7eed9e03e53415d37aa96045',
+          network: 'arbitrum-one',
+          asset: 'USDT',
+          source: 'buyer_entered',
+          confirmedAt: '2026-10-28T18:00:00.000Z',
+        },
+        externalRefund: {
+          amountMinor: 13_600,
+          transactionId: `0x${'ab'.repeat(32)}`,
+          recordedAt: '2026-10-28T19:00:00.000Z',
+        },
+      }),
+    ];
+    await openOrder();
+
+    expect(screen.getAllByText('Refunded').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Refund due')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('payment-review-abandoned')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Confirm refund address' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/before a verified payment arrived/)).not.toBeInTheDocument();
   });
 });

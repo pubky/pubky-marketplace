@@ -4,6 +4,7 @@ import { createPaymentFixture } from '@/test/fixtures/commerce/orders';
 import { createUsdtOrderFixture } from '@/test/fixtures/commerce/usdt-orders';
 import {
   isUsdtFulfilmentBlocked,
+  USDT_ABANDONED_ADDRESS_CONFIRMED_COPY,
   USDT_BUYER_PHASE_COPY,
   USDT_FINALITY_EXPECTATION_COPY,
   USDT_MULTI_SELLER_COPY,
@@ -14,6 +15,7 @@ import {
   usdtPaidAsLine,
   usdtParityMillionths,
   usdtPhaseCopy,
+  usdtReceivedLine,
   usdtSettlementPhase,
 } from './usdt-buyer-status';
 
@@ -48,6 +50,39 @@ describe('usdtSettlementPhase', () => {
     expect(usdtSettlementPhase(order, createPaymentFixture('expired'))).toBe('awaiting');
   });
 
+  it('follows an abandoned payment to its refund: the address, then the recorded refund', () => {
+    const { order } = createUsdtOrderFixture('final', { state: 'cancelled', receiptId: null, paymentFinality: null });
+    const abandoned = createPaymentFixture('expired', { resolutionOutcome: 'abandoned' });
+    const withAddress = { ...order, refundDestination: { address: '0xd8da6bf26964af9d7eed9e03e53415d37aa96045' } };
+    expect(usdtSettlementPhase(withAddress, abandoned)).toBe('abandoned');
+    expect(usdtPhaseCopy(withAddress, abandoned, true)).toBe(USDT_ABANDONED_ADDRESS_CONFIRMED_COPY.buyer);
+    expect(usdtPhaseCopy(withAddress, abandoned, false)).toBe(USDT_ABANDONED_ADDRESS_CONFIRMED_COPY.seller);
+    expect(usdtPhaseCopy(withAddress, abandoned, true)).not.toMatch(/Confirm a refund address/);
+
+    const refunded = {
+      ...withAddress,
+      state: 'refunded_external' as const,
+      externalRefund: {
+        amountMinor: 13_600,
+        transactionId: `0x${'ab'.repeat(32)}`,
+        recordedAt: '2026-10-28T19:00:00.000Z',
+      },
+    };
+    expect(usdtSettlementPhase(refunded, abandoned)).toBe('refunded');
+    expect(usdtPhaseCopy(refunded, abandoned, true)).toBe(USDT_BUYER_PHASE_COPY.refunded);
+    expect(usdtPhaseCopy(refunded, abandoned, false)).toBe(USDT_SELLER_PHASE_COPY.refunded);
+    expect(USDT_PHASE_BADGE_LABEL.refunded).toBe('Refunded');
+  });
+
+  it('names what an unapplied payment sent, not the quote, and nothing without an observation', () => {
+    const { order } = createUsdtOrderFixture('final', { state: 'cancelled', receiptId: null });
+    expect(usdtReceivedLine({ ...order, paykitObservation: { asset: 'USDT', observedUnits: 136_000_000 } })).toBe(
+      '136.000000 USDT received',
+    );
+    expect(usdtReceivedLine({ ...order, paykitObservation: { asset: 'USDT', observedUnits: null } })).toBeNull();
+    expect(usdtReceivedLine({ ...order, paykitObservation: null })).toBeNull();
+  });
+
   it('is null for every order that is not a USDT order', () => {
     for (const method of ['bitcoin', 'paypal', null] as const) {
       const { order, payment } = createUsdtOrderFixture('final', { paymentMethod: method, paymentAsset: null });
@@ -78,6 +113,7 @@ describe('USDT status copy', () => {
       rechecking: "Your payment is being re-checked on Arbitrum. You don't need to do anything yet.",
       abandoned:
         'Your USDT payment was received but not applied to the order. Confirm a refund address so the seller can return it.',
+      refunded: 'Your USDT payment was not applied to the order, and the seller recorded its refund to your address.',
     });
     expect(USDT_SELLER_PHASE_COPY).toEqual({
       awaiting: "Waiting for the buyer's USDT payment",
@@ -87,6 +123,7 @@ describe('USDT status copy', () => {
       rechecking: "The buyer's payment is being re-checked on Arbitrum. Don't ship.",
       abandoned:
         "The buyer's USDT payment was received but not applied to the order. Return it to the refund address they confirm, then record the refund.",
+      refunded: "The buyer's USDT payment was not applied to the order, and you recorded its refund.",
     });
   });
 
