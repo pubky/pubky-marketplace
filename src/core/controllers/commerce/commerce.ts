@@ -1487,7 +1487,7 @@ export class CommerceController {
     const isEnabled = () =>
       pubky !== null &&
       useAuthStore.getState().currentUserPubky === pubky &&
-      useSellerPaymentConfirmStore.getState().autoConfirmByPubky[pubky] === true;
+      useSellerPaymentConfirmStore.getState().autoConfirmByPubky[pubky] !== false;
     if (!pubky || !isEnabled()) return [];
     const pass = new AbortController();
     const deadline = setTimeout(() => pass.abort(), SELLER_AUTO_CONFIRM_PASS_TIMEOUT_MS);
@@ -1507,7 +1507,7 @@ export class CommerceController {
     const onStorage = (event: StorageEvent) => {
       // A null key is `localStorage.clear()` in another tab.
       if (event.key !== null && event.key !== SELLER_PAYMENT_CONFIRM_PERSIST_KEY) return;
-      // Rehydrating from a removed key keeps the old state, so a removal turns it off here too.
+      // Rehydrating from a removed key keeps the old state, so a removal resets this tab to the default too.
       if (event.newValue === null) {
         useSellerPaymentConfirmStore.getState().reset();
         return;

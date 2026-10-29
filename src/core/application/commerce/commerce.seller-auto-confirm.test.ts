@@ -10,18 +10,21 @@ const bitcoin = createOrderFixture('pending_payment', {
   id: '00000000-0000-4000-8000-000000000001',
   sellerPubky: SELLER,
   paymentMethod: 'paykit',
+  paymentConfirmation: 'seller',
   paykitRequestState: 'awaiting_seller_confirmation',
 });
 const paypal = createOrderFixture('pending_payment', {
   id: '00000000-0000-4000-8000-000000000002',
   sellerPubky: SELLER,
   paymentMethod: 'paypal',
+  paymentConfirmation: 'seller',
   gatewayPaymentSeenAt: '2026-10-28T09:00:00.000Z',
 });
 const short = createOrderFixture('pending_payment', {
   id: '00000000-0000-4000-8000-000000000003',
   sellerPubky: SELLER,
   paymentMethod: 'paykit',
+  paymentConfirmation: 'seller',
   paykitRequestState: 'awaiting_seller_confirmation',
 });
 const unrelated = createOrderFixture('paid', { id: '00000000-0000-4000-8000-000000000004', sellerPubky: SELLER });

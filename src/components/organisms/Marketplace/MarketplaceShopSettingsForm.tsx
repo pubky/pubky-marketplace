@@ -408,8 +408,11 @@ function ShopImageField({
 /**
  * Who confirms the seller's payments. On a seller-confirmed deployment every
  * payment waits for the seller, so the per-seller Bitcoin option is moot and
- * is replaced by what happens instead. Either way the seller can let this
- * browser confirm matching payments for them while they are signed in.
+ * is replaced by what happens instead, and by the switch that lets this
+ * browser confirm matching payments for them while they are signed in (on by
+ * default). An `automatic` deployment keeps the per-seller Bitcoin option and
+ * offers no automatic confirmation: a seller who opts in confirms each Bitcoin
+ * payment by hand, as before.
  */
 function SellerPaymentConfirmationSettings({
   control,
@@ -460,22 +463,24 @@ function SellerPaymentConfirmationSettings({
           )}
         />
       )}
-      <div data-testid="shop-settings-auto-confirm">
-        <Label className="justify-between">
-          <span className="flex items-center gap-1.5">
-            Confirm matching payments automatically
-            <InfoHint label="About confirming payments automatically">{SELLER_AUTO_CONFIRM_HINT_COPY}</InfoHint>
-          </span>
-          <Switch
-            checked={autoConfirm.enabled}
-            onCheckedChange={autoConfirm.setEnabled}
-            aria-label="Confirm matching payments automatically"
-          />
-        </Label>
-        <Typography as="p" className="mt-1 text-sm text-muted-foreground">
-          {SELLER_AUTO_CONFIRM_COPY}
-        </Typography>
-      </div>
+      {mode === 'seller' && (
+        <div data-testid="shop-settings-auto-confirm">
+          <Label className="justify-between">
+            <span className="flex items-center gap-1.5">
+              Confirm matching payments automatically
+              <InfoHint label="About confirming payments automatically">{SELLER_AUTO_CONFIRM_HINT_COPY}</InfoHint>
+            </span>
+            <Switch
+              checked={autoConfirm.enabled}
+              onCheckedChange={autoConfirm.setEnabled}
+              aria-label="Confirm matching payments automatically"
+            />
+          </Label>
+          <Typography as="p" className="mt-1 text-sm text-muted-foreground">
+            {SELLER_AUTO_CONFIRM_COPY}
+          </Typography>
+        </div>
+      )}
     </>
   );
 }

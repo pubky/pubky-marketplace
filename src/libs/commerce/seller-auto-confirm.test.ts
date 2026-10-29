@@ -11,6 +11,7 @@ function waitingPaykit(
   return createOrderFixture('pending_payment', {
     sellerPubky: SELLER,
     paymentMethod: 'paykit',
+    paymentConfirmation: 'seller',
     paykitRequestState: 'awaiting_seller_confirmation',
     paykitObservation: observation,
   });
@@ -50,6 +51,14 @@ describe('autoConfirmableRail', () => {
     ).toBeNull();
     expect(autoConfirmableRail(seenPaypal({ paymentReversedAt: '2026-10-28T09:01:00Z' }), SELLER)).toBeNull();
     expect(autoConfirmableRail(seenPaypal({ gatewayPaymentSeenAt: null }), SELLER)).toBeNull();
+  });
+
+  it('never confirms an automatic order, even a Bitcoin payment its seller opted to confirm by hand', () => {
+    for (const paymentConfirmation of ['automatic', null] as const) {
+      expect(autoConfirmableRail({ ...waitingPaykit(), paymentConfirmation }, SELLER)).toBeNull();
+      expect(autoConfirmableRail({ ...seenPaypal(), paymentConfirmation }, SELLER)).toBeNull();
+      expect(mayAwaitSellerConfirmation({ ...waitingPaykit(), paymentConfirmation }, SELLER)).toBe(false);
+    }
   });
 
   it('only ever acts for this seller on an open, unpaid order', () => {

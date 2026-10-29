@@ -23,6 +23,7 @@ export type AutoConfirmRail = 'paykit' | 'paypal';
 type AutoConfirmOrder = Pick<
   MarketplaceOrder,
   | 'sellerPubky'
+  | 'paymentConfirmation'
   | 'state'
   | 'receiptId'
   | 'paymentMethod'
@@ -35,13 +36,16 @@ type AutoConfirmOrder = Pick<
 
 /**
  * Which confirmation the seller's session may make for `order`, or null. Only
- * an open order of this seller qualifies, and only money that matched: a Paykit
+ * an open, seller-confirmed order of this seller qualifies (an `automatic`
+ * order, including a Bitcoin payment its seller opted to confirm by hand, is
+ * never confirmed for them), and only money that matched: a Paykit
  * observation that says the amount matched and has not disappeared, or a PayPal
  * notification with no refund or reversal recorded since. Anything else stays
  * with the seller to decide by hand.
  */
 export function autoConfirmableRail(order: AutoConfirmOrder, sellerPubky: string): AutoConfirmRail | null {
   if (order.sellerPubky !== sellerPubky || order.state !== 'pending_payment' || order.receiptId) return null;
+  if (order.paymentConfirmation !== 'seller') return null;
   if (order.paykitRequestState === 'awaiting_seller_confirmation') {
     const observation = order.paykitObservation;
     return observation?.amountMatched === true && observation.disappeared !== true ? 'paykit' : null;
@@ -64,6 +68,7 @@ export function autoConfirmableRail(order: AutoConfirmOrder, sellerPubky: string
  */
 export function mayAwaitSellerConfirmation(order: AutoConfirmOrder, sellerPubky: string): boolean {
   if (order.sellerPubky !== sellerPubky || order.state !== 'pending_payment') return false;
+  if (order.paymentConfirmation !== 'seller') return false;
   return (
     order.paykitRequestState === 'awaiting_seller_confirmation' ||
     (order.paymentMethod === 'paypal' && Boolean(order.gatewayPaymentSeenAt))
@@ -95,7 +100,7 @@ export const SELLER_CONFIRMS_PAYMENTS_COPY =
 
 /** Shop settings: the automatic confirmation switch. */
 export const SELLER_AUTO_CONFIRM_COPY =
-  'While you’re signed in on this browser, it confirms payments that match the order for you. Off by default.';
+  'While you’re signed in on this browser, it confirms payments that match the order for you. On by default; turn it off to confirm each payment yourself.';
 
 export const SELLER_AUTO_CONFIRM_HINT_COPY =
   'This browser checks your orders every 30 seconds while the Shop is open. It confirms a Bitcoin or USDT payment that was seen for the order’s exact amount, and a PayPal payment PayPal’s verified notification reported, and releases digital items. Anything that doesn’t match, or was refunded or reversed, waits for you. It stops when you sign out or close the Shop.';

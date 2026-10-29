@@ -1,15 +1,15 @@
 export interface SellerPaymentConfirmState {
   /**
    * Per signed-in pubky: whether this browser confirms that seller's matching
-   * payments automatically while their Shop is open. Off unless the seller
-   * turns it on.
+   * payments automatically while their Shop is open. On unless the seller
+   * turned it off here (`false`); no entry means on.
    */
   autoConfirmByPubky: Record<string, boolean>;
 }
 
 export interface SellerPaymentConfirmActions {
   setAutoConfirm: (pubky: string, enabled: boolean) => void;
-  /** Turns the setting off for every pubky in this browser. */
+  /** Forgets every choice made in this browser, so each pubky is back to the default (on). */
   reset: () => void;
 }
 

@@ -29,25 +29,27 @@ describe('CommerceController seller auto-confirm', () => {
     vi.restoreAllMocks();
   });
 
-  it('confirms nothing until the signed-in seller turns it on in this browser', async () => {
+  it('confirms by default, and confirms nothing once the signed-in seller turns it off in this browser', async () => {
     const pass = vi.spyOn(CommerceApplication, 'autoConfirmSellerPayments').mockResolvedValue(['order-1']);
 
-    await expect(CommerceController.autoConfirmSellerPayments()).resolves.toEqual([]);
-    expect(pass).not.toHaveBeenCalled();
-
-    CommerceController.setSellerPaymentAutoConfirm(true);
-    expect(useSellerPaymentConfirmStore.getState().autoConfirmByPubky).toEqual({ [SELLER]: true });
     await expect(CommerceController.autoConfirmSellerPayments()).resolves.toEqual(['order-1']);
     expect(pass).toHaveBeenCalledWith(SELLER, expect.any(Function), expect.any(AbortSignal));
-  });
 
-  it('keeps the setting per pubky, so another account on the device is not confirmed for', async () => {
-    const pass = vi.spyOn(CommerceApplication, 'autoConfirmSellerPayments').mockResolvedValue([]);
-    CommerceController.setSellerPaymentAutoConfirm(true);
-    useAuthStore.getState().setCurrentUserPubky(OTHER);
-
+    pass.mockClear();
+    CommerceController.setSellerPaymentAutoConfirm(false);
+    expect(useSellerPaymentConfirmStore.getState().autoConfirmByPubky).toEqual({ [SELLER]: false });
     await expect(CommerceController.autoConfirmSellerPayments()).resolves.toEqual([]);
     expect(pass).not.toHaveBeenCalled();
+  });
+
+  it('keeps the choice per pubky, so one account turning it off does not turn it off for another', async () => {
+    const pass = vi.spyOn(CommerceApplication, 'autoConfirmSellerPayments').mockResolvedValue([]);
+    CommerceController.setSellerPaymentAutoConfirm(false);
+    useAuthStore.getState().setCurrentUserPubky(OTHER);
+
+    await CommerceController.autoConfirmSellerPayments();
+    expect(pass).toHaveBeenCalledWith(OTHER, expect.any(Function), expect.any(AbortSignal));
+    expect(useSellerPaymentConfirmStore.getState().autoConfirmByPubky).toEqual({ [SELLER]: false });
   });
 
   it('does nothing outside the durable service', async () => {
@@ -130,11 +132,11 @@ describe('CommerceController seller auto-confirm', () => {
     }
   });
 
-  it('turns the setting off here when another tab removes it or clears storage', () => {
+  it('returns this tab to the default when another tab removes the setting or clears storage', () => {
     const unsubscribe = CommerceController.subscribeSellerPaymentAutoConfirmSync();
     try {
       for (const key of [SELLER_PAYMENT_CONFIRM_PERSIST_KEY, null]) {
-        CommerceController.setSellerPaymentAutoConfirm(true);
+        CommerceController.setSellerPaymentAutoConfirm(false);
         window.dispatchEvent(new StorageEvent('storage', { key, newValue: null }));
         expect(useSellerPaymentConfirmStore.getState().autoConfirmByPubky).toEqual({});
       }

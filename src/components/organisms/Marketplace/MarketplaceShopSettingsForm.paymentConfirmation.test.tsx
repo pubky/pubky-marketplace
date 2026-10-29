@@ -83,17 +83,26 @@ describe('MarketplaceShopSettingsForm payment confirmation', () => {
     expect(screen.queryByTestId('shop-settings-seller-confirms')).not.toBeInTheDocument();
   });
 
-  it('turns this browser’s automatic confirmation on for the signed-in seller only', async () => {
+  it('confirms automatically by default, and the seller turns it off for this browser', async () => {
     deployment.mode = 'seller';
     const user = userEvent.setup();
     render(<Harness />);
 
     expect(screen.getByTestId('shop-settings-auto-confirm')).toHaveTextContent(SELLER_AUTO_CONFIRM_COPY);
     const toggle = screen.getByRole('switch', { name: 'Confirm matching payments automatically' });
-    expect(toggle).not.toBeChecked();
+    expect(toggle).toBeChecked();
     await user.click(toggle);
 
-    expect(toggle).toBeChecked();
-    expect(useSellerPaymentConfirmStore.getState().autoConfirmByPubky).toEqual({ [SELLER]: true });
+    expect(toggle).not.toBeChecked();
+    expect(useSellerPaymentConfirmStore.getState().autoConfirmByPubky).toEqual({ [SELLER]: false });
   });
+
+  it.each(['automatic', 'unknown', 'checking'] as const)(
+    'offers no automatic confirmation when the deployment is %s',
+    (mode) => {
+      deployment.mode = mode;
+      render(<Harness />);
+      expect(screen.queryByTestId('shop-settings-auto-confirm')).not.toBeInTheDocument();
+    },
+  );
 });
