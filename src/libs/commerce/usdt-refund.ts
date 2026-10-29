@@ -315,7 +315,7 @@ export const USDT_REFUND_COPY = {
   railUnknown:
     'The buyer paid on both rails and the Shop cannot tell which one this refund returns. Resolve the order as paid or abandoned first.',
   amountUnrecordable:
-    'This USDT amount cannot be recorded as a refund because it is not a whole number of cents. Contact the marketplace operator.',
+    "This USDT amount cannot be recorded as a refund in this order's currency. Contact the marketplace operator.",
   recordHint: 'Send the refund from Bitkit to this address first, then record its Arbitrum transaction hash here.',
 } as const;
 
