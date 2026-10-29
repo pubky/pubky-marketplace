@@ -20,6 +20,7 @@ import {
   USDT_SELLER_REFUND_REFUSAL_COPY,
   usdtParityMillionths,
   usdtRefundCap,
+  usdtRefundCapMinor,
   usdtRefundDueMoney,
   type UsdtRefundOrder,
   usdtRefundRecordLine,
@@ -205,6 +206,59 @@ describe('USDT parity amounts', () => {
     expect(
       usdtRefundDueMoney(order({ returnRequest: { state: 'approved', requestedAmountMinor: 1_000 } })).amountMinor,
     ).toBe(1_000);
+  });
+});
+
+describe('a USDT refund of what was received', () => {
+  // A $25.00 order whose USDT transfer carried another amount than the 25.000000 quoted.
+  const received = (paymentAmountMinor: number, overrides: Partial<UsdtRefundOrder> = {}) =>
+    order({ state: 'cancelled', paymentAmountMinor, ...overrides });
+
+  it('asks the seller to send what arrived, not the quote', () => {
+    expect(usdtRefundDueMoney(received(24_000_000))).toEqual(usd(2_400));
+    expect(usdtRefundDueMoney(received(26_000_000))).toEqual(usd(2_600));
+    expect(formatUsdtRefundAmount(received(26_000_000), usdtRefundDueMoney(received(26_000_000)).amountMinor)).toBe(
+      '26.000000 USDT',
+    );
+  });
+
+  it('caps a USD order at the cents received, the lower cent between two', () => {
+    expect(usdtRefundCapMinor(received(25_000_000))).toBe(2_500);
+    expect(usdtRefundCapMinor(received(24_000_000))).toBe(2_400);
+    expect(usdtRefundCapMinor(received(26_000_000))).toBe(2_600);
+    expect(usdtRefundCapMinor(received(26_009_999))).toBe(2_600);
+    expect(usdtRefundCapMinor(order())).toBe(2_500);
+  });
+
+  it('caps an order recorded in USDT at the millionths received', () => {
+    const sat = { amountMinor: 30_000, currency: 'SAT', exponent: 0 };
+    expect(usdtRefundCapMinor(received(24_999_999, { total: sat }))).toBe(24_999_999);
+  });
+
+  it('has no cap for an order paid another way', () => {
+    expect(usdtRefundCapMinor(order({ paymentAsset: null, paymentAmountMinor: 26_000_000 }))).toBeNull();
+  });
+
+  it('never asks for more than arrived on an open return', () => {
+    const returned = received(24_000_000, { returnRequest: { state: 'received', requestedAmountMinor: 2_500 } });
+    expect(usdtRefundDueMoney(returned)).toEqual(usd(2_400));
+  });
+
+  it('reads a refund of everything that arrived as whole, and less as partial of what arrived', () => {
+    const whole = received(24_000_000, {
+      state: 'refunded_external',
+      refundDestination: destination,
+      externalRefund: { amountMinor: 2_400, transactionId: REFUND_FIXTURE_TX_HASH },
+    });
+    expect(usdtRefundRecordLine(whole)).toBe(
+      `The seller recorded a refund of 24.000000 USDT to ${REFUND_FIXTURE_ADDRESS} (transaction ${REFUND_FIXTURE_TX_HASH}). ${USDT_REFUND_COPY.notChecked}`,
+    );
+    const part = received(24_000_000, {
+      state: 'refunded_external',
+      refundDestination: destination,
+      externalRefund: { amountMinor: 1_000, transactionId: REFUND_FIXTURE_TX_HASH },
+    });
+    expect(usdtRefundRecordLine(part)).toContain('a refund of 10.000000 USDT ($10.00 of $24.00)');
   });
 });
 

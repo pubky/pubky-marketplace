@@ -228,6 +228,22 @@ describe('MarketplaceUsdtRefundAddress — seller', () => {
     expect(panel).not.toHaveTextContent('Record refund');
   });
 
+  it.each([
+    ['underpaid', 136_000_000, '136.000000 USDT'],
+    ['overpaid', 138_000_000, '138.000000 USDT'],
+  ])('asks the seller to return what an %s transfer carried, not the quote', (_case, received, amount) => {
+    // A mismatched review closed as abandoned: the order is cancelled with the money still to return.
+    renderPanel(
+      createUsdtOrderFixture('cancelled', {
+        paymentMethod: 'paykit',
+        paymentAmountMinor: received,
+        refundDestination: destination,
+      }),
+      { isBuyer: false },
+    );
+    expect(screen.getByTestId('usdt-refund-amount')).toHaveTextContent(`Refund amount: ${amount}`);
+  });
+
   it('asks for the requested return amount instead of the whole order', () => {
     renderPanel(
       createUsdtOrderFixture('return_approved', {

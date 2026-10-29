@@ -9,14 +9,21 @@ type RefundOrder = {
   externalRefund?: { amountMinor: number } | null;
 };
 
-/** "Refunded $X of $Y" when the service marks a partial state or stores a smaller amount. */
-export function partialRefundLabel(order: RefundOrder | null | undefined): string | null {
+/**
+ * "Refunded $X of $Y" when the service marks a partial state or stores less
+ * than the most it could: the order total, or `capMinor` (in the total's units)
+ * when the order received another amount.
+ */
+export function partialRefundLabel(
+  order: RefundOrder | null | undefined,
+  capMinor: number = order?.total.amountMinor ?? 0,
+): string | null {
   const refund = order?.externalRefund;
   if (!order || !refund) return null;
-  const partial = order.state === PARTIAL_REFUND_ORDER_STATE || refund.amountMinor < order.total.amountMinor;
+  const partial = order.state === PARTIAL_REFUND_ORDER_STATE || refund.amountMinor < capMinor;
   if (!partial) return null;
   const refunded = formatBitcoinAwareMoney({ ...order.total, amountMinor: refund.amountMinor });
-  const total = formatBitcoinAwareMoney(order.total);
+  const total = formatBitcoinAwareMoney({ ...order.total, amountMinor: capMinor });
   return `Refunded ${refunded} of ${total}`;
 }
 

@@ -241,13 +241,38 @@ export function formatUsdtParity(
   return millionths === null ? null : formatUsdt(millionths, options);
 }
 
-/** The amount the seller is asked to send: the requested return amount, else the whole order. */
+const USDT_MILLIONTHS_PER_CENT = 10 ** (USDT_EXPONENT - 2);
+
+/**
+ * The most a USDT refund of the order may record, in its refund units: the USDT
+ * it received. `paymentAmountMinor` is what the observed transfer carried, a
+ * transfer for another amount than quoted included, so an underpaid order is
+ * capped below its total and an overpaid one may refund its excess. A USD order
+ * records cents, so an amount between two cents caps at the lower one, as the
+ * service's `refund_cap_minor` does. Null for any other order; the total when
+ * the order carries no received amount.
+ */
+export function usdtRefundCapMinor(
+  order: Pick<UsdtRefundOrder, 'total' | 'paymentAsset' | 'paymentAmountMinor'>,
+): number | null {
+  if (!isUsdtRefundOrder(order)) return null;
+  const cap = usdtRefundCap(order);
+  if (cap) return cap.amountMinor;
+  const received = order.paymentAmountMinor;
+  if (usdtParityMillionths(order.total) === null || typeof received !== 'number' || !Number.isSafeInteger(received)) {
+    return order.total.amountMinor;
+  }
+  return received >= 0 ? Math.floor(received / USDT_MILLIONTHS_PER_CENT) : order.total.amountMinor;
+}
+
+/** The amount the seller is asked to send: the requested return amount, else the whole amount received. */
 export function usdtRefundDueMoney(order: UsdtRefundOrder): UsdtRefundOrder['total'] {
   // Recorded in USDT, a partial request in order units has no exact USDT figure, so the whole amount paid is due.
   const cap = usdtRefundCap(order);
   if (cap) return cap;
+  const received = usdtRefundCapMinor(order) ?? order.total.amountMinor;
   const requested = order.returnRequest && order.returnRequest.state !== 'refunded' ? order.returnRequest : null;
-  return requested ? { ...order.total, amountMinor: requested.requestedAmountMinor } : order.total;
+  return { ...order.total, amountMinor: requested ? Math.min(requested.requestedAmountMinor, received) : received };
 }
 
 export const USDT_REFUND_COPY = {
@@ -350,12 +375,12 @@ export function usdtRefundRecordLine(order: UsdtRefundOrder): string | null {
   const cap = usdtRefundCap(order);
   const amount = formatUsdtRefundAmount(order, refund.amountMinor, { grouped: true });
   const destination = order.refundDestination ? ` to ${order.refundDestination.address}` : '';
-  const capMinor = cap ? cap.amountMinor : order.total.amountMinor;
+  const capMinor = usdtRefundCapMinor(order) ?? order.total.amountMinor;
   const isPartial = order.state === 'refunded_partial' || refund.amountMinor < capMinor;
   const scope = isPartial
     ? cap
       ? ` (${formatUsdt(refund.amountMinor, { grouped: true })} of ${formatUsdt(cap.amountMinor, { grouped: true })})`
-      : ` (${formatCommerceMoney({ ...order.total, amountMinor: refund.amountMinor })} of ${formatCommerceMoney(order.total)})`
+      : ` (${formatCommerceMoney({ ...order.total, amountMinor: refund.amountMinor })} of ${formatCommerceMoney({ ...order.total, amountMinor: capMinor })})`
     : '';
   const what = amount ? `a refund of ${amount}${scope}` : `a refund${scope}`;
   const received = refund.receivedUnits;

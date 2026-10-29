@@ -87,7 +87,7 @@ export const marketplaceOrderActionSchema = z
 
 export type MarketplaceOrderActionData = z.infer<typeof marketplaceOrderActionSchema>;
 
-/** Order total the refund dialog is capped against. The service stores one partial refund when `1 <= amount_minor <= total`. */
+/** The amount the refund dialog is capped against. The service stores one partial refund when `1 <= amount_minor <= cap`. */
 export type MarketplaceRefundCap = {
   amountMinor: number;
   exponent: number;
@@ -106,7 +106,7 @@ export function formatOrderMajor(total: MarketplaceRefundCap): string {
  * The entered amount is what has not been recorded yet: the whole refund,
  * or what was refunded outside PayPal after PayPal refunds (`refundedMinor`).
  * The recorded total, `refundedMinor` plus the entry, must be positive and
- * at most the order total.
+ * at most `total`: the order total, or for a USDT order the USDT it received.
  */
 export function marketplaceOrderActionSchemaFor(
   total: MarketplaceRefundCap,
@@ -143,11 +143,13 @@ export function marketplaceOrderActionSchemaFor(
         code: 'custom',
         path: ['amount'],
         message:
-          refundedMinor === 0
-            ? 'Enter a refund up to the order total.'
-            : rail === 'paypal'
-              ? 'Enter a refund up to the amount PayPal has not refunded.'
-              : 'Enter a refund up to the amount not yet recorded.',
+          rail === 'usdt'
+            ? 'Enter a refund up to the USDT received.'
+            : refundedMinor === 0
+              ? 'Enter a refund up to the order total.'
+              : rail === 'paypal'
+                ? 'Enter a refund up to the amount PayPal has not refunded.'
+                : 'Enter a refund up to the amount not yet recorded.',
       });
     }
   });

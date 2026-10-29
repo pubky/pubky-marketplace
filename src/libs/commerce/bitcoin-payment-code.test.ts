@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { marketplaceOrderSchema } from '@/core/services/marketplace/marketplace-projections';
 import projectionSamples from '@/libs/commerce/contracts/samples/projections.json';
 import { createBitcoinQuotedOrderFixture, createOrderFixture } from '@/test/fixtures/commerce/orders';
-import { bitcoinPaymentBreakdown, formatBitcoinAmountBreakdown, orderAmountEntry } from './bitcoin-payment-code';
+import {
+  bitcoinPaymentBreakdown,
+  formatBitcoinAmountBreakdown,
+  orderAmountEntry,
+  orderRefundEntry,
+} from './bitcoin-payment-code';
 import { toCamelCaseWire } from './wire-casing';
 
 const PLACEHOLDERS: Record<string, string> = {
@@ -165,5 +170,21 @@ describe('refund amount entry for a USDT payment', () => {
       paymentAsset: 'BTC',
     });
     expect(orderAmountEntry(bitcoin)).toEqual({ amountMinor: 150_000, exponent: 0, unitLabel: '₿' });
+  });
+
+  it('caps a USDT refund at what arrived, while a return request stays within the total', () => {
+    const usdt = (paymentAmountMinor: number) =>
+      createOrderFixture('cancelled', {
+        total: { amountMinor: 13_700, currency: 'USD', exponent: 2 },
+        paymentMethod: 'paykit',
+        paymentAsset: 'USDT',
+        paymentAmountMinor,
+      });
+    expect(orderRefundEntry(usdt(137_000_000))).toEqual({ amountMinor: 13_700, exponent: 2, unitLabel: 'USD' });
+    expect(orderRefundEntry(usdt(136_000_000))).toEqual({ amountMinor: 13_600, exponent: 2, unitLabel: 'USD' });
+    expect(orderRefundEntry(usdt(138_000_000))).toEqual({ amountMinor: 13_800, exponent: 2, unitLabel: 'USD' });
+    expect(orderAmountEntry(usdt(138_000_000))).toEqual({ amountMinor: 13_700, exponent: 2, unitLabel: 'USD' });
+    const paypal = createOrderFixture('cancelled', { paymentMethod: 'paypal' });
+    expect(orderRefundEntry(paypal)).toEqual(orderAmountEntry(paypal));
   });
 });

@@ -4,7 +4,7 @@ import { mayPayInBitcoin, observedPaymentRail } from './paykit-rail';
 import type { PaymentMethodKind } from './payment-methods';
 import { formatBitcoinAmount, hasSameAsset, isBitcoinAsset, MAX_BITCOIN_BASE_UNITS } from './pricing';
 import type { CommerceMoney } from './transaction-contracts';
-import { usdtRefundCap } from './usdt-refund';
+import { usdtRefundCap, usdtRefundCapMinor } from './usdt-refund';
 
 /**
  * On the fork Paykit server a Bitcoin payment adds a random 1–999 sat amount
@@ -83,6 +83,18 @@ export function orderAmountEntry(order: BitcoinPaymentOrder & { total: CommerceM
     if (sats !== null) return { amountMinor: sats, exponent: 0, unitLabel: '₿' };
   }
   return { amountMinor: order.total.amountMinor, exponent: order.total.exponent, unitLabel: order.total.currency };
+}
+
+/**
+ * The amount a refund form records, at most. A USDT order is capped at the
+ * USDT it received rather than its total, so a seller can return exactly what
+ * an underpaid or overpaid transfer carried. A return request stays within the
+ * total (`orderAmountEntry`): the service caps it there.
+ */
+export function orderRefundEntry(order: BitcoinPaymentOrder & { total: CommerceMoney }): OrderAmountEntry {
+  const entry = orderAmountEntry(order);
+  const received = usdtRefundCapMinor(order);
+  return received === null ? entry : { ...entry, amountMinor: received };
 }
 
 export function formatBitcoinAmountBreakdown(breakdown: BitcoinPaymentBreakdown): string {
