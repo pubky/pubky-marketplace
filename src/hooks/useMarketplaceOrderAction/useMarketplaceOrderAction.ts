@@ -2,7 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import { orderAmountEntry, orderRefundEntry } from '@/libs/commerce/bitcoin-payment-code';
+import { orderRefundEntry, orderReturnEntry } from '@/libs/commerce/bitcoin-payment-code';
 import { buyerSellerRatings, reviewListingAggregateId, reviewsOfReviewer } from '@/libs/commerce/order-reviews';
 import { resolveTrackingCarrierName } from '@/libs/commerce/order-tracking';
 import { isUsdtRefundOrder, normalizeArbitrumTxHash } from '@/libs/commerce/usdt-refund';
@@ -23,8 +23,8 @@ export function useMarketplaceOrderAction(
   actOnOrder: (order: MarketplaceOrder, kind: string, payload: Record<string, unknown>) => Promise<boolean>,
 ) {
   const refundedMinor = paypalRefundedMinor(order);
-  const entry = orderAmountEntry(order);
   const refundEntry = orderRefundEntry(order);
+  const returnEntry = orderReturnEntry(order);
   const isUsdt = isUsdtRefundOrder(order);
   const rail = isUsdt ? 'usdt' : order.paymentMethod === 'paypal' ? 'paypal' : 'other';
   const form = useForm<MarketplaceOrderActionData>({
@@ -46,7 +46,7 @@ export function useMarketplaceOrderAction(
               amountMinor: Math.max(0, refundEntry.amountMinor - refundedMinor),
               exponent: refundEntry.exponent,
             })
-          : formatOrderMajor(entry),
+          : formatOrderMajor(returnEntry),
       ...overrides,
     });
   };
@@ -74,7 +74,7 @@ export function useMarketplaceOrderAction(
         case 'return':
           succeeded = await actOnOrder(order, 'return.request', {
             reason: data.reason,
-            requestedAmountMinor: majorToMinor(data.amount, entry.exponent),
+            requestedAmountMinor: majorToMinor(data.amount, returnEntry.exponent),
           });
           break;
         case 'refund':

@@ -7,6 +7,7 @@ import {
   formatBitcoinAmountBreakdown,
   orderAmountEntry,
   orderRefundEntry,
+  orderReturnEntry,
 } from './bitcoin-payment-code';
 import { toCamelCaseWire } from './wire-casing';
 
@@ -186,5 +187,50 @@ describe('refund amount entry for a USDT payment', () => {
     expect(orderAmountEntry(usdt(138_000_000))).toEqual({ amountMinor: 13_700, exponent: 2, unitLabel: 'USD' });
     const paypal = createOrderFixture('cancelled', { paymentMethod: 'paypal' });
     expect(orderRefundEntry(paypal)).toEqual(orderAmountEntry(paypal));
+  });
+});
+
+describe('return amount entry', () => {
+  const sats = { amountMinor: 150_000, currency: 'SAT', exponent: 0 };
+
+  it('asks for a USDT order in its own currency, never in USDT', () => {
+    const satPriced = createOrderFixture('delivered', {
+      total: sats,
+      paymentMethod: 'paykit',
+      paymentAsset: 'USDT',
+      paymentAmountMinor: 41_250_000,
+    });
+    expect(orderReturnEntry(satPriced)).toEqual({ amountMinor: 150_000, exponent: 0, unitLabel: '₿' });
+    const euroPriced = createOrderFixture('delivered', {
+      total: { amountMinor: 13_700, currency: 'EUR', exponent: 2 },
+      paymentMethod: 'paykit',
+      paymentAsset: 'USDT',
+      paymentAmountMinor: 148_539_999,
+    });
+    expect(orderReturnEntry(euroPriced)).toEqual({ amountMinor: 13_700, exponent: 2, unitLabel: 'EUR' });
+  });
+
+  it('leaves the payment code out of a Bitcoin order and keeps a fiat price in its currency', () => {
+    const wire = projectionBody('buyer_awaiting_confirmation');
+    wire.paykit_total_sats = 1_255;
+    wire.total = { amount_minor: 1_255, currency: 'BTC', exponent: 8 };
+    wire.merchandise_total = { amount_minor: 1_000, currency: 'BTC', exponent: 8 };
+    expect(orderReturnEntry(parseOrder(wire))).toEqual({ amountMinor: 1_000, exponent: 0, unitLabel: '₿' });
+    const quoted = marketplaceOrderSchema.parse({
+      ...createBitcoinQuotedOrderFixture(),
+      bitcoinPayable: { amountMinor: 3_000, currency: 'SAT', exponent: 0 },
+      paykitTotalSats: 3_000,
+    });
+    expect(orderReturnEntry(quoted)).toEqual({ amountMinor: 13_700, exponent: 2, unitLabel: 'USD' });
+  });
+
+  it('falls back to the total when the merchandise total is absent or in another unit', () => {
+    const order = createOrderFixture('delivered');
+    expect(orderReturnEntry(order)).toEqual({ amountMinor: 13_700, exponent: 2, unitLabel: 'USD' });
+    expect(orderReturnEntry({ ...order, merchandiseTotal: { amountMinor: 1, currency: 'EUR', exponent: 2 } })).toEqual({
+      amountMinor: 13_700,
+      exponent: 2,
+      unitLabel: 'USD',
+    });
   });
 });
