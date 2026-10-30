@@ -3,8 +3,54 @@ import { describe, expect, it, vi } from 'vitest';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import { createOrderFixture, createUsdtOrderFixture } from '@/test/fixtures/commerce/orders';
 import { useMarketplaceOrderAction } from './useMarketplaceOrderAction';
+import { marketplaceOrderActionDefaults, marketplaceOrderActionSchema } from './useMarketplaceOrderAction.types';
 
 describe('useMarketplaceOrderAction ship action', () => {
+  it('starts with no carrier chosen, so no carrier is recorded unless the seller picks one', () => {
+    expect(marketplaceOrderActionDefaults.carrierChoice).toBe('');
+    const { result } = renderHook(() =>
+      useMarketplaceOrderAction(
+        createOrderFixture('paid'),
+        vi.fn(async () => true),
+      ),
+    );
+    act(() => {
+      result.current.setAction('ship');
+    });
+    expect(result.current.form.getValues('carrierChoice')).toBe('');
+  });
+
+  it('refuses to ship until a carrier is chosen and sends nothing', async () => {
+    const order = createOrderFixture('paid');
+    const actOnOrder = vi.fn(async () => true);
+    const { result } = renderHook(() => {
+      const action = useMarketplaceOrderAction(order, actOnOrder);
+      void action.form.formState.errors;
+      return action;
+    });
+
+    act(() => {
+      result.current.setAction('ship', { trackingNumber: 'RN123456785GB' });
+    });
+    let succeeded = true;
+    await act(async () => {
+      succeeded = await result.current.submit();
+    });
+
+    expect(succeeded).toBe(false);
+    expect(actOnOrder).not.toHaveBeenCalled();
+    expect(result.current.form.formState.errors.carrierChoice?.message).toBe('Select a carrier.');
+  });
+
+  it('asks for a carrier only when shipping', () => {
+    const base = { ...marketplaceOrderActionDefaults, reason: 'Changed my mind' };
+    expect(marketplaceOrderActionSchema.safeParse({ ...base, action: 'ship' }).success).toBe(false);
+    expect(marketplaceOrderActionSchema.safeParse({ ...base, action: 'ship', carrierChoice: 'other' }).success).toBe(
+      true,
+    );
+    expect(marketplaceOrderActionSchema.safeParse({ ...base, action: 'cancel' }).success).toBe(true);
+  });
+
   it('sends the curated carrier by its canonical display name', async () => {
     const order = createOrderFixture('paid');
     const actOnOrder = vi.fn(async () => true);

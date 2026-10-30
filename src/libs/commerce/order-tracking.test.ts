@@ -53,7 +53,7 @@ describe('trackingFormValuesFor', () => {
 
   it('treats the Other default as no name and an absent shipment as blank', () => {
     expect(trackingFormValuesFor(shipment('Other', '')).carrier).toBe('');
-    expect(trackingFormValuesFor(null)).toEqual({ carrierChoice: 'other', carrier: '', trackingNumber: '' });
+    expect(trackingFormValuesFor(null)).toEqual({ carrierChoice: '', carrier: '', trackingNumber: '' });
   });
 });
 

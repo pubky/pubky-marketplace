@@ -1,11 +1,12 @@
 import { z } from 'zod';
-import { SHIPPING_CARRIERS } from '@/libs/commerce/carriers';
-
-const carrierIds = SHIPPING_CARRIERS.map(({ id }) => id) as [string, ...string[]];
+import { CARRIER_CHOICE_COPY, carrierChoiceFieldSchema, NO_CARRIER_CHOICE } from '@/libs/commerce/carrier-choice';
 
 export const orderTrackingFormSchema = z.object({
   /** Curated carrier id from the registry, or `other` with a free-text name below. */
-  carrierChoice: z.enum(carrierIds),
+  carrierChoice: carrierChoiceFieldSchema.refine(
+    (choice) => choice !== NO_CARRIER_CHOICE,
+    CARRIER_CHOICE_COPY.required,
+  ),
   carrier: z.string().trim().max(100, 'Use 100 characters or fewer.'),
   trackingNumber: z.string().trim().min(1, 'Enter the tracking number.').max(200, 'Use 200 characters or fewer.'),
 });
