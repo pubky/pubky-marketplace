@@ -869,6 +869,24 @@ describe('useMarketplaceReviews', () => {
         expect(fetch).toHaveBeenCalledTimes(2);
         expect(result.current.reviews).toHaveLength(MARKETPLACE_REVIEWS_PAGE_SIZE + 2);
       });
+
+      it('keeps the pages of an index that ignored the filter when the windows change', async () => {
+        const fetch = vi.mocked(CommerceController.fetchSellerReviews);
+        fetch.mockResolvedValueOnce(page('n', 2));
+        const { result } = await loaded();
+        fetch.mockResolvedValueOnce(page('e'));
+        act(() => result.current.setFilter({ kind: 'following' }));
+        await waitFor(() => expect(result.current.filtersAvailable).toBe(false));
+        fetch.mockResolvedValueOnce(page('m', 2));
+        act(() => result.current.loadMore());
+        await waitFor(() => expect(result.current.reviews).toHaveLength(MARKETPLACE_REVIEWS_PAGE_SIZE + 2));
+
+        act(() => setAttestorProfileKeyWindows(TEST_TRUSTED_ATTESTOR.pubky, NARROWED));
+        await act(async () => {});
+
+        expect(fetch).toHaveBeenCalledTimes(3);
+        expect(result.current.reviews).toHaveLength(MARKETPLACE_REVIEWS_PAGE_SIZE + 2);
+      });
     });
 
     describe('a later filtered page', () => {

@@ -7,6 +7,7 @@ import { MARKETPLACE_REVIEWS_PAGE_SIZE } from '@/config/commerce';
 import { REVIEW_FILTER_COPY, REVIEW_SORT_COPY } from '@/config/commerce-copy';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useAttestorKeyWindowsVersion } from '@/hooks/useAttestorKeyWindows/useAttestorKeyWindows';
+import { subscribeAttestorKeyWindows } from '@/libs/commerce/attestor-key-windows';
 import { countedSnippetReputation } from '@/libs/commerce/review-counting';
 import {
   isActiveReviewFilter,
@@ -199,15 +200,11 @@ export function useMarketplaceReviews(target: MarketplaceReviewsTarget): Marketp
   const isChosenTarget = chosen.targetKey === targetKey;
   const sort = isChosenTarget ? chosen.sort : MARKETPLACE_REVIEW_SORT_DEFAULT;
   const chosenFilter = isChosenTarget ? chosen.filter : MARKETPLACE_REVIEW_FILTER_DEFAULT;
-  const keyWindowsVersion = useAttestorKeyWindowsVersion();
-  // A filtered page and its `matched` are counted against the attestor windows sent with the request, so a
-  // filtered list reloads when they change; the unfiltered list sends none and keeps its pages.
-  const filteredWindowsVersion =
-    reviewFilterRequest(chosenFilter, viewerPubky) === undefined ? null : keyWindowsVersion;
   const [sortSupported, setSortSupported] = useState(true);
   const [filtersUnsupported, setFiltersUnsupported] = useState(reviewFiltersKnownUnsupported);
   // Mirrors `filtersUnsupported` for the fetch effect, which must not restart when the answer flips.
   const filtersUnsupportedRef = useRef(filtersUnsupported);
+  const [filteredWindowsReload, setFilteredWindowsReload] = useState(0);
   const [reviews, setReviews] = useState<CommerceIndexedReview[]>([]);
   const [matched, setMatched] = useState<CommerceReviewMatch | null | undefined>(undefined);
   const [filterRejected, setFilterRejected] = useState(false);
@@ -276,7 +273,17 @@ export function useMarketplaceReviews(target: MarketplaceReviewsTarget): Marketp
         setIsFetching(false);
         setIsReordering(false);
       });
-  }, [sellerPubky, listingId, targetKey, sort, chosenFilter, viewerPubky, filteredWindowsVersion]);
+  }, [sellerPubky, listingId, targetKey, sort, chosenFilter, viewerPubky, filteredWindowsReload]);
+
+  // A filtered page and its `matched` are counted against the attestor windows sent with the request, so a
+  // filtered list reloads when they change. An unfiltered list sends none and keeps its pages, and so does a
+  // list whose index showed it ignores filters (its requests are unfiltered too).
+  useEffect(() => {
+    if (reviewFilterRequest(chosenFilter, viewerPubky) === undefined) return;
+    return subscribeAttestorKeyWindows(() => {
+      if (!filtersUnsupportedRef.current) setFilteredWindowsReload((count) => count + 1);
+    });
+  }, [chosenFilter, viewerPubky]);
 
   const loadMore = () => {
     if (isFetching || status !== 'ok' || filterRejected) return;
