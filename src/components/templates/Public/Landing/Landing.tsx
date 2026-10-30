@@ -11,10 +11,13 @@ import { LandingScrollCue } from './LandingScrollCue';
 import { LandingSwirlState } from './LandingSwirlState';
 import { LandingVideo } from './LandingVideo';
 
-/** The swirl artwork lives in CSS, which cannot see the mount path; hand it over as a variable. */
+/** The swirl artwork lives in CSS, which cannot see the mount path; hand it over as variables. */
 function swirlImageStyle() {
   if (getBasePath() === '') return undefined;
-  return { ['--landing-swirl-image' as string]: `url(${withBasePath('/images/bg-home.svg')})` };
+  return {
+    ['--landing-swirl-image' as string]: `url(${withBasePath('/images/bg-home.svg')})`,
+    ['--landing-swirl-image-on-light' as string]: `url(${withBasePath('/images/bg-home-on-light.svg')})`,
+  };
 }
 
 export function Landing() {
