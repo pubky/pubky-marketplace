@@ -203,6 +203,7 @@ describe('MarketplaceNotificationNormalizer.toDeepLink', () => {
     bitcoin_payment_seen: MARKETPLACE_ROUTES.ORDERS,
     usdt_payment_seen: MARKETPLACE_ROUTES.ORDERS,
     paypal_payment_seen: MARKETPLACE_ROUTES.ORDERS,
+    digital_released: MARKETPLACE_ROUTES.ORDERS,
     bitcoin_prepare_voided: MARKETPLACE_ROUTES.ORDERS,
     order_cancelled: MARKETPLACE_ROUTES.ORDERS,
     order_cancelled_terms_change: MARKETPLACE_ROUTES.ORDERS,

@@ -46,6 +46,7 @@ import {
   unlistedOrderStateLabel,
 } from '@/libs/commerce/checkout-phase';
 import {
+  awaitsSellerRelease,
   DIGITAL_ORDER_COPY,
   DIGITAL_SELLER_COPY,
   digitalOrderManualChannels,
@@ -924,11 +925,12 @@ function getNextActorHint(
   }
   if (order.nextActor === 'seller') {
     if (isBuyer) return { label: 'Waiting on seller', isCurrentUser: false };
-    // Digital delivery design §3 "Seller's orders": a paid digital order the seller sends by hand.
+    // Digital delivery design §3 "Seller's orders": a paid digital order the seller sends by hand,
+    // or whose purchase waits for the seller's release.
     if (
       order.fulfillment === 'digital' &&
       order.state === 'paid' &&
-      digitalOrderManualChannels(order.lines).length > 0
+      (digitalOrderManualChannels(order.lines).length > 0 || awaitsSellerRelease(order))
     ) {
       return { label: DIGITAL_SELLER_COPY.toDeliver, isCurrentUser: true };
     }

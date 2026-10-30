@@ -346,6 +346,9 @@ export const marketplaceNotificationSchema = z
       // a payment, and waits for the seller's confirmation.
       'usdt_payment_seen',
       'paypal_payment_seen',
+      // A paid order's instant digital lines were released while email or
+      // message lines are still to come (the buyer's notice).
+      'digital_released',
       'bitcoin_prepare_voided',
       'order_cancelled',
       'order_shipped',
@@ -793,6 +796,11 @@ export const marketplaceOrderProjectionSchema = z
     paymentConfirmation: z.enum(['seller', 'automatic']).nullish().catch(null),
     // When PayPal reported a matching payment the seller has yet to confirm.
     gatewayPaymentSeenAt: z.string().nullish().catch(null),
+    // Who releases a paid digital order's instant lines, frozen at payment:
+    // `seller` while they wait for the seller's release, `payment` when the
+    // payment released them. Absent on older services and older orders.
+    digitalRelease: z.enum(['seller', 'payment']).nullish().catch(null),
+    digitalReleasedAt: z.string().nullish().catch(null),
     // FX-quoted Bitcoin orders carry the service's exact settlement amount.
     // Older orders and non-FX orders may omit this projection entirely.
     bitcoinQuote: marketplaceBitcoinQuoteSchema.nullable().optional(),

@@ -17,7 +17,8 @@ import type { MarketplaceNotification } from '@/services/marketplace/marketplace
  * `review_waiting` and `review_released` are from pubky/pubky-marketplace-service#186
  * (double-blind reviews behind `REVIEW_BLIND_WINDOW_DAYS`). `usdt_payment_seen`
  * and `paypal_payment_seen` are the seller-confirmed payment notices
- * (`PAYMENT_CONFIRMATION=seller`).
+ * (`PAYMENT_CONFIRMATION=seller`); `digital_released` is the buyer's notice
+ * of a seller's release (`DIGITAL_RELEASE=seller`).
  *
  * Shop-only types (`message_received`, `order_cancelled_terms_change`) are
  * mapped too, but they are not in this list because that service revision
@@ -29,6 +30,7 @@ export const SERVICE_NOTIFICATION_TYPES = [
   'bitcoin_manual_review',
   'bitcoin_payment_seen',
   'bitcoin_prepare_voided',
+  'digital_released',
   'drop_sold_out',
   'fiat_payment_reported',
   'offer_accepted',
@@ -86,6 +88,7 @@ export const MARKETPLACE_ACTIVITY_LABELS = {
   bitcoin_payment_seen: 'A Bitcoin payment is waiting for your confirmation',
   usdt_payment_seen: 'A USDT payment is waiting for your confirmation',
   paypal_payment_seen: 'PayPal reported a payment waiting for your confirmation',
+  digital_released: 'Your purchase is ready to open',
   bitcoin_prepare_voided: 'Bitcoin payment expired',
   order_cancelled: 'Order cancelled',
   order_cancelled_terms_change: 'Order cancelled — pickup terms changed',

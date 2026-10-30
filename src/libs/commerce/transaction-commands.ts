@@ -691,6 +691,13 @@ export const deliverDigitalCommandSchema = createCommerceCommandSchema(
   orderIdPayload.extend({ channel: marketplaceDigitalDeliveryChannelSchema }).strict(),
 );
 
+/**
+ * `fulfillment.release_digital` (seller, own paid digital order): releases the
+ * order's instant lines to the buyer when they wait for the seller's release;
+ * the order moves to `delivered` once no manual channel is left to mark.
+ */
+export const releaseDigitalCommandSchema = createCommerceCommandSchema('fulfillment.release_digital', orderIdPayload);
+
 /** `digital_delivery.clear` (seller, own listing only): removes delivery; refused while buyers pay for or download it (C4). */
 export const clearDigitalDeliveryCommandSchema = createCommerceCommandSchema(
   'digital_delivery.clear',
@@ -895,6 +902,7 @@ export const marketplaceCommandSchema = z.union([
   clearDigitalDeliveryCommandSchema,
   setDeliveryEmailCommandSchema,
   deliverDigitalCommandSchema,
+  releaseDigitalCommandSchema,
   markReadyForPickupCommandSchema,
   confirmPickupCommandSchema,
   requestReturnCommandSchema,
@@ -993,6 +1001,7 @@ export type SetDigitalDeliveryCommand = z.infer<typeof setDigitalDeliveryCommand
 export type ClearDigitalDeliveryCommand = z.infer<typeof clearDigitalDeliveryCommandSchema>;
 export type SetDeliveryEmailCommand = z.infer<typeof setDeliveryEmailCommandSchema>;
 export type DeliverDigitalCommand = z.infer<typeof deliverDigitalCommandSchema>;
+export type ReleaseDigitalCommand = z.infer<typeof releaseDigitalCommandSchema>;
 export type MarkReadyForPickupCommand = z.infer<typeof markReadyForPickupCommandSchema>;
 export type ConfirmPickupCommand = z.infer<typeof confirmPickupCommandSchema>;
 export type RequestReturnCommand = z.infer<typeof requestReturnCommandSchema>;

@@ -707,20 +707,22 @@ export class MarketplaceGatewayService {
   static async confirmFiatReceived(
     actor: string,
     orderId: string,
+    releaseDigital = false,
     options: { signal?: AbortSignal } = {},
   ): Promise<MarketplaceOrder> {
     this.assertDurableServiceOnly('confirmFiatReceived');
-    return await MarketplaceTransactionService.confirmFiatReceived(actor, orderId, options);
+    return await MarketplaceTransactionService.confirmFiatReceived(actor, orderId, releaseDigital, options);
   }
 
   static async confirmBitcoinPayment(
     actor: string,
     orderId: string,
     reason?: string,
+    releaseDigital = false,
     options: { signal?: AbortSignal } = {},
   ) {
     this.assertDurableServiceOnly('confirmBitcoinPayment');
-    return await MarketplaceTransactionService.confirmBitcoinPayment(actor, orderId, reason, options);
+    return await MarketplaceTransactionService.confirmBitcoinPayment(actor, orderId, reason, releaseDigital, options);
   }
 
   static async resolveBitcoinPayment(

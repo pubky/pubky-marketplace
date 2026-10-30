@@ -63,9 +63,25 @@ describe('CommerceApplication.autoConfirmSellerPayments', () => {
     expect(getOrder).toHaveBeenCalledTimes(3);
     expect(getOrder).not.toHaveBeenCalledWith(SELLER, unrelated.id);
     expect(confirmPaykit).toHaveBeenCalledTimes(1);
-    expect(confirmPaykit).toHaveBeenCalledWith(SELLER, bitcoin.id, SELLER_AUTO_CONFIRM_REASON, { signal: live });
+    expect(confirmPaykit).toHaveBeenCalledWith(SELLER, bitcoin.id, SELLER_AUTO_CONFIRM_REASON, false, { signal: live });
     expect(confirmPaypal).toHaveBeenCalledTimes(1);
-    expect(confirmPaypal).toHaveBeenCalledWith(SELLER, paypal.id, { signal: live });
+    expect(confirmPaypal).toHaveBeenCalledWith(SELLER, paypal.id, false, { signal: live });
+  });
+
+  it('releases a digital purchase in the same confirmation', async () => {
+    const { confirmPaykit } = stubService();
+    vi.spyOn(MarketplaceGatewayService, 'getOrders').mockResolvedValue([bitcoin]);
+    vi.spyOn(MarketplaceGatewayService, 'getOrder').mockResolvedValue({
+      ...bitcoin,
+      fulfillment: 'digital',
+      lines: bitcoin.lines.map((line) => ({ ...line, fulfillment: 'digital' as const, digitalKind: 'text' as const })),
+      paykitObservation: { amountMatched: true },
+    });
+
+    await expect(CommerceApplication.autoConfirmSellerPayments(SELLER, () => true, live)).resolves.toEqual([
+      bitcoin.id,
+    ]);
+    expect(confirmPaykit).toHaveBeenCalledWith(SELLER, bitcoin.id, SELLER_AUTO_CONFIRM_REASON, true, { signal: live });
   });
 
   it('keeps going past a confirmation the service refuses', async () => {
@@ -95,7 +111,7 @@ describe('CommerceApplication.autoConfirmSellerPayments', () => {
     const { confirmPaykit, confirmPaypal } = stubService();
     const pass = new AbortController();
     confirmPaykit.mockImplementationOnce(
-      (_actor, _orderId, _reason, options) =>
+      (_actor, _orderId, _reason, _releaseDigital, options) =>
         new Promise((_resolve, reject) => {
           options?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
         }),

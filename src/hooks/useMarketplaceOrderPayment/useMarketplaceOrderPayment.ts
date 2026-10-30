@@ -5,6 +5,7 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import { useAuctionWinnerDeliveryAddress } from '@/hooks/useAuctionWinnerDeliveryAddress/useAuctionWinnerDeliveryAddress';
 import { usePaykitOutage } from '@/hooks/usePaykitOutage/usePaykitOutage';
 import { useUsdtPaymentsCapability } from '@/hooks/useUsdtPaymentsCapability/useUsdtPaymentsCapability';
+import { hasInstantDigitalLines } from '@/libs/commerce/digital';
 import {
   isPaykitUnavailableRefusal,
   MARKETPLACE_FAILURE_MESSAGES,
@@ -140,11 +141,12 @@ export function useMarketplaceOrderPayment({
     [order.id, runAction],
   );
 
+  const releasesDigital = hasInstantDigitalLines(order);
   const confirmReceived = useCallback(async () => {
     await runAction('confirm', async () => {
-      await CommerceController.confirmFiatReceived(order.id);
+      await CommerceController.confirmFiatReceived(order.id, releasesDigital);
     });
-  }, [order.id, runAction]);
+  }, [order.id, releasesDigital, runAction]);
 
   // The picker names its assets from the seller config read with the USDT answer, so it waits for that answer.
   const ready = sellerConfig !== null && usdtCapability !== 'checking';

@@ -179,6 +179,23 @@ describe('MarketplaceOrders: the seller confirms a payment that waits on a reser
     expect(confirmReceived).toHaveBeenCalledTimes(1);
   });
 
+  it('offers Confirm payment and release for a reported PayPal payment on a digital file', async () => {
+    const digital = pendingPaypal({ paymentReportedAt: '2026-10-28T18:45:00.000Z', fulfillment: 'digital' });
+    digital.order = {
+      ...digital.order,
+      lines: digital.order.lines.map((line) => ({
+        ...line,
+        fulfillment: 'digital' as const,
+        digitalKind: 'file' as const,
+      })),
+    };
+    ordersState.orders = [digital];
+    const reservations = await openReservations();
+
+    await userEvent.setup().click(within(reservations).getByRole('button', { name: 'Confirm payment and release' }));
+    expect(confirmReceived).toHaveBeenCalledTimes(1);
+  });
+
   it('offers Confirm payment received for a payment PayPal reported', async () => {
     ordersState.orders = [pendingPaypal({ gatewayPaymentSeenAt: '2026-10-28T18:45:00.000Z' })];
     const reservations = await openReservations();

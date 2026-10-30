@@ -89,6 +89,8 @@ function getBaseActionText(type: MarketplaceNotification['type']): string {
       return 'saw a USDT payment waiting for your confirmation';
     case 'paypal_payment_seen':
       return 'reported a PayPal payment waiting for your confirmation';
+    case 'digital_released':
+      return 'released your purchase';
     case 'bitcoin_prepare_voided':
       return 'expired a bitcoin payment';
     case 'order_cancelled':

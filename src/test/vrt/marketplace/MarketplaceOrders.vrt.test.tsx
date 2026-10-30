@@ -311,6 +311,39 @@ const fixtures = vi.hoisted(async () => {
     };
   };
 
+  // A paid file-and-text purchase whose lines wait for the seller's release
+  // (DIGITAL_RELEASE=seller), seen by its buyer and by its seller.
+  const digitalAwaitingReleaseView = (viewer: 'buyer' | 'seller') => {
+    const base = createOrderFixture('paid', {
+      id: viewer === 'buyer' ? '018f47d2-6a27-7c23-a49d-000000000706' : '018f47d2-6a27-7c23-a49d-000000000707',
+      ...(viewer === 'seller' ? { buyerPubky: 's'.repeat(52), sellerPubky: ORDER_FIXTURE_BUYER } : {}),
+      nextActor: 'seller',
+      digitalRelease: 'seller',
+      digitalReleasedAt: null,
+    });
+    const line = base.lines[0];
+    return {
+      order: {
+        ...base,
+        fulfillment: 'digital' as const,
+        shipment: null,
+        shipping: { ...base.shipping, amountMinor: 0 },
+        total: base.subtotal,
+        lines: [
+          {
+            ...line,
+            title: 'Field guide to film cameras (PDF)',
+            fulfillment: 'digital' as const,
+            digitalKind: 'file' as const,
+          },
+          { ...line, title: 'Darkroom timer licence', fulfillment: 'digital' as const, digitalKind: 'text' as const },
+        ],
+      },
+      payment: createPaymentFixture('confirmed'),
+      receipt: null,
+    };
+  };
+
   const sellerAwaitingPayment = [
     'awaiting_entitlement',
     'detected',
@@ -537,6 +570,8 @@ const fixtures = vi.hoisted(async () => {
     usdtReviewSeller: [usdtReviewSellerView()],
     digitalDelivered: [digitalDeliveredView()],
     digitalToDeliver: [digitalToDeliverView()],
+    digitalAwaitingReleaseBuyer: [digitalAwaitingReleaseView('buyer')],
+    digitalAwaitingReleaseSeller: [digitalAwaitingReleaseView('seller')],
     sellerAwaitingPayment: sellerAwaitingPaymentViews,
     buyerPendingPayment,
     sellerPendingPayment,
@@ -958,6 +993,47 @@ describe('Marketplace orders — visual regression', () => {
       await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('orders-digital-to-deliver-desktop');
       await expect(await expectVrtSurface('order-seller-digital-panel')).toMatchScreenshot(
         'orders-seller-digital-panel-desktop',
+      );
+    } finally {
+      evidence.mockRestore();
+    }
+  });
+
+  it('tells the buyer a paid digital purchase waits for the seller’s release at desktop viewport', async () => {
+    const { digitalAwaitingReleaseBuyer } = await fixtures;
+    ordersState.orders = digitalAwaitingReleaseBuyer;
+    ordersState.isLoading = false;
+    ordersState.error = null;
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await expect.element(screen.getByTestId('order-digital-awaiting-release').first()).toBeVisible();
+    await expect(await expectVrtSurface('order-digital-panel')).toMatchScreenshot(
+      'orders-digital-awaiting-release-buyer-desktop',
+    );
+  });
+
+  it('offers the seller Release to buyer on a paid digital sale at desktop viewport', async () => {
+    const { digitalAwaitingReleaseSeller } = await fixtures;
+    ordersState.orders = digitalAwaitingReleaseSeller;
+    ordersState.isLoading = false;
+    ordersState.error = null;
+    const evidence = vi.spyOn(CommerceController, 'fetchOrderDigitalEvidence').mockResolvedValue({
+      orderId: digitalAwaitingReleaseSeller[0].order.id,
+      deliveredAt: null,
+      firstOpenedAt: null,
+      openCount: 0,
+      emailedAt: null,
+      messageDeliveredAt: null,
+    });
+
+    try {
+      const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_DESKTOP });
+      await expect.element(screen.getByRole('button', { name: 'Release to buyer' })).toBeVisible();
+      await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot(
+        'orders-digital-awaiting-release-seller-desktop',
+      );
+      await expect(await expectVrtSurface('order-seller-digital-panel')).toMatchScreenshot(
+        'orders-seller-digital-release-panel-desktop',
       );
     } finally {
       evidence.mockRestore();

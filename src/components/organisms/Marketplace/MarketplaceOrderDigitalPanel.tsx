@@ -15,6 +15,7 @@ import {
   useOrderDigitalDelivery,
 } from '@/hooks/useOrderDigitalDelivery/useOrderDigitalDelivery';
 import {
+  awaitsSellerRelease,
   DELIVERY_EMAIL_MAX_CHARS,
   DIGITAL_ORDER_COPY,
   DIGITAL_READ_REFUSAL_COPY,
@@ -75,6 +76,10 @@ export function MarketplaceOrderDigitalPanel({
           ) : !paid ? (
             <Typography as="p" className="text-sm text-muted-foreground">
               {DIGITAL_ORDER_COPY.notPaid}
+            </Typography>
+          ) : awaitsSellerRelease(order) ? (
+            <Typography as="p" className="text-sm text-muted-foreground" data-testid="order-digital-awaiting-release">
+              {DIGITAL_ORDER_COPY.awaitingRelease}
             </Typography>
           ) : (
             <OrderInstantLine line={line} delivery={delivery} />

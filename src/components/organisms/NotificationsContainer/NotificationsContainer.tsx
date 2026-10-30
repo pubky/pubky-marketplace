@@ -46,6 +46,7 @@ const MARKETPLACE_TAB_NOTIFICATION_TYPES = {
   bitcoin_payment_seen: true,
   usdt_payment_seen: true,
   paypal_payment_seen: true,
+  digital_released: true,
   bitcoin_prepare_voided: true,
   order_cancelled: true,
   order_cancelled_terms_change: true,

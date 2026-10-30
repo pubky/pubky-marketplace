@@ -454,8 +454,8 @@ describe('MarketplaceTransactionService.execute', () => {
 
     await MarketplaceTransactionService.getOrders(ACTOR, { signal });
     await MarketplaceTransactionService.getOrder(ACTOR, wireOrder.id, { signal });
-    await MarketplaceTransactionService.confirmFiatReceived(ACTOR, wireOrder.id, { signal });
-    await MarketplaceTransactionService.confirmBitcoinPayment(ACTOR, wireOrder.id, undefined, { signal });
+    await MarketplaceTransactionService.confirmFiatReceived(ACTOR, wireOrder.id, false, { signal });
+    await MarketplaceTransactionService.confirmBitcoinPayment(ACTOR, wireOrder.id, undefined, false, { signal });
 
     expect(vi.mocked(fetch).mock.calls.map(([, init]) => (init as RequestInit).signal)).toEqual([
       signal,
@@ -463,6 +463,46 @@ describe('MarketplaceTransactionService.execute', () => {
       signal,
       signal,
     ]);
+  });
+
+  it('sends release_digital on both seller payment confirmations only when asked', async () => {
+    await establishSession();
+    const wireOrder = { ...LIVE_ORDERS_WIRE_FIXTURE.orders[0], seller_pubky: ACTOR };
+    const orderId = wireOrder.id;
+    const body = (call: number) =>
+      JSON.parse((vi.mocked(fetch).mock.calls[call] as [string, RequestInit])[1].body as string);
+    const confirmation = {
+      ok: true,
+      order: wireOrder,
+      confirmation: {
+        order_id: orderId,
+        confirmed_by_pubky: ACTOR,
+        confirmed_at: '2026-10-28T09:00:00.000Z',
+        confirmation_basis: 'seller_attestation',
+        confirmation_source: 'seller',
+      },
+    };
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true, order: wireOrder }))
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true, order: wireOrder }))
+      .mockResolvedValueOnce(jsonResponse(200, confirmation))
+      .mockResolvedValueOnce(jsonResponse(200, confirmation));
+
+    await MarketplaceTransactionService.confirmFiatReceived(ACTOR, orderId, true);
+    await MarketplaceTransactionService.confirmFiatReceived(ACTOR, orderId);
+    await MarketplaceTransactionService.confirmBitcoinPayment(ACTOR, orderId, 'Seen in Bitkit', true);
+    await MarketplaceTransactionService.confirmBitcoinPayment(ACTOR, orderId);
+
+    expect(vi.mocked(fetch).mock.calls.map(([url]) => url)).toEqual([
+      `http://127.0.0.1:8080/v0/orders/${orderId}/fiat/confirm-received`,
+      `http://127.0.0.1:8080/v0/orders/${orderId}/fiat/confirm-received`,
+      `http://127.0.0.1:8080/v0/orders/${orderId}/confirm-bitcoin-payment`,
+      `http://127.0.0.1:8080/v0/orders/${orderId}/confirm-bitcoin-payment`,
+    ]);
+    expect(body(0)).toEqual({ release_digital: true });
+    expect(body(1)).toEqual({});
+    expect(body(2)).toEqual({ reason: 'Seen in Bitkit', release_digital: true });
+    expect(body(3)).toEqual({});
   });
 
   it('fails closed outside transaction-service mode', async () => {
