@@ -11,6 +11,7 @@ import {
   isUsdtRefundOrder,
   type RefundDestination,
   usdtRefundCap,
+  usdtRefundCapMinor,
   usdtRefundRecordLine,
 } from '@/libs/commerce/usdt-refund';
 
@@ -48,7 +49,7 @@ export type RefundOrderNotice = keyof typeof REFUND_ORDER_NOTICES;
 
 /** The order-card state pill for refunded orders. Null when the state is not refund-specific. */
 export function refundStateLabel(order: RefundCopyOrder): string | null {
-  const partial = usdtRefundCap(order) ? null : partialRefundLabel(order);
+  const partial = usdtRefundCap(order) ? null : partialRefundLabel(order, usdtRefundCapMinor(order) ?? undefined);
   if (partial) return partial;
   if (order.state !== 'refunded_external') return null;
   if (isUsdtRefundOrder(order)) return 'Refund recorded';

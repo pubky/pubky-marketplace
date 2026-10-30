@@ -27,6 +27,20 @@ describe('refund copy', () => {
     expect(refundStateLabel({ state: 'shipped', total, externalRefund: refund(100) })).toBe('Refunded $1.00 of $2.50');
   });
 
+  it('measures a USD order paid in USDT against the USDT it received', () => {
+    const usdt = {
+      state: 'refunded_external',
+      total: { amountMinor: 13_700, currency: 'USD', exponent: 2 },
+      paymentAsset: 'USDT',
+      paymentAmountMinor: 136_000_000,
+    };
+    expect(refundStateLabel({ ...usdt, externalRefund: refund(13_600) })).toBe('Refund recorded');
+    expect(refundStateLabel({ ...usdt, externalRefund: refund(10_000) })).toBe('Refunded $100.00 of $136.00');
+    expect(refundStateLabel({ ...usdt, paymentAmountMinor: 138_000_000, externalRefund: refund(13_700) })).toBe(
+      'Refunded $137.00 of $138.00',
+    );
+  });
+
   it('states the refund amount and reference in plain words', () => {
     expect(refundRecordLine({ state: 'refunded_external', total, externalRefund: refund(250) })).toBe(
       'Refunded in full ($2.50). Reference: 9RF12345AB678901C',

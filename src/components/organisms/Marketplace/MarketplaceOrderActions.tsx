@@ -22,7 +22,7 @@ import {
 } from '@/hooks/useMarketplaceOrderAction/useMarketplaceOrderAction.types';
 import { usePickupOrderActions } from '@/hooks/usePickupOrderActions/usePickupOrderActions';
 import { reviewAttestationIssuedAt } from '@/libs/commerce/attestation';
-import { orderAmountEntry } from '@/libs/commerce/bitcoin-payment-code';
+import { orderAmountEntry, orderRefundEntry } from '@/libs/commerce/bitcoin-payment-code';
 import { OTHER_CARRIER_ID, SHIPPING_CARRIERS } from '@/libs/commerce/carriers';
 import { DIGITAL_ORDER_COPY, DIGITAL_SELLER_COPY, isInstantDigitalDeliveryKind } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
@@ -217,6 +217,7 @@ export function MarketplaceOrderActions({
       (order.fulfillment === 'digital' && ['delivered', 'completed'].includes(order.state)));
   const refundedMinor = paypalRefundedMinor(order);
   const amountEntry = orderAmountEntry(order);
+  const refundEntry = orderRefundEntry(order);
   const isPaypal = order.paymentMethod === 'paypal';
   const isUsdt = isUsdtRefundOrder(order);
   // A USDT refund goes to the address the buyer confirmed; the service refuses
@@ -238,11 +239,11 @@ export function MarketplaceOrderActions({
         ? formatUsdt(refundedMinor)
         : formatCommerceMoney({ ...order.total, amountMinor: refundedMinor });
   const refundCapMoney =
-    amountEntry.unitLabel === '₿'
-      ? formatBitcoinAmount(amountEntry.amountMinor)
-      : amountEntry.unitLabel === 'USDT'
-        ? formatUsdt(amountEntry.amountMinor)
-        : formatCommerceMoney(order.total);
+    refundEntry.unitLabel === '₿'
+      ? formatBitcoinAmount(refundEntry.amountMinor)
+      : refundEntry.unitLabel === 'USDT'
+        ? formatUsdt(refundEntry.amountMinor)
+        : formatCommerceMoney({ ...order.total, amountMinor: refundEntry.amountMinor });
   const canReveal =
     isBuyer &&
     isPickup &&

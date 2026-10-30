@@ -2,7 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import { orderAmountEntry } from '@/libs/commerce/bitcoin-payment-code';
+import { orderAmountEntry, orderRefundEntry } from '@/libs/commerce/bitcoin-payment-code';
 import { buyerSellerRatings, reviewListingAggregateId, reviewsOfReviewer } from '@/libs/commerce/order-reviews';
 import { resolveTrackingCarrierName } from '@/libs/commerce/order-tracking';
 import { isUsdtRefundOrder, normalizeArbitrumTxHash } from '@/libs/commerce/usdt-refund';
@@ -24,10 +24,11 @@ export function useMarketplaceOrderAction(
 ) {
   const refundedMinor = paypalRefundedMinor(order);
   const entry = orderAmountEntry(order);
+  const refundEntry = orderRefundEntry(order);
   const isUsdt = isUsdtRefundOrder(order);
   const rail = isUsdt ? 'usdt' : order.paymentMethod === 'paypal' ? 'paypal' : 'other';
   const form = useForm<MarketplaceOrderActionData>({
-    resolver: zodResolver(marketplaceOrderActionSchemaFor(entry, refundedMinor, rail)),
+    resolver: zodResolver(marketplaceOrderActionSchemaFor(refundEntry, refundedMinor, rail)),
     defaultValues: marketplaceOrderActionDefaults,
     mode: 'onChange',
   });
@@ -42,8 +43,8 @@ export function useMarketplaceOrderAction(
       amount:
         action === 'refund'
           ? formatOrderMajor({
-              amountMinor: Math.max(0, entry.amountMinor - refundedMinor),
-              exponent: entry.exponent,
+              amountMinor: Math.max(0, refundEntry.amountMinor - refundedMinor),
+              exponent: refundEntry.exponent,
             })
           : formatOrderMajor(entry),
       ...overrides,
@@ -80,7 +81,7 @@ export function useMarketplaceOrderAction(
           // The record replaces PayPal's running sum, so it carries the
           // recorded total, never below what PayPal already refunded.
           succeeded = await actOnOrder(order, 'refund.record_external', {
-            amountMinor: refundedMinor + majorToMinor(data.amount, entry.exponent),
+            amountMinor: refundedMinor + majorToMinor(data.amount, refundEntry.exponent),
             transactionId: isUsdt ? normalizeArbitrumTxHash(data.transactionId) : data.transactionId,
           });
           break;

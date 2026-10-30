@@ -90,6 +90,8 @@ Both parties get a "Look up address on Arbiscan" link beside the confirmed addre
 
 A USDT payment on an order priced in satoshis or BTC (one Paykit request carries USDT for every currency the service converts, with the rate fixed at prepare) is refunded in USDT0, not in the order's currency: the refund form starts at the whole amount paid (`payment_amount_minor`), accepts up to six decimals, and the service records `external_refund.amount_minor` in millionths, capped at the amount paid (`usdtRefundCap`, `formatUsdtRefundAmount`). A USD order keeps cents at parity. A return request in order units has no exact USDT figure, so the seller is asked to send the whole amount paid.
 
+On every USDT order the amount paid is what the observed transfer carried (`payment_amount_minor`), not the quote, so a transfer for another amount (an abandoned amount-mismatch review) is refunded as it arrived. A USD order's refund form, "Refund amount" and partial-refund labels use the USDT received in whole cents, the lower cent when it falls between two (`usdtRefundCapMinor`, `orderRefundEntry`): an underpaid order cannot record more than arrived, and an overpaid one can record its excess. A buyer's return request stays within the order total, as the service caps it there.
+
 The "send it back to the address I paid from" choice appears only when the order projection carries an optional `payment_address`. The service does not send it today (paykit-server's status exposes no payer address), so the buyer enters an address.
 
 ## Resolving a USDT payment in manual review (W5)

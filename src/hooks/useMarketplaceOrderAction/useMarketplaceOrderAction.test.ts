@@ -1,5 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import { createOrderFixture, createUsdtOrderFixture } from '@/test/fixtures/commerce/orders';
 import { useMarketplaceOrderAction } from './useMarketplaceOrderAction';
 
@@ -361,6 +362,75 @@ describe('useMarketplaceOrderAction USDT refund on an order priced in satoshis',
     });
     const over = await record('41.250001');
     expect(over.actOnOrder).not.toHaveBeenCalled();
-    expect(over.result.current.form.formState.errors.amount?.message).toBe('Enter a refund up to the order total.');
+    expect(over.result.current.form.formState.errors.amount?.message).toBe('Enter a refund up to the USDT received.');
+  });
+});
+
+describe('useMarketplaceOrderAction USDT refund of another amount than quoted', () => {
+  const hash = `0x${'ab12'.repeat(16)}`;
+  const received = (paymentAmountMinor: number) =>
+    createUsdtOrderFixture('cancelled', {
+      paymentAmountMinor,
+      refundDestination: {
+        address: '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed',
+        network: 'arbitrum-one',
+        asset: 'USDT',
+        source: 'buyer_entered',
+        confirmedAt: '2026-10-09T16:00:00.000Z',
+      },
+    });
+
+  async function record(order: MarketplaceOrder, amount?: string) {
+    const actOnOrder = vi.fn(async () => true);
+    const { result } = renderHook(() => {
+      const value = useMarketplaceOrderAction(order, actOnOrder);
+      void value.form.formState.errors;
+      return value;
+    });
+    act(() => {
+      result.current.setAction('refund', { transactionId: hash, ...(amount === undefined ? {} : { amount }) });
+    });
+    const prefilled = result.current.form.getValues('amount');
+    await act(async () => {
+      await result.current.submit();
+    });
+    return { actOnOrder, result, prefilled };
+  }
+
+  it('starts at what an underpaid transfer carried and refuses the quote', async () => {
+    const underpaid = received(136_000_000);
+    const whole = await record(underpaid);
+    expect(whole.prefilled).toBe('136.00');
+    expect(whole.actOnOrder).toHaveBeenCalledWith(underpaid, 'refund.record_external', {
+      amountMinor: 13_600,
+      transactionId: hash,
+    });
+    const quote = await record(underpaid, '137.00');
+    expect(quote.actOnOrder).not.toHaveBeenCalled();
+    expect(quote.result.current.form.formState.errors.amount?.message).toBe('Enter a refund up to the USDT received.');
+  });
+
+  it('records the whole of an overpaid transfer, excess included, and no more', async () => {
+    const overpaid = received(138_000_000);
+    const whole = await record(overpaid);
+    expect(whole.prefilled).toBe('138.00');
+    expect(whole.actOnOrder).toHaveBeenCalledWith(overpaid, 'refund.record_external', {
+      amountMinor: 13_800,
+      transactionId: hash,
+    });
+    const over = await record(overpaid, '138.01');
+    expect(over.actOnOrder).not.toHaveBeenCalled();
+  });
+
+  it('keeps a return request within the order total', async () => {
+    const overpaid = received(138_000_000);
+    const { result } = renderHook(() =>
+      useMarketplaceOrderAction(
+        overpaid,
+        vi.fn(async () => true),
+      ),
+    );
+    act(() => result.current.setAction('return'));
+    expect(result.current.form.getValues('amount')).toBe('137.00');
   });
 });

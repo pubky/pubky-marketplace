@@ -1444,6 +1444,50 @@ describe('MarketplaceOrderActions USDT refund recording', () => {
     );
   });
 
+  it('records the whole of an overpaid USDT transfer, the excess included', async () => {
+    // A mismatched review closed as abandoned: 138.000000 USDT arrived for a $137.00 order.
+    const order = createUsdtOrderFixture('cancelled', {
+      paymentMethod: 'paykit',
+      paymentAmountMinor: 138_000_000,
+      refundDestination: destination,
+    });
+    const actOnOrder = vi.fn(async () => true);
+    render(<MarketplaceOrderActions order={order} isBuyer={false} canEditReview={false} actOnOrder={actOnOrder} />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Record refund' }));
+    expect(screen.getByLabelText('Amount (USD)')).toHaveValue('138.00');
+    expect(screen.getByTestId('refund-usdt-destination')).toHaveTextContent('Amount to send: 138.000000 USDT');
+    await user.type(screen.getByLabelText('Arbitrum transaction hash'), REFUND_FIXTURE_TX_HASH);
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() =>
+      expect(actOnOrder).toHaveBeenCalledWith(order, 'refund.record_external', {
+        amountMinor: 13_800,
+        transactionId: REFUND_FIXTURE_TX_HASH,
+      }),
+    );
+  });
+
+  it('refuses to record more than an underpaid USDT transfer carried', async () => {
+    const order = createUsdtOrderFixture('cancelled', {
+      paymentMethod: 'paykit',
+      paymentAmountMinor: 136_000_000,
+      refundDestination: destination,
+    });
+    const actOnOrder = vi.fn(async () => true);
+    render(<MarketplaceOrderActions order={order} isBuyer={false} canEditReview={false} actOnOrder={actOnOrder} />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Record refund' }));
+    expect(screen.getByLabelText('Amount (USD)')).toHaveValue('136.00');
+    await user.clear(screen.getByLabelText('Amount (USD)'));
+    await user.type(screen.getByLabelText('Amount (USD)'), '137.00');
+    await user.type(screen.getByLabelText('Arbitrum transaction hash'), REFUND_FIXTURE_TX_HASH);
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+    expect(await screen.findByText('Enter a refund up to the USDT received.')).toBeInTheDocument();
+    expect(actOnOrder).not.toHaveBeenCalled();
+  });
+
   it('does not touch a Bitcoin refund: no hold, free-form evidence', () => {
     render(
       <MarketplaceOrderActions

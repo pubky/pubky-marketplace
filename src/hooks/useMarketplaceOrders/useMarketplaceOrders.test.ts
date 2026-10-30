@@ -654,7 +654,7 @@ describe('useMarketplaceOrders', () => {
     [
       'refund.record_external',
       'refund_amount_unrecordable',
-      'This USDT amount cannot be recorded as a refund because it is not a whole number of cents. Contact the marketplace operator.',
+      "This USDT amount cannot be recorded as a refund in this order's currency. Contact the marketplace operator.",
     ],
     [
       'refund.confirm_destination',
