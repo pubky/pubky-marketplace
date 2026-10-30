@@ -77,8 +77,8 @@ export const FeedNavigation = ({ className }: FeedNavigationProps) => {
             })
           }
           className={cn(
-            'flex min-h-12 w-full min-w-40 items-center gap-x-2 border-b transition-colors hover:text-white lg:justify-center',
-            pathname === f.href ? 'border-white text-white' : 'border-border text-muted-foreground',
+            'flex min-h-12 w-full min-w-40 items-center gap-x-2 border-b transition-colors hover:text-foreground lg:justify-center',
+            pathname === f.href ? 'border-foreground text-foreground' : 'border-border text-muted-foreground',
           )}
         >
           {f.href !== APP_ROUTES.HOME && f.href === pathname ? (
@@ -101,7 +101,7 @@ export const FeedNavigation = ({ className }: FeedNavigationProps) => {
         <CustomFeedDialog mode="create">
           <Button
             overrideDefaults
-            className="flex min-h-12 w-full min-w-40 cursor-pointer items-center gap-x-2 border-b border-border text-muted-foreground transition-colors hover:text-white lg:justify-center"
+            className="flex min-h-12 w-full min-w-40 cursor-pointer items-center gap-x-2 border-b border-border text-muted-foreground transition-colors hover:text-foreground lg:justify-center"
           >
             <PlusCircle className="size-5 shrink-0" />
 
@@ -113,7 +113,7 @@ export const FeedNavigation = ({ className }: FeedNavigationProps) => {
       ) : (
         <Button
           overrideDefaults
-          className="flex min-h-12 w-full min-w-40 cursor-pointer items-center gap-x-2 border-b border-border text-muted-foreground transition-colors hover:text-white lg:justify-center"
+          className="flex min-h-12 w-full min-w-40 cursor-pointer items-center gap-x-2 border-b border-border text-muted-foreground transition-colors hover:text-foreground lg:justify-center"
           onClick={() => requireAuth(() => undefined)}
         >
           <PlusCircle className="size-5 shrink-0" />

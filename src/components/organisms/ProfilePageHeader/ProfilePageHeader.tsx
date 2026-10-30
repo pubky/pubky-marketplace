@@ -116,7 +116,7 @@ export function ProfilePageHeader({ profile, actions, isOwnProfile = true, userI
         <Typography as="span" overrideDefaults className="text-base leading-6">
           {displayEmoji}
         </Typography>
-        <Typography as="span" overrideDefaults className="text-base leading-6 font-bold text-white">
+        <Typography as="span" overrideDefaults className="text-base leading-6 font-bold text-foreground">
           {statusText}
         </Typography>
       </Container>
@@ -158,7 +158,7 @@ export function ProfilePageHeader({ profile, actions, isOwnProfile = true, userI
             data-cy="profile-username-header"
             as="h1"
             size="lg"
-            className="max-width-profile-page-header w-full truncate text-2xl leading-normal text-white sm:max-w-xl lg:max-w-full lg:text-6xl"
+            className="max-width-profile-page-header w-full truncate text-2xl leading-normal text-foreground sm:max-w-xl lg:max-w-full lg:text-6xl"
           >
             {name}
           </Typography>
