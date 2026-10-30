@@ -68,7 +68,7 @@ describe('MarketplaceTrackingDialog', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
-  it('asks for a carrier when none is chosen and sends nothing', async () => {
+  it('sends the registry carrier the seller picks in place of the recorded one', async () => {
     const user = userEvent.setup();
     const order = createOrderFixture('shipped', { shipment: shipmentOf('Other', '') });
     render(<MarketplaceTrackingDialog order={order} onChanged={vi.fn()} />);

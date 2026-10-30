@@ -86,11 +86,13 @@ deliberately without an enum so foreign clients can ship other carriers.
 Encoding decision: the ship dialog offers a curated carrier select, and the
 client writes the selected carrier's **canonical display name** (e.g.
 `Royal Mail`) into the existing `carrier` field. "Other" passes the seller's
-free-text carrier name through verbatim. The select starts on "Select carrier"
-and the form requires a choice, in both the ship dialog and the add/edit
-tracking dialog (one shared component): no carrier is ever preselected, so a
-seller outside the US cannot record USPS, or a USPS tracking link, by leaving a
-default. The Shop does not guess a carrier from the seller's country: the order
+free-text carrier name through verbatim. In the ship dialog the select starts
+on "Select carrier" and the form requires a choice: no carrier is preselected,
+so a seller outside the US cannot record USPS, or a USPS tracking link, by
+leaving a default. The add/edit tracking dialog uses the same select and also
+requires a choice; it opens only on an order that already has a shipment, so it
+starts on the carrier that shipment recorded. The Shop does not guess a carrier
+from the seller's country: the order
 carries no seller country, and the shop record's country defaults to `US` when
 the seller never set one. On read, the client resolves the
 stored string back against the registry (case-insensitive, plus known
