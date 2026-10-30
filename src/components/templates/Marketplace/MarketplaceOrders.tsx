@@ -36,6 +36,7 @@ import { CHECKOUT_HOLD_COPY, isHoldExpiredNoLateMoney } from '@/libs/commerce/ch
 import {
   getMarketplaceCheckoutRoute,
   isAbandonedCheckout,
+  isAbandonedReviewOrder,
   isBuyerCheckoutInProgress,
   isBuyerOrderHistory,
   isPendingPaymentState,
@@ -130,10 +131,12 @@ export function MarketplaceOrders() {
   const sellerReservations = orders.filter(({ order, payment }) =>
     isSellerReservation(order, currentUserPubky, payment),
   );
-  const abandonedCheckouts = orders.filter(({ order }) => isAbandonedCheckout(order, currentUserPubky));
+  const abandonedCheckouts = orders.filter(({ order, payment }) =>
+    isAbandonedCheckout(order, currentUserPubky, payment),
+  );
   const historyOrders = orders.filter(
     ({ order, payment }) =>
-      isBuyerOrderHistory(order, currentUserPubky) || isSellerSalesOrder(order, currentUserPubky, payment),
+      isBuyerOrderHistory(order, currentUserPubky, payment) || isSellerSalesOrder(order, currentUserPubky, payment),
   );
   const orderCounts = getOrderTabCounts(historyOrders, currentUserPubky);
   const visibleOrders = historyOrders.filter((view) => isOrderInTab(view, activeTab, currentUserPubky));
@@ -664,6 +667,7 @@ export function MarketplaceOrders() {
                               order={order}
                               isBuyer={isBuyer}
                               paymentInReview={payment?.state === 'manual_review'}
+                              reviewAbandoned={isAbandonedReviewOrder(order, payment)}
                               actOnOrder={actOnOrder}
                             />
                             {isBuyer && order.fulfillment === 'digital' && (

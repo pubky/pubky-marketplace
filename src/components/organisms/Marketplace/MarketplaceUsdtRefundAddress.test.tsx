@@ -28,13 +28,14 @@ const destination = {
 
 function renderPanel(
   order: MarketplaceOrder,
-  { isBuyer = true, paymentInReview = false, actOnOrder = vi.fn(async () => true) } = {},
+  { isBuyer = true, paymentInReview = false, reviewAbandoned = false, actOnOrder = vi.fn(async () => true) } = {},
 ) {
   const view = render(
     <MarketplaceUsdtRefundAddress
       order={order}
       isBuyer={isBuyer}
       paymentInReview={paymentInReview}
+      reviewAbandoned={reviewAbandoned}
       actOnOrder={actOnOrder}
     />,
   );
@@ -160,6 +161,16 @@ describe('MarketplaceUsdtRefundAddress — buyer', () => {
   it('is offered while a USDT payment is in manual review', () => {
     renderPanel(createUsdtOrderFixture('pending_payment'), { paymentInReview: true });
     expect(screen.getByTestId('usdt-refund-buyer')).toBeInTheDocument();
+  });
+
+  it('stays offered once the review ended abandoned and the order was cancelled', () => {
+    const cancelled = { ...createUsdtOrderFixture('cancelled'), receiptId: null };
+    const { container, unmount } = renderPanel(cancelled);
+    expect(container).toBeEmptyDOMElement();
+    unmount();
+    renderPanel(cancelled, { reviewAbandoned: true });
+    expect(screen.getByTestId('usdt-refund-buyer')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirm refund address' })).toBeInTheDocument();
   });
 });
 

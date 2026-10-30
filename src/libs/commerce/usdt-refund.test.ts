@@ -159,6 +159,20 @@ describe('usdtRefundSurface', () => {
     });
   });
 
+  it('keeps the address open on a cancelled order whose review ended abandoned', () => {
+    const abandoned = order({ state: 'cancelled', receiptId: null });
+    expect(usdtRefundSurface(abandoned, true, false, true)).toEqual({
+      kind: 'buyer',
+      phase: 'needed',
+      refundDue: true,
+    });
+    expect(usdtRefundSurface(abandoned, false, false, true)).toEqual({ kind: 'seller', phase: 'waiting' });
+    expect(usdtRefundSurface({ ...abandoned, refundDestination: destination }, false, false, true)).toEqual({
+      kind: 'seller',
+      phase: 'confirmed',
+    });
+  });
+
   it('moves the buyer from confirmed to recorded', () => {
     expect(usdtRefundSurface(order({ refundDestination: destination }), true, false)).toMatchObject({
       phase: 'confirmed',

@@ -1814,6 +1814,31 @@ describe('MarketplaceOrders USDT refund address', () => {
     expect(screen.getByText('Bought Bitcoin boots')).toBeInTheDocument();
     expect(screen.getByText('Bought PayPal boots')).toBeInTheDocument();
   });
+
+  it('keeps the refund address open on a cancelled USDT order whose review ended abandoned', async () => {
+    const usdt = { paymentMethod: 'paykit' as const, paymentAsset: 'USDT' as const, receiptId: null };
+    const abandoned = (title: string) =>
+      orderView('cancelled', title, 'buyer', usdt, 'expired', {
+        ...createPaymentFixture('expired', { id: `test-${title.toLowerCase().replaceAll(' ', '-')}-payment` }),
+        resolutionOutcome: 'abandoned',
+        resolutionBasis: 'seller_unresponsive',
+      });
+    ordersState.orders = [
+      abandoned('Abandoned USDT boots'),
+      orderView('cancelled', 'Unpaid USDT boots', 'buyer', usdt, 'expired'),
+    ];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(await screen.findByRole('tab', { name: /^All/ }));
+
+    // The reviewed order is an Order with its refund address; the unpaid one
+    // stays an abandoned checkout.
+    await waitFor(() => expect(screen.getByText('Abandoned USDT boots')).toBeInTheDocument());
+    expect(screen.getAllByTestId('usdt-refund-buyer')).toHaveLength(1);
+    const abandonedCheckouts = screen.getByTestId('marketplace-abandoned-checkouts');
+    expect(abandonedCheckouts).toHaveTextContent('Unpaid USDT boots');
+    expect(abandonedCheckouts).not.toHaveTextContent('Abandoned USDT boots');
+  });
 });
 
 describe('MarketplaceOrders shipment tracking', () => {

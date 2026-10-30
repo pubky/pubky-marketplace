@@ -11,6 +11,7 @@ import {
   getMarketplaceOfferCheckoutRoute,
   intersectPaymentMethods,
   isAbandonedCheckout,
+  isAbandonedReviewOrder,
   isBuyerCheckoutInProgress,
   isBuyerOrderHistory,
   isSellerBoundBitcoinOrder,
@@ -68,6 +69,22 @@ describe('checkout-phase', () => {
     ).toBe(true);
     expect(isBuyerOrderHistory({ state: 'return_requested', buyerPubky: BUYER }, BUYER)).toBe(true);
     expect(isBuyerCheckoutInProgress({ state: 'pending_payment', buyerPubky: BUYER }, BUYER)).toBe(true);
+  });
+
+  it('keeps a cancelled order whose reviewed money was abandoned among the buyer and seller orders', () => {
+    const cancelled = { state: 'cancelled', buyerPubky: BUYER, sellerPubky: SELLER, receiptId: null };
+    const abandoned = { state: 'expired', resolutionOutcome: 'abandoned' };
+    const unpaid = { state: 'expired', resolutionOutcome: null };
+
+    expect(isAbandonedReviewOrder(cancelled, abandoned)).toBe(true);
+    expect(isAbandonedCheckout(cancelled, BUYER, abandoned)).toBe(false);
+    expect(isBuyerOrderHistory(cancelled, BUYER, abandoned)).toBe(true);
+    expect(isSellerSalesOrder(cancelled, SELLER, abandoned)).toBe(true);
+
+    expect(isAbandonedReviewOrder(cancelled, unpaid)).toBe(false);
+    expect(isAbandonedCheckout(cancelled, BUYER, unpaid)).toBe(true);
+    expect(isBuyerOrderHistory(cancelled, BUYER, unpaid)).toBe(false);
+    expect(isSellerSalesOrder(cancelled, SELLER, unpaid)).toBe(false);
   });
 
   it('classifies cancelled rows by receipt for buyer history, abandoned, and seller orders', () => {

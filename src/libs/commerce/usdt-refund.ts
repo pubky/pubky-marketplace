@@ -152,10 +152,14 @@ const REFUND_DUE_STATES = new Set([
   'return_received',
 ]);
 
-/** `cancelled` and `closed` can also mean "never paid"; only a paid order has a receipt. */
-function hasSettledPayment(order: UsdtRefundOrder, paymentInReview: boolean): boolean {
+/**
+ * `cancelled` and `closed` can also mean "never paid"; only a paid order has a
+ * receipt, or a review that ended `abandoned`: that money was received and is
+ * still owed back.
+ */
+function hasSettledPayment(order: UsdtRefundOrder, paymentInReview: boolean, reviewAbandoned: boolean): boolean {
   if (SETTLED_STATES.has(order.state)) return true;
-  if (order.state === 'cancelled' || order.state === 'closed') return !!order.receiptId;
+  if (order.state === 'cancelled' || order.state === 'closed') return !!order.receiptId || reviewAbandoned;
   return order.state === 'pending_payment' && paymentInReview;
 }
 
@@ -172,16 +176,21 @@ export type UsdtRefundSurface =
 /**
  * What the refund-address panel shows for a viewer. `paymentInReview` is the
  * payment projection's `manual_review` state: late or mismatched money the
- * seller may have to return (plan §2.6, flow step 1).
+ * seller may have to return (plan §2.6, flow step 1). `reviewAbandoned` is a
+ * review that ended `abandoned` (by the seller, or after seven days without
+ * them): the order is cancelled, and the money is still the buyer's.
  */
 export function usdtRefundSurface(
   order: UsdtRefundOrder,
   isBuyer: boolean,
   paymentInReview: boolean,
+  reviewAbandoned = false,
 ): UsdtRefundSurface {
-  if (!isUsdtRefundOrder(order) || !hasSettledPayment(order, paymentInReview)) return { kind: 'hidden' };
+  if (!isUsdtRefundOrder(order) || !hasSettledPayment(order, paymentInReview, reviewAbandoned)) {
+    return { kind: 'hidden' };
+  }
   const recorded = !!order.externalRefund;
-  const refundDue = REFUND_DUE_STATES.has(order.state) || paymentInReview;
+  const refundDue = REFUND_DUE_STATES.has(order.state) || paymentInReview || reviewAbandoned;
   if (isBuyer) {
     return {
       kind: 'buyer',

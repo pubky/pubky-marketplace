@@ -41,15 +41,18 @@ export function MarketplaceUsdtRefundAddress({
   order,
   isBuyer,
   paymentInReview,
+  reviewAbandoned = false,
   actOnOrder,
 }: {
   order: MarketplaceOrder;
   isBuyer: boolean;
   /** The payment projection is in `manual_review`: late or mismatched money the seller may return. */
   paymentInReview: boolean;
+  /** The payment's review ended `abandoned`: received money the seller still owes back. */
+  reviewAbandoned?: boolean;
   actOnOrder: ActOnOrder;
 }) {
-  const surface = usdtRefundSurface(order, isBuyer, paymentInReview);
+  const surface = usdtRefundSurface(order, isBuyer, paymentInReview, reviewAbandoned);
   if (surface.kind === 'hidden') return null;
   return surface.kind === 'buyer' ? (
     <BuyerRefundAddress order={order} phase={surface.phase} refundDue={surface.refundDue} actOnOrder={actOnOrder} />
