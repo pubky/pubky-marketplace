@@ -17,6 +17,7 @@ export function useViewerTagLabels(viewerPubky: string): string[] {
 
   useEffect(() => {
     let active = true;
+    setLabels([]);
     TagController.getViewerUserTagLabels(viewerPubky, VIEWER_TAG_LABEL_SUGGESTIONS_MAX)
       .then((found) => {
         if (active) setLabels(found);

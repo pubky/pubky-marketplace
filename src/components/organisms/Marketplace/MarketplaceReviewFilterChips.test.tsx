@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { TagController } from '@/controllers/tag/tag';
@@ -48,6 +48,31 @@ describe('MarketplaceReviewFilterChips', () => {
     await user.click(screen.getByRole('radio', { name }));
 
     expect(onFilterChange).toHaveBeenCalledWith(expected);
+  });
+
+  it('names the chip group and the tag picker for assistive technology', async () => {
+    vi.spyOn(TagController, 'getViewerUserTagLabels').mockResolvedValue([]);
+    const user = userEvent.setup();
+    renderChips();
+
+    const reach = screen.getByRole('group', { name: 'Whose reviews' });
+    expect(within(reach).getAllByRole('radio')).toHaveLength(3);
+
+    await user.click(screen.getByRole('button', { name: /Tagged by me/ }));
+    expect(await screen.findByRole('dialog', { name: 'Reviewers you tagged' })).toBeInTheDocument();
+  });
+
+  it('chooses a chip from the keyboard', async () => {
+    const user = userEvent.setup();
+    const onFilterChange = renderChips();
+
+    await user.tab();
+    expect(screen.getByRole('radio', { name: 'All' })).toHaveFocus();
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByRole('radio', { name: 'People I follow' })).toHaveFocus();
+    await user.keyboard(' ');
+
+    expect(onFilterChange).toHaveBeenCalledWith({ kind: 'following' });
   });
 
   it('returns to All when the active chip is chosen again', async () => {

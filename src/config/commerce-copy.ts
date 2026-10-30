@@ -82,6 +82,7 @@ const REVIEW_FILTER_REACH_PHRASE: Record<MarketplaceActiveReviewFilter['kind'], 
  */
 export const REVIEW_FILTER_COPY = {
   label: 'Filter reviews',
+  reachLabel: 'Whose reviews',
   chips: { all: 'All', following: 'People I follow', wot: 'My network', tagged: 'Tagged by me' } satisfies Record<
     MarketplaceReviewFilter['kind'],
     string

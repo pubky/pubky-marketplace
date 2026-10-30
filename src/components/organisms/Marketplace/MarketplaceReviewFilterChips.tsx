@@ -44,6 +44,7 @@ export function MarketplaceReviewFilterChips({
         type="single"
         variant="outline"
         size="sm"
+        aria-label={REVIEW_FILTER_COPY.reachLabel}
         value={filter.kind === 'tagged' ? '' : filter.kind}
         onValueChange={(value) => {
           if (value === 'following' || value === 'wot') onFilterChange({ kind: value });
@@ -79,7 +80,7 @@ export function MarketplaceReviewFilterChips({
             <ChevronDown aria-hidden="true" />
           </button>
         </PopoverTrigger>
-        <PopoverContent align="start" sideOffset={6}>
+        <PopoverContent align="start" sideOffset={6} aria-label={REVIEW_FILTER_COPY.tagged.title}>
           <MarketplaceReviewTagPicker
             viewerPubky={viewerPubky}
             labels={taggedLabels}

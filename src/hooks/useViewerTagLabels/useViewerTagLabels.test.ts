@@ -29,6 +29,27 @@ describe('useViewerTagLabels', () => {
     expect(result.current).toEqual([]);
   });
 
+  it("clears the previous viewer's labels at once when the viewer changes", async () => {
+    let resolveNext: (labels: string[]) => void = () => undefined;
+    vi.spyOn(TagController, 'getViewerUserTagLabels')
+      .mockResolvedValueOnce(['mine'])
+      .mockReturnValueOnce(
+        new Promise((done) => {
+          resolveNext = done;
+        }),
+      );
+    const { result, rerender } = renderHook(({ viewer }) => useViewerTagLabels(viewer), {
+      initialProps: { viewer: VIEWER },
+    });
+    await waitFor(() => expect(result.current).toEqual(['mine']));
+
+    rerender({ viewer: 'w'.repeat(52) });
+
+    expect(result.current).toEqual([]);
+    resolveNext(['theirs']);
+    await waitFor(() => expect(result.current).toEqual(['theirs']));
+  });
+
   it('drops an answer that arrives after the component unmounted', async () => {
     let resolve: (labels: string[]) => void = () => undefined;
     vi.spyOn(TagController, 'getViewerUserTagLabels').mockReturnValue(

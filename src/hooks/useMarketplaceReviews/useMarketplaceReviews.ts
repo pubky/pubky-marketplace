@@ -199,6 +199,11 @@ export function useMarketplaceReviews(target: MarketplaceReviewsTarget): Marketp
   const isChosenTarget = chosen.targetKey === targetKey;
   const sort = isChosenTarget ? chosen.sort : MARKETPLACE_REVIEW_SORT_DEFAULT;
   const chosenFilter = isChosenTarget ? chosen.filter : MARKETPLACE_REVIEW_FILTER_DEFAULT;
+  const keyWindowsVersion = useAttestorKeyWindowsVersion();
+  // A filtered page and its `matched` are counted against the attestor windows sent with the request, so a
+  // filtered list reloads when they change; the unfiltered list sends none and keeps its pages.
+  const filteredWindowsVersion =
+    reviewFilterRequest(chosenFilter, viewerPubky) === undefined ? null : keyWindowsVersion;
   const [sortSupported, setSortSupported] = useState(true);
   const [filtersUnsupported, setFiltersUnsupported] = useState(reviewFiltersKnownUnsupported);
   // Mirrors `filtersUnsupported` for the fetch effect, which must not restart when the answer flips.
@@ -271,21 +276,32 @@ export function useMarketplaceReviews(target: MarketplaceReviewsTarget): Marketp
         setIsFetching(false);
         setIsReordering(false);
       });
-  }, [sellerPubky, listingId, targetKey, sort, chosenFilter, viewerPubky]);
+  }, [sellerPubky, listingId, targetKey, sort, chosenFilter, viewerPubky, filteredWindowsVersion]);
 
   const loadMore = () => {
     if (isFetching || status !== 'ok' || filterRejected) return;
     const epoch = epochRef.current;
     const isCurrent = () => epochRef.current === epoch;
+    const request = filtersUnsupported ? undefined : reviewFilterRequest(chosenFilter, viewerPubky);
     setIsFetching(true);
     fetchReviewsPage(
       { sellerPubky, listingId },
       nextSkip,
       sortSupported ? sort : MARKETPLACE_REVIEW_SORT_DEFAULT,
-      filtersUnsupported ? undefined : reviewFilterRequest(chosenFilter, viewerPubky),
+      request,
     )
       .then((result) => {
-        if (!isCurrent() || result.status !== 'ok') return;
+        if (!isCurrent()) return;
+        // A later filtered page the index refuses, or answers with its unfiltered list, ends the paging: appending
+        // it would mix everyone's reviews into the filtered list.
+        if (
+          result.status === 'rejected' ||
+          (result.status === 'ok' && request !== undefined && !result.filterApplied)
+        ) {
+          setHasMore(false);
+          return;
+        }
+        if (result.status !== 'ok') return;
         setReviews((current) => {
           const known = new Set(current.map(({ reviewerId, reviewId }) => `${reviewerId}:${reviewId}`));
           const fresh = result.reviews.filter(({ reviewerId, reviewId }) => !known.has(`${reviewerId}:${reviewId}`));

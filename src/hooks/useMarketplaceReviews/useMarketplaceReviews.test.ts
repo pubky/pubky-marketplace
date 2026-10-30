@@ -1,9 +1,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommerceIndexedReviewsResult } from '@/application/commerce/commerce';
 import { MARKETPLACE_REVIEWS_PAGE_SIZE } from '@/config/commerce';
 import { REVIEW_FILTER_COPY, REVIEW_SORT_COPY } from '@/config/commerce-copy';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { resetAttestorKeyWindows, setAttestorProfileKeyWindows } from '@/libs/commerce/attestor-key-windows';
 import type { CommerceIndexedReview, CommerceReviewMatch } from '@/models/commerce/commerce.schema';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -823,6 +824,86 @@ describe('useMarketplaceReviews', () => {
       );
       expect(result.current.sort).toBe('value');
       expect(toast).toHaveBeenCalledTimes(1);
+    });
+
+    describe('trusted attestor windows', () => {
+      const NARROWED = [{ pubky: 'k'.repeat(52), validUntil: null, compromisedFrom: 0 }];
+
+      afterEach(() => {
+        resetAttestorKeyWindows();
+      });
+
+      it('reloads a filtered list and its figures when a verified profile narrows the trusted attestors', async () => {
+        const fetch = vi.mocked(CommerceController.fetchSellerReviews);
+        fetch.mockResolvedValueOnce(page('n', 2));
+        const { result } = await loaded();
+        fetch.mockResolvedValueOnce(filteredPage('f', 2));
+        act(() => result.current.setFilter({ kind: 'following' }));
+        await waitFor(() => expect(result.current.filterSummary?.state).toBe('ready'));
+        const narrowed = { buyers: 1, orders: 1, avg: 5 };
+        fetch.mockResolvedValueOnce(filteredPage('g', 1, narrowed));
+
+        act(() => setAttestorProfileKeyWindows(TEST_TRUSTED_ATTESTOR.pubky, NARROWED));
+
+        await waitFor(() => expect(ids(result.current.reviews)).toEqual(['g00']));
+        expect(result.current.filterSummary).toEqual({
+          state: 'ready',
+          filter: { kind: 'following' },
+          matched: narrowed,
+        });
+        expect(fetch).toHaveBeenCalledTimes(3);
+        expect(lastFilter()).toEqual({ viewerId: VIEWER, reach: 'following' });
+      });
+
+      it('keeps the unfiltered list and its pages when the windows change', async () => {
+        const fetch = vi.mocked(CommerceController.fetchSellerReviews);
+        fetch.mockResolvedValueOnce(page('n'));
+        const { result } = await loaded();
+        fetch.mockResolvedValueOnce(page('m', 2));
+        act(() => result.current.loadMore());
+        await waitFor(() => expect(result.current.reviews).toHaveLength(MARKETPLACE_REVIEWS_PAGE_SIZE + 2));
+
+        act(() => setAttestorProfileKeyWindows(TEST_TRUSTED_ATTESTOR.pubky, NARROWED));
+        await act(async () => {});
+
+        expect(fetch).toHaveBeenCalledTimes(2);
+        expect(result.current.reviews).toHaveLength(MARKETPLACE_REVIEWS_PAGE_SIZE + 2);
+      });
+    });
+
+    describe('a later filtered page', () => {
+      async function filteredFirstPage() {
+        const fetch = vi.mocked(CommerceController.fetchSellerReviews);
+        fetch.mockResolvedValueOnce(page('n', 2));
+        const hook = await loaded();
+        fetch.mockResolvedValueOnce(filteredPage('f'));
+        act(() => hook.result.current.setFilter({ kind: 'following' }));
+        await waitFor(() => expect(hook.result.current.hasMore).toBe(true));
+        return hook;
+      }
+
+      it('stops the paging, appending nothing, when the index refuses it', async () => {
+        const { result } = await filteredFirstPage();
+        vi.mocked(CommerceController.fetchSellerReviews).mockResolvedValueOnce({ status: 'rejected' });
+
+        act(() => result.current.loadMore());
+
+        await waitFor(() => expect(result.current.hasMore).toBe(false));
+        expect(result.current.reviews).toHaveLength(MARKETPLACE_REVIEWS_PAGE_SIZE);
+        expect(result.current.isFetching).toBe(false);
+      });
+
+      it("stops the paging, appending nothing, when the index answers with everyone's list", async () => {
+        const { result } = await filteredFirstPage();
+        vi.mocked(CommerceController.fetchSellerReviews).mockResolvedValueOnce(page('x', 3));
+
+        act(() => result.current.loadMore());
+
+        await waitFor(() => expect(result.current.hasMore).toBe(false));
+        expect(ids(result.current.reviews).every((id) => id.startsWith('f'))).toBe(true);
+        expect(result.current.reviews).toHaveLength(MARKETPLACE_REVIEWS_PAGE_SIZE);
+        expect(result.current.isFetching).toBe(false);
+      });
     });
 
     describe('an index that answers 400', () => {
