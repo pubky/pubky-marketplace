@@ -169,9 +169,14 @@ When both are set the origin must satisfy both. With neither, the scripts refuse
 
 After a deploy, `PROOF_ORIGIN=<origin> EXPECTED_COMMIT=<sha> node scripts/release/served-checks.mjs` checks what the site
 serves with plain HTTP: the deployment identity, that the Locks SDK wasm is named in a chunk and served as `application/wasm`
-byte-identical to the pinned SDK, USDT off in the served config, and the service's `/health`. The wasm sits in a lazy
+byte-identical to the pinned SDK, the USDT flag in the served config, and the service's `/health`. The wasm sits in a lazy
 chunk, so the script reads webpack's chunk map (Next.js writes it in more than one shape) and crawls every chunk. It has
 no build-meta or version check; `/api/build` is read only when `EXPECTED_COMMIT` is set.
+
+The USDT checks expect USDT off unless `SERVED_CHECKS_USDT=on`; then the served config must have `usdtPaymentsEnabled`
+true and `/health` must list `usdt_payments`. Set it to the target's real state: John Prod has had USDT on since
+2026-10-16, so its target file (`proof/targets/production.env` in pubky-dev-hosting) sets `SERVED_CHECKS_USDT=on`.
+Without it, the two USDT checks fail on John Prod by design.
 
 ## Signed-in production proof
 

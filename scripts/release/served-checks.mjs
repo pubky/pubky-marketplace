@@ -6,14 +6,20 @@
 //   2. wasm-referenced: the Locks SDK wasm is named in a chunk. It is a lazy chunk, so the check reads the webpack
 //      runtime's chunk map and crawls every chunk (see served-checks-lib.mjs).
 //   3. wasm-served: that wasm answers 200 `application/wasm` and is byte-identical to the SDK this checkout pins.
-//   4. usdt-config: the served runtime config has `usdtPaymentsEnabled: false`.
-//   5. service-health: the marketplace service the config names answers /health without `usdt_payments`.
+//   4. usdt-config: the served runtime config's `usdtPaymentsEnabled` equals the expectation (false unless
+//      SERVED_CHECKS_USDT=on).
+//   5. service-health: the marketplace service the config names answers /health with `usdt_payments` when USDT is
+//      expected on, and without it otherwise.
+//
+// Set the expectation to the seat's real state. John Prod has had USDT on since 2026-10-16, so its target file
+// (`proof/targets/production.env` in pubky-dev-hosting) sets SERVED_CHECKS_USDT=on; run prod checks with it loaded.
+// Without it, checks 4 and 5 fail on John Prod by design.
 //
 // There is no build-meta or `/version.json` check, on purpose: the Shop publishes neither (#184), so identity is check 1
 // (the deployment id or the `/api/build` commit) and the git tag. Do not add one back.
 //
 // Env: PROOF_ORIGIN (required; with the Shop's mount path when it is mounted, e.g. https://pubky.app/shop-embed), EXPECTED_DPL or EXPECTED_COMMIT, LOCKS_WASM_SHA256 (default: the wasm in this
-// checkout's node_modules), SERVICE_URL (default: the marketplaceUrl in the served config), SERVED_CHECKS_USDT=on to expect USDT on.
+// checkout's node_modules), SERVICE_URL (default: the marketplaceUrl in the served config), SERVED_CHECKS_USDT=on to expect USDT on (John Prod).
 // Exit 0 only when every check passed.
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
