@@ -54,7 +54,7 @@ export function MarketplaceDeliveryKeyStep() {
         {deliveryKey.isLoading ? (
           <Skeleton className="h-10 w-48" aria-label="Checking your delivery key" />
         ) : deliveryKey.loadFailed ? (
-          <Typography as="p" role="alert" className="text-sm text-amber-300">
+          <Typography as="p" role="alert" className="text-sm text-warning-foreground">
             Could not read your delivery key status. Check your connection and reload.
           </Typography>
         ) : (

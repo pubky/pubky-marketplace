@@ -57,6 +57,8 @@ body {
   --color-button-outline: var(--button-outline);
   --color-action-pill: var(--action-pill);
   --color-embed: var(--embed);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-notice-foreground: var(--notice-foreground);
   --color-toast-action-muted: var(--toast-action-muted);
   --color-toast-action-muted-hover-border: var(--toast-action-muted-hover-border);
   --color-transparent: var(--transparent);
@@ -153,6 +155,13 @@ body {
   --embed: var(--muted);
   /** Wash laid over a tag's colour in PostTag (Figma `alpha/30` → 70% background). */
   --tag-overlay: rgb(5 5 10 / 0.7);
+  /**
+   * Shop status text. `warning` is inline alert and form error text; `notice` is the body of
+   * an amber notice panel (`border-amber-500/30 bg-amber-500/10`). Both keep the pale amber
+   * shades the dark page was designed with and darken on the light page to stay readable.
+   */
+  --warning-foreground: var(--color-amber-300);
+  --notice-foreground: var(--color-amber-200);
   --toast-action-muted: oklch(0.218 0.006 286);
   --toast-action-muted-hover-border: oklch(0.277 0.006 286);
   --transparent: oklch(0.118 0.014 284.115 / 0);
@@ -493,6 +502,8 @@ body {
   --action-pill: var(--background);
   --embed: var(--background);
   --tag-overlay: rgb(255 255 255 / 0.7);
+  --warning-foreground: var(--color-amber-800);
+  --notice-foreground: var(--color-amber-800);
   --toast-action-muted: #f4f4f9;
   --toast-action-muted-hover-border: #e4e4ec;
   --transparent: rgb(255 255 255 / 0);

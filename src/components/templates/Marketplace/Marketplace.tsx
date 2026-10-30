@@ -188,7 +188,7 @@ export function Marketplace({
                   size="xl"
                   className="relative pr-8 text-3xl leading-tight sm:text-4xl lg:pr-0 lg:text-5xl"
                 >
-                  <span className="text-white">Find something rare.</span>{' '}
+                  <span className="text-foreground">Find something rare.</span>{' '}
                   <span className="text-brand">Trade freely.</span>
                 </Heading>
                 <div className="relative mt-6 hidden w-full gap-6 sm:grid sm:grid-cols-3">
@@ -277,7 +277,10 @@ export function Marketplace({
           />
 
           {adapterMode === 'unavailable' && (
-            <div role="status" className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-amber-200">
+            <div
+              role="status"
+              className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-notice-foreground"
+            >
               Market transactions are unavailable in this deployment. Public browsing remains read-only.
             </div>
           )}

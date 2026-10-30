@@ -893,7 +893,7 @@ export function MarketplaceListingForm({
               as="p"
               role="note"
               data-testid="listing-digital-paypal-warning"
-              className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200"
+              className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-notice-foreground"
             >
               {DIGITAL_DELIVERY_COPY.paypalWarning}
             </Typography>

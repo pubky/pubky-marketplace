@@ -24,14 +24,16 @@ export function MarketplaceDeliveryKeyChangeDialog({ change, onDecision }: Marke
         </DialogHeader>
         {change ? (
           <div className="flex flex-col gap-3" data-testid="delivery-key-change">
-            <Typography className="text-base text-white/80">{DELIVERY_KEY_COPY.changedBody}</Typography>
-            <Typography className="text-sm text-white/60">Seller {truncateMiddle(change.sellerPubky, 20)}</Typography>
+            <Typography className="text-base text-foreground/80">{DELIVERY_KEY_COPY.changedBody}</Typography>
+            <Typography className="text-sm text-foreground/60">
+              Seller {truncateMiddle(change.sellerPubky, 20)}
+            </Typography>
             <div className="flex flex-col gap-1">
-              <Typography className="text-sm text-white/60">Key you saw before</Typography>
+              <Typography className="text-sm text-foreground/60">Key you saw before</Typography>
               <Typography className="font-mono text-sm break-all">
                 {formatDeliveryKeyFingerprint(change.pinnedKeyId)}
               </Typography>
-              <Typography className="text-sm text-white/60">Key the seller publishes now</Typography>
+              <Typography className="text-sm text-foreground/60">Key the seller publishes now</Typography>
               <Typography className="font-mono text-sm break-all">
                 {formatDeliveryKeyFingerprint(change.currentKeyId)}
               </Typography>

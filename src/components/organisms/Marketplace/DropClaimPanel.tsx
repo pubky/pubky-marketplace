@@ -269,7 +269,7 @@ export function DropClaimPanel({
         </ul>
       )}
       {claim.failure && (
-        <Typography as="p" role="alert" aria-live="assertive" className="text-sm font-medium text-amber-300">
+        <Typography as="p" role="alert" aria-live="assertive" className="text-sm font-medium text-warning-foreground">
           {claim.failure}
         </Typography>
       )}

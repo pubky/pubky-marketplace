@@ -321,7 +321,7 @@ function MarketplaceReviewItem({
           <Typography
             as="span"
             overrideDefaults
-            className="text-xs text-amber-400"
+            className="text-xs text-amber-400 [.light_&]:text-amber-800"
             title="This review was revised after the service's edit window."
           >
             Edited late
@@ -471,7 +471,7 @@ function MarketplaceReviewVerificationBadge({ review }: { review: CommerceIndexe
   const trustedAttestor = indexedReviewTrustedAttestor(review);
   if (trustedAttestor !== null) {
     return (
-      <Badge variant="secondary" className="gap-1 text-emerald-400">
+      <Badge variant="secondary" className="gap-1 text-emerald-400 [.light_&]:text-emerald-700">
         <BadgeCheck className="size-3" />
         {`Verified purchase · ${trustedAttestor.label}`}
       </Badge>

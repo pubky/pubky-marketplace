@@ -138,7 +138,7 @@ export function MarketplaceMyReviews({ orders = [], className }: { orders?: Mark
                       <Typography as="span" overrideDefaults className="text-xs text-muted-foreground">
                         {formatReviewDate(item.updatedAt)}
                       </Typography>
-                      <Badge variant="outline" className="text-amber-400">
+                      <Badge variant="outline" className="text-amber-400 [.light_&]:text-amber-800">
                         {REVIEW_PENDING_COPY.badge}
                       </Badge>
                     </div>
@@ -201,7 +201,7 @@ export function MarketplaceMyReviews({ orders = [], className }: { orders?: Mark
                         {formatReviewDate(review.record.updatedAt)}
                       </Typography>
                       {review.attestation_verified ? (
-                        <Badge variant="secondary" className="gap-1 text-emerald-400">
+                        <Badge variant="secondary" className="gap-1 text-emerald-400 [.light_&]:text-emerald-700">
                           <BadgeCheck className="size-3" />
                           Attested
                         </Badge>
@@ -213,7 +213,7 @@ export function MarketplaceMyReviews({ orders = [], className }: { orders?: Mark
                       {review.sync_status !== 'synced' && (
                         <Badge
                           variant="outline"
-                          className="text-amber-400"
+                          className="text-amber-400 [.light_&]:text-amber-800"
                           title="Publication is pending. Reopening this page will retry."
                         >
                           Publication pending

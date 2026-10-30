@@ -485,7 +485,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
     }
     if (payments.loadError) {
       return (
-        <Typography as="p" role="alert" className="text-sm text-amber-300">
+        <Typography as="p" role="alert" className="text-sm text-warning-foreground">
           {payments.loadError}
         </Typography>
       );
@@ -544,7 +544,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                 aria-describedby={showPaypalError ? 'get-paid-paypal-error' : undefined}
               />
               {showPaypalError && (
-                <Typography as="p" id="get-paid-paypal-error" role="alert" className="text-sm text-amber-300">
+                <Typography as="p" id="get-paid-paypal-error" role="alert" className="text-sm text-warning-foreground">
                   {PAYPAL_EMAIL_INVALID_COPY}
                 </Typography>
               )}
@@ -581,7 +581,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                 as="p"
                 id="get-paid-bitkit-unknown"
                 role="status"
-                className="text-sm text-amber-300"
+                className="text-sm text-warning-foreground"
                 data-testid="bitkit-setup-unknown"
               >
                 {BITCOIN_TOGGLE_BLOCKER_COPY['bitkit-unknown']}
@@ -601,7 +601,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
               <Typography
                 as="p"
                 role="alert"
-                className="mt-2 text-sm text-amber-300"
+                className="mt-2 text-sm text-warning-foreground"
                 data-testid="paykit-setup-problem"
               >
                 {paykitSetupProblem === 'mismatch'

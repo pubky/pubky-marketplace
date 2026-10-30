@@ -61,7 +61,7 @@ export function DropCard({
       <Card
         className={cn(
           cn(
-            'h-full gap-0 overflow-hidden border-0 py-0 transition-all group-hover:shadow-[0_24px_64px_-8px_rgba(0,0,0,0.8),0_8px_24px_rgba(0,0,0,0.5)]',
+            'h-full gap-0 overflow-hidden border-0 py-0 transition-all group-hover:shadow-[0_24px_64px_-8px_rgba(0,0,0,0.8),0_8px_24px_rgba(0,0,0,0.5)] [.light_&]:group-hover:shadow-[0_24px_64px_-8px_rgba(5,5,10,0.25),0_8px_24px_rgba(5,5,10,0.12)]',
             layout === 'list' && 'flex-row',
           ),
           'p-0',
@@ -74,7 +74,7 @@ export function DropCard({
           )}
         >
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_20%,rgba(255,255,255,0.16),transparent_32%)]" />
-          <CalendarClock className="size-16 text-white opacity-80" aria-hidden="true" />
+          <CalendarClock className="size-16 text-foreground opacity-80" aria-hidden="true" />
           {mediaUrl && !mediaFailed && (
             <Image
               src={mediaUrl}

@@ -272,7 +272,7 @@ function WatchlistItemRow({ entry }: { entry: MarketplaceWatchlistEntry }) {
             {state && (
               <Badge
                 variant="outline"
-                className={state.tone === 'warn' ? 'border-amber-500/50 text-amber-300' : undefined}
+                className={state.tone === 'warn' ? 'border-amber-500/50 text-warning-foreground' : undefined}
               >
                 {state.label}
               </Badge>
@@ -319,7 +319,7 @@ function EndsAtBadge({ endsAt }: { endsAt: string }) {
       : `Ends ${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(endsMs))}`;
   const isEndingSoon = remaining < 24 * 60 * 60 * 1_000;
   return (
-    <Badge variant="outline" className={isEndingSoon ? 'border-amber-500/50 text-amber-300' : undefined}>
+    <Badge variant="outline" className={isEndingSoon ? 'border-amber-500/50 text-warning-foreground' : undefined}>
       {label}
     </Badge>
   );
