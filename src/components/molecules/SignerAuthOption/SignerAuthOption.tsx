@@ -134,7 +134,7 @@ export function SignerAuthOption({
 }
 
 /** One signer's deeplink button in the stacked mobile layout. */
-export function SignerAuthorizeButton({ copy, auth, testId, authorizeLabel, onAuthorize }: SignerAuthorizeButtonProps) {
+export function SignerAuthorizeButton({ copy, auth, testId, onAuthorize }: SignerAuthorizeButtonProps) {
   const { url, isLoading, isExpired, isOpeningRing, onAuthorizeClick } = auth;
   const isMobileLaunching = isLoading || isOpeningRing;
   return (
@@ -161,7 +161,7 @@ export function SignerAuthorizeButton({ copy, auth, testId, authorizeLabel, onAu
       ) : (
         <>
           <Key className="mr-2 size-4" />
-          {authorizeLabel ?? `Authorize with ${copy.name}`}
+          {`Authorize with ${copy.name}`}
         </>
       )}
     </Button>

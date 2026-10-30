@@ -21,8 +21,7 @@ export function QrCodeSlot({
   fillWidth = false,
   activeQrHasHoverEffect = false,
   expiredReloadAction,
-  showRingLogo = true,
-  logo = showRingLogo ? 'ring' : undefined,
+  logo = 'ring',
 }: QrCodeSlotProps) {
   if (isLoading || (!url && !isExpired)) {
     return (
