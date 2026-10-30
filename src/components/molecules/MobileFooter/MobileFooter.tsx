@@ -186,7 +186,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
                   ? 'flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full p-2 transition-all sm:p-3'
                   : 'rounded-full p-3 transition-all',
                 itemBadgeCount > 0 && 'relative inline-flex',
-                itemIsActive ? 'bg-secondary' : 'border border-border bg-white/5 backdrop-blur-sm hover:bg-white/10',
+                itemIsActive ? 'bg-secondary' : 'border border-border bg-glass backdrop-blur-sm hover:bg-glass-hover',
               )}
             >
               <Icon className="h-6 w-6" />
@@ -302,7 +302,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
             variant="secondary"
             size="icon"
             className={cn(
-              'items-center justify-center border bg-white/5',
+              'items-center justify-center border bg-glass',
               socialHostUrl ? 'size-11 shrink-0 sm:size-12' : 'size-12',
             )}
             aria-label="Join Pubky"

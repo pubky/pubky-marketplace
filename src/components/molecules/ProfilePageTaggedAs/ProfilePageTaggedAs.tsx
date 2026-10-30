@@ -47,7 +47,7 @@ export function ProfilePageTaggedAs({ tags, isLoading = false, onTagClick, pubky
         data-cy="profile-tag-btn"
         variant="outline"
         size="sm"
-        className="border border-border bg-foreground/5"
+        className="border border-border bg-glass"
         onClick={handleButtonClick}
       >
         <Tag size={16} className="text-foreground" />
