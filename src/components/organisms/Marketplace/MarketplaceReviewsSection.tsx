@@ -16,17 +16,23 @@ import { Link } from '@/atoms/Link/Link';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Textarea } from '@/atoms/Textarea/Textarea';
 import { Typography } from '@/atoms/Typography/Typography';
-import { REVIEW_MODERATION_COPY, REVIEW_OUTCOME_COPY, REVIEW_SORT_COPY } from '@/config/commerce-copy';
+import {
+  REVIEW_FILTER_COPY,
+  REVIEW_MODERATION_COPY,
+  REVIEW_OUTCOME_COPY,
+  REVIEW_SORT_COPY,
+} from '@/config/commerce-copy';
 import { isSocialLinkOutEnabled } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useAttestorKeyWindowsVersion } from '@/hooks/useAttestorKeyWindows/useAttestorKeyWindows';
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
-import { useMarketplaceReviews } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
+import type { MarketplaceReviewsState } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import { useReviewOutcomes } from '@/hooks/useReviewOutcomes/useReviewOutcomes';
 import type { ReviewOutcome } from '@/libs/commerce/attestor-records';
 import { VERIFIED_PURCHASE_INFO, VERIFIED_PURCHASE_INFO_LABEL } from '@/libs/commerce/eu-region';
 import { indexedReviewTrustedAttestor, isCountedIndexedReview } from '@/libs/commerce/review-counting';
+import { isActiveReviewFilter } from '@/libs/commerce/review-filter';
 import { reviewOutcomesOf } from '@/libs/commerce/review-outcomes';
 import { isMarketplaceReviewSort, MARKETPLACE_REVIEW_SORTS } from '@/libs/commerce/review-sort';
 import { cn } from '@/libs/utils/utils';
@@ -38,10 +44,12 @@ import { ProfileOnPubkyLink } from '@/molecules/ProfileOnPubkyLink/ProfileOnPubk
 import { toast } from '@/molecules/Toaster/use-toast';
 import { DialogReportPost } from '@/organisms/DialogReportPost/DialogReportPost';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { MarketplaceReviewFilterChips } from './MarketplaceReviewFilterChips';
 import { MarketplaceReviewsListSkeleton } from './MarketplaceReviewsSection.skeleton';
 
 export interface MarketplaceReviewsSectionProps {
-  sellerPubky: string;
+  /** The list, from `useMarketplaceReviews`; the page owns it so its rating header can follow the same filter. */
+  reviews: MarketplaceReviewsState;
   /** When set, the section lists the buyer reviews of one listing; otherwise the seller's. */
   listingId?: string;
   className?: string;
@@ -74,18 +82,38 @@ export interface MarketplaceReviewsSectionProps {
  *   list only; the figures in the page header are those of every counted
  *   review and never change with the order. It is hidden when the index
  *   cannot sort, and with a single review there is nothing to order.
+ * - Filter: chips beside the sort keep the reviews of people the viewer
+ *   follows (People I follow), reaches within two hops (My network) or tagged
+ *   with chosen labels (Tagged by me). They exist for a signed-in viewer and
+ *   only while the index can filter; the page header then shows the figures
+ *   of the matches, with the basis phrase, instead of the figure of everyone.
+ *   A filter with no matches says so and offers to show all reviews; an index
+ *   that refuses the filter says that instead of showing everyone's.
  *
  * When no review-aware index serves this deployment the section renders
  * nothing at all — absence, not an empty claim.
  */
 export function MarketplaceReviewsSection({
-  sellerPubky,
+  reviews: list,
   listingId,
   className,
   infoCard = false,
 }: MarketplaceReviewsSectionProps) {
-  const { status, reviews, isFetching, isReordering, hasMore, loadMore, sort, setSort, sortSupported } =
-    useMarketplaceReviews({ sellerPubky, listingId });
+  const {
+    status,
+    reviews,
+    isFetching,
+    isReordering,
+    hasMore,
+    loadMore,
+    sort,
+    setSort,
+    sortSupported,
+    filter,
+    setFilter,
+    filtersAvailable,
+    filterRejected,
+  } = list;
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   // The counted and not-counted groups derive from the trust list at render; a narrowing profile re-renders them.
   useAttestorKeyWindowsVersion();
@@ -95,6 +123,11 @@ export function MarketplaceReviewsSection({
 
   const counted = reviews.filter(isCountedIndexedReview);
   const notCounted = reviews.filter((review) => !isCountedIndexedReview(review));
+  const filterActive = isActiveReviewFilter(filter);
+  const showFilterChips =
+    filtersAvailable &&
+    currentUserPubky !== null &&
+    (reviews.length > 0 || hasMore || isReordering || filterActive || filterRejected);
   const renderReview = (review: CommerceIndexedReview) => (
     <MarketplaceReviewItem
       key={`${review.reviewerId}:${review.reviewId}`}
@@ -157,8 +190,24 @@ export function MarketplaceReviewsSection({
             </Select>
           )}
         </div>
+        {showFilterChips && (
+          <MarketplaceReviewFilterChips viewerPubky={currentUserPubky} filter={filter} onFilterChange={setFilter} />
+        )}
         {isReordering ? (
           <MarketplaceReviewsListSkeleton />
+        ) : filterRejected ? (
+          <MarketplaceReviewsFilterNotice
+            message={REVIEW_FILTER_COPY.rejected}
+            infoCard={infoCard}
+            onShowAll={() => setFilter({ kind: 'all' })}
+          />
+        ) : reviews.length === 0 && filterActive ? (
+          <MarketplaceReviewsFilterNotice
+            message={REVIEW_FILTER_COPY.emptyList}
+            hint={REVIEW_FILTER_COPY.emptyHint}
+            infoCard={infoCard}
+            onShowAll={() => setFilter({ kind: 'all' })}
+          />
         ) : reviews.length === 0 ? (
           <Typography
             as="p"
@@ -193,6 +242,39 @@ export function MarketplaceReviewsSection({
         )}
       </div>
     </section>
+  );
+}
+
+/** What replaces the list when a filter matches no review or the index refused it, with the way back to all reviews. */
+function MarketplaceReviewsFilterNotice({
+  message,
+  hint,
+  infoCard,
+  onShowAll,
+}: {
+  message: string;
+  hint?: string;
+  infoCard: boolean;
+  onShowAll: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-start gap-2" data-testid="marketplace-reviews-filter-notice">
+      <Typography
+        as="p"
+        overrideDefaults
+        className={cn('text-muted-foreground', infoCard ? 'text-sm leading-5 font-medium' : 'text-sm')}
+      >
+        {message}
+      </Typography>
+      {hint !== undefined && (
+        <Typography as="p" overrideDefaults className="text-xs text-muted-foreground">
+          {hint}
+        </Typography>
+      )}
+      <Button size="sm" variant="secondary" className="rounded-full" onClick={onShowAll}>
+        {REVIEW_FILTER_COPY.showAll}
+      </Button>
+    </div>
   );
 }
 

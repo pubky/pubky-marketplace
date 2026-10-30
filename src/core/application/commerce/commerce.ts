@@ -139,6 +139,7 @@ import {
 } from '@/libs/commerce/priv-envelope';
 import type { MarketplacePrivKeysResult } from '@/libs/commerce/priv-keys';
 import { attestorWindowsParam } from '@/libs/commerce/review-counting';
+import type { MarketplaceReviewFilterRequest } from '@/libs/commerce/review-filter';
 import type { MarketplaceReviewSortParam } from '@/libs/commerce/review-sort';
 import { createCommerceSandboxCatalog } from '@/libs/commerce/sandbox-catalog';
 import {
@@ -182,6 +183,7 @@ import type {
   CommerceListingProjectionModelSchema,
   CommerceReputationSnippet,
   CommerceReputationSummary,
+  CommerceReviewMatch,
   CommerceReviewModelSchema,
   CommerceReviewResponseModelSchema,
   CommerceSavedSearchModelSchema,
@@ -250,6 +252,7 @@ import type {
   NexusListingDetails,
   NexusListingSaleFormat,
   NexusListingState,
+  NexusReviewFilterParams,
 } from '@/services/nexus/marketplace/marketplace.types';
 import type { NexusTag } from '@/services/nexus/nexus.types';
 import { PaykitReceiverService } from '@/services/paykit/paykit-receiver';
@@ -526,25 +529,74 @@ function ownReviewRemovalTarget(payload: unknown): { orderId: string; listingId?
 }
 
 /**
- * A review-list page, or the honest signal that no review index serves this
- * deployment. `sortApplied` is true only when the index answered a requested
- * sort in its envelope form; false for a list read without a sort and for an
- * index that ignored the parameter (before IX4), whose list is newest first.
+ * A review-list page, the honest signal that no review index serves this
+ * deployment, or an index's refusal of a reviewer filter.
+ *
+ * `sortApplied` and `filterApplied` are true only when the index answered a
+ * requested sort or filter in its envelope form; false for a list read without
+ * one and for an index that ignored the parameter (before IX4), whose list is
+ * everyone's, newest first. `matched` carries the figures of the counted
+ * matches of a filtered list, and only when the request named the trusted
+ * attestor windows: without them the index would count attestors this client
+ * does not trust, so no figure is claimed. `rejected` is a 400 for a filter:
+ * the index understood the request and refused it.
  */
 export type CommerceIndexedReviewsResult =
-  | { status: 'ok'; reviews: CommerceIndexedReview[]; sortApplied: boolean }
+  | {
+      status: 'ok';
+      reviews: CommerceIndexedReview[];
+      sortApplied: boolean;
+      filterApplied: boolean;
+      matched: CommerceReviewMatch | null;
+    }
+  | { status: 'rejected' }
   | { status: 'unavailable' };
 
-/** One page of a review list; `sort` is the parameter to send, absent for the default order. */
+/**
+ * One page of a review list; `sort` is the parameter to send, absent for the
+ * default order, and `filter` the reviewer filter, absent for everyone's.
+ */
 export interface CommerceReviewsPage {
   skip?: number;
   limit?: number;
   sort?: MarketplaceReviewSortParam;
+  filter?: MarketplaceReviewFilterRequest;
+}
+
+/**
+ * The query of a review page. A reviewer filter also names the trusted
+ * attestor windows, so the index counts what this client counts; they narrow
+ * the list itself to reviews those windows cover.
+ */
+function reviewsQuery({ skip, limit, sort, filter }: CommerceReviewsPage): NexusReviewFilterParams & {
+  skip?: number;
+  limit?: number;
+  sort?: MarketplaceReviewSortParam;
+} {
+  const attestors = filter === undefined ? null : attestorWindowsParam();
+  return {
+    skip,
+    limit,
+    ...(sort !== undefined && { sort }),
+    ...(filter !== undefined && {
+      viewer_id: filter.viewerId,
+      ...(filter.reach !== undefined && { reach: filter.reach }),
+      ...(filter.depth !== undefined && { depth: filter.depth }),
+      ...(filter.taggedLabels !== undefined && { tagged_by_viewer: filter.taggedLabels.join(',') }),
+      ...(attestors !== null && { attestors }),
+    }),
+  };
 }
 
 function reviewsResult(payload: unknown, page: CommerceReviewsPage): CommerceIndexedReviewsResult {
-  const { reviews, envelope } = CommerceRecordNormalizer.nexusReviewPage(payload);
-  return { status: 'ok', reviews, sortApplied: page.sort !== undefined && envelope };
+  const { reviews, envelope, matched } = CommerceRecordNormalizer.nexusReviewPage(payload);
+  return {
+    status: 'ok',
+    reviews,
+    sortApplied: page.sort !== undefined && envelope,
+    filterApplied: page.filter !== undefined && envelope,
+    matched: page.filter !== undefined && attestorWindowsParam() !== null ? matched : null,
+  };
 }
 
 type CommerceListingWithProjection = CommerceListingModelSchema & {
@@ -4992,9 +5044,13 @@ export class CommerceApplication {
   ): Promise<CommerceIndexedReviewsResult> {
     if (getCommerceAdapterMode() === 'sandbox') return { status: 'unavailable' };
     try {
-      const payload = await NexusMarketplaceService.fetchShopReviews({ seller_id: sellerPubky, ...page });
+      const payload = await NexusMarketplaceService.fetchShopReviews({
+        seller_id: sellerPubky,
+        ...reviewsQuery(page),
+      });
       return reviewsResult(payload, page);
     } catch (error) {
+      if (page.filter !== undefined && hasHttpStatus(error, HttpStatusCode.BAD_REQUEST)) return { status: 'rejected' };
       Logger.warn('Seller reviews fetch failed; rendering no review section', { sellerPubky, error });
       return { status: 'unavailable' };
     }
@@ -5011,10 +5067,11 @@ export class CommerceApplication {
       const payload = await NexusMarketplaceService.fetchListingReviews({
         seller_id: sellerPubky,
         listing_id: listingId,
-        ...page,
+        ...reviewsQuery(page),
       });
       return reviewsResult(payload, page);
     } catch (error) {
+      if (page.filter !== undefined && hasHttpStatus(error, HttpStatusCode.BAD_REQUEST)) return { status: 'rejected' };
       Logger.warn('Listing reviews fetch failed; rendering no review section', { sellerPubky, listingId, error });
       return { status: 'unavailable' };
     }

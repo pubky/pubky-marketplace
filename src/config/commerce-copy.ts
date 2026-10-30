@@ -1,4 +1,5 @@
 import type { ReviewOutcomeKind } from '@/libs/commerce/attestor-records';
+import type { MarketplaceActiveReviewFilter, MarketplaceReviewFilter } from '@/libs/commerce/review-filter';
 import type { MarketplaceReviewSort } from '@/libs/commerce/review-sort';
 
 export const MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE =
@@ -67,6 +68,49 @@ export const REVIEW_SORT_COPY: {
     rating_asc: 'Lowest rated',
   },
 };
+
+const REVIEW_FILTER_REACH_PHRASE: Record<MarketplaceActiveReviewFilter['kind'], string> = {
+  following: 'you follow',
+  wot: 'in your network',
+  tagged: 'you tagged',
+};
+
+/**
+ * The reviewer filters above a review list (reviews design section 3): the
+ * chip labels, the tag picker, and the phrases a filter puts in the rating
+ * header ("4.8 from 3 people you follow").
+ */
+export const REVIEW_FILTER_COPY = {
+  label: 'Filter reviews',
+  reachLabel: 'Whose reviews',
+  chips: { all: 'All', following: 'People I follow', wot: 'My network', tagged: 'Tagged by me' } satisfies Record<
+    MarketplaceReviewFilter['kind'],
+    string
+  >,
+  tagged: {
+    title: 'Reviewers you tagged',
+    hint: 'Show reviews from people you tagged with any of these tags.',
+    inputLabel: 'Add a tag',
+    inputPlaceholder: 'Add a tag',
+    add: 'Add',
+    apply: 'Apply',
+    clear: 'Clear',
+    suggestionsHeading: 'Tags you use',
+    limit: (max: number) => `Up to ${max} tags.`,
+    remove: (label: string) => `Remove ${label}`,
+  },
+  from: (kind: MarketplaceActiveReviewFilter['kind'], buyers: number) =>
+    `from ${buyers} ${buyers === 1 ? 'person' : 'people'} ${REVIEW_FILTER_REACH_PHRASE[kind]}`,
+  none: (kind: MarketplaceActiveReviewFilter['kind']) => `No reviews from people ${REVIEW_FILTER_REACH_PHRASE[kind]}`,
+  emptyList: 'No reviews match this filter.',
+  sellerRating: 'seller rating',
+  productsRated: 'products rated',
+  unscored: 'No rating for this filter',
+  emptyHint: "Follows and tags are read from this market's own index, so people on other homeservers are not included.",
+  showAll: 'Show all reviews',
+  rejected: 'The review index could not apply this filter. Try different tags, or show all reviews.',
+  failed: 'Could not filter the reviews. Showing all of them.',
+} as const;
 
 /**
  * The note beside a review whose order the attestor recorded as refunded or

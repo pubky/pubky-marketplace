@@ -59,7 +59,13 @@ describe('CommerceApplication review sorts', () => {
     const result = await CommerceApplication.fetchListingReviews(SELLER, 'boots_01', { limit: 10, sort: 'rating_asc' });
 
     expect(fetch).toHaveBeenCalledWith({ seller_id: SELLER, listing_id: 'boots_01', limit: 10, sort: 'rating_asc' });
-    expect(result).toEqual({ status: 'ok', reviews: [], sortApplied: true });
+    expect(result).toEqual({
+      status: 'ok',
+      reviews: [],
+      sortApplied: true,
+      filterApplied: false,
+      matched: null,
+    });
   });
 
   it('sends no sort without one, and reads the bare list as not sorted', async () => {

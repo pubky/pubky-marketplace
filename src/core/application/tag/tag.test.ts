@@ -402,4 +402,16 @@ describe('Tag Application', () => {
       expect(spy).toHaveBeenCalledWith('user-pubky');
     });
   });
+
+  describe('getViewerUserTagLabels', () => {
+    it('reads the labels the viewer used from the local copy', async () => {
+      const spy = vi.spyOn(LocalUserTagService, 'getLabelsTaggedBy').mockResolvedValue(['trusted', 'fast']);
+
+      await expect(TagApplication.getViewerUserTagLabels('viewer-pubky' as Pubky, 8)).resolves.toEqual([
+        'trusted',
+        'fast',
+      ]);
+      expect(spy).toHaveBeenCalledWith('viewer-pubky', 8);
+    });
+  });
 });

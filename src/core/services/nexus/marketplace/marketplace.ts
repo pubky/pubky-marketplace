@@ -100,6 +100,7 @@ export class NexusMarketplaceService {
    * @param params - Subject path param plus role filter, pagination and sort
    * @returns Review page entries, newest-indexed first unless a sort was
    *   requested (empty when none); an envelope when the request carried a sort
+   *   or a reviewer filter
    */
   static async fetchShopReviews(params: TShopReviewsParams): Promise<NexusReviewStream> {
     return await queryNexus<NexusReviewStream>({ url: marketplaceApi.shopReviews(params) });
@@ -124,6 +125,7 @@ export class NexusMarketplaceService {
    * @param params - Seller/listing path params plus pagination and sort
    * @returns Review page entries, newest-indexed first unless a sort was
    *   requested (empty when none); an envelope when the request carried a sort
+   *   or a reviewer filter
    */
   static async fetchListingReviews(params: TListingReviewsParams): Promise<NexusReviewStream> {
     return await queryNexus<NexusReviewStream>({ url: marketplaceApi.listingReviews(params) });

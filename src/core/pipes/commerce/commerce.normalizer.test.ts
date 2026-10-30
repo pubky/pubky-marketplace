@@ -469,8 +469,34 @@ describe('CommerceRecordNormalizer', () => {
       it('reads an empty envelope, with a null average, and an empty bare list', () => {
         expect(
           CommerceRecordNormalizer.nexusReviewPage({ reviews: [], matched: { buyers: 0, orders: 0, avg: null } }),
-        ).toEqual({ reviews: [], envelope: true });
-        expect(CommerceRecordNormalizer.nexusReviewPage([])).toEqual({ reviews: [], envelope: false });
+        ).toEqual({ reviews: [], envelope: true, matched: { buyers: 0, orders: 0, avg: null } });
+        expect(CommerceRecordNormalizer.nexusReviewPage([])).toEqual({ reviews: [], envelope: false, matched: null });
+      });
+
+      it('reads the matched figures, seller figures included, in camel case', () => {
+        const page = CommerceRecordNormalizer.nexusReviewPage({
+          reviews: listed(),
+          matched: { buyers: 2, orders: 3, avg: 3.5, seller_buyers: 1, seller_avg: 4 },
+        });
+
+        expect(page.matched).toEqual({ buyers: 2, orders: 3, avg: 3.5, sellerBuyers: 1, sellerAvg: 4 });
+      });
+
+      it('reads matched figures that leave out the seller ones', () => {
+        const page = CommerceRecordNormalizer.nexusReviewPage({
+          reviews: listed(),
+          matched: { buyers: 2, orders: 3, avg: 3.5 },
+        });
+
+        expect(page.matched).toEqual({ buyers: 2, orders: 3, avg: 3.5 });
+      });
+
+      it('reads malformed matched figures as none and keeps the reviews', () => {
+        const page = CommerceRecordNormalizer.nexusReviewPage({ reviews: listed(), matched: { buyers: 'two' } });
+
+        expect(page.envelope).toBe(true);
+        expect(page.matched).toBeNull();
+        expect(page.reviews).toHaveLength(2);
       });
 
       it('rejects an envelope whose reviews are malformed', () => {

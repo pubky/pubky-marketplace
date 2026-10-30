@@ -7,8 +7,7 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import type { CommerceIndexedReview, CommerceReputationBucket } from '@/models/commerce/commerce.schema';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
-import { MarketplaceReputationHeader } from './MarketplaceReputationHeader';
-import { MarketplaceReviewsSection } from './MarketplaceReviewsSection';
+import { ReviewsSection, ReviewsWithHeader } from '@/test-utils/marketplace-reviews';
 
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
@@ -53,7 +52,7 @@ const NEWEST = [review('n1', 'Newest review.', 3), review('n2', 'Older review.',
 const BY_RATING = [review('n2', 'Older review.', 5), review('n1', 'Newest review.', 3)];
 
 function reviews(list: CommerceIndexedReview[], sortApplied: boolean): CommerceIndexedReviewsResult {
-  return { status: 'ok', reviews: list, sortApplied };
+  return { status: 'ok', reviews: list, sortApplied, filterApplied: false, matched: null };
 }
 
 const seconds = (iso: string) => Date.parse(iso) / 1000;
@@ -108,12 +107,7 @@ describe('review sort next to the reputation header', () => {
   it('reorders the list for a signed-out visitor and leaves every header figure as it was', async () => {
     vi.mocked(CommerceController.fetchSellerReviews).mockResolvedValueOnce(reviews(NEWEST, false));
     const user = userEvent.setup();
-    render(
-      <>
-        <MarketplaceReputationHeader sellerPubky={SELLER} variant="full" />
-        <MarketplaceReviewsSection sellerPubky={SELLER} />
-      </>,
-    );
+    render(<ReviewsWithHeader sellerPubky={SELLER} />);
     await screen.findByText('Newest review.');
     await screen.findByTestId('marketplace-reputation-weighted');
     const before = headerText();
@@ -146,7 +140,7 @@ describe('review sort next to the reputation header', () => {
   it('falls back to Newest and drops the control, without an error, on an index that ignores the sort', async () => {
     vi.mocked(CommerceController.fetchSellerReviews).mockResolvedValueOnce(reviews(NEWEST, false));
     const user = userEvent.setup();
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} />);
+    render(<ReviewsSection sellerPubky={SELLER} />);
     await screen.findByText('Newest review.');
 
     vi.mocked(CommerceController.fetchSellerReviews).mockResolvedValueOnce(reviews(NEWEST, false));
