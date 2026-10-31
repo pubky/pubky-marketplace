@@ -101,7 +101,7 @@ const UNSAVED_SELLER_PAYMENT_CONFIG: SellerPaymentConfigOwnView = {
 };
 const PAYPAL_EMAIL_INVALID_COPY = 'Enter a valid email address.';
 const PAYKIT_RECONNECT_EXPLANATION =
-  "Scan the code with Bitkit, or open this page on your phone and tap Continue with Bitkit, to share a USDT address. Bitkit also gives Paykit a new Bitcoin account, which can cancel a buyer's pending Bitcoin request that has not been accepted yet.";
+  'Scan the code with Bitkit, or open this page on your phone and tap Continue with Bitkit, to share a USDT address.';
 const PAYKIT_BITCOIN_RECONNECT_EXPLANATION =
   "Paykit already has a Bitkit setup for this pubky. Approve it again in Bitkit to reconnect. Bitkit gives Paykit a new Bitcoin account, which can cancel a buyer's pending Bitcoin request that has not been accepted yet.";
 /** Upstream `/setup` refuses an account Paykit already holds (for example one set up for Locks); reconnect re-approves it. */
@@ -352,7 +352,12 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
     const url =
       mode === 'setup'
         ? CommerceController.getPaykitSetupUrl(window.location.href, state, currentUserPubky)
-        : CommerceController.getPaykitReconnectUrl(window.location.href, state, currentUserPubky);
+        : CommerceController.getPaykitReconnectUrl(
+            window.location.href,
+            state,
+            currentUserPubky,
+            mode === 'reconnect' ? 'USDT' : undefined,
+          );
     paykitSetupGenerationRef.current = state;
     setPaykitSetupMode(mode);
     setPaykitSetupState(state);
