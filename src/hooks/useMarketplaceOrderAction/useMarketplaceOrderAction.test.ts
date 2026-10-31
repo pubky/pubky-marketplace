@@ -1,9 +1,93 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
-import { createOrderFixture, createUsdtOrderFixture } from '@/test/fixtures/commerce/orders';
+import {
+  createBitcoinQuotedOrderFixture,
+  createOrderFixture,
+  createUsdtOrderFixture,
+} from '@/test/fixtures/commerce/orders';
 import { useMarketplaceOrderAction } from './useMarketplaceOrderAction';
 import { marketplaceOrderActionDefaults, marketplaceOrderActionSchema } from './useMarketplaceOrderAction.types';
+
+const sats = (amountMinor: number) => ({ amountMinor, currency: 'SAT', exponent: 0 });
+const btc = (amountMinor: number) => ({ amountMinor, currency: 'BTC', exponent: 8 });
+const eur = (amountMinor: number) => ({ amountMinor, currency: 'EUR', exponent: 2 });
+
+describe('useMarketplaceOrderAction return request', () => {
+  // `return.request` caps the amount at the order's merchandise total in its
+  // own units, whichever rail paid it.
+  const cases: Array<[string, MarketplaceOrder, string, number]> = [
+    [
+      'a USDT order priced in satoshis',
+      createUsdtOrderFixture('delivered', {
+        paymentMethod: 'paykit',
+        subtotal: sats(138_000),
+        shipping: sats(12_000),
+        total: sats(150_000),
+        paymentAmountMinor: 41_250_000,
+      }),
+      '150000',
+      150_000,
+    ],
+    [
+      'a USDT order priced in euros',
+      createUsdtOrderFixture('delivered', {
+        paymentMethod: 'paykit',
+        subtotal: eur(12_500),
+        shipping: eur(1_200),
+        total: eur(13_700),
+        paymentAmountMinor: 148_539_999,
+      }),
+      '137.00',
+      13_700,
+    ],
+    [
+      'a Bitcoin order priced in satoshis, without its payment code',
+      createOrderFixture('delivered', {
+        paymentMethod: 'bitcoin',
+        paykitTotalSats: 1_255,
+        merchandiseTotal: btc(1_000),
+        bitcoinPayable: sats(1_255),
+        subtotal: btc(1_000),
+        shipping: btc(0),
+        total: btc(1_255),
+      }),
+      '1000',
+      1_000,
+    ],
+    [
+      'a Bitcoin order priced in dollars',
+      {
+        ...createBitcoinQuotedOrderFixture(),
+        state: 'delivered',
+        bitcoinPayable: sats(3_000),
+        paykitTotalSats: 3_000,
+      },
+      '137.00',
+      13_700,
+    ],
+  ];
+
+  it.each(cases)('asks for %s in the order units', async (_name, order, prefill, requestedAmountMinor) => {
+    const actOnOrder = vi.fn(async () => true);
+    const { result } = renderHook(() => useMarketplaceOrderAction(order, actOnOrder));
+
+    act(() => {
+      result.current.setAction('return', { reason: 'Not as described' });
+    });
+    expect(result.current.form.getValues('amount')).toBe(prefill);
+    let succeeded = false;
+    await act(async () => {
+      succeeded = await result.current.submit();
+    });
+
+    expect(succeeded).toBe(true);
+    expect(actOnOrder).toHaveBeenCalledWith(order, 'return.request', {
+      reason: 'Not as described',
+      requestedAmountMinor,
+    });
+  });
+});
 
 describe('useMarketplaceOrderAction ship action', () => {
   it('starts with no carrier chosen, so no carrier is recorded unless the seller picks one', () => {

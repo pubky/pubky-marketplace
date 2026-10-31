@@ -1224,6 +1224,54 @@ describe('MarketplaceOrderActions return policy', () => {
   });
 });
 
+describe('MarketplaceOrderActions return request amount', () => {
+  it('asks for a USDT order priced in euros in euros', async () => {
+    const eur = (amountMinor: number) => ({ amountMinor, currency: 'EUR', exponent: 2 });
+    const order = createUsdtOrderFixture('delivered', {
+      paymentMethod: 'paykit',
+      subtotal: eur(12_500),
+      shipping: eur(1_200),
+      total: eur(13_700),
+      paymentAmountMinor: 148_539_999,
+    });
+    const actOnOrder = vi.fn(async () => true);
+    render(<MarketplaceOrderActions order={order} isBuyer canEditReview={false} actOnOrder={actOnOrder} />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Request return' }));
+    expect(screen.getByLabelText('Amount (EUR)')).toHaveValue('137.00');
+    expect(screen.queryByLabelText('Amount (USDT)')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('Reason'), 'Not as described');
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() =>
+      expect(actOnOrder).toHaveBeenCalledWith(order, 'return.request', {
+        reason: 'Not as described',
+        requestedAmountMinor: 13_700,
+      }),
+    );
+  });
+
+  it('asks for a Bitcoin order without its payment code and shows no payable equation', async () => {
+    const order = createOrderFixture('delivered', {
+      paymentMethod: 'bitcoin',
+      paykitTotalSats: 1_255,
+      merchandiseTotal: { amountMinor: 1_000, currency: 'BTC', exponent: 8 },
+      bitcoinPayable: { amountMinor: 1_255, currency: 'SAT', exponent: 0 },
+      subtotal: { amountMinor: 1_000, currency: 'BTC', exponent: 8 },
+      shipping: { amountMinor: 0, currency: 'BTC', exponent: 8 },
+      total: { amountMinor: 1_255, currency: 'BTC', exponent: 8 },
+    });
+    render(
+      <MarketplaceOrderActions order={order} isBuyer canEditReview={false} actOnOrder={vi.fn(async () => true)} />,
+    );
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Request return' }));
+    expect(screen.getByLabelText('Amount (₿)')).toHaveValue('1000');
+    expect(screen.queryByRole('table', { name: 'Bitcoin payment breakdown' })).not.toBeInTheDocument();
+  });
+});
+
 describe('MarketplaceOrderActions digital orders in an inconsistent shipped state (review P2)', () => {
   it('offers no Confirm delivery on a digital order projected as shipped', () => {
     render(
