@@ -456,6 +456,17 @@ describe('Marketplace listing detail — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-fixed-price-desktop');
   });
 
+  it('renders a fixed-price listing in light mode at desktop viewport', async () => {
+    const { seller, fixedPriceListing, fixedPriceProjection } = await fixtures;
+    await setView({ listing: fixedPriceListing, projection: fixedPriceProjection });
+
+    const screen = await renderForVRT(<MarketplaceListing sellerPubky={seller} listingId="boots_01" />, {
+      viewport: VRT_VIEWPORT_DESKTOP,
+      theme: 'light',
+    });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-fixed-price-light-desktop');
+  });
+
   it('renders the media gallery with a main image and thumbnail strip at desktop viewport', async () => {
     const { seller, galleryListing, fixedPriceProjection } = await fixtures;
     await setView({ listing: galleryListing, projection: fixedPriceProjection });
@@ -550,6 +561,20 @@ describe('Marketplace listing detail — visual regression', () => {
     });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       'listing-fixed-price-mobile',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it('renders a fixed-price listing in light mode at mobile viewport', async () => {
+    const { seller, fixedPriceListing, fixedPriceProjection } = await fixtures;
+    await setView({ listing: fixedPriceListing, projection: fixedPriceProjection });
+
+    const screen = await renderForVRT(<MarketplaceListing sellerPubky={seller} listingId="boots_01" />, {
+      viewport: VRT_VIEWPORT_MOBILE,
+      theme: 'light',
+    });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'listing-fixed-price-light-mobile',
       VRT_DENSE_CHROME_SCREENSHOT,
     );
   });

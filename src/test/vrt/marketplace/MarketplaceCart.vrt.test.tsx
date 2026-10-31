@@ -289,6 +289,24 @@ describe('Marketplace cart — visual regression', () => {
     await captureCart('cart-single-seller-mobile');
   });
 
+  it('renders a single-seller cart in light mode at desktop viewport', async () => {
+    const { singleSeller } = await fixtures;
+    view.items = singleSeller;
+    view.isLoading = false;
+
+    await renderForVRT(<MarketplaceCart />, { viewport: VRT_VIEWPORT_DESKTOP, theme: 'light' });
+    await captureCart('cart-single-seller-light-desktop');
+  });
+
+  it('renders a single-seller cart in light mode at mobile viewport', async () => {
+    const { singleSeller } = await fixtures;
+    view.items = singleSeller;
+    view.isLoading = false;
+
+    await renderForVRT(<MarketplaceCart />, { viewport: VRT_VIEWPORT_MOBILE, theme: 'light' });
+    await captureCart('cart-single-seller-light-mobile');
+  });
+
   it('renders a Locks digital cart with no shipping at desktop viewport', async () => {
     const { locksOnly } = await fixtures;
     view.items = locksOnly;
@@ -431,6 +449,14 @@ describe('Marketplace cart — visual regression', () => {
 
     await renderForVRT(<MarketplaceCart />, { viewport: VRT_VIEWPORT_DESKTOP });
     await captureCart('cart-empty-desktop');
+  });
+
+  it('renders the empty cart in light mode at desktop viewport', async () => {
+    view.items = [];
+    view.isLoading = false;
+
+    await renderForVRT(<MarketplaceCart />, { viewport: VRT_VIEWPORT_DESKTOP, theme: 'light' });
+    await captureCart('cart-empty-light-desktop');
   });
 
   it('renders the loading state at desktop viewport', async () => {
