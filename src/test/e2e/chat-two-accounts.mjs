@@ -100,7 +100,6 @@ async function signIn(context, identity, name) {
   const page = await context.newPage();
   page.on('pageerror', (error) => console.error(`[${identity.label}] pageerror`, String(error)));
   await page.goto(`${BASE}/sign-in`, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('radio', { name: 'Bitkit' }).click();
   const url = await readAuthUrl(page);
   if (!url.startsWith('pubkyauth://signin_grant')) {
     throw new Error(`[${identity.label}] expected a grant sign-in link, got ${url.slice(0, 40)}`);

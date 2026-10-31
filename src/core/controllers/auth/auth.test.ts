@@ -4,6 +4,8 @@ import { AuthApplication } from '@/application/auth/auth';
 import { BootstrapApplication } from '@/application/bootstrap/bootstrap';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { clearDatabase, clearPrivateData } from '@/database/franky/franky.helpers';
+import { readGrantSigner } from '@/hooks/useGrantSigner/useGrantSigner';
+import { marketplaceSignerChoice } from '@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner';
 import { Identity } from '@/libs/identity/identity';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { AUTH_PERSIST_KEY } from '@/stores/persistedKeys';
@@ -66,6 +68,37 @@ describe('grant-only authentication lifecycle', () => {
       expect(JSON.parse(localStorage.getItem(AUTH_PERSIST_KEY)!).state.sessionExport).toBeNull();
     },
   );
+
+  it('records an unidentified QR scan as an unknown signer that later approvals start on Pubky Ring', async () => {
+    const session = grantSession();
+    await approve(session, 'unknown');
+    await AuthController.initializeAuthenticatedSession({ session });
+    expect(useAuthStore.getState()).toMatchObject({ session, grantSigner: 'unknown' });
+    expect(readGrantSigner(useAuthStore.getState())).toBe('unknown');
+    expect(marketplaceSignerChoice(readGrantSigner(useAuthStore.getState()))).toBe('ring');
+  });
+
+  it('records the app the user opened last for the sign-in', async () => {
+    const session = grantSession();
+    vi.spyOn(AuthApplication, 'generateGrantAuthUrl').mockResolvedValue({
+      authorizationUrl: 'pubkyauth://signin_grant',
+      awaitApproval: Promise.resolve(session),
+      cancelAuthFlow: vi.fn(),
+    });
+    const flow = await AuthController.getAuthUrl();
+    AuthController.noteSignInSigner('ring');
+    AuthController.noteSignInSigner('bitkit');
+    await AuthController.initializeAuthenticatedSession({ session: await flow.awaitApproval });
+    expect(useAuthStore.getState().grantSigner).toBe('bitkit');
+  });
+
+  it('forgets the app opened for an earlier QR when a new QR is made', async () => {
+    AuthController.noteSignInSigner('ring');
+    const session = grantSession();
+    await approve(session, 'unknown');
+    await AuthController.initializeAuthenticatedSession({ session });
+    expect(useAuthStore.getState().grantSigner).toBe('unknown');
+  });
 
   it('never bootstraps or persists a live identity after a blocked SDK save', async () => {
     const session = grantSession();
@@ -261,9 +294,9 @@ describe('grant-only authentication lifecycle', () => {
       awaitApproval: new Promise<Session>(() => undefined),
       cancelAuthFlow: vi.fn(),
     });
-    await AuthController.getGrantAuthUrl();
+    await AuthController.getAuthUrl();
     expect(generate).toHaveBeenLastCalledWith();
-    await AuthController.getGrantAuthUrl({ withPrivKeys: false });
+    await AuthController.getAuthUrl({ withPrivKeys: false });
     expect(generate).toHaveBeenLastCalledWith(undefined, { withPrivKeys: false });
     await AuthController.getPassportGrantAuthUrl({ xSource: 'Pubky Market' });
     expect(generate).toHaveBeenLastCalledWith({ xSource: 'Pubky Market' }, { signer: 'passport' });

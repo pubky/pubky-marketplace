@@ -54,6 +54,29 @@ describe('AuthStore', () => {
       },
     );
 
+    it.each(['unknown', 'ring', 'bitkit'] as const)(
+      'restores a saved grant record with its %s signer after a reload',
+      (grantSigner) => {
+        localStorage.setItem(
+          AUTH_PERSIST_KEY,
+          JSON.stringify({
+            state: { currentUserPubky: 'grant-pubky', grantSessionRecordId: 'rec-1', grantSigner },
+            version: 0,
+          }),
+        );
+        try {
+          const freshStore = createAuthStore();
+
+          expect(freshStore.getState().grantSigner).toBe(grantSigner);
+          expect(freshStore.getState().grantSessionRecordId).toBe('rec-1');
+          expect(freshStore.getState().sessionOwner).toBe('shop');
+          expect(freshStore.getState().isRestoringSession).toBe(true);
+        } finally {
+          localStorage.removeItem(AUTH_PERSIST_KEY);
+        }
+      },
+    );
+
     it('marks the store as hydrated when persisted storage cannot be read', async () => {
       const originalStorage = useAuthStore.persist.getOptions().storage;
       const failingStorage: NonNullable<typeof originalStorage> = {

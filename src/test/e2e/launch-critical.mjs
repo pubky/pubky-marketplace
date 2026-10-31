@@ -352,21 +352,14 @@ async function exerciseLegacyOfferLinkOnce(page) {
 }
 
 /**
- * Ring grant QR only. `qr-auth-url` stays the slot id. The URL is not read
- * from the DOM: the copy button is what a person uses, and the slot must not
- * carry the relay secret in an attribute. Side-by-side sign-in puts the
- * Bitkit QR in the same card, so this prefers `sign-in-ring-option` and
- * validates the Shop's `pubkyauth://signin_grant`. Service grants are copied from the
- * open dialog, not from this locator.
+ * The sign-in QR, one for Pubky Ring and Bitkit. `qr-auth-url` stays the slot
+ * id. The URL is not read from the DOM: the copy button is what a person uses,
+ * and the slot must not carry the relay secret in an attribute. It is the
+ * Shop's `pubkyauth://signin_grant`. Service grants are copied from the open
+ * dialog, not from this locator.
  */
 async function ringSignInAuthSlot(page, timeout) {
-  const qr = '[data-testid="qr-auth-url"]';
-  // Side-by-side sign-in keeps both QRs inside sign-in-qr-card. A card-wide
-  // .first() copies Bitkit when that QR attaches first. Wait for the Ring
-  // option, or for the Ring-only card that has no Bitkit option.
-  const slot = page.locator(
-    `[data-testid="sign-in-ring-option"] ${qr}, [data-testid="sign-in-qr-card"]:not(:has([data-testid="sign-in-bitkit-option"])) ${qr}`,
-  );
+  const slot = page.locator('[data-testid="sign-in-qr-card"] [data-testid="qr-auth-url"]');
   await slot.first().waitFor({ state: 'attached', timeout });
   return slot.first();
 }
@@ -400,7 +393,7 @@ async function waitForAuthUrl(page, timeout = 25_000) {
     parsed.searchParams.get('cid') !== 'shop.pubky.app' ||
     caps !== SHOP_GRANT.split(',').sort().join(',')
   ) {
-    throw new Error('Ring QR did not request the Shop client grant and exact required scopes');
+    throw new Error('Sign-in QR did not request the Shop client grant and exact required scopes');
   }
   return url;
 }
@@ -436,7 +429,8 @@ async function waitForAuthStore(page, timeout = 90_000) {
           state.currentUserPubky &&
           typeof state.grantSessionRecordId === 'string' &&
           state.grantSessionRecordId.length > 0 &&
-          state.grantSigner === 'ring' &&
+          // A QR scan does not identify the approving app.
+          state.grantSigner === 'unknown' &&
           state.sessionExport === null &&
           state.hasProfile === true,
         );
