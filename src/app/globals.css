@@ -488,7 +488,7 @@ body {
   --secondary: #d4d4db;
   --secondary-foreground: #1d1d20;
   --muted: #d4d4db;
-  --muted-foreground: #717176;
+  --muted-foreground: #5f5f64;
   --accent: #c4c4cc;
   --accent-foreground: #303034;
   --destructive: oklch(0.577 0.245 27.325);
@@ -506,6 +506,8 @@ body {
   --sidebar-border: #babac1;
   --sidebar-ring: oklch(0.55 0.008 274.863);
   --brand: #88ad00;
+  /* `#88ad00` is below AA as text on the light surfaces and brand tints; fills keep it. */
+  --brand-text: #4c6300;
   --foreground-strong: var(--foreground);
   --glass: var(--card);
   --glass-hover: var(--accent);
@@ -723,6 +725,9 @@ body {
   .mdxeditor-popup-container [class*='linkDialogPreviewAnchor'] {
     color: var(--brand) !important;
   }
+  .light .mdxeditor-popup-container [class*='linkDialogPreviewAnchor'] {
+    color: var(--brand-text) !important;
+  }
 
   /* 6. Popover arrow - match dialog background */
   .mdxeditor-popup-container [class*='linkDialogPopoverContent'] [class*='popoverArrow'] polygon {
@@ -755,6 +760,15 @@ body {
   .light .caret-white,
   .light input.caret-thick {
     caret-color: var(--foreground);
+  }
+
+  /* `:where` keeps these at utility specificity so state variants such as `hover:text-foreground` still win. */
+  :where(.light) .text-brand,
+  :where(.light) .hover\:text-brand:hover {
+    color: var(--brand-text);
+  }
+  :where(.light) .hover\:text-brand\/80:hover {
+    color: color-mix(in oklab, var(--brand-text) 80%, transparent);
   }
 
   /* Keep the document scrollbar visible and hide all nested scrollbars */
