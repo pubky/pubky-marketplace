@@ -60,7 +60,7 @@ export function MarketplaceSandboxSeed() {
           {seedState === 'seeded' && (
             <div
               role="status"
-              className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-200"
+              className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-200 [.light_&]:text-emerald-800"
             >
               Sandbox catalog ready. Browse the marketplace to try the demo listings.
             </div>

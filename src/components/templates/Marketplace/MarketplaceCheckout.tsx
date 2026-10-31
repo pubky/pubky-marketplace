@@ -839,7 +839,7 @@ function MarketplaceCartCheckout() {
               <Typography
                 as="p"
                 role="note"
-                className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
+                className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-notice-foreground"
               >
                 {focusedPaying.some(
                   ({ order }) => orderMayPayInUsdt(order) || unboundOrderMayPayInUsdt(order, resumeOfferedAssets),
@@ -1570,7 +1570,7 @@ function MarketplaceCartCheckout() {
                 <Typography
                   as="p"
                   role="note"
-                  className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
+                  className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-notice-foreground"
                 >
                   {stagingUsdtPossible ? STAGING_USDT_FUNDS_NOTE : 'Staging environment. No real funds move.'}
                 </Typography>

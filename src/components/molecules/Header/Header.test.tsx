@@ -512,7 +512,7 @@ describe('Header Components', () => {
 
       const collectionsButton = document.querySelector('.lucide-library')?.closest('button');
       expect(collectionsButton).toHaveClass('bg-secondary');
-      expect(collectionsButton).not.toHaveClass('bg-white/5');
+      expect(collectionsButton).not.toHaveClass('bg-glass');
     });
 
     it('does not highlight Collections as new before dismissal', () => {
@@ -667,7 +667,7 @@ describe('Header Components', () => {
 
       const collectionsButton = document.querySelector('.lucide-library')?.closest('button');
       expect(collectionsButton).toHaveClass('bg-secondary');
-      expect(collectionsButton).not.toHaveClass('bg-white/5');
+      expect(collectionsButton).not.toHaveClass('bg-glass');
     });
   });
 
@@ -700,7 +700,7 @@ describe('Header Components', () => {
           'https://pubky.app/profile',
         ]);
         expect(screen.getByRole('button', { name: 'Shop' })).toHaveClass('bg-secondary');
-        expect(screen.getByRole('button', { name: 'Home' })).toHaveClass('bg-white/5');
+        expect(screen.getByRole('button', { name: 'Home' })).toHaveClass('bg-glass');
         expect(document.querySelector('[data-cy="header-nav-profile-btn"]')).toHaveAttribute('target', '_self');
         expect(document.querySelector('[data-cy="header-notification-counter"]')).toBeNull();
         expect(useChatUnread).toHaveBeenCalledWith({ enabled: false });

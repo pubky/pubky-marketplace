@@ -21,6 +21,20 @@ const screen = await renderForVRT(<Component />, { viewport: VRT_VIEWPORT_DESKTO
 await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('name-desktop');
 ```
 
+### Light mode captures
+
+Scenes render the dark `:root` tokens by default. Pass `theme: 'light'` to
+capture the `.light` token set instead: the harness writes the shared
+`pubky-theme` preference and toggles `.light` on `<html>` exactly as `ThemeSync`
+does at runtime, and resets both to dark on every render so a light scene never
+leaks into the next one. Name light baselines with a `-light-` segment before
+the viewport (for example `cart-single-seller-light-desktop`).
+
+```tsx
+const screen = await renderForVRT(<Component />, { viewport: VRT_VIEWPORT_DESKTOP, theme: 'light' });
+await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('name-light-desktop');
+```
+
 ### Surface captures (`expectVrtSurface`)
 
 When a scene should capture one production surface rather than the whole

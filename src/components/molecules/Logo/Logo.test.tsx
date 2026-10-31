@@ -44,17 +44,18 @@ describe('Logo', () => {
     });
   });
 
-  it('renders with default src', () => {
+  it('renders dark and light wordmarks, toggled by the .light class via CSS', () => {
     vi.mocked(usePathname).mockReturnValue('/home');
 
     render(<Logo />);
 
-    const container = screen.getByTestId('logo-image').parentElement;
-    const image = screen.getByTestId('logo-image');
+    const [darkImage, lightImage] = screen.getAllByTestId('logo-image');
 
-    expect(container).toBeInTheDocument();
-    expect(image).toBeInTheDocument();
-    expect(image).toHaveAttribute('src', '/pubky-logo.svg');
+    expect(darkImage.parentElement).toBeInTheDocument();
+    expect(darkImage).toHaveAttribute('src', '/pubky-logo.svg');
+    expect(darkImage).toHaveClass('[.light_&]:hidden');
+    expect(lightImage).toHaveAttribute('src', '/pubky-logo-on-light.svg');
+    expect(lightImage).toHaveClass('hidden', '[.light_&]:block');
   });
 
   it('uses the fixed default size classes and no inline size at the default dimensions', () => {
@@ -62,7 +63,7 @@ describe('Logo', () => {
 
     render(<Logo className="custom-logo-style" />);
 
-    const image = screen.getByTestId('logo-image');
+    const [image] = screen.getAllByTestId('logo-image');
     const link = image.closest('a')!;
     expect(link).toHaveClass('min-h-[36px]', 'min-w-[109px]', 'custom-logo-style');
     expect(link.style.minWidth).toBe('');
@@ -76,7 +77,7 @@ describe('Logo', () => {
 
     render(<Logo width={200} height={80} />);
 
-    const image = screen.getByTestId('logo-image');
+    const [image] = screen.getAllByTestId('logo-image');
     const link = image.closest('a')!;
     expect(link).not.toHaveClass('min-h-[36px]', 'min-w-[109px]');
     expect(link).toHaveStyle({ minWidth: '200px', minHeight: '80px' });
@@ -91,7 +92,7 @@ describe('Logo', () => {
     Object.defineProperty(window, 'scrollTo', { value: vi.fn(), writable: true });
 
     render(<Logo />);
-    const link = screen.getByTestId('logo-image').closest('a');
+    const link = screen.getAllByTestId('logo-image')[0].closest('a');
     expect(link).toBeTruthy();
 
     fireEvent.click(link!);
@@ -105,7 +106,7 @@ describe('Logo', () => {
     const setItemSpy = vi.spyOn(window.sessionStorage, 'setItem');
 
     render(<Logo />);
-    const link = screen.getByTestId('logo-image').closest('a');
+    const link = screen.getAllByTestId('logo-image')[0].closest('a');
     expect(link).toBeTruthy();
 
     fireEvent.click(link!);
@@ -118,7 +119,7 @@ describe('Logo', () => {
 
     render(<Logo />);
 
-    expect(screen.getByTestId('logo-image').closest('a')).toHaveAttribute('href', '/');
+    expect(screen.getAllByTestId('logo-image')[0].closest('a')).toHaveAttribute('href', '/');
   });
 
   it.each(LOGO_LANDING_ROUTES)('does not set home scroll intent when clicking logo on %s', (pathname) => {
@@ -128,7 +129,7 @@ describe('Logo', () => {
     const setItemSpy = vi.spyOn(window.sessionStorage, 'setItem');
 
     render(<Logo />);
-    fireEvent.click(screen.getByTestId('logo-image').closest('a')!);
+    fireEvent.click(screen.getAllByTestId('logo-image')[0].closest('a')!);
 
     expect(window.scrollTo).not.toHaveBeenCalled();
     expect(setItemSpy).not.toHaveBeenCalled();
@@ -150,14 +151,14 @@ describe('Logo - social link-out', () => {
   it('links to /home while off', () => {
     vi.mocked(usePathname).mockReturnValue('/marketplace/orders');
     render(<Logo />);
-    expect(screen.getByTestId('logo-image').closest('a')).toHaveAttribute('href', '/home');
+    expect(screen.getAllByTestId('logo-image')[0].closest('a')).toHaveAttribute('href', '/home');
   });
 
   it('links to the marketplace while on', () => {
     setSocialHost('https://pubky.app');
     vi.mocked(usePathname).mockReturnValue('/marketplace/orders');
     render(<Logo />);
-    expect(screen.getByTestId('logo-image').closest('a')).toHaveAttribute('href', '/marketplace');
+    expect(screen.getAllByTestId('logo-image')[0].closest('a')).toHaveAttribute('href', '/marketplace');
   });
 
   it('scrolls to top instead of navigating when already on the marketplace while on', () => {
@@ -166,7 +167,7 @@ describe('Logo - social link-out', () => {
     Object.defineProperty(window, 'scrollTo', { value: vi.fn(), writable: true });
 
     render(<Logo />);
-    fireEvent.click(screen.getByTestId('logo-image').closest('a')!);
+    fireEvent.click(screen.getAllByTestId('logo-image')[0].closest('a')!);
 
     expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' });
   });
@@ -175,6 +176,6 @@ describe('Logo - social link-out', () => {
     setSocialHost('https://pubky.app');
     vi.mocked(usePathname).mockReturnValue('/sign-in');
     render(<Logo />);
-    expect(screen.getByTestId('logo-image').closest('a')).toHaveAttribute('href', '/');
+    expect(screen.getAllByTestId('logo-image')[0].closest('a')).toHaveAttribute('href', '/');
   });
 });

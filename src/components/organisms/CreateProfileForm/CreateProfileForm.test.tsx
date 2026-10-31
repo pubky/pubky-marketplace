@@ -60,6 +60,7 @@ vi.mock('facehash', () => ({
       {onRenderMouth?.()}
     </div>
   ),
+  stringHash: () => 0,
 }));
 
 vi.mock('@/stores/onboarding/onboarding.store', () => ({

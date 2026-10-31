@@ -2,6 +2,7 @@ import { X } from 'lucide-react';
 import { Tag } from '@/atoms/Tag/Tag';
 import { Toggle } from '@/atoms/Toggle/Toggle';
 import { COLORS } from '@/config/theme';
+import { getTagDayPalette, getTagPaletteStyle } from '@/libs/utils/tagPalette';
 import { cn, generateRandomColor, hexToRgba } from '@/libs/utils/utils';
 import type { PostTagProps } from './PostTag.types';
 
@@ -18,6 +19,13 @@ export function PostTag({
 }: PostTagProps) {
   const tagColor = color || generateRandomColor(label);
   const backgroundGradient = `linear-gradient(90deg, ${hexToRgba(COLORS.background, 0.7)} 0%, ${hexToRgba(COLORS.background, 0.7)} 100%), linear-gradient(90deg, ${tagColor} 0%, ${tagColor} 100%)`;
+  const day = getTagDayPalette(tagColor);
+  const paletteStyle = getTagPaletteStyle({
+    nightFill: backgroundGradient,
+    nightEdge: tagColor,
+    dayFill: `linear-gradient(90deg, ${day.background} 0%, ${day.background} 100%)`,
+    day,
+  });
   // A tag chip's only jobs are toggle / close — never navigation. Suppressing
   // both the native default and propagation lets it sit inside a clickable or
   // linked surface (e.g. a collection card wrapped in a `Link`) without the
@@ -39,18 +47,19 @@ export function PostTag({
       data-cy="post-tag"
       data-tag-label={label}
       className={cn(
-        'group/tag relative h-8 max-w-full gap-1 rounded-md px-3 backdrop-blur-lg',
-        'border-0 text-sm leading-5 font-bold text-white subpixel-antialiased',
+        'tag-palette group/tag relative h-8 max-w-full gap-1 rounded-md px-3 backdrop-blur-lg',
+        'border-0 text-sm leading-5 font-bold text-white subpixel-antialiased [.light_&]:text-(--tag-label)',
         'transition-all duration-200',
-        // Override Toggle default hover styles - keep text white
-        'hover:bg-transparent hover:text-white',
+        // Override Toggle default hover styles - keep text colour
+        'hover:bg-transparent hover:text-white [.light_&]:hover:text-(--tag-label)',
         // Selected state - add border
-        'data-[state=on]:border data-[state=on]:border-solid data-[state=on]:bg-transparent data-[state=on]:text-white',
+        'data-[state=on]:border data-[state=on]:border-solid data-[state=on]:bg-transparent data-[state=on]:text-white [.light_&]:data-[state=on]:text-(--tag-label)',
         className,
       )}
       style={{
-        backgroundImage: backgroundGradient,
-        boxShadow: selected ? `inset 0 0 0 1px ${tagColor}` : undefined,
+        ...paletteStyle,
+        backgroundImage: 'var(--tag-fill)',
+        boxShadow: selected ? 'inset 0 0 0 1px var(--tag-edge)' : undefined,
       }}
       aria-label={count !== undefined ? `${label} tag (${count} posts)` : `${label} tag`}
     >
@@ -79,7 +88,7 @@ export function PostTag({
       <span
         className="pointer-events-none absolute inset-0 rounded-md opacity-0 transition-opacity group-hover/tag:opacity-100"
         style={{
-          boxShadow: `inset 0px 0px 8px 0px ${tagColor}`,
+          boxShadow: 'inset 0px 0px 8px 0px var(--tag-edge)',
         }}
         aria-hidden="true"
       />
@@ -89,7 +98,7 @@ export function PostTag({
         <span
           className="pointer-events-none absolute inset-0 rounded-md border border-solid"
           style={{
-            borderColor: tagColor,
+            borderColor: 'var(--tag-edge)',
           }}
           aria-hidden="true"
         />

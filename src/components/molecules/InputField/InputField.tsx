@@ -100,7 +100,7 @@ export function InputField({
   const messageClasses = {
     default: 'text-muted-foreground',
     info: 'text-blue-500',
-    alert: 'text-yellow-500',
+    alert: 'text-yellow-500 [.light_&]:text-yellow-700',
     error: 'text-red-500',
     success: 'text-brand',
   } as const;
@@ -133,7 +133,7 @@ export function InputField({
           id={id}
           name={name}
           type={type}
-          className={cn('w-full border-none !bg-transparent', inputClassName)}
+          className={cn('w-full border-none !bg-transparent [.light_&]:shadow-none', inputClassName)}
           value={loading ? resolvedLoadingText : value}
           placeholder={placeholder}
           disabled={disabled || loading}

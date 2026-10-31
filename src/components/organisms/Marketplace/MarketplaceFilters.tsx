@@ -75,11 +75,11 @@ const FILTER_TRIGGER_CLASS = cn(
 const CATEGORY_MENU_CLASS =
   'w-64 max-h-[min(70vh,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto border-border bg-background p-3';
 const CATEGORY_ITEM_CLASS =
-  'gap-2 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-white/8 hover:text-white focus:bg-white/8 focus:text-white data-[highlighted]:bg-white/8 data-[highlighted]:text-white data-[state=open]:bg-white/8 data-[state=open]:text-white data-[state=checked]:bg-white/8 data-[state=checked]:text-white data-[selected=true]:bg-white/8 data-[selected=true]:text-white';
+  'gap-2 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground-strong/8 hover:text-foreground-strong focus:bg-foreground-strong/8 focus:text-foreground-strong data-[highlighted]:bg-foreground-strong/8 data-[highlighted]:text-foreground-strong data-[state=open]:bg-foreground-strong/8 data-[state=open]:text-foreground-strong data-[state=checked]:bg-foreground-strong/8 data-[state=checked]:text-foreground-strong data-[selected=true]:bg-foreground-strong/8 data-[selected=true]:text-foreground-strong';
 
 const FILTER_MENU_CLASS = cn(
   CATEGORY_MENU_CLASS,
-  'max-h-[min(70vh,var(--radix-select-content-available-height))] border shadow-xl ring-0 [&_[data-state=checked]_svg]:text-white',
+  'max-h-[min(70vh,var(--radix-select-content-available-height))] border shadow-xl ring-0 [&_[data-state=checked]_svg]:text-foreground-strong',
 );
 const FILTER_ITEM_CLASS = cn(CATEGORY_ITEM_CLASS, 'cursor-pointer rounded-sm pr-8 pl-2');
 
@@ -372,7 +372,7 @@ export function MarketplaceFilters({
           <Button
             variant="dark-outline"
             size="icon"
-            className="size-8 shrink-0 rounded-full border-border bg-white/5 text-foreground"
+            className="size-8 shrink-0 rounded-full border-border bg-glass text-foreground"
             aria-label="Reset search and filters"
             title="Reset search and filters"
             onClick={resetFilters}
@@ -419,7 +419,7 @@ function MarketplaceCategoryNavigation({
         >
           <Layers className="size-4" aria-hidden="true" />
           All Categories
-          {!categoryId && <Check className="ml-auto size-4 text-white" aria-hidden="true" />}
+          {!categoryId && <Check className="ml-auto size-4 text-foreground-strong" aria-hidden="true" />}
         </DropdownMenuItem>
         <CategoryMenuItems parentId={null} categoryId={categoryId} onSelect={onSelect} />
       </DropdownMenuContent>
@@ -443,7 +443,7 @@ function CategoryMenuItems({
       <>
         <Icon className="size-4" aria-hidden="true" />
         <span className="flex-1">{node.label}</span>
-        {selected && <Check className="size-4 text-white" aria-hidden="true" />}
+        {selected && <Check className="size-4 text-foreground-strong" aria-hidden="true" />}
       </>
     );
     if (!commerceCategoryChildren(node.id).length) {
@@ -472,7 +472,7 @@ function CategoryMenuItems({
             >
               <Icon className="size-4" aria-hidden="true" />
               All {node.label}
-              {selected && <Check className="ml-auto size-4 text-white" aria-hidden="true" />}
+              {selected && <Check className="ml-auto size-4 text-foreground-strong" aria-hidden="true" />}
             </DropdownMenuItem>
             <CategoryMenuItems parentId={node.id} categoryId={categoryId} onSelect={onSelect} />
           </DropdownMenuSubContent>

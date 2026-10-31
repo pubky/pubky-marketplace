@@ -62,7 +62,7 @@ export function TextareaField({
   const messageClasses = {
     default: 'text-muted-foreground',
     info: 'text-blue-500',
-    alert: 'text-yellow-500',
+    alert: 'text-yellow-500 [.light_&]:text-yellow-700',
     error: 'text-red-500',
     success: 'text-brand',
   } as const;

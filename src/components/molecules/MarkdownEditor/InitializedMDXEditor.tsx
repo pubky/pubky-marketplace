@@ -36,6 +36,7 @@ import { Textarea } from '@/atoms/Textarea/Textarea';
 import { Typography } from '@/atoms/Typography/Typography';
 import { ARTICLE_MAX_CHARACTER_LENGTH } from '@/config/posts';
 import { useEmojiInsert } from '@/hooks/useEmojiInsert/useEmojiInsert';
+import { useResolvedTheme } from '@/hooks/useResolvedTheme/useResolvedTheme';
 import { MarkdownMark } from '@/icons';
 import { cn } from '@/libs/utils/utils';
 import { EmojiPickerDialog } from '../EmojiPickerDialog/EmojiPickerDialog';
@@ -83,6 +84,7 @@ export default function InitializedMDXEditor({
   const [mode, setMode] = useState<EditorMode>('richtext');
   const [markdownText, setMarkdownText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isDarkTheme = useResolvedTheme() === 'dark';
   const switchToMarkdownMode = () => {
     if (editorRef && 'current' in editorRef) {
       const markdown = editorRef.current?.getMarkdown() ?? '';
@@ -191,8 +193,8 @@ export default function InitializedMDXEditor({
       <MDXEditor
         readOnly={readOnly}
         placeholder={'Start writing your masterpiece'}
-        className={cn('dark-theme cursor-auto', mode === 'markdown' && 'hidden')}
-        contentEditableClassName="prose prose-neutral prose-invert prose-code:before:content-none prose-code:after:content-none max-w-none px-0! pb-0! pt-4! max-h-[60dvh] overflow-y-auto"
+        className={cn(isDarkTheme && 'dark-theme', 'cursor-auto', mode === 'markdown' && 'hidden')}
+        contentEditableClassName={`prose prose-neutral ${isDarkTheme ? 'prose-invert ' : ''}prose-code:before:content-none prose-code:after:content-none max-w-none px-0! pb-0! pt-4! max-h-[60dvh] overflow-y-auto`}
         plugins={[
           toolbarPlugin({
             toolbarClassName: 'bg-background! border rounded-md! flex-wrap',
@@ -247,7 +249,7 @@ export default function InitializedMDXEditor({
         <Container
           className={cn(
             'cursor-auto flex-row items-center gap-x-2 rounded-md p-2',
-            maxLengthWarning === 'approaching' && 'bg-yellow-500/15 text-yellow-500',
+            maxLengthWarning === 'approaching' && 'bg-yellow-500/15 text-yellow-500 [.light_&]:text-yellow-700',
             maxLengthWarning === 'reached' && 'bg-red-500/15 text-red-500',
           )}
           data-testid="max-length-warning"

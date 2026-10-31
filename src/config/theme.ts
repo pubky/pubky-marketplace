@@ -22,6 +22,34 @@ export const COLORS = {
 } as const;
 
 /**
+ * Colour scheme preferences shared with pubky-app, which owns the setting
+ * (Settings → Appearance there). The Shop has no setting of its own: it reads the
+ * value pubky-app persists and follows it.
+ *
+ * `system` follows the browser / OS `prefers-color-scheme` setting.
+ */
+export const THEME_OPTIONS = ['dark', 'light', 'system'] as const;
+
+export type ThemeOption = (typeof THEME_OPTIONS)[number];
+
+/** The scheme actually painted once `system` has been resolved. */
+export type ResolvedTheme = Exclude<ThemeOption, 'system'>;
+
+/** pubky-app's default, applied while the value is missing or not one of `THEME_OPTIONS`. */
+export const DEFAULT_THEME: ThemeOption = 'system';
+
+/**
+ * localStorage key pubky-app persists the chosen `ThemeOption` under (raw string, not JSON).
+ * It is deliberately not Shop-namespaced: the Shop only ever reads it.
+ */
+export const THEME_STORAGE_KEY = 'pubky-theme';
+
+/** Class on `<html>` that switches the `.light` tokens in globals.css over the dark `:root` base. */
+export const LIGHT_THEME_CLASS = 'light';
+
+export const PREFERS_DARK_QUERY = '(prefers-color-scheme: dark)';
+
+/**
  * Tailwind CSS v4 default breakpoints in pixels
  * Used for responsive design and media query hooks
  */

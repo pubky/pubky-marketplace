@@ -677,7 +677,7 @@ export function MarketplaceDashboard() {
           <DialogHeader>
             <DialogTitle>Replace your unsaved draft?</DialogTitle>
           </DialogHeader>
-          <Typography className="text-base tracking-wide text-white/80">
+          <Typography className="text-base tracking-wide text-foreground-strong/80">
             Duplicating this listing will replace the unsaved draft currently in the sell studio.
           </Typography>
           <DialogFooter>

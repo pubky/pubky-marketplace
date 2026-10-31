@@ -133,6 +133,23 @@ async function waitForJoinPubky(page) {
   return expectVisible(page, heading, 'join-pubky-dialog', 20_000);
 }
 
+async function setColorScheme(page, colorScheme) {
+  await page.emulateMedia({ colorScheme });
+  await page.waitForFunction(
+    (dark) => document.documentElement.classList.contains('light') !== dark,
+    colorScheme === 'dark',
+  );
+  // Colour transitions would otherwise be audited half way between the two themes.
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((animation) => animation instanceof CSSTransition)
+        .map((animation) => animation.finished.catch(() => undefined)),
+    ),
+  );
+}
+
 async function runAxe(page, pageId) {
   await page.addScriptTag({ path: path.join(ROOT, 'node_modules/axe-core/axe.min.js') });
   const dialogVisible = (await page.locator('[role="dialog"]:visible').count()) > 0;
@@ -1071,6 +1088,10 @@ async function main() {
 
     await expectVisible(page, page.getByText(fixture.listingTitle, { exact: false }), 'catalog:fixture-title');
     await runAxe(page, 'catalog');
+    // The context follows the light OS default, so audit the dark Shop through the live `system` sync too.
+    await setColorScheme(page, 'dark');
+    await runAxe(page, 'catalog-dark');
+    await setColorScheme(page, null);
 
     await gotoAndSettle(page, '/marketplace/drops');
     const dropsHeading = page.getByRole('heading', { level: 1, name: 'Drops' });

@@ -411,7 +411,7 @@ export function MarketplaceOrders() {
                       type="button"
                       size="sm"
                       variant="ghost"
-                      className="rounded-none border-0 border-b border-solid border-transparent bg-transparent shadow-none aria-selected:border-white aria-selected:text-white"
+                      className="rounded-none border-0 border-b border-solid border-transparent bg-transparent shadow-none aria-selected:border-foreground-strong aria-selected:text-foreground-strong"
                       role="tab"
                       aria-selected={activeTab === tab.id}
                       aria-label={`${tab.label} ${orderCounts[tab.id]}`}
@@ -421,7 +421,11 @@ export function MarketplaceOrders() {
                       onClick={() => chooseTab(tab.id)}
                     >
                       {tab.label}
-                      <span className={activeTab === tab.id ? 'text-xs text-white' : 'text-xs text-muted-foreground'}>
+                      <span
+                        className={
+                          activeTab === tab.id ? 'text-xs text-foreground-strong' : 'text-xs text-muted-foreground'
+                        }
+                      >
                         {orderCounts[tab.id]}
                       </span>
                     </Button>
@@ -537,7 +541,7 @@ export function MarketplaceOrders() {
                                 className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3"
                                 role="status"
                               >
-                                <Typography as="p" className="text-sm text-amber-200">
+                                <Typography as="p" className="text-sm text-notice-foreground">
                                   The seller changed the pickup terms since you paid. Show the meeting point to see the
                                   terms you paid against — you can cancel this order instantly from the order actions.
                                 </Typography>

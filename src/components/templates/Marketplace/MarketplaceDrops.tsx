@@ -73,7 +73,10 @@ export function MarketplaceDrops() {
             <Skeleton className="h-64 rounded-xl" />
           </div>
         ) : error ? (
-          <div role="alert" className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-amber-200">
+          <div
+            role="alert"
+            className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-notice-foreground"
+          >
             {error}
           </div>
         ) : !isIndexed ? (

@@ -35,10 +35,10 @@ function getStrengthText(strength: number): string {
 }
 
 function getStrengthColor(strength: number): string {
-  if (strength <= 2) return 'text-red-400';
-  if (strength <= 3) return 'text-yellow-400';
-  if (strength <= 4) return 'text-blue-400';
-  return 'text-green-400';
+  if (strength <= 2) return 'text-red-400 [.light_&]:text-red-600';
+  if (strength <= 3) return 'text-yellow-400 [.light_&]:text-yellow-700';
+  if (strength <= 4) return 'text-blue-400 [.light_&]:text-blue-600';
+  return 'text-green-400 [.light_&]:text-green-700';
 }
 
 interface DialogBackupEncryptedProps {

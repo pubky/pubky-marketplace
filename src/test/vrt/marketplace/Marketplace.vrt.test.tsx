@@ -197,6 +197,24 @@ describe('Marketplace — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('marketplace-mobile');
   });
 
+  it('renders the sandbox catalog in light mode at desktop viewport', async () => {
+    const screen = await renderForVRT(<Marketplace />, {
+      viewport: VRT_VIEWPORT_DESKTOP,
+      disableHover: true,
+      theme: 'light',
+    });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('marketplace-light-desktop');
+  });
+
+  it('renders the sandbox catalog in light mode at mobile viewport', async () => {
+    const screen = await renderForVRT(<Marketplace />, {
+      viewport: VRT_VIEWPORT_MOBILE,
+      disableHover: true,
+      theme: 'light',
+    });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('marketplace-light-mobile');
+  });
+
   it('renders the catalog filtered to PayPal sellers at desktop viewport', async () => {
     const { listings } = await fixtures;
     const { useCommerceStore } = await import('@/stores/commerce/commerce.store');

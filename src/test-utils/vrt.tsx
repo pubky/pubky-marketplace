@@ -4,12 +4,21 @@ import { vi } from 'vitest';
 import { commands, page, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-react';
 import { TooltipProvider } from '@/atoms/Tooltip/Tooltip';
+import { THEME_STORAGE_KEY } from '@/config/theme';
 import { TOOLTIP_DELAY_MS } from '@/config/ui';
+import { applyResolvedTheme } from '@/libs/theme/theme';
 import { injectMarketplaceZeroMotion } from './vrt.marketplace-zero-motion';
 import type { VrtViewport } from './vrt.viewports';
 
+export type VrtTheme = 'dark' | 'light';
+
 export interface RenderForVRTOptions {
   viewport: VrtViewport;
+  /**
+   * Colour scheme to capture. Defaults to `dark` (the `:root` tokens); `light`
+   * adds the `.light` class to `<html>` as `ThemeSync` does at runtime.
+   */
+  theme?: VrtTheme;
   /**
    * Render the tree with pointer events disabled so `:hover` styles cannot
    * apply. The browser window's pointer keeps whatever position the last
@@ -142,6 +151,12 @@ export async function renderForVRT(ui: ReactNode, options: RenderForVRTOptions) 
   // A full-surface capture may have enlarged the browser in the previous scene.
   await commands.resizeVrtBrowser();
   await page.viewport(options.viewport.width, options.viewport.height);
+  // Set on every render so a light capture never leaks into the next (dark) scene in the
+  // same browser document. The stored preference keeps `useResolvedTheme` readers in step
+  // with the class instead of following the test browser's colour scheme.
+  const theme = options.theme ?? 'dark';
+  window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  applyResolvedTheme(document.documentElement, theme);
   // Time is already frozen (and the formatting time zone pinned to UTC) by
   // `vrt.setup.ts` before any app module loads — see its "Time determinism"
   // comment block for the rules.
