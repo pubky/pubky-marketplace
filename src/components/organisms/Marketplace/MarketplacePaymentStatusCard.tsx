@@ -70,6 +70,7 @@ import {
 import { isAbandonedReviewOrder } from '@/libs/commerce/checkout-phase';
 import { hasInstantDigitalLines } from '@/libs/commerce/digital';
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
+import { PAYPAL_CHECKOUT_URL_REFUSED_COPY, trustedFiatCheckoutUrl } from '@/libs/commerce/fiat-checkout-url';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import {
   LOCKS_ADMISSION_COPY,
@@ -339,6 +340,7 @@ export function MarketplacePaymentStatusCard({
   const isPaykitRail = isPaykitOrder(order);
   const rail = observedPaymentRail(order);
   const hasBuyerBitcoinProgress = usesMethodFlow && isBuyer && (rail === 'bitcoin' || followsBitcoinFlow(order));
+  const paypalCheckoutUrl = trustedFiatCheckoutUrl(order.fiatCheckoutUrl);
 
   const statusInLabels = confirmedStatusInOrderLabels && visibleStatus === 'confirmed';
 
@@ -824,13 +826,24 @@ export function MarketplacePaymentStatusCard({
                   Complete your payment in PayPal. This page updates when your payment is confirmed.
                 </Typography>
                 <div className="flex flex-wrap items-center gap-3">
-                  <Button asChild className="w-fit rounded-full">
-                    <a href={order.fiatCheckoutUrl} target="_blank" rel="noopener noreferrer">
-                      <Banknote className="size-4" aria-hidden="true" />
-                      Continue to PayPal
-                      <ExternalLink className="size-4" aria-hidden="true" />
-                    </a>
-                  </Button>
+                  {paypalCheckoutUrl ? (
+                    <Button asChild className="w-fit rounded-full">
+                      <a href={paypalCheckoutUrl} target="_blank" rel="noopener noreferrer">
+                        <Banknote className="size-4" aria-hidden="true" />
+                        Continue to PayPal
+                        <ExternalLink className="size-4" aria-hidden="true" />
+                      </a>
+                    </Button>
+                  ) : (
+                    <Typography
+                      as="p"
+                      role="alert"
+                      className="text-sm text-amber-300"
+                      data-testid="paypal-checkout-url-refused"
+                    >
+                      {PAYPAL_CHECKOUT_URL_REFUSED_COPY}
+                    </Typography>
+                  )}
                   {checkoutActions}
                 </div>
               </div>
