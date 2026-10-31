@@ -3,10 +3,12 @@ import {
   type BitcoinPaymentOrder,
   formatBitcoinAmountBreakdown,
   formatBitcoinAwareMoney,
+  satoshiCount,
 } from '@/libs/commerce/bitcoin-payment-code';
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
-import { partialRefundLabel } from '@/libs/commerce/partial-refund';
-import type { CommerceMoney } from '@/libs/commerce/transaction-contracts';
+import { partialRefundLabel, satsRefundIsFull } from '@/libs/commerce/partial-refund';
+import { formatBitcoinAmount } from '@/libs/commerce/pricing';
+import type { CommerceMoney, RefundCap, RefundUnit } from '@/libs/commerce/transaction-contracts';
 import {
   isUsdtRefundOrder,
   type RefundDestination,
@@ -28,7 +30,9 @@ type RefundCopyOrder = {
   bitcoinPayable?: CommerceMoney | null;
   paykitTotalSats?: number | null;
   bitcoinQuote?: BitcoinPaymentOrder['bitcoinQuote'];
-  externalRefund?: { amountMinor: number; transactionId: string } | null;
+  externalRefund?: { amountMinor: number; transactionId: string; amountUnit?: RefundUnit } | null;
+  externalRefundFull?: boolean | null;
+  refundCap?: RefundCap | null;
   paymentReversedAt?: string | null;
   paymentReversalCancelledAt?: string | null;
   gatewayRefundReviewAt?: string | null;
@@ -62,15 +66,29 @@ export function refundRecordLine(order: RefundCopyOrder): string | null {
   if (!refund) return null;
   const partial = partialRefundLabel(order);
   if (isUsdtRefundOrder(order)) return usdtRefundRecordLine(order);
-  const equation = refundEquation(order);
-  const amount = partial ?? `Refunded in full (${equation ?? formatBitcoinAwareMoney(order.total)})`;
+  const breakdown = refundBreakdown(order);
+  const equation = breakdown ? formatBitcoinAmountBreakdown(breakdown) : null;
   if (partial && equation) return `${partial}. ${equation}. Reference: ${refund.transactionId}`;
-  return `${amount}. Reference: ${refund.transactionId}`;
+  if (partial) return `${partial}. Reference: ${refund.transactionId}`;
+  if (refund.amountUnit !== 'sat') {
+    return `Refunded in full (${equation ?? formatBitcoinAwareMoney(order.total)}). Reference: ${refund.transactionId}`;
+  }
+  // Not known to be partial, nor to be full: no claim either way.
+  if (satsRefundIsFull(order) !== true) {
+    return `Refunded ${formatBitcoinAmount(refund.amountMinor)}. Reference: ${refund.transactionId}`;
+  }
+  // A refund in sats is the sats received, which an over- or underpaid order
+  // holds apart from the payable its breakdown adds up to.
+  const full =
+    equation !== null && satoshiCount(breakdown?.payable) === refund.amountMinor
+      ? equation
+      : formatBitcoinAmount(refund.amountMinor);
+  return `Refunded in full (${full}). Reference: ${refund.transactionId}`;
 }
 
-function refundEquation(order: RefundCopyOrder): string | null {
+function refundBreakdown(order: RefundCopyOrder) {
   if (!order.subtotal || !order.shipping) return null;
-  const breakdown = bitcoinPaymentBreakdown({
+  return bitcoinPaymentBreakdown({
     paymentMethod: order.paymentMethod,
     paymentAsset: order.paymentAsset,
     subtotal: order.subtotal,
@@ -81,7 +99,6 @@ function refundEquation(order: RefundCopyOrder): string | null {
     paykitTotalSats: order.paykitTotalSats,
     bitcoinQuote: order.bitcoinQuote,
   });
-  return breakdown ? formatBitcoinAmountBreakdown(breakdown) : null;
 }
 
 /** Plain lines for PayPal reversals and held refund notices, in display order. */

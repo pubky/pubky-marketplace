@@ -816,6 +816,39 @@ describe('MarketplaceOrderActions refund reference labels', () => {
     );
   });
 
+  it('records a USD-priced Bitcoin refund in the sats received and names them', async () => {
+    const order = createOrderFixture('cancelled', {
+      paymentMethod: 'paykit',
+      paymentAsset: null,
+      subtotal: { amountMinor: 12_500, currency: 'USD', exponent: 2 },
+      shipping: { amountMinor: 1_200, currency: 'USD', exponent: 2 },
+      total: { amountMinor: 13_700, currency: 'USD', exponent: 2 },
+      paykitTotalSats: 51_637,
+      bitcoinPayable: { amountMinor: 51_637, currency: 'SAT', exponent: 0 },
+      refundCap: { amountMinor: 53_000, unit: 'sat', exponent: 0 },
+    });
+    const actOnOrder = vi.fn(async () => true);
+    render(<MarketplaceOrderActions order={order} isBuyer={false} canEditReview={false} actOnOrder={actOnOrder} />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Record refund' }));
+    expect(screen.getByLabelText('Amount (₿)')).toHaveValue('53000');
+    expect(screen.queryByLabelText('Amount (USD)')).not.toBeInTheDocument();
+    expect(screen.getByTestId('refund-bitcoin-received')).toHaveTextContent(
+      'Received ₿53,000. Record the refund in bitcoin, up to that amount.',
+    );
+    await user.type(screen.getByLabelText('External payment reference'), 'txid-bitcoin-refund');
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() =>
+      expect(actOnOrder).toHaveBeenCalledWith(order, 'refund.record_external', {
+        amountMinor: 53_000,
+        transactionId: 'txid-bitcoin-refund',
+        amountUnit: 'sat',
+      }),
+    );
+  });
+
   it('tells a PayPal seller to refund in PayPal before recording the return', async () => {
     const order = createOrderFixture('return_received', { paymentMethod: 'paypal' });
     render(

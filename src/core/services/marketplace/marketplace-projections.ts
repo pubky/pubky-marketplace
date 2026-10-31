@@ -15,6 +15,7 @@ import {
   listingStateSchema,
   orderStateSchema,
   PARTIAL_REFUND_ORDER_STATE,
+  refundUnitSchema,
 } from '@/libs/commerce/transaction-contracts';
 import { refundDestinationFieldsShape } from '@/libs/commerce/usdt-refund';
 import { usdtSettlementFieldsShape } from '@/libs/commerce/usdt-settlement-contract';
@@ -724,9 +725,15 @@ export const marketplaceOrderProjectionSchema = z
         recordedAt: z.string(),
         // USDT millionths Arbitrum shows reaching the refund address, when the service checked it.
         receivedUnits: z.number().int().nonnegative().nullish().catch(null),
+        // The unit `amountMinor` is in; absent on a record from a service that names none.
+        amountUnit: refundUnitSchema.optional().catch(undefined),
       })
       .nullable()
       .optional(),
+    // Every participant's: whether `externalRefund` reaches what was paid, in
+    // its unit. Null when it cannot be read against that; absent from a
+    // service that predates it.
+    externalRefundFull: z.boolean().nullish().catch(undefined),
     // PayPal refund notifications (service 94ecb0d). Display-only flags: a
     // malformed value drops the line for that order, never the order.
     paymentReversedAt: z.string().nullish().catch(null),
@@ -825,6 +832,18 @@ export const marketplaceOrderProjectionSchema = z
     paykitSellerConfirmationEnteredAt: z.string().nullable().optional(),
     paykitSellerConfirmationDeadline: z.string().nullable().optional(),
     paykitTotalSats: z.number().int().nonnegative().nullable().optional(),
+    // Seller-only: what a refund is entered in and capped at (the sats a
+    // Bitcoin order received, the USDT paid, or the order total). Absent on
+    // buyer views and from a service that predates it; a malformed value
+    // reads as absent.
+    refundCap: z
+      .object({
+        amountMinor: z.number().int().nonnegative(),
+        unit: refundUnitSchema,
+        exponent: z.number().int().nonnegative(),
+      })
+      .nullish()
+      .catch(undefined),
     // The activated Paykit request's deadline: the wallet's own "pay by".
     // Null until the request is activated (an upstream auction bind starts
     // from the reservation-based hold). Tolerant: a malformed value reads as
