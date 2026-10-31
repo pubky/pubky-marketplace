@@ -32,7 +32,7 @@ const isAuthFlowCanceled = (error: unknown): boolean =>
   (error as { name?: unknown }).name === AUTH_FLOW_CANCELED_ERROR_NAME;
 
 /**
- * Manages the authentication URL lifecycle for Pubky Ring authorization.
+ * Manages the authentication URL lifecycle for Pubky Ring and Bitkit authorization.
  * @param options - Configuration for auth URL generation (autoFetch, type, inviteCode for signup)
  * @returns URL state, loading/expired flags, and fetch/copy actions
  */
@@ -40,7 +40,7 @@ export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
   const autoFetch = options.autoFetch ?? true;
   const type = options.type ?? 'signin';
   const inviteCode = options.type === 'signup' ? options.inviteCode : '';
-  const withPrivKeys = options.type === 'grant' ? options.withPrivKeys : undefined;
+  const withPrivKeys = options.type === 'signup' ? undefined : options.withPrivKeys;
 
   const [url, setUrl] = useState('');
   const [isLoading, setIsLoading] = useState(autoFetch);
@@ -57,11 +57,9 @@ export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
       const { authorizationUrl, awaitApproval } =
         type === 'signup'
           ? await AuthController.getSignupAuthUrl(inviteCode)
-          : type === 'grant'
-            ? await (withPrivKeys === undefined
-                ? AuthController.getGrantAuthUrl()
-                : AuthController.getGrantAuthUrl({ withPrivKeys }))
-            : await AuthController.getAuthUrl();
+          : await (withPrivKeys === undefined
+              ? AuthController.getAuthUrl()
+              : AuthController.getAuthUrl({ withPrivKeys }));
 
       awaitApproval
         .then(async (session: Session) => {
