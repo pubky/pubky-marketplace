@@ -26,7 +26,13 @@ export function useMarketplaceOrderAction(
   const refundEntry = orderRefundEntry(order);
   const returnEntry = orderReturnEntry(order);
   const isUsdt = isUsdtRefundOrder(order);
-  const rail = isUsdt ? 'usdt' : order.paymentMethod === 'paypal' ? 'paypal' : 'other';
+  const rail = isUsdt
+    ? 'usdt'
+    : order.paymentMethod === 'paypal'
+      ? 'paypal'
+      : order.refundCap?.unit === 'sat'
+        ? 'bitcoin'
+        : 'other';
   const form = useForm<MarketplaceOrderActionData>({
     resolver: zodResolver(marketplaceOrderActionSchemaFor(refundEntry, refundedMinor, rail)),
     defaultValues: marketplaceOrderActionDefaults,
@@ -83,6 +89,9 @@ export function useMarketplaceOrderAction(
           succeeded = await actOnOrder(order, 'refund.record_external', {
             amountMinor: refundedMinor + majorToMinor(data.amount, refundEntry.exponent),
             transactionId: isUsdt ? normalizeArbitrumTxHash(data.transactionId) : data.transactionId,
+            // Named only from the cap the service projected: one that predates
+            // the unit refuses a payload field it does not know.
+            ...(order.refundCap ? { amountUnit: order.refundCap.unit } : {}),
           });
           break;
         case 'review':

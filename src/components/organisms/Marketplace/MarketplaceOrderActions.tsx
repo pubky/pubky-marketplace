@@ -19,7 +19,7 @@ import {
 } from '@/hooks/useMarketplaceOrderAction/useMarketplaceOrderAction.types';
 import { usePickupOrderActions } from '@/hooks/usePickupOrderActions/usePickupOrderActions';
 import { reviewAttestationIssuedAt } from '@/libs/commerce/attestation';
-import { orderAmountEntry, orderRefundEntry, orderReturnEntry } from '@/libs/commerce/bitcoin-payment-code';
+import { bitcoinRefundReceivedNote, orderRefundEntry, orderReturnEntry } from '@/libs/commerce/bitcoin-payment-code';
 import { OTHER_CARRIER_ID } from '@/libs/commerce/carriers';
 import { DIGITAL_ORDER_COPY, DIGITAL_SELLER_COPY, isInstantDigitalDeliveryKind } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
@@ -214,8 +214,9 @@ export function MarketplaceOrderActions({
     (['return_received', 'cancelled'].includes(order.state) ||
       (order.fulfillment === 'digital' && ['delivered', 'completed'].includes(order.state)));
   const refundedMinor = paypalRefundedMinor(order);
-  const amountEntry = orderAmountEntry(order);
   const refundEntry = orderRefundEntry(order);
+  const returnEntry = orderReturnEntry(order);
+  const bitcoinReceivedNote = bitcoinRefundReceivedNote(order);
   const isPaypal = order.paymentMethod === 'paypal';
   const isUsdt = isUsdtRefundOrder(order);
   // A USDT refund goes to the address the buyer confirmed; the service refuses
@@ -226,15 +227,14 @@ export function MarketplaceOrderActions({
   const usdtRefundAmount =
     isUsdt &&
     actionType === 'refund' &&
-    new RegExp(`^\\d+(?:\\.\\d{1,${Math.max(amountEntry.exponent, 1)}})?$`).test(refundAmountValue)
-      ? formatUsdtRefundAmount(order, majorToMinor(refundAmountValue, amountEntry.exponent))
+    new RegExp(`^\\d+(?:\\.\\d{1,${Math.max(refundEntry.exponent, 1)}})?$`).test(refundAmountValue)
+      ? formatUsdtRefundAmount(order, majorToMinor(refundAmountValue, refundEntry.exponent))
       : null;
-  const { unitLabel } = actionType === 'return' ? orderReturnEntry(order) : amountEntry;
-  const amountLabel = `Amount (${unitLabel})`;
+  const amountLabel = `Amount (${(actionType === 'refund' ? refundEntry : returnEntry).unitLabel})`;
   const refundedMoney =
-    amountEntry.unitLabel === '₿'
+    refundEntry.unitLabel === '₿'
       ? formatBitcoinAmount(refundedMinor)
-      : amountEntry.unitLabel === 'USDT'
+      : refundEntry.unitLabel === 'USDT'
         ? formatUsdt(refundedMinor)
         : formatCommerceMoney({ ...order.total, amountMinor: refundedMinor });
   const refundCapMoney =
@@ -592,6 +592,11 @@ export function MarketplaceOrderActions({
             </Typography>
           )}
           {actionType === 'refund' && <MarketplaceBitcoinAmountBreakdown order={order} />}
+          {actionType === 'refund' && bitcoinReceivedNote && (
+            <Typography as="p" className="text-sm text-muted-foreground" data-testid="refund-bitcoin-received">
+              {bitcoinReceivedNote}
+            </Typography>
+          )}
           {(actionType === 'return' || (actionType === 'refund' && (refundedMinor === 0 || !isPaypal))) && (
             <ControlledInputField name="amount" control={action.form.control} label={amountLabel} />
           )}

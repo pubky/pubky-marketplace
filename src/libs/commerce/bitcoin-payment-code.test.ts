@@ -4,6 +4,7 @@ import projectionSamples from '@/libs/commerce/contracts/samples/projections.jso
 import { createBitcoinQuotedOrderFixture, createOrderFixture } from '@/test/fixtures/commerce/orders';
 import {
   bitcoinPaymentBreakdown,
+  bitcoinRefundReceivedNote,
   formatBitcoinAmountBreakdown,
   orderAmountEntry,
   orderRefundEntry,
@@ -124,6 +125,35 @@ describe('bitcoin payment code', () => {
     expect(formatBitcoinAmountBreakdown(bitcoinPaymentBreakdown(order)!)).toBe(SAMPLE_EQUATION);
   });
 
+  it('reads the refund cap the seller projection carries and drops a malformed one', () => {
+    const wire = projectionBody('buyer_awaiting_confirmation');
+    wire.refund_cap = { amount_minor: 53_000, unit: 'sat', exponent: 0 };
+    expect(parseOrder(wire).refundCap).toEqual({ amountMinor: 53_000, unit: 'sat', exponent: 0 });
+    wire.refund_cap = { amount_minor: 53_000, unit: 'cents', exponent: 0 };
+    expect(parseOrder(wire).refundCap).toBeUndefined();
+  });
+
+  it('reads the unit a refund record names and drops an unknown one', () => {
+    const wire = projectionBody('buyer_awaiting_confirmation');
+    const record = { amount_minor: 20_000, transaction_id: 'txid', recorded_at: '2026-08-27T20:00:00.000Z' };
+    wire.external_refund = { ...record, amount_unit: 'sat' };
+    expect(parseOrder(wire).externalRefund?.amountUnit).toBe('sat');
+    wire.external_refund = { ...record, amount_unit: 'cents' };
+    expect(parseOrder(wire).externalRefund?.amountUnit).toBeUndefined();
+    wire.external_refund = record;
+    expect(parseOrder(wire).externalRefund?.amountUnit).toBeUndefined();
+  });
+
+  it('reads whether the refund is full and drops a malformed flag', () => {
+    const wire = projectionBody('buyer_awaiting_confirmation');
+    wire.external_refund_full = false;
+    expect(parseOrder(wire).externalRefundFull).toBe(false);
+    wire.external_refund_full = null;
+    expect(parseOrder(wire).externalRefundFull).toBeNull();
+    wire.external_refund_full = 'false';
+    expect(parseOrder(wire).externalRefundFull).toBeUndefined();
+  });
+
   it('stays quiet before a code exists, on other rails, and when the parts would not add', () => {
     expect(bitcoinPaymentBreakdown(createOrderFixture('pending_payment', { paymentMethod: 'bitcoin' }))).toBeNull();
     expect(
@@ -232,5 +262,100 @@ describe('return amount entry', () => {
       exponent: 2,
       unitLabel: 'USD',
     });
+  });
+});
+
+describe('refund amount entry for a Bitcoin payment', () => {
+  const usd = (cents: number) => ({ amountMinor: cents, currency: 'USD', exponent: 2 });
+  const sat = (sats: number) => ({ amountMinor: sats, currency: 'SAT', exponent: 0 });
+  const usdPriced = {
+    paymentMethod: 'paykit' as const,
+    paymentAsset: null,
+    subtotal: usd(12_500),
+    shipping: usd(1_200),
+    total: usd(13_700),
+    paykitTotalSats: 51_637,
+    bitcoinPayable: sat(51_637),
+  };
+
+  it('is the sats the service caps a Bitcoin refund at, whatever the price currency', () => {
+    expect(
+      orderRefundEntry(
+        createOrderFixture('cancelled', { ...usdPriced, refundCap: { amountMinor: 53_000, unit: 'sat', exponent: 0 } }),
+      ),
+    ).toEqual({ amountMinor: 53_000, exponent: 0, unitLabel: '₿' });
+  });
+
+  it('keeps the order total when the service caps it there', () => {
+    // A request that also offered USDT and records no rail: the service does
+    // not take it for Bitcoin, so the Shop does not either.
+    const unknownRail = createOrderFixture('cancelled', {
+      ...usdPriced,
+      refundCap: { amountMinor: 13_700, unit: 'order', exponent: 2 },
+    });
+    expect(orderRefundEntry(unknownRail)).toEqual({ amountMinor: 13_700, exponent: 2, unitLabel: 'USD' });
+    const satPriced = createOrderFixture('cancelled', {
+      paymentMethod: 'paykit',
+      total: sat(50_037),
+      refundCap: { amountMinor: 50_037, unit: 'order', exponent: 0 },
+    });
+    expect(orderRefundEntry(satPriced)).toEqual({ amountMinor: 50_037, exponent: 0, unitLabel: '₿' });
+  });
+
+  it('is the USDT paid when the service caps it there', () => {
+    const order = createOrderFixture('cancelled', {
+      paymentMethod: 'paykit',
+      paymentAsset: 'USDT',
+      paymentAmountMinor: 41_250_000,
+      total: { amountMinor: 3_800, currency: 'EUR', exponent: 2 },
+      refundCap: { amountMinor: 41_250_000, unit: 'usdt0', exponent: 6 },
+    });
+    expect(orderRefundEntry(order)).toEqual({ amountMinor: 41_250_000, exponent: 6, unitLabel: 'USDT' });
+  });
+
+  it('is the USDT received in cents for a USD order, above the total when overpaid', () => {
+    const order = createOrderFixture('cancelled', {
+      paymentMethod: 'paykit',
+      paymentAsset: 'USDT',
+      paymentAmountMinor: 138_000_000,
+      total: usd(13_700),
+      refundCap: { amountMinor: 13_800, unit: 'order', exponent: 2 },
+    });
+    expect(orderRefundEntry(order)).toEqual({ amountMinor: 13_800, exponent: 2, unitLabel: 'USD' });
+  });
+
+  it('keeps the earlier entry without a projected cap', () => {
+    const bitcoin = createOrderFixture('cancelled', usdPriced);
+    expect(orderRefundEntry(bitcoin)).toEqual(orderAmountEntry(bitcoin));
+    // A USDT order is still capped at the USDT it received.
+    const underpaid = createOrderFixture('cancelled', {
+      paymentMethod: 'paykit',
+      paymentAsset: 'USDT',
+      paymentAmountMinor: 136_000_000,
+      total: usd(13_700),
+    });
+    expect(orderRefundEntry(underpaid)).toEqual({ amountMinor: 13_600, exponent: 2, unitLabel: 'USD' });
+  });
+
+  it('names the sats received beside the form unless the breakdown already ends on them', () => {
+    const received = (amountMinor: number) => ({ amountMinor, unit: 'sat' as const, exponent: 0 });
+    const order = createOrderFixture('cancelled', { ...usdPriced, refundCap: received(51_637) });
+    expect(bitcoinRefundReceivedNote(order)).toBe('Received ₿51,637. Record the refund in bitcoin, up to that amount.');
+    const brokenDown = createOrderFixture('cancelled', {
+      ...usdPriced,
+      subtotal: sat(48_000),
+      shipping: sat(2_000),
+      merchandiseTotal: sat(50_000),
+      total: sat(51_637),
+      refundCap: received(51_637),
+    });
+    expect(bitcoinRefundReceivedNote(brokenDown)).toBeNull();
+    expect(bitcoinRefundReceivedNote({ ...brokenDown, refundCap: received(50_500) })).toBe(
+      'Received ₿50,500. Record the refund in bitcoin, up to that amount.',
+    );
+    expect(
+      bitcoinRefundReceivedNote({ ...order, refundCap: { amountMinor: 13_700, unit: 'order', exponent: 2 } }),
+    ).toBeNull();
+    expect(bitcoinRefundReceivedNote({ ...order, refundCap: undefined })).toBeNull();
   });
 });
