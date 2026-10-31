@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AwaitingReleaseReview } from '@/application/commerce/commerce';
 import { COMMERCE_REVIEW_EDIT_WINDOW_SECONDS } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { ORDER_COMMAND_UNSENDABLE_COPY } from '@/hooks/useMarketplaceOrderAction/useMarketplaceOrderAction.types';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import { marketplaceOrderSchema } from '@/services/marketplace/marketplace-projections';
@@ -847,6 +848,21 @@ describe('MarketplaceOrderActions refund reference labels', () => {
         amountUnit: 'sat',
       }),
     );
+  });
+
+  it('says in the dialog, and sends nothing, when the Shop refuses the refund it built', async () => {
+    const order = createOrderFixture('cancelled', { paymentMethod: 'paypal', id: 'not-an-order-id' });
+    const actOnOrder = vi.fn(async () => true);
+    render(<MarketplaceOrderActions order={order} isBuyer={false} canEditReview={false} actOnOrder={actOnOrder} />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Record refund' }));
+    await user.type(screen.getByLabelText('PayPal refund transaction id'), 'PAYPALREFUND100');
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(ORDER_COMMAND_UNSENDABLE_COPY);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(actOnOrder).not.toHaveBeenCalled();
   });
 
   it('tells a PayPal seller to refund in PayPal before recording the return', async () => {

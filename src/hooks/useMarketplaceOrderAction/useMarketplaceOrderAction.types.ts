@@ -52,6 +52,15 @@ export const marketplaceOrderActionSchema = z
     if (['cancel', 'return'].includes(data.action) && !data.reason) {
       context.addIssue({ code: 'custom', path: ['reason'], message: 'Reason is required.' });
     }
+    // The service's own limits: 500 characters for a cancellation, 1,000 for a return.
+    const reasonMax = data.action === 'cancel' ? 500 : data.action === 'return' ? 1_000 : null;
+    if (reasonMax !== null && data.reason.length > reasonMax) {
+      context.addIssue({
+        code: 'custom',
+        path: ['reason'],
+        message: `Keep the reason to ${reasonMax.toLocaleString('en-US')} characters.`,
+      });
+    }
     if (data.action === 'ship' && data.carrierChoice === NO_CARRIER_CHOICE) {
       context.addIssue({ code: 'custom', path: ['carrierChoice'], message: CARRIER_CHOICE_COPY.required });
     }
@@ -188,6 +197,10 @@ export const marketplaceOrderActionDefaults: MarketplaceOrderActionData = {
   sellerCommunication: '',
   allowAmountBand: false,
 };
+
+/** The dialog's line when the Shop refuses the command it built, so nothing was sent. */
+export const ORDER_COMMAND_UNSENDABLE_COPY =
+  'This could not be sent: the Shop refused the request it built, so nothing was recorded. Reload the page and try again.';
 
 /** Stars a listing starts at in the review dialog. */
 export const REVIEW_DEFAULT_RATING = '5';
