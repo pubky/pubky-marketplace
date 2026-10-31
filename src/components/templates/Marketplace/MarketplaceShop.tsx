@@ -19,6 +19,7 @@ import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
 import { useLiveSellerShop } from '@/hooks/useLiveSellerShop/useLiveSellerShop';
 import {
   buildMarketplaceCatalogItems,
+  isCatalogItemOpen,
   type MarketplaceCatalogItem,
 } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { useMarketplaceMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
@@ -67,10 +68,13 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
   // plus Nexus index projections discovered for this seller.
   const sellerListings = useLiveQuery(() => CommerceController.getListingsBySeller(sellerPubky), [sellerPubky]);
   const sellerEntries = useLiveQuery(() => CommerceController.getCatalogEntriesBySeller(sellerPubky), [sellerPubky]);
+  // The local cache also holds records in other states (a review's listing is
+  // read for its summary even when paused), so the storefront keeps only what
+  // a buyer can act on, like the home grid.
   const listings =
     sellerListings === undefined || sellerEntries === undefined
       ? undefined
-      : buildMarketplaceCatalogItems(sellerListings, sellerEntries);
+      : buildMarketplaceCatalogItems(sellerListings, sellerEntries).filter((item) => isCatalogItemOpen(item));
 
   const isLoading = listings === undefined || shop === undefined || (!shop && !shopFetchSettled);
 
