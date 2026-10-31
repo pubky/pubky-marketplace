@@ -5,7 +5,9 @@ import { useForm } from 'react-hook-form';
 import { orderRefundEntry, orderReturnEntry } from '@/libs/commerce/bitcoin-payment-code';
 import { buyerSellerRatings, reviewListingAggregateId, reviewsOfReviewer } from '@/libs/commerce/order-reviews';
 import { resolveTrackingCarrierName } from '@/libs/commerce/order-tracking';
+import { orderCommandPayloadIssues } from '@/libs/commerce/transaction-commands';
 import { isUsdtRefundOrder, normalizeArbitrumTxHash } from '@/libs/commerce/usdt-refund';
+import { Logger } from '@/libs/logger/logger';
 import { toast } from '@/molecules/Toaster/use-toast';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import {
@@ -14,6 +16,7 @@ import {
   type MarketplaceOrderActionData,
   marketplaceOrderActionDefaults,
   marketplaceOrderActionSchemaFor,
+  ORDER_COMMAND_UNSENDABLE_COPY,
   paypalRefundedMinor,
   type ReviewItemDraft,
 } from './useMarketplaceOrderAction.types';
@@ -57,12 +60,23 @@ export function useMarketplaceOrderAction(
     });
   };
 
+  // A payload the Shop's own command contract refuses never leaves the
+  // client, and `actOnOrder` would only toast a generic failure: the dialog
+  // says so itself.
+  const send = async (kind: string, payload: Record<string, unknown>) => {
+    const issues = orderCommandPayloadIssues(kind, order.id, payload);
+    if (!issues) return await actOnOrder(order, kind, payload);
+    Logger.error('[useMarketplaceOrderAction] The Shop refused its own order command', { kind, issues });
+    form.setError('root', { message: ORDER_COMMAND_UNSENDABLE_COPY });
+    return false;
+  };
+
   const submit = async (): Promise<boolean> => {
     let succeeded = false;
     await form.handleSubmit(async (data) => {
       switch (data.action) {
         case 'cancel':
-          succeeded = await actOnOrder(order, 'order.cancel_request', { reason: data.reason });
+          succeeded = await send('order.cancel_request', { reason: data.reason });
           break;
         case 'ship':
           // The service's `carrier` field is a structured free string; the
@@ -72,13 +86,13 @@ export function useMarketplaceOrderAction(
           // `Other` when none was given. The tracking number is optional: a
           // blank one is left out and added later with
           // `fulfillment.update_tracking`.
-          succeeded = await actOnOrder(order, 'fulfillment.ship', {
+          succeeded = await send('fulfillment.ship', {
             carrier: resolveTrackingCarrierName(data.carrierChoice, data.carrier),
             ...(data.trackingNumber ? { trackingNumber: data.trackingNumber } : {}),
           });
           break;
         case 'return':
-          succeeded = await actOnOrder(order, 'return.request', {
+          succeeded = await send('return.request', {
             reason: data.reason,
             requestedAmountMinor: majorToMinor(data.amount, returnEntry.exponent),
           });
@@ -86,7 +100,7 @@ export function useMarketplaceOrderAction(
         case 'refund':
           // The record replaces PayPal's running sum, so it carries the
           // recorded total, never below what PayPal already refunded.
-          succeeded = await actOnOrder(order, 'refund.record_external', {
+          succeeded = await send('refund.record_external', {
             amountMinor: refundedMinor + majorToMinor(data.amount, refundEntry.exponent),
             transactionId: isUsdt ? normalizeArbitrumTxHash(data.transactionId) : data.transactionId,
             // Named only from the cap the service projected: one that predates
@@ -96,7 +110,7 @@ export function useMarketplaceOrderAction(
           break;
         case 'review':
           if (data.reviewItems.length > 0) {
-            succeeded = await actOnOrder(order, 'review.create', {
+            succeeded = await send('review.create', {
               items: reviewItemTerms(data.reviewItems),
               ...sellerRatingTerms(data),
               // D2 both-sides consent: this is only half the gate — the
@@ -105,7 +119,7 @@ export function useMarketplaceOrderAction(
             });
             break;
           }
-          succeeded = await actOnOrder(order, 'review.create', {
+          succeeded = await send('review.create', {
             rating: Number(data.rating),
             text: data.text,
             allowAmountBand: data.allowAmountBand,
@@ -116,7 +130,7 @@ export function useMarketplaceOrderAction(
           // `expected_revision` from the loaded order. A revision conflict
           // re-reads the order and succeeds when that review is already there.
           if (data.reviewItems.length === 0) {
-            succeeded = await actOnOrder(order, 'review.update', {
+            succeeded = await send('review.update', {
               rating: Number(data.rating),
               text: data.text,
             });
@@ -143,7 +157,7 @@ export function useMarketplaceOrderAction(
             succeeded = true;
             break;
           }
-          succeeded = await actOnOrder(order, 'review.update', {
+          succeeded = await send('review.update', {
             items: reviewItemTerms(changed.length > 0 ? changed : data.reviewItems.slice(0, 1)),
             ...(sellerChanged ? seller : {}),
           });

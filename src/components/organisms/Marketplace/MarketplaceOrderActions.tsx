@@ -681,6 +681,11 @@ export function MarketplaceOrderActions({
               amount band.
             </p>
           )}
+          {action.form.formState.errors.root?.message && (
+            <Typography as="p" role="alert" className="text-sm text-destructive" data-testid="order-action-unsent">
+              {action.form.formState.errors.root.message}
+            </Typography>
+          )}
           <DialogFooter>
             <Button variant="secondary" className="rounded-full" onClick={() => setOpen(false)}>
               Cancel
