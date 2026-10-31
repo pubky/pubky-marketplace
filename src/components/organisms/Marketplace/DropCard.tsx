@@ -74,7 +74,7 @@ export function DropCard({
           )}
         >
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_20%,rgba(255,255,255,0.16),transparent_32%)]" />
-          <CalendarClock className="size-16 text-foreground opacity-80" aria-hidden="true" />
+          <CalendarClock className="size-16 text-foreground-strong opacity-80" aria-hidden="true" />
           {mediaUrl && !mediaFailed && (
             <Image
               src={mediaUrl}

@@ -150,8 +150,8 @@ export function MarketplaceSectionNav({
                   }
                 }}
                 className={cn(
-                  'relative inline-flex min-h-12 flex-1 shrink-0 items-center justify-center gap-2 border-b px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors hover:text-foreground',
-                  active ? 'border-foreground text-foreground' : 'border-border text-muted-foreground',
+                  'relative inline-flex min-h-12 flex-1 shrink-0 items-center justify-center gap-2 border-b px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors hover:text-foreground-strong',
+                  active ? 'border-foreground-strong text-foreground-strong' : 'border-border text-muted-foreground',
                 )}
               >
                 <Icon className="size-5 shrink-0" aria-hidden="true" />

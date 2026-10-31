@@ -102,6 +102,6 @@ describe('PopoverBackup', () => {
   it('merges a custom className onto the trigger button', () => {
     render(<PopoverBackup className="custom-backup-style" />);
 
-    expect(screen.getByTestId('button-ghost')).toHaveClass('hover:bg-foreground/10', 'custom-backup-style');
+    expect(screen.getByTestId('button-ghost')).toHaveClass('hover:bg-foreground-strong/10', 'custom-backup-style');
   });
 });

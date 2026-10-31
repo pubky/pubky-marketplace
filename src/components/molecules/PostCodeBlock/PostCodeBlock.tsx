@@ -38,7 +38,7 @@ export const PostCodeBlock = (props: PostCodeBlockProps) => {
     // The oneDark body is dark in both themes, so its chrome keeps light text in light mode too.
     <Container overrideDefaults className="max-w-69.5 xsm:max-w-72 sm:max-w-120 md:max-w-168 lg:max-w-130 xl:max-w-175">
       <Container className="flex-row items-center justify-between gap-x-2 rounded-t-md bg-gray-600 px-4 [.light_&]:text-white">
-        <Typography size="sm" className="text-white">
+        <Typography size="sm" className="[.light_&]:text-white">
           {lang}
         </Typography>
 
@@ -53,7 +53,7 @@ export const PostCodeBlock = (props: PostCodeBlockProps) => {
         >
           {copied ? <Check size={16} /> : <Clipboard size={16} />}
 
-          <Typography size="sm" className="text-white">
+          <Typography size="sm" className="[.light_&]:text-white">
             {copied ? 'Copied!' : 'Copy'}
           </Typography>
         </Button>

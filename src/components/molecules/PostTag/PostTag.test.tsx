@@ -96,10 +96,10 @@ describe('PostTag', () => {
     const tag = screen.getByRole('button');
     const day = getTagDayPalette('#123456');
 
-    expect(tag).toHaveClass('tag-palette', 'text-(--tag-label)');
+    expect(tag).toHaveClass('tag-palette', 'text-white', '[.light_&]:text-(--tag-label)');
     expect(tag.style.backgroundImage).toBe('var(--tag-fill)');
     expect(tag.style.getPropertyValue('--tag-night-fill')).toBe(
-      'linear-gradient(90deg, var(--tag-overlay) 0%, var(--tag-overlay) 100%), linear-gradient(90deg, #123456 0%, #123456 100%)',
+      'linear-gradient(90deg, rgba(5, 5, 10, 0.7) 0%, rgba(5, 5, 10, 0.7) 100%), linear-gradient(90deg, #123456 0%, #123456 100%)',
     );
     expect(tag.style.getPropertyValue('--tag-night-edge')).toBe('#123456');
     expect(tag.style.getPropertyValue('--tag-day-fill')).toBe(

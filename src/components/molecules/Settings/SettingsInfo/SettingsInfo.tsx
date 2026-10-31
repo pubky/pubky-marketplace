@@ -39,7 +39,7 @@ export function SettingsInfo({ className, hideFAQ = false }: SettingsInfoProps) 
               <Link key={question} href={SETTINGS_ROUTES.HELP}>
                 <Container
                   overrideDefaults
-                  className="relative w-full min-w-0 cursor-pointer rounded-md border border-border p-4 transition-colors hover:border-foreground"
+                  className="relative w-full min-w-0 cursor-pointer rounded-md border border-border p-4 transition-colors hover:border-foreground-strong"
                 >
                   <Typography
                     as="span"

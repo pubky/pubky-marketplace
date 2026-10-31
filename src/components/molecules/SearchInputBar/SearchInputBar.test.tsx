@@ -72,7 +72,7 @@ vi.mock('@/config/search', () => ({
     background: 'linear-gradient(180deg, var(--background) 0%, var(--background) 100%)',
   },
   SEARCH_EXPANDED_STYLE: {
-    background: 'linear-gradient(180deg, var(--background) 0%, var(--search-expanded-fade) 100%)',
+    background: 'linear-gradient(180deg, var(--background) 0%, var(--search-expanded-fade, rgba(5, 5, 10, 0.50)) 100%)',
     backdropFilter: 'blur(25px)',
     boxShadow: '0px 50px 100px rgba(0, 0, 0, 1)',
     maxHeight: '300px',

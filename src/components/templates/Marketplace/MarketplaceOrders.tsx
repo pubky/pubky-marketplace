@@ -411,7 +411,7 @@ export function MarketplaceOrders() {
                       type="button"
                       size="sm"
                       variant="ghost"
-                      className="rounded-none border-0 border-b border-solid border-transparent bg-transparent shadow-none aria-selected:border-foreground aria-selected:text-foreground"
+                      className="rounded-none border-0 border-b border-solid border-transparent bg-transparent shadow-none aria-selected:border-foreground-strong aria-selected:text-foreground-strong"
                       role="tab"
                       aria-selected={activeTab === tab.id}
                       aria-label={`${tab.label} ${orderCounts[tab.id]}`}
@@ -422,7 +422,9 @@ export function MarketplaceOrders() {
                     >
                       {tab.label}
                       <span
-                        className={activeTab === tab.id ? 'text-xs text-foreground' : 'text-xs text-muted-foreground'}
+                        className={
+                          activeTab === tab.id ? 'text-xs text-foreground-strong' : 'text-xs text-muted-foreground'
+                        }
                       >
                         {orderCounts[tab.id]}
                       </span>

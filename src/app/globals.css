@@ -51,6 +51,7 @@ body {
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
   --color-brand: var(--brand);
+  --color-foreground-strong: var(--foreground-strong);
   --color-glass: var(--glass);
   --color-glass-hover: var(--glass-hover);
   --color-glass-strong: var(--glass-strong);
@@ -135,15 +136,24 @@ body {
   --sidebar-ring: oklch(0.472 0.007 274.863);
   --brand: oklch(0.928 0.23 123.978);
   /**
+   * Text, borders and washes the dark page draws in pure white (headings, active tabs,
+   * dialog copy, step markers); the foreground in light mode. Keep Tailwind's `white`
+   * (not `--foreground`, which is `oklch(1 0 0)`) so `text-foreground-strong/80` and friends
+   * compute exactly as `text-white/80` did.
+   */
+  --foreground-strong: var(--color-white);
+  /**
    * Translucent chrome fill for outline-style controls (nav buttons, FAB,
    * sidebar "See all", checkbox/radio wells). Mirrors the Figma variable
    * `custom/background dark:input\30`: a faint white wash in dark mode and
    * the opaque card surface in light mode, so these controls read lighter
    * than the grey light page. Hover follows `custom/accent dark:input\50`.
+   * Dark values are the `bg-white/5`, `/10` and `/12` mixes. They mix `var(--color-white)`
+   * rather than a literal so the CSS minifier cannot pre-resolve them into a different colour.
    */
-  --glass: rgb(255 255 255 / 0.05);
-  --glass-hover: rgb(255 255 255 / 0.1);
-  --glass-strong: rgb(255 255 255 / 0.12);
+  --glass: color-mix(in oklab, var(--color-white) 5%, transparent);
+  --glass-hover: color-mix(in oklab, var(--color-white) 10%, transparent);
+  --glass-strong: color-mix(in oklab, var(--color-white) 12%, transparent);
   /**
    * Surface of the `outline` Button variant. Dark mode matches `bg-input/30`.
    * Light mode uses the card surface, so these buttons read lighter than the page.
@@ -153,8 +163,6 @@ body {
   --action-pill: var(--secondary);
   /** Surface of a post or link embedded in a post (repost preview, link preview): muted in dark, page in light. */
   --embed: var(--muted);
-  /** Wash laid over a tag's colour in PostTag (Figma `alpha/30` → 70% background). */
-  --tag-overlay: rgb(5 5 10 / 0.7);
   /**
    * Shop status text. `warning` is inline alert and form error text; `notice` is the body of
    * an amber notice panel (`border-amber-500/30 bg-amber-500/10`). Both keep the pale amber
@@ -167,7 +175,10 @@ body {
   --transparent: oklch(0.118 0.014 284.115 / 0);
   --search-closed-from: #07040a;
   --search-closed-to: #1b1820;
-  --search-expanded-fade: rgba(5, 5, 10, 0.5);
+  /**
+   * No dark `--search-expanded-fade`: the CSS minifier would round its alpha to 8 bits, so dark
+   * keeps the exact inline fallback in `config/search.ts`. Light mode sets it below.
+   */
   --search-expanded-shadow: rgba(0, 0, 0, 1);
   --scrollbar-size: 10px;
   --scrollbar-radius: 100%;
@@ -495,13 +506,13 @@ body {
   --sidebar-border: #babac1;
   --sidebar-ring: oklch(0.55 0.008 274.863);
   --brand: #88ad00;
+  --foreground-strong: var(--foreground);
   --glass: var(--card);
   --glass-hover: var(--accent);
   --glass-strong: var(--card);
   --button-outline: var(--card);
   --action-pill: var(--background);
   --embed: var(--background);
-  --tag-overlay: rgb(255 255 255 / 0.7);
   --warning-foreground: var(--color-amber-800);
   --notice-foreground: var(--color-amber-800);
   --toast-action-muted: #f4f4f9;
@@ -729,16 +740,20 @@ body {
 
   /* Thicker white caret for focused inputs (used by PostTagInput) */
   .caret-white {
-    caret-color: var(--foreground);
+    caret-color: white;
   }
   .caret-thick::selection {
     /* noop: selection styles kept default */
   }
   input.caret-white {
-    caret-color: var(--foreground);
+    caret-color: #fff;
   }
   /* Some browsers allow caret-width via proprietary property */
   input.caret-thick {
+    caret-color: #fff;
+  }
+  .light .caret-white,
+  .light input.caret-thick {
     caret-color: var(--foreground);
   }
 

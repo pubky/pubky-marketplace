@@ -1,16 +1,10 @@
 import { X } from 'lucide-react';
 import { Tag } from '@/atoms/Tag/Tag';
 import { Toggle } from '@/atoms/Toggle/Toggle';
+import { COLORS } from '@/config/theme';
 import { getTagDayPalette, getTagPaletteStyle } from '@/libs/utils/tagPalette';
-import { cn, generateRandomColor } from '@/libs/utils/utils';
+import { cn, generateRandomColor, hexToRgba } from '@/libs/utils/utils';
 import type { PostTagProps } from './PostTag.types';
-
-/**
- * Night mode wash laid over the tag colour: `--tag-overlay` is 70% background
- * (Figma `alpha/30`), darkening the chip so `text-foreground` stays legible.
- * Day mode uses a solid pastel chip from `getTagDayPalette` instead.
- */
-const TAG_OVERLAY = 'var(--tag-overlay)';
 
 export function PostTag({
   label,
@@ -24,7 +18,7 @@ export function PostTag({
   ...rest
 }: PostTagProps) {
   const tagColor = color || generateRandomColor(label);
-  const backgroundGradient = `linear-gradient(90deg, ${TAG_OVERLAY} 0%, ${TAG_OVERLAY} 100%), linear-gradient(90deg, ${tagColor} 0%, ${tagColor} 100%)`;
+  const backgroundGradient = `linear-gradient(90deg, ${hexToRgba(COLORS.background, 0.7)} 0%, ${hexToRgba(COLORS.background, 0.7)} 100%), linear-gradient(90deg, ${tagColor} 0%, ${tagColor} 100%)`;
   const day = getTagDayPalette(tagColor);
   const paletteStyle = getTagPaletteStyle({
     nightFill: backgroundGradient,
@@ -54,12 +48,12 @@ export function PostTag({
       data-tag-label={label}
       className={cn(
         'tag-palette group/tag relative h-8 max-w-full gap-1 rounded-md px-3 backdrop-blur-lg',
-        'border-0 text-sm leading-5 font-bold text-(--tag-label) subpixel-antialiased',
+        'border-0 text-sm leading-5 font-bold text-white subpixel-antialiased [.light_&]:text-(--tag-label)',
         'transition-all duration-200',
         // Override Toggle default hover styles - keep text colour
-        'hover:bg-transparent hover:text-(--tag-label)',
+        'hover:bg-transparent hover:text-white [.light_&]:hover:text-(--tag-label)',
         // Selected state - add border
-        'data-[state=on]:border data-[state=on]:border-solid data-[state=on]:bg-transparent data-[state=on]:text-(--tag-label)',
+        'data-[state=on]:border data-[state=on]:border-solid data-[state=on]:bg-transparent data-[state=on]:text-white [.light_&]:data-[state=on]:text-(--tag-label)',
         className,
       )}
       style={{

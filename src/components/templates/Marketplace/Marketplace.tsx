@@ -188,7 +188,7 @@ export function Marketplace({
                   size="xl"
                   className="relative pr-8 text-3xl leading-tight sm:text-4xl lg:pr-0 lg:text-5xl"
                 >
-                  <span className="text-foreground">Find something rare.</span>{' '}
+                  <span className="text-foreground-strong">Find something rare.</span>{' '}
                   <span className="text-brand">Trade freely.</span>
                 </Heading>
                 <div className="relative mt-6 hidden w-full gap-6 sm:grid sm:grid-cols-3">

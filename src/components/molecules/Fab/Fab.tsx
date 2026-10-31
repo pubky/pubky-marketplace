@@ -84,7 +84,7 @@ export function Fab() {
     'flex items-center justify-center',
     'bg-glass-strong backdrop-blur-lg',
     'hover:bg-brand',
-    'text-foreground',
+    'text-foreground-strong',
     'shadow-xl transition-colors',
     'group cursor-pointer',
     'z-40',

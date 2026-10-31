@@ -29,7 +29,7 @@ export function ProgressSteps({ currentStep, totalSteps, className }: ProgressSt
                     className={cn(
                       'h-8 w-8 transform items-center justify-center rounded-full font-bold transition-all duration-500 ease-in-out',
                       isActive ? 'bg-foreground text-background' : 'border text-muted-foreground',
-                      isCompleted && 'border-foreground bg-transparent text-foreground',
+                      isCompleted && 'border-foreground-strong bg-transparent text-foreground-strong',
                     )}
                   >
                     <Container
@@ -49,7 +49,7 @@ export function ProgressSteps({ currentStep, totalSteps, className }: ProgressSt
                       {/* Animated line */}
                       <Container
                         className={cn(
-                          'absolute inset-0 transform bg-foreground transition-all duration-500 ease-out',
+                          'absolute inset-0 transform bg-foreground-strong transition-all duration-500 ease-out',
                           stepNumber < currentStep ? 'translate-x-0' : '-translate-x-full',
                         )}
                       />
