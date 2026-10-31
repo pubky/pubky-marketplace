@@ -24,6 +24,10 @@ const unsupported = () => Promise.reject(new DOMException('Unrecognized name.', 
 
 const shopMarkers = () => Object.keys(localStorage).filter((name) => name.startsWith('shop-owned-grant-v1:'));
 
+/** The Shop reads Paykit records but never writes them, so its sign-in asks for no scope there. */
+const paykitEntries = (url: URL) =>
+  (url.searchParams.get('caps') ?? '').split(',').filter((entry) => entry.startsWith('/pub/paykit'));
+
 let relayOnline = true;
 /** Relay requests still open; a freed flow's background poll must end before the next test changes the relay. */
 let openRelayRequests = 0;
@@ -100,6 +104,7 @@ describe('Shop grant sign-in without WebCrypto Ed25519 (real SDK)', () => {
       expect(url.protocol).toBe('pubkyauth:');
       expect(url.host).toBe('signin_grant');
       expect(url.searchParams.get('caps')).toBe(CAPABILITIES);
+      expect(paykitEntries(url)).toEqual([]);
       expect(url.searchParams.get('cid')).toBe(getShopGrantClientId());
       expect(PublicKey.from(url.searchParams.get('cpk')!).toUint8Array()).toHaveLength(32);
       // No browser-held key entry exists, so nothing is marked for key cleanup.
@@ -153,6 +158,7 @@ describe('Shop grant sign-in without WebCrypto Ed25519 (real SDK)', () => {
     try {
       const url = new URL(flow.authorizationUrl);
       expect(url.searchParams.get('caps')).toBe(KEYED_CAPABILITIES);
+      expect(paykitEntries(url)).toEqual([]);
       expect(url.searchParams.get('af')).toBe('v1');
       expect(shopMarkers()).toEqual([]);
       await vi.waitFor(() => expect(resume).toHaveBeenCalled(), { timeout: 5000 });
