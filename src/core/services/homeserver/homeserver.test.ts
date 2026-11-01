@@ -815,6 +815,13 @@ describe('HomeserverService', () => {
         ['a grant session approved with scoped encryption keys', grantSession(KEYED_CAPABILITIES), true],
         ['an older grant missing chat permissions', grantSession(RING_COOKIE_CAPABILITIES), true],
         ['a core-only grant', grantSession('/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw'), true],
+        ['a core grant without /pub/paykit/', grantSession('/pub/pubky.app/:rw,/priv/pubky.app/:rw'), true],
+        [
+          'a grant approved while the Shop still asked for /pub/paykit/',
+          grantSession('/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw'),
+          true,
+        ],
+        ['a grant missing the private Shop tree', grantSession('/pub/pubky.app/:rw,/pub/paykit/:rw'), false],
         ['a Chat-only grant', grantSession('/pub/chat/v0/:rw,/priv/chat/v0/:rw'), false],
       ])('%s → %s', (_label, session, full) => {
         mockState.currentSession = session;

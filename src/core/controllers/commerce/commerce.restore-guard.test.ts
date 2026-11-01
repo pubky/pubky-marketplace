@@ -79,7 +79,12 @@ describe('purchase-session restore never downgrades memory or the store mirror',
     expect(CommerceController.restorePersistedMarketplaceSession(PUBKY)).toBeNull();
     expect(useCommerceStore.getState().marketplaceSession).toBeNull();
 
-    for (const capabilities of [parity, previous, CAPABILITIES]) {
+    for (const capabilities of [
+      parity,
+      previous,
+      CAPABILITIES,
+      '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw',
+    ]) {
       MarketplaceSessionService.clearSession();
       useCommerceStore.getState().reset();
       otherTabPersists(capabilities);
