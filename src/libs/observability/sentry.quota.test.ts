@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS } from '@/config/commerce';
 import { AppError, type AppErrorParams } from '@/libs/error/error';
 import { ServerErrorCode, TimeoutErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { withIoDeadline } from '@/libs/http/io-deadline';
+import * as sentryUtils from '@/libs/observability/sentry.utils';
+import { getSentryDiagnostics } from '@/libs/observability/sentry-test-harness';
 import { resetRuntimeConfigForTests, RUNTIME_CONFIG_WINDOW_KEY } from '@/libs/runtime-config/runtime-config';
 import { NETWORK_RUNTIME_DEFAULTS } from '@/libs/runtime-config/runtime-config.schema';
+import { NexusMarketplaceService } from '@/services/nexus/marketplace/marketplace';
 import { getSentryInitBase } from './sentry';
 
 const capture = vi.hoisted(() => {
@@ -40,7 +44,7 @@ function timeout(overrides: Partial<Extract<AppErrorParams, { category: ErrorCat
     message: 'The request took too long. Please retry.',
     service: ErrorService.Homeserver,
     operation: 'getJsonIfFound',
-    context: { timeoutMs: 15_000 },
+    context: { timeoutMs: 15_000, ioDeadline: true },
     ...overrides,
   });
 }
@@ -56,6 +60,8 @@ describe('Sentry staging error quota', () => {
     delete window[RUNTIME_CONFIG_WINDOW_KEY];
     resetRuntimeConfigForTests();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('samples staging errors independently of traces', () => {
@@ -68,22 +74,34 @@ describe('Sentry staging error quota', () => {
     expect(configure({ sentryEnvironment: environment }).sampleRate).toBe(1);
   });
 
-  it('recognizes a named staging environment', () => {
-    expect(configure({ sentryEnvironment: 'shop-staging' }).sampleRate).toBe(0.1);
+  it.each(['shop-staging', 'staging-eu'])('recognizes the named Sentry staging environment %s', (environment) => {
+    expect(configure({ sentryEnvironment: environment }).sampleRate).toBe(0.1);
   });
 
-  it('recognizes the staging deployment identity with a custom Sentry label', () => {
-    expect(
-      configure({
-        deployEnv: 'staging',
-        exchangeRateApi: 'https://rates.example.com',
-        sentryEnvironment: 'test-shop',
-      }).sampleRate,
-    ).toBe(0.1);
+  it('keeps real PR previews fully sampled and unlimited on the staging homeserver', () => {
+    const options = configure({
+      deployEnv: 'staging',
+      exchangeRateApi: 'https://rates.example.com',
+      sentryEnvironment: 'preview',
+    });
+    expect(options.sampleRate).toBe(1);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      expect(options.beforeSend!({ type: undefined }, { originalException: timeout() })).not.toBeNull();
+    }
   });
 
   it.each([0, 0.25, 1])('honors an explicit error sample rate of %s', (sampleRate) => {
     expect(configure({ sentrySampleRate: sampleRate }).sampleRate).toBe(sampleRate);
+  });
+
+  it.each([
+    { sentryEnvironment: 'staging', expected: 0.1 },
+    { sentryEnvironment: 'staging-eu', expected: 0.1 },
+    { sentryEnvironment: 'preview', expected: 1 },
+    { sentryEnvironment: 'staging', sentrySampleRate: 0, expected: 0 },
+  ])('shows the effective error sample rate in diagnostics: $expected', ({ expected, ...config }) => {
+    configure(config);
+    expect(getSentryDiagnostics()).toMatchObject({ sampleRate: expected });
   });
 
   it('keeps the first IO timeout and bounds repeats from a polling outage', async () => {
@@ -125,12 +143,86 @@ describe('Sentry staging error quota', () => {
     const beforeSend = configure().beforeSend!;
     const errors = [
       timeout(),
-      timeout({ service: ErrorService.Nexus }),
+      timeout({
+        service: ErrorService.Nexus,
+        context: { ioDeadline: true, timeoutMs: 15_000, ioEndpoint: 'v0/bootstrap/:pubky' },
+      }),
       timeout({ operation: 'put' }),
-      timeout({ context: { timeoutMs: 2_500 } }),
+      timeout({ context: { timeoutMs: 2_500, ioDeadline: true } }),
     ];
     for (const error of errors) expect(beforeSend({ type: undefined }, { originalException: error })).not.toBeNull();
     for (const error of errors) expect(beforeSend({ type: undefined }, { originalException: error })).toBeNull();
+  });
+
+  it('does not let one Nexus endpoint suppress another endpoint with the same IO budget', () => {
+    const beforeSend = configure().beforeSend!;
+    const send = (ioEndpoint: string) =>
+      beforeSend(
+        { type: undefined },
+        {
+          originalException: timeout({
+            service: ErrorService.Nexus,
+            operation: 'fetchNexus',
+            context: { ioDeadline: true, timeoutMs: 2_500, ioEndpoint },
+          }),
+        },
+      );
+    expect(send('v0/marketplace/attestor/:attestor_id/profile')).not.toBeNull();
+    expect(send('v0/marketplace/attestor/:attestor_id/profile')).toBeNull();
+    expect(send('v0/marketplace/attestor/:attestor_id/annotations')).not.toBeNull();
+  });
+
+  it('keeps real profile and annotation timeouts separate without retaining attestor IDs or order refs', async () => {
+    const beforeSend = configure().beforeSend!;
+    const contexts: unknown[] = [];
+    capture.exception.mockImplementation((error) => {
+      const event = beforeSend(
+        { type: undefined, contexts: { 'error.context': error.context } },
+        { originalException: error },
+      );
+      if (event !== null) contexts.push(event);
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<never>(() => {})),
+    );
+    const attestor = 'w'.repeat(52);
+    const orderRef = 'a'.repeat(64);
+    for (const read of [
+      () => NexusMarketplaceService.fetchAttestorProfile({ attestor_id: attestor }),
+      () => NexusMarketplaceService.fetchAttestorAnnotations({ attestor_id: attestor, order_refs: [orderRef] }),
+      () => NexusMarketplaceService.fetchAttestorProfile({ attestor_id: 'x'.repeat(52) }),
+    ]) {
+      const result = read().catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS);
+      expect(await result).toMatchObject({ context: { ioDeadline: true } });
+    }
+    expect(contexts).toHaveLength(2);
+    const serialized = JSON.stringify(contexts);
+    expect(serialized).toContain('v0/marketplace/attestor/:attestor_id/profile');
+    expect(serialized).toContain('v0/marketplace/attestor/:attestor_id/annotations');
+    expect(serialized).not.toContain(attestor);
+    expect(serialized).not.toContain(orderRef);
+    expect(serialized).not.toContain('https://');
+  });
+
+  it('does not limit unmarked HTTP/session/pass timeouts or unidentified Nexus routes', () => {
+    const beforeSend = configure().beforeSend!;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      for (const error of [
+        timeout({ context: { statusCode: 408 } }),
+        timeout({ context: { timeoutMs: 15_000 } }),
+        timeout({ context: { timeoutMs: 15_000, ioDeadline: false } }),
+        timeout({ service: ErrorService.Nexus, operation: 'fetchNexus' }),
+        timeout({
+          service: ErrorService.Nexus,
+          operation: 'fetchNexus',
+          context: { ioDeadline: true, timeoutMs: 15_000, ioEndpoint: 'https://nexus.example.com/users/private-id' },
+        }),
+      ]) {
+        expect(beforeSend({ type: undefined }, { originalException: error })).not.toBeNull();
+      }
+    }
   });
 
   it('does not suppress production timeouts or unrelated staging errors', () => {
@@ -169,6 +261,15 @@ describe('Sentry staging error quota', () => {
     expect(event).not.toBeNull();
     expect(JSON.stringify(event)).not.toContain('alice@example.com');
     expect(hint.originalException).not.toBeInstanceOf(AppError);
+  });
+
+  it('skips recursive scrubbing for repeats after a sampled timeout has been accepted', () => {
+    const scrub = vi.spyOn(sentryUtils, 'scrubSensitiveData');
+    const beforeSend = configure().beforeSend!;
+    expect(beforeSend({ type: undefined }, { originalException: timeout() })).not.toBeNull();
+    expect(scrub).toHaveBeenCalledTimes(1);
+    expect(beforeSend({ type: undefined }, { originalException: timeout() })).toBeNull();
+    expect(scrub).toHaveBeenCalledTimes(1);
   });
 
   it('bounds cache cardinality and recovers after a clock rollback', () => {

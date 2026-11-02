@@ -145,6 +145,7 @@ export class NexusMarketplaceService {
     return await fetchNexusIfFound<NexusAttestorProfile>({
       url: marketplaceApi.attestorProfile(params),
       timeoutMs: MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS,
+      ioEndpoint: 'v0/marketplace/attestor/:attestor_id/profile',
     });
   }
 
@@ -164,6 +165,7 @@ export class NexusMarketplaceService {
     return await fetchNexusIfFound<(NexusAttestorAnnotation | null)[]>({
       url: marketplaceApi.attestorAnnotations(params),
       timeoutMs: MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS,
+      ioEndpoint: 'v0/marketplace/attestor/:attestor_id/annotations',
     });
   }
 }

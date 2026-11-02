@@ -84,6 +84,7 @@ export async function fetchNexus<T>({
   method = HttpMethod.GET,
   body = null,
   timeoutMs,
+  ioEndpoint,
 }: TFetchNexusParams): Promise<T> {
   const fetchAndRead = async (signal?: AbortSignal): Promise<T> => {
     const response = await safeFetch(
@@ -105,7 +106,12 @@ export async function fetchNexus<T>({
   };
   return timeoutMs === undefined
     ? fetchAndRead()
-    : withIoDeadline(fetchAndRead, { service: ErrorService.Nexus, operation: FETCH_NEXUS_OPERATION, timeoutMs });
+    : withIoDeadline(fetchAndRead, {
+        service: ErrorService.Nexus,
+        operation: FETCH_NEXUS_OPERATION,
+        timeoutMs,
+        ioEndpoint,
+      });
 }
 
 /**
@@ -118,7 +124,8 @@ export async function fetchNexus<T>({
 export async function fetchNexusIfFound<T>({
   url,
   timeoutMs,
-}: Pick<TFetchNexusParams, 'url' | 'timeoutMs'>): Promise<T | null> {
+  ioEndpoint,
+}: Pick<TFetchNexusParams, 'url' | 'timeoutMs' | 'ioEndpoint'>): Promise<T | null> {
   const fetchAndRead = async (signal?: AbortSignal): Promise<T | null> => {
     const response = await safeFetch(
       url,
@@ -140,7 +147,12 @@ export async function fetchNexusIfFound<T>({
   };
   return timeoutMs === undefined
     ? fetchAndRead()
-    : withIoDeadline(fetchAndRead, { service: ErrorService.Nexus, operation: FETCH_NEXUS_OPERATION, timeoutMs });
+    : withIoDeadline(fetchAndRead, {
+        service: ErrorService.Nexus,
+        operation: FETCH_NEXUS_OPERATION,
+        timeoutMs,
+        ioEndpoint,
+      });
 }
 
 /** Like fetchNexus but for endpoints that return no body (e.g. PUT v0/ingest); throws on non-ok. */
@@ -167,12 +179,13 @@ export async function queryNexus<T>({
   body = null,
   timeoutMs,
   totalTimeoutMs,
+  ioEndpoint,
 }: TQueryNexusParams): Promise<T> {
   const queryKey = ['nexus', url, method, body];
   const query = () =>
     nexusQueryClient.fetchQuery({
       queryKey,
-      queryFn: () => fetchNexus<T>({ url, method, body, timeoutMs }),
+      queryFn: () => fetchNexus<T>({ url, method, body, timeoutMs, ioEndpoint }),
     });
   if (totalTimeoutMs === undefined) return query();
   // TanStack pauses retries when offline or hidden. Bound that pure query too,
@@ -189,6 +202,6 @@ export async function queryNexus<T>({
         signal.removeEventListener('abort', cancel);
       }
     },
-    { service: ErrorService.Nexus, operation: 'queryNexus', timeoutMs: totalTimeoutMs },
+    { service: ErrorService.Nexus, operation: 'queryNexus', timeoutMs: totalTimeoutMs, ioEndpoint },
   );
 }

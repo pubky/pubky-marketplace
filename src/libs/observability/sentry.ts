@@ -9,15 +9,9 @@ import {
   scrubTransactionEvent,
   shouldDropAppErrorFromSentry,
 } from '@/libs/observability/sentry.utils';
+import { getSentryErrorSampling, resolveSentryEnvironment } from '@/libs/observability/sentry-settings';
 import { createTimeoutQuotaFilter } from '@/libs/observability/sentry-timeout-quota';
-import {
-  getDeployEnv,
-  getSentryDsn,
-  getSentryEnvironment,
-  getSentrySampleRate,
-  getSentryTracesSampleRate,
-  getTestnet,
-} from '@/libs/runtime-config/runtime-config';
+import { getSentryDsn, getSentryTracesSampleRate, getTestnet } from '@/libs/runtime-config/runtime-config';
 
 /**
  * Single source of truth for Sentry configuration shared across the three Next.js runtimes
@@ -70,17 +64,6 @@ export function isSentryInitialized(): boolean {
 }
 
 /**
- * Resolved environment tag attached to every event.
- * Falls back to NODE_ENV when the runtime sentryEnvironment is unset.
- * Internal: consumed only by getSentryInitBase() in the same file (which only runs after
- * shouldEnableSentry() returned true, so the runtime config is already resolved and memoized).
- */
-function resolveSentryEnvironment(): string {
-  if (!Env) return 'unknown';
-  return getSentryEnvironment() ?? Env.NODE_ENV;
-}
-
-/**
  * Shared options applied to every Sentry.init() call (browser, node, edge).
  * Each runtime layers its own additions on top (e.g. replayIntegration only on browser).
  *
@@ -93,8 +76,8 @@ function resolveSentryEnvironment(): string {
  */
 export function getSentryInitBase(): Sentry.NodeOptions & Sentry.BrowserOptions {
   const environment = resolveSentryEnvironment();
-  const isStaging = getDeployEnv() === 'staging' || environment === 'staging' || environment.endsWith('-staging');
-  const dropRepeatedTimeout = createTimeoutQuotaFilter();
+  const { isStaging, sampleRate } = getSentryErrorSampling(environment);
+  const timeoutQuota = createTimeoutQuotaFilter();
   return {
     dsn: getSentryDsn(),
     environment,
@@ -104,7 +87,7 @@ export function getSentryInitBase(): Sentry.NodeOptions & Sentry.BrowserOptions 
     debug: false,
     sendDefaultPii: false,
     // Error events have their own quota; tracesSampleRate does not sample them.
-    sampleRate: getSentrySampleRate() ?? (isStaging ? 0.1 : 1),
+    sampleRate,
     tracesSampleRate: getSentryTracesSampleRate(),
     ignoreErrors: [
       'ResizeObserver loop limit exceeded',
@@ -122,9 +105,13 @@ export function getSentryInitBase(): Sentry.NodeOptions & Sentry.BrowserOptions 
       try {
         // Scrubbing replaces non-plain originalException objects in the hint.
         const originalException = hint?.originalException;
+        if (isStaging && timeoutQuota.shouldDrop(originalException)) return null;
         const scrubbed = scrubSensitiveData(event, hint);
         if (scrubbed === null) return null;
-        return isStaging && dropRepeatedTimeout(originalException) ? null : scrubbed;
+        // Only accepted events consume a slot; a privacy rejection must not
+        // suppress the next report. Repeats skip the recursive scrub above.
+        if (isStaging) timeoutQuota.record(originalException);
+        return scrubbed;
       } catch {
         return null;
       }

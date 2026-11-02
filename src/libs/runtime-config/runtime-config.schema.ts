@@ -500,7 +500,7 @@ function validateStagingEndpointsEnvInput(
 /**
  * Defaults for trace and Replay rates, applied by every runtime parse path.
  * sentrySampleRate stays optional: SDK initialization selects its error-event
- * default from the deployment identity and resolved Sentry environment.
+ * default from the resolved Sentry environment, independently of deployment identity.
  */
 export const SENTRY_RUNTIME_DEFAULTS = {
   sentryTracesSampleRate: 0.1,

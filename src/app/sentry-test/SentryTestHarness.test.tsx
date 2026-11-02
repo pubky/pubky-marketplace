@@ -12,6 +12,7 @@ vi.mock('@/libs/observability/sentry-test-harness', () => ({
     release: 'shop-test',
     dsn: 'https://public@example.com/1',
     tracesSampleRate: 0,
+    sampleRate: 0.1,
   }),
 }));
 vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
@@ -28,6 +29,12 @@ describe('SentryTestHarness server capture', () => {
   afterEach(() => {
     setBasePath('');
     vi.unstubAllGlobals();
+  });
+
+  it('shows the resolved error sampling separately from trace sampling', () => {
+    render(<SentryTestHarness />);
+    expect(screen.getByText('Error sample rate').parentElement).toHaveTextContent('0.1');
+    expect(screen.getByText('Traces sample rate').parentElement).toHaveTextContent('0');
   });
 
   it.each([

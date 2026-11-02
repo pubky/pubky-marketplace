@@ -191,6 +191,7 @@ describe('NexusMarketplaceService attestor reads', () => {
     expect(mockFetchNexus).toHaveBeenCalledWith({
       url: marketplaceApi.attestorProfile({ attestor_id: ATTESTOR }),
       timeoutMs: MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS,
+      ioEndpoint: 'v0/marketplace/attestor/:attestor_id/profile',
     });
     expect(mockQueryNexus).not.toHaveBeenCalled();
   });
@@ -206,6 +207,7 @@ describe('NexusMarketplaceService attestor reads', () => {
     expect(mockFetchNexus).toHaveBeenCalledWith({
       url: marketplaceApi.attestorAnnotations({ attestor_id: ATTESTOR, order_refs }),
       timeoutMs: MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS,
+      ioEndpoint: 'v0/marketplace/attestor/:attestor_id/annotations',
     });
     expect(mockQueryNexus).not.toHaveBeenCalled();
   });

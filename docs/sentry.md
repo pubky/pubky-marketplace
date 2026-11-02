@@ -27,21 +27,30 @@ Sentry. Do not change the homeserver/network settings to enable telemetry.
 
 `PUBKY_RUNTIME_SENTRY_SAMPLE_RATE` controls **error events**. The existing
 `PUBKY_RUNTIME_SENTRY_TRACES_SAMPLE_RATE` controls performance traces only and does not reduce
-error-quota usage. Without an explicit error rate, browser, Node and Edge use `0.1` on staging
-(`PUBKY_RUNTIME_ENV=staging`, or a Sentry environment of `staging` / ending in `-staging`) and
-`1.0` elsewhere. Set the production error rate to `1.0` or leave it unset when promoting the image.
+error-quota usage. Without an explicit error rate, browser, Node and Edge use `0.1` when
+the resolved Sentry environment contains a hyphen-delimited `staging` label (for example,
+`staging`, `shop-staging` or `staging-eu`) and `1.0` elsewhere. Network deployment identity
+(`PUBKY_RUNTIME_ENV`) does not select this policy: previews using staging homeservers keep
+full error sampling when `PUBKY_RUNTIME_SENTRY_ENVIRONMENT=preview`. An explicit error rate
+overrides the default in any environment.
 
-Staging also bounds repeated `AppError` / `REQUEST_TIMEOUT` events: after SDK sampling, the
-first timeout per service, operation and IO budget is retained, then at most one per minute
-while the outage continues. This is per SDK instance, with a bounded cache of 128 keys, not an
-organization-wide quota. Other error types and production timeouts are unaffected. Filtering
-runs in `beforeSend` for both explicit and automatic captures; retained events still pass through
-the privacy scrubber. Trace and Replay sampling remain separate.
+Staging also bounds repeated IO-deadline `AppError` / `REQUEST_TIMEOUT` events marked by
+`withIoDeadline`: after SDK sampling, the first timeout per service, operation, static endpoint
+label and IO budget is retained, then at most one per minute while the outage continues.
+Nexus calls must supply an allowlisted endpoint template; unlabelled Nexus timeouts pass through.
+The labels contain no URLs, public keys or order IDs. HTTP 408, session, auth-flow and pass-deadline
+timeouts without the IO marker keep normal reporting.
+
+This is per SDK instance, with a bounded cache of 128 keys, not an organization-wide quota.
+Production and preview timeouts are unaffected. Filtering runs in `beforeSend` for both explicit
+and automatic captures. Known duplicates are dropped before recursive privacy scrubbing;
+retained events must pass the scrubber before consuming a quota slot. Trace and Replay sampling
+remain separate.
 
 This protects error quota when a polling read or background publication repeatedly times out.
 It does not fix the upstream timeout or change polling, retry, payment or publication behavior.
-Inspect the retained event's `error.service`, `error.operation` and `error.context.timeoutMs`
-to identify the failing IO before changing those workflows.
+Inspect the retained event's `error.service`, `error.operation`, `error.context.ioEndpoint` and
+`error.context.timeoutMs` to identify the failing IO before changing those workflows.
 
 For readable production stack traces, the **Shop image build** also needs:
 
@@ -294,7 +303,7 @@ document is `/shop-embed/sentry-test`, and its server triggers must call
 `/shop-embed/api/sentry-test`, not Pubky App's root `/api/sentry-test`. The harness is reachable
 outside the `production` Sentry environment; set the explicit `staging` environment above.
 Trigger each capture path. The diagnostics card shows the resolved runtime
-settings, including **Client SDK initialized** (`Sentry.getClient()`), which catches the
+settings, including the effective **Error sample rate** and **Client SDK initialized** (`Sentry.getClient()`), which catches the
 silent-failure mode where Sentry is enabled but the browser SDK never initialized because
 `window.__PUBKY_CONFIG__` was not injected before `instrumentation-client.ts` evaluated.
 

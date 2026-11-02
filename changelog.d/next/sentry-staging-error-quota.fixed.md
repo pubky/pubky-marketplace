@@ -1,1 +1,1 @@
-Sample staging error events independently of traces and limit repeated request-timeout reports so polling outages do not flood Sentry. Production error sampling remains unchanged unless explicitly configured.
+Protect staging Sentry error quota with configurable error sampling and a bounded per-minute limit for repeated IO-deadline timeouts, separating Nexus endpoint templates and preserving preview and unrelated timeout reporting. Show the effective error sample rate in diagnostics.

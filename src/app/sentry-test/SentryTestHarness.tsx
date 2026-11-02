@@ -241,6 +241,7 @@ export function SentryTestHarness() {
           <DiagnosticRow label="Release" value={diagnostics.release} />
           <DiagnosticRow label="DSN" value={describeDsn(diagnostics.dsn)} tone={diagnostics.dsn ? 'default' : 'warn'} />
           <DiagnosticRow label="Traces sample rate" value={String(diagnostics.tracesSampleRate)} />
+          <DiagnosticRow label="Error sample rate" value={String(diagnostics.sampleRate)} />
         </CardContent>
       </Card>
 
