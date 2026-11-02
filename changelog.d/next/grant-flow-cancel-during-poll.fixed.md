@@ -1,1 +1,0 @@
-Cancelling a Pubky Ring, Bitkit or Pubky Passport sign-in while the Shop is checking the relay for an approval no longer risks crashing the Pubky SDK with "memory access out of bounds": the sign-in is released once that check finishes.

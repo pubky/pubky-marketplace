@@ -245,23 +245,14 @@ export const createCancelableAuthApproval = (
   const releasable = Boolean(options?.resume && options.releaseWhileHidden);
   let endPause: (() => void) | null = null;
 
-  let pendingPoll: Promise<unknown> | null = null;
-
-  // Freeing a flow while its `tryPollOnce` future is still running lets that future write to freed WASM memory,
-  // which later surfaces as a `memory access out of bounds` panic. A cancel during a poll frees once it settles.
   const freeFlow = () => {
     if (freed) return;
     freed = true;
-    const target = flow;
-    const release = () => {
-      try {
-        target.free();
-      } catch {
-        // Ignore double-free or already-finalized WASM objects.
-      }
-    };
-    if (pendingPoll) void pendingPoll.then(release, release);
-    else release();
+    try {
+      flow.free();
+    } catch {
+      // Ignore double-free or already-finalized WASM objects.
+    }
   };
 
   /** Waits between polls; a hide ends the wait early. */
@@ -345,14 +336,7 @@ export const createCancelableAuthApproval = (
       }
 
       try {
-        const poll = flow.tryPollOnce();
-        pendingPoll = poll;
-        let maybeSession: Session | undefined;
-        try {
-          maybeSession = await poll;
-        } finally {
-          pendingPoll = null;
-        }
+        const maybeSession = await flow.tryPollOnce();
         if (maybeSession) {
           if (canceled) {
             await options?.onCanceledSession?.(maybeSession);
