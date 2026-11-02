@@ -1,0 +1,1 @@
+Sample staging error events independently of traces and limit repeated request-timeout reports so polling outages do not flood Sentry. Production error sampling remains unchanged unless explicitly configured.

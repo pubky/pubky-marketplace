@@ -14,6 +14,7 @@ Set these on the **Shop container**, keeping the existing network and embedded c
 ```dotenv
 PUBKY_RUNTIME_SENTRY_DSN=<DSN from synonym-52 / pubky-marketplace>
 PUBKY_RUNTIME_SENTRY_ENVIRONMENT=staging
+PUBKY_RUNTIME_SENTRY_SAMPLE_RATE=0.1
 PUBKY_RUNTIME_SENTRY_TRACES_SAMPLE_RATE=0.1
 PUBKY_RUNTIME_SENTRY_REPLAYS_SESSION_SAMPLE_RATE=0.0
 PUBKY_RUNTIME_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE=1.0
@@ -23,6 +24,24 @@ The DSN is a public client key, available in the project's **Settings → Client
 It is not the upload auth token. Set the environment to `production` for the production deployment.
 Staging uses `PUBKY_RUNTIME_TESTNET=false`; the testnet switch is for test networks and disables
 Sentry. Do not change the homeserver/network settings to enable telemetry.
+
+`PUBKY_RUNTIME_SENTRY_SAMPLE_RATE` controls **error events**. The existing
+`PUBKY_RUNTIME_SENTRY_TRACES_SAMPLE_RATE` controls performance traces only and does not reduce
+error-quota usage. Without an explicit error rate, browser, Node and Edge use `0.1` on staging
+(`PUBKY_RUNTIME_ENV=staging`, or a Sentry environment of `staging` / ending in `-staging`) and
+`1.0` elsewhere. Set the production error rate to `1.0` or leave it unset when promoting the image.
+
+Staging also bounds repeated `AppError` / `REQUEST_TIMEOUT` events: after SDK sampling, the
+first timeout per service, operation and IO budget is retained, then at most one per minute
+while the outage continues. This is per SDK instance, with a bounded cache of 128 keys, not an
+organization-wide quota. Other error types and production timeouts are unaffected. Filtering
+runs in `beforeSend` for both explicit and automatic captures; retained events still pass through
+the privacy scrubber. Trace and Replay sampling remain separate.
+
+This protects error quota when a polling read or background publication repeatedly times out.
+It does not fix the upstream timeout or change polling, retry, payment or publication behavior.
+Inspect the retained event's `error.service`, `error.operation` and `error.context.timeoutMs`
+to identify the failing IO before changing those workflows.
 
 For readable production stack traces, the **Shop image build** also needs:
 
@@ -206,6 +225,7 @@ All Sentry values are part of the **optional runtime-config tier** ([ADR 0018](a
 | --------------------------------------------------- | ----------------------- | ---------------------------------------------------------- |
 | `PUBKY_RUNTIME_SENTRY_DSN`                          | browser + server + edge | Optional. Empty/unset disables Sentry entirely.            |
 | `PUBKY_RUNTIME_SENTRY_ENVIRONMENT`                  | all                     | Optional. Defaults to `NODE_ENV`.                          |
+| `PUBKY_RUNTIME_SENTRY_SAMPLE_RATE`                  | all                     | Optional. Error events: `0.1` on staging, `1.0` elsewhere. |
 | `PUBKY_RUNTIME_TESTNET`                             | all                     | When `true`, Sentry is disabled (CI E2E / testnet deploy). |
 | `PUBKY_RUNTIME_SENTRY_TRACES_SAMPLE_RATE`           | all                     | Optional. Default `0.1`.                                   |
 | `PUBKY_RUNTIME_SENTRY_REPLAYS_SESSION_SAMPLE_RATE`  | browser                 | Optional. Default `0.0` (record only on error).            |
@@ -277,6 +297,10 @@ Trigger each capture path. The diagnostics card shows the resolved runtime
 settings, including **Client SDK initialized** (`Sentry.getClient()`), which catches the
 silent-failure mode where Sentry is enabled but the browser SDK never initialized because
 `window.__PUBKY_CONFIG__` was not injected before `instrumentation-client.ts` evaluated.
+
+For a deterministic staging harness check, temporarily set `PUBKY_RUNTIME_SENTRY_SAMPLE_RATE=1`
+and restart/redeploy, then restore `0.1` afterward. At `0.1`, a single test event may legitimately
+be sampled out. Repeated request timeouts still have the per-minute staging limit.
 
 Then inspect recent events in **`pubky-marketplace`** for the configured environment and confirm the
 **source maps** resolve (original `.tsx`/`.ts` frames, not minified bundle names) and the **`release`**

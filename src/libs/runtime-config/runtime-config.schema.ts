@@ -498,9 +498,9 @@ function validateStagingEndpointsEnvInput(
 }
 
 /**
- * Defaults for the optional Sentry sample rates (applied by `runtimeConfigValueSchema`, which
- * every parse path runs through, so the resolved config always carries concrete numbers even
- * when the env leaves them unset).
+ * Defaults for trace and Replay rates, applied by every runtime parse path.
+ * sentrySampleRate stays optional: SDK initialization selects its error-event
+ * default from the deployment identity and resolved Sentry environment.
  */
 export const SENTRY_RUNTIME_DEFAULTS = {
   sentryTracesSampleRate: 0.1,
@@ -602,6 +602,8 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
   sentryDsn: urlValue.optional(),
   /** Environment tag attached to every Sentry event. Absent falls back to NODE_ENV (see sentry.ts). */
   sentryEnvironment: z.string().min(1).optional(),
+  /** Error-event sampling; absent selects 0.1 on staging and 1 elsewhere at SDK init. */
+  sentrySampleRate: sampleRateValue.optional(),
   sentryTracesSampleRate: sampleRateValue.default(SENTRY_RUNTIME_DEFAULTS.sentryTracesSampleRate),
   sentryReplaysSessionSampleRate: sampleRateValue.default(SENTRY_RUNTIME_DEFAULTS.sentryReplaysSessionSampleRate),
   sentryReplaysOnErrorSampleRate: sampleRateValue.default(SENTRY_RUNTIME_DEFAULTS.sentryReplaysOnErrorSampleRate),
@@ -829,6 +831,7 @@ export const runtimeEnvInputSchema = z
     deployEnv: deployEnvValue,
     sentryDsn: optionalTrimmedString,
     sentryEnvironment: optionalTrimmedString,
+    sentrySampleRate: sampleRateFromString,
     sentryTracesSampleRate: sampleRateFromString,
     sentryReplaysSessionSampleRate: sampleRateFromString,
     sentryReplaysOnErrorSampleRate: sampleRateFromString,
@@ -941,6 +944,7 @@ export const runtimeEnvInputSchemaWithDefaults = z
     deployEnv: deployEnvValue.default(NETWORK_RUNTIME_DEFAULTS.deployEnv),
     sentryDsn: optionalTrimmedString,
     sentryEnvironment: optionalTrimmedString,
+    sentrySampleRate: sampleRateFromString,
     sentryTracesSampleRate: sampleRateFromString,
     sentryReplaysSessionSampleRate: sampleRateFromString,
     sentryReplaysOnErrorSampleRate: sampleRateFromString,
@@ -1044,6 +1048,7 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   ...NETWORK_RUNTIME_ENV_NAMES,
   sentryDsn: 'PUBKY_RUNTIME_SENTRY_DSN',
   sentryEnvironment: 'PUBKY_RUNTIME_SENTRY_ENVIRONMENT',
+  sentrySampleRate: 'PUBKY_RUNTIME_SENTRY_SAMPLE_RATE',
   sentryTracesSampleRate: 'PUBKY_RUNTIME_SENTRY_TRACES_SAMPLE_RATE',
   sentryReplaysSessionSampleRate: 'PUBKY_RUNTIME_SENTRY_REPLAYS_SESSION_SAMPLE_RATE',
   sentryReplaysOnErrorSampleRate: 'PUBKY_RUNTIME_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE',
