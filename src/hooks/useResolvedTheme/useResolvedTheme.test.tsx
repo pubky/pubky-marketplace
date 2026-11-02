@@ -59,7 +59,16 @@ describe('useResolvedTheme', () => {
     expect(result.current).toBe('light');
   });
 
-  it('resolves a missing preference through the OS scheme', () => {
+  it('resolves a missing preference to dark, even if the OS prefers light', () => {
+    stubPrefersDark(false);
+
+    const { result } = renderHook(() => useResolvedTheme());
+
+    expect(result.current).toBe('dark');
+  });
+
+  it('resolves an explicit system preference through the OS scheme', () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'system');
     stubPrefersDark(false);
 
     const { result } = renderHook(() => useResolvedTheme());
@@ -78,6 +87,7 @@ describe('useResolvedTheme', () => {
   });
 
   it('updates when the OS scheme changes under system', () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'system');
     const setPrefersDark = stubPrefersDark(true);
     const { result } = renderHook(() => useResolvedTheme());
     expect(result.current).toBe('dark');

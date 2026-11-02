@@ -72,9 +72,9 @@ describe('parseThemeOption', () => {
   });
 
   it.each([null, undefined, '', 'Dark', 'LIGHT', 'auto', '"light"', ' light', 42, {}])(
-    'falls back to system for the invalid value %j',
+    'falls back to dark for the invalid value %j',
     (value) => {
-      expect(parseThemeOption(value)).toBe('system');
+      expect(parseThemeOption(value)).toBe('dark');
     },
   );
 });
@@ -93,8 +93,8 @@ describe('resolveTheme', () => {
 });
 
 describe('readThemeOption', () => {
-  it('reads system when pubky-app has not stored a preference', () => {
-    expect(readThemeOption(window)).toBe('system');
+  it('reads dark when pubky-app has not stored a preference', () => {
+    expect(readThemeOption(window)).toBe('dark');
   });
 
   it.each(['dark', 'light', 'system'])('reads the shared %s preference', (value) => {
@@ -103,18 +103,18 @@ describe('readThemeOption', () => {
     expect(readThemeOption(window)).toBe(value);
   });
 
-  it('reads system for an invalid stored value', () => {
+  it('reads dark for an invalid stored value', () => {
     window.localStorage.setItem(THEME_STORAGE_KEY, 'sepia');
 
-    expect(readThemeOption(window)).toBe('system');
+    expect(readThemeOption(window)).toBe('dark');
   });
 
-  it('reads system when localStorage is unavailable', () => {
+  it('reads dark when localStorage is unavailable', () => {
     vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
       throw new DOMException('denied', 'SecurityError');
     });
 
-    expect(readThemeOption(window)).toBe('system');
+    expect(readThemeOption(window)).toBe('dark');
   });
 });
 
@@ -134,12 +134,12 @@ describe('systemPrefersDark', () => {
 describe('readResolvedTheme', () => {
   it.each([
     [null, true, 'dark'],
-    [null, false, 'light'],
+    [null, false, 'dark'],
     ['system', true, 'dark'],
     ['system', false, 'light'],
     ['dark', false, 'dark'],
     ['light', true, 'light'],
-    ['bogus', false, 'light'],
+    ['bogus', false, 'dark'],
     ['bogus', true, 'dark'],
   ] as const)('resolves stored %s with prefers-dark=%s to %s', (stored, prefersDark, expected) => {
     if (stored !== null) window.localStorage.setItem(THEME_STORAGE_KEY, stored);
@@ -195,7 +195,7 @@ describe('buildThemePrepaintScript', () => {
     expect(isLight()).toBe(false);
   });
 
-  it('follows the OS scheme when localStorage is unavailable', () => {
+  it('paints dark when localStorage is unavailable, even if the OS prefers light', () => {
     stubPrefersDark(false);
     vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
       throw new DOMException('denied', 'SecurityError');
@@ -203,7 +203,7 @@ describe('buildThemePrepaintScript', () => {
 
     runPrepaint();
 
-    expect(isLight()).toBe(true);
+    expect(isLight()).toBe(false);
   });
 
   it('never writes the shared preference', () => {
@@ -321,23 +321,36 @@ describe('syncDocumentTheme', () => {
     unsubscribe();
   });
 
-  it('falls back to system when pubky-app removes or corrupts the value', () => {
-    window.localStorage.setItem(THEME_STORAGE_KEY, 'dark');
+  it('falls back to dark when pubky-app removes or corrupts the value', () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'light');
     stubPrefersDark(false);
     const unsubscribe = syncDocumentTheme(window);
-    expect(isLight()).toBe(false);
+    expect(isLight()).toBe(true);
 
     writeFromApp(null);
-    expect(isLight()).toBe(true);
+    expect(isLight()).toBe(false);
 
-    writeFromApp('dark');
+    writeFromApp('light');
     writeFromApp('not-a-theme');
-    expect(isLight()).toBe(true);
+    expect(isLight()).toBe(false);
 
     unsubscribe();
   });
 
-  it('follows OS colour scheme changes while the preference is system', () => {
+  it('stays dark when unset, even if the OS prefers light', () => {
+    const media = stubPrefersDark(false);
+    const unsubscribe = syncDocumentTheme(window);
+    expect(isLight()).toBe(false);
+
+    media.setPrefersDark(true);
+    media.setPrefersDark(false);
+    expect(isLight()).toBe(false);
+
+    unsubscribe();
+  });
+
+  it('follows OS colour scheme changes while the preference is explicitly system', () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'system');
     const media = stubPrefersDark(true);
     const unsubscribe = syncDocumentTheme(window);
     expect(isLight()).toBe(false);

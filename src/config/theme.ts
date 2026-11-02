@@ -35,8 +35,11 @@ export type ThemeOption = (typeof THEME_OPTIONS)[number];
 /** The scheme actually painted once `system` has been resolved. */
 export type ResolvedTheme = Exclude<ThemeOption, 'system'>;
 
-/** pubky-app's default, applied while the value is missing or not one of `THEME_OPTIONS`. */
-export const DEFAULT_THEME: ThemeOption = 'system';
+/**
+ * pubky-app's default, applied while the value is missing or not one of `THEME_OPTIONS`.
+ * Only an explicit `system` follows the OS.
+ */
+export const DEFAULT_THEME: ThemeOption = 'dark';
 
 /**
  * localStorage key pubky-app persists the chosen `ThemeOption` under (raw string, not JSON).
