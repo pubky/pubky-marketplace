@@ -137,12 +137,13 @@ ENV HOSTNAME="0.0.0.0"
 #   PUBKY_RUNTIME_TESTNET        ("true" | "false")
 #   PUBKY_RUNTIME_ENV            ("production" | "staging"; drives the staging sign-in guard)
 #
-# Optional (absent DSN disables Sentry entirely; rates have defaults 0.1 / 0.0 / 1.0):
+# Optional (absent DSN disables Sentry entirely):
 #   PUBKY_RUNTIME_SENTRY_DSN
 #   PUBKY_RUNTIME_SENTRY_ENVIRONMENT
-#   PUBKY_RUNTIME_SENTRY_TRACES_SAMPLE_RATE
-#   PUBKY_RUNTIME_SENTRY_REPLAYS_SESSION_SAMPLE_RATE
-#   PUBKY_RUNTIME_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE
+#   PUBKY_RUNTIME_SENTRY_SAMPLE_RATE                (0.1 for Sentry staging labels; 1.0 elsewhere, including preview)
+#   PUBKY_RUNTIME_SENTRY_TRACES_SAMPLE_RATE         (default 0.1)
+#   PUBKY_RUNTIME_SENTRY_REPLAYS_SESSION_SAMPLE_RATE (default 0.0)
+#   PUBKY_RUNTIME_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE (default 1.0)
 
 # Run the standalone server
 CMD ["node", "server.js"]
