@@ -90,7 +90,7 @@ export function InputField({
   const statusClasses = {
     default: '',
     success: 'border-brand text-brand',
-    error: 'border-red-500 text-red-500',
+    error: 'border-red-500 text-error-foreground',
   };
   const sizeClasses = {
     sm: 'h-10 text-sm',

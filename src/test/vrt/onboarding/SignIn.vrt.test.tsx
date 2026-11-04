@@ -2,22 +2,26 @@
 // Vitest `__vi_import_N__` aliases; reordering causes a TDZ crash in
 // @vitest/browser. Do not let `eslint --fix` reorder these imports.
 /* eslint-disable simple-import-sort/imports */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { preloadImages, renderForVRT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { createZustandLikeHook } from '@/test-utils/stores';
 import { SignInContent } from '@/organisms/SignIn/SignIn';
+import { expectGraphicContrast, expectTextContrast } from '@/test-utils/color-contrast';
 
 const SIGN_IN_IMAGE_URLS = ['/images/keyring.webp', '/images/sign-in/cloud.webp'];
 
 const deploy = vi.hoisted(() => ({ requestsKeys: false }));
+const authState = vi.hoisted(() => ({ isLoading: false }));
 
 // The QR encodes the approval URL, which is minted from the network and changes every run.
 // Pin it so QRCodeSVG draws the same matrix on every run and OS.
 vi.mock('@/hooks/useMobileAuth/useMobileAuth', () => ({
   useMobileAuth: () => ({
-    url: 'pubkyauth://signin_grant?caps=%2Fpub%2Fpubky.app%2F%3Arw&relay=https%3A%2F%2Fvrt.example%2Finbox&secret=vrt-fixed-secret&cid=shop.pubky.app&cpk=vrtfixedclientkey',
-    isLoading: false,
+    url: authState.isLoading
+      ? ''
+      : 'pubkyauth://signin_grant?caps=%2Fpub%2Fpubky.app%2F%3Arw&relay=https%3A%2F%2Fvrt.example%2Finbox&secret=vrt-fixed-secret&cid=shop.pubky.app&cpk=vrtfixedclientkey',
+    isLoading: authState.isLoading,
     isExpired: false,
     fetchUrl: vi.fn(),
     copyAuthUrl: vi.fn(),
@@ -59,6 +63,28 @@ vi.mock('@/stores/onboarding/onboarding.store', () => ({
 }));
 
 describe('SignIn (one QR for Pubky Ring and Bitkit) — visual regression', () => {
+  beforeEach(() => {
+    deploy.requestsKeys = false;
+    authState.isLoading = false;
+  });
+
+  it('keeps the QR loading text and spinner visible in light mode', async () => {
+    authState.isLoading = true;
+    await preloadImages(SIGN_IN_IMAGE_URLS);
+    const screen = await renderForVRT(<SignInContent />, {
+      viewport: VRT_VIEWPORT_DESKTOP,
+      theme: 'light',
+      disableHover: true,
+    });
+    const qrButton = screen.getByRole('button', { name: 'Copy authentication link' });
+    await expect(qrButton).toBeDisabled();
+    await expect(screen.getByText('Generating QR Code...')).toBeVisible();
+    expectTextContrast(screen.getByText('Generating QR Code...').element());
+    const spinner = qrButton.element().querySelector('svg');
+    expect(spinner).not.toBeNull();
+    expectGraphicContrast(spinner!, qrButton.element());
+  });
+
   it('renders the shared QR with both logos at desktop viewport', async () => {
     deploy.requestsKeys = false;
     await preloadImages(SIGN_IN_IMAGE_URLS);

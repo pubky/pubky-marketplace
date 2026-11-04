@@ -239,7 +239,10 @@ const NavigationButton = ({
           className="absolute -right-1 -bottom-1 h-5 w-5 rounded-full bg-brand shadow-sm"
           variant="secondary"
         >
-          <Typography className={cn('font-semibold text-primary-foreground', badgeCount > 21 && 'text-xs')} size="xs">
+          <Typography
+            className={cn('font-semibold text-bright-fill-foreground', badgeCount > 21 && 'text-xs')}
+            size="xs"
+          >
             {badgeCount > 21 ? '21+' : badgeCount}
           </Typography>
         </Badge>
@@ -341,7 +344,10 @@ export function HeaderNavigationButtons({
             className="absolute right-0 bottom-0 h-5 w-5 rounded-full bg-brand shadow-sm"
             variant="secondary"
           >
-            <Typography className={cn('font-semibold text-primary-foreground', counter > 21 && 'text-xs')} size="xs">
+            <Typography
+              className={cn('font-semibold text-bright-fill-foreground', counter > 21 && 'text-xs')}
+              size="xs"
+            >
               {counterString}
             </Typography>
           </Badge>

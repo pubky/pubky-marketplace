@@ -439,7 +439,9 @@ export function MarketplaceOrders() {
                     const nextActorBadge = nextActorHint && (
                       <Badge
                         variant="outline"
-                        className={nextActorHint.isCurrentUser ? 'bg-orange-400 text-primary-foreground' : undefined}
+                        className={
+                          nextActorHint.isCurrentUser ? 'bg-orange-400 text-bright-fill-foreground' : undefined
+                        }
                       >
                         {nextActorHint.label}
                       </Badge>

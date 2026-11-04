@@ -44,7 +44,7 @@ function GuideStep({ number, title, locked = false, screen, children }: GuideSte
     >
       <div className="grid content-start gap-3">
         <div className="flex items-start gap-3">
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-brand text-sm font-bold text-background">
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-brand text-sm font-bold text-brand-foreground">
             {number}
           </span>
           <Typography as="p" className="pt-0.5 text-sm">

@@ -267,7 +267,7 @@ export function MarketplaceAddressFields<T extends FieldValues>({
                     </SelectContent>
                   </Select>
                   {fieldState.error ? (
-                    <Typography as="small" size="sm" role="alert" className="ml-1 text-red-500">
+                    <Typography as="small" size="sm" role="alert" className="ml-1 text-error-foreground">
                       {fieldState.error.message}
                     </Typography>
                   ) : null}

@@ -152,7 +152,7 @@ describe('InputField - Variants', () => {
     expect(screen.getByText('Looks good')).toHaveClass('text-brand');
 
     rerender(<InputField value="" status="error" message="Nope" messageType="alert" />);
-    expect(screen.getByTestId('input').parentElement).toHaveClass('border-red-500', 'text-red-500');
+    expect(screen.getByTestId('input').parentElement).toHaveClass('border-red-500', 'text-error-foreground');
     expect(screen.getByTestId('input').parentElement).not.toHaveClass('border-dashed');
     expect(screen.getByText('Nope')).toHaveClass('text-yellow-500');
   });

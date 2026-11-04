@@ -221,11 +221,11 @@ function RestoreForm({
 
         {errors.some((error, index) => error && touched[index]) && (
           <Container className="rounded-lg border border-red-500/20 bg-red-500/10 p-4">
-            <div className="flex items-center gap-2 text-red-500">
+            <div className="flex items-center gap-2 text-error-foreground">
               <AlertCircle className="h-4 w-4" />
               <span className="text-sm font-medium">{'Invalid words detected'}</span>
             </div>
-            <p className="mt-1 text-sm text-red-500/80">
+            <p className="mt-1 text-sm text-red-500/80 [.light_&]:text-error-foreground">
               {'Please check that all words are valid and contain only lowercase letters.'}
             </p>
           </Container>

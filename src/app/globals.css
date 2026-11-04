@@ -52,6 +52,7 @@ body {
   --color-card: var(--card);
   --color-brand: var(--brand);
   --color-brand-foreground: var(--brand-foreground);
+  --color-bright-fill-foreground: var(--bright-fill-foreground);
   --color-destructive-button: var(--destructive-button);
   --color-destructive-button-hover: var(--destructive-button-hover);
   --color-error-foreground: var(--error-foreground);
@@ -176,13 +177,15 @@ body {
   --notice-foreground: var(--color-amber-200);
   /** Label on solid brand fills: the dark page colour in dark mode, a fixed dark ink in light mode. */
   --brand-foreground: var(--background);
+  /** Badges on bright fills retain their original primary ink in dark mode. */
+  --bright-fill-foreground: var(--primary-foreground);
   /**
-   * Solid destructive Button fill and hover. Dark mode keeps the translucent `/60` and `/90` mixes
+   * Filled destructive controls and alerts. Dark mode keeps the translucent `/60` and `/90` mixes
    * over dark surfaces; light mode needs an opaque, darker red so the pale label stays readable.
    */
   --destructive-button: color-mix(in oklab, var(--destructive) 60%, transparent);
   --destructive-button-hover: color-mix(in oklab, var(--destructive) 90%, transparent);
-  /** Input and textarea validation message text. */
+  /** Validation values and messages; fill colours remain independent. */
   --error-foreground: var(--color-red-500);
   --toast-action-muted: oklch(0.218 0.006 286);
   --toast-action-muted-hover-border: oklch(0.277 0.006 286);
@@ -532,6 +535,7 @@ body {
   --warning-foreground: var(--color-amber-800);
   --notice-foreground: var(--color-amber-800);
   --brand-foreground: #1d1d20;
+  --bright-fill-foreground: var(--brand-foreground);
   --destructive-button: var(--color-red-700);
   --destructive-button-hover: var(--color-red-800);
   --error-foreground: var(--color-red-700);
@@ -716,7 +720,7 @@ body {
   /* 4a. Primary button (Save) */
   .mdxeditor-popup-container [class*='linkDialogPopoverContent'] [class*='primaryButton'] {
     background-color: var(--brand) !important;
-    color: var(--background) !important;
+    color: var(--brand-foreground) !important;
     border: none !important;
     border-radius: var(--radius-sm) !important;
   }
@@ -782,11 +786,12 @@ body {
 
   /* `:where` keeps these at utility specificity so state variants such as `hover:text-foreground` still win. */
   :where(.light) .text-brand,
-  :where(.light) .hover\:text-brand:hover {
+  :where(.light) .hover\:text-brand:hover,
+  :where(.light) .hover\:text-brand\/80:hover {
     color: var(--brand-text);
   }
-  :where(.light) .hover\:text-brand\/80:hover {
-    color: color-mix(in oklab, var(--brand-text) 80%, transparent);
+  :where(.light) .\!text-brand {
+    color: var(--brand-text) !important;
   }
 
   /* Keep the document scrollbar visible and hide all nested scrollbars */

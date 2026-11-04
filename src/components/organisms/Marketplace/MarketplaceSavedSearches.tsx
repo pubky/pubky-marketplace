@@ -77,7 +77,9 @@ export function MarketplaceSavedSearches() {
         >
           <Bookmark className="size-4" />
           {totalNew > 0 && (
-            <Badge className="ml-1.5 bg-brand px-1.5 py-0 text-[10px] text-primary-foreground">{totalNew} NEW</Badge>
+            <Badge className="ml-1.5 bg-brand px-1.5 py-0 text-[10px] text-bright-fill-foreground">
+              {totalNew} NEW
+            </Badge>
           )}
         </Button>
       </PopoverTrigger>
@@ -141,7 +143,7 @@ export function MarketplaceSavedSearches() {
                   >
                     <span className="truncate">{search.name}</span>
                     {search.new_count > 0 && (
-                      <Badge className="shrink-0 bg-brand px-1.5 py-0 text-[10px] text-primary-foreground">
+                      <Badge className="shrink-0 bg-brand px-1.5 py-0 text-[10px] text-bright-fill-foreground">
                         {search.new_count} NEW
                       </Badge>
                     )}

@@ -105,7 +105,7 @@ export function MarketplaceNavCountBadge({ count, className }: { count: number; 
   if (count <= 0) return null;
   return (
     <Badge className={cn('h-5 min-w-5 rounded-full bg-brand px-1.5 shadow-sm', className)} variant="secondary">
-      <Typography className={cn('font-semibold text-primary-foreground', count > 21 && 'text-xs')} size="xs">
+      <Typography className={cn('font-semibold text-bright-fill-foreground', count > 21 && 'text-xs')} size="xs">
         {count > 21 ? '21+' : count}
       </Typography>
     </Badge>

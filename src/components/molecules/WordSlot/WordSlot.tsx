@@ -26,7 +26,7 @@ export const WordSlot = (props: WordSlotProps) => {
 
     const inputColor = cn(
       'min-w-0 flex-1 flex-row !border-none !bg-transparent !px-0 !pr-3 !pl-10',
-      hasError && '!text-red-500',
+      hasError && '!text-error-foreground',
     );
 
     return (
@@ -71,7 +71,7 @@ export const WordSlot = (props: WordSlotProps) => {
   const badgeClasses = cn(
     'absolute top-1/2 left-3 z-10 h-5 min-w-5 flex-shrink-0 -translate-y-1/2 rounded-full px-1 sm:left-5',
     !isCorrect && !isError && 'border border-transparent bg-secondary text-secondary-foreground',
-    isCorrect && 'border border-transparent bg-brand text-primary-foreground',
+    isCorrect && 'border border-transparent bg-brand text-bright-fill-foreground',
     isError && 'border border-transparent bg-destructive text-destructive-foreground',
   );
 
@@ -79,7 +79,7 @@ export const WordSlot = (props: WordSlotProps) => {
     'min-w-0 flex-1 flex-row !border-none !bg-transparent !px-0 !pr-2 !pl-9 text-base leading-[24px] font-medium sm:!pr-5 sm:!pl-[52px]',
     !isCorrect && !isError && word === '' && 'text-muted-foreground',
     isCorrect && '!text-brand',
-    isError && '!text-destructive',
+    isError && '!text-destructive [.light_&]:!text-error-foreground',
   );
 
   const title = canClear ? 'Click to remove this word' : '';

@@ -859,7 +859,7 @@ describe('InitializedMDXEditor', () => {
       const warning = screen.getByTestId('max-length-warning');
       expect(warning).toBeInTheDocument();
       expect(warning).toHaveClass('bg-red-500/15');
-      expect(warning).toHaveClass('text-red-500');
+      expect(warning).toHaveClass('text-error-foreground');
       expect(screen.getByText("You've reached the maximum character limit.")).toBeInTheDocument();
     });
 

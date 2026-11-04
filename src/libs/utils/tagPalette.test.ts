@@ -3,7 +3,7 @@ import { getTagDayPalette, getTagPaletteStyle } from './tagPalette';
 import { generateRandomColor } from './utils';
 
 const DARK_LABEL = 'var(--foreground)';
-const DARK_COUNT = 'color-mix(in oklab, var(--foreground) 60%, transparent)';
+const DARK_COUNT = 'color-mix(in oklab, var(--foreground) 95%, transparent)';
 /** Light theme `--foreground` */
 const DARK_LABEL_HEX = '#303034';
 
@@ -51,6 +51,41 @@ describe('getTagDayPalette', () => {
       const { background, label } = getTagDayPalette(colour);
       expect(label, colour).toBe(DARK_LABEL);
       expect(contrast(background, DARK_LABEL_HEX), colour).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('keeps the softer count readable on every day chip', () => {
+    for (const colour of allGeneratorColours()) {
+      const { background, count } = getTagDayPalette(colour);
+      const opacity = count.match(/^color-mix\(in oklab, var\(--foreground\) (\d+)%, transparent\)$/);
+      expect(opacity, colour).not.toBeNull();
+      if (!opacity) continue;
+
+      // Mixing one colour with transparent preserves its RGB and changes its alpha.
+      const alpha = Number(opacity[1]) / 100;
+      const countHex = `#${[1, 3, 5]
+        .map((offset) => {
+          const ink = parseInt(DARK_LABEL_HEX.slice(offset, offset + 2), 16);
+          const fill = parseInt(background.slice(offset, offset + 2), 16);
+          return Math.round(ink * alpha + fill * (1 - alpha))
+            .toString(16)
+            .padStart(2, '0');
+        })
+        .join('')}`;
+      expect(contrast(background, countHex), colour).toBeGreaterThanOrEqual(4.5);
+      // The featured tag fades as a whole on hover, over the light page.
+      const fade = (hex: string) =>
+        `#${[1, 3, 5]
+          .map((offset) =>
+            Math.round(
+              parseInt(hex.slice(offset, offset + 2), 16) * 0.9 +
+                parseInt('#eeeef6'.slice(offset, offset + 2), 16) * 0.1,
+            )
+              .toString(16)
+              .padStart(2, '0'),
+          )
+          .join('')}`;
+      expect(contrast(fade(background), fade(countHex)), `${colour} hovered`).toBeGreaterThanOrEqual(4.5);
     }
   });
 

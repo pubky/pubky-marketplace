@@ -178,7 +178,7 @@ function HomeserverStepUpDialog({
           <div className="grid justify-items-center gap-4">
             <button
               type="button"
-              className="group relative flex size-48 cursor-pointer items-center justify-center rounded-md bg-foreground p-2"
+              className="group relative flex size-48 cursor-pointer items-center justify-center rounded-md bg-foreground p-2 [.light_&]:bg-white"
               onClick={() => void copyUrl()}
               disabled={!reauth.authorizationUrl}
               aria-label="Copy authorization link"

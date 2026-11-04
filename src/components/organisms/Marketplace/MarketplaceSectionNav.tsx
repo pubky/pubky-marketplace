@@ -164,7 +164,7 @@ export function MarketplaceSectionNav({
                     variant="secondary"
                   >
                     <Typography
-                      className={cn('font-semibold text-primary-foreground', count > 21 && 'text-xs')}
+                      className={cn('font-semibold text-bright-fill-foreground', count > 21 && 'text-xs')}
                       size="xs"
                     >
                       {count > 21 ? '21+' : count}

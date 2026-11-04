@@ -10,6 +10,7 @@ import { ReviewsSection, ReviewsWithHeader } from '@/test-utils/marketplace-revi
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { setSocialHost } from '@/test-utils/social-host';
 import { TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
+import { expectTextContrast } from '@/test-utils/color-contrast';
 
 // The Phase 2 public review surfaces in every honest state: stars on catalog
 // cards (only when the index reported reviews; counted per-buyer means from
@@ -546,6 +547,19 @@ describe('Marketplace public reviews — visual regression', () => {
     await waitForText('Unverified');
     await waitForText('switched to double-boxing');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-section-spectrum-desktop');
+  });
+
+  it.each(['dark', 'light'] as const)('keeps verified purchase badge text contrast in %s mode', async (theme) => {
+    controllerState.reviews = [indexedReview()];
+    const screen = await renderForVRT(
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
+        <ReviewsSection sellerPubky={SELLER} />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP, theme },
+    );
+    const badge = screen.getByText('Verified purchase · Pubky Market');
+    await expect(badge).toBeVisible();
+    expectTextContrast(badge.element());
   });
 
   it('links reviewers to their shop with a Profile on Pubky link under social link-out at desktop viewport', async () => {

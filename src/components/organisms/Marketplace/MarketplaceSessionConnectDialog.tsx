@@ -261,7 +261,7 @@ export function MarketplaceSessionConnectDialog({
             session.status,
           ) ? (
           <div className="grid gap-3">
-            <div role="alert" className="flex items-center gap-3 rounded-md bg-destructive/60 px-6 py-3">
+            <div role="alert" className="flex items-center gap-3 rounded-md bg-destructive-button px-6 py-3">
               <TriangleAlert className="size-4 shrink-0 text-destructive-foreground" aria-hidden="true" />
               <Typography as="p" size="sm" className="font-medium text-destructive-foreground">
                 {session.status === 'mismatch'
@@ -302,7 +302,7 @@ export function MarketplaceSessionConnectDialog({
           <div className="grid justify-items-center gap-4">
             <button
               type="button"
-              className="group relative hidden size-48 cursor-pointer items-center justify-center rounded-md bg-foreground p-2 md:flex"
+              className="group relative hidden size-48 cursor-pointer items-center justify-center rounded-md bg-foreground p-2 md:flex [.light_&]:bg-white"
               onClick={() => void copyUrl()}
               disabled={!session.authorizationUrl}
               aria-label="Copy authorization link"

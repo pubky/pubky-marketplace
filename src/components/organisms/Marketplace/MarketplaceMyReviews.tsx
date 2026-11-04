@@ -201,7 +201,7 @@ export function MarketplaceMyReviews({ orders = [], className }: { orders?: Mark
                         {formatReviewDate(review.record.updatedAt)}
                       </Typography>
                       {review.attestation_verified ? (
-                        <Badge variant="secondary" className="gap-1 text-emerald-400 [.light_&]:text-emerald-700">
+                        <Badge variant="secondary" className="gap-1 text-emerald-400 [.light_&]:text-emerald-800">
                           <BadgeCheck className="size-3" />
                           Attested
                         </Badge>

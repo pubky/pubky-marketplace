@@ -25,7 +25,8 @@ const PASTEL_WHITE_MIX = 0.7;
 const CACHE_LIMIT = 2048;
 
 const DARK_LABEL = 'var(--foreground)';
-const DARK_COUNT = 'color-mix(in oklab, var(--foreground) 60%, transparent)';
+// Leave contrast headroom for HotTagCard's 90% hover opacity.
+const DARK_COUNT = 'color-mix(in oklab, var(--foreground) 95%, transparent)';
 
 const cache = new Map<string, TagDayPalette>();
 

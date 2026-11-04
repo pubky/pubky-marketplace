@@ -250,7 +250,7 @@ export default function InitializedMDXEditor({
           className={cn(
             'cursor-auto flex-row items-center gap-x-2 rounded-md p-2',
             maxLengthWarning === 'approaching' && 'bg-yellow-500/15 text-yellow-500 [.light_&]:text-yellow-700',
-            maxLengthWarning === 'reached' && 'bg-red-500/15 text-red-500',
+            maxLengthWarning === 'reached' && 'bg-red-500/15 text-error-foreground',
           )}
           data-testid="max-length-warning"
         >

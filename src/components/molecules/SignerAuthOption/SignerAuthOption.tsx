@@ -92,7 +92,7 @@ export function SignerAuthOption({
       type="button"
       data-testid={qrOnly ? testId : undefined}
       className={cn(
-        'group relative flex cursor-pointer items-center justify-center rounded-md bg-foreground p-2',
+        'group relative flex cursor-pointer items-center justify-center rounded-md bg-foreground p-2 [.light_&]:bg-white',
         qrOnly ? 'aspect-square w-full' : 'size-48',
       )}
       onClick={isExpired ? fetchUrl : handleQRClick}

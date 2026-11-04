@@ -217,7 +217,7 @@ export function MarketplaceFilters({
           <SlidersHorizontal aria-hidden="true" className="size-4" />
           Filters
           {collapsedFilterCount > 0 && (
-            <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-xs font-semibold text-primary-foreground">
+            <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-xs font-semibold text-bright-fill-foreground">
               {collapsedFilterCount}
             </span>
           )}

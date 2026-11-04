@@ -7,6 +7,8 @@ import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
 import { DeliveryKeyBlockedNotice } from '@/molecules/Marketplace/DeliveryKeyBlockedNotice';
 import { ListingPublishGuardNotice } from '@/molecules/Marketplace/ListingPublishGuardNotice';
 import { MarketplaceDeliveryKeyStep } from '@/organisms/Marketplace/MarketplaceDeliveryKeyStep';
+import { MarketplaceDeliveryKeyChangeDialog } from '@/organisms/Marketplace/MarketplaceDeliveryKeyChangeDialog';
+import { expectTextContrast } from '@/test-utils/color-contrast';
 
 const SELLER = 'gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco';
 
@@ -39,6 +41,21 @@ function Page({ children }: { children: React.ReactNode }) {
 }
 
 describe('Delivery key — visual regression', () => {
+  it.each(['dark', 'light'] as const)('keeps changed key comparison label text contrast in %s mode', async (theme) => {
+    const screen = await renderForVRT(
+      <MarketplaceDeliveryKeyChangeDialog
+        change={{ sellerPubky: SELLER, pinnedKeyId: 'a'.repeat(32), currentKeyId: 'b'.repeat(32) }}
+        onDecision={vi.fn()}
+      />,
+      { viewport: VRT_VIEWPORT_DESKTOP, theme },
+    );
+    for (const label of [/^Seller /, 'Key you saw before', 'Key the seller publishes now']) {
+      const text = screen.getByText(label);
+      await expect(text).toBeVisible();
+      expectTextContrast(text.element());
+    }
+  });
+
   it.each([
     ['desktop', VRT_VIEWPORT_DESKTOP],
     ['mobile', VRT_VIEWPORT_MOBILE],

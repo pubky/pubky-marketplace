@@ -471,7 +471,7 @@ function MarketplaceReviewVerificationBadge({ review }: { review: CommerceIndexe
   const trustedAttestor = indexedReviewTrustedAttestor(review);
   if (trustedAttestor !== null) {
     return (
-      <Badge variant="secondary" className="gap-1 text-emerald-400 [.light_&]:text-emerald-700">
+      <Badge variant="secondary" className="gap-1 text-emerald-400 [.light_&]:text-emerald-800">
         <BadgeCheck className="size-3" />
         {`Verified purchase · ${trustedAttestor.label}`}
       </Badge>

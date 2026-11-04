@@ -843,7 +843,7 @@ export function MarketplacePaymentStatusCard({
                     <Typography
                       as="p"
                       role="alert"
-                      className="text-sm text-amber-300"
+                      className="text-sm text-warning-foreground"
                       data-testid="paypal-checkout-url-refused"
                     >
                       {PAYPAL_CHECKOUT_URL_REFUSED_COPY}
