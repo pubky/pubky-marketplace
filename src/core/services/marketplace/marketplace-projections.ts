@@ -321,22 +321,29 @@ export const marketplaceNotificationReviewReasonSchema = z.enum([
  * (pubky/pubky-marketplace-service `docs/moderation-decisions.md`), sent to
  * the owner of the restricted listing, shop or review only.
  */
-export const marketplaceModerationDecisionSchema = z.object({
-  id: z.uuid(),
-  restriction: z.enum(['listing_removed', 'shop_suspended', 'review_text_hidden', 'review_excluded']),
-  targetUri: z.string().min(1),
-  territorialScope: z.string().min(1),
-  endsAt: z.iso.datetime({ offset: true }).nullable(),
-  decidedAt: z.iso.datetime({ offset: true }),
-  basis: z.enum(['notice', 'own_initiative']),
-  facts: z.string().min(1),
-  automatedDetection: z.boolean(),
-  automatedDecision: z.boolean(),
-  automatedMeans: z.string().min(1).nullable(),
-  ground: z.enum(['illegal_content', 'terms']),
-  groundReference: z.string().min(1),
-  explanation: z.string().min(1),
-});
+export const marketplaceModerationDecisionSchema = z
+  .object({
+    id: z.uuid(),
+    restriction: z.enum(['listing_removed', 'shop_suspended', 'review_text_hidden', 'review_excluded']),
+    targetUri: z.string().min(1),
+    territorialScope: z.string().min(1),
+    endsAt: z.iso.datetime({ offset: true }).nullable(),
+    decidedAt: z.iso.datetime({ offset: true }),
+    basis: z.enum(['notice', 'own_initiative']),
+    facts: z.string().min(1),
+    automatedDetection: z.boolean(),
+    automatedDecision: z.boolean(),
+    automatedMeans: z.string().min(1).nullable(),
+    ground: z.enum(['illegal_content', 'terms']),
+    groundReference: z.string().min(1),
+    explanation: z.string().min(1),
+  })
+  // The service describes automated means exactly when they were used; a
+  // statement that says otherwise would misstate how it was decided.
+  .refine(
+    (decision) => (decision.automatedDetection || decision.automatedDecision) === (decision.automatedMeans !== null),
+    { message: 'automatedMeans must be present exactly when automated means were used' },
+  );
 
 export type MarketplaceModerationDecision = z.infer<typeof marketplaceModerationDecisionSchema>;
 

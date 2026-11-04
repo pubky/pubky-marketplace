@@ -5,27 +5,31 @@ import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { MODERATION_DECISION_COPY } from '@/config/commerce-copy';
 import { COMPLAINT_EMAIL } from '@/config/legal';
+import { parseListingUri } from '@/libs/commerce/listingUri';
+import { commercePubkySchema } from '@/libs/commerce/transaction-contracts';
 import { formatDateTime } from '@/libs/utils/dateTime';
 import type { MarketplaceModerationDecision } from '@/services/marketplace/marketplace-projections';
 
-const LISTING_PATH = '/pub/pubky.app/marketplace/v1/listings/';
-const PROFILE_PATH = '/pub/pubky.app/profile.json';
+const PROFILE_URI_PATTERN = /^pubky:\/\/([^/]+)\/pub\/pubky\.app\/profile\.json$/;
 
-/** Where the restricted item can be opened in the Shop, or null for a review. */
+/** Where the restricted item can be opened in the Shop, or null for a review or a malformed target. */
 export function moderationTargetLink(
   decision: Pick<MarketplaceModerationDecision, 'restriction' | 'targetUri'>,
 ): { href: string; label: string } | null {
-  const match = /^pubky:\/\/([^/]+)(\/.*)$/.exec(decision.targetUri);
-  if (!match) return null;
-  const [, owner, path] = match;
-  if (decision.restriction === 'listing_removed' && path.startsWith(LISTING_PATH)) {
-    const listingId = path.slice(LISTING_PATH.length);
-    return listingId && !listingId.includes('/')
-      ? { href: getMarketplaceListingRoute(owner, listingId), label: MODERATION_DECISION_COPY.viewListing }
+  if (decision.restriction === 'listing_removed') {
+    const listing = parseListingUri(decision.targetUri);
+    return listing
+      ? {
+          href: getMarketplaceListingRoute(listing.sellerPubky, listing.listingId),
+          label: MODERATION_DECISION_COPY.viewListing,
+        }
       : null;
   }
-  if (decision.restriction === 'shop_suspended' && path === PROFILE_PATH) {
-    return { href: getMarketplaceShopRoute(owner), label: MODERATION_DECISION_COPY.viewShop };
+  if (decision.restriction === 'shop_suspended') {
+    const owner = PROFILE_URI_PATTERN.exec(decision.targetUri)?.[1];
+    return owner && commercePubkySchema.safeParse(owner).success
+      ? { href: getMarketplaceShopRoute(owner), label: MODERATION_DECISION_COPY.viewShop }
+      : null;
   }
   return null;
 }
@@ -40,8 +44,11 @@ export function moderationAutomationCopy(
   return automation.none;
 }
 
-export function moderationAppealHref(reference: string): string {
-  return `mailto:${COMPLAINT_EMAIL}?subject=${encodeURIComponent(MODERATION_DECISION_COPY.appealSubject(reference))}`;
+/** The appeal email, with the decision's reference in the subject when it is known. */
+export function moderationAppealHref(reference: string | null): string {
+  const subject =
+    reference === null ? MODERATION_DECISION_COPY.unreadableSubject : MODERATION_DECISION_COPY.appealSubject(reference);
+  return `mailto:${COMPLAINT_EMAIL}?subject=${encodeURIComponent(subject)}`;
 }
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
@@ -95,7 +102,13 @@ export function MarketplaceModerationDecisionCard({
         {decision ? (
           <ModerationDecisionDetails decision={decision} />
         ) : (
-          <Body testId="moderation-decision-unreadable">{copy.unreadable(COMPLAINT_EMAIL)}</Body>
+          <>
+            <Body testId="moderation-decision-unreadable">{copy.unreadable(COMPLAINT_EMAIL)}</Body>
+            <Link href={moderationAppealHref(null)} className="text-sm" data-testid="moderation-decision-appeal">
+              {copy.appealAction}
+            </Link>
+            <Body>{copy.otherRedress}</Body>
+          </>
         )}
       </CardContent>
     </Card>

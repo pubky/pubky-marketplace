@@ -102,6 +102,11 @@ describe('MarketplaceModerationDecisionCard', () => {
     expect(screen.getByTestId('moderation-decision-unreadable')).toHaveTextContent(
       MODERATION_DECISION_COPY.unreadable(COMPLAINT_EMAIL),
     );
+    expect(screen.getByTestId('moderation-decision-appeal')).toHaveAttribute(
+      'href',
+      `mailto:${COMPLAINT_EMAIL}?subject=Appeal`,
+    );
+    expect(screen.getByText(MODERATION_DECISION_COPY.otherRedress)).toBeInTheDocument();
   });
 });
 
@@ -128,6 +133,21 @@ describe('moderation decision helpers', () => {
       moderationTargetLink(decision({ targetUri: `pubky://${SELLER}/pub/pubky.app/marketplace/v1/listings/a/b` })),
     ).toBeNull();
     expect(moderationTargetLink(decision({ targetUri: 'https://example.com/x' }))).toBeNull();
+    for (const targetUri of [
+      'pubky://x/pub/pubky.app/marketplace/v1/listings/lst_1',
+      `pubky://${SELLER}/pub/pubky.app/marketplace/v1/listings/lst_1?x=1`,
+      `pubky://${SELLER}/pub/pubky.app/marketplace/v1/listings/lst#1`,
+      `pubky://${SELLER}/pub/pubky.app/profile.json`,
+    ]) {
+      expect(moderationTargetLink(decision({ targetUri })), targetUri).toBeNull();
+    }
+    for (const targetUri of [
+      'pubky://x/pub/pubky.app/profile.json',
+      `pubky://${SELLER}/pub/pubky.app/profile.json?x`,
+      `pubky://${SELLER}/pub/pubky.app/marketplace/v1/listings/lst_1`,
+    ]) {
+      expect(moderationTargetLink(decision({ restriction: 'shop_suspended', targetUri })), targetUri).toBeNull();
+    }
   });
 
   it('names how automated means were used', () => {
@@ -146,5 +166,6 @@ describe('moderation decision helpers', () => {
 
   it('builds the appeal email with the reference in the subject', () => {
     expect(moderationAppealHref('abc')).toBe(`mailto:${COMPLAINT_EMAIL}?subject=Appeal%20abc`);
+    expect(moderationAppealHref(null)).toBe(`mailto:${COMPLAINT_EMAIL}?subject=Appeal`);
   });
 });

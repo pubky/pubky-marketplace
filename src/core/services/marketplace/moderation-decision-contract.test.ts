@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
 import { activityRowHref } from '@/libs/commerce/activity-links';
 import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
+import { MarketplaceNotificationNormalizer } from '@/pipes/marketplaceNotification/marketplaceNotification.normalizer';
 import { MARKETPLACE_ACTIVITY_LABELS } from './marketplace-activity-copy';
 import { isRecognizedMarketplaceNotification, parseMarketplaceNotificationEntries } from './marketplace-projections';
 
@@ -74,8 +75,14 @@ describe('moderation decision notification contract', () => {
     expect(activityRowHref('moderation_decision', entry.aggregateId)).toBe(MARKETPLACE_ROUTES.NOTIFICATIONS);
   });
 
-  it('keeps the row when the statement cannot be read', () => {
-    for (const decision of [null, { ...DECISION_VIEW, restriction: 'account_banned' }, { id: 'nope' }]) {
+  it('keeps the row when the statement cannot be read or contradicts itself', () => {
+    for (const decision of [
+      null,
+      { ...DECISION_VIEW, restriction: 'account_banned' },
+      { id: 'nope' },
+      { ...DECISION_VIEW, automated_detection: true, automated_means: null },
+      { ...DECISION_VIEW, automated_means: 'An image classifier flagged the photos.' },
+    ]) {
       const [entry] = parseMarketplaceNotificationEntries(
         toCamelCaseWire({ notifications: [moderationRow(decision)] }),
       );
@@ -84,5 +91,22 @@ describe('moderation decision notification contract', () => {
       expect(entry.type).toBe('moderation_decision');
       expect(entry.moderationDecision).toBeNull();
     }
+  });
+
+  it('never carries the statement into the general notification feed', () => {
+    const [entry] = parseMarketplaceNotificationEntries(
+      toCamelCaseWire({ notifications: [moderationRow(DECISION_VIEW)] }),
+    );
+    const feed = JSON.stringify(MarketplaceNotificationNormalizer.toFeedNotification(entry, 'transaction-service'));
+    for (const text of [
+      DECISION_VIEW.facts,
+      DECISION_VIEW.explanation,
+      DECISION_VIEW.ground_reference,
+      DECISION_VIEW.target_uri,
+      DECISION_VIEW.territorial_scope,
+    ]) {
+      expect(feed).not.toContain(text);
+    }
+    expect(JSON.parse(feed)).toMatchObject({ type: 'moderation_decision', href: MARKETPLACE_ROUTES.NOTIFICATIONS });
   });
 });

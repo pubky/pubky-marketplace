@@ -69,7 +69,6 @@ export const MODERATION_DECISION_COPY = {
     review_excluded: 'We hid your review and left it out of every rating.',
   },
   whatLabel: 'What we did',
-  itemLabel: 'Affected',
   viewListing: 'View the listing',
   viewShop: 'View your shop',
   scopeLabel: 'Where it applies',
@@ -102,7 +101,8 @@ export const MODERATION_DECISION_COPY = {
   otherRedress: 'You can also take the decision to a certified out-of-court dispute settlement body, or to a court.',
   referenceLabel: 'Reference',
   unreadable: (email: string) =>
-    `We sent you a moderation decision that this version of the app cannot show. Email ${email} with “Appeal” in the subject to receive it or to contest it.`,
+    `We sent you a moderation decision that this version of the app cannot show. Email ${email} with “Appeal” in the subject, within six months of the decision, to receive it or to contest it.`,
+  unreadableSubject: 'Appeal',
 } as const;
 
 /** The sort control above a review list (reviews design section 3). */
