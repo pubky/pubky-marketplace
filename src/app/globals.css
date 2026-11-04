@@ -51,6 +51,10 @@ body {
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
   --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-destructive-button: var(--destructive-button);
+  --color-destructive-button-hover: var(--destructive-button-hover);
+  --color-error-foreground: var(--error-foreground);
   --color-foreground-strong: var(--foreground-strong);
   --color-glass: var(--glass);
   --color-glass-hover: var(--glass-hover);
@@ -170,6 +174,16 @@ body {
    */
   --warning-foreground: var(--color-amber-300);
   --notice-foreground: var(--color-amber-200);
+  /** Label on solid brand fills: the dark page colour in dark mode, a fixed dark ink in light mode. */
+  --brand-foreground: var(--background);
+  /**
+   * Solid destructive Button fill and hover. Dark mode keeps the translucent `/60` and `/90` mixes
+   * over dark surfaces; light mode needs an opaque, darker red so the pale label stays readable.
+   */
+  --destructive-button: color-mix(in oklab, var(--destructive) 60%, transparent);
+  --destructive-button-hover: color-mix(in oklab, var(--destructive) 90%, transparent);
+  /** Input and textarea validation message text. */
+  --error-foreground: var(--color-red-500);
   --toast-action-muted: oklch(0.218 0.006 286);
   --toast-action-muted-hover-border: oklch(0.277 0.006 286);
   --transparent: oklch(0.118 0.014 284.115 / 0);
@@ -517,6 +531,10 @@ body {
   --embed: var(--background);
   --warning-foreground: var(--color-amber-800);
   --notice-foreground: var(--color-amber-800);
+  --brand-foreground: #1d1d20;
+  --destructive-button: var(--color-red-700);
+  --destructive-button-hover: var(--color-red-800);
+  --error-foreground: var(--color-red-700);
   --toast-action-muted: #f4f4f9;
   --toast-action-muted-hover-border: #e4e4ec;
   --transparent: rgb(255 255 255 / 0);

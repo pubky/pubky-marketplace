@@ -541,7 +541,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
 
             <div className="flex flex-wrap items-center gap-2" data-surface="marketplace-listing-purchase">
               {record.sale.format === 'auction' ? (
-                <div className="[&_[data-slot=button]]:border-brand [&_[data-slot=button]]:bg-brand [&_[data-slot=button]]:text-background [&_[data-slot=button]:hover]:bg-brand/90">
+                <div className="[&_[data-slot=button]]:border-brand [&_[data-slot=button]]:bg-brand [&_[data-slot=button]]:text-brand-foreground [&_[data-slot=button]:hover]:bg-brand/90">
                   <MarketplaceBidDialog
                     aggregateId={aggregateId}
                     projection={negotiation.projection}
