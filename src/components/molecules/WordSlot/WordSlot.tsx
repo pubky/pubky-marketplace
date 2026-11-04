@@ -64,7 +64,7 @@ export const WordSlot = (props: WordSlotProps) => {
     'bg-background/10',
     canClear && 'cursor-pointer',
     isCorrect && 'border-brand hover:bg-brand/10',
-    isError && 'border-destructive hover:bg-destructive/20',
+    isError && 'border-destructive hover:bg-destructive/20 [.light_&]:hover:bg-destructive/10',
     !isCorrect && !isError && 'border-input hover:bg-secondary/80',
   );
 

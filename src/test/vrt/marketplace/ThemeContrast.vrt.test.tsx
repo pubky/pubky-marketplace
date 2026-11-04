@@ -31,10 +31,18 @@ describe('Light theme contrast', () => {
       { viewport: VRT_VIEWPORT_DESKTOP, theme: 'light' },
     );
 
+    await screen.getByText('Enter a positive bid.').hover();
     for (const input of document.querySelectorAll('input')) expectTextContrast(input);
     expectTextContrast(screen.getByText('Enter a positive bid.').element());
     expectTextContrast(screen.getByText('371 posts today').element());
     for (const badge of document.querySelectorAll('[data-slot="badge"]')) expectTextContrast(badge);
+    for (const index of [1, 2]) {
+      const word = screen.getByRole('textbox').nth(index);
+      await word.hover();
+      expectTextContrast(word.element());
+    }
+    await screen.getByText('371 posts today').hover();
+    expectTextContrast(screen.getByText('371 posts today').element());
     await screen.getByRole('textbox').nth(1).click();
     expect(onClear).toHaveBeenCalledWith(0);
   });
