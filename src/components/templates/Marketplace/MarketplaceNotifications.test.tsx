@@ -147,6 +147,47 @@ describe('MarketplaceNotifications', () => {
     expect(queryByText(/not available yet/)).not.toBeInTheDocument();
   });
 
+  it('shows a moderation decision as its statement of reasons, not as a link row', () => {
+    marketplaceView.notifications = [
+      {
+        id: '00000000-0000-4000-8000-000000000941',
+        recipientPubky: 'y'.repeat(52),
+        actorPubky: 'system',
+        type: 'moderation_decision',
+        aggregateId: 'moderation_decision:6f1c2b8e-1d2a-4c3b-9e8f-0a1b2c3d4e5f',
+        createdAt: '2026-11-04T12:00:05.000Z',
+        readAt: null,
+        moderationDecision: {
+          id: '6f1c2b8e-1d2a-4c3b-9e8f-0a1b2c3d4e5f',
+          restriction: 'review_excluded',
+          targetUri: `pubky://${'y'.repeat(52)}/pub/pubky.app/marketplace/v1/reviews/r1`,
+          territorialScope: 'Every region where Pubky Market is offered',
+          endsAt: null,
+          decidedAt: '2026-11-04T12:00:00.000Z',
+          basis: 'own_initiative',
+          facts: 'The review was posted by the seller about their own listing.',
+          automatedDetection: false,
+          automatedDecision: false,
+          automatedMeans: null,
+          ground: 'terms',
+          groundReference: 'Pubky Terms of Service, Reviews',
+          explanation: 'Reviews must come from a buyer of the listing.',
+        },
+      },
+    ];
+
+    const { getByTestId, getByText, queryByText } = render(<MarketplaceNotifications />);
+
+    expect(getByTestId('moderation-decision-card')).toBeInTheDocument();
+    expect(getByText('We hid your review and left it out of every rating.')).toBeInTheDocument();
+    expect(getByText('The review was posted by the seller about their own listing.')).toBeInTheDocument();
+    expect(getByTestId('moderation-decision-appeal')).toHaveAttribute(
+      'href',
+      'mailto:report@synonym.to?subject=Appeal%206f1c2b8e-1d2a-4c3b-9e8f-0a1b2c3d4e5f',
+    );
+    expect(queryByText('From System')).not.toBeInTheDocument();
+  });
+
   it('keeps the incomplete-history banner for a type the Shop has no copy for', () => {
     marketplaceView.notifications = [
       {

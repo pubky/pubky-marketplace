@@ -131,6 +131,8 @@ function getBaseActionText(type: MarketplaceNotification['type']): string {
       return 'sold out a drop';
     case 'payment_reversal_cancelled':
       return 'restored a disputed payment';
+    case 'moderation_decision':
+      return 'sent you a moderation decision';
     default: {
       const exhaustiveCheck: never = type;
       return exhaustiveCheck;

@@ -53,6 +53,58 @@ export const REVIEW_MODERATION_COPY = {
   notCountedHeading: (count: number) => `${count} not counted`,
 } as const;
 
+/**
+ * The statement of reasons a seller or reviewer receives when Pubky Market
+ * moderation restricts their listing, shop or review (EU Digital Services Act
+ * Art. 17(3)). The appeal route is the Terms' Complaint Procedure.
+ */
+export const MODERATION_DECISION_COPY = {
+  heading: 'Moderation decision',
+  restriction: {
+    listing_removed:
+      'We removed your listing from Pubky Market. It no longer appears in the catalogue, in search or on your shop page, and it cannot be bought, bid on or offered on. The listing record on your homeserver is not deleted.',
+    shop_suspended:
+      'We suspended your shop on Pubky Market. Your shop and all your listings no longer appear, and they cannot be bought, bid on or offered on. The records on your homeserver are not deleted.',
+    review_text_hidden: 'We hid the text of your review. Its star rating still counts.',
+    review_excluded: 'We hid your review and left it out of every rating.',
+  },
+  whatLabel: 'What we did',
+  itemLabel: 'Affected',
+  viewListing: 'View the listing',
+  viewShop: 'View your shop',
+  scopeLabel: 'Where it applies',
+  durationLabel: 'For how long',
+  untilLifted: 'Until the decision is lifted',
+  until: (date: string) => `Until ${date}`,
+  decidedLabel: 'Decided',
+  groundLabel: 'Why',
+  ground: {
+    terms: (reference: string) => `It breaks our Terms: ${reference}.`,
+    illegal_content: (reference: string) => `It is illegal content under ${reference}.`,
+  },
+  factsLabel: 'What we relied on',
+  basis: {
+    notice: 'We acted on a report.',
+    own_initiative: 'We found this in our own review.',
+  },
+  automationLabel: 'How it was decided',
+  automation: {
+    none: 'A person on the Pubky Market moderation team found this and took the decision. No automated means were used.',
+    detectedOnly: 'Automated means detected this. A person on the Pubky Market moderation team took the decision.',
+    decidedOnly: 'A person found this. The decision was taken by automated means.',
+    detectedAndDecided: 'Automated means detected this and took the decision.',
+  },
+  redressLabel: 'If you disagree',
+  appeal: (email: string) =>
+    `Email ${email} with “Appeal” and the reference below in the subject, within six months of this decision. Someone who did not take the decision reviews your appeal, and we reverse the decision if it was wrong.`,
+  appealAction: 'Appeal this decision',
+  appealSubject: (reference: string) => `Appeal ${reference}`,
+  otherRedress: 'You can also take the decision to a certified out-of-court dispute settlement body, or to a court.',
+  referenceLabel: 'Reference',
+  unreadable: (email: string) =>
+    `We sent you a moderation decision that this version of the app cannot show. Email ${email} with “Appeal” in the subject to receive it or to contest it.`,
+} as const;
+
 /** The sort control above a review list (reviews design section 3). */
 export const REVIEW_SORT_COPY: {
   label: string;
