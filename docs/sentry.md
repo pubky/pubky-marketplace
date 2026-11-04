@@ -14,6 +14,7 @@ Set these on the **Shop container**, keeping the existing network and embedded c
 ```dotenv
 PUBKY_RUNTIME_SENTRY_DSN=<DSN from synonym-52 / pubky-marketplace>
 PUBKY_RUNTIME_SENTRY_ENVIRONMENT=staging
+PUBKY_RUNTIME_SENTRY_SAMPLE_RATE=0.1
 PUBKY_RUNTIME_SENTRY_TRACES_SAMPLE_RATE=0.1
 PUBKY_RUNTIME_SENTRY_REPLAYS_SESSION_SAMPLE_RATE=0.0
 PUBKY_RUNTIME_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE=1.0
@@ -23,6 +24,33 @@ The DSN is a public client key, available in the project's **Settings → Client
 It is not the upload auth token. Set the environment to `production` for the production deployment.
 Staging uses `PUBKY_RUNTIME_TESTNET=false`; the testnet switch is for test networks and disables
 Sentry. Do not change the homeserver/network settings to enable telemetry.
+
+`PUBKY_RUNTIME_SENTRY_SAMPLE_RATE` controls **error events**. The existing
+`PUBKY_RUNTIME_SENTRY_TRACES_SAMPLE_RATE` controls performance traces only and does not reduce
+error-quota usage. Without an explicit error rate, browser, Node and Edge use `0.1` when
+the resolved Sentry environment contains a hyphen-delimited `staging` label (for example,
+`staging`, `shop-staging` or `staging-eu`) and `1.0` elsewhere. Network deployment identity
+(`PUBKY_RUNTIME_ENV`) does not select this policy: previews using staging homeservers keep
+full error sampling when `PUBKY_RUNTIME_SENTRY_ENVIRONMENT=preview`. An explicit error rate
+overrides the default in any environment.
+
+Staging also bounds repeated IO-deadline `AppError` / `REQUEST_TIMEOUT` events marked by
+`withIoDeadline`: after SDK sampling, the first timeout per service, operation, static endpoint
+label and IO budget is retained, then at most one per minute while the outage continues.
+Nexus calls must supply an allowlisted endpoint template; unlabelled Nexus timeouts pass through.
+The labels contain no URLs, public keys or order IDs. HTTP 408, session, auth-flow and pass-deadline
+timeouts without the IO marker keep normal reporting.
+
+This is per SDK instance, with a bounded cache of 128 keys, not an organization-wide quota.
+Production and preview timeouts are unaffected. Filtering runs in `beforeSend` for both explicit
+and automatic captures. Known duplicates are dropped before recursive privacy scrubbing;
+retained events must pass the scrubber before consuming a quota slot. Trace and Replay sampling
+remain separate.
+
+This protects error quota when a polling read or background publication repeatedly times out.
+It does not fix the upstream timeout or change polling, retry, payment or publication behavior.
+Inspect the retained event's `error.service`, `error.operation`, `error.context.ioEndpoint` and
+`error.context.timeoutMs` to identify the failing IO before changing those workflows.
 
 For readable production stack traces, the **Shop image build** also needs:
 
@@ -206,6 +234,7 @@ All Sentry values are part of the **optional runtime-config tier** ([ADR 0018](a
 | --------------------------------------------------- | ----------------------- | ---------------------------------------------------------- |
 | `PUBKY_RUNTIME_SENTRY_DSN`                          | browser + server + edge | Optional. Empty/unset disables Sentry entirely.            |
 | `PUBKY_RUNTIME_SENTRY_ENVIRONMENT`                  | all                     | Optional. Defaults to `NODE_ENV`.                          |
+| `PUBKY_RUNTIME_SENTRY_SAMPLE_RATE`                  | all                     | Optional. Error events: `0.1` on staging, `1.0` elsewhere. |
 | `PUBKY_RUNTIME_TESTNET`                             | all                     | When `true`, Sentry is disabled (CI E2E / testnet deploy). |
 | `PUBKY_RUNTIME_SENTRY_TRACES_SAMPLE_RATE`           | all                     | Optional. Default `0.1`.                                   |
 | `PUBKY_RUNTIME_SENTRY_REPLAYS_SESSION_SAMPLE_RATE`  | browser                 | Optional. Default `0.0` (record only on error).            |
@@ -274,9 +303,13 @@ document is `/shop-embed/sentry-test`, and its server triggers must call
 `/shop-embed/api/sentry-test`, not Pubky App's root `/api/sentry-test`. The harness is reachable
 outside the `production` Sentry environment; set the explicit `staging` environment above.
 Trigger each capture path. The diagnostics card shows the resolved runtime
-settings, including **Client SDK initialized** (`Sentry.getClient()`), which catches the
+settings, including the effective **Error sample rate** and **Client SDK initialized** (`Sentry.getClient()`), which catches the
 silent-failure mode where Sentry is enabled but the browser SDK never initialized because
 `window.__PUBKY_CONFIG__` was not injected before `instrumentation-client.ts` evaluated.
+
+For a deterministic staging harness check, temporarily set `PUBKY_RUNTIME_SENTRY_SAMPLE_RATE=1`
+and restart/redeploy, then restore `0.1` afterward. At `0.1`, a single test event may legitimately
+be sampled out. Repeated request timeouts still have the per-minute staging limit.
 
 Then inspect recent events in **`pubky-marketplace`** for the configured environment and confirm the
 **source maps** resolve (original `.tsx`/`.ts` frames, not minified bundle names) and the **`release`**

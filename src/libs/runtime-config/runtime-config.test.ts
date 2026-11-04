@@ -21,6 +21,7 @@ import {
   getSentryEnvironment,
   getSentryReplaysOnErrorSampleRate,
   getSentryReplaysSessionSampleRate,
+  getSentrySampleRate,
   getSentryTracesSampleRate,
   getUsdtPaymentsEnabled,
   readClientConfig,
@@ -50,6 +51,7 @@ const RUNTIME_ENV_VALUES: Partial<Record<keyof RuntimeConfig, string>> = {
   deployEnv: 'production',
   sentryDsn: 'https://abc123@o123.ingest.runtime.example.com/456',
   sentryEnvironment: 'staging',
+  sentrySampleRate: '0.2',
   sentryTracesSampleRate: '0.5',
   sentryReplaysSessionSampleRate: '0.25',
   sentryReplaysOnErrorSampleRate: '1',
@@ -147,6 +149,7 @@ describe('runtime-config resolver', () => {
       expect(config.testnet).toBe(false);
       expect(config.sentryDsn).toBe('https://abc123@o123.ingest.runtime.example.com/456');
       expect(config.sentryEnvironment).toBe('staging');
+      expect(config.sentrySampleRate).toBe(0.2);
       expect(config.sentryTracesSampleRate).toBe(0.5);
       expect(getMarketplaceUrl()).toBe('https://marketplace.runtime.example.com');
       expect(getLocksUrl()).toBe('https://locks.runtime.example.com');
@@ -160,6 +163,7 @@ describe('runtime-config resolver', () => {
       const config = readServerConfig();
       expect(config.sentryDsn).toBeUndefined();
       expect(config.sentryEnvironment).toBeUndefined();
+      expect(config.sentrySampleRate).toBeUndefined();
       expect(config.sentryTracesSampleRate).toBe(SENTRY_RUNTIME_DEFAULTS.sentryTracesSampleRate);
       expect(config.sentryReplaysSessionSampleRate).toBe(SENTRY_RUNTIME_DEFAULTS.sentryReplaysSessionSampleRate);
       expect(config.sentryReplaysOnErrorSampleRate).toBe(SENTRY_RUNTIME_DEFAULTS.sentryReplaysOnErrorSampleRate);
@@ -171,6 +175,22 @@ describe('runtime-config resolver', () => {
       const config = readServerConfig();
       expect(config.nexusUrl).toBe('https://nexus.runtime.example.com');
       expect(config.sentryEnvironment).toBe('staging');
+      expect(config.sentrySampleRate).toBe(0.2);
+    });
+
+    it.each(['-0.1', '1.1', 'NaN', 'nope'])('rejects an invalid error sample rate: %s', (rate) => {
+      setAllRuntimeEnv();
+      process.env[PUBKY_RUNTIME_ENV_NAMES.sentrySampleRate] = rate;
+      expect(() => readServerConfig()).toThrow();
+    });
+
+    it.each(['0', '1'])('preserves the error sample rate boundary %s through server-to-browser injection', (rate) => {
+      setAllRuntimeEnv();
+      process.env[PUBKY_RUNTIME_ENV_NAMES.sentrySampleRate] = rate;
+      const server = readServerConfig();
+      window[RUNTIME_CONFIG_WINDOW_KEY] = JSON.parse(JSON.stringify(server));
+      expect(getSentrySampleRate()).toBe(Number(rate));
+      expect(serializeRuntimeConfig()).toContain(`"sentrySampleRate":${rate}`);
     });
 
     it('throws on partial PUBKY_RUNTIME_* config in deployed/required mode', () => {
@@ -692,6 +712,7 @@ describe('runtime-config resolver', () => {
       const serialized = serializeRuntimeConfig();
       expect(serialized).not.toContain('sentryDsn');
       expect(serialized).not.toContain('sentryEnvironment');
+      expect(serialized).not.toContain('sentrySampleRate');
       // Defaulted rates are always present so the client never re-derives them.
       expect(serialized).toContain('sentryTracesSampleRate');
     });
@@ -703,6 +724,7 @@ describe('runtime-config resolver', () => {
         ...NETWORK_RUNTIME_DEFAULTS,
         sentryDsn: 'https://abc123@o123.ingest.injected.example.com/456',
         sentryEnvironment: 'preview',
+        sentrySampleRate: 0.2,
         sentryTracesSampleRate: 0.5,
         sentryReplaysSessionSampleRate: 0.25,
         sentryReplaysOnErrorSampleRate: 0.75,
@@ -710,6 +732,7 @@ describe('runtime-config resolver', () => {
 
       expect(getSentryDsn()).toBe('https://abc123@o123.ingest.injected.example.com/456');
       expect(getSentryEnvironment()).toBe('preview');
+      expect(getSentrySampleRate()).toBe(0.2);
       expect(getSentryTracesSampleRate()).toBe(0.5);
       expect(getSentryReplaysSessionSampleRate()).toBe(0.25);
       expect(getSentryReplaysOnErrorSampleRate()).toBe(0.75);
@@ -720,6 +743,7 @@ describe('runtime-config resolver', () => {
 
       expect(getSentryDsn()).toBeUndefined();
       expect(getSentryEnvironment()).toBeUndefined();
+      expect(getSentrySampleRate()).toBeUndefined();
       expect(getSentryTracesSampleRate()).toBe(SENTRY_RUNTIME_DEFAULTS.sentryTracesSampleRate);
       expect(getSentryReplaysSessionSampleRate()).toBe(SENTRY_RUNTIME_DEFAULTS.sentryReplaysSessionSampleRate);
       expect(getSentryReplaysOnErrorSampleRate()).toBe(SENTRY_RUNTIME_DEFAULTS.sentryReplaysOnErrorSampleRate);

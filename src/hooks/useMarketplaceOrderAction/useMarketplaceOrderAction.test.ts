@@ -372,6 +372,168 @@ describe('useMarketplaceOrderAction refund', () => {
   });
 });
 
+describe('useMarketplaceOrderAction Bitcoin refund in the sats received', () => {
+  const usd = (cents: number) => ({ amountMinor: cents, currency: 'USD', exponent: 2 });
+  const sat = (sats: number) => ({ amountMinor: sats, currency: 'SAT', exponent: 0 });
+  const received = (sats: number) => ({ amountMinor: sats, unit: 'sat' as const, exponent: 0 });
+  /** 137.00 USD paid through a fork Paykit request for 51,637 sats, payment code included. */
+  const usdPriced = (overrides = {}) =>
+    createOrderFixture('cancelled', {
+      paymentMethod: 'paykit',
+      paymentAsset: null,
+      subtotal: usd(12_500),
+      shipping: usd(1_200),
+      total: usd(13_700),
+      paykitTotalSats: 51_637,
+      bitcoinPayable: sat(51_637),
+      refundCap: received(51_637),
+      ...overrides,
+    });
+  /** 50,000 sats with a 37-sat payment code: the projected total is the payable. */
+  const satPriced = (overrides = {}) =>
+    createOrderFixture('cancelled', {
+      paymentMethod: 'paykit',
+      paymentAsset: null,
+      subtotal: sat(48_000),
+      shipping: sat(2_000),
+      merchandiseTotal: sat(50_000),
+      total: sat(50_037),
+      paykitTotalSats: 50_037,
+      bitcoinPayable: sat(50_037),
+      refundCap: received(50_037),
+      ...overrides,
+    });
+
+  it.each([
+    ['a USD price, at the payable', usdPriced(), '51637', 51_637],
+    ['a USD price, overpaid', usdPriced({ refundCap: received(53_000) }), '53000', 53_000],
+    ['a sats price, payment code included', satPriced(), '50037', 50_037],
+    ['a sats price, underpaid', satPriced({ refundCap: received(49_000) }), '49000', 49_000],
+  ])('starts at the sats received on %s and records them as sats', async (_case, order, prefill, amountMinor) => {
+    const actOnOrder = vi.fn(async () => true);
+    const { result } = renderHook(() => useMarketplaceOrderAction(order, actOnOrder));
+
+    act(() => {
+      result.current.setAction('refund', { transactionId: 'txid-bitcoin-refund' });
+    });
+    expect(result.current.form.getValues('amount')).toBe(prefill);
+    let succeeded = false;
+    await act(async () => {
+      succeeded = await result.current.submit();
+    });
+
+    expect(succeeded).toBe(true);
+    expect(actOnOrder).toHaveBeenCalledWith(order, 'refund.record_external', {
+      amountMinor,
+      transactionId: 'txid-bitcoin-refund',
+      amountUnit: 'sat',
+    });
+  });
+
+  it('records part of a USD-priced order in sats, above its total in cents', async () => {
+    const order = usdPriced();
+    const actOnOrder = vi.fn(async () => true);
+    const { result } = renderHook(() => useMarketplaceOrderAction(order, actOnOrder));
+
+    act(() => {
+      result.current.setAction('refund', { amount: '20000', transactionId: 'txid-bitcoin-refund' });
+    });
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(actOnOrder).toHaveBeenCalledWith(order, 'refund.record_external', {
+      amountMinor: 20_000,
+      transactionId: 'txid-bitcoin-refund',
+      amountUnit: 'sat',
+    });
+  });
+
+  it.each([
+    ['a USD price, above the payable', usdPriced(), '51638'],
+    ['a sats price, above what an underpayment received', satPriced({ refundCap: received(49_000) }), '49001'],
+  ])('refuses %s', async (_case, order, amount) => {
+    const actOnOrder = vi.fn(async () => true);
+    const { result } = renderHook(() => useMarketplaceOrderAction(order, actOnOrder));
+
+    act(() => {
+      result.current.setAction('refund', { amount, transactionId: 'txid-bitcoin-refund' });
+    });
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(actOnOrder).not.toHaveBeenCalled();
+    expect(result.current.form.getFieldState('amount').error?.message).toBe(
+      'Enter a refund up to the bitcoin received.',
+    );
+  });
+
+  it('records the order total, in its own units, when the service caps the refund there', async () => {
+    // A NULL-asset request that also offered USDT and records no rail.
+    const order = usdPriced({ refundCap: { amountMinor: 13_700, unit: 'order', exponent: 2 } });
+    const actOnOrder = vi.fn(async () => true);
+    const { result } = renderHook(() => useMarketplaceOrderAction(order, actOnOrder));
+
+    act(() => {
+      result.current.setAction('refund', { transactionId: 'txid-refund' });
+    });
+    expect(result.current.form.getValues('amount')).toBe('137.00');
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(actOnOrder).toHaveBeenCalledWith(order, 'refund.record_external', {
+      amountMinor: 13_700,
+      transactionId: 'txid-refund',
+      amountUnit: 'order',
+    });
+  });
+
+  it('names no unit to a service that projects no cap', async () => {
+    const order = usdPriced({ refundCap: undefined });
+    const actOnOrder = vi.fn(async () => true);
+    const { result } = renderHook(() => useMarketplaceOrderAction(order, actOnOrder));
+
+    act(() => {
+      result.current.setAction('refund', { transactionId: 'txid-refund' });
+    });
+    expect(result.current.form.getValues('amount')).toBe('137.00');
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(actOnOrder).toHaveBeenCalledWith(order, 'refund.record_external', {
+      amountMinor: 13_700,
+      transactionId: 'txid-refund',
+    });
+  });
+
+  it.each([
+    ['without a quote', {}, '137.00', 13_700],
+    // A quote breaks the payable down into sats; a return is still asked for
+    // in the order's own units (`orderReturnEntry`), never the payable.
+    ['with a quote', { bitcoinQuote: { quotedSats: 51_200 } }, '137.00', 13_700],
+  ])('keeps the return request off the refund cap: %s', async (_case, overrides, prefill, requestedAmountMinor) => {
+    const order = usdPriced({ ...overrides, state: 'delivered', refundCap: received(53_000) });
+    const actOnOrder = vi.fn(async () => true);
+    const { result } = renderHook(() => useMarketplaceOrderAction(order, actOnOrder));
+
+    act(() => {
+      result.current.setAction('return', { reason: 'Arrived damaged' });
+    });
+    expect(result.current.form.getValues('amount')).toBe(prefill);
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(actOnOrder).toHaveBeenCalledWith(order, 'return.request', {
+      reason: 'Arrived damaged',
+      requestedAmountMinor,
+    });
+  });
+});
+
 describe('useMarketplaceOrderAction USDT refund', () => {
   const hash = `0x${'ab12'.repeat(16)}`;
   const usdtOrder = createUsdtOrderFixture('return_received', {

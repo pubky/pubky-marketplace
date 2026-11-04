@@ -9,8 +9,12 @@ import {
 
 export const APP_VERSION = Env.NEXT_PUBLIC_APP_VERSION;
 
-/** Minimum storage permissions needed to open Shop with an existing grant. */
-export const CORE_CAPABILITIES = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw';
+/**
+ * Minimum storage permissions needed to open Shop with an existing grant.
+ * Nothing under `/pub/paykit/`: the Shop only reads there (App Registry,
+ * reader authorization, refund endpoint), and public reads need no capability.
+ */
+export const CORE_CAPABILITIES = '/pub/pubky.app/:rw,/priv/pubky.app/:rw';
 
 /**
  * The chat trees, versioned so the Shop neither writes the shared chat
@@ -20,7 +24,7 @@ export const CORE_CAPABILITIES = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky
 export const CHAT_CAPABILITIES = '/pub/chat/v0/:rw,/priv/chat/v0/:rw';
 
 /** New approvals also cover Chat v0; signer-derived encryption keys are requested only by {@link KEYED_CAPABILITIES}. */
-export const CAPABILITIES = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw';
+export const CAPABILITIES = '/pub/pubky.app/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw';
 
 /**
  * The Shop's scope for scoped encryption keys (priv-encryption Phase 4):

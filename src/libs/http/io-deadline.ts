@@ -1,6 +1,7 @@
 import { TimeoutErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import type { ErrorService } from '@/libs/error/error.types';
+import { type IoDeadlineEndpoint, isIoDeadlineEndpoint } from '@/libs/http/io-deadline.types';
 
 export const AUTH_IO_TIMEOUT_MS = 15_000;
 
@@ -12,7 +13,7 @@ export const AUTH_IO_TIMEOUT_MS = 15_000;
  */
 export async function withIoDeadline<T>(
   work: (signal: AbortSignal) => Promise<T>,
-  options: { service: ErrorService; operation: string; timeoutMs: number },
+  options: { service: ErrorService; operation: string; timeoutMs: number; ioEndpoint?: IoDeadlineEndpoint },
 ): Promise<T> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout>;
@@ -21,7 +22,11 @@ export async function withIoDeadline<T>(
       const error = Err.timeout(TimeoutErrorCode.REQUEST_TIMEOUT, 'The request took too long. Please retry.', {
         service: options.service,
         operation: options.operation,
-        context: { timeoutMs: options.timeoutMs },
+        context: {
+          timeoutMs: options.timeoutMs,
+          ioDeadline: true,
+          ...(isIoDeadlineEndpoint(options.ioEndpoint) ? { ioEndpoint: options.ioEndpoint } : {}),
+        },
       });
       reject(error);
       controller.abort(error);

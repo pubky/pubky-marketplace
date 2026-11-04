@@ -1,6 +1,7 @@
 import { Env } from '@/libs/env/env';
 import { shouldEnableSentry } from '@/libs/observability/sentry';
-import { getSentryDsn, getSentryEnvironment, getSentryTracesSampleRate } from '@/libs/runtime-config/runtime-config';
+import { getSentryErrorSampling, resolveSentryEnvironment } from '@/libs/observability/sentry-settings';
+import { getSentryDsn, getSentryTracesSampleRate } from '@/libs/runtime-config/runtime-config';
 
 /**
  * Shared gating + diagnostics for the Sentry verification harness
@@ -26,7 +27,7 @@ const PRODUCTION_ENVIRONMENT = 'production';
  */
 function resolveEnvironment(): string {
   try {
-    return getSentryEnvironment() ?? Env.NODE_ENV;
+    return resolveSentryEnvironment();
   } catch {
     // A misconfigured deploy whose runtime config can't resolve is treated as production so
     // the harness fails closed (hidden) rather than leaking into a broken production build.
@@ -56,6 +57,8 @@ export interface SentryDiagnostics {
   release: string;
   /** Configured DSN (a public client-side value, safe to display) or null when unset. */
   dsn: string | null;
+  /** Resolved error-event sampling rate (0–1), independent of tracing. */
+  sampleRate: number;
   /** Performance trace sampling rate (0–1). */
   tracesSampleRate: number;
 }
@@ -69,12 +72,14 @@ export function getSentryDiagnostics(): SentryDiagnostics {
   let environment = PRODUCTION_ENVIRONMENT;
   let dsn: string | null = null;
   let tracesSampleRate = 0;
+  let sampleRate = 0;
   let enabled = false;
 
   try {
     environment = resolveEnvironment();
     dsn = getSentryDsn() ?? null;
     tracesSampleRate = getSentryTracesSampleRate();
+    sampleRate = getSentryErrorSampling(environment).sampleRate;
     enabled = shouldEnableSentry();
   } catch {
     // Leave defaults; a resolution failure is itself useful signal ("disabled").
@@ -85,6 +90,7 @@ export function getSentryDiagnostics(): SentryDiagnostics {
     environment,
     release: Env.NEXT_PUBLIC_APP_VERSION,
     dsn,
+    sampleRate,
     tracesSampleRate,
   };
 }

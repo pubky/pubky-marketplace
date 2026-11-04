@@ -54,6 +54,14 @@ function sameCapabilitySet(capabilities: string, expected: string): boolean {
 /** Historical purchase-session set, retained only for restore and session labels. */
 export const LEGACY_SHOP_SIGN_IN_GRANT = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw';
 
+/**
+ * The Shop sign-in grant before it stopped asking for `/pub/paykit/:rw`,
+ * retained only for restore and session labels so sessions approved with it
+ * keep working.
+ */
+export const PREVIOUS_SHOP_SIGN_IN_GRANT =
+  '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw';
+
 /** The grants a claimed (Bitkit or Ring grant-flow) session may carry. */
 export const MARKETPLACE_CLAIMABLE_GRANTS = [MARKETPLACE_SESSION_GRANT, MARKETPLACE_PREVIOUS_SESSION_GRANT] as const;
 

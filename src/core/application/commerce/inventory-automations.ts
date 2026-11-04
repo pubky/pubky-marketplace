@@ -6,7 +6,11 @@ import {
   MarketplaceInventorySessionService,
 } from '@/services/marketplace/marketplace-inventory-session';
 import { MarketplaceSessionService } from '@/services/marketplace/marketplace-session';
-import { LEGACY_SHOP_SIGN_IN_GRANT, MARKETPLACE_SESSION_GRANT } from '@/services/marketplace/marketplace-session-grant';
+import {
+  LEGACY_SHOP_SIGN_IN_GRANT,
+  MARKETPLACE_SESSION_GRANT,
+  PREVIOUS_SHOP_SIGN_IN_GRANT,
+} from '@/services/marketplace/marketplace-session-grant';
 import {
   MarketplaceShopClientService,
   PubkyShopError,
@@ -141,6 +145,7 @@ const PURCHASE_GRANTS: readonly string[] = [
   MARKETPLACE_SESSION_GRANT,
   RING_COOKIE_CAPABILITIES,
   LEGACY_SHOP_SIGN_IN_GRANT,
+  PREVIOUS_SHOP_SIGN_IN_GRANT,
   CAPABILITIES,
 ];
 

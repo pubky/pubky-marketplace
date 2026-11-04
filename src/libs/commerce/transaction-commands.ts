@@ -25,6 +25,7 @@ import {
   commercePositiveMoneySchema,
   commercePubkySchema,
   createCommerceCommandSchema,
+  refundUnitSchema,
 } from './transaction-contracts';
 import { isValidArbitrumAddress } from './usdt-refund';
 
@@ -733,12 +734,19 @@ export const approveReturnCommandSchema = createCommerceCommandSchema('return.ap
 export const receiveReturnCommandSchema = createCommerceCommandSchema('return.receive', orderIdPayload);
 export const cancelReturnCommandSchema = createCommerceCommandSchema('return.cancel', orderIdPayload);
 
+/**
+ * `refund.record_external` (seller). `amountUnit` names the unit
+ * `amountMinor` is in, as the seller's `refundCap` names it; the service
+ * refuses a unit other than the order's. It is sent only when the service
+ * projected a cap: one that predates the unit refuses the field.
+ */
 export const recordExternalRefundCommandSchema = createCommerceCommandSchema(
   'refund.record_external',
   orderIdPayload
     .extend({
       amountMinor: z.number().int().positive(),
       transactionId: z.string().trim().min(8).max(200),
+      amountUnit: refundUnitSchema.optional(),
     })
     .strict(),
 );
@@ -915,6 +923,27 @@ export const marketplaceCommandSchema = z.union([
   updateReviewCommandSchema,
   withdrawReviewCommandSchema,
 ]);
+
+const marketplaceCommandPayloadSchemas: ReadonlyMap<string, z.ZodType> = new Map(
+  marketplaceCommandSchema.options.map((schema) => [schema.shape.kind.value, schema.shape.payload]),
+);
+
+/**
+ * The payload paths the Shop's own command contract refuses for an order
+ * command, as `actOnOrder` sends it (with `orderId`), or null when it takes
+ * it. The command normalizer refuses the same payload before anything is
+ * sent, so a dialog checks first and can say so.
+ */
+export function orderCommandPayloadIssues(
+  kind: string,
+  orderId: string,
+  payload: Record<string, unknown>,
+): string[] | null {
+  const schema = marketplaceCommandPayloadSchemas.get(kind);
+  if (!schema) return ['kind'];
+  const parsed = schema.safeParse({ orderId, ...payload });
+  return parsed.success ? null : parsed.error.issues.map(({ path }) => ['payload', ...path].join('.'));
+}
 
 export const marketplaceCommandResponseSchema = z.discriminatedUnion('ok', [
   z

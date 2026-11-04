@@ -60,6 +60,7 @@ import {
 } from '@/libs/commerce/checkout-phase';
 import { DELIVERY_EMAIL_MAX_CHARS, DIGITAL_CHECKOUT_COPY, digitalCheckoutLineLabel } from '@/libs/commerce/digital';
 import { marketplaceOfferCheckoutFailureMessage } from '@/libs/commerce/failure-messages';
+import { trustedFiatCheckoutUrl } from '@/libs/commerce/fiat-checkout-url';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { tracksVariantStock } from '@/libs/commerce/listing-variants';
 import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/locks-payment';
@@ -636,8 +637,9 @@ function MarketplaceCartCheckout() {
       await removeAwardLine();
       await offers.refresh();
       if (!isPickupAward) await checkout.rememberAddress();
-      if (result.boundOrder?.fiatCheckoutUrl) {
-        navigateTop(result.boundOrder.fiatCheckoutUrl);
+      const fiatCheckoutUrl = trustedFiatCheckoutUrl(result.boundOrder?.fiatCheckoutUrl);
+      if (fiatCheckoutUrl) {
+        navigateTop(fiatCheckoutUrl);
         return;
       }
       if (result.orderId) {
@@ -693,8 +695,9 @@ function MarketplaceCartCheckout() {
       window.history.replaceState(null, '', withBasePath(getMarketplaceCheckoutRoute(result.orderIds[0])));
     }
     const fiatBound = result.boundOrders.filter((order) => order.fiatCheckoutUrl);
-    if (fiatBound.length === 1 && fiatBound[0].fiatCheckoutUrl) {
-      navigateTop(fiatBound[0].fiatCheckoutUrl);
+    const fiatCheckoutUrl = fiatBound.length === 1 ? trustedFiatCheckoutUrl(fiatBound[0].fiatCheckoutUrl) : null;
+    if (fiatCheckoutUrl) {
+      navigateTop(fiatCheckoutUrl);
       return;
     }
     await orders.refresh();

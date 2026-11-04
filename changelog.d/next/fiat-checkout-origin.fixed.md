@@ -1,0 +1,1 @@
+Checkout opens a PayPal checkout link only when it is an `https:` address on PayPal's checkout origins. Any other link from the service is not followed: the buyer stays on the order, which says the link can't be opened and offers Cancel.

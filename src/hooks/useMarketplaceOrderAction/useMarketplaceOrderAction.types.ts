@@ -52,6 +52,15 @@ export const marketplaceOrderActionSchema = z
     if (['cancel', 'return'].includes(data.action) && !data.reason) {
       context.addIssue({ code: 'custom', path: ['reason'], message: 'Reason is required.' });
     }
+    // The service's own limits: 500 characters for a cancellation, 1,000 for a return.
+    const reasonMax = data.action === 'cancel' ? 500 : data.action === 'return' ? 1_000 : null;
+    if (reasonMax !== null && data.reason.length > reasonMax) {
+      context.addIssue({
+        code: 'custom',
+        path: ['reason'],
+        message: `Keep the reason to ${reasonMax.toLocaleString('en-US')} characters.`,
+      });
+    }
     if (data.action === 'ship' && data.carrierChoice === NO_CARRIER_CHOICE) {
       context.addIssue({ code: 'custom', path: ['carrierChoice'], message: CARRIER_CHOICE_COPY.required });
     }
@@ -88,7 +97,12 @@ export const marketplaceOrderActionSchema = z
 
 export type MarketplaceOrderActionData = z.infer<typeof marketplaceOrderActionSchema>;
 
-/** The amount the refund dialog is capped against. The service stores one partial refund when `1 <= amount_minor <= cap`. */
+/**
+ * What the refund dialog is capped against, in the units the refund is
+ * recorded in: the sats received for a Bitcoin order, the USDT received for a
+ * USDT order, else the order total. The service stores one partial refund when
+ * `1 <= amount_minor <= cap`.
+ */
 export type MarketplaceRefundCap = {
   amountMinor: number;
   exponent: number;
@@ -107,12 +121,12 @@ export function formatOrderMajor(total: MarketplaceRefundCap): string {
  * The entered amount is what has not been recorded yet: the whole refund,
  * or what was refunded outside PayPal after PayPal refunds (`refundedMinor`).
  * The recorded total, `refundedMinor` plus the entry, must be positive and
- * at most `total`: the order total, or for a USDT order the USDT it received.
+ * at most the cap.
  */
 export function marketplaceOrderActionSchemaFor(
   total: MarketplaceRefundCap,
   refundedMinor = 0,
-  rail: 'paypal' | 'usdt' | 'other' = 'other',
+  rail: 'paypal' | 'usdt' | 'bitcoin' | 'other' = 'other',
 ) {
   return marketplaceOrderActionSchema.superRefine((data, context) => {
     if (data.action !== 'refund') return;
@@ -147,7 +161,9 @@ export function marketplaceOrderActionSchemaFor(
           rail === 'usdt'
             ? 'Enter a refund up to the USDT received.'
             : refundedMinor === 0
-              ? 'Enter a refund up to the order total.'
+              ? rail === 'bitcoin'
+                ? 'Enter a refund up to the bitcoin received.'
+                : 'Enter a refund up to the order total.'
               : rail === 'paypal'
                 ? 'Enter a refund up to the amount PayPal has not refunded.'
                 : 'Enter a refund up to the amount not yet recorded.',
@@ -181,6 +197,10 @@ export const marketplaceOrderActionDefaults: MarketplaceOrderActionData = {
   sellerCommunication: '',
   allowAmountBand: false,
 };
+
+/** The dialog's line when the Shop refuses the command it built, so nothing was sent. */
+export const ORDER_COMMAND_UNSENDABLE_COPY =
+  'This could not be sent: the Shop refused the request it built, so nothing was recorded. Reload the page and try again.';
 
 /** Stars a listing starts at in the review dialog. */
 export const REVIEW_DEFAULT_RATING = '5';

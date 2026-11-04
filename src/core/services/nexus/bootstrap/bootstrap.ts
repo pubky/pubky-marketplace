@@ -24,6 +24,7 @@ export class NexusBootstrapService {
       url,
       timeoutMs: AUTH_IO_TIMEOUT_MS,
       totalTimeoutMs: 75_000,
+      ioEndpoint: 'v0/bootstrap/:pubky',
     });
     Logger.debug('Bootstrap data fetched successfully', { data });
     return data;

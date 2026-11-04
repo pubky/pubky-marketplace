@@ -10,6 +10,7 @@ import {
   holderUnboundCopy,
   UNBOUND_BACK_CANCEL_REASON,
 } from '@/libs/commerce/checkout-hold';
+import { PAYPAL_CHECKOUT_URL_REFUSED_COPY } from '@/libs/commerce/fiat-checkout-url';
 import {
   LOCKS_ADMISSION_COPY,
   LOCKS_TERMINAL_REASON_COPY,
@@ -391,6 +392,32 @@ describe('MarketplacePaymentStatusCard', () => {
     expect(vi.mocked(useMarketplaceOrderPayment).mock.results.at(-1)?.value.markPaid).toHaveBeenCalledWith(
       'PAYPAL-123',
     );
+  });
+
+  it.each([
+    ['an origin that is not PayPal', 'https://www.paypal.com.example.net/cgi-bin/webscr?cmd=_xclick'],
+    ['plain http', 'http://www.paypal.com/cgi-bin/webscr?cmd=_xclick'],
+  ])('shows an error instead of a PayPal link whose checkout URL has %s', (_case, fiatCheckoutUrl) => {
+    const payment = createPaymentFixture('awaiting_entitlement');
+    render(
+      <MarketplacePaymentStatusCard
+        order={createOrderFixture('pending_payment', {
+          paymentId: payment.id,
+          paymentMethod: 'paypal',
+          fiatCheckoutUrl,
+          fiatVerification: 'seller-attested',
+        })}
+        payment={payment}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />,
+    );
+
+    expect(screen.queryByRole('link', { name: 'Continue to PayPal' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /PayPal/ })).not.toBeInTheDocument();
+    expect(screen.getByTestId('paypal-checkout-url-refused')).toHaveTextContent(PAYPAL_CHECKOUT_URL_REFUSED_COPY);
   });
 
   it('shows a reported PayPal payment as awaiting confirmation without asking for another payment', () => {

@@ -22,6 +22,8 @@ import {
   marketplaceCommandSchema,
   markReadyForPickupCommandSchema,
   offerCheckoutCommandSchema,
+  orderCommandPayloadIssues,
+  recordExternalRefundCommandSchema,
   registerListingCommandSchema,
   setDeliveryEmailCommandSchema,
   setDigitalDeliveryCommandSchema,
@@ -196,6 +198,65 @@ describe('review.withdraw command contract', () => {
     expect(withdrawReviewCommandSchema.safeParse(withdraw({ rating: 4 })).success).toBe(false);
     expect(withdrawReviewCommandSchema.safeParse(withdraw({ listingId: '' })).success).toBe(false);
     expect(withdrawReviewCommandSchema.safeParse(withdraw({ orderId: 'not-a-uuid' })).success).toBe(false);
+  });
+});
+
+describe('refund.record_external command contract', () => {
+  const refund = (payload: Record<string, unknown> = {}) => ({
+    ...reviewCommand('review.update'),
+    kind: 'refund.record_external' as const,
+    payload: { orderId: ORDER_ID, amountMinor: 100, transactionId: 'REFUND-REF-0001', ...payload },
+  });
+
+  it.each(['order', 'sat', 'usdt0'])('takes the %s unit and sends it as amount_unit', (amountUnit) => {
+    const parsed = marketplaceCommandSchema.parse(refund({ amountUnit }));
+    expect(toSnakeCaseWire(parsed)).toMatchObject({ payload: { amount_minor: 100, amount_unit: amountUnit } });
+  });
+
+  it('takes a refund without a unit, as a service before the cap expects', () => {
+    expect(recordExternalRefundCommandSchema.parse(refund()).payload).toEqual({
+      orderId: ORDER_ID,
+      amountMinor: 100,
+      transactionId: 'REFUND-REF-0001',
+    });
+  });
+
+  it('refuses a unit the service does not know, and any other field', () => {
+    expect(recordExternalRefundCommandSchema.safeParse(refund({ amountUnit: 'cents' })).success).toBe(false);
+    expect(recordExternalRefundCommandSchema.safeParse(refund({ currency: 'USD' })).success).toBe(false);
+  });
+});
+
+describe('orderCommandPayloadIssues', () => {
+  it('takes a payload the command contract takes', () => {
+    expect(
+      orderCommandPayloadIssues('refund.record_external', ORDER_ID, {
+        amountMinor: 100,
+        transactionId: 'REFUND-REF-0001',
+        amountUnit: 'order',
+      }),
+    ).toBeNull();
+    expect(
+      orderCommandPayloadIssues('return.request', ORDER_ID, { reason: 'Too small', requestedAmountMinor: 1 }),
+    ).toBeNull();
+  });
+
+  it('names the paths the contract refuses', () => {
+    expect(
+      orderCommandPayloadIssues('refund.record_external', ORDER_ID, {
+        amountMinor: 100,
+        transactionId: 'REFUND-REF-0001',
+        amountUnit: 'cents',
+      }),
+    ).toEqual(['payload.amountUnit']);
+    expect(orderCommandPayloadIssues('order.cancel_request', 'not-a-uuid', { reason: 'r'.repeat(501) })).toEqual([
+      'payload.orderId',
+      'payload.reason',
+    ]);
+  });
+
+  it('refuses a kind the contract does not have', () => {
+    expect(orderCommandPayloadIssues('refund.unknown', ORDER_ID, {})).toEqual(['kind']);
   });
 });
 

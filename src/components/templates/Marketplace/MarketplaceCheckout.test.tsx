@@ -1146,6 +1146,35 @@ describe('MarketplaceCheckout', () => {
       await waitFor(() => expect(window.location.search).toBe('?order=018f47d2-6a27-7c23-a49d-000000000001'));
       expect(navigation.navigateTop).not.toHaveBeenCalled();
     });
+
+    it('follows a PayPal sandbox checkout URL', async () => {
+      const sandboxUrl = 'https://www.sandbox.paypal.com/cgi-bin/webscr?cmd=_xclick&business=seller%40example.com';
+      view.payResult = {
+        ok: true,
+        orderIds: ['018f47d2-6a27-7c23-a49d-000000000001'],
+        boundOrders: [{ fiatCheckoutUrl: sandboxUrl }],
+      };
+
+      await payWithPaypal();
+
+      await waitFor(() => expect(navigation.navigateTop).toHaveBeenCalledWith(sandboxUrl));
+    });
+
+    it.each([
+      ['an origin that is not PayPal', 'https://paypal.example.com/checkoutnow?token=EC-ABC123'],
+      ['plain http', 'http://www.paypal.com/checkoutnow?token=EC-ABC123'],
+    ])('stays on the order overview when the checkout URL has %s', async (_case, url) => {
+      view.payResult = {
+        ok: true,
+        orderIds: ['018f47d2-6a27-7c23-a49d-000000000001'],
+        boundOrders: [{ fiatCheckoutUrl: url }],
+      };
+
+      await payWithPaypal();
+
+      await waitFor(() => expect(window.location.search).toBe('?order=018f47d2-6a27-7c23-a49d-000000000001'));
+      expect(navigation.navigateTop).not.toHaveBeenCalled();
+    });
   });
 
   it('shows no guarantee checkbox and enables pay on a valid delivery alone', async () => {
@@ -2666,6 +2695,20 @@ describe('MarketplaceCheckout accepted-offer path', () => {
 
     await waitFor(() => expect(navigation.navigateTop).toHaveBeenCalledWith(paypalUrl));
     expect(navigation.navigateTop).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the order instead of following an accepted offer checkout URL that is not PayPal', async () => {
+    offerState.submit.mockResolvedValue({
+      ok: true,
+      orderId: '00000000-0000-4000-8000-000000000803',
+      boundOrder: { fiatCheckoutUrl: 'https://checkout.example.com/pay?token=EC-OFFER' },
+    });
+    const user = userEvent.setup();
+    render(<MarketplaceCheckout />);
+    await fillAndPay(user);
+
+    await waitFor(() => expect(window.location.search).toBe('?order=00000000-0000-4000-8000-000000000803'));
+    expect(navigation.navigateTop).not.toHaveBeenCalled();
   });
 
   it('checks out a pickup award with the pickup UI: no address, no shipping, merchandise only', async () => {
