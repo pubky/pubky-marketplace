@@ -81,12 +81,22 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     getSellerPaymentConfig: vi.fn(),
     getMyDeliveryKeyStatus: vi.fn(),
     getMarketplaceListingProjection: vi.fn(),
+    ensureListingRegistered: vi.fn(async (_record: { title: string }) => true),
     cacheMarketplaceListingProjection: vi.fn(async () => undefined),
   },
 }));
 
 vi.mock('@/molecules/Toaster/use-toast', () => ({
   toast: vi.fn(),
+}));
+
+const sourcesState = vi.hoisted(() => ({ bySeller: {} as Record<string, string[]>, ready: false }));
+
+vi.mock('@/hooks/useListingSources/useListingSources', () => ({
+  useListingSources: () => ({
+    sourcesOf: (listingId: string) => sourcesState.bySeller[listingId] ?? [],
+    ready: sourcesState.ready,
+  }),
 }));
 
 describe('useMarketplaceSellerDashboard duplicateListing', () => {
@@ -1041,5 +1051,96 @@ describe('useMarketplaceSellerDashboard stock', () => {
 
     await waitFor(() => expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(result.current.canOfferRegistration(listing)).toBe(true));
+  });
+
+  describe('bulk registration and table rows', () => {
+    function startThree() {
+      startDurableDashboard();
+      const make = (listingId: string, title: string, registeredWithService: boolean) => ({
+        id: `${OWNER}:${listingId}`,
+        listing_id: listingId,
+        registeredWithService,
+        state: 'active' as const,
+        record: createCommerceListingFixture({ listingId, title }),
+      });
+      localListings = [make('one', 'One', false), make('two', 'Two', false), make('held', 'Held', true)];
+      vi.mocked(CommerceController.getListingsBySeller).mockResolvedValue(localListings as never);
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(null);
+      vi.mocked(CommerceController.cacheMarketplaceListingProjection).mockImplementation(async () => undefined);
+    }
+
+    it('registers the selected listings that need it, once each, and leaves the others alone', async () => {
+      startThree();
+      vi.mocked(CommerceController.ensureListingRegistered).mockResolvedValue(true);
+      const { result } = renderHook(() => useMarketplaceSellerDashboard());
+      await waitFor(() => expect(result.current.canOfferRegistration(localListings[0] as never)).toBe(true));
+
+      let outcome: Awaited<ReturnType<typeof result.current.registerListings>> | undefined;
+      await act(async () => {
+        outcome = await result.current.registerListings(localListings.map((row) => row.id as string));
+      });
+
+      expect(outcome).toEqual({ registered: 2, failed: [] });
+      expect(CommerceController.ensureListingRegistered).toHaveBeenCalledTimes(2);
+      expect(
+        vi
+          .mocked(CommerceController.ensureListingRegistered)
+          .mock.calls.map(([record]) => (record as { title: string }).title)
+          .sort(),
+      ).toEqual(['One', 'Two']);
+      expect(toast).toHaveBeenCalledTimes(1);
+      expect(toast).toHaveBeenCalledWith({ title: '2 listings registered for checkout' });
+      expect(result.current.registering).toBeNull();
+    });
+
+    it('reports the listings that failed in one toast, without stopping the rest', async () => {
+      startThree();
+      vi.mocked(CommerceController.ensureListingRegistered).mockImplementation(async (record) => {
+        const { title } = record as { title: string };
+        if (title === 'Two') throw new Error('service down');
+        return true;
+      });
+      const { result } = renderHook(() => useMarketplaceSellerDashboard());
+      await waitFor(() => expect(result.current.canOfferRegistration(localListings[0] as never)).toBe(true));
+
+      let outcome: Awaited<ReturnType<typeof result.current.registerListings>> | undefined;
+      await act(async () => {
+        outcome = await result.current.registerListings(localListings.map((row) => row.id as string));
+      });
+
+      expect(outcome).toEqual({ registered: 1, failed: ['Two'] });
+      expect(toast).toHaveBeenCalledTimes(1);
+      expect(toast).toHaveBeenCalledWith(
+        expect.objectContaining({ variant: 'error', title: 'Registered 1 of 2 for checkout' }),
+      );
+    });
+
+    it('does nothing, and says nothing, when no selected listing needs registration', async () => {
+      startThree();
+      const { result } = renderHook(() => useMarketplaceSellerDashboard());
+      await waitFor(() => expect(result.current.canOfferRegistration(localListings[0] as never)).toBe(true));
+
+      await act(async () => {
+        await result.current.registerListings([`${OWNER}:held`]);
+      });
+
+      expect(CommerceController.ensureListingRegistered).not.toHaveBeenCalled();
+      expect(toast).not.toHaveBeenCalled();
+    });
+
+    it('builds a table row per listing with its checkout state and store source', async () => {
+      startThree();
+      sourcesState.bySeller = { one: ['shopify'] };
+      sourcesState.ready = true;
+      const { result } = renderHook(() => useMarketplaceSellerDashboard());
+      await waitFor(() => expect(result.current.canOfferRegistration(localListings[0] as never)).toBe(true));
+
+      const rows = Object.fromEntries(result.current.tableRows.map((row) => [row.title, row]));
+      expect(rows.One).toMatchObject({ needsRegistration: true, sources: ['shopify'] });
+      expect(rows.Held).toMatchObject({ needsRegistration: false, sources: [] });
+      expect(result.current.sourcesReady).toBe(true);
+      sourcesState.bySeller = {};
+      sourcesState.ready = false;
+    });
   });
 });

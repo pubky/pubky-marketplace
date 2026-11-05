@@ -10,13 +10,14 @@ import { toCommerceListingModel } from '@/test/fixtures/commerce/listing-models'
 import { MarketplaceDashboard } from './MarketplaceDashboard';
 
 const viewport = vi.hoisted(() => ({ isMobile: false }));
-const router = vi.hoisted(() => ({ push: vi.fn() }));
+const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
+const urlState = vi.hoisted(() => ({ params: new URLSearchParams() }));
 const dashboardFns = vi.hoisted(() => ({
   duplicateListing: vi.fn(async () => true),
   hasUnsavedListingDraft: vi.fn(async (): Promise<string | null> => null),
   discardListingDraft: vi.fn(async () => undefined),
   resumeListingDraft: vi.fn(),
-  updateListingState: vi.fn(async () => true),
+  updateListingState: vi.fn(async (_ids: string[], _state: string) => true),
 }));
 const dashboardState = vi.hoisted(() => ({
   listings: [] as unknown[],
@@ -40,11 +41,17 @@ const dashboardState = vi.hoisted(() => ({
   sessionError: null as string | null,
   registrationOffered: true,
   stockUnknown: false,
+  sourcesReady: false,
+  sources: {} as Record<string, string[]>,
+}));
+const registerFlow = vi.hoisted(() => ({
+  registerListings: vi.fn(async (_ids: string[]) => ({ registered: 0, failed: [] as string[] })),
 }));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => router,
   usePathname: () => MARKETPLACE_ROUTES.DASHBOARD,
+  useSearchParams: () => urlState.params,
 }));
 
 vi.mock('@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl', async () => {
@@ -66,9 +73,27 @@ vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', a
   const { formatListingStock } = await vi.importActual<typeof import('@/libs/commerce/unlimited-stock')>(
     '@/libs/commerce/unlimited-stock',
   );
+  const { toListingTableRow } = await vi.importActual<typeof import('@/libs/commerce/listing-table')>(
+    '@/libs/commerce/listing-table',
+  );
   return {
     useMarketplaceSellerDashboard: () => ({
       listings: dashboardState.listings,
+      tableRows: (dashboardState.listings as Array<Parameters<typeof toListingTableRow>[0]>).map((listing) =>
+        toListingTableRow(listing, {
+          nowMs: dashboardState.nowMs,
+          needsRegistration: (row) =>
+            (row as { registeredWithService?: boolean }).registeredWithService === false &&
+            dashboardState.registrationOffered,
+          stockKnown: () => !dashboardState.stockUnknown,
+          sourcesOf: (listingId) => (dashboardState.sources[listingId] ?? []) as ['shopify'],
+        }),
+      ),
+      needsRegistration: (row: { registeredWithService?: boolean }) =>
+        row.registeredWithService === false && dashboardState.registrationOffered,
+      registerListings: registerFlow.registerListings,
+      registering: null,
+      sourcesReady: dashboardState.sourcesReady,
       nowMs: dashboardState.nowMs,
       sellerOrders: [],
       offers: [],
@@ -725,6 +750,208 @@ describe('MarketplaceDashboard delete', () => {
     act(() => deleteFlow.onDeleted?.([boots.id, lamp.id]));
     expect(screen.getByRole('checkbox', { name: 'Select Boots' })).not.toBeChecked();
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+  });
+});
+
+describe('MarketplaceDashboard listing table filters, sorts and bulk actions', () => {
+  beforeEach(() => {
+    vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('sandbox');
+    viewport.isMobile = false;
+    shopState.shop = SHOP_WITH_POLICIES;
+    router.replace.mockClear();
+    dashboardFns.updateListingState.mockClear();
+    registerFlow.registerListings.mockClear();
+    urlState.params = new URLSearchParams();
+    dashboardState.sourcesReady = false;
+    dashboardState.sources = {};
+    dashboardState.registrationOffered = true;
+    dashboardState.stockUnknown = false;
+  });
+
+  const many = (count: number, make: (index: number) => Parameters<typeof listing>[0] = () => ({})) =>
+    Array.from({ length: count }, (_, index) => {
+      const label = String(index + 1).padStart(3, '0');
+      return listing({
+        listingId: `item_${label}`,
+        title: `Item ${label}`,
+        createdAt: new Date(Date.UTC(2026, 0, 1) + index * 86_400_000).toISOString(),
+        ...make(index),
+      });
+    });
+  const needsRegistration = (row: ReturnType<typeof listing>) => ({ ...row, registeredWithService: false });
+  const renderedTitles = () =>
+    screen
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => within(row).getAllByRole('link')[0].textContent);
+
+  it('pages 120 listings, newest first, 50 at a time', () => {
+    dashboardState.listings = many(120);
+
+    render(<MarketplaceDashboard />);
+
+    expect(screen.getAllByRole('row')).toHaveLength(51);
+    expect(screen.getByText('Showing 1–50 of 120')).toBeInTheDocument();
+    expect(renderedTitles()[0]).toBe('Item 120');
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(router.replace).toHaveBeenCalledWith(`${MARKETPLACE_ROUTES.DASHBOARD}?page=2`, { scroll: false });
+  });
+
+  it('shows the page the URL names', () => {
+    dashboardState.listings = many(120);
+    urlState.params = new URLSearchParams('page=3');
+
+    render(<MarketplaceDashboard />);
+
+    expect(screen.getAllByRole('row')).toHaveLength(21);
+    expect(screen.getByText('Showing 101–120 of 120')).toBeInTheDocument();
+  });
+
+  it('filters by the state the URL names', () => {
+    dashboardState.listings = many(6, (index) => ({ state: index % 3 === 0 ? 'paused' : 'active' }));
+    urlState.params = new URLSearchParams('state=paused');
+
+    render(<MarketplaceDashboard />);
+
+    expect(renderedTitles().sort()).toEqual(['Item 001', 'Item 004']);
+    expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument();
+  });
+
+  it('searches title and SKU', () => {
+    dashboardState.listings = [
+      listing({ listingId: 'boots', title: 'Vintage boots' }),
+      listing({ listingId: 'lamp', title: 'Brass lamp' }),
+    ];
+    urlState.params = new URLSearchParams('q=lamp');
+
+    render(<MarketplaceDashboard />);
+
+    expect(renderedTitles()).toEqual(['Brass lamp']);
+    expect(screen.getByRole('searchbox', { name: 'Search listings by title or SKU' })).toHaveValue('lamp');
+  });
+
+  it('filters by store source once the stores were read', () => {
+    dashboardState.listings = many(3);
+    dashboardState.sourcesReady = true;
+    dashboardState.sources = { item_001: ['shopify'], item_003: ['shopify'] };
+    urlState.params = new URLSearchParams('source=shopify');
+
+    render(<MarketplaceDashboard />);
+
+    expect(renderedTitles().sort()).toEqual(['Item 001', 'Item 003']);
+    expect(screen.getByRole('combobox', { name: 'Source' })).toBeInTheDocument();
+  });
+
+  it('filters to listings that still need registering, and out-of-stock ones', () => {
+    dashboardState.listings = [
+      needsRegistration(listing({ listingId: 'a', title: 'Alpha' })),
+      { ...listing({ listingId: 'b', title: 'Bravo' }), registeredWithService: true },
+    ];
+    urlState.params = new URLSearchParams('checkout=needs');
+
+    render(<MarketplaceDashboard />);
+
+    expect(renderedTitles()).toEqual(['Alpha']);
+  });
+
+  it('says so, and offers to clear, when the filters match nothing', () => {
+    dashboardState.listings = many(3);
+    urlState.params = new URLSearchParams('q=zzz');
+
+    render(<MarketplaceDashboard />);
+
+    const empty = screen.getByTestId('listing-filter-empty');
+    expect(empty).toHaveTextContent('No listings match these filters.');
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    fireEvent.click(within(empty).getByRole('button', { name: 'Clear filters' }));
+    expect(router.replace).toHaveBeenCalledWith(MARKETPLACE_ROUTES.DASHBOARD, { scroll: false });
+  });
+
+  it('sorts by the column header, and reverses the active column', () => {
+    dashboardState.listings = many(3);
+
+    const { unmount } = render(<MarketplaceDashboard />);
+    fireEvent.click(screen.getByRole('button', { name: 'Listing' }));
+    expect(router.replace).toHaveBeenLastCalledWith(`${MARKETPLACE_ROUTES.DASHBOARD}?sort=title`, { scroll: false });
+    unmount();
+
+    urlState.params = new URLSearchParams('sort=price');
+    render(<MarketplaceDashboard />);
+    expect(screen.getByRole('columnheader', { name: 'Price' })).toHaveAttribute('aria-sort', 'ascending');
+    fireEvent.click(screen.getByRole('button', { name: 'Price' }));
+    expect(router.replace).toHaveBeenLastCalledWith(`${MARKETPLACE_ROUTES.DASHBOARD}?sort=price&dir=desc`, {
+      scroll: false,
+    });
+  });
+
+  it('orders the rows by the sort in the URL', () => {
+    dashboardState.listings = [
+      listing({ listingId: 'c', title: 'Cherry' }),
+      listing({ listingId: 'a', title: 'apple' }),
+      listing({ listingId: 'b', title: 'Banana' }),
+    ];
+    urlState.params = new URLSearchParams('sort=title');
+
+    render(<MarketplaceDashboard />);
+
+    expect(renderedTitles()).toEqual(['apple', 'Banana', 'Cherry']);
+  });
+
+  it('selects the whole page, then every listing that matches, and acts on all of them', () => {
+    dashboardState.listings = many(120);
+
+    render(<MarketplaceDashboard />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select all listings on this page' }));
+    expect(screen.getByTestId('listing-selection-banner')).toHaveTextContent('50 listings selected.');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select all 120 matching' }));
+    expect(screen.getByTestId('listing-selection-banner')).toHaveTextContent('All 120 matching listings are selected.');
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+
+    const [ids] = dashboardFns.updateListingState.mock.calls[0];
+    expect(ids).toHaveLength(120);
+  });
+
+  it('never acts on a selected listing the filters now hide', () => {
+    dashboardState.listings = many(4, (index) => ({ state: index < 2 ? 'paused' : 'active' }));
+
+    const { rerender } = render(<MarketplaceDashboard />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Item 001' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Item 004' }));
+    expect(screen.getByTestId('listing-selection-banner')).toHaveTextContent('2 listings selected.');
+
+    urlState.params = new URLSearchParams('state=paused');
+    rerender(<MarketplaceDashboard />);
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+
+    const [ids] = dashboardFns.updateListingState.mock.calls[0];
+    expect(ids).toEqual([expect.stringContaining('item_001')]);
+  });
+
+  it('registers only the selected listings that need it, in one action', () => {
+    dashboardState.listings = [
+      needsRegistration(listing({ listingId: 'a', title: 'Alpha' })),
+      needsRegistration(listing({ listingId: 'b', title: 'Bravo' })),
+      { ...listing({ listingId: 'c', title: 'Charlie' }), registeredWithService: true },
+    ];
+
+    render(<MarketplaceDashboard />);
+    const register = screen.getByRole('button', { name: 'Register selected' });
+    expect(register).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select all listings on this page' }));
+    fireEvent.click(register);
+
+    const [ids] = registerFlow.registerListings.mock.calls[0];
+    expect(ids).toHaveLength(2);
+    expect(ids.join()).not.toContain('c');
+  });
+
+  it('offers no bulk registration when every listing is already registered', () => {
+    dashboardState.listings = [{ ...listing({ listingId: 'c', title: 'Charlie' }), registeredWithService: true }];
+
+    render(<MarketplaceDashboard />);
+
+    expect(screen.queryByRole('button', { name: 'Register selected' })).not.toBeInTheDocument();
   });
 });
 

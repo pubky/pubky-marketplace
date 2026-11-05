@@ -8,6 +8,7 @@ import {
   evaluateListingActivationGuards,
   seedDraftFormFromListing,
 } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing';
+import { useListingSources } from '@/hooks/useListingSources/useListingSources';
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
 import { useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplaceOrders';
 import { cacheProjection } from '@/hooks/useMarketplaceProjection/useMarketplaceProjection';
@@ -23,6 +24,7 @@ import {
   markListingDraftResumeId,
 } from '@/libs/commerce/listing-drafts';
 import { listingPublishBlockToast } from '@/libs/commerce/listing-publish-guards';
+import { toListingTableRow } from '@/libs/commerce/listing-table';
 import { sumMoneyByAsset } from '@/libs/commerce/pricing';
 import {
   countableStockQuantity,
@@ -30,6 +32,7 @@ import {
   isUnlimitedStock,
   UNLIMITED_STOCK_LABEL,
 } from '@/libs/commerce/unlimited-stock';
+import { isListingRegistrationPending } from '@/models/commerce/commerce.schema';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
@@ -38,6 +41,8 @@ const REVENUE_ORDER_STATES = ['paid', 'processing', 'shipped', 'delivered', 'com
 
 /** Shown in place of a listing's stock, and the stock total, while the service has not yet answered for it. */
 const STOCK_UNKNOWN_LABEL = '—';
+
+const REGISTER_CONCURRENCY = 4;
 
 type LocalListing = Awaited<ReturnType<typeof CommerceController.getListingsBySeller>>[number];
 
@@ -223,6 +228,60 @@ export function useMarketplaceSellerDashboard() {
     }
   };
 
+  const listingSources = useListingSources();
+  // The row's Register for checkout button and the Checkout filter both ask this: offered only once the service
+  // said it holds no projection for a listing the seller published.
+  const needsRegistration = (listing: LocalListing) =>
+    isListingRegistrationPending(listing) && !listing.registeredWithService && canOfferRegistration(listing);
+  const tableRows = (localListings ?? []).map((listing) =>
+    toListingTableRow(listing, {
+      nowMs,
+      needsRegistration,
+      stockKnown: isStockKnown,
+      sourcesOf: listingSources.sourcesOf,
+    }),
+  );
+  const [registering, setRegistering] = useState<{ done: number; total: number } | null>(null);
+
+  /**
+   * Registers every selected listing the service does not hold yet, a few at a time, through the same call as the
+   * row button. One summary toast, with the titles that failed; listings that did not need it are left alone.
+   */
+  const registerListings = async (listingIds: string[]) => {
+    const targets = (localListings ?? []).filter(
+      (listing) => listingIds.includes(listing.id) && needsRegistration(listing),
+    );
+    if (targets.length === 0) return { registered: 0, failed: [] as string[] };
+    setRegistering({ done: 0, total: targets.length });
+    const failed: string[] = [];
+    let next = 0;
+    let done = 0;
+    const worker = async () => {
+      while (next < targets.length) {
+        const listing = targets[next++];
+        const ok = await CommerceController.ensureListingRegistered(listing.record).catch(() => false);
+        if (!ok) failed.push(listing.record.title);
+        done += 1;
+        setRegistering({ done, total: targets.length });
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(REGISTER_CONCURRENCY, targets.length) }, worker));
+    setRegistering(null);
+    const registered = targets.length - failed.length;
+    if (failed.length === 0) {
+      toast({ title: `${registered} ${registered === 1 ? 'listing' : 'listings'} registered for checkout` });
+    } else {
+      const shown = failed.slice(0, 3).join(', ');
+      const more = failed.length > 3 ? ` and ${failed.length - 3} more` : '';
+      toast({
+        variant: 'error',
+        title: `Registered ${registered} of ${targets.length} for checkout`,
+        description: `Could not register ${shown}${more}. Select them again to retry.`,
+      });
+    }
+    return { registered, failed };
+  };
+
   const retryListingRegistration = async (listingId: string): Promise<boolean> => {
     const listing = (localListings ?? []).find((candidate) => candidate.listing_id === listingId);
     if (!listing) return false;
@@ -347,6 +406,11 @@ export function useMarketplaceSellerDashboard() {
     updateListingState,
     retryListingRegistration,
     canOfferRegistration,
+    needsRegistration,
+    registerListings,
+    registering,
+    tableRows,
+    sourcesReady: listingSources.ready,
     listingStockLabel,
     duplicateListing,
     hasUnsavedListingDraft,

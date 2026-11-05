@@ -92,6 +92,7 @@ const view = vi.hoisted(() => ({
   metrics: {} as unknown,
   actionNeeded: {} as unknown,
   isLoading: false,
+  search: '',
   shop: null as unknown,
   unfinishedDrafts: [] as Array<{ listingId: string; title: string; updatedAt: number; ageLabel: string }>,
   selling: {
@@ -107,8 +108,9 @@ const view = vi.hoisted(() => ({
 }));
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   usePathname: () => '/marketplace/dashboard',
+  useSearchParams: () => new URLSearchParams(view.search),
 }));
 
 // The browser build has no region policy; a scene sets what the policy would say.
@@ -163,9 +165,11 @@ vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', a
   const { formatListingStock } = await vi.importActual<typeof import('@/libs/commerce/unlimited-stock')>(
     '@/libs/commerce/unlimited-stock',
   );
+  const { dashboardTableMock } = await import('@/test/mocks/dashboard-table');
   return {
     useMarketplaceSellerDashboard: () => ({
       listings: view.listings,
+      ...dashboardTableMock(view.listings, Date.parse('2026-09-21T12:00:00.000Z')),
       sellerOrders: [],
       offers: [],
       isLoading: view.isLoading,
@@ -196,6 +200,7 @@ vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
 describe('Marketplace seller dashboard — visual regression', () => {
   beforeEach(() => {
     view.unfinishedDrafts = [];
+    view.search = '';
     view.selling = {
       active: false,
       checking: false,
@@ -275,6 +280,26 @@ describe('Marketplace seller dashboard — visual regression', () => {
     const screen = await renderForVRT(<MarketplaceDashboard />, { viewport: VRT_VIEWPORT_MOBILE });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       'dashboard-populated-mobile',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it.each([
+    { name: 'filtered', search: 'sort=title&stock=in', viewport: VRT_VIEWPORT_DESKTOP },
+    { name: 'no-match', search: 'q=zzz', viewport: VRT_VIEWPORT_DESKTOP },
+    { name: 'no-match-mobile', search: 'q=zzz', viewport: VRT_VIEWPORT_MOBILE },
+  ])('renders the listing table with the $name filters at $viewport.width px', async ({ name, search, viewport }) => {
+    const { listings, populatedMetrics, populatedActionNeeded, shop } = await fixtures;
+    view.listings = listings;
+    view.metrics = populatedMetrics;
+    view.actionNeeded = populatedActionNeeded;
+    view.isLoading = false;
+    view.shop = shop;
+    view.search = search;
+
+    const screen = await renderForVRT(<MarketplaceDashboard />, { viewport });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      `dashboard-listing-filters-${name}`,
       VRT_DENSE_CHROME_SCREENSHOT,
     );
   });
