@@ -95,14 +95,14 @@ export function MarketplaceDashboard() {
   const facetCounts = listingFacetCounts(dashboard.tableRows, filterQuery);
   // A selection belongs to the filters it was made under: changing a filter or the search starts a new one, so a
   // hidden row cannot come back selected when the filter is cleared. Sorting and paging keep it.
-  const filterKey = [
+  const filterKey = JSON.stringify([
     table.query.q.trim(),
     table.query.state,
     table.query.format,
     table.query.checkout,
     filterQuery.source,
     table.query.stock,
-  ].join('|');
+  ]);
   const [selection, setSelection] = useState<{ key: string; ids: string[] }>({ key: filterKey, ids: [] });
   if (selection.key !== filterKey) setSelection({ key: filterKey, ids: [] });
   const selectedIds = selection.key === filterKey ? selection.ids : [];

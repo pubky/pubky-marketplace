@@ -1151,6 +1151,34 @@ describe('useMarketplaceSellerDashboard stock', () => {
       vi.mocked(CommerceController.ensureListingRegistered).mockReset();
     });
 
+    it('reads the service projections a few at a time, not one after another', async () => {
+      startDurableDashboard();
+      const make = (n: number) => ({
+        id: `${OWNER}:many_${n}`,
+        listing_id: `many_${n}`,
+        registeredWithService: false,
+        state: 'active' as const,
+        record: createCommerceListingFixture({ listingId: `many_${n}` }),
+      });
+      localListings = Array.from({ length: 20 }, (_, n) => make(n));
+      vi.mocked(CommerceController.getListingsBySeller).mockResolvedValue(localListings as never);
+      let inFlight = 0;
+      let peak = 0;
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockImplementation(async () => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight -= 1;
+        return null;
+      });
+
+      renderHook(() => useMarketplaceSellerDashboard());
+
+      await waitFor(() => expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(20));
+      expect(peak).toBeGreaterThan(1);
+      expect(peak).toBeLessThanOrEqual(6);
+    });
+
     it('does nothing, and says nothing, when no selected listing needs registration', async () => {
       startThree();
       const { result } = renderHook(() => useMarketplaceSellerDashboard());

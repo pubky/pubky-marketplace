@@ -44,6 +44,8 @@ const STOCK_UNKNOWN_LABEL = '—';
 
 const REGISTER_CONCURRENCY = 4;
 
+const PROJECTION_READ_CONCURRENCY = 6;
+
 type LocalListing = Awaited<ReturnType<typeof CommerceController.getListingsBySeller>>[number];
 
 export function useMarketplaceSellerDashboard() {
@@ -123,21 +125,32 @@ export function useMarketplaceSellerDashboard() {
     const sellerPubky = currentUserPubky;
     stockReadFailed.current = false;
     void (async () => {
-      for (const listing of await CommerceController.getListingsBySeller(sellerPubky)) {
-        try {
-          const projection = await CommerceController.getMarketplaceListingProjection(sellerPubky, listing.listing_id);
-          if (projection) await cacheProjection(projection);
-          setUnregisteredIds((ids) => {
-            if (ids.has(listing.id) === !projection) return ids;
-            const next = new Set(ids);
-            if (projection) next.delete(listing.id);
-            else next.add(listing.id);
-            return next;
-          });
-        } catch {
-          stockReadFailed.current = true;
+      const listings = await CommerceController.getListingsBySeller(sellerPubky);
+      let next = 0;
+      // A few reads at a time: one after another, a few hundred listings left the Checkout filter and the stock
+      // column filling in for minutes.
+      const worker = async () => {
+        while (next < listings.length) {
+          const listing = listings[next++];
+          try {
+            const projection = await CommerceController.getMarketplaceListingProjection(
+              sellerPubky,
+              listing.listing_id,
+            );
+            if (projection) await cacheProjection(projection);
+            setUnregisteredIds((ids) => {
+              if (ids.has(listing.id) === !projection) return ids;
+              const updated = new Set(ids);
+              if (projection) updated.delete(listing.id);
+              else updated.add(listing.id);
+              return updated;
+            });
+          } catch {
+            stockReadFailed.current = true;
+          }
         }
-      }
+      };
+      await Promise.all(Array.from({ length: Math.min(PROJECTION_READ_CONCURRENCY, listings.length) }, worker));
     })();
   }, [currentUserPubky, marketplaceSession, catalogFetchState, stockKey]);
   const activeListings = (localListings ?? []).filter(
