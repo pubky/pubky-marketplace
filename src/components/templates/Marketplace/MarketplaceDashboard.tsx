@@ -56,7 +56,6 @@ import { formatCommerceMoney } from '@/libs/commerce/format';
 import { listingPublishNeedsMarketplaceSession } from '@/libs/commerce/listing-publish-guards';
 import {
   filterListingRows,
-  LISTING_TABLE_PAGE_SIZE,
   listingFacetCounts,
   paginateListingRows,
   sortListingRows,
@@ -84,15 +83,34 @@ export function MarketplaceDashboard() {
   const selling = useSellingAvailability();
   // Blocked, or still reading the region: everything that publishes or sets up selling is off, the rest stays.
   const sellingHeld = selling.held;
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const table = useListingTableQuery();
+  // Until the stores' mappings are read every listing looks hand-made, so a source in the URL is not applied yet.
+  const filterQuery = dashboard.sourcesReady ? table.query : { ...table.query, source: null };
   const visibleRows = sortListingRows(
-    filterListingRows(dashboard.tableRows, table.query),
+    filterListingRows(dashboard.tableRows, filterQuery),
     table.query.sort,
     table.query.dir,
   );
   const listingPage = paginateListingRows(visibleRows, table.query.page);
-  const facetCounts = listingFacetCounts(dashboard.tableRows, table.query);
+  const facetCounts = listingFacetCounts(dashboard.tableRows, filterQuery);
+  // A selection belongs to the filters it was made under: changing a filter or the search starts a new one, so a
+  // hidden row cannot come back selected when the filter is cleared. Sorting and paging keep it.
+  const filterKey = [
+    table.query.q.trim(),
+    table.query.state,
+    table.query.format,
+    table.query.checkout,
+    filterQuery.source,
+    table.query.stock,
+  ].join('|');
+  const [selection, setSelection] = useState<{ key: string; ids: string[] }>({ key: filterKey, ids: [] });
+  if (selection.key !== filterKey) setSelection({ key: filterKey, ids: [] });
+  const selectedIds = selection.key === filterKey ? selection.ids : [];
+  const setSelectedIds = (update: string[] | ((current: string[]) => string[])) =>
+    setSelection((current) => {
+      const base = current.key === filterKey ? current.ids : [];
+      return { key: filterKey, ids: typeof update === 'function' ? update(base) : update };
+    });
   const listingStates = [...new Set(dashboard.tableRows.map((row) => row.state))];
   const listingsById = new Map(dashboard.listings.map((listing) => [listing.id, listing]));
   // A selection never reaches rows the filters hide: bulk actions act on what the seller can see and counted.
@@ -610,7 +628,7 @@ export function MarketplaceDashboard() {
                         />
                         <ListingSelectionBanner
                           pageSelected={pageSelectedCount}
-                          pageSize={LISTING_TABLE_PAGE_SIZE}
+                          pageSize={pageIds.length}
                           matching={visibleRows.length}
                           selected={selected.length}
                           allMatchingSelected={allMatchingSelected}
@@ -791,7 +809,7 @@ export function MarketplaceDashboard() {
                                               size="sm"
                                               variant="secondary"
                                               className="rounded-full"
-                                              disabled={sellingHeld}
+                                              disabled={sellingHeld || dashboard.registering !== null}
                                               onClick={() =>
                                                 void dashboard.retryListingRegistration(listing.listing_id)
                                               }

@@ -44,6 +44,7 @@ export function useListingTableQuery(): UseListingTableQueryResult {
   // The back button or a new link changes the URL under the box: follow it, unless the seller is mid-typing.
   useEffect(() => {
     if (query.q !== committedText.current) {
+      if (timer.current) clearTimeout(timer.current);
       committedText.current = query.q;
       setSearchTextState(query.q);
     }

@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
@@ -68,6 +68,30 @@ describe('useListingSources', () => {
 
     await waitFor(() => expect(connectors.fetchConnections).toHaveBeenCalled());
     expect(result.current.ready).toBe(false);
+  });
+
+  it('never serves one seller the mappings read for another while the new ones load', async () => {
+    connectors.fetchConnections.mockResolvedValueOnce([{ id: 'c1', provider: 'shopify', mappingCount: 1 }]);
+    connectors.fetchMappings.mockResolvedValueOnce([{ listingId: 'a' }]);
+    const { result } = renderHook(() => useListingSources());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    let release: (connections: unknown[]) => void = () => undefined;
+    connectors.fetchConnections.mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    act(() => {
+      useAuthStore.setState({ currentUserPubky: 'o'.repeat(52) });
+      useCommerceStore.setState({ marketplaceSession: { ...SESSION, pubky: 'o'.repeat(52) } as never });
+    });
+
+    expect(result.current.ready).toBe(false);
+    expect(result.current.sourcesOf('a')).toEqual([]);
+    await act(async () => release([]));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.sourcesOf('a')).toEqual([]);
   });
 
   it('asks nothing without a marketplace session or without a transaction service', () => {

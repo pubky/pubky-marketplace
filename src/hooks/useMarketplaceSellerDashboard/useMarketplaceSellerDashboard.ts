@@ -242,6 +242,7 @@ export function useMarketplaceSellerDashboard() {
     }),
   );
   const [registering, setRegistering] = useState<{ done: number; total: number } | null>(null);
+  const registeringNow = useRef(false);
 
   /**
    * Registers every selected listing the service does not hold yet, a few at a time, through the same call as the
@@ -251,7 +252,8 @@ export function useMarketplaceSellerDashboard() {
     const targets = (localListings ?? []).filter(
       (listing) => listingIds.includes(listing.id) && needsRegistration(listing),
     );
-    if (targets.length === 0) return { registered: 0, failed: [] as string[] };
+    if (targets.length === 0 || registeringNow.current) return { registered: 0, failed: [] as string[] };
+    registeringNow.current = true;
     setRegistering({ done: 0, total: targets.length });
     const failed: string[] = [];
     let next = 0;
@@ -265,8 +267,12 @@ export function useMarketplaceSellerDashboard() {
         setRegistering({ done, total: targets.length });
       }
     };
-    await Promise.all(Array.from({ length: Math.min(REGISTER_CONCURRENCY, targets.length) }, worker));
-    setRegistering(null);
+    try {
+      await Promise.all(Array.from({ length: Math.min(REGISTER_CONCURRENCY, targets.length) }, worker));
+    } finally {
+      registeringNow.current = false;
+      setRegistering(null);
+    }
     const registered = targets.length - failed.length;
     if (failed.length === 0) {
       toast({ title: `${registered} ${registered === 1 ? 'listing' : 'listings'} registered for checkout` });

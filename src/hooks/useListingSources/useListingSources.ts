@@ -26,11 +26,14 @@ const NONE: readonly StoreSource[] = [];
 export function useListingSources(): UseListingSourcesResult {
   const sellerPubky = useAuthStore((state) => state.currentUserPubky);
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
-  const [sources, setSources] = useState<ReadonlyMap<string, readonly StoreSource[]> | null>(null);
+  // Keyed by seller and session, so a map read for one never serves another while its replacement loads.
+  const key = `${sellerPubky ?? ''}|${marketplaceSession?.issuedAt ?? ''}`;
+  const [read, setRead] = useState<{ key: string; map: ReadonlyMap<string, readonly StoreSource[]> } | null>(null);
+  const sources = read?.key === key ? read.map : null;
 
   useEffect(() => {
     if (!sellerPubky || !marketplaceSession || !isDurableCommerceMode(getCommerceAdapterMode())) {
-      setSources(null);
+      setRead(null);
       return;
     }
     let active = true;
@@ -39,6 +42,7 @@ export function useListingSources(): UseListingSourcesResult {
         const connections = await ConnectorsController.fetchConnections();
         const bySeller = new Map<string, Set<StoreSource>>();
         for (const connection of connections) {
+          if (!active) return;
           if (connection.mappingCount === 0) continue;
           for (const mapping of await ConnectorsController.fetchMappings(connection.id)) {
             const set = bySeller.get(mapping.listingId) ?? new Set<StoreSource>();
@@ -46,15 +50,15 @@ export function useListingSources(): UseListingSourcesResult {
             bySeller.set(mapping.listingId, set);
           }
         }
-        if (active) setSources(new Map([...bySeller].map(([listingId, set]) => [listingId, [...set]])));
+        if (active) setRead({ key, map: new Map([...bySeller].map(([listingId, set]) => [listingId, [...set]])) });
       } catch {
-        if (active) setSources(null);
+        if (active) setRead(null);
       }
     })();
     return () => {
       active = false;
     };
-  }, [sellerPubky, marketplaceSession]);
+  }, [sellerPubky, marketplaceSession, key]);
 
   return { sourcesOf: (listingId) => sources?.get(listingId) ?? NONE, ready: sources !== null };
 }

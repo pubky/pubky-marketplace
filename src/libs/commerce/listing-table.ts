@@ -102,7 +102,8 @@ interface ParamReader {
 }
 
 export function parseListingTableQuery(params: ParamReader): ListingTableQuery {
-  const page = Number.parseInt(params.get('page') ?? '', 10);
+  const rawPage = params.get('page') ?? '';
+  const page = /^[1-9]\d{0,8}$/.test(rawPage) ? Number(rawPage) : 1;
   const sort = oneOf(LISTING_SORT_KEYS, params.get('sort')) ?? DEFAULT_LISTING_TABLE_QUERY.sort;
   const dir = oneOf(['asc', 'desc'] as const, params.get('dir')) ?? defaultDirection(sort);
   return {
@@ -114,7 +115,7 @@ export function parseListingTableQuery(params: ParamReader): ListingTableQuery {
     stock: oneOf(LISTING_STOCK_FILTERS, params.get('stock')),
     sort,
     dir,
-    page: Number.isFinite(page) && page > 0 ? page : 1,
+    page,
   };
 }
 

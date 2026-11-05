@@ -42,6 +42,7 @@ const dashboardState = vi.hoisted(() => ({
   registrationOffered: true,
   stockUnknown: false,
   sourcesReady: false,
+  registering: null as { done: number; total: number } | null,
   sources: {} as Record<string, string[]>,
 }));
 const registerFlow = vi.hoisted(() => ({
@@ -92,7 +93,7 @@ vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', a
       needsRegistration: (row: { registeredWithService?: boolean }) =>
         row.registeredWithService === false && dashboardState.registrationOffered,
       registerListings: registerFlow.registerListings,
-      registering: null,
+      registering: dashboardState.registering,
       sourcesReady: dashboardState.sourcesReady,
       nowMs: dashboardState.nowMs,
       sellerOrders: [],
@@ -763,6 +764,7 @@ describe('MarketplaceDashboard listing table filters, sorts and bulk actions', (
     registerFlow.registerListings.mockClear();
     urlState.params = new URLSearchParams();
     dashboardState.sourcesReady = false;
+    dashboardState.registering = null;
     dashboardState.sources = {};
     dashboardState.registrationOffered = true;
     dashboardState.stockUnknown = false;
@@ -912,7 +914,7 @@ describe('MarketplaceDashboard listing table filters, sorts and bulk actions', (
     expect(ids).toHaveLength(120);
   });
 
-  it('never acts on a selected listing the filters now hide', () => {
+  it('starts a new selection when a filter changes, so hidden rows are never acted on', () => {
     dashboardState.listings = many(4, (index) => ({ state: index < 2 ? 'paused' : 'active' }));
 
     const { rerender } = render(<MarketplaceDashboard />);
@@ -922,8 +924,11 @@ describe('MarketplaceDashboard listing table filters, sorts and bulk actions', (
 
     urlState.params = new URLSearchParams('state=paused');
     rerender(<MarketplaceDashboard />);
-    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
 
+    expect(screen.queryByTestId('listing-selection-banner')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Item 001' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
     const [ids] = dashboardFns.updateListingState.mock.calls[0];
     expect(ids).toEqual([expect.stringContaining('item_001')]);
   });
@@ -944,6 +949,69 @@ describe('MarketplaceDashboard listing table filters, sorts and bulk actions', (
     const [ids] = registerFlow.registerListings.mock.calls[0];
     expect(ids).toHaveLength(2);
     expect(ids.join()).not.toContain('c');
+  });
+
+  it('offers select-all-matching from a partly filled last page', () => {
+    dashboardState.listings = many(183);
+    urlState.params = new URLSearchParams('page=4');
+
+    render(<MarketplaceDashboard />);
+    expect(screen.getAllByRole('row')).toHaveLength(34);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select all listings on this page' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Select all 183 matching' }));
+
+    expect(screen.getByTestId('listing-selection-banner')).toHaveTextContent('All 183 matching listings are selected.');
+  });
+
+  it('does not bring a hidden selection back when the filter is cleared', () => {
+    dashboardState.listings = many(4, (index) => ({ state: index < 2 ? 'paused' : 'active' }));
+
+    const { rerender } = render(<MarketplaceDashboard />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Item 004' }));
+    urlState.params = new URLSearchParams('state=paused');
+    rerender(<MarketplaceDashboard />);
+    urlState.params = new URLSearchParams();
+    rerender(<MarketplaceDashboard />);
+
+    expect(screen.queryByTestId('listing-selection-banner')).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Select Item 004' })).not.toBeChecked();
+  });
+
+  it('keeps the selection when only the sort or the page changes', () => {
+    dashboardState.listings = many(3);
+
+    const { rerender } = render(<MarketplaceDashboard />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Item 002' }));
+    urlState.params = new URLSearchParams('sort=title');
+    rerender(<MarketplaceDashboard />);
+
+    expect(screen.getByRole('checkbox', { name: 'Select Item 002' })).toBeChecked();
+  });
+
+  it('does not apply a store source filter before the stores were read', () => {
+    dashboardState.listings = many(3);
+    dashboardState.sourcesReady = false;
+
+    urlState.params = new URLSearchParams('source=manual');
+    const { rerender } = render(<MarketplaceDashboard />);
+    expect(renderedTitles()).toHaveLength(3);
+
+    urlState.params = new URLSearchParams('source=shopify');
+    rerender(<MarketplaceDashboard />);
+    expect(renderedTitles()).toHaveLength(3);
+    expect(screen.queryByRole('combobox', { name: 'Source' })).not.toBeInTheDocument();
+  });
+
+  it('turns the per-row registration button off while a bulk registration runs', () => {
+    dashboardState.listings = [needsRegistration(listing({ listingId: 'a', title: 'Alpha' }))];
+    dashboardState.registering = { done: 1, total: 5 };
+
+    render(<MarketplaceDashboard />);
+
+    expect(
+      within(screen.getByRole('row', { name: /Alpha/ })).getByRole('button', { name: 'Register for checkout' }),
+    ).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Registering 1/5' })).toBeDisabled();
   });
 
   it('offers no bulk registration when every listing is already registered', () => {

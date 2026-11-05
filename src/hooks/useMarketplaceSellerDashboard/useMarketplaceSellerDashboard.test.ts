@@ -1115,6 +1115,42 @@ describe('useMarketplaceSellerDashboard stock', () => {
       );
     });
 
+    it('runs one bulk registration at a time: a second call while one is running does nothing', async () => {
+      startThree();
+      const pending: Array<(ok: boolean) => void> = [];
+      vi.mocked(CommerceController.ensureListingRegistered).mockImplementation(
+        () =>
+          new Promise<boolean>((resolve) => {
+            pending.push(resolve);
+          }),
+      );
+      const { result } = renderHook(() => useMarketplaceSellerDashboard());
+      await waitFor(() => expect(result.current.canOfferRegistration(localListings[0] as never)).toBe(true));
+      const ids = localListings.map((row) => row.id as string);
+
+      let first: Promise<unknown> = Promise.resolve();
+      act(() => {
+        first = result.current.registerListings(ids);
+      });
+      await waitFor(() => expect(pending).toHaveLength(2));
+      expect(result.current.registering).toEqual({ done: 0, total: 2 });
+
+      let second: Awaited<ReturnType<typeof result.current.registerListings>> | undefined;
+      await act(async () => {
+        second = await result.current.registerListings(ids);
+      });
+      expect(second).toEqual({ registered: 0, failed: [] });
+      expect(CommerceController.ensureListingRegistered).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        pending.forEach((resolve) => resolve(true));
+        await first;
+      });
+      expect(result.current.registering).toBeNull();
+      expect(toast).toHaveBeenCalledTimes(1);
+      vi.mocked(CommerceController.ensureListingRegistered).mockReset();
+    });
+
     it('does nothing, and says nothing, when no selected listing needs registration', async () => {
       startThree();
       const { result } = renderHook(() => useMarketplaceSellerDashboard());

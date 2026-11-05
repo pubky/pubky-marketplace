@@ -98,6 +98,21 @@ describe('useListingTableQuery', () => {
     expect(router.replace).toHaveBeenCalledWith('/marketplace/dashboard?sort=title', { scroll: false });
   });
 
+  it('drops a pending search write when the URL changes under it, so the back button is not undone', () => {
+    url.params = new URLSearchParams('q=boots');
+    const { result, rerender } = renderHook(() => useListingTableQuery());
+
+    act(() => result.current.setSearchText('boots and more'));
+    url.params = new URLSearchParams('q=lamp');
+    rerender();
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(result.current.searchText).toBe('lamp');
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
   it('follows the URL when it changes under the search box, as on the back button', () => {
     url.params = new URLSearchParams('q=boots');
     const { result, rerender } = renderHook(() => useListingTableQuery());

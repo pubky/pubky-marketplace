@@ -71,6 +71,10 @@ describe('listing table query in the URL', () => {
     expect(parsed).toEqual(DEFAULT_LISTING_TABLE_QUERY);
   });
 
+  it.each(['2junk', '1.5', '0', '-3', '', '99999999999999'])('reads page=%s as the first page', (page) => {
+    expect(parseListingTableQuery(new URLSearchParams({ page })).page).toBe(1);
+  });
+
   it('starts a sort in the direction its default says when only the sort is given', () => {
     expect(parseListingTableQuery(new URLSearchParams('sort=title')).dir).toBe('asc');
     expect(parseListingTableQuery(new URLSearchParams('sort=created')).dir).toBe('desc');
@@ -131,6 +135,17 @@ describe('listingFacetCounts', () => {
     expect(counts.source).toEqual({ shopify: 1, woocommerce: 0, manual: 1 });
     expect(counts.checkout).toEqual({ ready: 1, needs: 1 });
     expect(counts.format).toEqual({ fixed_price: 2, auction: 0 });
+  });
+
+  it.each([
+    ['format', { format: 'auction' as const }, 'format', { fixed_price: 3, auction: 1 }],
+    ['checkout', { checkout: 'needs' as const }, 'checkout', { ready: 3, needs: 1 }],
+    ['source', { source: 'shopify' as const }, 'source', { shopify: 2, woocommerce: 0, manual: 2 }],
+    ['stock', { stock: 'out' as const }, 'stock', { in: 3, out: 1 }],
+  ])('leaves the %s filter out of its own counts', (_name, filter, facet, expected) => {
+    expect(listingFacetCounts(rows, query(filter))[facet as 'format' | 'checkout' | 'source' | 'stock']).toEqual(
+      expected,
+    );
   });
 
   it('applies the text search to every count', () => {
