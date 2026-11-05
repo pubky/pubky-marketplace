@@ -230,7 +230,7 @@ describe('useOwnDrop', () => {
       outcome = await result.current.withdrawUnregistered();
     });
 
-    expect(CommerceController.withdrawUnregisteredDrop).toHaveBeenCalledWith('drop1');
+    expect(CommerceController.withdrawUnregisteredDrop).toHaveBeenCalledWith({ title: 'Winter capsule' });
     expect(outcome).toEqual({ ok: true, conflict: false, message: null });
     expect(readOwnDropIndex(SELLER)).toEqual(['other_drop']);
   });
@@ -247,6 +247,42 @@ describe('useOwnDrop', () => {
 
     expect(CommerceController.withdrawUnregisteredDrop).not.toHaveBeenCalled();
     expect(outcome).toMatchObject({ ok: false, conflict: false });
+  });
+
+  it('refuses without a readable record: there is nothing to withdraw or put back', async () => {
+    vi.mocked(CommerceController.getOwnDrop).mockResolvedValue(null as never);
+    vi.mocked(CommerceController.fetchDrop).mockRejectedValue(new Error('not found'));
+    const { result } = renderHook(() => useOwnDrop('drop1'));
+    await flush();
+
+    let outcome: Awaited<ReturnType<typeof result.current.withdrawUnregistered>> | undefined;
+    await act(async () => {
+      outcome = await result.current.withdrawUnregistered();
+    });
+
+    expect(CommerceController.withdrawUnregisteredDrop).not.toHaveBeenCalled();
+    expect(outcome).toMatchObject({ ok: false, conflict: false });
+  });
+
+  it('re-reads both sources after a failed withdraw', async () => {
+    vi.mocked(CommerceController.getOwnDrop).mockResolvedValue(null as never);
+    vi.mocked(CommerceController.withdrawUnregisteredDrop).mockRejectedValue({
+      name: 'AppError',
+      code: 'SERVICE_UNAVAILABLE',
+      message: 'upstream down',
+    });
+    const { result } = renderHook(() => useOwnDrop('drop1'));
+    await flush();
+    expect(CommerceController.fetchDrop).toHaveBeenCalledTimes(1);
+
+    let outcome: Awaited<ReturnType<typeof result.current.withdrawUnregistered>> | undefined;
+    await act(async () => {
+      outcome = await result.current.withdrawUnregistered();
+    });
+
+    expect(outcome).toMatchObject({ ok: false, conflict: false });
+    expect(outcome?.message).not.toContain('upstream down');
+    expect(CommerceController.fetchDrop).toHaveBeenCalledTimes(2);
   });
 
   it('reports a conflict and shows fresh state when the service registered the drop meanwhile', async () => {

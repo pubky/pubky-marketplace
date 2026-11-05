@@ -177,12 +177,12 @@ export function useOwnDrop(dropId: string): UseOwnDropResult {
     runLifecycleCommand('release', DROP_ENDED_STATES, 'Listings release only after the drop ends.');
 
   const withdrawUnregistered = async (): Promise<DropCommandOutcome> => {
-    if (!currentUserPubky || !isDurable || dropRef.current !== null) {
+    if (!currentUserPubky || !isDurable || dropRef.current !== null || record === null) {
       return { ok: false, conflict: false, message: 'Only an unregistered announcement can be deleted.' };
     }
     setIsActing(true);
     try {
-      const outcome = await CommerceController.withdrawUnregisteredDrop(dropId);
+      const outcome = await CommerceController.withdrawUnregisteredDrop(record);
       if (outcome === 'withdrawn') {
         forgetOwnDrop(currentUserPubky, dropId);
         return { ok: true, conflict: false, message: null };
@@ -194,6 +194,7 @@ export function useOwnDrop(dropId: string): UseOwnDropResult {
         message: 'The service registered this drop in the meantime. Fresh state is shown — withdraw it from there.',
       };
     } catch (commandError) {
+      await load();
       return {
         ok: false,
         conflict: false,

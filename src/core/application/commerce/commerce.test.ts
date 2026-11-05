@@ -55,7 +55,7 @@ import {
 import { toCommerceListingModel } from '@/test/fixtures/commerce/listing-models';
 import { createAuctionProjectionFixture } from '@/test/fixtures/commerce/projections';
 import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';
-import { CommerceApplication, LISTING_REGISTRATION_LOCK_PREFIX } from './commerce';
+import { CommerceApplication, DROP_WITHDRAW_RECHECK_DELAYS_MS, LISTING_REGISTRATION_LOCK_PREFIX } from './commerce';
 
 const SHOP_URL = `pubky://${COMMERCE_FIXTURE_SELLER}/pub/pubky.app/marketplace/v1/shop.json`;
 const LISTING_URL = `pubky://${COMMERCE_FIXTURE_SELLER}/pub/pubky.app/marketplace/v1/listings/boots_01`;
@@ -3140,9 +3140,39 @@ describe('CommerceApplication', () => {
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       );
+    const upstreamDown = () => new Response('upstream down', { status: 502 });
+    const dropRecord = CommerceRecordNormalizer.drop({
+      schemaVersion: 1,
+      recordType: 'drop',
+      ownerPubky: COMMERCE_FIXTURE_SELLER,
+      revision: 1,
+      createdAt: '2026-09-10T10:00:00.000Z',
+      updatedAt: '2026-09-10T10:00:00.000Z',
+      dropId: 'drop_faraday_01',
+      title: 'Faraday cage drop',
+      description: 'Three numbered pieces.',
+      media: [],
+      format: 'fcfs',
+      startsAt: '2026-12-01T17:00:00.000Z',
+      listingIds: ['listing_faraday_01'],
+      totalQuantity: 3,
+      perBuyerLimit: 1,
+      stockDisplay: 'exact',
+    });
     const fetchMock = vi.fn();
+    const answers = (...responses: (() => Response)[]) => {
+      for (const respond of responses) fetchMock.mockImplementationOnce(async () => respond());
+    };
+    /** Runs a withdraw through every re-check delay. */
+    const withdraw = async (actor = COMMERCE_FIXTURE_SELLER) => {
+      const pending = CommerceApplication.withdrawUnregisteredDrop(actor, dropRecord);
+      pending.catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(DROP_WITHDRAW_RECHECK_DELAYS_MS.at(-1)!);
+      return await pending;
+    };
 
     beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
       vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
       vi.spyOn(commerceConfig, 'getMarketplaceUrl').mockReturnValue(service);
       vi.stubGlobal('fetch', fetchMock);
@@ -3151,45 +3181,69 @@ describe('CommerceApplication', () => {
 
     afterEach(() => {
       vi.unstubAllGlobals();
+      vi.useRealTimers();
     });
 
     it('deletes the seller-signed record when the service never registered the drop', async () => {
-      fetchMock.mockImplementation(async () => notFound());
+      answers(notFound, notFound, notFound);
       const remove = vi.spyOn(CommerceHomeserverService, 'delete').mockResolvedValue();
+      const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue();
 
-      await expect(CommerceApplication.withdrawUnregisteredDrop(COMMERCE_FIXTURE_SELLER, 'drop_faraday_01')).resolves.toBe(
-        'withdrawn',
-      );
+      await expect(withdraw()).resolves.toBe('withdrawn');
       expect(remove).toHaveBeenCalledExactlyOnceWith(dropRecordUrl);
+      expect(put).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(1 + DROP_WITHDRAW_RECHECK_DELAYS_MS.length);
       expect(fetchMock).toHaveBeenCalledWith(publicDropUrl, expect.objectContaining({ method: 'GET' }));
     });
 
     it('never deletes the record of a registered drop', async () => {
-      fetchMock.mockImplementation(async () => registered());
+      answers(registered);
       const remove = vi.spyOn(CommerceHomeserverService, 'delete').mockResolvedValue();
 
-      await expect(CommerceApplication.withdrawUnregisteredDrop(COMMERCE_FIXTURE_SELLER, 'drop_faraday_01')).resolves.toBe(
-        'registered',
-      );
+      await expect(withdraw()).resolves.toBe('registered');
       expect(remove).not.toHaveBeenCalled();
     });
 
-    it('reports a registration that landed while the delete was in flight', async () => {
-      fetchMock.mockImplementationOnce(async () => notFound()).mockImplementationOnce(async () => registered());
-      vi.spyOn(CommerceHomeserverService, 'delete').mockResolvedValue();
+    it('refuses another account without reading or deleting anything', async () => {
+      const remove = vi.spyOn(CommerceHomeserverService, 'delete').mockResolvedValue();
 
-      await expect(CommerceApplication.withdrawUnregisteredDrop(COMMERCE_FIXTURE_SELLER, 'drop_faraday_01')).resolves.toBe(
-        'registered',
+      await expect(withdraw('z'.repeat(52))).rejects.toMatchObject({ code: AuthErrorCode.FORBIDDEN });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(remove).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['right after the delete', [notFound, registered]],
+      ['only at the delayed re-check', [notFound, notFound, registered]],
+    ])('publishes the record back when a concurrent drop.sync registered it %s', async (_when, responses) => {
+      answers(...responses);
+      vi.spyOn(CommerceHomeserverService, 'delete').mockResolvedValue();
+      const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue();
+
+      await expect(withdraw()).resolves.toBe('registered');
+      expect(put).toHaveBeenCalledExactlyOnceWith(
+        dropRecordUrl,
+        expect.objectContaining({ dropId: 'drop_faraday_01', revision: 1, listingIds: ['listing_faraday_01'] }),
       );
     });
 
-    it('deletes nothing when the service read fails', async () => {
-      fetchMock.mockImplementation(async () => new Response('upstream down', { status: 502 }));
+    it('publishes the record back and reports the failure when a re-check after the delete fails', async () => {
+      answers(notFound, upstreamDown);
+      vi.spyOn(CommerceHomeserverService, 'delete').mockResolvedValue();
+      const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue();
+
+      await expect(withdraw()).rejects.toSatisfy((error) => hasHttpStatus(error, 502));
+      expect(put).toHaveBeenCalledExactlyOnceWith(
+        dropRecordUrl,
+        expect.objectContaining({ dropId: 'drop_faraday_01' }),
+      );
+    });
+
+    it('deletes nothing when the first service read fails', async () => {
+      answers(upstreamDown);
       const remove = vi.spyOn(CommerceHomeserverService, 'delete').mockResolvedValue();
 
-      await expect(
-        CommerceApplication.withdrawUnregisteredDrop(COMMERCE_FIXTURE_SELLER, 'drop_faraday_01'),
-      ).rejects.toBeDefined();
+      await expect(withdraw()).rejects.toSatisfy((error) => hasHttpStatus(error, 502));
       expect(remove).not.toHaveBeenCalled();
     });
   });
