@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useWatch } from 'react-hook-form';
-import type { InventoryImportUnfinished } from '@/application/commerce/inventory-import';
+import type {
+  InventoryImportListingProgress,
+  InventoryImportUnfinished,
+} from '@/application/commerce/inventory-import';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { ImportStoreCatalogController } from '@/controllers/import-store/import-store-catalog';
 import { runImportImageBatches } from '@/hooks/useImportImageUpload/runImportImageBatches';
@@ -53,6 +56,7 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
   const [fileName, setFileName] = useState<string | undefined>();
   const [message, setMessage] = useState<string | undefined>();
   const [counts, setCounts] = useState<InventoryImportDryRunCounts | undefined>();
+  const [listingCount, setListingCount] = useState<number | undefined>();
   const [manifestId, setManifestId] = useState<string | null>(null);
   const [conflictListingId, setConflictListingId] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | undefined>();
@@ -152,6 +156,7 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     }
     setManifestId(result.manifestId);
     setCounts(result.counts);
+    setListingCount(result.listingCount);
     setFormat(result.format);
     setLossReport(result.lossReport);
     setAppliedSettings(settings);
@@ -373,7 +378,9 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
   const photosThen = async (
     id: string,
     photosTotal: number,
-    publishStep: () => Promise<Awaited<ReturnType<typeof CommerceController.publishInventoryImport>>>,
+    publishStep: (
+      onProgress: InventoryImportListingProgress,
+    ) => Promise<Awaited<ReturnType<typeof CommerceController.publishInventoryImport>>>,
     listingsTotal?: number,
   ) => {
     const photos = await runImagePhase(id, photosTotal);
@@ -389,8 +396,8 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
       return;
     }
     setProgressPhase('listings');
-    if (listingsTotal !== undefined) setProgress({ done: 0, total: listingsTotal });
-    const result = await publishStep();
+    setProgress(listingsTotal === undefined ? undefined : { done: 0, total: listingsTotal });
+    const result = await publishStep(setProgress);
     setBusy(false);
     applyPublishOutcome(result);
   };
@@ -404,8 +411,8 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     await photosThen(
       manifestId,
       photoPlan?.count ?? 0,
-      () => CommerceController.publishInventoryImport(sellerPubky, manifestId),
-      counts ? counts.create + counts.update + counts.end : 0,
+      (onProgress) => CommerceController.publishInventoryImport(sellerPubky, manifestId, onProgress),
+      listingCount ?? 0,
     );
   };
 
@@ -413,8 +420,8 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     if (!sellerPubky || !manifestId) return;
     setBusy(true);
     setScene('progress');
-    await photosThen(manifestId, photoPlan?.count ?? 0, () =>
-      CommerceController.resumeInventoryImport(sellerPubky, manifestId),
+    await photosThen(manifestId, photoPlan?.count ?? 0, (onProgress) =>
+      CommerceController.resumeInventoryImport(sellerPubky, manifestId, onProgress),
     );
   };
 
@@ -449,8 +456,8 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     setBusy(true);
     setScene('progress');
     setStep(5);
-    await photosThen(found.manifestId, found.photosLeft, () =>
-      CommerceController.resumeInventoryImport(sellerPubky, found.manifestId),
+    await photosThen(found.manifestId, found.photosLeft, (onProgress) =>
+      CommerceController.resumeInventoryImport(sellerPubky, found.manifestId, onProgress),
     );
   };
 
@@ -491,6 +498,7 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
   ) => {
     if (result.status === 'planned') {
       setCounts(result.counts);
+      setListingCount(result.listingCount);
       setConflictListingId(null);
       setScene(result.counts.conflict > 0 ? 'conflict' : 'dry-run');
       setStep(result.counts.conflict > 0 ? 5 : 4);
@@ -571,6 +579,7 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     fileName,
     message,
     counts,
+    listingCount,
     progress,
     progressPhase,
     batchInfo,

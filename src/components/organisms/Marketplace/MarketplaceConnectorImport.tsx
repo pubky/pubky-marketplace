@@ -5,7 +5,7 @@ import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
 import { Typography } from '@/atoms/Typography/Typography';
 import type { useConnectorCatalogImport } from '@/hooks/useConnectorCatalogImport/useConnectorCatalogImport';
-import type { ConnectorConnection } from '@/libs/commerce/connectors';
+import type { ConnectorConnection, VariantMode } from '@/libs/commerce/connectors';
 import { MarketplaceConnectorImportSettings } from './MarketplaceConnectorImportSettings';
 import { MarketplaceInventoryImport } from './MarketplaceInventoryImport';
 import { MarketplaceInventoryImportLossReport } from './MarketplaceInventoryImportLossReport';
@@ -15,13 +15,22 @@ type MarketplaceConnectorImportProps = {
   connection: Pick<ConnectorConnection, 'provider' | 'domain'> & { variantMode?: ConnectorConnection['variantMode'] };
   /** Back to the product list. */
   onBack: () => void;
+  /** Changes how the store's variants become listings; resolves true when the connection took the setting. */
+  onVariantMode?: (mode: VariantMode) => Promise<boolean>;
+  variantModeBusy?: boolean;
 };
 
 /**
  * Publishing the chosen store products: the settings every product needs, then
  * the Studio's own dry run, publish and result, then the link to the store.
  */
-export function MarketplaceConnectorImport({ flow, connection, onBack }: MarketplaceConnectorImportProps) {
+export function MarketplaceConnectorImport({
+  flow,
+  connection,
+  onBack,
+  onVariantMode,
+  variantModeBusy = false,
+}: MarketplaceConnectorImportProps) {
   const { importer, stage, linkState } = flow;
 
   if (stage === 'loading') {
@@ -43,10 +52,13 @@ export function MarketplaceConnectorImport({ flow, connection, onBack }: Marketp
         domain={connection.domain}
         currency={flow.currency ?? ''}
         productCount={flow.productCount}
+        variantCount={flow.variantCount}
         untrackedVariants={flow.untrackedVariants}
         madeToOrderVariants={flow.madeToOrderVariants}
         conditionOptions={importer.conditionOptions}
         variantMode={connection.variantMode ?? 'native'}
+        {...(onVariantMode ? { onVariantMode } : {})}
+        variantModeBusy={variantModeBusy}
         busy={importer.busy}
         onReview={() => void flow.review()}
         onChooseFreeShipping={() => void flow.chooseFreeShipping()}
@@ -82,7 +94,12 @@ export function MarketplaceConnectorImport({ flow, connection, onBack }: Marketp
               fileName={`${connection.domain}, ${flow.productCount} ${flow.productCount === 1 ? 'product' : 'products'}`}
               {...(importer.message ? { message: importer.message } : {})}
               {...(importer.counts ? { counts: importer.counts } : {})}
+              {...(importer.listingCount === undefined ? {} : { listingCount: importer.listingCount })}
               {...(importer.progress ? { progress: importer.progress } : {})}
+              progressPhase={importer.progressPhase}
+              {...(importer.batchInfo ? { batchInfo: importer.batchInfo } : {})}
+              waitSeconds={importer.waitSeconds}
+              {...(importer.photoPlan ? { photoPlan: importer.photoPlan } : {})}
               {...(importer.lossSummary ? { lossSummary: importer.lossSummary } : {})}
               {...(importer.publishNotice ? { publishNotice: importer.publishNotice } : {})}
               {...(importer.publishDisabledReason ? { publishDisabledReason: importer.publishDisabledReason } : {})}

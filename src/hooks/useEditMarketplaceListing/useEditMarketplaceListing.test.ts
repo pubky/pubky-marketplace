@@ -411,6 +411,16 @@ describe('useEditMarketplaceListing', () => {
     const { result } = renderHook(() => useEditMarketplaceListing(OWNER, LISTING_ID));
 
     await waitFor(() => expect(result.current.status).toBe('unsupported'));
+    expect(result.current.ownedListing).toMatchObject({ listingId: LISTING_ID });
+  });
+
+  it('exposes the loaded record for Delete once the listing is ready, and not before', async () => {
+    const { result } = renderHook(() => useEditMarketplaceListing(OWNER, LISTING_ID));
+    expect(result.current.ownedListing).toBeNull();
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    expect(result.current.ownedListing).toMatchObject({ listingId: LISTING_ID, title: 'Vintage leather boots' });
   });
 
   it('round-trips unknown record members through an edit (open-world records)', async () => {

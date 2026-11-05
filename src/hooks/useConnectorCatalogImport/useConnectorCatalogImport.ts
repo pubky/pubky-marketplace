@@ -77,6 +77,7 @@ export function useConnectorCatalogImport(connection: ImportConnection | null) {
       product.variants.filter((variant) => variant.madeToOrder !== true && typeof variant.stock !== 'number').length,
     0,
   );
+  const variantCount = products.reduce((total, product) => total + product.variants.length, 0);
   const madeToOrderVariants = products.reduce(
     (total, product) => total + product.variants.filter((variant) => variant.madeToOrder === true).length,
     0,
@@ -217,6 +218,7 @@ export function useConnectorCatalogImport(connection: ImportConnection | null) {
     planning,
     nothingToImport,
     productCount: products.length,
+    variantCount,
     currency,
     untrackedVariants,
     madeToOrderVariants,

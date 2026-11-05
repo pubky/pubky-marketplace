@@ -20,6 +20,7 @@ import { isAppError } from '@/libs/error/error';
 import { ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
+import { getRetryAfter } from '@/libs/error/error.utils';
 import {
   type LinkableListing,
   type ListingLinkSuggestion,
@@ -64,6 +65,41 @@ export type StorePushOverview = {
 
 const RECENT_PUSHES_PER_CONNECTION = 50;
 const MAX_CATALOG_PAGES = 100;
+/**
+ * A store answers a catalog page with `provider_rate_limited` when its API
+ * throttle is empty (Shopify's cost bucket refills in seconds). The page is
+ * asked for again after the wait the service names, a few times, so one
+ * throttled page does not abandon a catalog read that is part-way through.
+ */
+const CATALOG_RATE_LIMIT_RETRIES = 4;
+const CATALOG_RETRY_MIN_SECONDS = 2;
+const CATALOG_RETRY_MAX_SECONDS = 30;
+const CATALOG_RETRY_DEFAULT_SECONDS = 5;
+
+/** Sleeps `ms`; rejects with the signal's reason as soon as it is aborted, so a closed page stops waiting. */
+function waitUnlessAborted(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function catalogRetryDelayMs(error: unknown): number {
+  const named = isAppError(error) ? getRetryAfter(error) : undefined;
+  const seconds = typeof named === 'number' && Number.isFinite(named) ? named : CATALOG_RETRY_DEFAULT_SECONDS;
+  return Math.min(Math.max(seconds, CATALOG_RETRY_MIN_SECONDS), CATALOG_RETRY_MAX_SECONDS) * 1000;
+}
 
 function invalidInput(operation: string, message: string): never {
   throw Err.validation(ValidationErrorCode.INVALID_INPUT, message, { service: ErrorService.Marketplace, operation });
@@ -279,9 +315,18 @@ export class ConnectorsApplication {
   static async catalogPage(
     actor: string,
     connectionId: string,
-    options: { page?: string | null; selected?: boolean } = {},
+    options: { page?: string | null; selected?: boolean; signal?: AbortSignal } = {},
   ): Promise<ConnectorCatalogPage> {
-    return await MarketplaceConnectorsService.catalog(actor, connectionId, options);
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await MarketplaceConnectorsService.catalog(actor, connectionId, options);
+      } catch (error) {
+        if (connectorRefusalReason(error) !== 'provider_rate_limited' || attempt >= CATALOG_RATE_LIMIT_RETRIES) {
+          throw error;
+        }
+        await waitUnlessAborted(catalogRetryDelayMs(error), options.signal);
+      }
+    }
   }
 
   /** Every product the seller chose to also publish, all pages, as the store describes it now. */
@@ -289,7 +334,7 @@ export class ConnectorsApplication {
     const products: ConnectorCatalogProduct[] = [];
     let page: string | null = null;
     for (let index = 0; index < MAX_CATALOG_PAGES; index += 1) {
-      const next = await MarketplaceConnectorsService.catalog(actor, connectionId, { page, selected: true });
+      const next = await this.catalogPage(actor, connectionId, { page, selected: true });
       products.push(...next.products.filter((product) => product.selected));
       if (!next.nextPage) return products;
       page = next.nextPage;
@@ -302,7 +347,7 @@ export class ConnectorsApplication {
     const products: ConnectorCatalogProduct[] = [];
     let page: string | null = null;
     for (let index = 0; index < MAX_CATALOG_PAGES; index += 1) {
-      const next = await MarketplaceConnectorsService.catalog(actor, connectionId, { page });
+      const next = await this.catalogPage(actor, connectionId, { page });
       products.push(...next.products);
       if (!next.nextPage) return products;
       page = next.nextPage;

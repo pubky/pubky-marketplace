@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
@@ -44,6 +44,7 @@ vi.mock('@/controllers/connectors/connectors', () => ({
     fetchMappings: vi.fn(),
     fetchCatalogPage: vi.fn(),
     commitSelection: vi.fn(),
+    commitVariantMode: vi.fn(),
   },
 }));
 
@@ -109,6 +110,37 @@ describe('MarketplaceConnectorCatalog', () => {
     await waitFor(() => expect(ConnectorsController.commitSelection).toHaveBeenCalledWith('c1', ['2']));
   });
 
+  it('offers Try again when the first read of the catalog fails, and loads it on the second try', async () => {
+    const user = userEvent.setup();
+    vi.mocked(ConnectorsController.fetchCatalogPage)
+      .mockRejectedValueOnce(connectorRefusal('provider_rate_limited', 429))
+      .mockResolvedValue({ kind: 'connector_catalog', connectionId: 'c1', products: PRODUCTS, nextPage: null });
+    render(<MarketplaceConnectorCatalog connectionId="c1" />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('The store is busy. Wait a minute, then try again.');
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByTestId('connector-catalog')).toBeInTheDocument();
+    expect(screen.getAllByTestId('connector-product')).toHaveLength(2);
+  });
+
+  it('keeps Publish off while the rest of the catalog is still loading, so only one read of the store runs', async () => {
+    let release: (page: unknown) => void = () => {};
+    vi.mocked(ConnectorsController.fetchSelection).mockResolvedValue(['2']);
+    vi.mocked(ConnectorsController.fetchCatalogPage)
+      .mockResolvedValueOnce({ kind: 'connector_catalog', connectionId: 'c1', products: PRODUCTS, nextPage: 'p2' })
+      .mockImplementationOnce(() => new Promise((resolve) => (release = resolve)) as never);
+    render(<MarketplaceConnectorCatalog connectionId="c1" />);
+    await screen.findByTestId('connector-catalog');
+
+    expect(screen.getByRole('button', { name: 'Publish chosen products' })).toBeDisabled();
+    expect(screen.getByTestId('connector-import-loading-first')).toBeInTheDocument();
+
+    release({ kind: 'connector_catalog', connectionId: 'c1', products: [], nextPage: null });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Publish chosen products' })).toBeEnabled());
+    expect(screen.queryByTestId('connector-import-loading-first')).not.toBeInTheDocument();
+  });
+
   describe('publishing the chosen products', () => {
     it('keeps Publish off until the choice is saved, and says so', async () => {
       const user = userEvent.setup();
@@ -146,6 +178,77 @@ describe('MarketplaceConnectorCatalog', () => {
 
       await user.click(screen.getByRole('button', { name: 'Back to products' }));
       expect(await screen.findByTestId('connector-catalog')).toBeInTheDocument();
+    });
+
+    it('shows how the variants become listings on the settings step and switches it before Review import', async () => {
+      const user = userEvent.setup();
+      vi.mocked(ConnectorsController.fetchSelection).mockResolvedValue(['2']);
+      vi.mocked(ConnectorsController.fetchSelectedProducts).mockResolvedValue([
+        connectorCatalogProductSchema.parse({
+          ...PRODUCTS[1],
+          selected: true,
+          variants: [
+            { providerVariantId: '21', price: { amountMinor: 1800, currency: 'USD', exponent: 2 } },
+            { providerVariantId: '22', price: { amountMinor: 1800, currency: 'USD', exponent: 2 } },
+            { providerVariantId: '23', price: { amountMinor: 1800, currency: 'USD', exponent: 2 } },
+          ],
+        }),
+      ]);
+      vi.mocked(CommerceController.inventoryImportDefaults).mockResolvedValue({
+        countryCode: 'US',
+        shipping: null,
+        currency: null,
+      });
+      vi.mocked(ConnectorsController.commitVariantMode).mockResolvedValue({
+        connection: { ...CONNECTION, variantMode: 'split' },
+        unmappedListings: [],
+      });
+      render(<MarketplaceConnectorCatalog connectionId="c1" />);
+      await screen.findByTestId('connector-catalog');
+      await user.click(screen.getByRole('button', { name: 'Publish chosen products' }));
+      await screen.findByTestId('connector-import-settings');
+
+      expect(screen.getByTestId('connector-import-variant-mode-state')).toHaveTextContent(
+        'Sizes and colours stay together as one listing: 1 listing with 3 variants.',
+      );
+
+      await user.click(screen.getByRole('switch', { name: 'One listing per size or variant' }));
+
+      expect(ConnectorsController.commitVariantMode).toHaveBeenCalledWith('c1', 'split');
+      await waitFor(() =>
+        expect(screen.getByTestId('connector-import-variant-mode-state')).toHaveTextContent(
+          'Every size or variant becomes its own listing: 3 listings.',
+        ),
+      );
+      expect(screen.getByRole('button', { name: 'Review import' })).toBeInTheDocument();
+    });
+
+    it('waits for the saved setting before Review import plans anything', async () => {
+      const user = userEvent.setup();
+      let settle: (value: { connection: typeof CONNECTION; unmappedListings: never[] }) => void = () => undefined;
+      vi.mocked(ConnectorsController.fetchSelection).mockResolvedValue(['2']);
+      vi.mocked(ConnectorsController.fetchSelectedProducts).mockResolvedValue([
+        connectorCatalogProductSchema.parse({ ...PRODUCTS[1], selected: true }),
+      ]);
+      vi.mocked(CommerceController.inventoryImportDefaults).mockResolvedValue({
+        countryCode: 'US',
+        shipping: { mode: 'free', minDays: 3, maxDays: 10 } as never,
+        currency: 'USD',
+      });
+      vi.mocked(ConnectorsController.commitVariantMode).mockImplementation(
+        () => new Promise((resolve) => (settle = resolve as typeof settle)),
+      );
+      render(<MarketplaceConnectorCatalog connectionId="c1" />);
+      await screen.findByTestId('connector-catalog');
+      await user.click(screen.getByRole('button', { name: 'Publish chosen products' }));
+      await screen.findByTestId('connector-import-settings');
+
+      await user.click(screen.getByRole('switch', { name: 'One listing per size or variant' }));
+      expect(screen.getByRole('button', { name: 'Review import' })).toBeDisabled();
+
+      await act(async () => settle({ connection: { ...CONNECTION, variantMode: 'split' }, unmappedListings: [] }));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Review import' })).toBeEnabled());
+      expect(screen.getByRole('switch', { name: 'One listing per size or variant' })).toBeChecked();
     });
 
     it('says to choose products first when nothing is saved', async () => {
