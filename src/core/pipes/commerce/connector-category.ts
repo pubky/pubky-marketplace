@@ -253,9 +253,12 @@ const TAXONOMY_RULES: readonly (readonly [string, Target])[] = [
  */
 const KEYWORD_RULES: readonly (readonly [RegExp, Target])[] = [
   [/\blaptop (?:sleeves?|bags?|cases?)\b|\bnotebook sleeves?\b/i, fixed('electronics-tech-accessories-laptop-bags')],
-  [/\bairpods\b.*\bcases?\b|\bcases?\b.*\bairpods\b/i, fixed('electronics-tech-accessories')],
   [
-    /\b(?:phone|iphone|samsung|galaxy|pixel|magsafe)\b.*\bcases?\b|\bcases?\b.*\b(?:phone|iphone|samsung|galaxy|pixel)\b/i,
+    /\bairpods\b(?:\W+\w+){0,2}?\W+cases?\b(?!\W+stud)|\bcases? for (?:the )?airpods\b/i,
+    fixed('electronics-tech-accessories'),
+  ],
+  [
+    /\b(?:i?phone|samsung|galaxy|pixel|magsafe)\b(?:\W+\w+){0,2}?\W+cases?\b(?!\W+stud)|\bcases? for (?:the |an? )?(?:i?phone|samsung|galaxy|pixel)\b/i,
     fixed('electronics-tech-accessories-phone-cases'),
   ],
   [/\bhood(?:ie|ies|y|ys)\b/i, fashion('tops-hoodies')],
@@ -266,18 +269,19 @@ const KEYWORD_RULES: readonly (readonly [RegExp, Target])[] = [
   [/\bsweaters?\b|\bjumpers?\b|\bpullovers?\b|\bknitwear\b/i, fashion('tops-jumpers')],
   [/\bcardigans?\b/i, fashion('tops-cardigans')],
   [/\bblouses?\b/i, fashion('tops-blouses')],
-  [/\bshirts?\b|\bjerseys?\b/i, fashion('tops-shirts')],
+  [/\bshirts?\b/i, fashion('tops-shirts')],
   [/\bvests?\b|\bgilets?\b/i, fashion('coats-jackets-gilets')],
   [/\bjackets?\b|\bwindbreakers?\b|\bbombers?\b/i, fashion('coats-jackets-jackets')],
   [/\bcoats?\b|\bparkas?\b/i, fashion('coats-jackets-coats')],
-  [/\bdress(?:es)?\b/i, fashion('dresses', undefined, 'women')],
+  [/\bdress(?:es)?\b(?!\W+(?:shirts?|shoes?|pants?|socks?|code|boots?))/i, fashion('dresses', undefined, 'women')],
+  [/\bjerseys?\b/i, fashion('tops-shirts')],
   [/\bskirts?\b|\bleggings?\b/i, fashion('bottoms', undefined, 'women')],
   [/\bjoggers?\b|\bpants\b|\btrousers\b|\bjeans\b|\bshorts\b/i, fashion('bottoms')],
   [/\bswim ?suits?\b|\bbikinis?\b|\bone-?piece swim/i, fashion('swim-beach-wear', undefined, 'women')],
   [/\bswim ?(?:wear|trunks)\b|\bboard ?shorts\b/i, fashion('swim-beach-wear')],
   [/\bsocks?\b|\bunderwear\b|\bboxers?\b|\bbriefs\b/i, fashion('underwear')],
   [
-    /\bsneakers?\b|\bboots?\b|\bsandals?\b|\bslides\b|\bslippers?\b|\bshoes?\b|\bflip[- ]?flops?\b/i,
+    /\bsneakers?\b|\bboots?\b|\bsandals?\b|(?<!presentation |microscope |photo |powerpoint |google )\bslides\b|\bslippers?\b|\bshoes?\b|\bflip[- ]?flops?\b/i,
     fashion('footwear'),
   ],
   [/\bhats?\b|\bcaps?\b|\bbeanies?\b|\bsnapbacks?\b|\bvisors?\b|\bbucket hats?\b/i, fashion('accessories-hat')],
@@ -311,6 +315,10 @@ const KEYWORD_RULES: readonly (readonly [RegExp, Target])[] = [
   [/\bface masks?\b/i, fixed('other-face-masks')],
   [/\bbooks?\b/i, fixed('books-media-books')],
 ];
+
+/** Words that name an item worn by women unless the text says otherwise. */
+const WOMENS_ITEMS =
+  /\b(?:dress(?:es)?(?!\W+(?:shirts?|shoes?|pants?|socks?|code|boots?))|skirts?|skorts?|bikinis?|tankinis?|burkinis?|swim ?suits?|one-?piece swim\w*|leggings?|jeggings?|blouses?|lingerie|bras?|nightgowns?)\b/i;
 
 const KIDS = /\bkids?\b|\bchildren(?:'s|s)?\b|\byouth\b|\btoddlers?\b|\binfants?\b|\bbab(?:y|ies)\b/i;
 const WOMEN = /\bwom[ae]n(?:'s|s)?\b|\bladies\b|\blady\b/i;
@@ -350,7 +358,8 @@ function closestKnown(id: string): string {
 
 function resolveTarget(target: Target, texts: readonly string[]): string {
   if ('id' in target) return closestKnown(target.id);
-  return closestKnown(`fashion-${audienceOf(texts, target.audience, target.fallbackAudience)}-${target.fashion}`);
+  const fallback = target.fallbackAudience ?? (WOMENS_ITEMS.test(texts.join(' | ')) ? 'women' : 'men');
+  return closestKnown(`fashion-${audienceOf(texts, target.audience, fallback)}-${target.fashion}`);
 }
 
 function taxonomyTarget(category: string): Target | null {

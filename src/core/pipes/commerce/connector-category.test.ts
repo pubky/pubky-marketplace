@@ -128,6 +128,39 @@ describe('mapStoreCategory audience', () => {
     expect(category('Dress')).toBe('fashion-women-dresses');
   });
 
+  it('uses the women default for a swimsuit, leggings or a dress on the Shopify taxonomy path too', () => {
+    expect(category('Swimsuit', ['Apparel & Accessories > Clothing > Swimwear'])).toBe('fashion-women-swim-beach-wear');
+    expect(category('Trunks', ['Apparel & Accessories > Clothing > Swimwear > Swim Shorts'])).toBe(
+      'fashion-men-swim-beach-wear',
+    );
+    expect(category('Yoga Leggings', ['Apparel & Accessories > Clothing > Activewear > Activewear Pants'])).toBe(
+      'fashion-women-bottoms',
+    );
+    expect(category('Floral', ['Apparel & Accessories > Clothing > Swimwear > Classic Bikinis'])).toBe(
+      'fashion-women-swim-beach-wear',
+    );
+    expect(category('Plain', ['Apparel & Accessories > Clothing > Pants > Leggings'])).toBe('fashion-women-bottoms');
+    expect(category("Men's Swimsuit", ['Apparel & Accessories > Clothing > Swimwear'])).toBe(
+      'fashion-men-swim-beach-wear',
+    );
+  });
+
+  it('does not take a dress shirt, dress shoes or a dress code for a dress', () => {
+    expect(category('Dress Shirt')).toBe('fashion-men-tops-shirts');
+    expect(category('Dress Shoes')).toBe('fashion-men-footwear');
+    expect(category('Oxford', ['Apparel & Accessories > Clothing > Clothing Tops > Shirts > Dress Shirts'])).toBe(
+      'fashion-men-tops-shirts',
+    );
+  });
+
+  it('files a jersey dress as a dress, and keeps presentation slides and case studies out of footwear and phone cases', () => {
+    expect(category('Jersey dress')).toBe('fashion-women-dresses');
+    expect(category('Presentation slides')).toBe('');
+    expect(category('Phone Booth Case Study')).toBe('');
+    expect(category('Case for iPhone 15')).toBe('electronics-tech-accessories-phone-cases');
+    expect(category('Magsafe Clear Case')).toBe('electronics-tech-accessories-phone-cases');
+  });
+
   it('does not read "men" inside "women"', () => {
     expect(category('Women Tee')).toBe('fashion-women-tops-tshirts');
   });
