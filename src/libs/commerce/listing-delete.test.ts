@@ -6,6 +6,7 @@ import {
   listingDeleteConfirmLabel,
   listingDeleteFailureMessage,
   listingDeleteOpenOrdersNote,
+  listingDeleteSummary,
   listingDeleteTitle,
 } from './listing-delete';
 
@@ -75,6 +76,12 @@ describe('listing delete copy', () => {
     expect(listingDeleteTitle(3)).toBe('Delete 3 listings?');
     expect(listingDeleteConfirmLabel(1)).toBe('Delete listing');
     expect(listingDeleteConfirmLabel(3)).toBe('Delete 3 listings');
+  });
+
+  it('promises only the record deletion, because photo cleanup is best-effort', () => {
+    expect(listingDeleteSummary(1)).not.toMatch(/photo/i);
+    expect(listingDeleteSummary(3)).not.toMatch(/photo/i);
+    expect(listingDeleteSummary(1)).toContain('removes the owner-signed record from your homeserver');
   });
 
   it('pluralises the open-order warning', () => {

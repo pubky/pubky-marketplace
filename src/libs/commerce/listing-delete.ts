@@ -88,8 +88,8 @@ export function listingDeleteConfirmLabel(count: number): string {
 
 export function listingDeleteSummary(count: number): string {
   return count === 1
-    ? "This permanently removes the owner-signed record from your homeserver, then its photos. This can't be undone."
-    : `This permanently removes ${count} owner-signed records from your homeserver, then their photos. This can't be undone.`;
+    ? "This permanently removes the owner-signed record from your homeserver. This can't be undone."
+    : `This permanently removes ${count} owner-signed records from your homeserver. This can't be undone.`;
 }
 
 export function listingDeleteOpenOrdersNote(openOrders: number, listings: number): string {
