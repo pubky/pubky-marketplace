@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
 import { COMMERCE_FIXTURE_SELLER, createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { toCommerceListingModel } from '@/test/fixtures/commerce/listing-models';
+import { dashboardTableMock } from '@/test/mocks/dashboard-table';
 import { resetRegionState, setRegionModes, stubClientRegion } from '@/test-utils/region-modes';
 import { MarketplaceDashboard } from './MarketplaceDashboard';
 
@@ -24,6 +25,7 @@ const dashboardFns = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/marketplace/dashboard',
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock('@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl', async () => {
@@ -39,6 +41,7 @@ vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', a
   return {
     useMarketplaceSellerDashboard: () => ({
       listings: view.listings,
+      ...dashboardTableMock(view.listings, Date.parse('2026-10-22T12:00:00.000Z')),
       nowMs: Date.parse('2026-10-22T12:00:00.000Z'),
       sellerOrders: [],
       offers: [],
@@ -155,8 +158,9 @@ describe('the seller studio in a blocked region', () => {
 
     expect(screen.getByRole('button', { name: /Sell an item/ })).toBeDisabled();
     for (const name of STUDIO_LINKS) {
-      expect(screen.queryByRole('link', { name: new RegExp(name) })).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: new RegExp(name) })).toBeDisabled();
+      const shopActions = within(screen.getByRole('navigation', { name: 'Shop actions' }));
+      expect(shopActions.queryByRole('link', { name: new RegExp(name) })).not.toBeInTheDocument();
+      expect(shopActions.getByRole('button', { name: new RegExp(name) })).toBeDisabled();
     }
     const row = screen.getByRole('row', { name: /Vintage boots/ });
     expect(within(row).getByRole('button', { name: /Edit/ })).toBeDisabled();

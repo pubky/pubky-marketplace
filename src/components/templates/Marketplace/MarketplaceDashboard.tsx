@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   AlertTriangle,
+  BadgeCheck,
   Banknote,
   Copy,
   Download,
@@ -19,6 +20,7 @@ import {
   ReceiptText,
   ShoppingBag,
   Store,
+  Trash2,
   TrendingUp,
   Truck,
   Wallet,
@@ -37,13 +39,14 @@ import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { useDeleteMarketplaceListings } from '@/hooks/useDeleteMarketplaceListings/useDeleteMarketplaceListings';
 import { useIsMobile } from '@/hooks/useIsMobile/useIsMobile';
+import { useListingTableQuery } from '@/hooks/useListingTableQuery/useListingTableQuery';
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { useMarketplaceSellerDashboard } from '@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard';
 import { useNowMs } from '@/hooks/useNowMs/useNowMs';
 import { useSellerPaymentMethodGate } from '@/hooks/useSellerPaymentMethodGate/useSellerPaymentMethodGate';
 import { useSellingAvailability } from '@/hooks/useSellingAvailability/useSellingAvailability';
-import { listingDisplayState } from '@/libs/commerce/auction-phase';
 import {
   AUCTION_UNLIST_BLOCKED_NOTE,
   AUCTION_UNLIST_SKIPPED_TITLE,
@@ -51,11 +54,23 @@ import {
 } from '@/libs/commerce/auction-removal';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { listingPublishNeedsMarketplaceSession } from '@/libs/commerce/listing-publish-guards';
-import { isListingRegistrationPending } from '@/models/commerce/commerce.schema';
+import {
+  filterListingRows,
+  listingFacetCounts,
+  paginateListingRows,
+  sortListingRows,
+} from '@/libs/commerce/listing-table';
 import { SellingUnavailableNotice } from '@/molecules/Marketplace/SellingUnavailableNotice';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
+import { MarketplaceListingDeleteDialog } from '@/organisms/Marketplace/MarketplaceListingDeleteDialog';
+import {
+  ListingPagination,
+  ListingSelectionBanner,
+  MarketplaceListingFilterBar,
+  SortableHeader,
+} from '@/organisms/Marketplace/MarketplaceListingTableControls';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -68,7 +83,62 @@ export function MarketplaceDashboard() {
   const selling = useSellingAvailability();
   // Blocked, or still reading the region: everything that publishes or sets up selling is off, the rest stays.
   const sellingHeld = selling.held;
-  const [selected, setSelected] = useState<string[]>([]);
+  const table = useListingTableQuery();
+  // Until the stores' mappings are read every listing looks hand-made, so a source in the URL is not applied yet.
+  const filterQuery = dashboard.sourcesReady ? table.query : { ...table.query, source: null };
+  const visibleRows = sortListingRows(
+    filterListingRows(dashboard.tableRows, filterQuery),
+    table.query.sort,
+    table.query.dir,
+  );
+  const listingPage = paginateListingRows(visibleRows, table.query.page);
+  const facetCounts = listingFacetCounts(dashboard.tableRows, filterQuery);
+  // A selection belongs to the filters it was made under: changing a filter or the search starts a new one, so a
+  // hidden row cannot come back selected when the filter is cleared. Sorting and paging keep it.
+  const filterKey = JSON.stringify([
+    table.query.q.trim(),
+    table.query.state,
+    table.query.format,
+    table.query.checkout,
+    filterQuery.source,
+    table.query.stock,
+  ]);
+  const [selection, setSelection] = useState<{ key: string; ids: string[] }>({ key: filterKey, ids: [] });
+  if (selection.key !== filterKey) setSelection({ key: filterKey, ids: [] });
+  const selectedIds = selection.key === filterKey ? selection.ids : [];
+  const setSelectedIds = (update: string[] | ((current: string[]) => string[])) =>
+    setSelection((current) => {
+      const base = current.key === filterKey ? current.ids : [];
+      return { key: filterKey, ids: typeof update === 'function' ? update(base) : update };
+    });
+  const listingStates = [...new Set(dashboard.tableRows.map((row) => row.state))];
+  const listingsById = new Map(dashboard.listings.map((listing) => [listing.id, listing]));
+  // A selection never reaches rows the filters hide: bulk actions act on what the seller can see and counted.
+  const visibleIds = new Set(visibleRows.map((row) => row.id));
+  const selected = selectedIds.filter((id) => visibleIds.has(id));
+  const selectedSet = new Set(selected);
+  const pageIds = listingPage.rows.map((row) => row.id);
+  const pageSelectedCount = pageIds.filter((id) => selectedSet.has(id)).length;
+  const allMatchingSelected = visibleRows.length > 0 && selected.length === visibleRows.length;
+  const selectedNeedingRegistration = selected.filter((id) => {
+    const listing = listingsById.get(id);
+    return listing !== undefined && dashboard.needsRegistration(listing);
+  });
+  const anyNeedsRegistration = dashboard.tableRows.some((row) => row.needsRegistration);
+  const deleting = useDeleteMarketplaceListings({
+    onDeleted: (deletedKeys) => setSelectedIds((current) => current.filter((id) => !deletedKeys.includes(id))),
+  });
+  const requestDelete = (listingIds: string[]) =>
+    deleting.request(
+      dashboard.listings
+        .filter(({ id }) => listingIds.includes(id))
+        .map(({ seller_id, listing_id, record }) => ({
+          ownerPubky: seller_id,
+          listingId: listing_id,
+          title: record.title,
+          record,
+        })),
+    );
   const [showSellingApproval, setShowSellingApproval] = useState(false);
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
   const [pendingDuplicateId, setPendingDuplicateId] = useState<string | null>(null);
@@ -461,30 +531,62 @@ export function MarketplaceDashboard() {
                         size="sm"
                         variant="secondary"
                         className="rounded-full max-sm:has-[>svg]:px-3"
+                        title="Pause"
                         disabled={!selected.length}
                         onClick={() => updateListingState(selected, 'paused')}
                       >
                         <Pause className="size-4" />
-                        Pause
+                        <span className="max-sm:sr-only">Pause</span>
                       </Button>
                       <Button
                         size="sm"
                         variant="secondary"
                         className="rounded-full max-sm:has-[>svg]:px-3"
+                        title="Activate"
                         disabled={!selected.length || sellingHeld}
                         onClick={() => updateListingState(selected, 'active')}
                       >
                         <Play className="size-4" />
-                        Activate
+                        <span className="max-sm:sr-only">Activate</span>
                       </Button>
                       <Button
                         size="sm"
                         variant="secondary"
                         className="rounded-full max-sm:has-[>svg]:px-3"
+                        title="Export"
                         onClick={exportCsv}
                       >
                         <Download className="size-4" />
-                        Export
+                        <span className="max-sm:sr-only">Export</span>
+                      </Button>
+                      {anyNeedsRegistration && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="rounded-full max-sm:has-[>svg]:px-3"
+                          title="Register for checkout"
+                          disabled={
+                            selectedNeedingRegistration.length === 0 || sellingHeld || dashboard.registering !== null
+                          }
+                          onClick={() => void dashboard.registerListings(selectedNeedingRegistration)}
+                        >
+                          <BadgeCheck className="size-4" />
+                          <span className="max-sm:sr-only">
+                            {dashboard.registering
+                              ? `Registering ${dashboard.registering.done}/${dashboard.registering.total}`
+                              : 'Register selected'}
+                          </span>
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="rounded-full text-destructive max-sm:has-[>svg]:px-3"
+                        disabled={!selected.length}
+                        onClick={() => void requestDelete(selected)}
+                      >
+                        <Trash2 className="size-4" />
+                        <span className="max-sm:sr-only">Delete</span>
                       </Button>
                     </div>
                   </div>
@@ -513,123 +615,214 @@ export function MarketplaceDashboard() {
                         </div>
                       </div>
                     ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full min-w-2xl text-left text-sm">
-                          <thead className="text-muted-foreground">
-                            <tr className="border-b">
-                              <th className="p-3">
-                                <span className="sr-only">Select</span>
-                              </th>
-                              <th className="p-3">Listing</th>
-                              <th className="p-3">State</th>
-                              <th className="p-3">Format</th>
-                              <th className="p-3">Inventory</th>
-                              <th className="p-3">Price</th>
-                              <th className="p-3">
-                                <span className="sr-only">Actions</span>
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {dashboard.listings.map((listing) => {
-                              const checked = selected.includes(listing.id);
-                              return (
-                                <tr key={listing.id} className="border-b last:border-0">
-                                  <td className="p-3">
+                      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 p-3">
+                        <MarketplaceListingFilterBar
+                          table={table}
+                          counts={facetCounts}
+                          states={listingStates}
+                          sourcesReady={dashboard.sourcesReady}
+                        />
+                        <ListingSelectionBanner
+                          pageSelected={pageSelectedCount}
+                          pageSize={pageIds.length}
+                          matching={visibleRows.length}
+                          selected={selected.length}
+                          allMatchingSelected={allMatchingSelected}
+                          onSelectAllMatching={() => setSelectedIds(visibleRows.map((row) => row.id))}
+                          onClear={() => setSelectedIds([])}
+                        />
+                        {visibleRows.length === 0 ? (
+                          <div
+                            className="flex min-h-32 flex-col items-center justify-center gap-3 rounded-md bg-card/40 p-6 text-center"
+                            data-testid="listing-filter-empty"
+                          >
+                            <Typography as="p" className="text-muted-foreground">
+                              No listings match these filters.
+                            </Typography>
+                            <Button size="sm" variant="secondary" className="rounded-full" onClick={table.clearFilters}>
+                              Clear filters
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full min-w-2xl text-left text-sm">
+                              <thead className="text-muted-foreground">
+                                <tr className="border-b">
+                                  <th className="p-3">
                                     <Checkbox
-                                      checked={checked}
+                                      checked={
+                                        pageSelectedCount === pageIds.length && pageIds.length > 0
+                                          ? true
+                                          : pageSelectedCount > 0
+                                            ? 'indeterminate'
+                                            : false
+                                      }
                                       onCheckedChange={(next) =>
-                                        setSelected((current) =>
-                                          next ? [...current, listing.id] : current.filter((id) => id !== listing.id),
+                                        setSelectedIds((current) =>
+                                          next === true
+                                            ? [...new Set([...current, ...pageIds])]
+                                            : current.filter((id) => !pageIds.includes(id)),
                                         )
                                       }
-                                      aria-label={`Select ${listing.record.title}`}
+                                      aria-label="Select all listings on this page"
                                     />
-                                  </td>
-                                  <td className="p-3">
-                                    <div className="flex items-center gap-3">
-                                      <ListingThumbnail
-                                        mediaUrls={listing.record.media
-                                          .filter(({ type }) => type === 'image')
-                                          .map(({ url }) => url)}
-                                        title={listing.record.title}
-                                      />
-                                      <Link
-                                        href={getMarketplaceListingRoute(listing.seller_id, listing.listing_id)}
-                                        overrideDefaults
-                                        className="font-semibold hover:text-brand hover:underline"
-                                      >
-                                        {listing.record.title}
-                                      </Link>
-                                    </div>
-                                  </td>
-                                  <td className="p-3">
-                                    <Badge variant="secondary">
-                                      {listingDisplayState(listing.state, listing.record.sale, dashboard.nowMs)}
-                                    </Badge>
-                                  </td>
-                                  <td className="p-3">{listing.format.replace('_', ' ')}</td>
-                                  <td className="p-3">{dashboard.listingStockLabel(listing)}</td>
-                                  <td className="p-3">
-                                    {/* The record's own price money: the model row's
+                                  </th>
+                                  <SortableHeader
+                                    sortKey="title"
+                                    active={table.query.sort}
+                                    dir={table.query.dir}
+                                    onSort={(sort, dir) => table.update({ sort, dir })}
+                                  >
+                                    Listing
+                                  </SortableHeader>
+                                  <SortableHeader
+                                    sortKey="state"
+                                    active={table.query.sort}
+                                    dir={table.query.dir}
+                                    onSort={(sort, dir) => table.update({ sort, dir })}
+                                  >
+                                    State
+                                  </SortableHeader>
+                                  <th className="p-3">Format</th>
+                                  <SortableHeader
+                                    sortKey="inventory"
+                                    active={table.query.sort}
+                                    dir={table.query.dir}
+                                    onSort={(sort, dir) => table.update({ sort, dir })}
+                                  >
+                                    Inventory
+                                  </SortableHeader>
+                                  <SortableHeader
+                                    sortKey="price"
+                                    active={table.query.sort}
+                                    dir={table.query.dir}
+                                    onSort={(sort, dir) => table.update({ sort, dir })}
+                                  >
+                                    Price
+                                  </SortableHeader>
+                                  <th className="p-3">
+                                    <span className="sr-only">Actions</span>
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {listingPage.rows.map((row) => {
+                                  const listing = listingsById.get(row.id);
+                                  if (!listing) return null;
+                                  const checked = selectedSet.has(listing.id);
+                                  return (
+                                    <tr key={listing.id} className="border-b last:border-0">
+                                      <td className="p-3">
+                                        <Checkbox
+                                          checked={checked}
+                                          onCheckedChange={(next) =>
+                                            setSelectedIds((current) =>
+                                              next
+                                                ? [...current, listing.id]
+                                                : current.filter((id) => id !== listing.id),
+                                            )
+                                          }
+                                          aria-label={`Select ${listing.record.title}`}
+                                        />
+                                      </td>
+                                      <td className="p-3">
+                                        <div className="flex items-center gap-3">
+                                          <ListingThumbnail
+                                            mediaUrls={listing.record.media
+                                              .filter(({ type }) => type === 'image')
+                                              .map(({ url }) => url)}
+                                            title={listing.record.title}
+                                          />
+                                          <Link
+                                            href={getMarketplaceListingRoute(listing.seller_id, listing.listing_id)}
+                                            overrideDefaults
+                                            className="font-semibold hover:text-brand hover:underline"
+                                          >
+                                            {listing.record.title}
+                                          </Link>
+                                        </div>
+                                      </td>
+                                      <td className="p-3">
+                                        <Badge variant="secondary">{row.state}</Badge>
+                                      </td>
+                                      <td className="p-3">{listing.format.replace('_', ' ')}</td>
+                                      <td className="p-3">{dashboard.listingStockLabel(listing)}</td>
+                                      <td className="p-3">
+                                        {/* The record's own price money: the model row's
                                     `price_minor` has no exponent column, and
                                     assuming 2 misstates bitcoin-priced listings. */}
-                                    {formatCommerceMoney(
-                                      listing.record.sale.format === 'fixed_price'
-                                        ? listing.record.sale.unitPrice
-                                        : listing.record.sale.startingPrice,
-                                    )}
-                                  </td>
-                                  <td className="p-3">
-                                    <div className="flex flex-wrap gap-1">
-                                      {sellingHeld ? (
-                                        <Button size="sm" variant="ghost" className="rounded-full" disabled>
-                                          <PencilLine className="size-4" />
-                                          Edit
-                                        </Button>
-                                      ) : (
-                                        <Button asChild size="sm" variant="ghost" className="rounded-full">
-                                          <Link
-                                            href={getMarketplaceListingEditRoute(listing.seller_id, listing.listing_id)}
-                                            overrideDefaults
-                                          >
-                                            <PencilLine className="size-4" />
-                                            Edit
-                                          </Link>
-                                        </Button>
-                                      )}
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="rounded-full"
-                                        disabled={sellingHeld || duplicatingId === listing.listing_id}
-                                        onClick={() => {
-                                          void requestDuplicate(listing.listing_id);
-                                        }}
-                                      >
-                                        <Copy className="size-4" />
-                                        Duplicate
-                                      </Button>
-                                      {isListingRegistrationPending(listing) &&
-                                        !listing.registeredWithService &&
-                                        dashboard.canOfferRegistration(listing) && (
+                                        {formatCommerceMoney(
+                                          listing.record.sale.format === 'fixed_price'
+                                            ? listing.record.sale.unitPrice
+                                            : listing.record.sale.startingPrice,
+                                        )}
+                                      </td>
+                                      <td className="p-3">
+                                        <div className="flex flex-wrap gap-1">
+                                          {sellingHeld ? (
+                                            <Button size="sm" variant="ghost" className="rounded-full" disabled>
+                                              <PencilLine className="size-4" />
+                                              Edit
+                                            </Button>
+                                          ) : (
+                                            <Button asChild size="sm" variant="ghost" className="rounded-full">
+                                              <Link
+                                                href={getMarketplaceListingEditRoute(
+                                                  listing.seller_id,
+                                                  listing.listing_id,
+                                                )}
+                                                overrideDefaults
+                                              >
+                                                <PencilLine className="size-4" />
+                                                Edit
+                                              </Link>
+                                            </Button>
+                                          )}
                                           <Button
                                             size="sm"
-                                            variant="secondary"
+                                            variant="ghost"
                                             className="rounded-full"
-                                            disabled={sellingHeld}
-                                            onClick={() => void dashboard.retryListingRegistration(listing.listing_id)}
+                                            disabled={sellingHeld || duplicatingId === listing.listing_id}
+                                            onClick={() => {
+                                              void requestDuplicate(listing.listing_id);
+                                            }}
                                           >
-                                            Register for checkout
+                                            <Copy className="size-4" />
+                                            Duplicate
                                           </Button>
-                                        )}
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="rounded-full text-destructive"
+                                            aria-label={`Delete ${listing.record.title}`}
+                                            onClick={() => void requestDelete([listing.id])}
+                                          >
+                                            <Trash2 className="size-4" />
+                                            Delete
+                                          </Button>
+                                          {dashboard.needsRegistration(listing) && (
+                                            <Button
+                                              size="sm"
+                                              variant="secondary"
+                                              className="rounded-full"
+                                              disabled={sellingHeld || dashboard.registering !== null}
+                                              onClick={() =>
+                                                void dashboard.retryListingRegistration(listing.listing_id)
+                                              }
+                                            >
+                                              Register for checkout
+                                            </Button>
+                                          )}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                        <ListingPagination page={listingPage} onPage={(page) => table.update({ page })} />
                       </div>
                     )}
                   </SettingsSectionContent>
@@ -657,6 +850,7 @@ export function MarketplaceDashboard() {
           />
         )}
       </Container>
+      <MarketplaceListingDeleteDialog controller={deleting} />
       <Dialog
         open={pendingDuplicateId !== null}
         onOpenChange={(open) => {

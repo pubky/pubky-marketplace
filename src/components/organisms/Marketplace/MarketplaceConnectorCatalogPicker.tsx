@@ -125,6 +125,26 @@ export function MarketplaceConnectorCatalogPicker({ catalog, actions }: Marketpl
           </Typography>
         </div>
 
+        {catalog.loadMoreError && (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/40 p-3 text-sm"
+            data-testid="connector-catalog-load-more-error"
+          >
+            <span>{catalog.loadMoreError} The products shown so far are kept.</span>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="rounded-full"
+              disabled={catalog.isLoadingMore}
+              onClick={() => void catalog.resumeLoading()}
+            >
+              Load the rest
+            </Button>
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center gap-2">
           <Button type="button" variant="secondary" size="sm" className="rounded-full" onClick={catalog.selectVisible}>
             Select all shown

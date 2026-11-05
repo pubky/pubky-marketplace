@@ -12,7 +12,10 @@ import {
 } from '@/application/commerce/delivery-keys';
 import { CommerceInventoryApplication, type InventoryBoardRow } from '@/application/commerce/inventory';
 import { CommerceInventoryAutomationsApplication } from '@/application/commerce/inventory-automations';
-import { CommerceInventoryImportApplication } from '@/application/commerce/inventory-import';
+import {
+  CommerceInventoryImportApplication,
+  type InventoryImportListingProgress,
+} from '@/application/commerce/inventory-import';
 import { CommercePrivKeyringApplication } from '@/application/commerce/priv-keyring';
 import { CommerceShippingApplication } from '@/application/commerce/shipping';
 import { ProfileApplication } from '@/application/profile/profile';
@@ -580,12 +583,20 @@ export class CommerceController {
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).importDefaults();
   }
 
-  static async publishInventoryImport(sellerPubky: string, manifestId: string) {
-    return await CommerceInventoryImportApplication.forSeller(sellerPubky).publish(manifestId);
+  static async publishInventoryImport(
+    sellerPubky: string,
+    manifestId: string,
+    onProgress?: InventoryImportListingProgress,
+  ) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).publish(manifestId, onProgress);
   }
 
-  static async resumeInventoryImport(sellerPubky: string, manifestId: string) {
-    return await CommerceInventoryImportApplication.forSeller(sellerPubky).resume(manifestId);
+  static async resumeInventoryImport(
+    sellerPubky: string,
+    manifestId: string,
+    onProgress?: InventoryImportListingProgress,
+  ) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).resume(manifestId, onProgress);
   }
 
   static async confirmInventoryImportConflict(sellerPubky: string, manifestId: string, listingId: string) {

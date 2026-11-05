@@ -81,8 +81,14 @@ describe('useConnectorCatalog', () => {
     const { result } = await loaded();
 
     expect(result.current.products.map((entry) => entry.providerProductId)).toEqual(['1', '2']);
-    expect(ConnectorsController.fetchCatalogPage).toHaveBeenNthCalledWith(1, 'c1', { page: null });
-    expect(ConnectorsController.fetchCatalogPage).toHaveBeenNthCalledWith(2, 'c1', { page: 'p2' });
+    expect(ConnectorsController.fetchCatalogPage).toHaveBeenNthCalledWith(1, 'c1', {
+      page: null,
+      signal: expect.any(AbortSignal),
+    });
+    expect(ConnectorsController.fetchCatalogPage).toHaveBeenNthCalledWith(2, 'c1', {
+      page: 'p2',
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it('searches titles, SKUs and variant titles', async () => {
@@ -155,6 +161,120 @@ describe('useConnectorCatalog', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     await waitFor(() => expect(result.current.error).not.toBeNull());
     expect(result.current.error).toBe('The store did not accept those keys. Check them and try again.');
+  });
+
+  describe('when a page of the catalog fails part-way', () => {
+    const page = (id: string, nextPage: string | null) => ({
+      kind: 'connector_catalog' as const,
+      connectionId: 'c1',
+      products: [product(id, `Product ${id}`)],
+      nextPage,
+    });
+
+    it('keeps the products already loaded and offers to carry on from the failed page', async () => {
+      vi.mocked(ConnectorsController.fetchCatalogPage)
+        .mockResolvedValueOnce(page('1', 'p2'))
+        .mockRejectedValueOnce(connectorRefusal('provider_rate_limited', 429))
+        .mockResolvedValueOnce(page('2', 'p3'))
+        .mockResolvedValueOnce(page('3', null));
+      const { result } = renderHook(() => useConnectorCatalog(CONNECTION));
+      await waitFor(() => expect(result.current.loadMoreError).not.toBeNull());
+
+      expect(result.current.error).toBeNull();
+      expect(result.current.isLoadingMore).toBe(false);
+      expect(result.current.loadMoreError).toBe('The store is busy. Wait a minute, then try again.');
+      expect(result.current.products.map((entry) => entry.providerProductId)).toEqual(['1']);
+
+      await act(async () => {
+        await result.current.resumeLoading();
+      });
+
+      expect(result.current.loadMoreError).toBeNull();
+      expect(result.current.products.map((entry) => entry.providerProductId)).toEqual(['1', '2', '3']);
+      expect(ConnectorsController.fetchCatalogPage).toHaveBeenNthCalledWith(3, 'c1', {
+        page: 'p2',
+        signal: expect.any(AbortSignal),
+      });
+      expect(ConnectorsController.fetchCatalogPage).toHaveBeenCalledTimes(4);
+    });
+
+    it('keeps a seller choice made while the rest was missing', async () => {
+      vi.mocked(ConnectorsController.fetchCatalogPage)
+        .mockResolvedValueOnce(page('1', 'p2'))
+        .mockRejectedValueOnce(connectorRefusal('provider_rate_limited', 429))
+        .mockResolvedValueOnce(page('2', null));
+      const { result } = renderHook(() => useConnectorCatalog(CONNECTION));
+      await waitFor(() => expect(result.current.loadMoreError).not.toBeNull());
+      act(() => result.current.toggle('1'));
+
+      await act(async () => {
+        await result.current.resumeLoading();
+      });
+
+      expect(result.current.chosen.has('1')).toBe(true);
+    });
+
+    it('treats an empty first page that was answered as loaded, so a later failure keeps Load the rest', async () => {
+      vi.mocked(ConnectorsController.fetchCatalogPage)
+        .mockResolvedValueOnce({ ...page('1', 'p2'), products: [] })
+        .mockRejectedValueOnce(connectorRefusal('provider_rate_limited', 429))
+        .mockResolvedValueOnce(page('2', null));
+      const { result } = renderHook(() => useConnectorCatalog(CONNECTION));
+      await waitFor(() => expect(result.current.loadMoreError).not.toBeNull());
+      expect(result.current.error).toBeNull();
+
+      await act(async () => {
+        await result.current.resumeLoading();
+      });
+      expect(result.current.products.map((entry) => entry.providerProductId)).toEqual(['2']);
+    });
+
+    it('drops a late page of a read that a reload replaced, and aborts its wait', async () => {
+      let lateResolve: (value: ReturnType<typeof page>) => void = () => undefined;
+      let firstSignal: AbortSignal | undefined;
+      vi.mocked(ConnectorsController.fetchCatalogPage)
+        .mockImplementationOnce(
+          (_id: string, options?: { signal?: AbortSignal }) =>
+            new Promise((resolve) => {
+              firstSignal = options?.signal;
+              lateResolve = resolve as typeof lateResolve;
+            }),
+        )
+        .mockResolvedValue(page('9', null));
+      const { result } = renderHook(() => useConnectorCatalog(CONNECTION));
+      await waitFor(() => expect(firstSignal).toBeDefined());
+
+      await act(async () => {
+        await result.current.reload();
+      });
+      expect(firstSignal?.aborted).toBe(true);
+      expect(result.current.products.map((entry) => entry.providerProductId)).toEqual(['9']);
+
+      await act(async () => {
+        lateResolve(page('stale', null));
+        await Promise.resolve();
+      });
+      expect(result.current.products.map((entry) => entry.providerProductId)).toEqual(['9']);
+    });
+
+    it('does not resume when nothing failed', async () => {
+      const { result } = await loaded();
+      await act(async () => {
+        await result.current.resumeLoading();
+      });
+      expect(ConnectorsController.fetchCatalogPage).toHaveBeenCalledTimes(1);
+    });
+
+    it('still reports the error, with nothing shown, when the first page fails', async () => {
+      vi.mocked(ConnectorsController.fetchCatalogPage).mockRejectedValue(
+        connectorRefusal('provider_rate_limited', 429),
+      );
+      const { result } = renderHook(() => useConnectorCatalog(CONNECTION));
+      await waitFor(() => expect(result.current.error).not.toBeNull());
+      expect(result.current.error).toBe('The store is busy. Wait a minute, then try again.');
+      expect(result.current.loadMoreError).toBeNull();
+      expect(result.current.products).toEqual([]);
+    });
   });
 
   it('does nothing without a connection', () => {

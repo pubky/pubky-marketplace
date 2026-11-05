@@ -18,10 +18,13 @@ import { MarketplaceConnectorImport } from '@/organisms/Marketplace/MarketplaceC
 import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSessionRequiredCard } from '@/organisms/Marketplace/MarketplaceSessionRequiredCard';
+import { MarketplaceUnmappedListingsNotice } from '@/organisms/Marketplace/MarketplaceUnmappedListingsNotice';
+import { useAuthStore } from '@/stores/auth/auth.store';
 
 /** Settings, Store connections, one store: choose the products to also publish on Pubky. */
 export function MarketplaceConnectorCatalog({ connectionId }: { connectionId: string }) {
   const connections = useStoreConnections();
+  const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const connection = connections.connections.find((entry) => entry.id === connectionId) ?? null;
   const catalog = useConnectorCatalog(connection);
   const importFlow = useConnectorCatalogImport(connection);
@@ -73,11 +76,38 @@ export function MarketplaceConnectorCatalog({ connectionId }: { connectionId: st
             {connections.error ?? 'This store connection was not found. Go back to Store connections.'}
           </div>
         ) : catalog.error ? (
-          <div role="alert" className="rounded-md border border-destructive/40 p-4 text-sm">
-            {catalog.error}
+          <div
+            role="alert"
+            className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/40 p-4 text-sm"
+          >
+            <span>{catalog.error}</span>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="rounded-full"
+              onClick={() => void catalog.reload()}
+            >
+              Try again
+            </Button>
           </div>
         ) : view === 'import' ? (
-          <MarketplaceConnectorImport flow={importFlow} connection={connection} onBack={backToProducts} />
+          <>
+            {connections.unmapped && (
+              <MarketplaceUnmappedListingsNotice
+                notice={connections.unmapped}
+                sellerPubky={currentUserPubky}
+                onDismiss={connections.dismissUnmapped}
+              />
+            )}
+            <MarketplaceConnectorImport
+              flow={importFlow}
+              connection={connection}
+              onBack={backToProducts}
+              onVariantMode={(mode) => connections.setVariantMode(connection, mode)}
+              variantModeBusy={connections.workingId === connection.id}
+            />
+          </>
         ) : (
           <>
             {importFlow.message && (
@@ -97,12 +127,22 @@ export function MarketplaceConnectorCatalog({ connectionId }: { connectionId: st
                     type="button"
                     size="sm"
                     className="rounded-full"
-                    disabled={catalog.dirty || catalog.saved.size === 0 || importFlow.stage === 'loading'}
+                    disabled={
+                      catalog.dirty ||
+                      catalog.saved.size === 0 ||
+                      catalog.isLoadingMore ||
+                      importFlow.stage === 'loading'
+                    }
                     onClick={() => void openImport()}
                   >
                     <Upload className="size-4" aria-hidden="true" />
                     Publish chosen products
                   </Button>
+                  {catalog.isLoadingMore && (
+                    <span className="text-xs text-muted-foreground" data-testid="connector-import-loading-first">
+                      Publishing opens when all your products are shown.
+                    </span>
+                  )}
                   {catalog.dirty && (
                     <span className="text-xs text-muted-foreground" data-testid="connector-import-save-first">
                       Save your choice to publish it.
