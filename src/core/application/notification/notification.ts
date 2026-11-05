@@ -61,14 +61,6 @@ export class NotificationApplication {
   }
 
   /**
-   * Retrieves all notifications from the local cache.
-   * @returns Promise resolving to all notifications ordered by timestamp descending
-   */
-  static async getAllFromCache(): Promise<FlatNotification[]> {
-    return await LocalNotificationService.getAll();
-  }
-
-  /**
    * Counts unread notifications filtered by allowed types.
    * Used by Controllers to compute the preference-filtered badge count.
    *

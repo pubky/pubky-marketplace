@@ -1,5 +1,3 @@
-export const DEFAULT_TEXTAREA_ROWS = 4;
-
 /**
  * Shared validation patterns for form inputs
  */

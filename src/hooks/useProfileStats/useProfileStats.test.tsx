@@ -82,11 +82,6 @@ vi.mock('@/controllers/user/user', () => ({
     fetchCounts: vi.fn().mockImplementation(() => Promise.resolve(mockUserCounts.current)),
   },
 }));
-vi.mock('@/controllers/notification/notification', () => ({
-  NotificationController: {
-    getNotificationsCountsNow: vi.fn(() => mockNotificationsCount.current),
-  },
-}));
 vi.mock('@/stores/notification/notification.store', () => ({
   useNotificationStore: vi.fn(
     (selector: (state: { selectUnread: () => number; selectTotalUnread: () => number }) => number) =>

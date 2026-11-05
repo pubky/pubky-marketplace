@@ -1,7 +1,6 @@
 import { ReactNode } from 'react';
 import type { ImageProps } from 'next/image';
 import { BasePathImage as Image } from '@/atoms/BasePathImage/BasePathImage';
-import { Container } from '@/atoms/Container/Container';
 import { cn } from '@/libs/utils/utils';
 import { IllustratedCard } from '../IllustratedCard/IllustratedCard';
 
@@ -42,30 +41,6 @@ export function ContentCard({ children, className, classNameImage, image, layout
       {children}
     </IllustratedCard>
   );
-}
-
-interface ContentContainerProps {
-  children: ReactNode;
-  className?: React.HTMLAttributes<HTMLDivElement>['className'];
-  maxWidth?: 'sm' | 'md' | 'lg' | 'xl';
-  gap?: 'sm' | 'md' | 'lg';
-}
-
-export function ContentContainer({ children, className, maxWidth = 'lg', gap = 'md' }: ContentContainerProps) {
-  const maxWidthClasses = {
-    sm: 'max-w-[588px]',
-    md: 'max-w-[800px]',
-    lg: 'max-w-(--container-max-width)',
-    xl: 'max-w-[1400px]',
-  };
-
-  const gapClasses = {
-    sm: 'gap-3',
-    md: 'gap-6',
-    lg: 'gap-8',
-  };
-
-  return <Container className={cn(maxWidthClasses[maxWidth], gapClasses[gap], className)}>{children}</Container>;
 }
 
 interface ContentImageProps extends Omit<ImageProps, 'className'> {

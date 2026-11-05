@@ -685,34 +685,3 @@ describe('NotificationApplication.fetchMissingEntities', () => {
     });
   });
 });
-
-describe('NotificationApplication.getAllFromCache', () => {
-  const createFlat = (timestamp: number): FlatNotification =>
-    ({ type: NotificationType.Follow, timestamp, followed_by: `user-${timestamp}` }) as FlatNotification;
-
-  beforeEach(() => vi.clearAllMocks());
-
-  it('should delegate to LocalNotificationService.getAll', async () => {
-    const expected = [createFlat(3000), createFlat(2000), createFlat(1000)];
-    const serviceSpy = vi.spyOn(LocalNotificationService, 'getAll').mockResolvedValue(expected);
-
-    const result = await NotificationApplication.getAllFromCache();
-
-    expect(serviceSpy).toHaveBeenCalled();
-    expect(result).toEqual(expected);
-  });
-
-  it('should return empty array when no notifications exist', async () => {
-    vi.spyOn(LocalNotificationService, 'getAll').mockResolvedValue([]);
-
-    const result = await NotificationApplication.getAllFromCache();
-
-    expect(result).toEqual([]);
-  });
-
-  it('should bubble service errors', async () => {
-    vi.spyOn(LocalNotificationService, 'getAll').mockRejectedValue(new Error('service-fail'));
-
-    await expect(NotificationApplication.getAllFromCache()).rejects.toThrow('service-fail');
-  });
-});

@@ -49,65 +49,6 @@ describe('NotificationModel', () => {
     });
   });
 
-  describe('getAll', () => {
-    it('should return all notifications in descending timestamp order', async () => {
-      await NotificationModel.bulkSave([createNotification(1000), createNotification(3000), createNotification(2000)]);
-
-      const all = await NotificationModel.getAll();
-
-      expect(all).toHaveLength(3);
-      expect(all[0].timestamp).toBe(3000);
-      expect(all[1].timestamp).toBe(2000);
-      expect(all[2].timestamp).toBe(1000);
-    });
-
-    it('should return empty array when no notifications exist', async () => {
-      const all = await NotificationModel.getAll();
-      expect(all).toHaveLength(0);
-    });
-  });
-
-  describe('getRecent', () => {
-    it('should return notifications in descending timestamp order', async () => {
-      await NotificationModel.bulkSave([createNotification(1000), createNotification(3000), createNotification(2000)]);
-
-      const recent = await NotificationModel.getRecent(2);
-
-      expect(recent).toHaveLength(2);
-      expect(recent[0].timestamp).toBe(3000);
-      expect(recent[1].timestamp).toBe(2000);
-    });
-  });
-
-  describe('getByType', () => {
-    it('should filter notifications by type', async () => {
-      await NotificationModel.bulkSave([createNotification(1000), createReply(2000), createNotification(3000)]);
-
-      const follows = await NotificationModel.getByType(NotificationType.Follow);
-      const replies = await NotificationModel.getByType(NotificationType.Reply);
-
-      expect(follows).toHaveLength(2);
-      expect(replies).toHaveLength(1);
-    });
-  });
-
-  describe('getRecentByType', () => {
-    it('should return recent notifications of specific type in descending order', async () => {
-      await NotificationModel.bulkSave([
-        createNotification(1000),
-        createNotification(3000),
-        createNotification(2000),
-        createReply(2500),
-      ]);
-
-      const recentFollows = await NotificationModel.getRecentByType(NotificationType.Follow, 2);
-
-      expect(recentFollows).toHaveLength(2);
-      expect(recentFollows[0].timestamp).toBe(3000);
-      expect(recentFollows[1].timestamp).toBe(2000);
-    });
-  });
-
   describe('getOlderThan', () => {
     it('should return notifications older than timestamp in descending order', async () => {
       await NotificationModel.bulkSave([1000, 2000, 3000, 4000, 5000].map((t) => createNotification(t)));

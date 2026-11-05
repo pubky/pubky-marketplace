@@ -17,14 +17,6 @@ export class LocalNotificationService {
   }
 
   /**
-   * Retrieves all notifications from the local database ordered by timestamp descending.
-   * @returns Promise resolving to array of all notifications
-   */
-  static async getAll(): Promise<TFlatNotificationList> {
-    return await NotificationModel.getAll();
-  }
-
-  /**
    * Persists flat notifications to the local database.
    * @param notifications - Array of flat notifications to save
    */

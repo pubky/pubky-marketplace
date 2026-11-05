@@ -36,13 +36,3 @@ export interface BaseFilterProps<T = string> {
    */
   disabled?: boolean;
 }
-
-/**
- * Extended filter props with onClose support
- */
-export interface FilterPropsWithClose<T = string> extends BaseFilterProps<T> {
-  /**
-   * Callback to close filter dialog/drawer
-   */
-  onClose?: () => void;
-}
