@@ -166,7 +166,7 @@ describe('MarketplaceConnectorsService', () => {
     ).rejects.toMatchObject({ message: 'The marketplace service returned an unexpected response.' });
   });
 
-  it('resolves a store domain with a bearer GET, the domain in the query, and reads the shop back', async () => {
+  it('resolves a store domain with a bearer POST, the domain in the body only, and reads the shop back', async () => {
     fetchMock.mockResolvedValue(
       json({
         schema_version: 1,
@@ -184,9 +184,9 @@ describe('MarketplaceConnectorsService', () => {
 
     expect(resolved).toMatchObject({ shop: 'your-store.myshopify.com', domain: 'shop.example' });
     const { url, init } = lastCall();
-    expect(url).toBe(`${BASE}/v1/connectors/resolve?provider=shopify&domain=shop.example%2Fa+b`);
-    expect(init.method ?? 'GET').toBe('GET');
-    expect(init.body).toBeUndefined();
+    expect(url).toBe(`${BASE}/v1/connectors/resolve`);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ provider: 'shopify', domain: 'shop.example/a b' });
   });
 
   it.each([
@@ -199,6 +199,30 @@ describe('MarketplaceConnectorsService', () => {
     await expect(
       MarketplaceConnectorsService.resolveShop(ACTOR, { provider: 'shopify', domain: 'shop.example' }),
     ).rejects.toMatchObject({ context: { reason: code, statusCode: status } });
+  });
+
+  it('keeps the typed domain out of every error context', async () => {
+    const domain = 'secret-typed-store.example';
+    const contexts: string[] = [];
+    const attempt = async (reply: () => Promise<Response>) => {
+      fetchMock.mockImplementation(reply);
+      const error = await MarketplaceConnectorsService.resolveShop(ACTOR, { provider: 'shopify', domain }).catch(
+        (caught: unknown) => caught,
+      );
+      contexts.push(
+        JSON.stringify(
+          error instanceof AppError ? { ...error, message: error.message, context: error.context } : error,
+        ),
+      );
+    };
+    await attempt(async () => json({ ok: false, error: { code: 'not_a_shopify_store' } }, 422));
+    await attempt(async () => new Response(null, { status: 404 }));
+    await attempt(async () => new Response('not json', { status: 200 }));
+    await attempt(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    expect(contexts).toHaveLength(4);
+    for (const context of contexts) expect(context).not.toContain('secret-typed-store');
   });
 
   it('refuses a resolve answer that does not name a shop', async () => {
