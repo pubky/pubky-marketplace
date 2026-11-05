@@ -9,6 +9,7 @@ import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import { commerceListingShippingMinor, commerceVariantUnitPrice } from '@/libs/commerce/marketplace-records';
 import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
 import { sumMoneyByAsset } from '@/libs/commerce/pricing';
+import { listingZonePricing } from '@/libs/commerce/shipping-groups';
 import type { CommerceListingModelSchema } from '@/models/commerce/commerce.schema';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -30,7 +31,11 @@ export interface MarketplaceCartGroup {
   subtotals: ReturnType<typeof sumMoneyByAsset>;
 }
 
-/** Shipping for the lines that ship: a pickup or digital line adds none, even beside shipped ones. */
+/**
+ * Shipping for the lines that ship at their listing's flat rate: a pickup or digital line adds none, even beside
+ * shipped ones. A zone-priced line is left out: its price depends on the destination and is quoted per group by
+ * `useMarketplaceShippingGroups`.
+ */
 export function marketplaceCartShippingTotals(
   groups: MarketplaceCartGroup[],
   fulfillmentForItem: (item: MarketplaceCartItem) => MarketplaceFulfillmentMethod | undefined,
@@ -41,6 +46,7 @@ export function marketplaceCartShippingTotals(
   for (const group of groups) {
     for (const item of group.items) {
       if (fulfillmentForItem(item) !== 'shipping') continue;
+      if (listingZonePricing(item.listing.record) !== null) continue;
       const options = item.listing.record.shippingOptions ?? [];
       if (options.length === 0) continue;
       const shippingMinor = commerceListingShippingMinor(options);

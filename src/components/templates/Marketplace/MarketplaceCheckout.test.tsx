@@ -10,6 +10,7 @@ import { formatCommerceMoney } from '@/libs/commerce/format';
 import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
 import { createPaykitOrderFixture } from '@/test/fixtures/commerce/paykit-orders';
 import { setHeavySuiteBudgets } from '@/test-utils/load-budget';
+import { noZoneShipping } from '@/test-utils/zone-shipping';
 import { MarketplaceCheckout } from './MarketplaceCheckout';
 
 setHeavySuiteBudgets();
@@ -49,6 +50,7 @@ const view = vi.hoisted(() => ({
   hasInstantDigitalLine: false,
   hasManualDigitalLine: false,
   orderCount: 1,
+  zoneShipping: null as null | ReturnType<typeof noZoneShipping>,
   payResult: { ok: false, orderIds: [] as string[], boundOrders: [] as unknown[] } as {
     ok: boolean;
     orderIds: string[];
@@ -239,6 +241,7 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
         hasFulfillmentConflict: view.hasFulfillmentConflict,
         isPickupCapabilityLoadingForSeller: () => view.isPickupCapabilityLoading,
         orderCount: view.orderCount,
+        zoneShipping: view.zoneShipping ?? noZoneShipping(),
         fulfillmentForItem: (itemId: string) => {
           const line = (view.items as Array<{ id: string; listing: { record: { ownerPubky: string } } }>).find(
             ({ id }) => id === itemId,
@@ -402,6 +405,7 @@ function resetCheckoutView() {
   view.hasManualDigitalLine = false;
   checkoutActions.setDigitalChoice.mockReset();
   view.orderCount = 1;
+  view.zoneShipping = null;
   view.payResult = { ok: false, orderIds: [], boundOrders: [] };
   view.availability.clear();
   navigation.navigateTop.mockReset();
@@ -1655,6 +1659,64 @@ describe('MarketplaceCheckout digital lines (digital delivery design §3 "Checko
     expect(screen.queryByText('Shipping')).not.toBeInTheDocument();
     expect(screen.getByText('Delivery').parentElement).not.toHaveTextContent('$');
     expect(screen.getByText('No shipping for digital items.')).toBeInTheDocument();
+  });
+
+  it('shows a rate choice per zone-priced group and adds the chosen rate to the shipping and the total', () => {
+    const asset = { currency: 'USD', exponent: 2 };
+    view.items = [
+      {
+        id: CART_ITEM_ID,
+        listingId: listing.id,
+        variantId: 'variant_42',
+        quantity: 1,
+        listing: { ...listing, record: { ...listing.record, shippingProfileId: 'worldwide' } },
+      },
+    ];
+    const setRate = vi.fn();
+    view.zoneShipping = noZoneShipping({
+      hasZonedGroups: true,
+      amounts: [{ amountMinor: 1349, ...asset }],
+      setRate,
+      groups: [
+        {
+          key: 'profile:s:worldwide',
+          sellerPubky: listing.record.ownerPubky,
+          label: 'Worldwide',
+          units: 1,
+          asset,
+          state: {
+            status: 'ready',
+            selectedRateId: 'std',
+            amount: { amountMinor: 1349, ...asset },
+            quotes: [
+              {
+                zoneId: 'eu',
+                rateId: 'std',
+                label: 'Standard',
+                amountMinor: 1349,
+                estimatedMinDays: 6,
+                estimatedMaxDays: 12,
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    render(<MarketplaceCheckout />);
+
+    expect(screen.getByRole('region', { name: 'Shipping rates' })).toHaveTextContent('Shipping for Worldwide');
+    const summary = within(screen.getByTestId('marketplace-checkout-summary'));
+    expect(summary.getByText('Shipping').parentElement).toHaveTextContent('$13.49');
+    expect(summary.getByText('Total').parentElement).toHaveTextContent('$25.49');
+  });
+
+  it('offers no rate section for a cart with no zone-priced line', () => {
+    seededCart();
+
+    render(<MarketplaceCheckout />);
+
+    expect(screen.queryByRole('region', { name: 'Shipping rates' })).not.toBeInTheDocument();
   });
 
   it('shows no fulfillment conflict for a seller whose lines are all digital', () => {

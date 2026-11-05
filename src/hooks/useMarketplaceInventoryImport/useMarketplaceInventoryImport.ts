@@ -10,6 +10,10 @@ import type {
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { ImportStoreCatalogController } from '@/controllers/import-store/import-store-catalog';
 import { runImportImageBatches } from '@/hooks/useImportImageUpload/runImportImageBatches';
+import {
+  readShippingProfilesNow,
+  useMarketplaceShippingProfiles,
+} from '@/hooks/useMarketplaceShippingProfiles/useMarketplaceShippingProfiles';
 import { toast } from '@/molecules/Toaster/use-toast';
 import type {
   InventoryImportDryRunCounts,
@@ -85,6 +89,8 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
   });
 
   const watched = useWatch({ control: form.control });
+  const profilesState = useMarketplaceShippingProfiles().state;
+  const shippingProfiles = profilesState.status === 'ready' ? profilesState.profiles : [];
 
   useEffect(() => {
     void loadUnfinished();
@@ -139,7 +145,11 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     setFileName(label);
     setScene('validation');
     setStep(2);
-    const settings = toImportSettings(form.getValues());
+    const values = form.getValues();
+    const settings = toImportSettings(
+      values,
+      values.shippingMode === 'profile' ? await readShippingProfilesNow(sellerPubky) : [],
+    );
     const result = catalog
       ? await CommerceController.planInventoryStoreImport(sellerPubky, catalog, settings, IMPORT_CURRENCY_OPTIONS)
       : await CommerceController.planInventoryImport(sellerPubky, file as File, settings);
@@ -556,7 +566,7 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     downloadText(await CommerceController.exportInventoryOrdersJson(sellerPubky), 'application/json', 'orders.json');
   };
 
-  const formSettings = toImportSettings({ ...importSettingsFormDefaults, ...watched });
+  const formSettings = toImportSettings({ ...importSettingsFormDefaults, ...watched }, shippingProfiles);
   const missing = appliedSettings ? missingImportChoices(formSettings) : [];
   const settingsChanged =
     appliedSettings !== undefined && JSON.stringify(appliedSettings) !== JSON.stringify(formSettings);

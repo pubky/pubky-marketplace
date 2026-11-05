@@ -10,6 +10,7 @@ import { useClientRegionStore } from '@/stores/client-region/client-region.store
 import { setHeavySuiteBudgets } from '@/test-utils/load-budget';
 import { resetRegionState, setRegionModes, stubClientRegion } from '@/test-utils/region-modes';
 import { asOpaque } from '@/test-utils/type-assertions';
+import { noZoneShipping } from '@/test-utils/zone-shipping';
 import { MarketplaceCheckout } from './MarketplaceCheckout';
 
 setHeavySuiteBudgets();
@@ -223,6 +224,7 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
         hasFulfillmentConflict: view.hasFulfillmentConflict,
         isPickupCapabilityLoadingForSeller: () => view.isPickupCapabilityLoading,
         orderCount: view.orderCount,
+        zoneShipping: noZoneShipping(),
         fulfillmentForItem: (itemId: string) => {
           const line = (view.items as Array<{ id: string; listing: { record: { ownerPubky: string } } }>).find(
             ({ id }) => id === itemId,

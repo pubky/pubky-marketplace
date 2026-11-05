@@ -3,6 +3,41 @@ import { PHOTO_REQUIRED_MESSAGE } from '@/pipes/commerce/import-publish-failure'
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { listingToCanonicalRows, mapCanonicalRowsToListing } from './inventory-listing-map';
 
+describe('mapCanonicalRowsToListing shipping profile', () => {
+  it('publishes the listing under the profile its row names and keeps the legacy option', () => {
+    const record = createCommerceListingFixture();
+    const [row] = listingToCanonicalRows(record);
+    const mapped = mapCanonicalRowsToListing(
+      [
+        {
+          ...row!,
+          extraFields: {
+            country_code: 'US',
+            media_json: JSON.stringify(record.media),
+            shipping_profile_id: 'worldwide',
+          },
+        },
+      ],
+      record.ownerPubky,
+    );
+    expect(mapped.ok).toBe(true);
+    if (mapped.ok) {
+      expect(mapped.record.shippingProfileId).toBe('worldwide');
+      expect(mapped.record.shippingOptions.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('leaves the profile off when the row names none', () => {
+    const record = createCommerceListingFixture();
+    const [row] = listingToCanonicalRows(record);
+    const mapped = mapCanonicalRowsToListing(
+      [{ ...row!, extraFields: { country_code: 'US', media_json: JSON.stringify(record.media) } }],
+      record.ownerPubky,
+    );
+    expect(mapped.ok && mapped.record.shippingProfileId).toBeFalsy();
+  });
+});
+
 describe('mapCanonicalRowsToListing', () => {
   it('prefers extraFields.record_json for a Shop-valid create', () => {
     const record = createCommerceListingFixture({ listingId: 'boots_01' });

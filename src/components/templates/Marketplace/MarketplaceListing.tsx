@@ -28,6 +28,11 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode, isDurableCommerceMode, isTransactionalCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useCommerceFavorite } from '@/hooks/useCommerceFavorite/useCommerceFavorite';
+import { useDefaultAddressCountry } from '@/hooks/useDefaultAddressCountry/useDefaultAddressCountry';
+import {
+  type ListingShippingPreviewState,
+  useListingShippingPreview,
+} from '@/hooks/useListingShippingPreview/useListingShippingPreview';
 import { useLiveSellerShop } from '@/hooks/useLiveSellerShop/useLiveSellerShop';
 import { useMarketplaceCart } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import { useMarketplaceMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
@@ -70,7 +75,7 @@ import {
   commerceVariantUnitPrice,
 } from '@/libs/commerce/marketplace-records';
 import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
-import { formatShipsToCountries, shopShipsToCountries } from '@/libs/commerce/ships-to';
+import { countryDisplayName, formatShipsToCountries, shopShipsToCountries } from '@/libs/commerce/ships-to';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { formatPackageDimensions, formatWeight } from '@/libs/commerce/units';
 import { RegionAvailabilityNotice } from '@/molecules/Marketplace/RegionAvailabilityNotice';
@@ -200,6 +205,11 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   });
   const regionRefused = region.refusal !== null || region.needsCountry;
   const regionBlocked = regionRefused || region.commerce.held;
+  const defaultAddressCountry = useDefaultAddressCountry();
+  const zoneShipping = useListingShippingPreview(
+    listing?.record,
+    region.buyerCountry ?? (defaultAddressCountry === '' ? null : defaultAddressCountry.toUpperCase()),
+  );
   const declaration = shop ? sellerDeclaration(shop.record) : 'unknown';
 
   useEffect(() => {
@@ -290,9 +300,15 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   // with neither takes no offers.
   const offersPhysical = shipsItem || methods.includes('pickup');
   const offersDigitalOnly = offersDigital && !offersPhysical;
-  const shippingCopy = formatListingShipping(record, methods);
+  const shippingCopy =
+    shipsItem && zoneShipping.status !== 'none'
+      ? formatZoneShipping(zoneShipping, price)
+      : formatListingShipping(record, methods);
   const hasFreeShipping = shippingCopy === 'Shipping: free';
-  const flatShipping = shipsItem ? record.shippingOptions.find((option) => option.pricing === 'flat') : undefined;
+  const flatShipping =
+    shipsItem && zoneShipping.status === 'none'
+      ? record.shippingOptions.find((option) => option.pricing === 'flat')
+      : undefined;
   const shippingBadge =
     hasFreeShipping || flatShipping?.price.amountMinor === 0
       ? 'Shipping: Free'
@@ -851,6 +867,43 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
       </Container>
     </ContentLayout>
   );
+}
+
+function formatZoneShipping(
+  state: Exclude<ListingShippingPreviewState, { status: 'none' }>,
+  asset: { currency: string; exponent: number },
+): string {
+  if (state.status === 'loading') return 'Shipping: loading prices';
+  if (state.status === 'unreadable') return 'Shipping: prices could not be loaded';
+  const { destination, countries } = state.preview;
+  if (destination) {
+    const name = countryDisplayName(destination.country);
+    if (destination.quotes === null) {
+      return countries === null || countries.length === 0
+        ? `Does not ship to ${name}`
+        : `Does not ship to ${name}. Ships to: ${formatShipsToCountries(countries)}`;
+    }
+    return `Ships to ${name}: ${destination.quotes
+      .map((quote) => {
+        const days =
+          quote.estimatedMinDays === quote.estimatedMaxDays
+            ? `${quote.estimatedMinDays} days`
+            : `${quote.estimatedMinDays}-${quote.estimatedMaxDays} days`;
+        const price =
+          quote.amountMinor === 0
+            ? 'free'
+            : formatCommerceMoney({
+                amountMinor: quote.amountMinor,
+                currency: asset.currency,
+                exponent: asset.exponent,
+              });
+        return `${quote.label} ${price}, ${days}`;
+      })
+      .join(' · ')}`;
+  }
+  return countries === null
+    ? 'Shipping: price depends on your country'
+    : `Ships to: ${formatShipsToCountries(countries)}`;
 }
 
 function formatListingShipping(

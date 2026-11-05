@@ -54,6 +54,11 @@ export class CommerceHomeserverService {
     return await HomeserverService.getBlob({ url, logUrl: DIGITAL_DELIVERABLE_LOG_PATH, maxBytes });
   }
 
+  /** The raw bytes of a public or owned record, refusing a body over `maxBytes`; rejects with a 404 when there is none. */
+  static async getBytes(url: string, maxBytes: number): Promise<Uint8Array<ArrayBuffer>> {
+    return await HomeserverService.getBlob({ url, maxBytes });
+  }
+
   static async list(directoryUrl: string, limit: number, logUrl?: string): Promise<string[]> {
     return await HomeserverService.list({ baseDirectory: directoryUrl, limit, logUrl });
   }

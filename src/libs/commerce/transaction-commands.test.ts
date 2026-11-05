@@ -29,6 +29,7 @@ import {
   setDigitalDeliveryCommandSchema,
   setPickupDetailsCommandSchema,
   shipOrderCommandSchema,
+  shippingChoiceSchema,
   updateOrderTrackingCommandSchema,
   updateReviewCommandSchema,
   withdrawReviewCommandSchema,
@@ -1418,5 +1419,85 @@ describe('compositeListingIdFromAggregateId', () => {
     ['an empty string', ''],
   ])('returns null for %s', (_name, aggregateId) => {
     expect(compositeListingIdFromAggregateId(aggregateId)).toBeNull();
+  });
+});
+
+describe('checkout.create destination and shipping choices', () => {
+  const SHA = 'ab'.repeat(32);
+  const profileChoice = { sellerPubky: SELLER, profileId: 'worldwide', rateId: 'std', profileSha256: SHA };
+  const inlineChoice = { sellerPubky: SELLER, listingAggregateId: LISTING_AGGREGATE_ID, rateId: 'std' };
+
+  function checkout(payload: Record<string, unknown> = {}) {
+    return {
+      version: 1,
+      commandId: '018f47d2-6a27-7c23-a62f-000000000735',
+      aggregateId: 'checkout:018f47d2-6a27-7c23-a62f-000000000735',
+      expectedRevision: 0,
+      issuedAt: '2026-11-05T10:00:00.000Z',
+      kind: 'checkout.create',
+      payload: {
+        lines: [{ listingAggregateId: LISTING_AGGREGATE_ID, expectedRevision: 1, quantity: 1 }],
+        deliveryAddress: {
+          name: 'Alice Buyer',
+          line1: '1 Market Street',
+          line2: '',
+          city: 'Berlin',
+          region: '',
+          postalCode: '10115',
+          countryCode: 'DE',
+        },
+        ...payload,
+      },
+    };
+  }
+
+  it('accepts a destination with a profile choice and an inline choice', () => {
+    const parsed = createMarketplaceCheckoutCommandSchema.parse(
+      checkout({ destinationCountry: 'DE', shippingChoices: [profileChoice, inlineChoice] }),
+    );
+    expect(parsed.payload.destinationCountry).toBe('DE');
+    expect(parsed.payload.shippingChoices).toHaveLength(2);
+  });
+
+  it('keeps a checkout without either field valid', () => {
+    expect(createMarketplaceCheckoutCommandSchema.safeParse(checkout()).success).toBe(true);
+  });
+
+  it.each([
+    ['both a profile and a listing', { ...profileChoice, listingAggregateId: LISTING_AGGREGATE_ID }],
+    ['neither a profile nor a listing', { sellerPubky: SELLER, rateId: 'std' }],
+    ['a profile without a digest', { sellerPubky: SELLER, profileId: 'worldwide', rateId: 'std' }],
+    ['an inline choice with a digest', { ...inlineChoice, profileSha256: SHA }],
+    ['an uppercase digest', { ...profileChoice, profileSha256: SHA.toUpperCase() }],
+    ['a short digest', { ...profileChoice, profileSha256: SHA.slice(2) }],
+    ['an unknown member', { ...profileChoice, extra: 1 }],
+  ])('rejects a choice with %s', (_name, choice) => {
+    expect(shippingChoiceSchema.safeParse(choice).success).toBe(false);
+    expect(createMarketplaceCheckoutCommandSchema.safeParse(checkout({ shippingChoices: [choice] })).success).toBe(
+      false,
+    );
+  });
+
+  it('rejects an empty choice list, more than fifty choices and a malformed destination', () => {
+    expect(createMarketplaceCheckoutCommandSchema.safeParse(checkout({ shippingChoices: [] })).success).toBe(false);
+    expect(
+      createMarketplaceCheckoutCommandSchema.safeParse(checkout({ shippingChoices: Array(51).fill(profileChoice) }))
+        .success,
+    ).toBe(false);
+    expect(createMarketplaceCheckoutCommandSchema.safeParse(checkout({ destinationCountry: 'Germany' })).success).toBe(
+      false,
+    );
+  });
+
+  it('puts the destination and choices on the wire in the service’s snake_case', () => {
+    const parsed = createMarketplaceCheckoutCommandSchema.parse(
+      checkout({ destinationCountry: 'DE', shippingChoices: [profileChoice, inlineChoice] }),
+    );
+    const wire = toSnakeCaseWire(parsed) as { payload: Record<string, unknown> };
+    expect(wire.payload.destination_country).toBe('DE');
+    expect(wire.payload.shipping_choices).toEqual([
+      { seller_pubky: SELLER, profile_id: 'worldwide', rate_id: 'std', profile_sha256: SHA },
+      { seller_pubky: SELLER, listing_aggregate_id: LISTING_AGGREGATE_ID, rate_id: 'std' },
+    ]);
   });
 });

@@ -11,6 +11,7 @@ import {
   shippingFormValues,
   toImportSettings,
 } from '@/hooks/useMarketplaceInventoryImport/useMarketplaceInventoryImport.types';
+import { readShippingProfilesNow } from '@/hooks/useMarketplaceShippingProfiles/useMarketplaceShippingProfiles';
 import {
   type ConnectorCatalogProduct,
   type ConnectorConnection,
@@ -139,7 +140,11 @@ export function useConnectorCatalogImport(connection: ImportConnection | null) {
   const review = async (): Promise<boolean> => {
     if (!connection || !sellerPubky) return false;
     if (!(await form.trigger())) return false;
-    const settings = toImportSettings(form.getValues());
+    const values = form.getValues();
+    const settings = toImportSettings(
+      values,
+      values.shippingMode === 'profile' ? await readShippingProfilesNow(sellerPubky) : [],
+    );
     const mapped = mapConnectorCatalog({
       products,
       provider: connection.provider,

@@ -85,6 +85,7 @@ import {
   assetForListingCurrency,
   tryAmountInputToMoney,
 } from '@/libs/commerce/pricing';
+import { shippingZonesFromForm } from '@/libs/commerce/shipping-zones-form';
 import {
   dimensionInputFromMillimeters,
   dimensionUnitLabel,
@@ -104,6 +105,7 @@ import { toast } from '@/molecules/Toaster/use-toast';
 import { MarketplaceCategoryPicker } from '@/organisms/Marketplace/MarketplaceCategoryPicker';
 import { MarketplaceDigitalDeliveryEditor } from '@/organisms/Marketplace/MarketplaceDigitalDeliveryEditor';
 import { MarketplaceListingAttributeFields } from '@/organisms/Marketplace/MarketplaceListingAttributeFields';
+import { MarketplaceListingShippingMode } from '@/organisms/Marketplace/MarketplaceListingShippingMode';
 import {
   MarketplacePickupDetailsEditor,
   type MarketplacePickupDetailsEditorHandle,
@@ -201,6 +203,7 @@ export function MarketplaceListingForm({
   const currency = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.CURRENCY });
   const { presets, saveFromFields } = useMarketplaceShippingPresets();
   const [saveDeliveryPreset, setSaveDeliveryPreset] = useState(false);
+  const shippingMode = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_MODE });
   const freeShipping = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.FREE_SHIPPING });
   const watchedListingFields = useWatch({
     control: form.control,
@@ -451,7 +454,7 @@ export function MarketplaceListingForm({
       editor.isDirty;
     const values = form.getValues();
     const presetFields =
-      saveDeliveryPreset && delivery.ship && !values.freeShipping
+      saveDeliveryPreset && delivery.ship && values.shippingMode === 'flat' && !values.freeShipping
         ? {
             shippingLabel: values.shippingLabel,
             shippingPrice: values.shippingPrice,
@@ -920,76 +923,85 @@ export function MarketplaceListingForm({
 
           {delivery.ship && (
             <>
-              <ListingShippingPresetRow
+              <MarketplaceListingShippingMode
                 form={form}
                 isPublishing={isPublishing}
-                presets={presets}
-                listingCurrency={currency}
+                zonesAllowed={saleFormat !== 'auction'}
               />
-              <div className="grid gap-5 sm:grid-cols-2">
-                <ControlledInputField
-                  name={CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_LABEL}
-                  control={form.control}
-                  label="Shipping label"
-                  placeholder="Standard shipping"
-                  disabled={isPublishing}
-                />
-                <div className="grid gap-2">
-                  <ControlledInputField
-                    name={CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_PRICE}
-                    // A flat rate is required unless shipping is free.
-                    markRequired={!freeShipping}
-                    control={form.control}
-                    label={`Flat shipping (${priceUnit})`}
-                    placeholder={amountInputExample(assetForListingCurrency(currency), AMOUNT_EXAMPLES.shipping)}
-                    disabled={isPublishing || freeShipping}
+              {shippingMode === 'flat' && (
+                <>
+                  <ListingShippingPresetRow
+                    form={form}
+                    isPublishing={isPublishing}
+                    presets={presets}
+                    listingCurrency={currency}
                   />
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="listing-free-shipping"
-                      checked={freeShipping}
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <ControlledInputField
+                      name={CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_LABEL}
+                      control={form.control}
+                      label="Shipping label"
+                      placeholder="Standard shipping"
                       disabled={isPublishing}
-                      onCheckedChange={(checked) => setFreeShipping(checked === true)}
                     />
-                    <Label htmlFor="listing-free-shipping" className="cursor-pointer text-sm">
-                      Free shipping
-                    </Label>
+                    <div className="grid gap-2">
+                      <ControlledInputField
+                        name={CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_PRICE}
+                        // A flat rate is required unless shipping is free.
+                        markRequired={!freeShipping}
+                        control={form.control}
+                        label={`Flat shipping (${priceUnit})`}
+                        placeholder={amountInputExample(assetForListingCurrency(currency), AMOUNT_EXAMPLES.shipping)}
+                        disabled={isPublishing || freeShipping}
+                      />
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="listing-free-shipping"
+                          checked={freeShipping}
+                          disabled={isPublishing}
+                          onCheckedChange={(checked) => setFreeShipping(checked === true)}
+                        />
+                        <Label htmlFor="listing-free-shipping" className="cursor-pointer text-sm">
+                          Free shipping
+                        </Label>
+                      </div>
+                    </div>
+                    <ControlledInputField
+                      name={CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_MIN_DAYS}
+                      control={form.control}
+                      label="Delivery estimate min (days)"
+                      placeholder="3"
+                      disabled={isPublishing}
+                    />
+                    <ControlledInputField
+                      name={CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_MAX_DAYS}
+                      control={form.control}
+                      label="Delivery estimate max (days)"
+                      placeholder="7"
+                      disabled={isPublishing}
+                    />
                   </div>
-                </div>
-                <ControlledInputField
-                  name={CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_MIN_DAYS}
-                  control={form.control}
-                  label="Delivery estimate min (days)"
-                  placeholder="3"
-                  disabled={isPublishing}
-                />
-                <ControlledInputField
-                  name={CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_MAX_DAYS}
-                  control={form.control}
-                  label="Delivery estimate max (days)"
-                  placeholder="7"
-                  disabled={isPublishing}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="listing-save-delivery-preset"
-                    checked={saveDeliveryPreset && !freeShipping}
-                    disabled={isPublishing || freeShipping}
-                    onCheckedChange={(checked) => setSaveDeliveryPreset(checked === true)}
-                    aria-describedby="listing-save-delivery-preset-hint"
-                  />
-                  <Label htmlFor="listing-save-delivery-preset" className="cursor-pointer text-sm">
-                    Save delivery details as preset
-                  </Label>
-                </div>
-                <Typography as="p" id="listing-save-delivery-preset-hint" className="text-sm text-muted-foreground">
-                  {freeShipping
-                    ? 'Presets hold a paid flat rate; free shipping cannot be saved as one.'
-                    : 'Saves the shipping label, flat rate and delivery estimates on this device when you save the listing.'}
-                </Typography>
-              </div>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="listing-save-delivery-preset"
+                        checked={saveDeliveryPreset && !freeShipping}
+                        disabled={isPublishing || freeShipping}
+                        onCheckedChange={(checked) => setSaveDeliveryPreset(checked === true)}
+                        aria-describedby="listing-save-delivery-preset-hint"
+                      />
+                      <Label htmlFor="listing-save-delivery-preset" className="cursor-pointer text-sm">
+                        Save delivery details as preset
+                      </Label>
+                    </div>
+                    <Typography as="p" id="listing-save-delivery-preset-hint" className="text-sm text-muted-foreground">
+                      {freeShipping
+                        ? 'Presets hold a paid flat rate; free shipping cannot be saved as one.'
+                        : 'Saves the shipping label, flat rate and delivery estimates on this device when you save the listing.'}
+                    </Typography>
+                  </div>
+                </>
+              )}
               <div className="grid gap-5 sm:grid-cols-2">
                 <ControlledInputField
                   name={CREATE_MARKETPLACE_LISTING_FIELDS.PACKAGE_WEIGHT}
@@ -1435,11 +1447,16 @@ function getListingSectionStatuses(
     categoryRequiredAttributesComplete(values);
   const shippingComplete =
     !fulfillmentFlags(values.fulfillment).ship ||
-    (values.shippingLabel.trim().length > 0 &&
-      (values.freeShipping ||
-        amountInputSchemaForAsset(assetForListingCurrency(values.currency)).safeParse(values.shippingPrice).success) &&
-      /^\d+$/.test(values.shippingMinDays) &&
-      /^\d+$/.test(values.shippingMaxDays) &&
+    ((values.shippingMode === 'profile'
+      ? values.shippingProfileId !== ''
+      : values.shippingMode === 'custom'
+        ? shippingZonesFromForm(values.shippingZoneValues, assetForListingCurrency(values.currency)).ok
+        : values.shippingLabel.trim().length > 0 &&
+          (values.freeShipping ||
+            amountInputSchemaForAsset(assetForListingCurrency(values.currency)).safeParse(values.shippingPrice)
+              .success) &&
+          /^\d+$/.test(values.shippingMinDays) &&
+          /^\d+$/.test(values.shippingMaxDays)) &&
       values.packageWeight.trim().length > 0 &&
       values.packageLength.trim().length > 0 &&
       values.packageWidth.trim().length > 0 &&

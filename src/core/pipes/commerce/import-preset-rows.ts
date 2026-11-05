@@ -7,7 +7,12 @@ import {
   COMMERCE_LISTING_TITLE_MIN_CHARS,
 } from '@/config/commerce';
 import type { ImportLoss } from './import-loss-report';
-import { IMPORT_CONDITIONS_SET, type ImportSettings, shippingOptionRow } from './import-settings';
+import {
+  IMPORT_CONDITIONS_SET,
+  type ImportSettings,
+  SHIPPING_PROFILE_ID_FIELD,
+  shippingOptionRow,
+} from './import-settings';
 
 /** JSON-safe value carried in a canonical import row. */
 export type PresetJson = string | number | boolean | null | PresetJson[] | { [key: string]: PresetJson };
@@ -56,6 +61,12 @@ export const VARIANT_PRICE_MINOR_FIELD = 'variant_price_minor';
 export const COUNTRY_CODE_FIELD = 'country_code';
 
 export type SourceImage = { readonly url: string; readonly alt: string };
+
+/** A file's own shipping profile column never survives: the seller's import settings decide shipping. */
+function withoutShippingProfile(fields: Readonly<Record<string, string>>): Record<string, string> {
+  const { [SHIPPING_PROFILE_ID_FIELD]: _ignored, ...rest } = fields;
+  return rest;
+}
 
 const ENTITY_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const SKU_MAX_CHARS = 64;
@@ -318,9 +329,13 @@ export function finalizePresetRows(input: FinalizeInput): FinalizeResult {
         options,
         variantQuantity: quantities[index] ?? 0,
         shippingOptions: shipping,
-        extraFields: settings.countryCode
-          ? { ...row.extraFields, [COUNTRY_CODE_FIELD]: settings.countryCode }
-          : { ...row.extraFields },
+        extraFields: {
+          ...withoutShippingProfile(row.extraFields),
+          ...(settings.countryCode ? { [COUNTRY_CODE_FIELD]: settings.countryCode } : {}),
+          ...(settings.shipping?.mode === 'profile'
+            ? { [SHIPPING_PROFILE_ID_FIELD]: settings.shipping.profileId }
+            : {}),
+        },
       });
     });
     losses.push(...rowLosses);

@@ -10,7 +10,15 @@ export const IMPORT_CONDITIONS_SET: ReadonlySet<string> = new Set(IMPORT_CONDITI
 
 export type ImportShipping =
   | { readonly mode: 'free'; readonly minDays: number; readonly maxDays: number }
-  | { readonly mode: 'flat'; readonly priceMinor: number; readonly minDays: number; readonly maxDays: number };
+  | { readonly mode: 'flat'; readonly priceMinor: number; readonly minDays: number; readonly maxDays: number }
+  /**
+   * Every listing names the seller's shipping profile and carries `option`, the legacy
+   * flat entry derived from that profile, for readers that predate zones.
+   */
+  | { readonly mode: 'profile'; readonly profileId: string; readonly option: Readonly<Record<string, unknown>> };
+
+/** The shipping an existing listing can prefill: a rate, never a profile. */
+export type ImportRateShipping = Exclude<ImportShipping, { readonly mode: 'profile' }>;
 
 export type ImportSettings = {
   readonly currency: string;
@@ -89,7 +97,11 @@ export function missingImportChoices(settings: ImportSettings): ('shipping' | 'c
   return missing;
 }
 
+/** Row extra-field key that carries the shipping profile id of a profile-priced listing. */
+export const SHIPPING_PROFILE_ID_FIELD = 'shipping_profile_id';
+
 export function shippingOptionRow(shipping: ImportShipping, currency: string): Record<string, unknown> {
+  if (shipping.mode === 'profile') return { ...shipping.option };
   const estimate = { estimatedMinDays: shipping.minDays, estimatedMaxDays: shipping.maxDays };
   if (shipping.mode === 'free') {
     return { id: 'standard', pricing: 'free', label: 'Free shipping', ...estimate };

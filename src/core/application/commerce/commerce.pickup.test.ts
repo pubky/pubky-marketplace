@@ -269,6 +269,30 @@ describe('CommerceApplication local pickup (Wave 7)', () => {
       expect(payload.deliveryAddress).toBeUndefined();
     });
 
+    it('carries the destination and the shipping choices in the command, and omits both when absent', async () => {
+      const execute = vi.spyOn(MarketplaceGatewayService, 'execute').mockResolvedValue(okResponse as never);
+      const choice = { sellerPubky: SELLER, profileId: 'worldwide', rateId: 'std', profileSha256: 'ab'.repeat(32) };
+
+      await CommerceApplication.commitCreateMarketplaceCheckout(BUYER, {
+        lines: [lineA],
+        fulfillmentChoiceBySeller: {},
+        deliveryAddress: address,
+        deliveryKeys: keysFor([SELLER, sellerKey]),
+        destinationCountry: 'US',
+        shippingChoices: [choice],
+      });
+      await CommerceApplication.commitCreateMarketplaceCheckout(BUYER, {
+        lines: [lineA],
+        fulfillmentChoiceBySeller: {},
+        deliveryAddress: address,
+        deliveryKeys: keysFor([SELLER, sellerKey]),
+      });
+
+      expect(execute.mock.calls[0][1].payload).toMatchObject({ destinationCountry: 'US', shippingChoices: [choice] });
+      expect(execute.mock.calls[1][1].payload).not.toHaveProperty('destinationCountry');
+      expect(execute.mock.calls[1][1].payload).not.toHaveProperty('shippingChoices');
+    });
+
     it('defaults unchosen groups to shipping and seals the address to the shipped seller only', async () => {
       const execute = vi.spyOn(MarketplaceGatewayService, 'execute').mockResolvedValue(okResponse as never);
 

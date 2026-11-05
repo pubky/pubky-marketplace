@@ -57,6 +57,12 @@ const view = vi.hoisted(() => ({
   hasFullHomeserverGrant: true,
   orders: [] as Array<{ order: ReturnType<typeof createOrderFixture> }>,
   offers: [] as MarketplaceOffer[],
+  addressCountry: '',
+  shippingProfile: null as unknown,
+}));
+
+vi.mock('@/hooks/useDefaultAddressCountry/useDefaultAddressCountry', () => ({
+  useDefaultAddressCountry: () => view.addressCountry,
 }));
 
 vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({ useMarketplaceCartCount: () => 0 }));
@@ -97,6 +103,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     },
     getPublicListingAvailability: publicAvailabilityRead,
     fetchSellerPaymentBadges: paymentBadgesRead,
+    fetchShippingProfile: () => Promise.resolve(view.shippingProfile),
     hasFullHomeserverGrant: () => view.hasFullHomeserverGrant,
     canRegisterListings: () => false,
     ensureListingRegistered: vi.fn(async () => {}),
@@ -236,6 +243,8 @@ describe('MarketplaceListing', () => {
     view.shop = toCommerceShopModel(createCommerceShopFixture());
     view.projection = createListingProjectionFixture();
     view.projectionError = null;
+    view.addressCountry = '';
+    view.shippingProfile = null;
     view.listingRemoved = false;
     view.fetchFailure = null;
     view.confirmedRemoved = false;
@@ -413,6 +422,83 @@ describe('MarketplaceListing', () => {
     expect(screen.getByTestId('marketplace-listing-ships-to')).toHaveTextContent(
       'Ships to: Switzerland and Liechtenstein',
     );
+  });
+
+  describe('zone-priced shipping', () => {
+    const zones = [
+      {
+        zoneId: 'eu',
+        name: 'Europe',
+        countries: ['DE', 'FR', 'PT'],
+        rates: [
+          {
+            pricing: 'per_item' as const,
+            rateId: 'std',
+            label: 'Standard',
+            estimatedMinDays: 6,
+            estimatedMaxDays: 12,
+            firstMinor: 899,
+            additionalMinor: 450,
+          },
+        ],
+      },
+    ];
+    const zoned = (overrides: Record<string, unknown> = {}) =>
+      toCommerceListingModel(createCommerceListingFixture({ shippingZones: zones, ...overrides }));
+
+    it('shows the rate to the buyer’s country with its delivery estimate', () => {
+      view.listing = zoned();
+      view.addressCountry = 'DE';
+      renderListing();
+      expect(screen.getByText('Ships to Germany: Standard $8.99, 6-12 days')).toBeInTheDocument();
+      expect(screen.queryByText(/Shipping: calculated/)).not.toBeInTheDocument();
+    });
+
+    it('lists where it ships when the buyer’s country is unknown, and says so when the country is not served', () => {
+      view.listing = zoned();
+      view.addressCountry = '';
+      renderListing();
+      expect(screen.getByText('Ships to: Germany, France, and Portugal')).toBeInTheDocument();
+      cleanup();
+
+      view.addressCountry = 'BR';
+      renderListing();
+      expect(screen.getByText('Does not ship to Brazil. Ships to: Germany, France, and Portugal')).toBeInTheDocument();
+    });
+
+    it('reads a shared profile for the price', async () => {
+      view.listing = toCommerceListingModel(createCommerceListingFixture({ shippingProfileId: 'worldwide' }));
+      view.shippingProfile = {
+        sha256: 'a'.repeat(64),
+        record: {
+          profileId: 'worldwide',
+          name: 'Worldwide',
+          currency: 'USD',
+          exponent: 2,
+          excludedCountries: [],
+          zones,
+        },
+      };
+      view.addressCountry = 'FR';
+      renderListing();
+      expect(await screen.findByText('Ships to France: Standard $8.99, 6-12 days')).toBeInTheDocument();
+    });
+
+    it('offers no Make offer on a zone-priced listing that accepts offers', () => {
+      const sale = {
+        format: 'fixed_price' as const,
+        unitPrice: { amountMinor: 12_500, currency: 'USD', exponent: 2 },
+        acceptsOffers: true,
+      };
+      view.listing = toCommerceListingModel(createCommerceListingFixture({ sale }));
+      renderListing();
+      expect(screen.getByRole('button', { name: /Make offer/ })).toBeInTheDocument();
+      cleanup();
+
+      view.listing = zoned({ sale });
+      renderListing();
+      expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
+    });
   });
 
   it("badges the seller's accepted payment methods", async () => {

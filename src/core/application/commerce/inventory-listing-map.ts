@@ -12,6 +12,7 @@ import { countryFieldError, publishedCountryCode } from '@/libs/commerce/ships-t
 import { listingStockRefusal } from '@/libs/commerce/unlimited-stock';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import { PHOTO_REQUIRED_MESSAGE } from '@/pipes/commerce/import-publish-failure';
+import { SHIPPING_PROFILE_ID_FIELD } from '@/pipes/commerce/import-settings';
 
 type ImportJsonPrimitive = string | number | boolean | null;
 export type ImportJsonValue = ImportJsonPrimitive | ImportJsonValue[] | { [key: string]: ImportJsonValue };
@@ -331,6 +332,9 @@ export function mapCanonicalRowsToListing(rows: readonly CanonicalImportRow[], o
       fulfillmentMethods: ['physical'],
       ...(shippingOptions.length > 0
         ? {
+            ...(first.extraFields[SHIPPING_PROFILE_ID_FIELD]
+              ? { shippingProfileId: first.extraFields[SHIPPING_PROFILE_ID_FIELD] }
+              : {}),
             package: parseJsonField(first.extraFields.package_json) ?? {
               weightGrams: 500,
               lengthMillimeters: 200,

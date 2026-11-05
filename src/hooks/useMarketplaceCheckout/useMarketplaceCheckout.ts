@@ -19,6 +19,10 @@ import {
   useMarketplaceSellerShipsTo,
 } from '@/hooks/useMarketplaceSellerShipsTo/useMarketplaceSellerShipsTo';
 import {
+  type ShippingGroupView,
+  useMarketplaceShippingGroups,
+} from '@/hooks/useMarketplaceShippingGroups/useMarketplaceShippingGroups';
+import {
   BIND_FAIL_CANCEL_REASON,
   listingAggregatesFromCheckoutLines,
   resolveCreatedCheckoutOrderIds,
@@ -37,6 +41,8 @@ import {
   marketplaceFailureMessage,
   marketplaceListingNotActiveMessage,
   marketplaceRegionRefusalMessage,
+  marketplaceShippingRefusalMessage,
+  SHIPPING_CHANGED_MESSAGE,
 } from '@/libs/commerce/failure-messages';
 import { tracksVariantStock } from '@/libs/commerce/listing-variants';
 import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/locks-payment';
@@ -50,6 +56,7 @@ import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
 import { pickupRefusalFailureMessage } from '@/libs/commerce/pickup';
 import { canonicalCountryCode } from '@/libs/commerce/postal-address';
+import type { ShippingChoicePayload } from '@/libs/commerce/shipping-groups';
 import { isDestinationAllowed } from '@/libs/commerce/ships-to';
 import {
   buildMarketplaceListingAggregateId,
@@ -80,6 +87,15 @@ import {
  * The bare (non-owner-prefixed) address id the controller works with — the
  * stored primary key is `${owner_id}:${addressId}`.
  */
+/** Why an order with zone-priced shipping cannot be sent yet, in words the buyer can act on. */
+const ZONE_SHIPPING_BLOCKED_COPY: Record<ShippingGroupView['state']['status'], string> = {
+  loading: 'Shipping prices are still loading. Try again in a moment.',
+  unreadable: 'A seller’s shipping prices could not be read. Nothing was reserved. Try again in a moment.',
+  'needs-destination': 'Enter your delivery country to see shipping prices.',
+  refused: 'A seller in your cart does not ship to that country. Choose another address or remove their items.',
+  ready: '',
+};
+
 function bareAddressId(address: CommerceDeliveryAddressModelSchema): string {
   return address.id.slice(address.owner_id.length + 1);
 }
@@ -221,6 +237,8 @@ export function useMarketplaceCheckout(
   isPickupCapabilityLoadingForSeller: (sellerPubky: string) => boolean;
   /** The number of durable rows this checkout creates — one per (seller, fulfillment) group. */
   orderCount: number;
+  /** The zone-priced shipping groups: each one's rates, the buyer's pick and what it adds to the order. */
+  zoneShipping: ReturnType<typeof useMarketplaceShippingGroups>;
   /** Persist a used or newly saved address after a successful create (offer or cart). */
   pendingKeyChange: PendingDeliveryKeyChange | null;
   decideKeyChange: (accepted: boolean) => void;
@@ -456,6 +474,9 @@ export function useMarketplaceCheckout(
     ...(award && fulfillmentForSeller(award.sellerPubky) === 'shipping' ? [award.sellerPubky] : []),
   ];
   const shipsTo = useMarketplaceSellerShipsTo(shippedSellerPubkys);
+  const shippedItems = physicalItems.filter((item) => fulfillmentForItem(item.id) === 'shipping');
+  const watchedDestination = useWatch({ control: form.control, name: 'countryCode' });
+  const zoneShipping = useMarketplaceShippingGroups(shippedItems, watchedDestination ?? '');
   const storeShare = useConnectorStoreShare(shippedSellerPubkys);
   const orderCount = new Set([
     ...items.map((item) => `${item.listing.record.ownerPubky}|${fulfillmentForItem(item.id) ?? ''}`),
@@ -738,6 +759,18 @@ export function useMarketplaceCheckout(
         return { ok: false };
       }
     }
+    const sendsDestination =
+      shippedSellers.length > 0 &&
+      (zoneShipping.hasZonedGroups || (shipsTo.status === 'ready' && shipsTo.countries !== null));
+    let shippingChoices: ShippingChoicePayload[] = [];
+    if (shippedSellers.length > 0 && zoneShipping.hasZonedGroups) {
+      const priced = zoneShipping.choices();
+      if (!priced.ok) {
+        toast({ variant: 'error', description: ZONE_SHIPPING_BLOCKED_COPY[priced.reason] });
+        return { ok: false };
+      }
+      shippingChoices = priced.choices;
+    }
     const sealedTo = await resolveKeys(shippedSellers);
     if (!sealedTo.ok) return { ok: false };
     // Placing an order to an address is the buyer's choice of country: send it with this command
@@ -755,6 +788,8 @@ export function useMarketplaceCheckout(
         ? { buyerCountry: addressCountry }
         : {}),
       fulfillmentChoiceBySeller,
+      ...(sendsDestination ? { destinationCountry: canonicalCountryCode(data.countryCode) } : {}),
+      ...(shippingChoices.length > 0 ? { shippingChoices } : {}),
       deliveryKeys: sealedTo.keys,
       ...(storeShare.selected.some((store) => shippedSellers.includes(store.sellerPubky))
         ? { connectorShares: storeShare.selected.filter((store) => shippedSellers.includes(store.sellerPubky)) }
@@ -790,6 +825,11 @@ export function useMarketplaceCheckout(
       const variantRefusal = variantRefusalMessage(response.error);
       if (variantRefusal) {
         return refuse(variantRefusal, classifyVariantRefusal(response.error) === 'variant_sold_out');
+      }
+      const shippingRefusal = marketplaceShippingRefusalMessage(response.error);
+      if (shippingRefusal) {
+        if (shippingRefusal === SHIPPING_CHANGED_MESSAGE) zoneShipping.refresh();
+        return refuse(shippingRefusal);
       }
       const pickupRefusal = classifyMarketplacePickupCommandRefusal(response);
       if (pickupRefusal) return refuse(pickupRefusalFailureMessage(pickupRefusal));
@@ -963,6 +1003,7 @@ export function useMarketplaceCheckout(
     isPickupCapabilityLoadingForSeller: (sellerPubky: string) =>
       pickupAvailable === null && sellersPublishingPickup.has(sellerPubky),
     orderCount,
+    zoneShipping,
     pendingKeyChange,
     decideKeyChange,
     deliveryKeyBlock,

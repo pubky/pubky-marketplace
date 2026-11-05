@@ -15,6 +15,7 @@ import {
   type ImportSettingsFormData,
 } from '@/hooks/useMarketplaceInventoryImport/useMarketplaceInventoryImport.types';
 import { CONNECTOR_PROVIDER_LABELS, type ConnectorProvider, type VariantMode } from '@/libs/commerce/connectors';
+import { MarketplaceImportShippingProfilePicker } from '@/organisms/Marketplace/MarketplaceImportShippingProfilePicker';
 
 type MarketplaceConnectorImportSettingsProps = {
   control: Control<ImportSettingsFormData>;
@@ -182,6 +183,7 @@ export function MarketplaceConnectorImportSettings({
                     <SelectContent>
                       <SelectItem value="free">Free shipping</SelectItem>
                       <SelectItem value="flat">Flat rate</SelectItem>
+                      <SelectItem value="profile">Shipping profile</SelectItem>
                     </SelectContent>
                   </Select>
                   {field.value === '' && (
@@ -229,43 +231,55 @@ export function MarketplaceConnectorImportSettings({
               />
             )}
 
-            <Controller
-              name={IMPORT_SETTINGS_FIELDS.SHIPPING_MIN_DAYS}
-              control={control}
-              render={({ field, fieldState }) => (
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="connector-import-shipping-min">Delivery, fewest days</Label>
-                  <Input
-                    {...field}
-                    id="connector-import-shipping-min"
-                    theme="outline"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    aria-invalid={fieldState.error ? true : undefined}
-                  />
-                  <FieldError message={fieldState.error?.message} />
-                </div>
-              )}
-            />
+            {shippingMode === 'profile' && (
+              <MarketplaceImportShippingProfilePicker
+                control={control}
+                currency={currency}
+                idPrefix="connector-import"
+              />
+            )}
 
-            <Controller
-              name={IMPORT_SETTINGS_FIELDS.SHIPPING_MAX_DAYS}
-              control={control}
-              render={({ field, fieldState }) => (
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="connector-import-shipping-max">Delivery, most days</Label>
-                  <Input
-                    {...field}
-                    id="connector-import-shipping-max"
-                    theme="outline"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    aria-invalid={fieldState.error ? true : undefined}
-                  />
-                  <FieldError message={fieldState.error?.message} />
-                </div>
-              )}
-            />
+            {shippingMode !== 'profile' && (
+              <>
+                <Controller
+                  name={IMPORT_SETTINGS_FIELDS.SHIPPING_MIN_DAYS}
+                  control={control}
+                  render={({ field, fieldState }) => (
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="connector-import-shipping-min">Delivery, fewest days</Label>
+                      <Input
+                        {...field}
+                        id="connector-import-shipping-min"
+                        theme="outline"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        aria-invalid={fieldState.error ? true : undefined}
+                      />
+                      <FieldError message={fieldState.error?.message} />
+                    </div>
+                  )}
+                />
+
+                <Controller
+                  name={IMPORT_SETTINGS_FIELDS.SHIPPING_MAX_DAYS}
+                  control={control}
+                  render={({ field, fieldState }) => (
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="connector-import-shipping-max">Delivery, most days</Label>
+                      <Input
+                        {...field}
+                        id="connector-import-shipping-max"
+                        theme="outline"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        aria-invalid={fieldState.error ? true : undefined}
+                      />
+                      <FieldError message={fieldState.error?.message} />
+                    </div>
+                  )}
+                />
+              </>
+            )}
 
             <Controller
               name={IMPORT_SETTINGS_FIELDS.CONDITION}

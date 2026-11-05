@@ -236,6 +236,7 @@ export function listingDraftHasUserContent(record: Record<string, unknown>): boo
   ) {
     return true;
   }
+  if (record.shippingMode === 'profile' || record.shippingMode === 'custom') return true;
   if (
     typeof record.shippingLabel === 'string' &&
     record.shippingLabel.trim() !== '' &&

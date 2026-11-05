@@ -37,6 +37,11 @@ import {
   listingPublishBlockToast,
   type SellerDeliveryKeyRequirement,
 } from '@/libs/commerce/listing-publish-guards';
+import {
+  buildListingShipping,
+  listingShippingFormFromRecord,
+  type ListingShippingRecordFields,
+} from '@/libs/commerce/listing-shipping';
 import { type CommerceListingRecord, commerceListingRecordSchema } from '@/libs/commerce/marketplace-records';
 import {
   amountInputFromMoney,
@@ -374,9 +379,21 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
       // retried, never publish a duplicate. The id is the draft id itself.
       pendingListingIdRef.current ??= draftId;
 
+      const shipping = await resolveListingShipping(currentUserPubky, data);
+      if (!shipping.ok) {
+        toast({ variant: 'error', description: shipping.errors[0] });
+        return;
+      }
+
       try {
         await uploadListingMedia(preparedMedia.uploads);
-        const listing = buildListingRecord(currentUserPubky, data, preparedMedia.media, pendingListingIdRef.current);
+        const listing = buildListingRecord(
+          currentUserPubky,
+          data,
+          preparedMedia.media,
+          pendingListingIdRef.current,
+          shipping.fields,
+        );
         const reservePrice =
           data.saleFormat === 'auction' && data.reservePrice !== ''
             ? amountInputToMoney(data.reservePrice, assetForListingCurrency(data.currency))
@@ -610,6 +627,7 @@ export function seedDraftFormFromListing(
       priceOverride: variant.priceOverride ? amountInputFromMoney(variant.priceOverride) : '',
     })),
     fulfillment,
+    ...listingShippingFormFromRecord(record, assetForListingCurrency(currency)),
     shippingLabel: flatShipping ? flatShipping.label : createMarketplaceListingDefaults.shippingLabel,
     shippingPrice: flatShipping ? amountInputFromMoney(flatShipping.price) : '',
     shippingMinDays: flatShipping
@@ -685,11 +703,31 @@ export async function uploadListingMedia(
   }
 }
 
+/**
+ * The listing's shipping members for the studio's choice. A profile listing
+ * reads the profile now, so the legacy option it carries matches the profile
+ * a buyer is quoted against; a profile that cannot be read refuses the save.
+ */
+export async function resolveListingShipping(
+  ownerPubky: string,
+  data: CreateMarketplaceListingData,
+): Promise<ReturnType<typeof buildListingShipping>> {
+  if (!fulfillmentRequiresShipping(data.fulfillment)) {
+    return { ok: true, fields: { shippingOptions: [], shippingProfileId: undefined, shippingZones: undefined } };
+  }
+  const profile =
+    data.shippingMode === 'profile'
+      ? await CommerceController.fetchShippingProfile(ownerPubky, data.shippingProfileId)
+      : null;
+  return buildListingShipping(data, profile);
+}
+
 function buildListingRecord(
   ownerPubky: string,
   data: CreateMarketplaceListingData,
   media: ListingMediaRecord[],
   listingId: string,
+  shipping: ListingShippingRecordFields,
 ): CommerceListingRecord {
   const now = new Date();
   const asset = assetForListingCurrency(data.currency);
@@ -741,26 +779,9 @@ function buildListingRecord(
     sale,
     fulfillmentMethods: fulfillmentMethodsFromForm(data.fulfillment),
     package: requiresShipping ? buildPackageRecord(data) : undefined,
-    shippingOptions: requiresShipping
-      ? [
-          data.freeShipping
-            ? {
-                id: 'seller_flat_rate',
-                pricing: 'free' as const,
-                label: data.shippingLabel,
-                estimatedMinDays: Number(data.shippingMinDays),
-                estimatedMaxDays: Number(data.shippingMaxDays),
-              }
-            : {
-                id: 'seller_flat_rate',
-                pricing: 'flat' as const,
-                label: data.shippingLabel,
-                price: amountInputToMoney(data.shippingPrice, asset),
-                estimatedMinDays: Number(data.shippingMinDays),
-                estimatedMaxDays: Number(data.shippingMaxDays),
-              },
-        ]
-      : [],
+    shippingOptions: requiresShipping ? shipping.shippingOptions : [],
+    shippingProfileId: requiresShipping ? shipping.shippingProfileId : undefined,
+    shippingZones: requiresShipping ? shipping.shippingZones : undefined,
     returnPolicy: {
       acceptsReturns: returnWindowDays !== undefined,
       returnWindowDays,

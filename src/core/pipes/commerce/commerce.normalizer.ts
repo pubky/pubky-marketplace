@@ -22,6 +22,8 @@ import {
   commerceReviewRecordSchema,
   type CommerceReviewResponseRecord,
   commerceReviewResponseRecordSchema,
+  type CommerceShippingProfileRecord,
+  commerceShippingProfileRecordSchema,
   type CommerceShopRecord,
   commerceShopRecordSchema,
   type CommerceWatchlistRecord,
@@ -388,6 +390,10 @@ export class CommerceRecordNormalizer {
 
   static shop(input: unknown): CommerceShopRecord {
     return this.parse(commerceShopRecordSchema, input, 'shop');
+  }
+
+  static shippingProfile(input: unknown): CommerceShippingProfileRecord {
+    return this.parse(commerceShippingProfileRecordSchema, input, 'shippingProfile');
   }
 
   static listing(input: unknown): CommerceListingRecord {
