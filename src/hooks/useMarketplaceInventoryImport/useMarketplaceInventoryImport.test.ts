@@ -126,6 +126,25 @@ describe('import settings with a shipping profile', () => {
     expect(importSettingsFormSchema.safeParse({ ...chosen, shippingProfileId: 'worldwide' }).success).toBe(true);
   });
 
+  it('ignores delivery days that profile mode hides, and still checks them for free and flat shipping', () => {
+    const hidden = { ...chosen, shippingProfileId: 'worldwide', shippingMinDays: '9', shippingMaxDays: 'x' };
+    expect(importSettingsFormSchema.safeParse(hidden).success).toBe(true);
+    for (const shippingMode of ['free', 'flat'] as const) {
+      const result = importSettingsFormSchema.safeParse({
+        ...hidden,
+        shippingMode,
+        shippingPrice: '5',
+      });
+      expect(result.error?.issues.map((issue) => issue.path[0])).toEqual(['shippingMaxDays']);
+    }
+    const reversed = importSettingsFormSchema.safeParse({
+      ...hidden,
+      shippingMode: 'free',
+      shippingMaxDays: '2',
+    });
+    expect(reversed.error?.issues[0]?.message).toBe('Maximum delivery must not be before the minimum.');
+  });
+
   it('names the profile and derives the legacy option from it', () => {
     const settings = toImportSettings({ ...chosen, shippingProfileId: 'worldwide' }, [profile('USD')]);
     expect(settings.shipping).toMatchObject({

@@ -75,7 +75,12 @@ import {
   commerceVariantUnitPrice,
 } from '@/libs/commerce/marketplace-records';
 import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
-import { countryDisplayName, formatShipsToCountries, shopShipsToCountries } from '@/libs/commerce/ships-to';
+import {
+  countryDisplayName,
+  formatShipsToCountries,
+  shopShipsToCountries,
+  shopShipsToRestriction,
+} from '@/libs/commerce/ships-to';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { formatPackageDimensions, formatWeight } from '@/libs/commerce/units';
 import { RegionAvailabilityNotice } from '@/molecules/Marketplace/RegionAvailabilityNotice';
@@ -208,11 +213,12 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const defaultAddressCountry = useDefaultAddressCountry();
   const listedSale = listing?.record.sale;
   const listedPrice = listedSale?.format === 'fixed_price' ? listedSale.unitPrice : listedSale?.startingPrice;
+  const shopRestriction = shopShipsToRestriction(shop?.record);
   const zoneShipping = useListingShippingPreview(
     listing?.record,
     region.buyerCountry ?? (defaultAddressCountry === '' ? null : defaultAddressCountry),
     listedPrice ? { currency: listedPrice.currency, exponent: listedPrice.exponent } : null,
-    shopShipsToCountries(shop?.record),
+    shopRestriction === undefined ? 'unusable' : shopRestriction,
   );
   const declaration = shop ? sellerDeclaration(shop.record) : 'unknown';
 
@@ -514,7 +520,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                   {shippingCopy}
                 </Typography>
               )}
-              {shipsItem && shipsToCountries && (
+              {shipsItem && shipsToCountries && zoneShipping.status === 'none' && (
                 <Typography
                   as="p"
                   className="mt-1 text-sm text-muted-foreground"
@@ -670,19 +676,21 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                       }
                     />
                   )}
-                  {record.sale.acceptsOffers && offersDigital && (
-                    <Typography
-                      as="p"
-                      className="w-full text-sm text-muted-foreground"
-                      data-testid="marketplace-listing-digital-offer-note"
-                    >
-                      {offersDigitalOnly
-                        ? DIGITAL_DELIVERY_COPY.offersUnavailable
-                        : shipsItem
-                          ? DIGITAL_DELIVERY_COPY.offersBuyShipped
-                          : DIGITAL_DELIVERY_COPY.offersBuyPickup}
-                    </Typography>
-                  )}
+                  {record.sale.acceptsOffers &&
+                    offersDigital &&
+                    (offersDigitalOnly || commerceListingTakesOffers(record)) && (
+                      <Typography
+                        as="p"
+                        className="w-full text-sm text-muted-foreground"
+                        data-testid="marketplace-listing-digital-offer-note"
+                      >
+                        {offersDigitalOnly
+                          ? DIGITAL_DELIVERY_COPY.offersUnavailable
+                          : shipsItem
+                            ? DIGITAL_DELIVERY_COPY.offersBuyShipped
+                            : DIGITAL_DELIVERY_COPY.offersBuyPickup}
+                      </Typography>
+                    )}
                 </>
               )}
               <Button

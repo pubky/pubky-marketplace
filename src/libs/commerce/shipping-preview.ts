@@ -17,16 +17,25 @@ export function previewListingShipping(
   zones: readonly ShippingZone[],
   excludedCountries: readonly string[],
   viewerCountry: string | null,
-  shopCountries: readonly string[] | null = null,
+  shopCountries: readonly string[] | null | 'unusable' = null,
 ): ListingShippingPreview {
+  const country = viewerCountry === null ? '' : canonicalCountryCode(viewerCountry);
+  const viewer = /^[A-Z]{2}$/.test(country) ? country : null;
+  // A shop restriction that lists no usable country is refused by checkout, so nothing ships.
+  if (shopCountries === 'unusable') {
+    return { countries: [], destination: viewer === null ? null : { country: viewer, quotes: null } };
+  }
   const shop = shopCountries === null ? null : shopCountries.map(canonicalCountryCode);
   const zoned = shippedCountries(zones, excludedCountries);
   // A shop that lists where it ships narrows every listing: checkout refuses anything outside the list.
   const countries =
-    shop === null ? zoned : zoned === null ? [...shop] : zoned.filter((country) => shop.includes(country));
-  const country = viewerCountry === null ? '' : canonicalCountryCode(viewerCountry);
-  if (!/^[A-Z]{2}$/.test(country)) return { countries, destination: null };
-  if (shop !== null && !shop.includes(country)) return { countries, destination: { country, quotes: null } };
-  const quotes = quoteAllShippingRates(zones, excludedCountries, country, 1);
-  return { countries, destination: { country, quotes: quotes.ok ? quotes.value : null } };
+    shop === null
+      ? zoned
+      : zoned === null
+        ? shop.filter((code) => !excludedCountries.includes(code))
+        : zoned.filter((country) => shop.includes(country));
+  if (viewer === null) return { countries, destination: null };
+  if (shop !== null && !shop.includes(viewer)) return { countries, destination: { country: viewer, quotes: null } };
+  const quotes = quoteAllShippingRates(zones, excludedCountries, viewer, 1);
+  return { countries, destination: { country: viewer, quotes: quotes.ok ? quotes.value : null } };
 }

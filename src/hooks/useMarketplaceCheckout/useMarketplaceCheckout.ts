@@ -42,7 +42,6 @@ import {
   marketplaceListingNotActiveMessage,
   marketplaceRegionRefusalMessage,
   marketplaceShippingRefusalMessage,
-  SHIPPING_CHANGED_MESSAGE,
 } from '@/libs/commerce/failure-messages';
 import { tracksVariantStock } from '@/libs/commerce/listing-variants';
 import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/locks-payment';
@@ -840,7 +839,9 @@ export function useMarketplaceCheckout(
       }
       const shippingRefusal = marketplaceShippingRefusalMessage(response.error);
       if (shippingRefusal) {
-        if (shippingRefusal === SHIPPING_CHANGED_MESSAGE) zoneShipping.refresh();
+        if (response.error.code === 'SHIPPING_CHANGED' || response.error.code === 'SHIPPING_UNAVAILABLE') {
+          zoneShipping.refresh();
+        }
         return refuse(shippingRefusal);
       }
       const pickupRefusal = classifyMarketplacePickupCommandRefusal(response);

@@ -36,12 +36,11 @@ const listingShape = createMarketplaceListingSchema.shape;
 export const IMPORT_CURRENCY_OPTIONS: readonly string[] = listingShape.currency.options;
 export const IMPORT_CONDITION_OPTIONS: readonly string[] = listingShape.condition.options;
 
-const dayCount = (label: string) =>
-  z
-    .string()
-    .trim()
-    .regex(/^\d{1,3}$/, `${label} must be a whole number of days.`)
-    .refine((value) => Number(value) <= 365, `${label} must be 365 days or fewer.`);
+/** The message for a delivery-day entry that is not a whole number of days up to 365, or null. */
+const dayCountError = (label: string, value: string): string | null => {
+  if (!/^\d{1,3}$/.test(value)) return `${label} must be a whole number of days.`;
+  return Number(value) <= 365 ? null : `${label} must be 365 days or fewer.`;
+};
 
 export const importSettingsFormSchema = z
   .object({
@@ -60,8 +59,8 @@ export const importSettingsFormSchema = z
       .refine((mode): boolean => mode !== '', 'Choose a shipping option.'),
     [IMPORT_SETTINGS_FIELDS.SHIPPING_PROFILE]: z.string().trim(),
     [IMPORT_SETTINGS_FIELDS.SHIPPING_PRICE]: z.string().trim(),
-    [IMPORT_SETTINGS_FIELDS.SHIPPING_MIN_DAYS]: dayCount('Minimum delivery'),
-    [IMPORT_SETTINGS_FIELDS.SHIPPING_MAX_DAYS]: dayCount('Maximum delivery'),
+    [IMPORT_SETTINGS_FIELDS.SHIPPING_MIN_DAYS]: z.string().trim(),
+    [IMPORT_SETTINGS_FIELDS.SHIPPING_MAX_DAYS]: z.string().trim(),
     [IMPORT_SETTINGS_FIELDS.USE_CSV_QUANTITIES]: z.boolean(),
     [IMPORT_SETTINGS_FIELDS.UNMANAGED_STOCK]: z
       .string()
@@ -70,12 +69,23 @@ export const importSettingsFormSchema = z
       .refine((value) => Number(value) < COMMERCE_LISTING_MAX_QUANTITY, 'That is more copies than a listing can hold.'),
   })
   .superRefine((data, context) => {
-    if (Number(data.shippingMaxDays) < Number(data.shippingMinDays)) {
-      context.addIssue({
-        code: 'custom',
-        path: [IMPORT_SETTINGS_FIELDS.SHIPPING_MAX_DAYS],
-        message: 'Maximum delivery must not be before the minimum.',
-      });
+    // Profile mode hides the delivery-day fields, so only free and flat shipping read them.
+    if (data.shippingMode === 'free' || data.shippingMode === 'flat') {
+      const minError = dayCountError('Minimum delivery', data.shippingMinDays);
+      const maxError = dayCountError('Maximum delivery', data.shippingMaxDays);
+      if (minError) {
+        context.addIssue({ code: 'custom', path: [IMPORT_SETTINGS_FIELDS.SHIPPING_MIN_DAYS], message: minError });
+      }
+      if (maxError) {
+        context.addIssue({ code: 'custom', path: [IMPORT_SETTINGS_FIELDS.SHIPPING_MAX_DAYS], message: maxError });
+      }
+      if (!minError && !maxError && Number(data.shippingMaxDays) < Number(data.shippingMinDays)) {
+        context.addIssue({
+          code: 'custom',
+          path: [IMPORT_SETTINGS_FIELDS.SHIPPING_MAX_DAYS],
+          message: 'Maximum delivery must not be before the minimum.',
+        });
+      }
     }
     if (data.shippingMode === 'profile' && data.shippingProfileId === '') {
       context.addIssue({

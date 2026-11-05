@@ -556,6 +556,40 @@ describe('MarketplaceListing', () => {
       expect(screen.queryByRole('button', { name: 'Place a bid' })).not.toBeInTheDocument();
     });
 
+    it('shows only the listing’s own destinations, not the shop’s wider list', () => {
+      view.shop = toCommerceShopModel(createCommerceShopFixture({ shipsToCountries: ['DE', 'IT'] }));
+      view.listing = zoned();
+      view.addressCountry = '';
+      renderListing();
+      expect(screen.getByText('Ships to: Germany')).toBeInTheDocument();
+      expect(screen.queryByTestId('marketplace-listing-ships-to')).not.toBeInTheDocument();
+    });
+
+    it('quotes nothing under a shop restriction that names no usable country', () => {
+      view.shop = toCommerceShopModel(createCommerceShopFixture({ shipsToCountries: ['CHE'] }));
+      view.listing = zoned();
+      view.addressCountry = 'DE';
+      renderListing();
+      expect(screen.queryByText(/One item to Germany/)).not.toBeInTheDocument();
+      expect(screen.getByText(/Does not ship to/)).toBeInTheDocument();
+    });
+
+    it('does not say offers buy the shipped version on a zone-priced listing that delivers digitally', () => {
+      const sale = {
+        format: 'fixed_price' as const,
+        unitPrice: { amountMinor: 12_500, currency: 'USD', exponent: 2 },
+        acceptsOffers: true,
+      };
+      view.listing = zoned({ sale, fulfillmentMethods: ['physical', 'shipping', 'digital'] });
+      view.projection = createListingProjectionFixture({
+        fulfillmentMethods: ['shipping', 'digital'],
+        digitalDelivery: { kind: 'email' },
+      });
+      renderListing();
+      expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
+      expect(screen.queryByTestId('marketplace-listing-digital-offer-note')).not.toBeInTheDocument();
+    });
+
     it('offers no Make offer on a zone-priced listing that accepts offers', () => {
       const sale = {
         format: 'fixed_price' as const,

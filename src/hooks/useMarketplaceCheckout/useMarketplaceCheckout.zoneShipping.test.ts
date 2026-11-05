@@ -277,6 +277,26 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
     expect(sent(1)?.shippingChoices?.[0]).toMatchObject({ profileSha256: SHA_B });
   });
 
+  it('reads the profile again after SHIPPING_UNAVAILABLE and sends nothing once it cannot be read', async () => {
+    const { result } = mount(profileItem(), 'DE');
+    await waitFor(() => expect(group(result)?.state.status).toBe('ready'));
+    vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'SHIPPING_UNAVAILABLE', message: 'The shipping profile is unavailable.' },
+    } as never);
+    vi.mocked(CommerceController.fetchShippingProfile).mockResolvedValueOnce(null as never);
+
+    await act(async () => {
+      await result.current.submit();
+    });
+    await waitFor(() => expect(group(result)?.state.status).toBe('unreadable'));
+
+    await act(async () => {
+      await result.current.submit();
+    });
+    expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledTimes(1);
+  });
+
   it('sends one checkout when Pay and submit are triggered in the same tick', async () => {
     const { result } = mount(profileItem(), 'DE');
     await waitFor(() => expect(group(result)?.state.status).toBe('ready'));

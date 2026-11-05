@@ -83,6 +83,22 @@ describe('previewListingShipping', () => {
     expect(previewListingShipping(ZONES, [], 'DE', ['DE']).destination?.quotes).not.toBeNull();
   });
 
+  it('keeps excluded countries out of the shop list when a zone covers the rest of the world', () => {
+    expect(previewListingShipping(ZONES, ['FR'], null, ['DE', 'FR']).countries).toEqual(['DE']);
+    expect(previewListingShipping(ZONES, ['FR'], 'FR', ['DE', 'FR']).destination).toEqual({
+      country: 'FR',
+      quotes: null,
+    });
+  });
+
+  it('ships nowhere under a shop list that names no usable country', () => {
+    expect(previewListingShipping(ZONES, [], null, 'unusable')).toEqual({ countries: [], destination: null });
+    expect(previewListingShipping(ZONES, [], 'DE', 'unusable')).toEqual({
+      countries: [],
+      destination: { country: 'DE', quotes: null },
+    });
+  });
+
   it('reports no countries when the shop list and the zones share none', () => {
     expect(previewListingShipping([ZONES[0] as ShippingZone], [], null, ['BR']).countries).toEqual([]);
   });
