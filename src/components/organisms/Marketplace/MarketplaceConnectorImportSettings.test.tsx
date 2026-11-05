@@ -18,6 +18,7 @@ function Harness({
   variantMode = 'native',
   variantCount = 3,
   onVariantMode,
+  variantModeBusy = false,
   onReview = vi.fn(),
   onChooseFreeShipping = vi.fn(),
   onBack = vi.fn(),
@@ -28,6 +29,7 @@ function Harness({
   variantMode?: 'native' | 'split';
   variantCount?: number;
   onVariantMode?: (mode: 'native' | 'split') => Promise<boolean>;
+  variantModeBusy?: boolean;
   onReview?: () => void;
   onChooseFreeShipping?: () => void;
   onBack?: () => void;
@@ -50,6 +52,7 @@ function Harness({
       conditionOptions={IMPORT_CONDITION_OPTIONS}
       variantMode={variantMode}
       {...(onVariantMode ? { onVariantMode } : {})}
+      variantModeBusy={variantModeBusy}
       busy={false}
       onReview={onReview}
       onChooseFreeShipping={onChooseFreeShipping}
@@ -156,6 +159,28 @@ describe('MarketplaceConnectorImportSettings', () => {
     it('shows the setting without a switch when it cannot be changed here', () => {
       render(<Harness />);
       expect(screen.queryByRole('switch', { name: 'One listing per size or variant' })).not.toBeInTheDocument();
+    });
+
+    it('keeps Review, free shipping and Enter off while the setting is being saved, so the dry run uses the new mode', async () => {
+      const user = userEvent.setup();
+      const onReview = vi.fn();
+      const onChooseFreeShipping = vi.fn();
+      render(
+        <Harness
+          variantMode="native"
+          onVariantMode={async () => true}
+          variantModeBusy
+          onReview={onReview}
+          onChooseFreeShipping={onChooseFreeShipping}
+        />,
+      );
+      expect(screen.getByRole('switch', { name: 'One listing per size or variant' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Review import' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Use free shipping (3–10 days)' })).toBeDisabled();
+
+      await user.type(screen.getByLabelText('Ships from (country code)'), 'CH{Enter}');
+      expect(onReview).not.toHaveBeenCalled();
+      expect(onChooseFreeShipping).not.toHaveBeenCalled();
     });
 
     it('switches to one listing per variant from the settings step, and back', async () => {

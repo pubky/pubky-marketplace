@@ -348,6 +348,16 @@ describe('MarketplaceInventoryImport listings and variants', () => {
         scene="progress"
         counts={rows}
         listingCount={183}
+        progress={{ done: 10, total: 83 }}
+      />,
+    );
+    expect(screen.getByTestId('inventory-import-progress')).toHaveTextContent(/^Saving your listings… 10 of 83\.$/);
+    rerender(
+      <MarketplaceInventoryImport
+        step={5}
+        scene="progress"
+        counts={rows}
+        listingCount={183}
         progressPhase="photos"
         progress={{ done: 76, total: 705 }}
       />,

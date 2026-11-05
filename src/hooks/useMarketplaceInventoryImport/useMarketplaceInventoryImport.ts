@@ -396,7 +396,7 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
       return;
     }
     setProgressPhase('listings');
-    if (listingsTotal !== undefined) setProgress({ done: 0, total: listingsTotal });
+    setProgress(listingsTotal === undefined ? undefined : { done: 0, total: listingsTotal });
     const result = await publishStep(setProgress);
     setBusy(false);
     applyPublishOutcome(result);

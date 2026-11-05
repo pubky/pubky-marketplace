@@ -81,8 +81,14 @@ describe('useConnectorCatalog', () => {
     const { result } = await loaded();
 
     expect(result.current.products.map((entry) => entry.providerProductId)).toEqual(['1', '2']);
-    expect(ConnectorsController.fetchCatalogPage).toHaveBeenNthCalledWith(1, 'c1', { page: null });
-    expect(ConnectorsController.fetchCatalogPage).toHaveBeenNthCalledWith(2, 'c1', { page: 'p2' });
+    expect(ConnectorsController.fetchCatalogPage).toHaveBeenNthCalledWith(1, 'c1', {
+      page: null,
+      signal: expect.any(AbortSignal),
+    });
+    expect(ConnectorsController.fetchCatalogPage).toHaveBeenNthCalledWith(2, 'c1', {
+      page: 'p2',
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it('searches titles, SKUs and variant titles', async () => {
@@ -185,7 +191,10 @@ describe('useConnectorCatalog', () => {
 
       expect(result.current.loadMoreError).toBeNull();
       expect(result.current.products.map((entry) => entry.providerProductId)).toEqual(['1', '2', '3']);
-      expect(ConnectorsController.fetchCatalogPage).toHaveBeenNthCalledWith(3, 'c1', { page: 'p2' });
+      expect(ConnectorsController.fetchCatalogPage).toHaveBeenNthCalledWith(3, 'c1', {
+        page: 'p2',
+        signal: expect.any(AbortSignal),
+      });
       expect(ConnectorsController.fetchCatalogPage).toHaveBeenCalledTimes(4);
     });
 
@@ -203,6 +212,49 @@ describe('useConnectorCatalog', () => {
       });
 
       expect(result.current.chosen.has('1')).toBe(true);
+    });
+
+    it('treats an empty first page that was answered as loaded, so a later failure keeps Load the rest', async () => {
+      vi.mocked(ConnectorsController.fetchCatalogPage)
+        .mockResolvedValueOnce({ ...page('1', 'p2'), products: [] })
+        .mockRejectedValueOnce(connectorRefusal('provider_rate_limited', 429))
+        .mockResolvedValueOnce(page('2', null));
+      const { result } = renderHook(() => useConnectorCatalog(CONNECTION));
+      await waitFor(() => expect(result.current.loadMoreError).not.toBeNull());
+      expect(result.current.error).toBeNull();
+
+      await act(async () => {
+        await result.current.resumeLoading();
+      });
+      expect(result.current.products.map((entry) => entry.providerProductId)).toEqual(['2']);
+    });
+
+    it('drops a late page of a read that a reload replaced, and aborts its wait', async () => {
+      let lateResolve: (value: ReturnType<typeof page>) => void = () => undefined;
+      let firstSignal: AbortSignal | undefined;
+      vi.mocked(ConnectorsController.fetchCatalogPage)
+        .mockImplementationOnce(
+          (_id: string, options?: { signal?: AbortSignal }) =>
+            new Promise((resolve) => {
+              firstSignal = options?.signal;
+              lateResolve = resolve as typeof lateResolve;
+            }),
+        )
+        .mockResolvedValue(page('9', null));
+      const { result } = renderHook(() => useConnectorCatalog(CONNECTION));
+      await waitFor(() => expect(firstSignal).toBeDefined());
+
+      await act(async () => {
+        await result.current.reload();
+      });
+      expect(firstSignal?.aborted).toBe(true);
+      expect(result.current.products.map((entry) => entry.providerProductId)).toEqual(['9']);
+
+      await act(async () => {
+        lateResolve(page('stale', null));
+        await Promise.resolve();
+      });
+      expect(result.current.products.map((entry) => entry.providerProductId)).toEqual(['9']);
     });
 
     it('does not resume when nothing failed', async () => {

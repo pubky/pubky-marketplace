@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
@@ -221,6 +221,34 @@ describe('MarketplaceConnectorCatalog', () => {
         ),
       );
       expect(screen.getByRole('button', { name: 'Review import' })).toBeInTheDocument();
+    });
+
+    it('waits for the saved setting before Review import plans anything', async () => {
+      const user = userEvent.setup();
+      let settle: (value: { connection: typeof CONNECTION; unmappedListings: never[] }) => void = () => undefined;
+      vi.mocked(ConnectorsController.fetchSelection).mockResolvedValue(['2']);
+      vi.mocked(ConnectorsController.fetchSelectedProducts).mockResolvedValue([
+        connectorCatalogProductSchema.parse({ ...PRODUCTS[1], selected: true }),
+      ]);
+      vi.mocked(CommerceController.inventoryImportDefaults).mockResolvedValue({
+        countryCode: 'US',
+        shipping: { mode: 'free', minDays: 3, maxDays: 10 } as never,
+        currency: 'USD',
+      });
+      vi.mocked(ConnectorsController.commitVariantMode).mockImplementation(
+        () => new Promise((resolve) => (settle = resolve as typeof settle)),
+      );
+      render(<MarketplaceConnectorCatalog connectionId="c1" />);
+      await screen.findByTestId('connector-catalog');
+      await user.click(screen.getByRole('button', { name: 'Publish chosen products' }));
+      await screen.findByTestId('connector-import-settings');
+
+      await user.click(screen.getByRole('switch', { name: 'One listing per size or variant' }));
+      expect(screen.getByRole('button', { name: 'Review import' })).toBeDisabled();
+
+      await act(async () => settle({ connection: { ...CONNECTION, variantMode: 'split' }, unmappedListings: [] }));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Review import' })).toBeEnabled());
+      expect(screen.getByRole('switch', { name: 'One listing per size or variant' })).toBeChecked();
     });
 
     it('says to choose products first when nothing is saved', async () => {

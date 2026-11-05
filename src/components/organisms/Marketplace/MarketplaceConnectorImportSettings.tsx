@@ -137,7 +137,7 @@ export function MarketplaceConnectorImportSettings({
           className="grid gap-4"
           onSubmit={(event) => {
             event.preventDefault();
-            onReview();
+            if (!variantModeBusy) onReview();
           }}
         >
           <div className="grid gap-4 sm:grid-cols-2">
@@ -195,7 +195,7 @@ export function MarketplaceConnectorImportSettings({
                           variant="secondary"
                           size="sm"
                           className="rounded-full"
-                          disabled={busy}
+                          disabled={busy || variantModeBusy}
                           onClick={onChooseFreeShipping}
                         >
                           Use free shipping ({minDays}–{maxDays} days)
@@ -334,7 +334,7 @@ export function MarketplaceConnectorImportSettings({
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" className="rounded-full" disabled={busy}>
+            <Button type="submit" className="rounded-full" disabled={busy || variantModeBusy}>
               {busy && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
               Review import
             </Button>

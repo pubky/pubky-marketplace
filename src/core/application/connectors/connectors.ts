@@ -76,6 +76,25 @@ const CATALOG_RETRY_MIN_SECONDS = 2;
 const CATALOG_RETRY_MAX_SECONDS = 30;
 const CATALOG_RETRY_DEFAULT_SECONDS = 5;
 
+/** Sleeps `ms`; rejects with the signal's reason as soon as it is aborted, so a closed page stops waiting. */
+function waitUnlessAborted(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 function catalogRetryDelayMs(error: unknown): number {
   const named = isAppError(error) ? getRetryAfter(error) : undefined;
   const seconds = typeof named === 'number' && Number.isFinite(named) ? named : CATALOG_RETRY_DEFAULT_SECONDS;
@@ -296,7 +315,7 @@ export class ConnectorsApplication {
   static async catalogPage(
     actor: string,
     connectionId: string,
-    options: { page?: string | null; selected?: boolean } = {},
+    options: { page?: string | null; selected?: boolean; signal?: AbortSignal } = {},
   ): Promise<ConnectorCatalogPage> {
     for (let attempt = 0; ; attempt += 1) {
       try {
@@ -305,7 +324,7 @@ export class ConnectorsApplication {
         if (connectorRefusalReason(error) !== 'provider_rate_limited' || attempt >= CATALOG_RATE_LIMIT_RETRIES) {
           throw error;
         }
-        await new Promise((resolve) => setTimeout(resolve, catalogRetryDelayMs(error)));
+        await waitUnlessAborted(catalogRetryDelayMs(error), options.signal);
       }
     }
   }

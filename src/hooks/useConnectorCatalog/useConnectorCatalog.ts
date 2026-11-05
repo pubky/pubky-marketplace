@@ -45,25 +45,38 @@ export function useConnectorCatalog(connection: Pick<ConnectorConnection, 'id'> 
   const [search, setSearch] = useState('');
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const resumeFrom = useRef<string | null>(null);
+  const loadedRef = useRef<ConnectorCatalogProduct[]>([]);
+  const run = useRef<{ id: number; controller: AbortController | null }>({ id: 0, controller: null });
+
+  /** Starts a read of the catalog and ends any read still going, so a late page never lands on a newer one. */
+  const beginRun = () => {
+    run.current.controller?.abort();
+    const controller = new AbortController();
+    const id = run.current.id + 1;
+    run.current = { id, controller };
+    return { signal: controller.signal, isCurrent: () => run.current.id === id };
+  };
+
+  const endRuns = () => {
+    run.current.controller?.abort();
+    run.current = { id: run.current.id + 1, controller: null };
+  };
 
   /** Reads catalog pages from `startPage` on; products already shown stay when a later page fails. */
-  const loadPages = async (
-    id: string,
-    startPage: string | null,
-    initial: ConnectorCatalogProduct[],
-    isCurrent: () => boolean,
-  ) => {
+  const loadPages = async (id: string, startPage: string | null, isCurrent: () => boolean, signal: AbortSignal) => {
     let page = startPage;
-    let loaded = initial;
+    let answered = startPage !== null;
     setLoadMoreError(null);
     resumeFrom.current = null;
     try {
       for (let index = 0; index < MAX_CATALOG_PAGES; index += 1) {
-        const next = await ConnectorsController.fetchCatalogPage(id, { page });
+        const next = await ConnectorsController.fetchCatalogPage(id, { page, signal });
         if (!isCurrent()) return;
-        loaded = [...loaded, ...next.products];
-        setProducts(loaded);
-        if (startPage === null && index === 0) {
+        const first = !answered;
+        answered = true;
+        loadedRef.current = [...loadedRef.current, ...next.products];
+        setProducts(loadedRef.current);
+        if (first) {
           setIsLoading(false);
           setIsLoadingMore(Boolean(next.nextPage));
         }
@@ -72,15 +85,18 @@ export function useConnectorCatalog(connection: Pick<ConnectorConnection, 'id'> 
       }
     } catch (pageError) {
       if (!isCurrent()) return;
-      if (loaded.length === 0) throw pageError;
+      if (!answered) throw pageError;
       resumeFrom.current = page;
       setLoadMoreError(connectorErrorMessage(pageError, LOAD_MORE_FAILED));
     }
   };
 
-  const load = async (isCurrent: () => boolean) => {
+  const load = async () => {
     if (!connectionId) return;
+    const { isCurrent, signal } = beginRun();
+    loadedRef.current = [];
     setIsLoading(true);
+    setIsLoadingMore(false);
     setError(null);
     setLoadMoreError(null);
     try {
@@ -93,7 +109,7 @@ export function useConnectorCatalog(connection: Pick<ConnectorConnection, 'id'> 
       setSaved(selectedSet);
       setChosen(selectedSet);
       setMapped(new Set(mappings.map((mapping) => mapping.providerProductId)));
-      await loadPages(connectionId, null, [], isCurrent);
+      await loadPages(connectionId, null, isCurrent, signal);
     } catch (loadError) {
       if (!isCurrent()) return;
       setNeedsSession(isMarketplaceSessionRequiredError(loadError));
@@ -110,20 +126,18 @@ export function useConnectorCatalog(connection: Pick<ConnectorConnection, 'id'> 
   const resumeLoading = async () => {
     const from = resumeFrom.current;
     if (!connectionId || from === null) return;
+    const { isCurrent, signal } = beginRun();
     setIsLoadingMore(true);
     try {
-      await loadPages(connectionId, from, products, () => true);
+      await loadPages(connectionId, from, isCurrent, signal);
     } finally {
-      setIsLoadingMore(false);
+      if (isCurrent()) setIsLoadingMore(false);
     }
   };
 
   useEffect(() => {
-    let current = true;
-    void load(() => current);
-    return () => {
-      current = false;
-    };
+    void load();
+    return endRuns;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionId, marketplaceSession]);
 
@@ -196,6 +210,6 @@ export function useConnectorCatalog(connection: Pick<ConnectorConnection, 'id'> 
     save,
     dirty: !sameSet(saved, chosen),
     chosenCount: chosen.size,
-    reload: async () => load(() => true),
+    reload: load,
   };
 }

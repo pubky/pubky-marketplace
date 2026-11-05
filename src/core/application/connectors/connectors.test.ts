@@ -531,6 +531,22 @@ describe('ConnectorsApplication', () => {
       expect(catalog).toHaveBeenCalledTimes(5);
     });
 
+    it('stops waiting as soon as the read is abandoned', async () => {
+      const catalog = vi
+        .spyOn(MarketplaceConnectorsService, 'catalog')
+        .mockRejectedValue(connectorRefusal('provider_rate_limited', 429, { retryAfter: 30 }));
+      const controller = new AbortController();
+
+      const done = ConnectorsApplication.catalogPage(ACTOR, ID, { signal: controller.signal });
+      const settled = expect(done).rejects.toMatchObject({ name: 'AbortError' });
+      await vi.advanceTimersByTimeAsync(1_000);
+      controller.abort();
+      await settled;
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(catalog).toHaveBeenCalledTimes(1);
+    });
+
     it('does not retry any other refusal', async () => {
       const catalog = vi
         .spyOn(MarketplaceConnectorsService, 'catalog')
