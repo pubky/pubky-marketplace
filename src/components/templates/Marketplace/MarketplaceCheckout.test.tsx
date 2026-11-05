@@ -1016,6 +1016,28 @@ describe('MarketplaceCheckout', () => {
     expect(checkoutActions.pay).toHaveBeenCalledWith(method, expect.any(Function));
   });
 
+  it('runs the latest pay, with the rail now selected, when an old Try again action is clicked', async () => {
+    const user = userEvent.setup();
+    seededCart();
+    view.adapterMode = 'transaction-service';
+    view.hasMarketplaceSession = true;
+
+    render(<MarketplaceCheckout />);
+    await user.click(await screen.findByTestId('marketplace-checkout-method-paykit'));
+    await fillValidDelivery(user);
+    const pay = screen.getByTestId('marketplace-checkout-pay');
+    await waitFor(() => expect(pay).toBeEnabled());
+    await user.click(pay);
+    const staleRetry = (checkoutActions.pay.mock.calls as unknown[][])[0]?.[1] as (() => void) | undefined;
+    expect(staleRetry).toBeInstanceOf(Function);
+
+    await user.click(screen.getByTestId('marketplace-checkout-method-paypal'));
+    checkoutActions.pay.mockClear();
+    await act(async () => staleRetry?.());
+
+    expect(checkoutActions.pay).toHaveBeenCalledWith('paypal', expect.any(Function));
+  });
+
   describe('sold-out items', () => {
     const soldListing = () => ({
       aggregateId: `listing:${listing.record.ownerPubky}_boots`,

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { HandCoins, LoaderCircle, ShoppingCart, WalletCards } from 'lucide-react';
 import { Controller, useWatch } from 'react-hook-form';
@@ -690,6 +690,7 @@ function MarketplaceCartCheckout() {
     }
   };
 
+  const latestPay = useRef<() => Promise<void>>(async () => {});
   const pay = async () => {
     if (isOfferCheckout) {
       await payOffer();
@@ -699,7 +700,7 @@ function MarketplaceCartCheckout() {
     // real rail. A Locks checkout binds none either (`locksCheckoutRoute`).
     const method = isSandbox || isLocksCheckout ? null : selectedMethod;
     setPayRefusal(null);
-    const result = await checkout.pay(method, () => void pay());
+    const result = await checkout.pay(method, () => void latestPay.current());
     if (!result.ok) {
       if (result.paykitUnavailable) markPaykitRefused();
       if (result.refusal) setPayRefusal(result.refusal);
@@ -719,6 +720,10 @@ function MarketplaceCartCheckout() {
     }
     await orders.refresh();
   };
+  // The wallet-setup Try again toast outlives this render; it runs the latest pay, never the one that raised it.
+  useEffect(() => {
+    latestPay.current = pay;
+  });
 
   return (
     <ContentLayout

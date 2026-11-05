@@ -684,12 +684,19 @@ export function useMarketplaceCheckout(
         // the buyer saw it: the cart's record is refreshed and the buyer reviews the new terms. A projection
         // whose price or shipping differs stops checkout even when its sync failed. Any other unsynced
         // mismatch charges what the buyer saw, and the service refuses an unpublished method itself.
+        // A projection does not carry zone pricing, and an inline-zone choice has no digest to pin it, so a
+        // zone-priced line is charged only from a projection of the cart's own revision.
+        const zonePricedDrift =
+          (record.shippingProfileId !== undefined || record.shippingZones !== undefined) &&
+          !synced &&
+          projection.listingRevision !== record.revision;
         if (
           durable &&
-          (synced ||
-            projection.listingRevision > record.revision ||
-            !commerceListingProjectionChargesRecordTerms(record, projection)) &&
-          !commerceListingProjectionMatchesRecord(record, projection)
+          (zonePricedDrift ||
+            ((synced ||
+              projection.listingRevision > record.revision ||
+              !commerceListingProjectionChargesRecordTerms(record, projection)) &&
+              !commerceListingProjectionMatchesRecord(record, projection)))
         ) {
           sawChangedListing = true;
           await CommerceController.refreshListing(record.ownerPubky, record.listingId).catch((error: unknown) => {

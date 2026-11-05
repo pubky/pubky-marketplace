@@ -83,6 +83,8 @@ const express = {
   amountMinor: 2500,
 };
 
+const INLINE_ZONES = [{ zoneId: 'eu', name: 'Europe', countries: ['DE', 'FR'], rates: [standard(899, 450), express] }];
+
 const served = vi.hoisted(() => ({ profile: null as unknown, failing: false }));
 
 const config = vi.hoisted(() => ({ mode: 'sandbox' as string }));
@@ -295,6 +297,42 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
       await result.current.submit();
     });
     expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { label: 'an inline-zone listing', record: { shippingZones: INLINE_ZONES } },
+    { label: 'a profile-priced listing', record: { shippingProfileId: 'worldwide' } },
+  ])('sends nothing for $label whose projection lags the cart when the sync fails', async ({ record }) => {
+    config.mode = 'transaction-service';
+    vi.mocked(CommerceController.syncListingRegistration).mockResolvedValue({
+      ok: false,
+      error: { code: 'SERVICE_UNAVAILABLE', message: 'down' },
+    } as never);
+    vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue({
+      aggregateId: `listing:${listing.ownerPubky}_${listing.listingId}`,
+      sellerPubky: listing.ownerPubky,
+      listingId: listing.listingId,
+      listingRevision: listing.revision - 1,
+      contentHash: listing.media[0].contentHash,
+      serverRevision: 1,
+      state: 'available',
+      availableQuantity: 5,
+      reservedQuantity: 0,
+      unitPrice: price,
+      shipping,
+      saleFormat: 'fixed_price',
+      fulfillmentMethods: ['shipping'],
+      auction: null,
+    });
+    const { result } = mount(cartItem(record, 2), 'DE');
+    await waitFor(() => expect(group(result)?.state.status).toBe('ready'));
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+    expect(CommerceController.refreshListing).toHaveBeenCalled();
   });
 
   it('sends one checkout when Pay and submit are triggered in the same tick', async () => {
