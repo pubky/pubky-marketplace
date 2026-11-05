@@ -29,17 +29,12 @@ import { type ChatEnvelope, chatEnvelopeSchema, type ChatPlaintext, chatPlaintex
 const SALT = new TextEncoder().encode('pubky-chat/v0');
 const KEY_BYTES = 32;
 const NONCE_BYTES = 24;
-export const CHAT_NONCE_BYTES = NONCE_BYTES;
 
 export type ChatKeypair = { publicKey: Uint8Array; secretKey: Uint8Array };
 
 export function generateChatKeypair(): ChatKeypair {
   const secretKey = x25519.utils.randomSecretKey();
   return { secretKey, publicKey: x25519.getPublicKey(secretKey) };
-}
-
-export function chatPublicKeyFromSecret(secretKey: Uint8Array): Uint8Array {
-  return x25519.getPublicKey(secretKey);
 }
 
 /** 16 hex chars: the first 8 bytes of sha256(public key). */

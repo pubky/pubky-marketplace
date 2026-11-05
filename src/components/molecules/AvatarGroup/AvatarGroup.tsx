@@ -1,6 +1,5 @@
 'use client';
 
-import * as React from 'react';
 import { Container } from '@/atoms/Container/Container';
 import { cn } from '@/libs/utils/utils';
 import { AvatarWithFallback } from '@/organisms/AvatarWithFallback/AvatarWithFallback';

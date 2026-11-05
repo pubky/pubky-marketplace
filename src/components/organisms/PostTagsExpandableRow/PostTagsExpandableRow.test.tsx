@@ -125,8 +125,7 @@ beforeEach(() => {
   });
   mockUseEntityTags.mockReturnValue({
     tags: snapshotTags,
-    count: snapshotTags.length,
-    isLoading: false,
+
     isViewerTagger: mockIsViewerTagger,
     handleTagToggle: mockHandleTagToggle,
     handleTagAdd: mockHandleTagAdd,

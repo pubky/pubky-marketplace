@@ -2,9 +2,6 @@ import z from 'zod';
 import type { Pubky } from '@/models/models.types';
 import type { UiLink } from '@/pipes/user/user.normalizer';
 import type { UiUserSchema } from '@/pipes/user/user.validator';
-import type { NexusUserDetails } from '@/services/nexus/nexus.types';
-
-export type UserControllerNewData = Omit<NexusUserDetails, 'id' | 'indexed_at' | 'status'>;
 
 export type TReadProfileParams = {
   userId: Pubky;

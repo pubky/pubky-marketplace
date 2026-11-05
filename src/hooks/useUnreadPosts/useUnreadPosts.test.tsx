@@ -44,7 +44,7 @@ describe('useUnreadPosts', () => {
     const { result } = renderHook(() => useUnreadPosts({ streamId: null }));
 
     expect(result.current.unreadPostIds).toEqual([]);
-    expect(result.current.unreadCount).toBe(0);
+    expect(result.current.unreadPostIds.length).toBe(0);
   });
 
   it('should return empty arrays when no unread stream exists', () => {
@@ -53,7 +53,7 @@ describe('useUnreadPosts', () => {
     const { result } = renderHook(() => useUnreadPosts({ streamId: 'timeline:all:all' as PostStreamId }));
 
     expect(result.current.unreadPostIds).toEqual([]);
-    expect(result.current.unreadCount).toBe(0);
+    expect(result.current.unreadPostIds.length).toBe(0);
   });
 
   it('should return unread post IDs when stream exists', () => {
@@ -63,7 +63,7 @@ describe('useUnreadPosts', () => {
     const { result } = renderHook(() => useUnreadPosts({ streamId: 'timeline:all:all' as PostStreamId }));
 
     expect(result.current.unreadPostIds).toEqual(mockPostIds);
-    expect(result.current.unreadCount).toBe(3);
+    expect(result.current.unreadPostIds.length).toBe(3);
   });
 
   it('filters unread post IDs through the stream filter', async () => {
@@ -83,7 +83,7 @@ describe('useUnreadPosts', () => {
 
     const { result } = renderHook(() => useUnreadPosts({ streamId: 'timeline:all:all' as PostStreamId }));
 
-    expect(result.current.unreadCount).toBe(1);
+    expect(result.current.unreadPostIds.length).toBe(1);
   });
 
   it('should return correct count for many posts', () => {
@@ -92,7 +92,7 @@ describe('useUnreadPosts', () => {
 
     const { result } = renderHook(() => useUnreadPosts({ streamId: 'timeline:all:all' as PostStreamId }));
 
-    expect(result.current.unreadCount).toBe(100);
+    expect(result.current.unreadPostIds.length).toBe(100);
   });
 
   it('should handle empty stream array', () => {
@@ -101,7 +101,7 @@ describe('useUnreadPosts', () => {
     const { result } = renderHook(() => useUnreadPosts({ streamId: 'timeline:all:all' as PostStreamId }));
 
     expect(result.current.unreadPostIds).toEqual([]);
-    expect(result.current.unreadCount).toBe(0);
+    expect(result.current.unreadPostIds.length).toBe(0);
   });
 
   it('should handle streamId change and update results', () => {
@@ -115,14 +115,14 @@ describe('useUnreadPosts', () => {
     );
 
     expect(result.current.unreadPostIds).toEqual(['post-1', 'post-2']);
-    expect(result.current.unreadCount).toBe(2);
+    expect(result.current.unreadPostIds.length).toBe(2);
 
     // Change streamId to a different stream
     setMockUnreadStream({ stream: ['post-3'] });
     rerender({ streamId: 'timeline:following:all' as PostStreamId });
 
     expect(result.current.unreadPostIds).toEqual(['post-3']);
-    expect(result.current.unreadCount).toBe(1);
+    expect(result.current.unreadPostIds.length).toBe(1);
   });
 
   it('should handle streamId changing to null', () => {
@@ -140,7 +140,7 @@ describe('useUnreadPosts', () => {
     rerender({ streamId: null });
 
     expect(result.current.unreadPostIds).toEqual([]);
-    expect(result.current.unreadCount).toBe(0);
+    expect(result.current.unreadPostIds.length).toBe(0);
   });
 
   it('should handle streamId changing from null to valid stream', () => {
@@ -154,14 +154,14 @@ describe('useUnreadPosts', () => {
     );
 
     expect(result.current.unreadPostIds).toEqual([]);
-    expect(result.current.unreadCount).toBe(0);
+    expect(result.current.unreadPostIds.length).toBe(0);
 
     // Change streamId to valid stream
     setMockUnreadStream({ stream: ['post-1'] });
     rerender({ streamId: 'timeline:all:all' as PostStreamId });
 
     expect(result.current.unreadPostIds).toEqual(['post-1']);
-    expect(result.current.unreadCount).toBe(1);
+    expect(result.current.unreadPostIds.length).toBe(1);
   });
 
   it('should handle very large stream arrays', () => {
@@ -171,7 +171,7 @@ describe('useUnreadPosts', () => {
     const { result } = renderHook(() => useUnreadPosts({ streamId: 'timeline:all:all' as PostStreamId }));
 
     expect(result.current.unreadPostIds).toHaveLength(10000);
-    expect(result.current.unreadCount).toBe(10000);
+    expect(result.current.unreadPostIds.length).toBe(10000);
     expect(result.current.unreadPostIds[0]).toBe('post-0');
     expect(result.current.unreadPostIds[9999]).toBe('post-9999');
   });
@@ -184,6 +184,6 @@ describe('useUnreadPosts', () => {
     const { result } = renderHook(() => useUnreadPosts({ streamId: 'timeline:all:all' as PostStreamId }));
 
     expect(result.current.unreadPostIds).toEqual(['post-1', 'post-1', 'post-2']);
-    expect(result.current.unreadCount).toBe(3);
+    expect(result.current.unreadPostIds.length).toBe(3);
   });
 });

@@ -28,7 +28,6 @@ import type {
   TAddReplyToStreamParams,
   TPersistPostsParams,
   TPostDetailsTimestampParams,
-  TPostStreamBulkParams,
   TPostStreamPersistResult,
   TPostStreamUpsertParams,
   TPrependToStreamParams,
@@ -56,14 +55,6 @@ export class LocalStreamPostsService {
    */
   static async upsert({ streamId, stream }: TPostStreamUpsertParams): Promise<void> {
     await PostStreamModel.upsert(streamId, stream);
-  }
-
-  /**
-   *
-   * @param postStreams - Array of post streams to upsert
-   */
-  static async bulkSave({ postStreams }: TPostStreamBulkParams): Promise<void> {
-    await Promise.all(postStreams.map(({ streamId, stream }) => this.upsert({ streamId, stream })));
   }
 
   /**

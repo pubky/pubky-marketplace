@@ -469,9 +469,7 @@ const findPostInFeed = (
       }
 
       // fail the test if the post cannot be found
-      assert(false, `findPostInFeed: Post not found at index ${postIdx} - Failing test`);
-      // return unfound post to satisfy return type
-      return cy.wrap(filteredPosts.eq(postIdx));
+      assert.fail(`findPostInFeed: Post not found at index ${postIdx} - Failing test`);
     });
 };
 

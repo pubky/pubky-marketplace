@@ -107,7 +107,7 @@ vi.mock('@/hooks/useSearchStreamId/useSearchStreamId', () => ({
 
 // Mock the new hooks used in TimelineFeed
 vi.mock('@/hooks/useUnreadPosts/useUnreadPosts', () => ({
-  useUnreadPosts: vi.fn(() => ({ unreadPostIds: [], unreadCount: 0 })),
+  useUnreadPosts: vi.fn(() => ({ unreadPostIds: [] })),
 }));
 
 vi.mock('@/hooks/useIsScrolledFromTop/useIsScrolledFromTop', () => ({

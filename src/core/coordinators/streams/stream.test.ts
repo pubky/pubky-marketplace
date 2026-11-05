@@ -94,10 +94,8 @@ function setupHomeStore(options: HomeStoreOptions = {}): HomeStoreSetup {
     setTaggedAsActive: vi.fn(),
     applyDefaultReach: vi.fn(),
     setContent: vi.fn(),
-    setProfileTags: vi.fn(),
     addProfileTag: vi.fn(),
     removeProfileTag: vi.fn(),
-    clearProfileTags: vi.fn(),
     setHasHydrated: vi.fn(),
     reset: vi.fn(),
   });
@@ -359,7 +357,6 @@ describe('StreamCoordinator', () => {
         setSort: vi.fn(),
         setReach: vi.fn(),
         setContent: vi.fn(),
-        setProfileTags: vi.fn(),
         reset: vi.fn(),
       });
 

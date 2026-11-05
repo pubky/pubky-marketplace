@@ -50,8 +50,6 @@ export interface UseUserStreamParams {
 export interface UseUserStreamResult {
   /** Array of user details */
   users: UserStreamUser[];
-  /** User IDs in the stream */
-  userIds: Pubky[];
   /** Whether the initial load is in progress */
   isLoading: boolean;
   /** Whether more data is being loaded (only when paginated) */
@@ -62,8 +60,6 @@ export interface UseUserStreamResult {
   error: string | null;
   /** Load next page of users (only works when paginated) */
   loadMore: () => Promise<void>;
-  /** Re-fetch the users */
-  refetch: () => Promise<void>;
 }
 
 export type FetchUserStreamSliceOptions = {

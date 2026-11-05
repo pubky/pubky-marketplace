@@ -200,8 +200,8 @@ body {
   /**
    * Mobile header height (full chrome) — KNOWN STALE VALUE, do not trust without audit.
    * - Actual full-chrome MobileHeader (p-6, side buttons) is 96px; this is still 80px.
-   * - MobileTabBar `headerTop="mobile"` default is unused: Hot, Profile, and Settings all
-   *   pass `headerTop="compact"` (see --header-height-settings).
+   * - MobileTabBar uses the compact header offset for Hot, Profile, and Settings
+   *   (see --header-height-settings).
    * - ProfilePageLayout also reads this for min-height calc, but that page's header is 72px.
    * - Intentionally left as-is until a broader mobile layout refactor; changing it now
    *   would ripple through tab-bar positioning and profile feed height across the PR.
@@ -747,22 +747,14 @@ body {
     @apply pointer-events-none absolute top-full right-0 left-0 h-6 bg-linear-to-b from-background to-transparent content-[''];
   }
 
-  /* Thicker white caret for focused inputs (used by PostTagInput) */
+  /* White caret for focused inputs (used by PostTagInput) */
   .caret-white {
     caret-color: white;
-  }
-  .caret-thick::selection {
-    /* noop: selection styles kept default */
   }
   input.caret-white {
     caret-color: #fff;
   }
-  /* Some browsers allow caret-width via proprietary property */
-  input.caret-thick {
-    caret-color: #fff;
-  }
-  .light .caret-white,
-  .light input.caret-thick {
+  .light .caret-white {
     caret-color: var(--foreground);
   }
 

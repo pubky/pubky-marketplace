@@ -171,10 +171,6 @@ export class ChatApplication {
     });
   }
 
-  static async getIdentity(me: string): Promise<ChatIdentityModelSchema | null> {
-    return await LocalChatService.getIdentity(me);
-  }
-
   // =================================================================== peers
 
   /**

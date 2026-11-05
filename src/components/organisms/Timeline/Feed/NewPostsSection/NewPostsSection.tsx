@@ -74,7 +74,7 @@ export function NewPostsSection({
       */
       if (postsToAdd.length > 0) {
         const details = await PostController.getDetailsByIds({ compositeIds: postsToAdd });
-        postsToAdd = postsToAdd.filter((id, index) => {
+        postsToAdd = postsToAdd.filter((_id, index) => {
           const kind = details[index]?.kind;
           return !kind || postKindBelongsToStream(kind, streamId);
         });

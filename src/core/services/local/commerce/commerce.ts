@@ -421,10 +421,6 @@ export class LocalCommerceService {
     return await CommerceShopFollowModel.exists(this.shopFollowId(ownerId, sellerId));
   }
 
-  static async getShopFollows(ownerId: string) {
-    return await CommerceShopFollowModel.findByOwner(ownerId);
-  }
-
   static async createShopFollow(ownerId: string, sellerId: string, now: number): Promise<void> {
     await CommerceShopFollowModel.upsert({
       id: this.shopFollowId(ownerId, sellerId),
@@ -596,10 +592,6 @@ export class LocalCommerceService {
 
   static async getListingsBySeller(sellerId: string): Promise<CommerceListingModelSchema[]> {
     return await CommerceListingModel.findBySeller(sellerId);
-  }
-
-  static async getListingsByCategory(categoryId: string): Promise<CommerceListingModelSchema[]> {
-    return await CommerceListingModel.findByCategory(categoryId);
   }
 
   static async getAllListings(): Promise<CommerceListingModelSchema[]> {
@@ -1108,43 +1100,6 @@ export class LocalCommerceService {
     }
   }
 
-  static async upsertListingAndProjection(
-    record: CommerceListingRecord,
-    syncStatus: CommerceCacheStatus,
-    projection: CommerceListingProjectionModelSchema,
-  ): Promise<void> {
-    const listing = this.toListingModel(record, syncStatus);
-    if (listing.id !== projection.id || listing.revision !== projection.listing_revision) {
-      throw Err.validation(
-        ValidationErrorCode.INVALID_INPUT,
-        'Listing projection must match the public listing identity and revision.',
-        {
-          service: ErrorService.Local,
-          operation: 'upsertListingAndProjection',
-          context: {
-            identityMatches: listing.id === projection.id,
-            revisionMatches: listing.revision === projection.listing_revision,
-          },
-        },
-      );
-    }
-
-    try {
-      await db.transaction('rw', CommerceListingModel.table, CommerceListingProjectionModel.table, async () => {
-        await CommerceListingModel.upsert(listing);
-        await CommerceListingProjectionModel.upsert(projection);
-      });
-    } catch (error) {
-      if (isAppError(error)) throw error;
-      throw Err.database(DatabaseErrorCode.WRITE_FAILED, 'Failed to persist listing and projection atomically', {
-        service: ErrorService.Local,
-        operation: 'upsertListingAndProjection',
-        context: { tables: [CommerceListingModel.table.name, CommerceListingProjectionModel.table.name] },
-        cause: error,
-      });
-    }
-  }
-
   static async seedSandboxCatalog({
     shops,
     listings,
@@ -1212,11 +1167,6 @@ export class LocalCommerceService {
 
   static async getListingProjection(compositeListingId: string) {
     return await CommerceListingProjectionModel.findById(compositeListingId);
-  }
-
-  static async getDraft(compositeListingId: string) {
-    const draft = await CommerceListingDraftModel.findById(compositeListingId);
-    return draft ? this.hydrateDraftBlobs(draft) : draft;
   }
 
   static async getDraftsByOwner(ownerId: string): Promise<CommerceListingDraftModelSchema[]> {

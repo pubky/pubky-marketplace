@@ -1,6 +1,5 @@
 'use client';
 
-import * as React from 'react';
 import { HeartHandshake, Radio, Tags, UserRound, Waypoints } from 'lucide-react';
 import { UsersRound2 } from '@/icons';
 import { REACH, type ReachType } from '@/stores/home/home.types';

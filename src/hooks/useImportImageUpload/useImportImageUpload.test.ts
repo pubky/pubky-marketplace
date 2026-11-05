@@ -1,4 +1,3 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TImportImagePrepareResult } from '@/application/import-image/import-image-upload';
 import {
@@ -9,7 +8,7 @@ import {
 } from '@/config/import-image';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { ImportImageUploadController } from '@/controllers/import-image/import-image-upload';
-import { uploadImportImages, useImportImageUpload } from './useImportImageUpload';
+import { uploadImportImages } from './useImportImageUpload';
 
 const OWNER = 'o'.repeat(52);
 
@@ -298,59 +297,5 @@ describe('uploadImportImages when the route asks to slow down', () => {
     expect(results[0]).toMatchObject({ status: 'failed', reason: 'cancelled' });
     expect(onWait.mock.calls.at(-1)).toEqual([null]);
     expect(prepareSpy).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('useImportImageUpload', () => {
-  const prepareSpy = vi.spyOn(ImportImageUploadController, 'fetchAndPrepare');
-  const writeSpy = vi.spyOn(CommerceController, 'commitCreateMedia');
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    prepareSpy.mockResolvedValue(prepared('m1'));
-    writeSpy.mockResolvedValue('pubky://ok');
-  });
-
-  it('does nothing without a signed-in seller', async () => {
-    const { result } = renderHook(() => useImportImageUpload(null));
-    let outcome: unknown;
-    await act(async () => {
-      outcome = await result.current.run(['https://a.example.com/1.png']);
-    });
-    expect(outcome).toBeNull();
-    expect(prepareSpy).not.toHaveBeenCalled();
-  });
-
-  it('exposes results and progress after a run', async () => {
-    const { result } = renderHook(() => useImportImageUpload(OWNER));
-    await act(async () => {
-      await result.current.run(['https://a.example.com/1.png']);
-    });
-    await waitFor(() => expect(result.current.running).toBe(false));
-    expect(result.current.results).toHaveLength(1);
-    expect(result.current.results[0].status).toBe('uploaded');
-    expect(result.current.progress).toEqual({ done: 1, total: 1, url: 'https://a.example.com/1.png' });
-  });
-
-  it('cancel aborts the run in flight', async () => {
-    let release: () => void = () => {};
-    prepareSpy.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          release = () => resolve(prepared('m1'));
-        }),
-    );
-    const { result } = renderHook(() => useImportImageUpload(OWNER));
-    let pending: Promise<unknown> = Promise.resolve();
-    act(() => {
-      pending = result.current.run(['https://a.example.com/1.png', 'https://a.example.com/2.png']);
-    });
-    await waitFor(() => expect(result.current.running).toBe(true));
-    act(() => result.current.cancel());
-    release();
-    await act(async () => {
-      await pending;
-    });
-    expect(result.current.results[1]).toMatchObject({ status: 'failed', reason: 'cancelled' });
   });
 });

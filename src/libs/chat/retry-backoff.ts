@@ -24,22 +24,11 @@ export class RetryBackoff<T> {
     private readonly random: () => number = () => Math.random(),
   ) {}
 
-  /** The held value while the next attempt for `key` is not yet due; otherwise `undefined`. */
-  waiting(key: string, now: number = Date.now()): T | undefined {
-    const entry = this.entries.get(key);
-    return entry && now < entry.nextAttemptAt ? entry.value : undefined;
-  }
-
   /** `none` — no recorded failure; `waiting` — failed, retry not due; `due` — failed, retry may run. */
   status(key: string, now: number = Date.now()): 'none' | 'waiting' | 'due' {
     const entry = this.entries.get(key);
     if (!entry) return 'none';
     return now < entry.nextAttemptAt ? 'waiting' : 'due';
-  }
-
-  /** True when `value` is the one the latest failure for `key` recorded. */
-  holds(key: string, value: T): boolean {
-    return this.entries.get(key)?.value === value;
   }
 
   /** Records one more consecutive failure and returns the delay until the next attempt. */
@@ -51,30 +40,8 @@ export class RetryBackoff<T> {
     return delay;
   }
 
-  /**
-   * Replaces the value a recorded failure of `key` reports, keeping its
-   * schedule and failure count. A key with no recorded failure is untouched.
-   */
-  replace(key: string, value: T): void {
-    const entry = this.entries.get(key);
-    if (entry) this.entries.set(key, { ...entry, value });
-  }
-
   succeed(key: string): void {
     this.entries.delete(key);
-  }
-
-  /**
-   * Restarts the schedule of every failed key `matches` accepts: its next
-   * attempt is due at `now` and its next failure waits the first delay
-   * again. A restarted key stays `due`, not `none`, so callers that keep
-   * retries out of a healthy budget still do. Keys with no recorded failure
-   * are untouched.
-   */
-  restart(matches: (key: string) => boolean, now: number = Date.now()): void {
-    for (const [key, entry] of this.entries) {
-      if (matches(key)) this.entries.set(key, { failures: 0, nextAttemptAt: now, value: entry.value });
-    }
   }
 
   clear(): void {

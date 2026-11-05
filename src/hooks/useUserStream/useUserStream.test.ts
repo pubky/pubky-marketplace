@@ -351,15 +351,15 @@ describe('useUserStream', () => {
     });
   });
 
-  describe('refetch', () => {
-    it('refetch resets and fetches again', async () => {
+  describe('mount lifecycle', () => {
+    it('fetches again for a new mount', async () => {
       mockGetOrFetchStreamSlice.mockResolvedValue({
         nextPageIds: ['user-1'],
         skip: 1,
       });
       mockUseLiveQuery.mockReturnValue(new Map());
 
-      const { result } = renderHook(() =>
+      const { result, unmount } = renderHook(() =>
         useUserStream({
           streamId: UserStreamTypes.RECOMMENDED,
         }),
@@ -369,9 +369,9 @@ describe('useUserStream', () => {
         expect(result.current.isLoading).toBe(false);
       });
 
-      await act(async () => {
-        await result.current.refetch();
-      });
+      unmount();
+      renderHook(() => useUserStream({ streamId: UserStreamTypes.RECOMMENDED }));
+      await waitFor(() => expect(mockGetOrFetchStreamSlice).toHaveBeenCalledTimes(2));
 
       expect(mockGetOrFetchStreamSlice).toHaveBeenCalledTimes(2);
     });

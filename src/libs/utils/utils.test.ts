@@ -8,10 +8,8 @@ import {
 import { asInvalid } from '@/test-utils/type-assertions';
 import {
   canSubmitPost,
-  clearCookies,
   cn,
   copyToClipboard,
-  daysAgo,
   extractInitials,
   focusAdjacentGridItem,
   formatInviteCode,
@@ -22,13 +20,11 @@ import {
   getDisplayTags,
   getValidAuthorPubkyFromPostCompositeId,
   hexToRgba,
-  hoursAgo,
   isPostDeleted,
   isPubkyIdentifier,
   isSameDomain,
   isValidPostCompositeId,
   isValidTagLabel,
-  minutesAgo,
   resolveDisplayName,
   sanitizeTagInput,
   shouldBypassLinkConfirmation,
@@ -374,73 +370,6 @@ describe('Utils', () => {
     });
   });
 
-  describe('clearCookies', () => {
-    let originalCookie: string;
-
-    beforeEach(() => {
-      originalCookie = document.cookie;
-      // Clear any existing cookies
-      document.cookie.split(';').forEach((c) => {
-        const eqPos = c.indexOf('=');
-        const name = eqPos > -1 ? c.substr(0, eqPos) : c;
-        document.cookie = `${name.trim()}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
-      });
-    });
-
-    afterEach(() => {
-      // Restore original cookies if any
-      if (originalCookie) {
-        document.cookie = originalCookie;
-      }
-    });
-
-    it('should clear all cookies', () => {
-      // Set some test cookies
-      document.cookie = 'testCookie1=value1; path=/';
-      document.cookie = 'testCookie2=value2; path=/';
-      document.cookie = 'testCookie3=value3; path=/';
-
-      // Verify cookies are set
-      expect(document.cookie).toContain('testCookie1');
-      expect(document.cookie).toContain('testCookie2');
-      expect(document.cookie).toContain('testCookie3');
-
-      // Clear cookies
-      clearCookies();
-
-      // Note: In test environment, we can't actually verify cookies are cleared
-      // because document.cookie behavior is limited in jsdom
-      // We can only test that the function runs without errors
-      expect(() => clearCookies()).not.toThrow();
-    });
-
-    it('should handle empty cookies gracefully', () => {
-      // Ensure no cookies exist
-      expect(document.cookie).toBe('');
-
-      // Should not throw error
-      expect(() => clearCookies()).not.toThrow();
-    });
-
-    it('should handle cookies with spaces', () => {
-      // Set cookies with various formats
-      document.cookie = ' testCookie1 = value1 ; path=/';
-      document.cookie = '  testCookie2=value2; path=/';
-
-      // Should not throw error
-      expect(() => clearCookies()).not.toThrow();
-    });
-
-    it('should handle cookies with special characters in names', () => {
-      // Set cookies with special characters (that are valid)
-      document.cookie = 'test_cookie-1=value1; path=/';
-      document.cookie = 'test.cookie.2=value2; path=/';
-
-      // Should not throw error
-      expect(() => clearCookies()).not.toThrow();
-    });
-  });
-
   describe('generateRandomColor', () => {
     it('should return custom colors for specific names', () => {
       expect(generateRandomColor('bitcoin')).toBe('#FF9900');
@@ -659,120 +588,6 @@ describe('Utils', () => {
 
     it('should handle mixed alphanumeric strings', () => {
       expect(truncateString('User123Name456', 8)).toBe('User123N...');
-    });
-  });
-
-  describe('minutesAgo', () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
-    it('should return timestamp for minutes ago', () => {
-      const now = Date.now();
-      vi.setSystemTime(now);
-
-      const result = minutesAgo(5);
-      const expected = now - 5 * 60 * 1000;
-
-      expect(result).toBe(expected);
-    });
-
-    it('should handle zero minutes', () => {
-      const now = Date.now();
-      vi.setSystemTime(now);
-
-      const result = minutesAgo(0);
-      expect(result).toBe(now);
-    });
-
-    it('should handle large number of minutes', () => {
-      const now = Date.now();
-      vi.setSystemTime(now);
-
-      const result = minutesAgo(1440); // 24 hours
-      const expected = now - 1440 * 60 * 1000;
-
-      expect(result).toBe(expected);
-    });
-  });
-
-  describe('hoursAgo', () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
-    it('should return timestamp for hours ago', () => {
-      const now = Date.now();
-      vi.setSystemTime(now);
-
-      const result = hoursAgo(3);
-      const expected = now - 3 * 60 * 60 * 1000;
-
-      expect(result).toBe(expected);
-    });
-
-    it('should handle zero hours', () => {
-      const now = Date.now();
-      vi.setSystemTime(now);
-
-      const result = hoursAgo(0);
-      expect(result).toBe(now);
-    });
-
-    it('should handle large number of hours', () => {
-      const now = Date.now();
-      vi.setSystemTime(now);
-
-      const result = hoursAgo(48); // 2 days
-      const expected = now - 48 * 60 * 60 * 1000;
-
-      expect(result).toBe(expected);
-    });
-  });
-
-  describe('daysAgo', () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
-    it('should return timestamp for days ago', () => {
-      const now = Date.now();
-      vi.setSystemTime(now);
-
-      const result = daysAgo(7);
-      const expected = now - 7 * 24 * 60 * 60 * 1000;
-
-      expect(result).toBe(expected);
-    });
-
-    it('should handle zero days', () => {
-      const now = Date.now();
-      vi.setSystemTime(now);
-
-      const result = daysAgo(0);
-      expect(result).toBe(now);
-    });
-
-    it('should handle large number of days', () => {
-      const now = Date.now();
-      vi.setSystemTime(now);
-
-      const result = daysAgo(30);
-      const expected = now - 30 * 24 * 60 * 60 * 1000;
-
-      expect(result).toBe(expected);
     });
   });
 

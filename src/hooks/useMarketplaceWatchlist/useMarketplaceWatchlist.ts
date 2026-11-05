@@ -2,7 +2,6 @@
 
 import { useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { getCommerceAdapterMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { CommerceWatchSnapshotModelSchema } from '@/models/commerce/commerce.schema';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -38,7 +37,6 @@ export interface MarketplaceWatchlistEntry {
  */
 export function useMarketplaceWatchlist() {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
-  const adapterMode = getCommerceAdapterMode();
   const watchlistSyncStatus = useCommerceStore((state) => state.watchlistSyncStatus);
   const marketplaceSessionId = useCommerceStore((state) =>
     state.marketplaceSession ? `${state.marketplaceSession.pubky}:${state.marketplaceSession.issuedAt}` : null,
@@ -99,7 +97,6 @@ export function useMarketplaceWatchlist() {
     entries,
     isLoading: Boolean(currentUserPubky) && (favorites === undefined || localListings === undefined),
     isSignedIn: Boolean(currentUserPubky),
-    adapterMode,
     syncWatchlist,
     /** `needs_reauth` = the session's grant cannot write /priv (or a write was refused); watching still works locally. */
     watchlistSyncStatus,

@@ -67,12 +67,6 @@ export const SERVICE_NOTIFICATION_TYPES = [
 
 export type ServiceNotificationType = (typeof SERVICE_NOTIFICATION_TYPES)[number];
 
-const SERVICE_NOTIFICATION_TYPE_SET: ReadonlySet<string> = new Set(SERVICE_NOTIFICATION_TYPES);
-
-export function isServiceNotificationType(type: string): type is ServiceNotificationType {
-  return SERVICE_NOTIFICATION_TYPE_SET.has(type);
-}
-
 /** Plain activity-row titles. One sentence of what happened, no diagnostics. */
 export const MARKETPLACE_ACTIVITY_LABELS = {
   message_received: 'New market message',

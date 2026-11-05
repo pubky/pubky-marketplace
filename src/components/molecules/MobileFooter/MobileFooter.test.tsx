@@ -117,7 +117,7 @@ vi.mock('@/hooks/usePublicRoute/usePublicRoute', () => ({
 }));
 
 vi.mock('@/hooks/useKeyboardOffset/useKeyboardOffset', () => ({
-  useKeyboardOffset: vi.fn(() => ({ isKeyboardVisible: false, keyboardOffset: 0 })),
+  useKeyboardOffset: vi.fn(() => ({ isKeyboardVisible: false })),
 }));
 vi.mock('@/hooks/useChatUnread/useChatUnread', () => ({
   useChatUnread: vi.fn(() => 0),
@@ -192,7 +192,7 @@ describe('MobileFooter', () => {
     HTMLElement.prototype.scrollIntoView = vi.fn();
 
     // Reset keyboard offset mock
-    vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: false, keyboardOffset: 0 });
+    vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: false });
   });
 
   describe('embedded in another app', () => {
@@ -565,7 +565,7 @@ describe('MobileFooter', () => {
   });
 
   it('hides while the keyboard is open, so it never floats on the keyboard', () => {
-    vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: true, keyboardOffset: 300 });
+    vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: true });
 
     const { container } = render(<MobileFooter />);
 
@@ -573,7 +573,7 @@ describe('MobileFooter', () => {
   });
 
   it('shows with the keyboard closed', () => {
-    vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: false, keyboardOffset: 0 });
+    vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: false });
 
     const { container } = render(<MobileFooter />);
     const footerContainer = container.querySelector('.fixed');

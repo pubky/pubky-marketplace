@@ -133,7 +133,6 @@ export const pickupDetailsSchema = z
 
 export type MarketplacePickupAddress = z.infer<typeof pickupAddressSchema>;
 export type MarketplacePickupAvailabilityWindow = z.infer<typeof pickupAvailabilityWindowSchema>;
-export type MarketplacePickupAvailability = z.infer<typeof pickupAvailabilitySchema>;
 export type MarketplacePickupDetails = z.infer<typeof pickupDetailsSchema>;
 
 // -----------------------------------------------------------------------------
@@ -280,8 +279,6 @@ export const marketplaceHealthSchema = z
       .catch(undefined),
   })
   .passthrough();
-
-export type MarketplacePickupRevealLine = z.infer<typeof marketplacePickupRevealLineSchema>;
 export type MarketplacePickupReveal = z.infer<typeof marketplacePickupRevealSchema>;
 export type MarketplaceSellerPickupDetails = z.infer<typeof marketplaceSellerPickupDetailsSchema>;
 export type MarketplaceHealth = z.infer<typeof marketplaceHealthSchema>;

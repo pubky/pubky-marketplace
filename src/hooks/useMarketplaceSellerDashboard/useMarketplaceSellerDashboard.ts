@@ -314,18 +314,12 @@ export function useMarketplaceSellerDashboard() {
 
   return {
     listings: localListings ?? [],
-    sellerOrders,
-    offers: sellerOffers,
     isLoading:
       localListings === undefined ||
       (localListings.length === 0 && (catalogFetchState === 'idle' || catalogFetchState === 'loading')) ||
       orders.isLoading ||
       offers.isLoading,
     error: catalogFetchState === 'error' ? 'Could not load your listings.' : null,
-    // Orders and offers ride the same durable session, so either flag means
-    // the dashboard's remote-backed numbers are missing until reconnect.
-    needsSession: orders.needsSession || offers.needsSession,
-    sessionError: (orders.needsSession ? orders.error : null) ?? (offers.needsSession ? offers.error : null),
     metrics: {
       activeListings: activeListings.length,
       totalInventory,

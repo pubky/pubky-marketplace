@@ -115,5 +115,3 @@ export const marketplaceApi = {
       baseUrl: getMarketplaceNexusUrl(),
     }),
 };
-
-export type MarketplaceApiEndpoint = keyof typeof marketplaceApi;

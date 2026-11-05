@@ -142,7 +142,6 @@ describe('useDialogKeyboardOrchestrator', () => {
     const { result } = renderHook(() => useDialogKeyboardOrchestrator(contentRef, { enabled: false }));
 
     expect(mockUseKeyboardViewport).toHaveBeenCalledWith({ enabled: false, threshold: 150 });
-    expect(result.current.isKeyboardVisible).toBe(false);
     expect(result.current.spacerHeight).toBe(0);
     expect(result.current.contentStyle).toBeUndefined();
     expect(addEventListenerSpy).not.toHaveBeenCalledWith('focusin', expect.any(Function), true);

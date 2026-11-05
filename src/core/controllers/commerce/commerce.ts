@@ -131,10 +131,6 @@ export class CommerceController {
     return await CommerceApplication.getAllShops();
   }
 
-  static async fetchShop(ownerPubky: unknown) {
-    return await CommerceApplication.fetchShop(CommerceRecordNormalizer.pubky(ownerPubky));
-  }
-
   static async refreshShop(ownerPubky: unknown) {
     return await CommerceApplication.refreshShop(CommerceRecordNormalizer.pubky(ownerPubky));
   }
@@ -168,12 +164,6 @@ export class CommerceController {
     return await CommerceApplication.getManyListings(ids);
   }
 
-  static async fetchListing(ownerPubky: unknown, listingId: unknown) {
-    const owner = CommerceRecordNormalizer.pubky(ownerPubky);
-    const id = CommerceRecordNormalizer.entityId(listingId);
-    return await CommerceApplication.fetchListing(owner, id);
-  }
-
   /** Network, then local: replaces the cached row with the record the owner's homeserver publishes. */
   static async refreshListing(ownerPubky: unknown, listingId: unknown) {
     const owner = CommerceRecordNormalizer.pubky(ownerPubky);
@@ -204,10 +194,6 @@ export class CommerceController {
     return await CommerceApplication.getListingsBySeller(CommerceRecordNormalizer.pubky(sellerPubky));
   }
 
-  static async getOrFetchListingsBySeller(sellerPubky: unknown) {
-    return await CommerceApplication.getOrFetchListingsBySeller(CommerceRecordNormalizer.pubky(sellerPubky));
-  }
-
   static async refreshListingsBySeller(sellerPubky: unknown): Promise<void> {
     await CommerceApplication.refreshListingsBySeller(CommerceRecordNormalizer.pubky(sellerPubky));
   }
@@ -225,11 +211,6 @@ export class CommerceController {
     if (previous !== undefined && previous !== availability) {
       useCommerceStore.getState().refreshListingCards([projection.id]);
     }
-  }
-
-  /** Tells the catalog cards of these listings to re-read their availability. */
-  static refreshListingCards(compositeListingIds: readonly string[]): void {
-    useCommerceStore.getState().refreshListingCards(compositeListingIds);
   }
 
   /**
@@ -291,10 +272,6 @@ export class CommerceController {
       taggedId: CommerceRecordNormalizer.pubky(ownerPubky),
       viewerId,
     });
-  }
-
-  static async getListingsByCategory(categoryId: unknown) {
-    return await CommerceApplication.getListingsByCategory(CommerceRecordNormalizer.entityId(categoryId));
   }
 
   static async getAllListings() {
@@ -535,10 +512,6 @@ export class CommerceController {
     return await CommerceInventoryApplication.retrySync(sellerPubky, listingId);
   }
 
-  static inventoryImportAuth(sellerPubky: string) {
-    return CommerceInventoryImportApplication.authStatus(sellerPubky);
-  }
-
   static async planInventoryImport(
     sellerPubky: string,
     file: Parameters<CommerceInventoryImportApplication['planFile']>[0],
@@ -605,10 +578,6 @@ export class CommerceController {
 
   static async inventoryImportDefaults(sellerPubky: string) {
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).importDefaults();
-  }
-
-  static async dryRunInventoryImport(sellerPubky: string, manifestId: string) {
-    return await CommerceInventoryImportApplication.forSeller(sellerPubky).dryRun(manifestId);
   }
 
   static async publishInventoryImport(sellerPubky: string, manifestId: string) {
@@ -2283,10 +2252,6 @@ export class CommerceController {
       this.getCurrentUserPubky(),
       CommerceRecordNormalizer.pubky(sellerPubky),
     );
-  }
-
-  static async getShopFollows() {
-    return await CommerceApplication.getShopFollows(this.getCurrentUserPubky());
   }
 
   static async commitCreateShopFollow(sellerPubky: unknown): Promise<void> {

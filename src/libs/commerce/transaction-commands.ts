@@ -6,8 +6,6 @@ import {
 } from '@/config/commerce';
 import { DELIVERY_ENVELOPE_BYTES, DELIVERY_KEY_ID_PATTERN } from './delivery-envelope-format';
 import {
-  type DigitalDeliveryCommandResult,
-  digitalDeliveryCommandResultSchema,
   digitalDeliverySetSchema,
   marketplaceDeliveryEmailSchema,
   marketplaceDigitalDeliveryChannelSchema,
@@ -832,9 +830,6 @@ const reviewV2TermsPayloadSchema = orderIdPayload
 
 const reviewTermsPayloadSchema = z.union([reviewV1TermsPayloadSchema, reviewV2TermsPayloadSchema]);
 
-export type ReviewItemTerms = z.input<typeof reviewItemTermsSchema>;
-export type ReviewSellerRatingTerms = z.infer<typeof reviewSellerRatingTermsSchema>;
-
 export const createReviewCommandSchema = createCommerceCommandSchema('review.create', reviewTermsPayloadSchema);
 
 /**
@@ -997,15 +992,10 @@ export const marketplaceCommandResponseSchema = z.discriminatedUnion('ok', [
 ]);
 
 export type RegisterListingCommand = z.infer<typeof registerListingCommandSchema>;
-export type SyncListingCommand = z.infer<typeof syncListingCommandSchema>;
-export type SyncDropCommand = z.infer<typeof syncDropCommandSchema>;
-export type CancelDropCommand = z.infer<typeof cancelDropCommandSchema>;
-export type ReleaseDropListingsCommand = z.infer<typeof releaseDropListingsCommandSchema>;
 export type ReserveInventoryCommand = z.infer<typeof reserveInventoryCommandSchema>;
 export type CreateOfferCommand = z.infer<typeof createOfferCommandSchema>;
 export type CounterOfferCommand = z.infer<typeof counterOfferCommandSchema>;
 export type AcceptOfferCommand = z.infer<typeof acceptOfferCommandSchema>;
-export type OfferCheckoutCommand = z.infer<typeof offerCheckoutCommandSchema>;
 export type RejectOfferCommand = z.infer<typeof rejectOfferCommandSchema>;
 export type WithdrawOfferCommand = z.infer<typeof withdrawOfferCommandSchema>;
 export type PlaceBidCommand = z.infer<typeof placeBidCommandSchema>;
@@ -1017,8 +1007,6 @@ export type UpdateMarketplaceNotificationPreferencesCommand = z.infer<
 >;
 export type CreateMarketplaceCheckoutCommand = z.infer<typeof createMarketplaceCheckoutCommandSchema>;
 export type AdvanceSandboxPaymentCommand = z.infer<typeof advanceSandboxPaymentCommandSchema>;
-export type PrepareLocksPaymentCommand = z.infer<typeof prepareLocksPaymentCommandSchema>;
-export type RegisterLocksPaymentCommand = z.infer<typeof registerLocksPaymentCommandSchema>;
 export type RequestOrderCancellationCommand = z.infer<typeof requestOrderCancellationCommandSchema>;
 export type ApproveOrderCancellationCommand = z.infer<typeof approveOrderCancellationCommandSchema>;
 export type ShipOrderCommand = z.infer<typeof shipOrderCommandSchema>;
@@ -1026,11 +1014,6 @@ export type UpdateOrderTrackingCommand = z.infer<typeof updateOrderTrackingComma
 export type ConfirmOrderDeliveryCommand = z.infer<typeof confirmOrderDeliveryCommandSchema>;
 export type SetPickupDetailsCommand = z.infer<typeof setPickupDetailsCommandSchema>;
 export type ClearPickupDetailsCommand = z.infer<typeof clearPickupDetailsCommandSchema>;
-export type SetDigitalDeliveryCommand = z.infer<typeof setDigitalDeliveryCommandSchema>;
-export type ClearDigitalDeliveryCommand = z.infer<typeof clearDigitalDeliveryCommandSchema>;
-export type SetDeliveryEmailCommand = z.infer<typeof setDeliveryEmailCommandSchema>;
-export type DeliverDigitalCommand = z.infer<typeof deliverDigitalCommandSchema>;
-export type ReleaseDigitalCommand = z.infer<typeof releaseDigitalCommandSchema>;
 export type MarkReadyForPickupCommand = z.infer<typeof markReadyForPickupCommandSchema>;
 export type ConfirmPickupCommand = z.infer<typeof confirmPickupCommandSchema>;
 export type RequestReturnCommand = z.infer<typeof requestReturnCommandSchema>;
@@ -1038,9 +1021,7 @@ export type ApproveReturnCommand = z.infer<typeof approveReturnCommandSchema>;
 export type ReceiveReturnCommand = z.infer<typeof receiveReturnCommandSchema>;
 export type CancelReturnCommand = z.infer<typeof cancelReturnCommandSchema>;
 export type RecordExternalRefundCommand = z.infer<typeof recordExternalRefundCommandSchema>;
-export type ConfirmRefundDestinationCommand = z.infer<typeof confirmRefundDestinationCommandSchema>;
 export type CreateReviewCommand = z.infer<typeof createReviewCommandSchema>;
-export type UpdateReviewCommand = z.infer<typeof updateReviewCommandSchema>;
 export type MarketplaceCommand = z.infer<typeof marketplaceCommandSchema>;
 export type MarketplaceCommandResponse = z.infer<typeof marketplaceCommandResponseSchema>;
 
@@ -1135,26 +1116,6 @@ export const pickupDetailsCommandResultSchema = z
   .passthrough();
 
 export type PickupDetailsCommandResult = z.infer<typeof pickupDetailsCommandResultSchema>;
-
-/**
- * Narrows a command response to the pickup-details result, or null for a
- * refusal / a different command's result. Callers that need the new version
- * for the next CAS use this instead of casting the passthrough result.
- */
-export function asPickupDetailsCommandResult(response: MarketplaceCommandResponse): PickupDetailsCommandResult | null {
-  if (!response.ok) return null;
-  const parsed = pickupDetailsCommandResultSchema.safeParse(response.result);
-  return parsed.success ? parsed.data : null;
-}
-
-/** Narrows a command response to the digital-delivery result, or null for a refusal or another result. */
-export function asDigitalDeliveryCommandResult(
-  response: MarketplaceCommandResponse,
-): DigitalDeliveryCommandResult | null {
-  if (!response.ok) return null;
-  const parsed = digitalDeliveryCommandResultSchema.safeParse(response.result);
-  return parsed.success ? parsed.data : null;
-}
 
 /**
  * True when a command was refused because the caller's `expected_revision`

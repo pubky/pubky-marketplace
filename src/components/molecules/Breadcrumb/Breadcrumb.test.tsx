@@ -1,15 +1,6 @@
-import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import {
-  Breadcrumb,
-  BreadcrumbEllipsis,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from './Breadcrumb';
+import { Breadcrumb, BreadcrumbEllipsis, BreadcrumbItem, BreadcrumbSeparator } from './Breadcrumb';
 
 describe('Breadcrumb', () => {
   describe('Breadcrumb Container', () => {
@@ -218,33 +209,5 @@ describe('Breadcrumb - Variants', () => {
     expect(ellipsis).toHaveAttribute('aria-hidden', 'true');
     expect(ellipsis).toHaveClass('custom-ellipsis');
     expect(screen.getByText('More')).toHaveClass('sr-only');
-  });
-
-  it('marks BreadcrumbPage as the current, disabled page link', () => {
-    render(<BreadcrumbPage className="custom-page">Settings</BreadcrumbPage>);
-
-    const page = screen.getByRole('link', { name: 'Settings' });
-    expect(page).toHaveAttribute('aria-current', 'page');
-    expect(page).toHaveAttribute('aria-disabled', 'true');
-    expect(page).toHaveClass('text-foreground', 'custom-page');
-  });
-
-  it('renders BreadcrumbLink as an anchor or as its child with asChild', () => {
-    const { rerender } = render(<BreadcrumbLink href="/home">Home</BreadcrumbLink>);
-    expect(screen.getByRole('link', { name: 'Home' })).toHaveClass('hover:text-foreground');
-
-    rerender(
-      <BreadcrumbLink asChild>
-        <button type="button">Back</button>
-      </BreadcrumbLink>,
-    );
-    expect(screen.getByRole('button', { name: 'Back' })).toHaveClass('hover:text-foreground');
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
-  });
-
-  it('renders BreadcrumbList as a wrapping ordered list', () => {
-    render(<BreadcrumbList className="custom-list" />);
-
-    expect(screen.getByRole('list')).toHaveClass('flex-wrap', 'custom-list');
   });
 });

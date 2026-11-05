@@ -44,12 +44,6 @@ export function mintChatFileName(sentAt: number, randomHex8?: string): string {
   return `${String(Math.max(0, Math.floor(sentAt))).padStart(13, '0')}-${suffix}.json`;
 }
 
-export function parseChatFileName(name: string): { sentAt: number } | null {
-  const match = CHAT_MESSAGE_FILE_NAME.exec(name);
-  if (!match) return null;
-  return { sentAt: Number(match[1]) };
-}
-
 /** Last path segment of a `pubky://` or `/`-separated URL. */
 export function fileNameFromUrl(url: string): string {
   const trimmed = url.endsWith('/') ? url.slice(0, -1) : url;

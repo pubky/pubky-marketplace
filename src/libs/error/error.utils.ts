@@ -11,17 +11,8 @@ export { isAppError };
 // Category Checks
 // =============================================================================
 
-/** Check if error is a network error (connection-level failures) */
-export const isNetworkError = (e: AppError): boolean => e.category === ErrorCategory.Network;
-
 /** Check if error is a timeout error */
 export const isTimeoutError = (e: AppError): boolean => e.category === ErrorCategory.Timeout;
-
-/** Check if error is a server error (5xx) */
-export const isServerError = (e: AppError): boolean => e.category === ErrorCategory.Server;
-
-/** Check if error is a client error (4xx) */
-export const isClientError = (e: AppError): boolean => e.category === ErrorCategory.Client;
 
 /** Check if error is an auth error (401, 403) */
 export const isAuthError = (e: AppError): boolean => e.category === ErrorCategory.Auth;
@@ -42,12 +33,6 @@ export const isWritePathNotAllowedError = (e: AppError): boolean =>
   e.category === ErrorCategory.Auth &&
   e.code === AuthErrorCode.FORBIDDEN &&
   e.message.includes(HOMESERVER_WRITE_PATH_NOT_ALLOWED);
-
-/** Check if error is a validation error (local) */
-export const isValidationError = (e: AppError): boolean => e.category === ErrorCategory.Validation;
-
-/** Check if error is a database error (local storage) */
-export const isDatabaseError = (e: AppError): boolean => e.category === ErrorCategory.Database;
 
 // =============================================================================
 // Decision Helpers

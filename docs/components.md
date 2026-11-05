@@ -57,7 +57,7 @@ Guests can open routes that do not require a session:
 | -------------- | ------------------------------------------------------------------------------------------------- | ---------------------- | ----------------------- |
 | Core explore   | `/home`, `/hot`, `/search`, `/collections`                                                        | `isCoreExploreRoute`   | `isCoreExploreRoute`    |
 | Dynamic public | `/post/[userId]/[postId]`, `/profile/[pubky]`, `/invite/[code]`, `/collections/[userId]/[postId]` | `isDynamicPublicRoute` | `isDynamicPublicRoute`  |
-| Either         | —                                                                                                 | `isPublicExploreRoute` | `isPublicExploreRoute`  |
+| Either         | —                                                                                                 | —                      | `isPublicExploreRoute`  |
 
 - **Route guard:** `EXPLORE_ROUTES` is included in `UNAUTHENTICATED_ROUTES`; dynamic public paths are allowed via `isDynamicPublicRoute()` in `RouteGuardProvider`.
 - **UI chrome:** use `usePublicRoute()` for layout (e.g. explore header, mobile footer on `/home`). `isPublicRoute` on the hook result is a **legacy alias** for `isDynamicPublicRoute` only—it is `false` on `/home` even though the page is browsable.
@@ -164,7 +164,7 @@ The `@/icons` alias is defined in `tsconfig.json` and points at `src/libs/icons/
 
 ### URL → icon / label helpers
 
-Helpers such as **`getIconFromUrl`** and **`getLabelFromUrl`** live in **`@/libs/utils/urlToIcon`** (`src/libs/utils/urlToIcon.ts`). They return Lucide component types or labels for link previews — import them from `@/libs/utils/urlToIcon`, not from `@/icons`.
+**`getIconFromUrl`** lives in **`@/libs/utils/urlToIcon`** (`src/libs/utils/urlToIcon.ts`). It returns icon component types for link previews — import it from `@/libs/utils/urlToIcon`, not from `@/icons`.
 
 ### Tests
 

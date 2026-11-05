@@ -70,8 +70,6 @@ vi.mock('@/hooks/useNotifications/useNotifications', () => ({
       },
     ],
     unreadNotifications: [],
-    count: 27,
-    unreadCount: 0,
     isLoading: false,
     isLoadingMore: false,
     hasMore: false,
@@ -79,7 +77,6 @@ vi.mock('@/hooks/useNotifications/useNotifications', () => ({
     loadMore: vi.fn(),
     refresh: vi.fn(),
     markAllAsRead: vi.fn(),
-    isNotificationUnread: vi.fn(() => false),
   })),
 }));
 
@@ -194,8 +191,6 @@ describe('NotificationsContainer', () => {
     vi.mocked(useNotifications).mockReturnValueOnce({
       notifications: [],
       unreadNotifications: [],
-      count: 0,
-      unreadCount: 0,
       isLoading: true,
       isLoadingMore: false,
       hasMore: false,
@@ -203,7 +198,6 @@ describe('NotificationsContainer', () => {
       loadMore: vi.fn(),
       refresh: vi.fn(),
       markAllAsRead: vi.fn(),
-      isNotificationUnread: vi.fn(() => false),
     });
     render(<NotificationsContainer />);
     expect(screen.getAllByTestId('skeleton').length).toBeGreaterThan(0);
@@ -213,8 +207,6 @@ describe('NotificationsContainer', () => {
     vi.mocked(useNotifications).mockReturnValueOnce({
       notifications: [],
       unreadNotifications: [],
-      count: 0,
-      unreadCount: 0,
       isLoading: false,
       isLoadingMore: false,
       hasMore: false,
@@ -222,7 +214,6 @@ describe('NotificationsContainer', () => {
       loadMore: vi.fn(),
       refresh: vi.fn(),
       markAllAsRead: vi.fn(),
-      isNotificationUnread: vi.fn(() => false),
     });
     render(<NotificationsContainer />);
     expect(screen.getByText(/No notifications yet/i)).toBeInTheDocument();
@@ -233,8 +224,6 @@ describe('NotificationsContainer', () => {
     vi.mocked(useNotifications).mockReturnValueOnce({
       notifications: [],
       unreadNotifications: [],
-      count: 0,
-      unreadCount: 0,
       isLoading: false,
       isLoadingMore: false,
       hasMore: false,
@@ -242,7 +231,6 @@ describe('NotificationsContainer', () => {
       loadMore: vi.fn(),
       refresh,
       markAllAsRead: vi.fn(),
-      isNotificationUnread: vi.fn(() => false),
     });
     render(<NotificationsContainer />);
 
@@ -265,8 +253,6 @@ describe('NotificationsContainer', () => {
         } as FlatNotification,
       ],
       unreadNotifications: [],
-      count: 1,
-      unreadCount: 0,
       isLoading: false,
       isLoadingMore: false,
       hasMore: true,
@@ -274,7 +260,6 @@ describe('NotificationsContainer', () => {
       loadMore: vi.fn(),
       refresh,
       markAllAsRead: vi.fn(),
-      isNotificationUnread: vi.fn(() => false),
     });
     const { container } = render(<NotificationsContainer />);
 
@@ -300,8 +285,6 @@ describe('NotificationsContainer', () => {
         },
       ],
       unreadNotifications: [],
-      count: 1,
-      unreadCount: 0,
       isLoading: false,
       isLoadingMore: true,
       hasMore: true,
@@ -309,7 +292,6 @@ describe('NotificationsContainer', () => {
       loadMore: vi.fn(),
       refresh: vi.fn(),
       markAllAsRead: vi.fn(),
-      isNotificationUnread: vi.fn(() => false),
     });
     render(<NotificationsContainer />);
     expect(screen.getAllByTestId('skeleton').length).toBeGreaterThan(0);
@@ -327,8 +309,6 @@ describe('NotificationsContainer', () => {
         },
       ],
       unreadNotifications: [],
-      count: 1,
-      unreadCount: 0,
       isLoading: false,
       isLoadingMore: false,
       hasMore: false,
@@ -336,7 +316,6 @@ describe('NotificationsContainer', () => {
       loadMore: vi.fn(),
       refresh: vi.fn(),
       markAllAsRead,
-      isNotificationUnread: vi.fn(() => false),
     });
     const { unmount } = render(<NotificationsContainer />);
     expect(markAllAsRead).toHaveBeenCalledTimes(1);
@@ -360,8 +339,6 @@ describe('NotificationsContainer', () => {
         },
       ],
       unreadNotifications: [],
-      count: 1,
-      unreadCount: 0,
       isLoading: false,
       isLoadingMore: false,
       hasMore: false,
@@ -369,7 +346,6 @@ describe('NotificationsContainer', () => {
       loadMore: vi.fn(),
       refresh: vi.fn(),
       markAllAsRead,
-      isNotificationUnread: vi.fn(() => false),
     });
 
     render(<NotificationsContainer />);
@@ -471,8 +447,6 @@ function buildNotificationsResult({
   return {
     notifications,
     unreadNotifications: [],
-    count: notifications.length,
-    unreadCount: 0,
     isLoading: false,
     isLoadingMore: false,
     hasMore,
@@ -480,7 +454,6 @@ function buildNotificationsResult({
     loadMore,
     refresh: vi.fn(),
     markAllAsRead: vi.fn(),
-    isNotificationUnread: vi.fn(() => false),
   };
 }
 

@@ -11,7 +11,7 @@ import {
   shippingParcelSchema,
   type ShippoRate,
 } from '@/libs/commerce/shipping';
-import { deleteDeviceRecord, getDeviceRecord, putDeviceRecord } from '@/libs/crypto/delivery-key-store';
+import { getDeviceRecord, putDeviceRecord } from '@/libs/crypto/delivery-key-store';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -125,9 +125,5 @@ export class CommerceShippingApplication {
 
   static async getLabel(owner: string, orderId: string): Promise<ShippingLabel | null> {
     return await readJson(owner, labelRecord(orderId), shippingLabelSchema);
-  }
-
-  static async deleteLabel(owner: string, orderId: string): Promise<void> {
-    await deleteDeviceRecord(owner, labelRecord(orderId));
   }
 }

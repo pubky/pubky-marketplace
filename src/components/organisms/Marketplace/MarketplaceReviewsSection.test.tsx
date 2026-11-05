@@ -171,14 +171,12 @@ describe('MarketplaceReviewsSection on a storefront', () => {
     expect(screen.getByText('Exactly as described.')).toBeInTheDocument();
   });
 
-  it('keeps the review of a deleted listing intact without a strict fetch that reports the 404', async () => {
+  it('keeps the review of a deleted listing intact when its listing is not found', async () => {
     const lookup = vi.spyOn(CommerceController, 'getOrFetchListingIfFound').mockResolvedValue(null);
-    const strictFetch = vi.spyOn(CommerceController, 'fetchListing');
 
     render(<MarketplaceReviewsSection reviews={listedState()} />);
 
     await vi.waitFor(() => expect(lookup).toHaveBeenCalledWith(SELLER, 'rangefinder_camera'));
-    expect(strictFetch).not.toHaveBeenCalled();
     expect(screen.queryByRole('link', { name: 'Rangefinder camera' })).not.toBeInTheDocument();
     expect(screen.getByText('Exactly as described.')).toBeInTheDocument();
   });

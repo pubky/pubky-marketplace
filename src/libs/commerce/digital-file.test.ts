@@ -9,7 +9,6 @@ import {
   digitalFileContentType,
   digitalFileName,
   encryptDigitalDeliverable,
-  isDigitalDeliverableId,
   newDigitalDeliverableId,
   openDigitalDeliverable,
 } from './digital-file';
@@ -130,9 +129,7 @@ describe('digital deliverable encryption (§2 "How a file is stored")', () => {
   });
 
   it('mints deliverable ids the service accepts', () => {
-    expect(isDigitalDeliverableId(newDigitalDeliverableId())).toBe(true);
-    expect(isDigitalDeliverableId('A'.repeat(32))).toBe(false);
-    expect(isDigitalDeliverableId('a'.repeat(31))).toBe(false);
+    expect(newDigitalDeliverableId()).toMatch(/^[0-9a-f]{32}$/);
   });
 });
 

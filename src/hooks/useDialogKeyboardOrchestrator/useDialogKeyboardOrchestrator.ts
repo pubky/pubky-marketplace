@@ -154,7 +154,6 @@ export function useDialogKeyboardOrchestrator<T extends HTMLElement>(
     : undefined;
 
   return {
-    isKeyboardVisible,
     spacerHeight,
     contentStyle,
     layerStyle,

@@ -4,8 +4,6 @@ import {
   REFUND_FIXTURE_ADDRESS,
 } from '@/test/fixtures/commerce/usdt-refund.wire';
 import {
-  asDigitalDeliveryCommandResult,
-  asPickupDetailsCommandResult,
   clearDigitalDeliveryCommandSchema,
   clearPickupDetailsCommandSchema,
   compositeListingIdFromAggregateId,
@@ -562,54 +560,6 @@ describe('fulfillment.mark_ready / fulfillment.confirm_pickup command contracts'
   });
 });
 
-describe('pickup_details command result narrowing', () => {
-  const response = {
-    ok: true as const,
-    version: 1 as const,
-    commandId: '018f47d2-6a27-7c23-a62f-000000000731',
-    aggregateId: LISTING_AGGREGATE_ID,
-    revision: 3,
-    eventIds: ['018f47d2-6a27-7c23-a62f-000000000732'],
-  };
-
-  it('narrows the set result to the new details version', () => {
-    const result = asPickupDetailsCommandResult({
-      ...response,
-      result: {
-        kind: 'pickup_details',
-        listingAggregateId: LISTING_AGGREGATE_ID,
-        version: 3,
-        updatedAt: '2026-08-19T22:00:00.000Z',
-      },
-    });
-    expect(result).toMatchObject({ kind: 'pickup_details', version: 3, listingAggregateId: LISTING_AGGREGATE_ID });
-  });
-
-  it('narrows the clear result with the surviving version and the cleared flag', () => {
-    const result = asPickupDetailsCommandResult({
-      ...response,
-      result: {
-        kind: 'pickup_details',
-        listingAggregateId: LISTING_AGGREGATE_ID,
-        version: 4,
-        cleared: true,
-        updatedAt: '2026-08-19T22:05:00.000Z',
-      },
-    });
-    expect(result).toMatchObject({ version: 4, cleared: true });
-  });
-
-  it('returns null for a refusal or another command kind', () => {
-    expect(
-      asPickupDetailsCommandResult({
-        ok: false,
-        error: { code: 'INVALID_STATE', message: 'The listing does not publish pickup.' },
-      }),
-    ).toBeNull();
-    expect(asPickupDetailsCommandResult({ ...response, result: { kind: 'order', state: 'paid' } })).toBeNull();
-  });
-});
-
 describe('listing.register variant prices (mirrors the service register validation)', () => {
   const large = { amountMinor: 15_000, currency: 'USD', exponent: 2 };
   const command = (variants: unknown) => ({
@@ -952,7 +902,7 @@ describe('digital_delivery.set / .clear command contract (digital delivery desig
     ).toBe(true);
   });
 
-  it('parses and narrows the service result (handlers/digital.rs)', () => {
+  it('parses the service result (handlers/digital.rs)', () => {
     const response = marketplaceCommandResponseSchema.parse({
       ok: true,
       version: 1,
@@ -969,8 +919,10 @@ describe('digital_delivery.set / .clear command contract (digital delivery desig
         updatedAt: '2026-09-25T10:00:00.000Z',
       },
     });
-    expect(asDigitalDeliveryCommandResult(response)).toMatchObject({ version: 3, deliveryKind: 'file' });
-    expect(asPickupDetailsCommandResult(response)).toBeNull();
+    expect(response).toMatchObject({
+      ok: true,
+      result: { kind: 'digital_delivery', version: 3, deliveryKind: 'file' },
+    });
   });
 });
 

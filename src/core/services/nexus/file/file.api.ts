@@ -37,5 +37,3 @@ export const filesApi = {
     url: buildNexusUrl(`${API_PREFIX}/by_ids`),
   }),
 };
-
-export type FilesApiEndpoint = keyof typeof filesApi;

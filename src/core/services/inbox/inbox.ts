@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { CHAT_PING_MAX_BYTES } from '@/config/chat';
 import { utf8Bytes } from '@/libs/chat/encoding';
 import { MESSAGING_RETRY_POLICY, RetryBackoff } from '@/libs/chat/retry-backoff';
-import { isAppError } from '@/libs/error/error';
 import { ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { httpResponseToError, safeFetch } from '@/libs/error/error.http';
@@ -313,9 +312,4 @@ export class InboxService {
       // Nothing persisted, nothing to remove.
     }
   }
-}
-
-/** Whether an inbox failure means the session is gone (re-establish on the next pass). */
-export function isInboxSessionGone(error: unknown): boolean {
-  return isAppError(error) && error.context?.statusCode === 401;
 }

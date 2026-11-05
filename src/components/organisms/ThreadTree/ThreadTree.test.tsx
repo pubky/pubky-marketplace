@@ -54,7 +54,7 @@ describe('ThreadTree', () => {
       replyIds: [],
       totalCount: 0,
       hasMore: false,
-      showAll: false,
+
       isExpandingAll: false,
       expandAll: vi.fn(async () => {}),
     });
@@ -71,7 +71,7 @@ describe('ThreadTree', () => {
       replyIds: [],
       totalCount: 0,
       hasMore: false,
-      showAll: false,
+
       isExpandingAll: false,
       expandAll: vi.fn(async () => {}),
     });
@@ -86,7 +86,7 @@ describe('ThreadTree', () => {
       replyIds: ['author:reply-1', 'author:reply-2'],
       totalCount: 5,
       hasMore: true,
-      showAll: false,
+
       isExpandingAll: false,
       expandAll: vi.fn(async () => {}),
     });
@@ -110,7 +110,7 @@ describe('ThreadTree', () => {
       replyIds: ['author:reply-1', 'author:reply-2'],
       totalCount: 2,
       hasMore: false,
-      showAll: false,
+
       isExpandingAll: false,
       expandAll: vi.fn(async () => {}),
     });
@@ -130,7 +130,7 @@ describe('ThreadTree', () => {
       replyIds: ['author:reply-1'],
       totalCount: 1,
       hasMore: false,
-      showAll: false,
+
       isExpandingAll: false,
       expandAll: vi.fn(async () => {}),
     });
@@ -146,7 +146,7 @@ describe('ThreadTree', () => {
       replyIds: ['author:reply-1', 'author:reply-2'],
       totalCount: 5,
       hasMore: true,
-      showAll: false,
+
       isExpandingAll: false,
       expandAll: vi.fn(async () => {}),
     });
@@ -167,7 +167,7 @@ describe('ThreadTree', () => {
       replyIds: ['author:reply-1'],
       totalCount: 2,
       hasMore: true,
-      showAll: false,
+
       isExpandingAll: false,
       expandAll,
     });
@@ -183,7 +183,7 @@ describe('ThreadTree', () => {
       replyIds: ['author:reply-1', 'author:reply-2'],
       totalCount: 2,
       hasMore: false,
-      showAll: false,
+
       isExpandingAll: false,
       expandAll: vi.fn(async () => {}),
     });
@@ -207,7 +207,7 @@ describe('ThreadTree', () => {
       replyIds: ['author:reply-1'],
       totalCount: 6,
       hasMore: true,
-      showAll: false,
+
       isExpandingAll: false,
       expandAll,
     });
@@ -232,7 +232,7 @@ describe('ThreadTree', () => {
       replyIds: ['author:reply-1'],
       totalCount: 2,
       hasMore: true,
-      showAll: true,
+
       isExpandingAll: true,
       expandAll: vi.fn(async () => {}),
     });

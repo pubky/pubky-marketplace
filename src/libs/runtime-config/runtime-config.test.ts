@@ -4,7 +4,6 @@ import {
   getClientRegionHeader,
   getCommerceAdapterMode,
   getCommercePollIntervalMs,
-  getDigitalRegionBlockEnabled,
   getEuFenceEnabled,
   getLocksUrl,
   getMarketplaceNexusUrl,
@@ -291,17 +290,17 @@ describe('runtime-config resolver', () => {
       expect(PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled).toBe('PUBKY_RUNTIME_EU_FENCE_ENABLED');
       expect(PUBKY_RUNTIME_ENV_NAMES.digitalRegionBlockEnabled).toBe('PUBKY_RUNTIME_DIGITAL_REGION_BLOCK_ENABLED');
       expect(getEuFenceEnabled()).toBe(false);
-      expect(getDigitalRegionBlockEnabled()).toBe(false);
+      expect(getRegionPolicy().digitalHoldActive).toBe(false);
 
       resetRuntimeConfigForTests();
       process.env[PUBKY_RUNTIME_ENV_NAMES.digitalRegionBlockEnabled] = 'true';
-      expect(getDigitalRegionBlockEnabled()).toBe(true);
+      expect(getRegionPolicy().digitalHoldActive).toBe(true);
       expect(getEuFenceEnabled()).toBe(false);
 
       resetRuntimeConfigForTests();
       process.env[PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled] = 'true';
       expect(getEuFenceEnabled()).toBe(true);
-      expect(getDigitalRegionBlockEnabled()).toBe(true);
+      expect(getRegionPolicy().digitalHoldActive).toBe(true);
     });
 
     it('fails loudly on a malformed region switch and resolves both off in a strict deployed parse', () => {
@@ -351,7 +350,7 @@ describe('runtime-config resolver', () => {
         expect(policy.modeOf('US')).toBe('blocked');
         expect(policy.hasNuanced).toBe(false);
         expect(getEuFenceEnabled()).toBe(false);
-        expect(getDigitalRegionBlockEnabled()).toBe(false);
+        expect(getRegionPolicy().digitalHoldActive).toBe(false);
       });
 
       it('opens everything with none, even with the older flags on', () => {

@@ -93,15 +93,6 @@ export class Identity {
   }
 
   /**
-   * Converts a keypair to a z32 pubky string
-   * @param keypair - The keypair to convert
-   * @returns The z-base32 encoding of this public key
-   */
-  static z32FromKeypair(keypair: Keypair): Pubky {
-    return keypair.publicKey.z32();
-  }
-
-  /**
    * Converts a secret key to a z32 pubky string
    * @param secretKey - The secret key to convert
    * @returns The z-base32 encoding of this public key
@@ -118,17 +109,6 @@ export class Identity {
    * @returns The pubky string with prefix
    */
   static pubkyFromKeypair(keypair: Keypair): string {
-    return keypair.publicKey.toString();
-  }
-
-  /**
-   * Converts a secret key to a human-readable pubky string
-   * @param secretKey - The secret key to convert
-   * @returns The pubky string with prefix
-   */
-  static pubkyFromSecret(secretKey: string): string {
-    const secretKeyUint8Array = this.secretKeyFromHex(secretKey);
-    const keypair = Keypair.fromSecret(secretKeyUint8Array);
     return keypair.publicKey.toString();
   }
 
@@ -297,15 +277,6 @@ export class Identity {
    */
   static z32FromSession({ session }: THomeserverSessionResult): Pubky {
     return session.info.publicKey.z32();
-  }
-
-  /**
-   * Gets the human-readable pubky from a session
-   * @param session - The session to get the pubky from
-   * @returns The pubky string with prefix
-   */
-  static pubkyFromSession({ session }: THomeserverSessionResult): string {
-    return session.info.publicKey.toString();
   }
 
   /**

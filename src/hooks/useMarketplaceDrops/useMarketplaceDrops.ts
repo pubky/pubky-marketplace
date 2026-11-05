@@ -22,7 +22,6 @@ export interface UseMarketplaceDropsResult {
   isLoading: boolean;
   error: string | null;
   adapterMode: ReturnType<typeof getCommerceAdapterMode>;
-  refresh: () => Promise<void>;
 }
 
 const EMPTY_BUCKETS: Record<DropStreamBucket, NexusDropStreamEntry[]> = { upcoming: [], live: [], ended: [] };
@@ -98,5 +97,5 @@ export function useMarketplaceDrops(): UseMarketplaceDropsResult {
     void refresh();
   }, [isDurable, refresh]);
 
-  return { buckets, isIndexed, isLoading, error, adapterMode, refresh };
+  return { buckets, isIndexed, isLoading, error, adapterMode };
 }

@@ -159,7 +159,6 @@ export function useMarketplaceCheckout(
   award: { sellerPubky: string; fulfillmentMethods: readonly MarketplaceFulfillmentMethod[] } | null = null,
 ): {
   form: UseFormReturn<MarketplaceCheckoutData>;
-  submit: () => Promise<boolean>;
   /** `onRetry` backs the Try again action of a wallet-setup refusal; it runs only on the buyer's click. */
   pay: (method: PaymentMethodKind | null, onRetry?: () => void) => Promise<MarketplacePayResult>;
   isPaying: boolean;
@@ -841,22 +840,6 @@ export function useMarketplaceCheckout(
     );
   };
 
-  const submit = async (): Promise<boolean> => {
-    if (!items.length) return false;
-    let succeeded = false;
-    await form.handleSubmit(async (data) => {
-      try {
-        const created = await createCheckout(data);
-        if (!created.ok) return;
-        succeeded = true;
-        await finishCreatedCheckout(data);
-      } catch (checkoutError) {
-        handleCheckoutError(checkoutError);
-      }
-    })();
-    return succeeded;
-  };
-
   const pay = async (method: PaymentMethodKind | null, onRetry?: () => void): Promise<MarketplacePayResult> => {
     const empty: MarketplacePayResult = { ok: false, orderIds: [], boundOrders: [] };
     if (!items.length || isPaying) return empty;
@@ -931,7 +914,6 @@ export function useMarketplaceCheckout(
 
   return {
     form,
-    submit,
     pay,
     isPaying,
     needsSession,

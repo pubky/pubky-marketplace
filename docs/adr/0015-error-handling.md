@@ -364,7 +364,7 @@ try {
 
 **TanStack Query** (`src/libs/query-client/query-client.factory.ts`): The QueryClient factory reads `error.context.statusCode` to make retry decisions. Each service configures its own retry limits, non-retryable codes, and exponential backoff delays.
 
-**Utilities** (`src/libs/error/error.utils.ts`): Category predicates (`isNetworkError`, `isAuthError`, etc.), decision helpers (`isRetryable`, `requiresLogin`, `isNotFound`, `getRetryAfter`), and normalization functions (`toAppError`, `getErrorMessage`) support error handling throughout the application.
+**Utilities** (`src/libs/error/error.utils.ts`): Error predicates (`isAuthError`, `isTimeoutError`), decision helpers (`isRetryable`, `requiresLogin`, `isNotFound`, `getRetryAfter`), and normalization functions (`toAppError`, `getErrorMessage`) support error handling throughout the application.
 
 ---
 

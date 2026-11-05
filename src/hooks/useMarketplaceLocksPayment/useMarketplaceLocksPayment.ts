@@ -272,7 +272,6 @@ export function useMarketplaceLocksPayment({
   };
 
   return {
-    enabled,
     correlation,
     isStarting,
     isUnlocking,

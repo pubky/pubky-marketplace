@@ -108,5 +108,3 @@ export function buildUserStreamBodyUrl(params: TUserStreamUsersByIdsParams) {
 
   return body;
 }
-
-export type UserStreamApiEndpoint = keyof typeof userStreamApi;

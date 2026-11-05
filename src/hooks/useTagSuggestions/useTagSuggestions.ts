@@ -27,7 +27,7 @@ export function useTagSuggestions({
   limit = TAG_SUGGESTIONS_DEFAULT_LIMIT,
 }: UseTagSuggestionsParams): UseTagSuggestionsResult {
   const [rawSuggestions, setRawSuggestions] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [, setIsLoading] = useState(false);
   // Guards against out-of-order async responses overwriting newer results
   const requestIdRef = useRef(0);
 
@@ -103,6 +103,5 @@ export function useTagSuggestions({
 
   return {
     suggestions,
-    isLoading,
   };
 }

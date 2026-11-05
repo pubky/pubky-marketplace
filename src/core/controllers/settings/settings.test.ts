@@ -29,7 +29,6 @@ const mockNotificationStoreActions = {
 
 const mockStoreActions = {
   setNotificationPreference: vi.fn(),
-  setAllNotifications: vi.fn(),
   setShowConfirm: vi.fn(),
   setBlurCensored: vi.fn(),
   setSignOutInactive: vi.fn(),
@@ -38,10 +37,6 @@ const mockStoreActions = {
   setHideActiveFriends: vi.fn(),
   setHideSearch: vi.fn(),
   setNeverShowPosts: vi.fn(),
-  addMutedUser: vi.fn(),
-  removeMutedUser: vi.fn(),
-  setMutedUsers: vi.fn(),
-  clearMutedUsers: vi.fn(),
   notifications: defaultNotificationPreferences,
   privacy: defaultPrivacyPreferences,
   muted: [] as string[],
@@ -123,47 +118,6 @@ describe('SettingsController', () => {
     });
   });
 
-  describe('setAllNotifications', () => {
-    it('should update zustand store', async () => {
-      const preferences = { ...defaultNotificationPreferences, follow: false };
-      await SettingsController.setAllNotifications(preferences);
-
-      expect(mockStoreActions.setAllNotifications).toHaveBeenCalledWith(preferences);
-    });
-
-    it('should recalculate unread badge count when types are enabled', async () => {
-      countFilteredSpy.mockResolvedValue(3);
-      const preferences = { ...defaultNotificationPreferences, follow: false };
-      await SettingsController.setAllNotifications(preferences);
-
-      expect(countFilteredSpy).toHaveBeenCalledWith(MOCK_LAST_READ, MOCK_ALLOWED_TYPES);
-      expect(mockNotificationStoreActions.setUnread).toHaveBeenCalledWith(3);
-    });
-
-    it('should recalculate unread badge count to 0 when no types match', async () => {
-      countFilteredSpy.mockResolvedValue(0);
-      const preferences = { ...defaultNotificationPreferences, follow: false };
-      await SettingsController.setAllNotifications(preferences);
-
-      expect(countFilteredSpy).toHaveBeenCalledWith(MOCK_LAST_READ, MOCK_ALLOWED_TYPES);
-      expect(mockNotificationStoreActions.setUnread).toHaveBeenCalledWith(0);
-    });
-
-    it('should sync to homeserver', async () => {
-      const preferences = { ...defaultNotificationPreferences, follow: false };
-      await SettingsController.setAllNotifications(preferences);
-
-      expect(commitUpdateSpy).toHaveBeenCalledWith(mockSettingsState, TEST_PUBKY);
-    });
-
-    it('should still sync to homeserver when badge recalculation fails', async () => {
-      countFilteredSpy.mockRejectedValue(new Error('db-fail'));
-
-      await expect(SettingsController.setAllNotifications(defaultNotificationPreferences)).rejects.toThrow('db-fail');
-      expect(commitUpdateSpy).toHaveBeenCalledWith(mockSettingsState, TEST_PUBKY);
-    });
-  });
-
   describe('setShowConfirm', () => {
     it('should update zustand store and sync to homeserver', async () => {
       await SettingsController.setShowConfirm(false);
@@ -179,29 +133,6 @@ describe('SettingsController', () => {
 
       expect(mockStoreActions.setBlurCensored).toHaveBeenCalledWith(true);
       expect(commitUpdateSpy).toHaveBeenCalledWith(mockSettingsState, TEST_PUBKY);
-    });
-  });
-
-  describe('local-only operations (muted users)', () => {
-    it('addMutedUser should update store without homeserver sync', () => {
-      SettingsController.addMutedUser('user-1');
-
-      expect(mockStoreActions.addMutedUser).toHaveBeenCalledWith('user-1');
-      expect(commitUpdateSpy).not.toHaveBeenCalled();
-    });
-
-    it('removeMutedUser should update store without homeserver sync', () => {
-      SettingsController.removeMutedUser('user-1');
-
-      expect(mockStoreActions.removeMutedUser).toHaveBeenCalledWith('user-1');
-      expect(commitUpdateSpy).not.toHaveBeenCalled();
-    });
-
-    it('clearMutedUsers should update store without homeserver sync', () => {
-      SettingsController.clearMutedUsers();
-
-      expect(mockStoreActions.clearMutedUsers).toHaveBeenCalled();
-      expect(commitUpdateSpy).not.toHaveBeenCalled();
     });
   });
 

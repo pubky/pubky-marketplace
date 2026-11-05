@@ -145,13 +145,11 @@ export function useConnectorPushStatus() {
 
   return {
     visible: (overview?.connections.length ?? 0) > 0 || (overview?.alerts.length ?? 0) > 0,
-    connections: overview?.connections ?? [],
     pushes: overview?.pushes ?? [],
     needsAttention,
     alerts: alertsWithoutPush,
     retryingOrderId,
     retry,
     dismissAlert,
-    refresh: async () => load(),
   };
 }

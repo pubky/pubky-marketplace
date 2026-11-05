@@ -19,8 +19,6 @@ import {
   isDynamicPublicRoute,
   isLogoLandingRoute,
   isNavItemActive,
-  isPostRoute,
-  isPublicExploreRoute,
   LOGO_LANDING_ROUTES,
   MARKETPLACE_ROUTES,
   matchesAllowedRoute,
@@ -495,19 +493,6 @@ describe('getUserProfileUrl', () => {
   });
 });
 
-describe('isPostRoute', () => {
-  it('returns true for single post pages', () => {
-    const pubky = 'o1gg96ewuojmopcjbz8895478wdtxtzzber7aezq6ror5a91j7dy';
-    expect(isPostRoute(`/post/${pubky}/0034BBBDFK83G`)).toBe(true);
-  });
-
-  it('returns false for non-post paths', () => {
-    expect(isPostRoute('/post')).toBe(false);
-    expect(isPostRoute('/post/user-only')).toBe(false);
-    expect(isPostRoute('/home')).toBe(false);
-  });
-});
-
 describe('isCoreExploreRoute', () => {
   it('returns true for core logged-out explore routes', () => {
     expect(isCoreExploreRoute('/home')).toBe(true);
@@ -526,30 +511,6 @@ describe('isCoreExploreRoute', () => {
     expect(isCoreExploreRoute('/bookmarks')).toBe(false);
     expect(isCoreExploreRoute('/feed/custom-feed')).toBe(false);
     expect(isCoreExploreRoute('/settings/account')).toBe(false);
-  });
-});
-
-describe('isPublicExploreRoute', () => {
-  it('returns true for core explore routes and dynamic post/profile/collection pages', () => {
-    const pubky = 'o1gg96ewuojmopcjbz8895478wdtxtzzber7aezq6ror5a91j7dy';
-
-    expect(isPublicExploreRoute('/home')).toBe(true);
-    expect(isPublicExploreRoute('/hot')).toBe(true);
-    expect(isPublicExploreRoute('/search')).toBe(true);
-    expect(isPublicExploreRoute('/collections')).toBe(true);
-    expect(isPublicExploreRoute(`/post/${pubky}/0034BBBDFK83G`)).toBe(true);
-    expect(isPublicExploreRoute(`/profile/${pubky}`)).toBe(true);
-    expect(isPublicExploreRoute(`/collections/${pubky}/0034BBBDFK83G`)).toBe(true);
-  });
-
-  it('returns false for protected routes', () => {
-    expect(isPublicExploreRoute('/bookmarks')).toBe(false);
-    expect(isPublicExploreRoute('/collections/bookmarks')).toBe(false);
-    expect(isPublicExploreRoute('/feed/custom-feed')).toBe(false);
-    expect(isPublicExploreRoute('/settings/account')).toBe(false);
-    expect(isPublicExploreRoute('/profile/posts')).toBe(false);
-    expect(isPublicExploreRoute('/share')).toBe(false);
-    expect(isPublicExploreRoute('/who-to-follow')).toBe(false);
   });
 });
 

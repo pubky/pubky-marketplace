@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HttpMethod } from '@/libs/http/http.types';
 import { useFollowUser } from './useFollowUser';
@@ -40,28 +40,26 @@ describe('useFollowUser', () => {
     mockGetDetails.mockResolvedValue(null);
   });
 
-  it('sets error when user not authenticated', async () => {
+  it('refuses to follow when user is not authenticated', async () => {
     mockUseAuthStore.mockReturnValue({ currentUserPubky: null });
 
     const { result } = renderHook(() => useFollowUser());
 
     await act(async () => {
-      await result.current.toggleFollow('user-1', false);
+      expect(await result.current.toggleFollow('user-1', false)).toBe(false);
     });
 
-    expect(result.current.error).toBe('User not authenticated');
     expect(mockCommitFollow).not.toHaveBeenCalled();
     expect(mockToast).not.toHaveBeenCalled();
   });
 
-  it('sets error when following self', async () => {
+  it('refuses to follow self', async () => {
     const { result } = renderHook(() => useFollowUser());
 
     await act(async () => {
-      await result.current.toggleFollow('current-user', false);
+      expect(await result.current.toggleFollow('current-user', false)).toBe(false);
     });
 
-    expect(result.current.error).toBe('Cannot follow yourself');
     expect(mockCommitFollow).not.toHaveBeenCalled();
   });
 
@@ -126,9 +124,6 @@ describe('useFollowUser', () => {
     });
 
     expect(returned).toBe(false);
-    await waitFor(() => {
-      expect(result.current.error).toBe('Failed to follow Alice');
-    });
     expect(mockToast).toHaveBeenCalledWith({
       variant: 'error',
       description: 'Failed to follow Alice',

@@ -252,16 +252,6 @@ export function formatInviteCode(code: string) {
   }
 }
 
-export function clearCookies() {
-  if (typeof document !== 'undefined') {
-    document.cookie.split(';').forEach((cookie) => {
-      const eqPos = cookie.indexOf('=');
-      const name = eqPos > -1 ? cookie.substr(0, eqPos) : cookie;
-      document.cookie = `${name.trim()}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
-    });
-  }
-}
-
 /**
  * Pauses execution for the specified duration.
  * Useful for adding delays in async operations.
@@ -274,13 +264,6 @@ export function clearCookies() {
  * await sleep(5000); // Wait 5 seconds
  */
 export const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * Helper functions to create timestamps relative to now
- */
-export const minutesAgo = (mins: number): number => Date.now() - mins * 60 * 1000;
-export const hoursAgo = (hours: number): number => Date.now() - hours * 60 * 60 * 1000;
-export const daysAgo = (days: number): number => Date.now() - days * 24 * 60 * 60 * 1000;
 
 /**
  * Formats a filename by truncating it if it exceeds the max length,

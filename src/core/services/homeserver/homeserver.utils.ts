@@ -33,21 +33,6 @@ const AUTH_POLL_INTERVAL_MS = 100;
 const AUTH_POLL_MAX_ATTEMPTS = 3_000;
 
 /**
- * Encode bytes as standard (padded) base64 — the same alphabet `session.export()`
- * uses, so a `/signup` response body (serialized SessionInfo) can be fed to
- * `Pubky.restoreSession`. Chunked to stay under the argument limit of
- * `String.fromCharCode.apply` for large inputs.
- */
-export const bytesToBase64 = (bytes: Uint8Array): string => {
-  const CHUNK_SIZE = 0x8000;
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK_SIZE));
-  }
-  return btoa(binary);
-};
-
-/**
  * Checks if a URL is an HTTP or HTTPS URL
  * @param url - The URL to check
  * @returns True if the URL is HTTP/HTTPS, false otherwise

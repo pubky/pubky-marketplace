@@ -20,15 +20,7 @@ export type TUserRelationshipParams = TUserId & {
   viewer_id: Pubky;
 };
 
-export type TUserTaggersParams = TUserId &
-  TPaginationParams &
-  TUserDepthParams & {
-    label: string;
-  };
-
 export type TUserTagsParams = TUserId & TTagsPaginationParams & TUserDepthParams & TSkipTagsParams;
 
-export type TUserQueryParams = TUserViewParams | TUserPaginationParams | TUserTaggersParams | TUserTagsParams;
-
 // Path parameters that should NOT be added to query string
-export const USER_PATH_PARAMS = ['user_id', 'label'] as const;
+export const USER_PATH_PARAMS = ['user_id'] as const;

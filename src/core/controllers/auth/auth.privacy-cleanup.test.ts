@@ -24,7 +24,6 @@ vi.mock('@/libs/query-client/query-client.factory', async (original) => ({
 }));
 vi.mock('@/libs/utils/utils', async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  clearCookies: vi.fn(),
 }));
 
 const ALICE = '5a1diz4pghi47ywdfyfzpit5f3bdomzt4pugpbmq4rngdd4iub4y';

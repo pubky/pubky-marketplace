@@ -30,7 +30,6 @@ vi.mock('@/libs/utils/utils', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/libs/utils/utils')>();
   return {
     ...actual,
-    clearCookies: vi.fn(),
   };
 });
 

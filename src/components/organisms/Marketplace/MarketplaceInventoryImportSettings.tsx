@@ -30,12 +30,6 @@ const IMPORT_FORMAT_INTRO: Record<ImportSourceFormat, string> = {
   shopify: 'Shopify export detected. These apply to every listing in this file.',
 };
 
-export const IMPORT_FORMAT_LABEL: Record<ImportSourceFormat, string> = {
-  woocommerce: 'WooCommerce',
-  woocommerce_store: 'WooCommerce store',
-  shopify: 'Shopify',
-};
-
 function conditionLabel(value: string): string {
   const text = value.replaceAll('_', ' ');
   return text.charAt(0).toUpperCase() + text.slice(1);

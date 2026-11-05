@@ -20,7 +20,6 @@ vi.mock('@/libs/query-client/query-client.factory', async (original) => ({
 }));
 vi.mock('@/libs/utils/utils', async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  clearCookies: vi.fn(),
 }));
 
 beforeEach(() => {

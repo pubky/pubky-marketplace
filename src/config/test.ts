@@ -72,10 +72,7 @@ class MockIntersectionObserver implements IntersectionObserver {
 
 // Polyfill ResizeObserver for jsdom
 class MockResizeObserver implements ResizeObserver {
-  constructor(callback: ResizeObserverCallback) {
-    this.callback = callback;
-  }
-  private callback: ResizeObserverCallback;
+  constructor(_callback: ResizeObserverCallback) {}
   observe(): void {}
   unobserve(): void {}
   disconnect(): void {}

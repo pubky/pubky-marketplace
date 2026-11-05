@@ -64,9 +64,4 @@ export interface UseTtlSubscriptionResult {
    * Use this ref on the container element
    */
   ref: (node: HTMLElement | null) => void;
-
-  /**
-   * Whether the element is currently visible in the viewport
-   */
-  isVisible: boolean;
 }

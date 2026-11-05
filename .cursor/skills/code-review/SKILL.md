@@ -171,7 +171,7 @@ For each changed function, component, or block, ask whether it could be written 
 1. **Over-abstraction**: wrapper functions/components that add a layer without adding value, premature generalization for a single use case
 2. **Control flow**: nested if/else that could be early returns, complex ternaries that should be if statements, switch statements with fallthrough that obscure intent
 3. **Duplication within the diff**: similar logic repeated across changed files that could share a utility
-4. **Existing utilities ignored**: code that reimplements something already available in `src/libs/` — this project has `cn()` (clsx+tailwind-merge), timestamp helpers (`minutesAgo`, `hoursAgo`, `daysAgo`), string utilities (`truncateString`, `truncateMiddle`, `formatPublicKey`, `formatFileName`), and error utilities (`toAppError`, `safeFetch`). Check `src/libs/` before flagging.
+4. **Existing utilities ignored**: code that reimplements something already available in `src/libs/` — this project has `cn()` (clsx+tailwind-merge), string utilities (`truncateString`, `truncateMiddle`, `formatPublicKey`, `formatFileName`), and error utilities (`toAppError`, `safeFetch`). Check `src/libs/` before flagging.
 5. **Component complexity**: React components mixing concerns that should be separated per the architecture — e.g., a component calling services directly instead of using controllers, or doing data transformation that belongs in a Pipe
 
 VERIFICATION IS MANDATORY. Read the actual source file for full context before flagging. A function may look complex in a diff but be justified by surrounding code. Never use "likely" or "probably".

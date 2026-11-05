@@ -73,7 +73,7 @@ describe('useThreadReplies', () => {
     });
 
     expect(getOrFetchSpy).toHaveBeenCalledTimes(2);
-    expect(result.current.showAll).toBe(true);
+    expect(result.current.hasMore).toBe(false);
     expect(result.current.hasMore).toBe(false);
   });
 
@@ -101,7 +101,7 @@ describe('useThreadReplies', () => {
     });
 
     expect(getOrFetchSpy).toHaveBeenCalled();
-    expect(result.current.showAll).toBe(true);
+    expect(result.current.hasMore).toBe(false);
     expect(result.current.hasMore).toBe(false);
   });
 });

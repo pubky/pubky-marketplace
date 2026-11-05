@@ -125,7 +125,6 @@ export function availablePaymentMethods(
 }
 
 export const BITCOIN_SETUP_STATUSES = ['ready', 'setup_required', 'unavailable'] as const;
-export type BitcoinSetupStatus = (typeof BITCOIN_SETUP_STATUSES)[number];
 
 /**
  * The service's uncached Paykit answer for receiving Bitcoin (`bitcoin_setup`),
@@ -200,22 +199,4 @@ export function isValidPaypalMerchantEmail(value: string): boolean {
   if (local === '' || domain === '' || !domain.includes('.')) return false;
   if (domain.startsWith('.') || domain.endsWith('.') || domain.includes('..')) return false;
   return paypalEmailReadBackSchema.safeParse(email).success;
-}
-
-/**
- * Client-side sanity check for a pasted BIP84 account key before it is sent
- * to the claim endpoint (which performs the authoritative parse). Accepts
- * the mainnet and testnet/regtest account-xpub encodings a wallet exports
- * for native-segwit accounts, plus the raw xpub/tpub forms some tools emit.
- */
-const ACCOUNT_XPUB_PREFIXES = ['zpub', 'vpub', 'xpub', 'tpub'];
-const BASE58_CHARS = /^[1-9A-HJ-NP-Za-km-z]+$/;
-
-export function isPlausibleAccountXpub(value: string): boolean {
-  const trimmed = value.trim();
-  const prefix = ACCOUNT_XPUB_PREFIXES.find((candidate) => trimmed.startsWith(candidate));
-  if (!prefix) return false;
-  // Serialized extended keys are 111-112 base58 characters.
-  if (trimmed.length < 100 || trimmed.length > 120) return false;
-  return BASE58_CHARS.test(trimmed);
 }

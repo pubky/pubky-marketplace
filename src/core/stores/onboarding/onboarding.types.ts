@@ -25,7 +25,6 @@ export interface OnboardingActions {
 
 export interface OnboardingSelectors {
   selectSecretKey: () => string;
-  selectMnemonic: () => string;
 }
 
 export type OnboardingStore = OnboardingState & OnboardingActions & OnboardingSelectors;

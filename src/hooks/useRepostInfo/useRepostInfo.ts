@@ -23,7 +23,7 @@ import type { UseRepostInfoResult } from './useRepostInfo.types';
  * - **PostMain**: Uses `isRepost` and `isCurrentUserRepost` to show repost header
  *
  * @param postId - Composite post ID in format "authorId:postId"
- * @returns Repost information including whether it's a repost, repost author ID, original post ID, and if current user reposted
+ * @returns Repost information including whether it's a repost, its original post ID, and if the current user reposted
  *
  * @example
  * ```tsx
@@ -47,7 +47,7 @@ export function useRepostInfo(postId: string): UseRepostInfoResult {
   const { currentUserPubky } = useCurrentUserProfile();
 
   // Read relationships via controller using local-first pattern
-  const { data: relationships, isLoading } = useLocalFirstQuery<PostRelationshipsModelSchema>({
+  const { data: relationships } = useLocalFirstQuery<PostRelationshipsModelSchema>({
     queryFn: () => PostController.getRelationships({ compositeId: postId }),
     fetchFn: () => PostController.fetch({ compositeId: postId }),
     deps: [postId],
@@ -55,7 +55,6 @@ export function useRepostInfo(postId: string): UseRepostInfoResult {
   });
 
   const isRepost = !!relationships?.reposted;
-  const hasError = !!postId && relationships === null && !isLoading;
 
   // Extract original post ID from reposted URI
   let originalPostId: string | null = null;
@@ -90,10 +89,7 @@ export function useRepostInfo(postId: string): UseRepostInfoResult {
 
   return {
     isRepost,
-    repostAuthorId,
     isCurrentUserRepost,
     originalPostId,
-    isLoading,
-    hasError,
   };
 }

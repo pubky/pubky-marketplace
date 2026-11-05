@@ -41,7 +41,6 @@ export function useMarketplaceSellerDeliveryTerms(sellerPubkys: readonly string[
   }, [key]);
 
   return {
-    isLoading: key !== '' && resolved?.key !== key,
     entries: key !== '' && resolved?.key === key ? resolved.entries : [],
   };
 }

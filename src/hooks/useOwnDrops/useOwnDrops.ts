@@ -27,7 +27,6 @@ export interface OwnDropRow {
 export interface UseOwnDropsResult {
   rows: OwnDropRow[];
   isLoading: boolean;
-  isDurable: boolean;
   refresh: () => Promise<void>;
 }
 
@@ -110,7 +109,6 @@ export function useOwnDrops(): UseOwnDropsResult {
   return {
     rows,
     isLoading,
-    isDurable,
     refresh: () => runLoad('refresh'),
   };
 }

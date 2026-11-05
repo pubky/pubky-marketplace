@@ -1,5 +1,4 @@
 import { UserApplication } from '@/application/user/user';
-import type { TUserCountsOrFetchResult } from '@/application/user/user.types';
 import { withoutBasePath } from '@/config/base-path';
 import type { TReadProfileParams } from '@/controllers/profile/profile.types';
 import type { TFollowParams, TPubkyListParams } from '@/controllers/user/user.type';
@@ -11,14 +10,8 @@ import type { PostStreamId } from '@/models/stream/post/postStream.types';
 import type { UserCountsModel } from '@/models/user/counts/userCounts';
 import type { UserRelationshipsModelSchema } from '@/models/user/relationships/userRelationships.schema';
 import { FollowNormalizer } from '@/pipes/follow/follow.normalizer';
-import type {
-  NexusTag,
-  NexusTaggers,
-  NexusUserCounts,
-  NexusUserDetails,
-  NexusUserRelationship,
-} from '@/services/nexus/nexus.types';
-import type { TUserTaggersParams, TUserTagsParams } from '@/services/nexus/user/user.types';
+import type { NexusTag, NexusUserCounts, NexusUserDetails, NexusUserRelationship } from '@/services/nexus/nexus.types';
+import type { TUserTagsParams } from '@/services/nexus/user/user.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useHomeStore } from '@/stores/home/home.store';
 import { getHomeStreamIdFromFilters } from '@/stores/home/home.utils';
@@ -51,15 +44,8 @@ export class UserController {
   }
 
   /**
-   * Get user counts from local database, fetching from Nexus API if not found.
-   */
-  static async getOrFetchCounts(params: TReadProfileParams): Promise<TUserCountsOrFetchResult | null> {
-    return await UserApplication.getOrFetchCounts(params);
-  }
-
-  /**
    * Fetch user counts from Nexus and persist locally (network-only, no local read).
-   * Use instead of `getOrFetchCounts` when the caller already knows counts are not cached.
+   * Use when the caller already knows counts are not cached.
    */
   static async fetchCounts(params: TReadProfileParams): Promise<NexusUserCounts | null> {
     return await UserApplication.fetchCounts(params);
@@ -101,15 +87,6 @@ export class UserController {
   }
 
   /**
-   * Fetch taggers for a user from the Nexus API
-   * @param params - The parameters for fetching taggers
-   * @returns The taggers for the user
-   */
-  static async fetchTaggers(params: TUserTaggersParams): Promise<NexusTaggers[]> {
-    return await UserApplication.fetchTaggers(params);
-  }
-
-  /**
    * Get user relationships from local database
    * This is a read-only operation that queries the local cache
    */
@@ -126,17 +103,8 @@ export class UserController {
   }
 
   /**
-   * Get full user entity from local database or fetch from Nexus batch API.
-   * Persists details, counts, relationships, tags, TTL, and moderation.
-   * Preferred over `getOrFetchDetails` when the caller needs the full entity cached.
-   */
-  static async getOrFetch(params: TReadProfileParams): Promise<NexusUserDetails | null> {
-    return await UserApplication.getOrFetch(params);
-  }
-
-  /**
    * Fetch full user entity from Nexus batch API and persist locally (network-only, no local read).
-   * Use instead of `getOrFetch` when the caller already knows the user is not cached.
+   * Use when the caller already knows the user is not cached.
    */
   static async fetch(params: TReadProfileParams): Promise<NexusUserDetails | null> {
     return await UserApplication.fetch(params);

@@ -91,7 +91,6 @@ describe('useTtlSubscription', () => {
 
       expect(result.current.ref).toBeDefined();
       expect(typeof result.current.ref).toBe('function');
-      expect(result.current.isVisible).toBe(false);
     });
 
     it('should not subscribe post when id is null', () => {
@@ -239,7 +238,6 @@ describe('useTtlSubscription', () => {
         simulateVisibility(true);
       });
 
-      expect(result.current.isVisible).toBe(true);
       expect(mockSubscribePost).toHaveBeenCalledWith({
         compositePostId: 'author123:post456',
       });
@@ -291,7 +289,6 @@ describe('useTtlSubscription', () => {
         simulateVisibility(false);
       });
 
-      expect(result.current.isVisible).toBe(false);
       expect(mockUnsubscribePost).toHaveBeenCalledWith({
         compositePostId: 'author123:post456',
       });
@@ -316,7 +313,6 @@ describe('useTtlSubscription', () => {
         simulateVisibility(true);
       });
 
-      expect(result.current.isVisible).toBe(true);
       expect(mockSubscribeUser).toHaveBeenCalledWith({
         pubky: 'user123',
       });
@@ -345,7 +341,6 @@ describe('useTtlSubscription', () => {
         simulateVisibility(false);
       });
 
-      expect(result.current.isVisible).toBe(false);
       expect(mockUnsubscribeUser).toHaveBeenCalledWith({
         pubky: 'user123',
       });
@@ -573,7 +568,6 @@ describe('useTtlSubscription', () => {
       });
 
       // Final state should be visible
-      expect(result.current.isVisible).toBe(true);
 
       const subscribeCalls = mockSubscribePost.mock.calls.length;
       const unsubscribeCalls = mockUnsubscribePost.mock.calls.length;
@@ -616,7 +610,6 @@ describe('useTtlSubscription', () => {
       });
 
       // Final state should be visible
-      expect(result.current.isVisible).toBe(true);
 
       const subscribeCalls = mockSubscribeUser.mock.calls.length;
       const unsubscribeCalls = mockUnsubscribeUser.mock.calls.length;
@@ -656,7 +649,6 @@ describe('useTtlSubscription', () => {
       });
 
       // Final state should be hidden
-      expect(result.current.isVisible).toBe(false);
 
       // Clear mocks before unmount
       mockUnsubscribePost.mockClear();
@@ -702,7 +694,6 @@ describe('useTtlSubscription', () => {
       expect(subscribeCalls).toBe(unsubscribeCalls);
 
       // Final state should be hidden
-      expect(result.current.isVisible).toBe(false);
     });
   });
 

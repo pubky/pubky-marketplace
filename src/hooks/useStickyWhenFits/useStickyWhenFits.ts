@@ -37,15 +37,6 @@ interface UseStickyWhenFitsResult {
    * undefined as sticky (optimistic assumption during SSR).
    */
   shouldBeSticky: boolean | undefined;
-  /** Whether the sticky calculation has been performed (client-side only) */
-  isReady: boolean;
-  /**
-   * Dynamically calculated negative offset for when sidebar doesn't fit.
-   * Calculated as: viewportHeight - sidebarHeight - bottomOffset
-   * This ensures the sidebar only scrolls as much as needed to reveal bottom elements.
-   * Only valid when shouldBeSticky is false.
-   */
-  nonStickyOffset: number | undefined;
   /**
    * Pre-calculated sticky top value in pixels.
    * - When `shouldBeSticky` is `true` or `undefined` (SSR): returns `topOffset`
@@ -168,8 +159,6 @@ export function useStickyWhenFits(options: UseStickyWhenFitsOptions = {}): UseSt
   return {
     ref,
     shouldBeSticky,
-    isReady: shouldBeSticky !== undefined,
-    nonStickyOffset,
     stickyTop,
   };
 }

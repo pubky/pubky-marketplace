@@ -24,7 +24,6 @@ export interface UseDialogKeyboardOrchestratorOptions {
 }
 
 export interface UseDialogKeyboardOrchestratorResult {
-  isKeyboardVisible: boolean;
   spacerHeight: number;
   contentStyle: CSSProperties | undefined;
   /**

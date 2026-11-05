@@ -18,10 +18,6 @@ export interface UsePostParticipantsOptions {
 export interface UsePostParticipantsResult {
   /** Array of participants (author + reply authors) */
   participants: PostParticipant[];
-  /** The post author */
-  author: PostParticipant | null;
   /** Loading state */
   isLoading: boolean;
-  /** Error state */
-  error: Error | null;
 }

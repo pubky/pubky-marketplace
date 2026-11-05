@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './Card';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './Card';
 
 describe('Card', () => {
   it('renders complete card structure', () => {
@@ -9,7 +9,6 @@ describe('Card', () => {
         <CardHeader>
           <CardTitle>Card Title</CardTitle>
           <CardDescription>Card Description</CardDescription>
-          <CardAction>Action</CardAction>
         </CardHeader>
         <CardContent>Card Content</CardContent>
         <CardFooter>Card Footer</CardFooter>
@@ -19,7 +18,6 @@ describe('Card', () => {
     expect(screen.getByTestId('complete-card')).toBeInTheDocument();
     expect(screen.getByText('Card Title')).toBeInTheDocument();
     expect(screen.getByText('Card Description')).toBeInTheDocument();
-    expect(screen.getByText('Action')).toBeInTheDocument();
     expect(screen.getByText('Card Content')).toBeInTheDocument();
     expect(screen.getByText('Card Footer')).toBeInTheDocument();
   });
@@ -45,7 +43,6 @@ describe('Card', () => {
     ['CardHeader', 'card-header', <CardHeader key="c">Header</CardHeader>],
     ['CardTitle', 'card-title', <CardTitle key="c">Title</CardTitle>],
     ['CardDescription', 'card-description', <CardDescription key="c">Description</CardDescription>],
-    ['CardAction', 'card-action', <CardAction key="c">Action</CardAction>],
     ['CardContent', 'card-content', <CardContent key="c">Content</CardContent>],
     ['CardFooter', 'card-footer', <CardFooter key="c">Footer</CardFooter>],
   ])('%s renders its data-slot', (name, slot, element) => {

@@ -1,4 +1,3 @@
-import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { FileText, LockKeyhole, Users } from 'lucide-react';
 import { describe, expect, it, vi } from 'vitest';

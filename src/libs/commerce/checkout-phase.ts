@@ -173,18 +173,6 @@ export function isSellerReservation(
   );
 }
 
-export function isSellerPaidOrder(
-  order: { state: string; sellerPubky: string; buyerPubky: string; receiptId?: string | null },
-  currentUserPubky: string | null,
-): boolean {
-  return (
-    currentUserPubky !== null &&
-    order.sellerPubky === currentUserPubky &&
-    order.buyerPubky !== currentUserPubky &&
-    isPaidOrReceiptedState(order)
-  );
-}
-
 /**
  * Paid sales, plus a seller's bound Bitcoin payment that is still pending and
  * a USDT payment held for manual review.

@@ -3,7 +3,6 @@ import {
   defaultMeasurementSystemForLocale,
   dimensionInputFromMillimeters,
   dimensionUnitLabel,
-  formatDimension,
   formatPackageDimensions,
   formatWeight,
   gramsFromWeightInput,
@@ -89,11 +88,6 @@ describe('buyer-facing display', () => {
     expect(dimensionUnitLabel('imperial')).toBe('in');
     expect(weightUnitLabel('metric')).toBe('g');
     expect(weightUnitLabel('imperial')).toBe('oz');
-  });
-
-  it('formats dimensions with one decimal in the chosen unit', () => {
-    expect(formatDimension(350, 'metric')).toBe('35.0 cm');
-    expect(formatDimension(350, 'imperial')).toBe('13.8 in');
   });
 
   it('formats weight with a sensible unit step', () => {

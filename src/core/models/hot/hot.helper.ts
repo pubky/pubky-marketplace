@@ -1,5 +1,4 @@
-import type { NexusHotTag, UserStreamReach, UserStreamTimeframe } from '@/services/nexus/nexus.types';
-import { HotTagsModelSchema } from './hot.schema';
+import type { UserStreamReach, UserStreamTimeframe } from '@/services/nexus/nexus.types';
 
 /**
  * Builds a composite hot tags ID from timeframe and reach parameters
@@ -11,16 +10,4 @@ import { HotTagsModelSchema } from './hot.schema';
  */
 export const buildHotTagsId = (timeframe: UserStreamTimeframe, reach: UserStreamReach | 'all'): string => {
   return `${timeframe}:${reach}`;
-};
-
-/**
- * Creates a default hot tags model schema
- * @param id - Composite ID (timeframe:reach)
- * @param tags - Array of hot tags
- */
-export const createDefaultHotTags = (id: string, tags: NexusHotTag[] = []): HotTagsModelSchema => {
-  return {
-    id,
-    tags,
-  };
 };

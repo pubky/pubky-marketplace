@@ -42,9 +42,7 @@ export function useChatComposerForm(peerPubky: string, context?: ChatContext) {
   return {
     form,
     submit,
-    reset: () => form.reset(chatComposerDefaults),
     bytesUsed,
-    bytesLeft: CHAT_BODY_MAX_BYTES - bytesUsed,
     isOverLimit: bytesUsed > CHAT_BODY_MAX_BYTES,
   };
 }

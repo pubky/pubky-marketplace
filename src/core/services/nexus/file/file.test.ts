@@ -123,7 +123,7 @@ describe('File API', () => {
     });
   });
 
-  describe('FilesApiEndpoint type', () => {
+  describe('fileApi endpoint contract', () => {
     it('should have exactly 3 endpoints', () => {
       const endpointKeys = Object.keys(filesApi);
       expect(endpointKeys).toHaveLength(3);
