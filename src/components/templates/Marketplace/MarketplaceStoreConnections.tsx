@@ -22,11 +22,11 @@ import {
   shopifyReturnErrorCopy,
 } from '@/libs/commerce/connectors';
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceConnectionStatusCheck } from '@/organisms/Marketplace/MarketplaceConnectionStatusCheck';
 import { MarketplaceConnectorListingLinks } from '@/organisms/Marketplace/MarketplaceConnectorListingLinks';
 import { MarketplaceConnectShopify } from '@/organisms/Marketplace/MarketplaceConnectShopify';
 import { MarketplaceConnectWooCommerce } from '@/organisms/Marketplace/MarketplaceConnectWooCommerce';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSessionRequiredCard } from '@/organisms/Marketplace/MarketplaceSessionRequiredCard';
 import { MarketplaceStoreAccessNotes } from '@/organisms/Marketplace/MarketplaceStoreAccessNotes';
@@ -100,14 +100,7 @@ export function MarketplaceStoreConnections() {
   const onCheckWoo = () => void checkAndRefresh({ provider: 'woocommerce', attempts: 3, delayMs: 1_500 });
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      disableMainContentOverflow
-      className="pb-28"
-    >
+    <MarketplaceContentLayout disableMainContentOverflow className="pb-28">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <MarketplaceSectionNav />
         <BackToMyShop />
@@ -281,6 +274,6 @@ export function MarketplaceStoreConnections() {
           </>
         )}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }

@@ -55,7 +55,7 @@ import { isListingRegistrationPending } from '@/models/commerce/commerce.schema'
 import { SellingUnavailableNotice } from '@/molecules/Marketplace/SellingUnavailableNotice';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { toast } from '@/molecules/Toaster/use-toast';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -178,14 +178,7 @@ export function MarketplaceDashboard() {
   };
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      disableMainContentOverflow
-      className="pb-28"
-    >
+    <MarketplaceContentLayout disableMainContentOverflow className="pb-28">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <MarketplaceSectionNav />
         <div>
@@ -707,7 +700,7 @@ export function MarketplaceDashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }
 

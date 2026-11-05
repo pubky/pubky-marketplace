@@ -23,7 +23,7 @@ import { ChatIdentityNotice } from '@/organisms/Chat/ChatIdentityNotice';
 import { ChatPeerIdentity, useChatPeerName } from '@/organisms/Chat/ChatPeerIdentity';
 import { ChatPrivacyNote } from '@/organisms/Chat/ChatPrivacyNote';
 import { ChatThread } from '@/organisms/Chat/ChatThread';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 function contextFromQuery(params: URLSearchParams | null): ChatContext | undefined {
@@ -72,11 +72,7 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
         : `Say hello to ${name}.`;
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
+    <MarketplaceContentLayout
       // Standalone keeps room under the thread for the fixed mobile footer; the
       // embedded Shop has none, only the legal strip that follows in flow.
       className={isEmbedded ? 'pb-4' : 'pb-24 lg:pb-8'}
@@ -176,6 +172,6 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
           </>
         )}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }

@@ -26,8 +26,8 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams('offer=00000000-0000-0000-0000-000000000901'),
   usePathname: () => '/marketplace/checkout',
 }));
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 vi.mock('@/hooks/useMarketplaceOffers/useMarketplaceOffers', () => ({
   useMarketplaceOffers: () => ({

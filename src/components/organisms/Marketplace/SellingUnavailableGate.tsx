@@ -12,7 +12,7 @@ import { useSellingAvailability } from '@/hooks/useSellingAvailability/useSellin
 import { BACK_TO_MARKET_LABEL, COMMERCE_BLOCKED_INFO_LABEL } from '@/libs/commerce/region-modes';
 import { InfoHint } from '@/molecules/InfoHint/InfoHint';
 import { SellingUnavailableHint } from '@/molecules/Marketplace/SellingUnavailableNotice';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 
 /**
  * Wraps a seller page (the studio, Sell, drops, store connections, Get paid). Where selling is
@@ -27,13 +27,7 @@ export function SellingUnavailableGate({ children }: { children: ReactNode }) {
   if (!selling.held) return <>{children}</>;
 
   return (
-    <ContentLayout
-      className="marketplace-surface"
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-    >
+    <MarketplaceContentLayout className="marketplace-surface">
       {selling.blocked && selling.sellingMessage && selling.info && (
         <Container overrideDefaults className="w-full">
           <Card className="rounded-md p-0" data-testid="selling-unavailable">
@@ -55,6 +49,6 @@ export function SellingUnavailableGate({ children }: { children: ReactNode }) {
           </Card>
         </Container>
       )}
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }

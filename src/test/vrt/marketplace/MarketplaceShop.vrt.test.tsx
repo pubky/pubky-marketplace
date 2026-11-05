@@ -185,8 +185,10 @@ vi.mock('@/hooks/useEnrichedTags/useEnrichedTags', () => ({
   useEnrichedTags: (tags: unknown[]) => ({ enrichedTags: tags, isLoading: false }),
 }));
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main className="w-full py-6">{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => (
+    <main className="w-full py-6">{children}</main>
+  ),
 }));
 
 describe('Marketplace shop — visual regression', () => {

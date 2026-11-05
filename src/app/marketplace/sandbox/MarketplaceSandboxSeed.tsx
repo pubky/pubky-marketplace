@@ -9,7 +9,7 @@ import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 
 type SeedState = 'idle' | 'seeding' | 'seeded' | 'skipped' | 'error';
 
@@ -27,14 +27,7 @@ export function MarketplaceSandboxSeed() {
   };
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      className="pb-28"
-      classNameWrapperContent="max-w-4xl"
-    >
+    <MarketplaceContentLayout className="pb-28" classNameWrapperContent="max-w-4xl">
       <Container overrideDefaults className="flex w-full flex-col gap-6 px-4 sm:px-6">
         <Link href={APP_ROUTES.MARKETPLACE} overrideDefaults className="inline-flex w-fit items-center gap-2 text-sm">
           <ArrowLeft className="size-4" />
@@ -77,6 +70,6 @@ export function MarketplaceSandboxSeed() {
           )}
         </div>
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }

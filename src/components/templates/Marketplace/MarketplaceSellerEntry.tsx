@@ -8,17 +8,11 @@ import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 
 export function MarketplaceSellerEntry() {
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      className="pb-28 lg:pb-16"
-    >
+    <MarketplaceContentLayout className="pb-28 lg:pb-16">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <Link
           href={APP_ROUTES.MARKETPLACE}
@@ -57,6 +51,6 @@ export function MarketplaceSellerEntry() {
           </CardContent>
         </Card>
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }

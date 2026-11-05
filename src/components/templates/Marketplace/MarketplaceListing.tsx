@@ -82,11 +82,11 @@ import { MarketplaceReviewFilterRating } from '@/molecules/MarketplaceReviewFilt
 import { MarketplaceSellerIdentity } from '@/molecules/MarketplaceSellerIdentity/MarketplaceSellerIdentity';
 import { MarketplaceSnippetRating } from '@/molecules/MarketplaceSnippetRating/MarketplaceSnippetRating';
 import { ChatEntryButton } from '@/organisms/Chat/ChatEntryButton';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DialogReportPost } from '@/organisms/DialogReportPost/DialogReportPost';
 import { MarketplaceAuctionPanel } from '@/organisms/Marketplace/MarketplaceAuctionPanel';
 import { MarketplaceBidDialog } from '@/organisms/Marketplace/MarketplaceBidDialog';
 import { MarketplaceCommunityTags } from '@/organisms/Marketplace/MarketplaceCommunityTags';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceDigitalDeliveryNotice } from '@/organisms/Marketplace/MarketplaceDigitalDeliveryNotice';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import { MarketplaceListingOwnerPanel } from '@/organisms/Marketplace/MarketplaceListingOwnerPanel';
@@ -233,29 +233,17 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
 
   if (listing === undefined || shop === undefined || (!listing && !isFetchSettled && !error)) {
     return (
-      <ContentLayout
-        className="marketplace-surface font-medium"
-        showLeftSidebar={false}
-        showRightSidebar={false}
-        showLeftMobileButton={false}
-        showRightMobileButton={false}
-      >
+      <MarketplaceContentLayout className="marketplace-surface font-medium">
         <Container overrideDefaults className="w-full">
           <MarketplaceListingDetailSkeleton />
         </Container>
-      </ContentLayout>
+      </MarketplaceContentLayout>
     );
   }
 
   if (!listing || error) {
     return (
-      <ContentLayout
-        className="marketplace-surface font-medium"
-        showLeftSidebar={false}
-        showRightSidebar={false}
-        showLeftMobileButton={false}
-        showRightMobileButton={false}
-      >
+      <MarketplaceContentLayout className="marketplace-surface font-medium">
         <Container className="min-h-96 items-center justify-center px-6 text-center">
           <Store className="mb-4 size-12 text-muted-foreground" />
           <Heading level={1} size="lg">
@@ -272,7 +260,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
             </Link>
           </Button>
         </Container>
-      </ContentLayout>
+      </MarketplaceContentLayout>
     );
   }
 
@@ -368,11 +356,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   };
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
+    <MarketplaceContentLayout
       hasGradientBackground={false}
       className="marketplace-surface pb-28 font-medium lg:pb-16"
       classNameWrapperContent="overflow-visible lg:overflow-visible"
@@ -849,7 +833,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
           </div>
         </div>
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }
 

@@ -21,8 +21,8 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: { getShop: vi.fn(async () => null) },
 }));
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 
 vi.mock('@/templates/Marketplace/MarketplaceSell', () => ({ MarketplaceSell: () => <p>page: sell</p> }));

@@ -24,7 +24,7 @@ import { UNLIMITED_STOCK_LABEL } from '@/libs/commerce/unlimited-stock';
 import { cn } from '@/libs/utils/utils';
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceInventoryGrantBanner } from '@/organisms/Marketplace/MarketplaceInventoryGrantBanner';
 import { MarketplaceInventoryImport } from '@/organisms/Marketplace/MarketplaceInventoryImport';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
@@ -42,14 +42,7 @@ export function MarketplaceInventory() {
   const rows = board.load.status === 'ready' ? board.load.rows : [];
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      disableMainContentOverflow
-      className="pb-28 lg:pb-16"
-    >
+    <MarketplaceContentLayout disableMainContentOverflow className="pb-28 lg:pb-16">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <MarketplaceSectionNav />
         <BackToMyShop />
@@ -475,6 +468,6 @@ export function MarketplaceInventory() {
           )}
         </DialogContent>
       </Dialog>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }

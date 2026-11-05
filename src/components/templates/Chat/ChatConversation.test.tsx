@@ -40,8 +40,8 @@ vi.mock('@/organisms/Chat/ChatPeerIdentity', () => ({
 vi.mock('@/organisms/Chat/ChatComposer', () => ({ ChatComposer: () => <div /> }));
 vi.mock('@/organisms/Chat/ChatThread', () => ({ ChatThread: () => <div /> }));
 vi.mock('@/organisms/Chat/ChatPrivacyNote', () => ({ ChatPrivacyNote: () => null }));
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 
 describe('ChatConversation', () => {

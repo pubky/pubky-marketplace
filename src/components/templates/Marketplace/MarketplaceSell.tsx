@@ -20,7 +20,7 @@ import { listingDraftResumePrompt, listingDraftTitleLabel } from '@/libs/commerc
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
 import { ListingComposerPaymentBanner } from '@/molecules/Marketplace/ListingComposerPaymentBanner';
 import { PaykitOutageNotice } from '@/molecules/Marketplace/PaykitOutageNotice';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceListingForm } from '@/organisms/Marketplace/MarketplaceListingForm';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
@@ -44,12 +44,7 @@ export function MarketplaceSell() {
   }
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-    >
+    <MarketplaceContentLayout>
       {access.ready && !cancelled && (
         <MarketplaceSessionConnectDialog
           intent="sell"
@@ -70,7 +65,7 @@ export function MarketplaceSell() {
           }}
         />
       )}
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }
 
@@ -124,14 +119,7 @@ function MarketplaceSellComposer() {
   };
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      disableMainContentOverflow
-      className="pb-28 lg:pb-16"
-    >
+    <MarketplaceContentLayout disableMainContentOverflow className="pb-28 lg:pb-16">
       <Container overrideDefaults data-surface="seller-studio" className="flex w-full flex-col gap-6">
         <MarketplaceSectionNav />
         <BackToMyShop />
@@ -266,6 +254,6 @@ function MarketplaceSellComposer() {
           Drafts are saved locally
         </Typography>
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }

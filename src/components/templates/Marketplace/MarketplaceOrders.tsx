@@ -75,11 +75,11 @@ import { MarketplaceCheckoutStatusLabels } from '@/molecules/Marketplace/Marketp
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
 import { MarketplacePaymentStatusLabels } from '@/molecules/Marketplace/MarketplacePaymentStatusBadge';
 import { ChatEntryButton } from '@/organisms/Chat/ChatEntryButton';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DropEditionBadge, DropEditionReceiptLine } from '@/organisms/Marketplace/DropEditionBadge';
 import { MarketplaceBitcoinAmountBreakdown } from '@/organisms/Marketplace/MarketplaceBitcoinAmountBreakdown';
 import { MarketplaceCheckoutItem } from '@/organisms/Marketplace/MarketplaceCheckoutItem';
 import { MarketplaceConnectorPushStatus } from '@/organisms/Marketplace/MarketplaceConnectorPushStatus';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import { MarketplaceMyReviews } from '@/organisms/Marketplace/MarketplaceMyReviews';
 import { MarketplaceOrderActions } from '@/organisms/Marketplace/MarketplaceOrderActions';
@@ -233,14 +233,7 @@ export function MarketplaceOrders() {
   };
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      disableMainContentOverflow
-      className="pb-28"
-    >
+    <MarketplaceContentLayout disableMainContentOverflow className="pb-28">
       <Container overrideDefaults className="flex w-full flex-col gap-6" data-surface="marketplace-orders">
         <MarketplaceSectionNav />
         <div>
@@ -739,7 +732,7 @@ export function MarketplaceOrders() {
 
         <MarketplaceMyReviews orders={orders.map(({ order }) => order)} />
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }
 

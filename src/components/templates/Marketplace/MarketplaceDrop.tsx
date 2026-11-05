@@ -24,12 +24,12 @@ import { useMarketplaceDropClaim } from '@/hooks/useMarketplaceDropClaim/useMark
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { formatDateTime } from '@/libs/utils/dateTime';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DropClaimPanel } from '@/organisms/Marketplace/DropClaimPanel';
 import { DropCountdown } from '@/organisms/Marketplace/DropCountdown';
 import { DropReadyCheckPanel } from '@/organisms/Marketplace/DropReadyCheckPanel';
 import { DropRemindMe } from '@/organisms/Marketplace/DropRemindMe';
 import { DropStockDisplay } from '@/organisms/Marketplace/DropStockDisplay';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
@@ -322,16 +322,10 @@ function ArchiveFact({ label, value }: { label: string; value: string }) {
 
 function DropPageShell({ children }: { children: React.ReactNode }) {
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      className="pb-28 lg:pb-16"
-    >
+    <MarketplaceContentLayout className="pb-28 lg:pb-16">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         {children}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }

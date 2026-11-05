@@ -25,7 +25,6 @@ vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
     leftDrawerContentMobile,
     rightDrawerContent,
     classNameWrapperContent,
-    layoutOverride,
   }: {
     children: React.ReactNode;
     leftSidebarContent?: React.ReactNode;
@@ -34,13 +33,8 @@ vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
     leftDrawerContentMobile?: React.ReactNode;
     rightDrawerContent?: React.ReactNode;
     classNameWrapperContent?: string;
-    layoutOverride?: string;
   }) => (
-    <div
-      data-testid="content-layout"
-      data-wrapper-class-name={classNameWrapperContent}
-      data-layout-override={layoutOverride}
-    >
+    <div data-testid="content-layout" data-wrapper-class-name={classNameWrapperContent}>
       {leftSidebarContent && <div data-testid="left-sidebar">{leftSidebarContent}</div>}
       {rightSidebarContent && <div data-testid="right-sidebar">{rightSidebarContent}</div>}
       {leftDrawerContent && <div data-testid="left-drawer">{leftDrawerContent}</div>}
@@ -121,16 +115,6 @@ describe('PostPageShell', () => {
 
     expect(rightPanel).toHaveAttribute('data-post-id', VALID_COMPOSITE_POST_ID);
     expect(rightPanel).toHaveAttribute('data-show-feedback', 'true');
-  });
-
-  it('lets ContentLayout resolve the persisted Home layout', () => {
-    render(
-      <PostPageShell postId={VALID_COMPOSITE_POST_ID}>
-        <div>body</div>
-      </PostPageShell>,
-    );
-
-    expect(screen.getByTestId('content-layout')).not.toHaveAttribute('data-layout-override');
   });
 
   it('swaps to discovery layout without post sidebars when the post is missing', () => {

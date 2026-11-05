@@ -113,8 +113,8 @@ vi.mock('@/stores/auth/auth.store', () => ({
   ),
 }));
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 
 const STUDIO_LINKS = ['Inventory', 'Payment settings', 'Store connections'] as const;

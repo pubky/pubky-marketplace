@@ -40,8 +40,8 @@ vi.mock('@/hooks/useOwnDrop/useOwnDrop', async () => {
   };
 });
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 
 function sellerDrop(state: string): MarketplaceSellerDrop {

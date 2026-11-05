@@ -18,7 +18,7 @@ import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useMarketplaceInventoryAutomations } from '@/hooks/useMarketplaceInventoryAutomations/useMarketplaceInventoryAutomations';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceInventoryGrantBanner } from '@/organisms/Marketplace/MarketplaceInventoryGrantBanner';
 import { MarketplaceInventoryOnceSecretDialog } from '@/organisms/Marketplace/MarketplaceInventoryOnceSecretDialog';
 import { MarketplaceInventoryRevokeDialog } from '@/organisms/Marketplace/MarketplaceInventoryRevokeDialog';
@@ -33,14 +33,7 @@ export function MarketplaceInventoryAutomations() {
   const webhooks = board.load.status === 'ready' || board.load.status === 'empty' ? board.load.webhooks : [];
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      disableMainContentOverflow
-      className="pb-28 lg:pb-16"
-    >
+    <MarketplaceContentLayout disableMainContentOverflow className="pb-28 lg:pb-16">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <MarketplaceSectionNav />
         <Link
@@ -269,6 +262,6 @@ export function MarketplaceInventoryAutomations() {
           void board.revoke(target.id, target.kind);
         }}
       />
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }

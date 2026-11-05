@@ -30,8 +30,8 @@ import { sellerDeclaration } from '@/libs/commerce/eu-region';
 import { resolveSellerDeliveryTerms, sellerDeliveryTermsCopy } from '@/libs/commerce/seller-delivery-terms';
 import { formatShipsToCountries, shopShipsToCountries } from '@/libs/commerce/ships-to';
 import { MarketplacePaymentMethodBadges } from '@/molecules/MarketplacePaymentMethodBadges/MarketplacePaymentMethodBadges';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceCommunityTags } from '@/organisms/Marketplace/MarketplaceCommunityTags';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceListingCard } from '@/organisms/Marketplace/MarketplaceListingCard';
 import { MarketplaceReputationHeader } from '@/organisms/Marketplace/MarketplaceReputationHeader';
 import { MarketplaceReviewsSection } from '@/organisms/Marketplace/MarketplaceReviewsSection';
@@ -85,13 +85,7 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
   const shipsToCountries = shopShipsToCountries(shop?.record);
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      className="pb-28 lg:pb-16"
-    >
+    <MarketplaceContentLayout className="pb-28 lg:pb-16">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <Link
           href={APP_ROUTES.MARKETPLACE}
@@ -268,7 +262,7 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
           </>
         )}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }
 

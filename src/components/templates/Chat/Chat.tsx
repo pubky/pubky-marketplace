@@ -15,7 +15,7 @@ import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
 import { CHAT_COPY } from '@/libs/chat/copy';
 import { ChatConversationRow } from '@/organisms/Chat/ChatConversationRow';
 import { ChatIdentityNotice } from '@/organisms/Chat/ChatIdentityNotice';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
@@ -30,11 +30,7 @@ export function Chat() {
   const commerceAvailable = getCommerceAdapterMode() !== 'unavailable';
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
+    <MarketplaceContentLayout
       // Lets the Market tab bar pin to the page instead of the clipped main column, as on the Market pages.
       disableMainContentOverflow
       // The bottom room is for the standalone FAB; the embedded Shop has none.
@@ -103,6 +99,6 @@ export function Chat() {
           </>
         )}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }
