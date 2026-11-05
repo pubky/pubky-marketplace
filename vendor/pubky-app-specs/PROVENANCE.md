@@ -3,7 +3,8 @@
 `npm pack` tarballs of the marketplace fork of `pubky-app-specs`, vendored so
 `npm ci` needs no network fetch from a mutable source. The root `package.json`
 pins one of them: `"pubky-app-specs": "file:vendor/pubky-app-specs/pubky-app-specs-0.6.2-marketplace.16.tgz"`.
-Older tarballs stay for reference; only the pinned one is installed.
+Only the pinned tarball is kept in the current tree. Older tarballs remain
+available in Git history; their provenance below is retained for reference.
 
 ## Current pin: `0.6.2-marketplace.16`
 
@@ -22,7 +23,7 @@ Older tarballs stay for reference; only the pinned one is installed.
 - Tarball sha512 (as recorded in `package-lock.json`):
   `zr+qJPLcnUbZ+vBPor4V4Z0+mmjkAqzwiHcQ/PBgtUrWPpYH0fLG0LL5MavdfNwxck9nVF+icN0AtJtt/6XOfg==`.
 
-## Previous pin: `0.6.2-marketplace.15`
+## Previous pin: `0.6.2-marketplace.15` (historical)
 
 - Source: `https://github.com/BitcoinErrorLog/pubky-app-specs`, tag
   `v0.6.2-marketplace.15`, commit `a49f4089ec18a883fcc28927c3b895adc1378403`
@@ -36,9 +37,10 @@ Older tarballs stay for reference; only the pinned one is installed.
   "Changes in `.15`", in the fork.
 - Build: Rust 1.89.0, `wasm-pack` 0.13.1, `cargo run --bin bundle_specs_npm`,
   then `npm install`, `npm test` (60 passing) and `npm pack` in `pkg/`.
-- Tarball sha512 (as recorded in `package-lock.json`):
+- Tarball sha512 (as recorded in the lockfile when `.15` was pinned):
   `eD4UGhVkVmqnOKTAj+znkSRC7+uT+eIoKv0QkWP2HI1ooskvbYAP/DCHh6wwXEMKHeU37pJMlorcGZzr1QyIwg==`.
 
 To update, rebuild from the new fork commit, add the tarball here, point
 `package.json` at it, run `npm install` to refresh `package-lock.json`, and
-record the source here.
+record the source here. Remove the superseded tarball after confirming that
+no manifest, script or build still references it.
