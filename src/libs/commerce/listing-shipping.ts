@@ -64,6 +64,7 @@ function flatOption(data: ListingShippingForm, asset: CommerceAsset): CommerceSh
 export function buildListingShipping(
   data: ListingShippingForm,
   profile: ShippingProfileSnapshot | null,
+  storedZones: readonly ShippingZone[] = [],
 ): ListingShippingResult {
   const asset = assetForListingCurrency(data.currency);
   if (data.shippingMode === 'flat') {
@@ -89,7 +90,7 @@ export function buildListingShipping(
       fields: { shippingOptions: [option], shippingProfileId: profile.record.profileId, shippingZones: undefined },
     };
   }
-  const zones = shippingZonesFromForm(data.shippingZoneValues, asset);
+  const zones = shippingZonesFromForm(data.shippingZoneValues, asset, storedZones);
   if (!zones.ok) return { ok: false, reason: 'zones-invalid', errors: zones.errors };
   return {
     ok: true,

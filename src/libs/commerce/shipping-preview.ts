@@ -1,3 +1,4 @@
+import { canonicalCountryCode } from './postal-address';
 import type { ShippingQuote, ShippingZone } from './shipping-zones';
 import { quoteAllShippingRates, shippedCountries } from './shipping-zones';
 
@@ -18,7 +19,8 @@ export function previewListingShipping(
   viewerCountry: string | null,
 ): ListingShippingPreview {
   const countries = shippedCountries(zones, excludedCountries);
-  if (viewerCountry === null || !/^[A-Z]{2}$/.test(viewerCountry)) return { countries, destination: null };
-  const quotes = quoteAllShippingRates(zones, excludedCountries, viewerCountry, 1);
-  return { countries, destination: { country: viewerCountry, quotes: quotes.ok ? quotes.value : null } };
+  const country = viewerCountry === null ? '' : canonicalCountryCode(viewerCountry);
+  if (!/^[A-Z]{2}$/.test(country)) return { countries, destination: null };
+  const quotes = quoteAllShippingRates(zones, excludedCountries, country, 1);
+  return { countries, destination: { country, quotes: quotes.ok ? quotes.value : null } };
 }

@@ -206,7 +206,7 @@ export function useEditMarketplaceListing(sellerPubky: string, listingId: string
         return;
       }
 
-      const shipping = await resolveListingShipping(currentUserPubky, data);
+      const shipping = await resolveListingShipping(currentUserPubky, data, record.shippingZones);
       if (!shipping.ok) {
         toast({ variant: 'error', description: shipping.errors[0] });
         return;

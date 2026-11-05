@@ -91,6 +91,8 @@ import {
 const ZONE_SHIPPING_BLOCKED_COPY: Record<ShippingGroupView['state']['status'], string> = {
   loading: 'Shipping prices are still loading. Try again in a moment.',
   unreadable: 'A seller’s shipping prices could not be read. Nothing was reserved. Try again in a moment.',
+  'asset-mismatch':
+    'A seller’s shipping rates are priced in a different currency than their item, so it cannot ship yet.',
   'needs-destination': 'Enter your delivery country to see shipping prices.',
   refused: 'A seller in your cart does not ship to that country. Choose another address or remove their items.',
   ready: '',

@@ -82,7 +82,11 @@ export function MarketplaceShippingProfilesCard() {
     ]) {
       if (problem) found.push(problem);
     }
-    const zones = shippingZonesFromForm(draft.zones, asset);
+    const storedZones =
+      state.status === 'ready'
+        ? state.profiles.find(({ record }) => record.profileId === draft.profileId)?.record.zones
+        : undefined;
+    const zones = shippingZonesFromForm(draft.zones, asset, storedZones);
     if (!zones.ok) found.push(...zones.errors);
     setProblems(found);
     if (found.length > 0 || !zones.ok) return;

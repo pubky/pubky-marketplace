@@ -40,7 +40,11 @@ function cartItem(record: Record<string, unknown>, quantity: number): Marketplac
   } as MarketplaceCartItem;
 }
 
-function snapshot(sha256: string, rates: Record<string, unknown>[]): ShippingProfileSnapshot {
+function snapshot(
+  sha256: string,
+  rates: Record<string, unknown>[],
+  profile: { countries?: string[]; currency?: string; exponent?: number } = {},
+): ShippingProfileSnapshot {
   return asOpaque<ShippingProfileSnapshot>({
     sha256,
     record: {
@@ -52,11 +56,11 @@ function snapshot(sha256: string, rates: Record<string, unknown>[]): ShippingPro
       updatedAt: '2026-11-05T10:00:00.000Z',
       profileId: 'worldwide',
       name: 'Worldwide',
-      currency: price.currency,
-      exponent: price.exponent,
+      currency: profile.currency ?? price.currency,
+      exponent: profile.exponent ?? price.exponent,
       origins: ['US'],
       excludedCountries: [],
-      zones: [{ zoneId: 'eu', name: 'Europe', countries: ['DE', 'FR'], rates }],
+      zones: [{ zoneId: 'eu', name: 'Europe', countries: profile.countries ?? ['DE', 'FR'], rates }],
     },
   });
 }
@@ -212,6 +216,65 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
         { sellerPubky: listing.ownerPubky, profileId: 'worldwide', rateId: 'std', profileSha256: SHA_A },
       ],
     });
+  });
+
+  it('prices a UK address against a GB zone and sends the canonical country', async () => {
+    served.profile = snapshot(SHA_A, [standard(899, 450)], { countries: ['GB'] });
+    const { result } = mount(profileItem(), 'uk');
+    await waitFor(() => expect(group(result)?.state.status).toBe('ready'));
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(sent()).toMatchObject({ destinationCountry: 'GB' });
+  });
+
+  it('sends nothing when the profile prices in another currency than the item', async () => {
+    served.profile = snapshot(SHA_A, [standard(899, 450)], { currency: price.currency === 'EUR' ? 'USD' : 'EUR' });
+    const { result } = mount(profileItem(), 'DE');
+    await waitFor(() => expect(group(result)?.state.status).toBe('asset-mismatch'));
+
+    expect(result.current.zoneShipping.amounts).toEqual([]);
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({ description: expect.stringContaining('different currency') }),
+    );
+  });
+
+  it('sends nothing for the old quote while the profile is read again after SHIPPING_CHANGED', async () => {
+    const { result } = mount(profileItem(), 'DE');
+    await waitFor(() => expect(group(result)?.state.status).toBe('ready'));
+    vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'SHIPPING_CHANGED', message: 'The shipping profile changed.' },
+    } as never);
+    let finishRead: (value: unknown) => void = () => {};
+    vi.mocked(CommerceController.fetchShippingProfile).mockImplementationOnce(
+      () => new Promise((resolve) => (finishRead = resolve)) as never,
+    );
+
+    await act(async () => {
+      await result.current.submit();
+    });
+    expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledTimes(1);
+    expect(group(result)?.state.status).toBe('loading');
+
+    await act(async () => {
+      await result.current.submit();
+    });
+    expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledTimes(1);
+
+    await act(async () => finishRead(snapshot(SHA_B, [standard(999, 500)])));
+    await waitFor(() => expect(group(result)?.state.status).toBe('ready'));
+    await act(async () => {
+      await result.current.submit();
+    });
+    expect(sent(1)?.shippingChoices?.[0]).toMatchObject({ profileSha256: SHA_B });
   });
 
   it('sends the rate the buyer picked', async () => {

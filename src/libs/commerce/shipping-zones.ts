@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { commerceEntityIdSchema, commerceMoneySchema } from '@/libs/commerce/transaction-contracts';
+import { commerceEntityIdSchema } from '@/libs/commerce/transaction-contracts';
 
 /**
  * Zone-priced shipping: the zones, rates and quote function of the shared
@@ -126,8 +126,6 @@ export const shippingCountryListSchema = (max: number) =>
     .array(shippingCountryCodeSchema)
     .max(max)
     .superRefine((codes, context) => addDuplicateIssue(codes, context, [], 'Countries must be unique'));
-
-export const shippingAssetSchema = commerceMoneySchema.pick({ currency: true, exponent: true });
 
 /** What one rate charges a shipping group. */
 export type ShippingQuote = {

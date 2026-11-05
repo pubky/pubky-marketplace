@@ -46,7 +46,11 @@ import { getMarketplaceUrl } from '@/config/commerce';
 import { csvHeaderCells, parseCsvTable } from '@/pipes/commerce/import-csv-table';
 import type { ImportLossReport, ImportSourceFormat } from '@/pipes/commerce/import-loss-report';
 import type { PresetRow } from '@/pipes/commerce/import-preset-rows';
-import { type ImportSettings, shopifyWorkExponent } from '@/pipes/commerce/import-settings';
+import {
+  type ImportSettings,
+  shopifyWorkExponent,
+  withoutShippingProfileField,
+} from '@/pipes/commerce/import-settings';
 import { buildShopifyPresetRows } from '@/pipes/commerce/import-shopify-csv';
 import { isWooProductCsv, mapWooProductCsv } from '@/pipes/commerce/import-woo-csv';
 import { looksLikeUnknownLanguageWooExport, WOO_UNKNOWN_LANGUAGE_MESSAGE } from '@/pipes/commerce/import-woo-headers';
@@ -299,7 +303,10 @@ function jsonPayloads(value: unknown): Map<string, string> {
     const object = asObject(item);
     if (!object) continue;
     const row = object as unknown as CanonicalCsvRow;
-    payloads.set(canonicalCsvRowIdentity(row), JSON.stringify(quoteFormulaStrings(object)));
+    payloads.set(
+      canonicalCsvRowIdentity(row),
+      JSON.stringify(quoteFormulaStrings(withoutShippingProfileField(object))),
+    );
   }
   return payloads;
 }
@@ -617,7 +624,7 @@ export class MarketplaceShopClientService {
       if (!planned.ok) return planned;
       const payloads = new Map<string, string>();
       await parseCanonicalCsvStream(browserFileSource(file, DEFAULT_CSV_LIMITS.maxBytes), (row) => {
-        payloads.set(canonicalCsvRowIdentity(row), JSON.stringify(row));
+        payloads.set(canonicalCsvRowIdentity(row), JSON.stringify(withoutShippingProfileField(row)));
       });
       await store.persistPayloads(planned.value.manifest.manifestId, payloads);
       return {

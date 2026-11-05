@@ -57,6 +57,7 @@ describe('MarketplaceCheckoutShippingRates', () => {
   it.each([
     ['loading', 'Loading shipping prices.'],
     ['unreadable', 'This seller’s shipping prices could not be read.'],
+    ['asset-mismatch', 'priced in a different currency than the item'],
     ['needs-destination', 'Enter your delivery country to see shipping prices.'],
   ] as const)('explains the %s state instead of offering rates', (status, copy) => {
     render(<MarketplaceCheckoutShippingRates groups={[view({ status })]} onChange={vi.fn()} />);

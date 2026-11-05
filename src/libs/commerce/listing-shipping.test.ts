@@ -176,3 +176,44 @@ describe('listingShippingFormFromRecord', () => {
     expect(rebuilt.ok && rebuilt.fields.shippingZones).toEqual(zones);
   });
 });
+
+describe('buildListingShipping when an edit round-trips inline zones', () => {
+  it('keeps the zone and rate members the editor does not manage', () => {
+    const stored = [
+      {
+        zoneId: 'us',
+        name: 'United States',
+        countries: ['US'],
+        carrierHint: 'ups',
+        rates: [
+          {
+            pricing: 'flat' as const,
+            rateId: 'std',
+            label: 'Standard',
+            estimatedMinDays: 4,
+            estimatedMaxDays: 8,
+            amountMinor: 479,
+            trackingIncluded: true,
+          },
+        ],
+      },
+    ];
+    const values = [
+      emptyShippingZone({
+        zoneId: 'us',
+        name: 'United States',
+        countries: 'US',
+        rates: [emptyShippingRate({ rateId: 'std', label: 'Standard', amount: '6.00', minDays: '4', maxDays: '8' })],
+      }),
+    ];
+
+    const result = buildListingShipping(form({ shippingMode: 'custom', shippingZoneValues: values }), null, stored);
+
+    expect(result).toMatchObject({
+      ok: true,
+      fields: {
+        shippingZones: [{ carrierHint: 'ups', rates: [{ amountMinor: 600, trackingIncluded: true }] }],
+      },
+    });
+  });
+});

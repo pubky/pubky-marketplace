@@ -123,3 +123,63 @@ describe('shippingZonesFromForm', () => {
     expect(shippingZonesFromForm(shippingZonesToForm(parsed.zones, USD_ASSET), USD_ASSET)).toEqual(parsed);
   });
 });
+
+describe('shippingZonesFromForm with stored zones', () => {
+  const stored = [
+    {
+      zoneId: 'us',
+      name: 'United States',
+      countries: ['US'],
+      carrierHint: 'ups',
+      rates: [
+        {
+          pricing: 'flat' as const,
+          rateId: 'std',
+          label: 'Standard',
+          estimatedMinDays: 4,
+          estimatedMaxDays: 8,
+          amountMinor: 479,
+          trackingIncluded: true,
+        },
+      ],
+    },
+  ];
+
+  it('keeps the members another client wrote on a zone and a rate it edits', () => {
+    const result = shippingZonesFromForm([zone({ rates: [rate({ amount: '5.00' })] })], USD_ASSET, stored);
+    expect(result).toMatchObject({
+      ok: true,
+      zones: [
+        { zoneId: 'us', carrierHint: 'ups', rates: [{ rateId: 'std', amountMinor: 500, trackingIncluded: true }] },
+      ],
+    });
+  });
+
+  it('lets the editor’s own fields win and drops the amounts of a rate that changes kind', () => {
+    const result = shippingZonesFromForm(
+      [zone({ rates: [rate({ pricing: 'per_item', amount: '4.00', additionalAmount: '1.00' })] })],
+      USD_ASSET,
+      stored,
+    );
+    expect(result.ok && result.zones[0]?.rates[0]).toEqual({
+      pricing: 'per_item',
+      rateId: 'std',
+      label: 'Standard',
+      estimatedMinDays: 4,
+      estimatedMaxDays: 8,
+      firstMinor: 400,
+      additionalMinor: 100,
+      trackingIncluded: true,
+    });
+  });
+
+  it('adds nothing foreign to a new zone or rate', () => {
+    const result = shippingZonesFromForm(
+      [zone({ zoneId: 'eu', name: 'Europe', countries: 'DE', rates: [rate({ rateId: 'new' })] })],
+      USD_ASSET,
+      stored,
+    );
+    expect(result.ok && result.zones[0]).not.toHaveProperty('carrierHint');
+    expect(result.ok && result.zones[0]?.rates[0]).not.toHaveProperty('trackingIncluded');
+  });
+});

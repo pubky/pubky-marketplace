@@ -48,6 +48,8 @@ export function MarketplaceCheckoutShippingRates({ groups, onChange }: Props) {
               <Typography as="p" id={selectId} className="text-sm text-muted-foreground" role="status">
                 {state.status === 'loading' && 'Loading shipping prices.'}
                 {state.status === 'unreadable' && 'This seller’s shipping prices could not be read.'}
+                {state.status === 'asset-mismatch' &&
+                  'This seller’s shipping rates are priced in a different currency than the item.'}
                 {state.status === 'needs-destination' && 'Enter your delivery country to see shipping prices.'}
                 {state.status === 'refused' && 'This seller does not ship to your country.'}
               </Typography>

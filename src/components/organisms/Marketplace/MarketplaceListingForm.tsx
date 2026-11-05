@@ -290,6 +290,10 @@ export function MarketplaceListingForm({
     if (saleFormat === 'auction' && form.getValues(CREATE_MARKETPLACE_LISTING_FIELDS.FULFILLMENT) !== 'shipping') {
       form.setValue(CREATE_MARKETPLACE_LISTING_FIELDS.FULFILLMENT, 'shipping', { shouldValidate: true });
     }
+    // The shipping selector shows flat and locks for an auction, so the stored mode must follow it.
+    if (saleFormat === 'auction' && form.getValues(CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_MODE) !== 'flat') {
+      form.setValue(CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_MODE, 'flat', { shouldValidate: true });
+    }
   }, [saleFormat, form]);
   // A deployment without pickup cannot publish it either — drop a pickup
   // choice the same way the auction path does, so a stale form value never

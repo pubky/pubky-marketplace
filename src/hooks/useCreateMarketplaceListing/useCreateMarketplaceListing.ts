@@ -50,6 +50,7 @@ import {
   type CommerceAsset,
   listingCurrencyChoiceForAsset,
 } from '@/libs/commerce/pricing';
+import type { ShippingZone } from '@/libs/commerce/shipping-zones';
 import { publishedCountryCode } from '@/libs/commerce/ships-to';
 import {
   dimensionInputFromMillimeters,
@@ -711,15 +712,20 @@ export async function uploadListingMedia(
 export async function resolveListingShipping(
   ownerPubky: string,
   data: CreateMarketplaceListingData,
+  storedZones: readonly ShippingZone[] = [],
 ): Promise<ReturnType<typeof buildListingShipping>> {
   if (!fulfillmentRequiresShipping(data.fulfillment)) {
     return { ok: true, fields: { shippingOptions: [], shippingProfileId: undefined, shippingZones: undefined } };
   }
-  const profile =
-    data.shippingMode === 'profile'
-      ? await CommerceController.fetchShippingProfile(ownerPubky, data.shippingProfileId)
-      : null;
-  return buildListingShipping(data, profile);
+  let profile: Awaited<ReturnType<typeof CommerceController.fetchShippingProfile>> = null;
+  if (data.shippingMode === 'profile') {
+    try {
+      profile = await CommerceController.fetchShippingProfile(ownerPubky, data.shippingProfileId);
+    } catch {
+      profile = null;
+    }
+  }
+  return buildListingShipping(data, profile, storedZones);
 }
 
 function buildListingRecord(

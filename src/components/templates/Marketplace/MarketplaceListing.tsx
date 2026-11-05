@@ -206,9 +206,12 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const regionRefused = region.refusal !== null || region.needsCountry;
   const regionBlocked = regionRefused || region.commerce.held;
   const defaultAddressCountry = useDefaultAddressCountry();
+  const listedSale = listing?.record.sale;
+  const listedPrice = listedSale?.format === 'fixed_price' ? listedSale.unitPrice : listedSale?.startingPrice;
   const zoneShipping = useListingShippingPreview(
     listing?.record,
-    region.buyerCountry ?? (defaultAddressCountry === '' ? null : defaultAddressCountry.toUpperCase()),
+    region.buyerCountry ?? (defaultAddressCountry === '' ? null : defaultAddressCountry),
+    listedPrice ? { currency: listedPrice.currency, exponent: listedPrice.exponent } : null,
   );
   const declaration = shop ? sellerDeclaration(shop.record) : 'unknown';
 
@@ -556,7 +559,11 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
             )}
 
             <div className="flex flex-wrap items-center gap-2" data-surface="marketplace-listing-purchase">
-              {record.sale.format === 'auction' ? (
+              {record.sale.format === 'auction' && zoneShipping.status !== 'none' ? (
+                <Typography as="p" className="text-sm text-muted-foreground" data-testid="zone-priced-auction-notice">
+                  Shipping on this auction is priced by destination, which this Shop cannot collect when bidding yet.
+                </Typography>
+              ) : record.sale.format === 'auction' ? (
                 <div className="[&_[data-slot=button]]:border-brand [&_[data-slot=button]]:bg-brand [&_[data-slot=button]]:text-brand-foreground [&_[data-slot=button]:hover]:bg-brand/90">
                   <MarketplaceBidDialog
                     aggregateId={aggregateId}
@@ -875,6 +882,7 @@ function formatZoneShipping(
 ): string {
   if (state.status === 'loading') return 'Shipping: loading prices';
   if (state.status === 'unreadable') return 'Shipping: prices could not be loaded';
+  if (state.status === 'asset-mismatch') return 'Shipping: the seller’s rates use a different currency than the item';
   const { destination, countries } = state.preview;
   if (destination) {
     const name = countryDisplayName(destination.country);

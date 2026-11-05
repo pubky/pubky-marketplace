@@ -484,6 +484,55 @@ describe('MarketplaceListing', () => {
       expect(await screen.findByText('Ships to France: Standard $8.99, 6-12 days')).toBeInTheDocument();
     });
 
+    it('prices a buyer whose address says UK against a GB zone', () => {
+      view.listing = zoned({
+        shippingZones: [{ ...zones[0]!, countries: ['GB'] }],
+      });
+      view.addressCountry = 'uk';
+      renderListing();
+      expect(screen.getByText('Ships to United Kingdom: Standard $8.99, 6-12 days')).toBeInTheDocument();
+    });
+
+    it('prices no rate from a profile whose currency differs from the item', async () => {
+      view.listing = toCommerceListingModel(createCommerceListingFixture({ shippingProfileId: 'worldwide' }));
+      view.shippingProfile = {
+        sha256: 'a'.repeat(64),
+        record: {
+          profileId: 'worldwide',
+          name: 'Worldwide',
+          currency: 'EUR',
+          exponent: 2,
+          excludedCountries: [],
+          zones,
+        },
+      };
+      view.addressCountry = 'FR';
+      renderListing();
+      expect(await screen.findByText(/rates use a different currency than the item/)).toBeInTheDocument();
+      expect(screen.queryByText(/Ships to France/)).not.toBeInTheDocument();
+    });
+
+    it('offers no bidding on an auction priced by zones', () => {
+      const auction = {
+        format: 'auction' as const,
+        startingPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+        minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
+        startsAt: new Date(Date.now() - 60_000).toISOString(),
+        endsAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+        antiSnipingWindowSeconds: 300,
+        antiSnipingExtensionSeconds: 300,
+      };
+      view.listing = toCommerceListingModel(createCommerceListingFixture({ sale: auction }));
+      renderListing();
+      expect(screen.getByRole('button', { name: 'Place a bid' })).toBeInTheDocument();
+      cleanup();
+
+      view.listing = zoned({ sale: auction });
+      renderListing();
+      expect(screen.getByTestId('zone-priced-auction-notice')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Place a bid' })).not.toBeInTheDocument();
+    });
+
     it('offers no Make offer on a zone-priced listing that accepts offers', () => {
       const sale = {
         format: 'fixed_price' as const,

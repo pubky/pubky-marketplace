@@ -296,6 +296,20 @@ describe('MarketplaceListingForm', () => {
     await waitFor(() => expect(formRef.current?.getValues('auctionDurationMinutes')).toBe(String(7 * 24 * 60)));
   });
 
+  it.each(['profile', 'custom'] as const)(
+    'returns a %s-priced draft to flat shipping when it becomes an auction',
+    async (shippingMode) => {
+      const formRef: { current: UseFormReturn<CreateMarketplaceListingData> | null } = { current: null };
+      render(<FormHarness defaultValues={{ saleFormat: 'fixed_price', shippingMode }} formRef={formRef} />);
+      expect(formRef.current?.getValues('shippingMode')).toBe(shippingMode);
+
+      act(() => formRef.current?.setValue('saleFormat', 'auction'));
+
+      await waitFor(() => expect(formRef.current?.getValues('shippingMode')).toBe('flat'));
+      expect(screen.getByText('Flat shipping (USD)')).toBeInTheDocument();
+    },
+  );
+
   it('hides the auction length when editing a published auction', () => {
     vi.mocked(getAuctionDurationsMinutes).mockReturnValue([7 * 24 * 60, 15]);
     render(<FormHarness mode="edit" saleTermsLocked defaultValues={{ saleFormat: 'auction' }} />);

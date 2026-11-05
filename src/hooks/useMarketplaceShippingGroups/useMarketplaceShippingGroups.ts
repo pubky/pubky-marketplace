@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { type MarketplaceCartItem, priceForCartItem } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
+import { canonicalCountryCode } from '@/libs/commerce/postal-address';
 import {
   groupOptions,
   type GroupRateCard,
@@ -14,6 +15,7 @@ import {
   shippingGroups,
   type ZonedLine,
 } from '@/libs/commerce/shipping-groups';
+import { shippingProfileFitsAsset } from '@/libs/commerce/shipping-profile';
 import type { ShippingQuote, ShippingQuoteErrorCode } from '@/libs/commerce/shipping-zones';
 
 export type ShippingMoney = { amountMinor: number; currency: string; exponent: number };
@@ -29,6 +31,7 @@ export type ShippingGroupView = {
   state:
     | { status: 'loading' }
     | { status: 'unreadable' }
+    | { status: 'asset-mismatch' }
     | { status: 'needs-destination' }
     | { status: 'refused'; code: ShippingQuoteErrorCode }
     | { status: 'ready'; quotes: ShippingQuote[]; selectedRateId: string; amount: ShippingMoney };
@@ -36,8 +39,14 @@ export type ShippingGroupView = {
 
 type CardState =
   | { status: 'loading' }
-  | { status: 'unreadable' }
-  | { status: 'ready'; card: GroupRateCard; name: string };
+  | { status: 'unreadable'; generation: number }
+  | {
+      status: 'ready';
+      card: GroupRateCard;
+      name: string;
+      asset?: { currency: string; exponent: number };
+      generation: number;
+    };
 
 const DESTINATION = /^[A-Z]{2}$/;
 
@@ -63,7 +72,7 @@ export function zonedLinesOf(items: readonly MarketplaceCartItem[]): ZonedLine[]
  * rate.
  */
 export function useMarketplaceShippingGroups(shippedItems: readonly MarketplaceCartItem[], destinationInput: string) {
-  const destination = destinationInput.trim().toUpperCase();
+  const destination = canonicalCountryCode(destinationInput);
   const groups = useMemo(() => shippingGroups(zonedLinesOf(shippedItems)), [shippedItems]);
   const [cards, setCards] = useState<Record<string, CardState>>({});
   const [picked, setPicked] = useState<Record<string, string>>({});
@@ -72,6 +81,7 @@ export function useMarketplaceShippingGroups(shippedItems: readonly MarketplaceC
   const readKey = groups.map((group) => group.key).join('|');
   useEffect(() => {
     let active = true;
+    const generation = reads;
     const wanted = groups.filter((group) => group.profileId !== undefined);
     for (const group of wanted) {
       void CommerceController.fetchShippingProfile(group.sellerPubky, group.profileId)
@@ -82,18 +92,20 @@ export function useMarketplaceShippingGroups(shippedItems: readonly MarketplaceC
             [group.key]: snapshot
               ? {
                   status: 'ready',
+                  generation,
                   name: snapshot.record.name,
+                  asset: { currency: snapshot.record.currency, exponent: snapshot.record.exponent },
                   card: {
                     zones: snapshot.record.zones,
                     excludedCountries: snapshot.record.excludedCountries,
                     profileSha256: snapshot.sha256,
                   },
                 }
-              : { status: 'unreadable' },
+              : { status: 'unreadable', generation },
           }));
         })
         .catch(() => {
-          if (active) setCards((current) => ({ ...current, [group.key]: { status: 'unreadable' } }));
+          if (active) setCards((current) => ({ ...current, [group.key]: { status: 'unreadable', generation } }));
         });
     }
     return () => {
@@ -105,11 +117,14 @@ export function useMarketplaceShippingGroups(shippedItems: readonly MarketplaceC
 
   const cardFor = useCallback(
     (group: ShippingGroup): CardState => {
-      if (group.zones !== undefined)
-        return { status: 'ready', card: { zones: group.zones, excludedCountries: [] }, name: '' };
-      return cards[group.key] ?? { status: 'loading' };
+      if (group.zones !== undefined) {
+        return { status: 'ready', card: { zones: group.zones, excludedCountries: [] }, name: '', generation: reads };
+      }
+      const read = cards[group.key];
+      // A read older than the latest refresh describes rates the service may have replaced.
+      return read === undefined || ('generation' in read && read.generation !== reads) ? { status: 'loading' } : read;
     },
-    [cards],
+    [cards, reads],
   );
 
   const views = useMemo<ShippingGroupView[]>(
@@ -130,6 +145,16 @@ export function useMarketplaceShippingGroups(shippedItems: readonly MarketplaceC
           state,
         });
         if (card.status !== 'ready') return view({ status: card.status });
+        if (card.asset !== undefined) {
+          const profileAsset = card.asset;
+          const fits = shippedItems
+            .filter((item) => group.lineIds.includes(item.id))
+            .every((item) => {
+              const line = priceForCartItem(item);
+              return line !== null && shippingProfileFitsAsset(profileAsset, line);
+            });
+          if (!fits) return view({ status: 'asset-mismatch' });
+        }
         if (!DESTINATION.test(destination)) return view({ status: 'needs-destination' });
         const options = groupOptions(group, card.card, destination);
         if (options.status === 'refused') return view({ status: 'refused', code: options.code });

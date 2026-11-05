@@ -59,6 +59,20 @@ describe('previewListingShipping', () => {
 
   it('reports no quotes for an excluded country and ignores a malformed country', () => {
     expect(previewListingShipping(ZONES, ['DE'], 'DE').destination).toEqual({ country: 'DE', quotes: null });
-    expect(previewListingShipping(ZONES, [], 'de').destination).toBeNull();
+    expect(previewListingShipping(ZONES, [], 'Germany').destination).toBeNull();
+    expect(previewListingShipping(ZONES, [], '1').destination).toBeNull();
+    expect(previewListingShipping(ZONES, [], '').destination).toBeNull();
+  });
+
+  it('reads a lowercase country as its uppercase code', () => {
+    expect(previewListingShipping(ZONES, [], 'de').destination).toMatchObject({ country: 'DE' });
+  });
+
+  it('reads the viewer’s country through its canonical code, so UK matches a GB zone', () => {
+    const gb = [{ ...(ZONES[0] as ShippingZone), countries: ['GB'] }];
+    expect(previewListingShipping(gb, [], ' uk ').destination).toMatchObject({
+      country: 'GB',
+      quotes: [expect.objectContaining({ rateId: 'std' })],
+    });
   });
 });

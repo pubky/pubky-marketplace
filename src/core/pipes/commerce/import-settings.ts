@@ -100,6 +100,17 @@ export function missingImportChoices(settings: ImportSettings): ('shipping' | 'c
 /** Row extra-field key that carries the shipping profile id of a profile-priced listing. */
 export const SHIPPING_PROFILE_ID_FIELD = 'shipping_profile_id';
 
+/**
+ * A file's own `shipping_profile_id` column never survives: the seller's import
+ * settings choose the profile, and the preset and connector paths add it after this.
+ */
+export function withoutShippingProfileField<T extends { readonly extraFields?: unknown }>(row: T): T {
+  const extra = row.extraFields;
+  if (typeof extra !== 'object' || extra === null || !(SHIPPING_PROFILE_ID_FIELD in extra)) return row;
+  const { [SHIPPING_PROFILE_ID_FIELD]: _ignored, ...rest } = extra as Record<string, unknown>;
+  return { ...row, extraFields: rest };
+}
+
 export function shippingOptionRow(shipping: ImportShipping, currency: string): Record<string, unknown> {
   if (shipping.mode === 'profile') return { ...shipping.option };
   const estimate = { estimatedMinDays: shipping.minDays, estimatedMaxDays: shipping.maxDays };

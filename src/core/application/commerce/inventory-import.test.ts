@@ -127,6 +127,40 @@ describe('MarketplaceShopClientService import helpers', () => {
     expect(payload).not.toMatch(/"title":"=HYPERLINK/);
   });
 
+  it('drops a shipping_profile_id column from JSON rows before they are stored', async () => {
+    const store = new MemoryImportStore();
+    const row = canonicalRow('boots_01', {
+      extraFields: { country_code: 'US', shipping_profile_id: 'someone-elses' },
+    });
+    const file = new BytesFile(utf8(JSON.stringify([row])), 'listings.json', 'application/json');
+    const planned = await MarketplaceShopClientService.planBrowserFile(file, store);
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) return;
+    const manifest = await store.load(planned.value.manifestId);
+    const payload = JSON.parse(
+      (await store.getPayloadJson(planned.value.manifestId, manifest!.rows[0]!.rowIdentity)) ?? '{}',
+    );
+    expect(payload.extraFields).toEqual({ country_code: 'US' });
+  });
+
+  it('drops a shipping_profile_id column from canonical CSV rows before they are stored', async () => {
+    const store = new MemoryImportStore();
+    const row = canonicalRow('csv_01', {
+      extraFields: { country_code: 'US', shipping_profile_id: 'someone-elses' },
+    });
+    const csv = MarketplaceShopClientService.exportListingsCsv([row]);
+    const planned = await MarketplaceShopClientService.planBrowserFile(
+      new BytesFile(csv, 'listings.csv', 'text/csv'),
+      store,
+    );
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) return;
+    const manifest = await store.load(planned.value.manifestId);
+    const payload = (await store.getPayloadJson(planned.value.manifestId, manifest!.rows[0]!.rowIdentity)) ?? '';
+    expect(payload).toContain('country_code');
+    expect(payload).not.toContain('shipping_profile_id');
+  });
+
   it('plans JSON rows and persists payloads without publishing', async () => {
     const store = new MemoryImportStore();
     const row = canonicalRow('boots_01');

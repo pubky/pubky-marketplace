@@ -80,6 +80,24 @@ export function emptyShippingZone(overrides: Partial<ShippingZoneFormValue> = {}
   };
 }
 
+const KNOWN_ZONE_MEMBERS = new Set(['zoneId', 'name', 'countries', 'restOfWorld', 'rates']);
+const KNOWN_RATE_MEMBERS = new Set([
+  'rateId',
+  'label',
+  'pricing',
+  'estimatedMinDays',
+  'estimatedMaxDays',
+  'amountMinor',
+  'firstMinor',
+  'additionalMinor',
+]);
+
+/** The members of a stored object this editor does not manage, kept so an edit does not drop another client's data. */
+function foreignMembers(stored: object | undefined, known: ReadonlySet<string>): Record<string, unknown> {
+  if (stored === undefined) return {};
+  return Object.fromEntries(Object.entries(stored).filter(([key]) => !known.has(key)));
+}
+
 export type ShippingZonesFormResult = { ok: true; zones: ShippingZone[] } | { ok: false; errors: string[] };
 
 const WHOLE_DAYS = /^\d+$/;
@@ -89,6 +107,7 @@ function rateFromForm(
   asset: CommerceAsset,
   where: string,
   errors: string[],
+  stored?: ShippingRate,
 ): ShippingRate | null {
   const label = rate.label.trim();
   if (label === '' || label.length > SHIPPING_MAX_NAME_CHARS) {
@@ -107,6 +126,7 @@ function rateFromForm(
     errors.push(`${where}: the longest delivery estimate cannot be shorter than the shortest.`);
   }
   const base = {
+    ...foreignMembers(stored, KNOWN_RATE_MEMBERS),
     rateId: rate.rateId,
     label,
     estimatedMinDays: minDays ?? 0,
@@ -137,6 +157,7 @@ function rateFromForm(
 export function shippingZonesFromForm(
   values: readonly ShippingZoneFormValue[],
   asset: CommerceAsset,
+  stored: readonly ShippingZone[] = [],
 ): ShippingZonesFormResult {
   const errors: string[] = [];
   if (values.length === 0) errors.push('Add at least one zone.');
@@ -159,11 +180,14 @@ export function shippingZonesFromForm(
     if (zone.rates.length === 0 || zone.rates.length > SHIPPING_MAX_RATES_PER_ZONE) {
       errors.push(`${where}: give it 1-${SHIPPING_MAX_RATES_PER_ZONE} rates.`);
     }
+    const storedZone = stored.find(({ zoneId }) => zoneId === zone.zoneId);
     const rates = zone.rates.flatMap((rate, rateIndex) => {
-      const parsed = rateFromForm(rate, asset, `${where}, rate ${rateIndex + 1}`, errors);
+      const storedRate = storedZone?.rates.find(({ rateId }) => rateId === rate.rateId);
+      const parsed = rateFromForm(rate, asset, `${where}, rate ${rateIndex + 1}`, errors, storedRate);
       return parsed ? [parsed] : [];
     });
     zones.push({
+      ...foreignMembers(storedZone, KNOWN_ZONE_MEMBERS),
       zoneId: zone.zoneId,
       name,
       countries,
