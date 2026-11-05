@@ -10,10 +10,11 @@ import {
   isLiveAuction,
 } from '@/libs/commerce/auction-removal';
 import {
+  countOpenOrdersForListings,
+  deletableTargets,
   listingDeleteFailureMessage,
   listingDeleteKey,
   listingDeleteSuccessToast,
-  openOrderCountsByListing,
 } from '@/libs/commerce/listing-delete';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
@@ -69,9 +70,11 @@ export function useDeleteMarketplaceListings({
   const [plan, setPlan] = useState<ListingDeletePlan | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const generation = useRef(0);
+  // Set before the first await, so two confirmations in one tick cannot both pass a state-based check.
+  const inFlight = useRef(false);
 
   const request = async (targets: ListingDeleteTarget[]) => {
-    if (targets.length === 0) return;
+    if (targets.length === 0 || inFlight.current) return;
     const attempt = ++generation.current;
     setPlan(null);
     setOpen(true);
@@ -80,18 +83,17 @@ export function useDeleteMarketplaceListings({
   };
 
   const cancel = () => {
-    if (isDeleting) return;
+    if (inFlight.current) return;
     generation.current += 1;
     setOpen(false);
     setPlan(null);
   };
 
   const confirm = async () => {
-    if (!plan || isDeleting || !hasHomeserverSession) return;
-    const deletable = plan.targets.filter(
-      (target) => !plan.blocked.some(({ target: blocked }) => sameListing(blocked, target)),
-    );
+    if (!plan || inFlight.current || !hasHomeserverSession) return;
+    const deletable = deletableTargets(plan);
     if (deletable.length === 0) return;
+    inFlight.current = true;
     setIsDeleting(true);
     const deleted: string[] = [];
     let bidRefusals = 0;
@@ -118,6 +120,7 @@ export function useDeleteMarketplaceListings({
             : listingDeleteFailureMessage(failed, deletable.length),
       });
     }
+    inFlight.current = false;
     setIsDeleting(false);
     setOpen(false);
     setPlan(null);
@@ -157,12 +160,12 @@ async function planDelete(targets: ListingDeleteTarget[]): Promise<ListingDelete
   }
   try {
     const orders = await CommerceController.getMarketplaceOrders();
-    const counts = openOrderCountsByListing(orders, targets[0].ownerPubky);
-    const openOrders = targets.reduce(
-      (total, { ownerPubky, listingId }) =>
-        total + (counts.get(buildMarketplaceListingAggregateId(ownerPubky, listingId)) ?? 0),
-      0,
+    const deletableIds = new Set(
+      targets
+        .filter((target) => !blocked.some(({ target: held }) => sameListing(held, target)))
+        .map(({ ownerPubky, listingId }) => buildMarketplaceListingAggregateId(ownerPubky, listingId)),
     );
+    const openOrders = countOpenOrdersForListings(orders, targets[0].ownerPubky, deletableIds);
     return { targets, blocked, openOrders, ordersChecked: true };
   } catch (error) {
     Logger.warn('Could not read open orders before offering to delete a listing', { error });

@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  countOpenOrdersForListings,
+  deletableTargets,
   isOpenOrderState,
   listingDeleteConfirmLabel,
   listingDeleteFailureMessage,
   listingDeleteOpenOrdersNote,
   listingDeleteTitle,
-  openOrderCountsByListing,
 } from './listing-delete';
 
 const SELLER = 'seller-pubky';
@@ -28,21 +29,43 @@ describe('isOpenOrderState', () => {
   );
 });
 
-describe('openOrderCountsByListing', () => {
-  it('counts open orders per listing, once per order, for the seller only', () => {
-    const counts = openOrderCountsByListing(
+describe('countOpenOrdersForListings', () => {
+  const order = (id: string, state: string, ...ids: string[]) => ({
+    id,
+    sellerPubky: SELLER,
+    state,
+    lines: ids.map(line),
+  });
+
+  it('counts the seller’s open orders on the given listings only', () => {
+    const count = countOpenOrdersForListings(
       [
-        { sellerPubky: SELLER, state: 'paid', lines: [line('a'), line('a'), line('b')] },
-        { sellerPubky: SELLER, state: 'pending_payment', lines: [line('a')] },
-        { sellerPubky: SELLER, state: 'completed', lines: [line('a')] },
-        { sellerPubky: 'someone-else', state: 'paid', lines: [line('a')] },
+        order('1', 'paid', 'a'),
+        order('2', 'pending_payment', 'a'),
+        order('3', 'completed', 'a'),
+        order('4', 'paid', 'other'),
+        { ...order('5', 'paid', 'a'), sellerPubky: 'someone-else' },
       ],
       SELLER,
+      new Set(['a']),
     );
 
-    expect(counts.get('a')).toBe(2);
-    expect(counts.get('b')).toBe(1);
-    expect(counts.has('c')).toBe(false);
+    expect(count).toBe(2);
+  });
+
+  it('counts an order once however many of the listings its lines name', () => {
+    expect(countOpenOrdersForListings([order('1', 'paid', 'a', 'a', 'b')], SELLER, new Set(['a', 'b']))).toBe(1);
+  });
+});
+
+describe('deletableTargets', () => {
+  const ref = (listingId: string) => ({ ownerPubky: SELLER, listingId });
+
+  it('leaves out the targets the plan holds back', () => {
+    expect(deletableTargets({ targets: [ref('a'), ref('b'), ref('c')], blocked: [{ target: ref('b') }] })).toEqual([
+      ref('a'),
+      ref('c'),
+    ]);
   });
 });
 

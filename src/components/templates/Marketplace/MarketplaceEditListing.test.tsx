@@ -7,6 +7,7 @@ import { MarketplaceEditListing } from './MarketplaceEditListing';
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 const editing = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 const deleteFlow = vi.hoisted(() => ({
+  open: false,
   request: vi.fn(async (_targets: unknown[]) => {}),
   onDeleted: undefined as undefined | ((keys: string[]) => void),
 }));
@@ -19,7 +20,7 @@ vi.mock('@/hooks/useDeleteMarketplaceListings/useDeleteMarketplaceListings', () 
   useDeleteMarketplaceListings: ({ onDeleted }: { onDeleted?: (keys: string[]) => void } = {}) => {
     deleteFlow.onDeleted = onDeleted;
     return {
-      open: false,
+      open: deleteFlow.open,
       plan: null,
       isDeleting: false,
       hasHomeserverSession: true,
@@ -33,15 +34,31 @@ vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
   ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 vi.mock('@/organisms/Marketplace/MarketplaceListingForm', () => ({
-  MarketplaceListingForm: () => <form aria-label="Listing form" />,
+  MarketplaceListingForm: ({ onSubmit }: { onSubmit: () => Promise<boolean> }) => (
+    <button
+      type="button"
+      onClick={() => {
+        void onSubmit().then((saved) => {
+          formState.lastSaved = saved;
+        });
+      }}
+    >
+      Save changes
+    </button>
+  ),
 }));
 vi.mock('@/molecules/Marketplace/ListingPublishGuardNotice', () => ({ ListingPublishGuardNotice: () => null }));
+
+const formState = vi.hoisted(() => ({ lastSaved: null as boolean | null }));
 
 const record = createCommerceListingFixture({ listingId: 'boots' });
 
 describe('MarketplaceEditListing delete', () => {
   beforeEach(() => {
     deleteFlow.request.mockClear();
+    deleteFlow.open = false;
+    formState.lastSaved = null;
+    editing.value = {};
     router.push.mockClear();
   });
 
@@ -72,6 +89,29 @@ describe('MarketplaceEditListing delete', () => {
 
     expect(screen.getByRole('heading', { name: 'This listing cannot be edited here' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Delete listing' })).toBeInTheDocument();
+  });
+
+  it('does not save while the delete confirmation is open', async () => {
+    const submit = vi.fn(async () => 'boots');
+    editing.value = { status: 'ready', ownedListing: record, publishBlocked: null, form: {}, media: {}, submit };
+    deleteFlow.open = true;
+
+    render(<MarketplaceEditListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes', hidden: true }));
+    await vi.waitFor(() => expect(formState.lastSaved).toBe(false));
+
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it('saves normally when no delete is pending', async () => {
+    const submit = vi.fn(async () => 'boots');
+    editing.value = { status: 'ready', ownedListing: record, publishBlocked: null, form: {}, media: {}, submit };
+
+    render(<MarketplaceEditListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await vi.waitFor(() => expect(formState.lastSaved).toBe(true));
+
+    expect(submit).toHaveBeenCalledOnce();
   });
 
   it('offers no Delete before the listing has loaded', () => {

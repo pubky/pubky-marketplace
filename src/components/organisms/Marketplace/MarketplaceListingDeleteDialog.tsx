@@ -14,6 +14,7 @@ import { Typography } from '@/atoms/Typography/Typography';
 import type { UseDeleteMarketplaceListingsResult } from '@/hooks/useDeleteMarketplaceListings/useDeleteMarketplaceListings';
 import { auctionDeleteBlockedNote } from '@/libs/commerce/auction-removal';
 import {
+  deletableTargets,
   LISTING_DELETE_COPY,
   listingDeleteConfirmLabel,
   listingDeleteOpenOrdersNote,
@@ -30,12 +31,9 @@ export interface MarketplaceListingDeleteDialogProps {
 /** The confirmation every seller surface opens before a listing is deleted. Driven by `useDeleteMarketplaceListings`. */
 export function MarketplaceListingDeleteDialog({ controller }: MarketplaceListingDeleteDialogProps) {
   const { open, plan, isDeleting, hasHomeserverSession, confirm, cancel } = controller;
-  const blockedKeys = new Set((plan?.blocked ?? []).map(({ target }) => `${target.ownerPubky}:${target.listingId}`));
-  const deletable = (plan?.targets ?? []).filter(
-    (target) => !blockedKeys.has(`${target.ownerPubky}:${target.listingId}`),
-  );
+  const deletable = plan ? deletableTargets(plan) : [];
   const shownCount = deletable.length > 0 ? deletable.length : (plan?.targets.length ?? 1);
-  const everyTargetIsAuction = (plan?.targets ?? []).every(({ record }) => record.sale.format === 'auction');
+  const everyTargetIsAuction = deletable.every(({ record }) => record.sale.format === 'auction');
   const canConfirm = plan !== null && deletable.length > 0 && hasHomeserverSession && !isDeleting;
 
   return (

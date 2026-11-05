@@ -39,13 +39,13 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
           Delete this listing
         </Heading>
         <Typography as="p" className="mt-1 text-sm text-muted-foreground">
-          Removes it from your shop and Pubky Market for good. To stop sales but keep it, unlist it from the listing
-          page instead.
+          Removes it from your homeserver for good. To stop sales but keep it, unlist it from the listing page instead.
         </Typography>
       </div>
       <Button
         variant="secondary"
         className="rounded-full text-destructive"
+        disabled={isSaving}
         onClick={() => {
           const record = editing.ownedListing;
           if (!record) return;
@@ -62,6 +62,7 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
   );
 
   const persistListing = async (options?: { silent?: boolean }) => {
+    if (deleting.open) return false;
     setIsSaving(true);
     try {
       const savedId = await editing.submit(options);

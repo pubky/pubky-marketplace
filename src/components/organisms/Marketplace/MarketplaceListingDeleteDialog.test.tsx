@@ -129,6 +129,17 @@ describe('MarketplaceListingDeleteDialog', () => {
     expect(screen.getByRole('button', { name: 'Delete listing' })).toBeEnabled();
   });
 
+  it('still offers unlisting for a fixed-price listing when a live auction is skipped beside it', () => {
+    const live = auction('live');
+    render(
+      <MarketplaceListingDeleteDialog
+        controller={controllerFor(planFor([live, target('plain')], { blocked: [{ target: live, bids: 1 }] }))}
+      />,
+    );
+
+    expect(screen.getByTestId('listing-delete-unlist-hint')).toBeInTheDocument();
+  });
+
   it('disables the delete without a homeserver session', () => {
     render(
       <MarketplaceListingDeleteDialog

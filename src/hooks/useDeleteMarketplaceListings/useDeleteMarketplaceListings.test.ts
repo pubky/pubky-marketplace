@@ -60,14 +60,30 @@ describe('useDeleteMarketplaceListings', () => {
 
   it('opens on request and plans from the seller’s open orders on each listing', async () => {
     controller.getMarketplaceOrders.mockResolvedValue([
-      { sellerPubky: COMMERCE_FIXTURE_SELLER, state: 'paid', lines: [{ listingAggregateId: aggregateId('one') }] },
       {
+        id: 'o1',
+        sellerPubky: COMMERCE_FIXTURE_SELLER,
+        state: 'paid',
+        lines: [{ listingAggregateId: aggregateId('one') }],
+      },
+      {
+        id: 'o2',
         sellerPubky: COMMERCE_FIXTURE_SELLER,
         state: 'pending_payment',
         lines: [{ listingAggregateId: aggregateId('one') }],
       },
-      { sellerPubky: COMMERCE_FIXTURE_SELLER, state: 'completed', lines: [{ listingAggregateId: aggregateId('one') }] },
-      { sellerPubky: COMMERCE_FIXTURE_SELLER, state: 'paid', lines: [{ listingAggregateId: aggregateId('other') }] },
+      {
+        id: 'o3',
+        sellerPubky: COMMERCE_FIXTURE_SELLER,
+        state: 'completed',
+        lines: [{ listingAggregateId: aggregateId('one') }],
+      },
+      {
+        id: 'o4',
+        sellerPubky: COMMERCE_FIXTURE_SELLER,
+        state: 'paid',
+        lines: [{ listingAggregateId: aggregateId('other') }],
+      },
     ]);
     const { result } = renderHook(() => useDeleteMarketplaceListings());
 
@@ -77,6 +93,25 @@ describe('useDeleteMarketplaceListings', () => {
 
     expect(result.current.open).toBe(true);
     expect(result.current.plan).toMatchObject({ openOrders: 2, ordersChecked: true, blocked: [] });
+  });
+
+  it('counts a shared order once and ignores orders that only touch a listing held back', async () => {
+    const base = createAuctionProjectionFixture();
+    controller.getMarketplaceListingProjection.mockResolvedValue(
+      createAuctionProjectionFixture({ auction: { ...base.auction!, bidCount: 1 } }),
+    );
+    const line = (listingId: string) => ({ listingAggregateId: aggregateId(listingId) });
+    controller.getMarketplaceOrders.mockResolvedValue([
+      { id: 'shared', sellerPubky: COMMERCE_FIXTURE_SELLER, state: 'paid', lines: [line('one'), line('two')] },
+      { id: 'auction-only', sellerPubky: COMMERCE_FIXTURE_SELLER, state: 'paid', lines: [line('auction')] },
+    ]);
+    const { result } = renderHook(() => useDeleteMarketplaceListings());
+
+    await act(async () => {
+      await result.current.request([targetFor('one'), targetFor('two'), auctionTarget('auction')]);
+    });
+
+    expect(result.current.plan?.openOrders).toBe(1);
   });
 
   it('flags an unknown open-order count when the orders cannot be read, and still lets the seller delete', async () => {
@@ -191,6 +226,63 @@ describe('useDeleteMarketplaceListings', () => {
 
     expect(toast).toHaveBeenCalledWith({ variant: 'error', description: AUCTION_HAS_BIDS_MESSAGE });
     expect(onDeleted).not.toHaveBeenCalled();
+  });
+
+  it('deletes once when confirm is called twice before the first finishes', async () => {
+    let finish: () => void = () => {};
+    controller.commitDeleteListing.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useDeleteMarketplaceListings());
+    await act(async () => {
+      await result.current.request([targetFor('one')]);
+    });
+
+    let first: Promise<void> = Promise.resolve();
+    let second: Promise<void> = Promise.resolve();
+    await act(async () => {
+      first = result.current.confirm();
+      second = result.current.confirm();
+      finish();
+      await Promise.all([first, second]);
+    });
+
+    expect(controller.commitDeleteListing).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a new request and a cancel while a delete is running', async () => {
+    let finish: () => void = () => {};
+    controller.commitDeleteListing.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useDeleteMarketplaceListings());
+    await act(async () => {
+      await result.current.request([targetFor('one')]);
+    });
+
+    let running: Promise<void> = Promise.resolve();
+    await act(async () => {
+      running = result.current.confirm();
+    });
+    await act(async () => {
+      await result.current.request([targetFor('two')]);
+      result.current.cancel();
+    });
+    expect(result.current.open).toBe(true);
+    expect(result.current.plan?.targets[0].listingId).toBe('one');
+
+    await act(async () => {
+      finish();
+      await running;
+    });
+    expect(controller.commitDeleteListing).toHaveBeenCalledTimes(1);
+    expect(result.current.open).toBe(false);
   });
 
   it('never deletes without a homeserver session', async () => {
