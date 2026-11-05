@@ -15,7 +15,7 @@ export type TPostBase = TPostBasePathParams & {
 };
 
 // Specific parameter types for each source
-export type TPostViewParams = TPostBase & TTagsPaginationParams;
+type TPostViewParams = TPostBase & TTagsPaginationParams;
 
 export type TPostTaggersParams = TPostBase &
   TPaginationParams & {
