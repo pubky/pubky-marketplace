@@ -271,6 +271,29 @@ describe('MarketplaceListingOwnerPanel state badge', () => {
   });
 });
 
+describe('MarketplaceListingOwnerPanel delete confirmation', () => {
+  beforeEach(() => {
+    controller.commitDeleteListing.mockReset();
+    controller.commitDeleteListing.mockResolvedValue(undefined);
+    useAuthStore.setState({ session: {} as never });
+  });
+
+  it('labels Delete in the owner actions and explains the consequences before deleting', async () => {
+    const user = userEvent.setup();
+    render(<MarketplaceListingOwnerPanel record={createCommerceListingFixture()} registrationStatus="registered" />);
+
+    expect(screen.getByRole('button', { name: 'Delete' })).toHaveTextContent('Delete');
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+    expect(await screen.findByRole('heading', { name: 'Delete this listing?' })).toBeInTheDocument();
+    expect(screen.getByText(/Paid orders still settle and can be fulfilled/)).toBeInTheDocument();
+    expect(controller.commitDeleteListing).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Keep listing' }));
+    expect(controller.commitDeleteListing).not.toHaveBeenCalled();
+  });
+});
+
 describe('MarketplaceListingOwnerPanel delete of an auction', () => {
   const record = () => {
     const auction = createCommerceListingFixture();

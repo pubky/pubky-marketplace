@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
 import * as commerceConfig from '@/config/commerce';
@@ -139,6 +139,26 @@ vi.mock('@/stores/auth/auth.store', () => ({
       subscribe: vi.fn(() => vi.fn()),
     },
   ),
+}));
+
+const deleteFlow = vi.hoisted(() => ({
+  request: vi.fn(async (_targets: unknown[]) => {}),
+  onDeleted: undefined as undefined | ((keys: string[]) => void),
+}));
+
+vi.mock('@/hooks/useDeleteMarketplaceListings/useDeleteMarketplaceListings', () => ({
+  useDeleteMarketplaceListings: ({ onDeleted }: { onDeleted?: (keys: string[]) => void } = {}) => {
+    deleteFlow.onDeleted = onDeleted;
+    return {
+      open: false,
+      plan: null,
+      isDeleting: false,
+      hasHomeserverSession: true,
+      request: deleteFlow.request,
+      confirm: vi.fn(),
+      cancel: vi.fn(),
+    };
+  },
 }));
 
 vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
@@ -656,6 +676,55 @@ describe('MarketplaceDashboard registration for checkout', () => {
     render(<MarketplaceDashboard />);
 
     expect(screen.queryByRole('button', { name: 'Register for checkout' })).not.toBeInTheDocument();
+  });
+});
+
+describe('MarketplaceDashboard delete', () => {
+  beforeEach(() => {
+    deleteFlow.request.mockClear();
+    viewport.isMobile = false;
+  });
+
+  it('offers Delete on every listing row and requests that one listing', () => {
+    const boots = listing({ listingId: 'boots', title: 'Boots' });
+    const lamp = listing({ listingId: 'lamp', title: 'Lamp' });
+    dashboardState.listings = [boots, lamp];
+
+    render(<MarketplaceDashboard />);
+    fireEvent.click(within(screen.getByRole('row', { name: /Lamp/ })).getByRole('button', { name: 'Delete Lamp' }));
+
+    expect(deleteFlow.request).toHaveBeenCalledWith([
+      { ownerPubky: lamp.seller_id, listingId: 'lamp', title: 'Lamp', record: lamp.record },
+    ]);
+  });
+
+  it('keeps Delete reachable while selling is held, because removing a listing adds no exposure', () => {
+    dashboardState.listings = [listing({ listingId: 'boots', title: 'Boots' })];
+
+    render(<MarketplaceDashboard />);
+
+    expect(screen.getByRole('button', { name: 'Delete Boots' })).toBeEnabled();
+  });
+
+  it('deletes the selected listings together and clears the ones that were deleted from the selection', () => {
+    const boots = listing({ listingId: 'boots', title: 'Boots' });
+    const lamp = listing({ listingId: 'lamp', title: 'Lamp' });
+    dashboardState.listings = [boots, lamp];
+
+    render(<MarketplaceDashboard />);
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Boots' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Lamp' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+    expect(deleteFlow.request).toHaveBeenCalledWith([
+      expect.objectContaining({ listingId: 'boots', title: 'Boots' }),
+      expect.objectContaining({ listingId: 'lamp', title: 'Lamp' }),
+    ]);
+
+    act(() => deleteFlow.onDeleted?.([boots.id, lamp.id]));
+    expect(screen.getByRole('checkbox', { name: 'Select Boots' })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
   });
 });
 

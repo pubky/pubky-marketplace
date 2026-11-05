@@ -52,6 +52,10 @@ mean exactly that.
   - Return policy (window or no-returns)
 - **Listing management**
   - Edit, unlist/relist (fixed-price), delete, copy public link
+  - Delete is reachable from the owner panel on the listing page, each row and
+    the bulk selection in the seller studio table, and the edit page. All
+    four open one confirmation that warns about open orders and refuses an
+    auction that has bids
   - Dashboard **Export CSV** emits the canonical import CSV; an exported file
     imports back with zero diffs and edits become planned updates (see
     [`import-export.md`](import-export.md))

@@ -2,16 +2,18 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, PencilLine, Store } from 'lucide-react';
-import { getMarketplaceListingEditRoute, getMarketplaceListingRoute } from '@/app/routes';
+import { ArrowLeft, PencilLine, Store, Trash2 } from 'lucide-react';
+import { getMarketplaceListingEditRoute, getMarketplaceListingRoute, MARKETPLACE_ROUTES } from '@/app/routes';
 import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
+import { useDeleteMarketplaceListings } from '@/hooks/useDeleteMarketplaceListings/useDeleteMarketplaceListings';
 import { useEditMarketplaceListing } from '@/hooks/useEditMarketplaceListing/useEditMarketplaceListing';
 import { ListingPublishGuardNotice } from '@/molecules/Marketplace/ListingPublishGuardNotice';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceListingDeleteDialog } from '@/organisms/Marketplace/MarketplaceListingDeleteDialog';
 import { MarketplaceListingForm } from '@/organisms/Marketplace/MarketplaceListingForm';
 import { MarketplaceSkeleton } from './Marketplace.skeleton';
 
@@ -25,8 +27,42 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
   const editing = useEditMarketplaceListing(sellerPubky, listingId);
   const [isSaving, setIsSaving] = useState(false);
   const listingRoute = getMarketplaceListingRoute(sellerPubky, listingId);
+  const deleting = useDeleteMarketplaceListings({ onDeleted: () => router.push(MARKETPLACE_ROUTES.DASHBOARD) });
+  const deleteSection = editing.ownedListing && (
+    <section
+      aria-label="Delete this listing"
+      className="flex flex-wrap items-center justify-between gap-4 rounded-md border border-destructive/40 p-6"
+      data-testid="edit-listing-delete"
+    >
+      <div className="min-w-0 flex-1">
+        <Heading level={2} size="md">
+          Delete this listing
+        </Heading>
+        <Typography as="p" className="mt-1 text-sm text-muted-foreground">
+          Removes it from your homeserver for good. To stop sales but keep it, unlist it from the listing page instead.
+        </Typography>
+      </div>
+      <Button
+        variant="secondary"
+        className="rounded-full text-destructive"
+        disabled={isSaving}
+        onClick={() => {
+          const record = editing.ownedListing;
+          if (!record) return;
+          void deleting.request([
+            { ownerPubky: record.ownerPubky, listingId: record.listingId, title: record.title, record },
+          ]);
+        }}
+      >
+        <Trash2 className="size-4" aria-hidden="true" />
+        Delete listing
+      </Button>
+      <MarketplaceListingDeleteDialog controller={deleting} />
+    </section>
+  );
 
   const persistListing = async (options?: { silent?: boolean }) => {
+    if (deleting.open) return false;
     setIsSaving(true);
     try {
       const savedId = await editing.submit(options);
@@ -71,6 +107,9 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
                   Back to listing
                 </Link>
               </Button>
+              {editing.status === 'unsupported' && deleteSection && (
+                <div className="mt-8 w-full max-w-xl text-left">{deleteSection}</div>
+              )}
             </Container>
           )}
         </Container>
@@ -135,6 +174,7 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
             Cancel and go back
           </Link>
         </Button>
+        {deleteSection}
       </Container>
     </ContentLayout>
   );
