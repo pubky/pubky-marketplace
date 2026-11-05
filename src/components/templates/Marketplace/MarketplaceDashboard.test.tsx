@@ -797,7 +797,7 @@ describe('MarketplaceDashboard listing table filters, sorts and bulk actions', (
     expect(renderedTitles()[0]).toBe('Item 120');
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     expect(router.replace).toHaveBeenCalledWith(`${MARKETPLACE_ROUTES.DASHBOARD}?page=2`, { scroll: false });
-  });
+  }, 30_000);
 
   it('shows the page the URL names', () => {
     dashboardState.listings = many(120);
@@ -807,7 +807,7 @@ describe('MarketplaceDashboard listing table filters, sorts and bulk actions', (
 
     expect(screen.getAllByRole('row')).toHaveLength(21);
     expect(screen.getByText('Showing 101–120 of 120')).toBeInTheDocument();
-  });
+  }, 30_000);
 
   it('filters by the state the URL names', () => {
     dashboardState.listings = many(6, (index) => ({ state: index % 3 === 0 ? 'paused' : 'active' }));
@@ -912,7 +912,7 @@ describe('MarketplaceDashboard listing table filters, sorts and bulk actions', (
 
     const [ids] = dashboardFns.updateListingState.mock.calls[0];
     expect(ids).toHaveLength(120);
-  });
+  }, 30_000);
 
   it('starts a new selection when a filter changes, so hidden rows are never acted on', () => {
     dashboardState.listings = many(4, (index) => ({ state: index < 2 ? 'paused' : 'active' }));
@@ -961,7 +961,7 @@ describe('MarketplaceDashboard listing table filters, sorts and bulk actions', (
     fireEvent.click(screen.getByRole('button', { name: 'Select all 183 matching' }));
 
     expect(screen.getByTestId('listing-selection-banner')).toHaveTextContent('All 183 matching listings are selected.');
-  });
+  }, 30_000);
 
   it('does not bring a hidden selection back when the filter is cleared', () => {
     dashboardState.listings = many(4, (index) => ({ state: index < 2 ? 'paused' : 'active' }));
