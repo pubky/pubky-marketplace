@@ -246,12 +246,12 @@ Use `queryNexus` which wraps `safeFetch` + `httpResponseToError` with TanStack Q
 ```typescript
 // src/core/services/nexus/post/post.ts
 export class NexusPostService {
-  static async getPost({ compositeId }: TCompositeId): Promise<NexusPost> {
+  static async getPostTags({ compositeId, skip, limit, viewerId }: TFetchMorePostTagsParams): Promise<NexusTag[]> {
     const { pubky: author_id, id: post_id } = parseCompositeId(compositeId);
-    const url = postApi.view({ author_id, post_id });
+    const url = postApi.tags({ author_id, post_id, skip_tags: skip, limit_tags: limit, viewer_id: viewerId });
 
     // queryNexus handles: safeFetch → httpResponseToError → parseResponseOrThrow → retry
-    return await queryNexus<NexusPost>({ url });
+    return await queryNexus<NexusTag[]>({ url });
   }
 }
 ```

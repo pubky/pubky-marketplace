@@ -24,7 +24,5 @@ export type TPostTaggersParams = TPostBase &
 
 export type TPostTagsParams = TPostViewParams & TSkipTagsParams;
 
-export type TPostQueryParams = TPostViewParams | TPostBase | TPostTaggersParams | TPostTagsParams;
-
 // Path parameters that should NOT be added to query string
 export const POST_PATH_PARAMS = ['author_id', 'post_id', 'label'] as const;
