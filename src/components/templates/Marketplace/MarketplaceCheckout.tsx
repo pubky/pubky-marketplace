@@ -929,6 +929,7 @@ function MarketplaceCartCheckout() {
                     key={group.sellerPubky}
                     className="grid gap-3"
                     aria-label={`Items from ${group.sellerPubky}`}
+                    inert={checkout.checkoutBusy}
                     data-surface={isPickupGroup ? 'checkout-pickup-group' : undefined}
                   >
                     {isPickupCapabilityLoading ? (
@@ -1086,7 +1087,11 @@ function MarketplaceCartCheckout() {
               {approvalNeeded && !region.commerce.blocked && <MarketplaceSessionRequiredCard />}
 
               {region.needsCountryField && (
-                <section className="grid min-w-0 gap-4 rounded-md bg-card p-6 shadow-lg" aria-label="Your country">
+                <section
+                  className="grid min-w-0 gap-4 rounded-md bg-card p-6 shadow-lg"
+                  aria-label="Your country"
+                  inert={checkout.checkoutBusy}
+                >
                   <BuyerCountryField
                     value={region.buyerCountry}
                     onChange={region.setBuyerCountry}
@@ -1096,7 +1101,11 @@ function MarketplaceCartCheckout() {
               )}
 
               {checkout.requiresDeliveryAddress && (
-                <section className="grid min-w-0 gap-6 rounded-md bg-card p-6 shadow-lg" aria-label="Delivery address">
+                <section
+                  className="grid min-w-0 gap-6 rounded-md bg-card p-6 shadow-lg"
+                  aria-label="Delivery address"
+                  inert={checkout.checkoutBusy}
+                >
                   <Heading level={2} size="sm" className="text-xl font-semibold">
                     Delivery address
                   </Heading>

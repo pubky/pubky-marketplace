@@ -106,28 +106,9 @@ export const SHIPPING_PROFILE_ID_FIELD = 'shipping_profile_id';
  */
 export function withoutShippingProfileField<T extends { readonly extraFields?: unknown }>(row: T): T {
   const extra = row.extraFields;
-  if (typeof extra !== 'object' || extra === null) return row;
-  const fields = extra as Record<string, unknown>;
-  const recordJson = withoutProfileInRecordJson(fields.record_json);
-  if (!(SHIPPING_PROFILE_ID_FIELD in fields) && recordJson === fields.record_json) return row;
-  const { [SHIPPING_PROFILE_ID_FIELD]: _ignored, ...rest } = fields;
-  return { ...row, extraFields: recordJson === undefined ? rest : { ...rest, record_json: recordJson } };
-}
-
-/** A whole-record `record_json` column names its own profile; an untrusted file never gets to pick one that way. */
-function withoutProfileInRecordJson(value: unknown): unknown {
-  if (typeof value !== 'string') return value;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(value);
-  } catch {
-    return value;
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed) || !('shippingProfileId' in parsed)) {
-    return value;
-  }
-  const { shippingProfileId: _ignored, ...rest } = parsed as Record<string, unknown>;
-  return JSON.stringify(rest);
+  if (typeof extra !== 'object' || extra === null || !(SHIPPING_PROFILE_ID_FIELD in extra)) return row;
+  const { [SHIPPING_PROFILE_ID_FIELD]: _ignored, ...rest } = extra as Record<string, unknown>;
+  return { ...row, extraFields: rest };
 }
 
 export function shippingOptionRow(shipping: ImportShipping, currency: string): Record<string, unknown> {

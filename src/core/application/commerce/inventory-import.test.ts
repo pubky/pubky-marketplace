@@ -162,25 +162,6 @@ describe('MarketplaceShopClientService import helpers', () => {
     expect(payload).not.toContain('shipping_profile_id');
   });
 
-  it('drops the profile a record_json column names, in JSON and canonical CSV rows', async () => {
-    const recordJson = JSON.stringify({ listingId: 'boots_01', title: 'Boots', shippingProfileId: 'someone-elses' });
-    const row = canonicalRow('boots_01', { extraFields: { country_code: 'US', record_json: recordJson } });
-    const sources = [
-      new BytesFile(utf8(JSON.stringify([row])), 'listings.json', 'application/json'),
-      new BytesFile(MarketplaceShopClientService.exportListingsCsv([row]), 'listings.csv', 'text/csv'),
-    ];
-    for (const file of sources) {
-      const store = new MemoryImportStore();
-      const planned = await MarketplaceShopClientService.planBrowserFile(file, store);
-      expect(planned.ok).toBe(true);
-      if (!planned.ok) return;
-      const manifest = await store.load(planned.value.manifestId);
-      const payload = (await store.getPayloadJson(planned.value.manifestId, manifest!.rows[0]!.rowIdentity)) ?? '';
-      expect(payload).toContain('boots_01');
-      expect(payload).not.toContain('shippingProfileId');
-    }
-  });
-
   it('does not formula-quote a profile id that starts with a hyphen on a Shop-built file', async () => {
     const store = new MemoryImportStore();
     const row = canonicalRow('boots_01', { extraFields: { country_code: 'US', shipping_profile_id: '-worldwide' } });
@@ -368,6 +349,35 @@ describe('CommerceInventoryImportApplication', () => {
     await importer.publish(planned.manifestId);
 
     expect(puts).toEqual(['guide_01']);
+  });
+
+  it.each([
+    { label: 'an update of the stored listing', stored: true, profile: 'worldwide' },
+    { label: 'a create with no stored listing', stored: false, profile: undefined },
+  ])('publishes an edited export of a profile-priced listing as $label', async ({ stored, profile }) => {
+    const record = createCommerceListingFixture({ listingId: 'boots_01', shippingProfileId: 'worldwide' });
+    const published: Array<{ title: string; shippingProfileId: string | undefined }> = [];
+    const importer = CommerceInventoryImportApplication.forSeller(PUBKY, {
+      ...IMPORT_GATES_PASSING,
+      store,
+      currentItems: async () => ({}),
+      localRecords: async () => (stored ? [record] : []),
+      putListing: async (next) => {
+        published.push({ title: next.title, shippingProfileId: next.shippingProfileId });
+      },
+      listingExists: async () => false,
+      syncMany: async (listings) =>
+        syncOk(listings.map((listing) => ({ listing_id: listing.listing_id, status: 200 }))),
+    });
+    const rows = listingToCanonicalRows({ ...record, title: 'Boots, edited' });
+    const planned = await importer.planFile(
+      new BytesFile(utf8(JSON.stringify(rows)), 'export.json', 'application/json'),
+    );
+    if (planned.status !== 'planned') throw new Error(`not planned: ${planned.status}`);
+
+    await importer.publish(planned.manifestId);
+
+    expect(published).toEqual([{ title: 'Boots, edited', shippingProfileId: profile }]);
   });
 
   it('checkpoints conflict on CAS 409 and does not overwrite', async () => {

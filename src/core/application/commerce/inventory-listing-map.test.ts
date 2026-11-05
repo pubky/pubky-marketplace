@@ -38,6 +38,30 @@ describe('mapCanonicalRowsToListing shipping profile', () => {
   });
 });
 
+describe('mapCanonicalRowsToListing profile in a whole-record round trip', () => {
+  const priced = () => createCommerceListingFixture({ listingId: 'boots_01', shippingProfileId: 'worldwide' });
+  const edited = (title: string) => {
+    const record = priced();
+    const rows = listingToCanonicalRows({ ...record, title });
+    return { record, rows };
+  };
+
+  it('keeps the profile of the stored listing when an edited export is re-imported over it', () => {
+    const { record, rows } = edited('Boots, edited');
+    const mapped = mapCanonicalRowsToListing(rows, record.ownerPubky, 'worldwide');
+    expect(mapped.ok && mapped.record.title).toBe('Boots, edited');
+    expect(mapped.ok && mapped.record.shippingProfileId).toBe('worldwide');
+  });
+
+  it('never lets a file introduce a profile on a create or an unpriced listing', () => {
+    const { record, rows } = edited('Boots');
+    const created = mapCanonicalRowsToListing(rows, record.ownerPubky);
+    expect(created.ok && created.record.shippingProfileId).toBeUndefined();
+    const other = mapCanonicalRowsToListing(rows, record.ownerPubky, 'someone-elses');
+    expect(other.ok && other.record.shippingProfileId).toBeUndefined();
+  });
+});
+
 describe('mapCanonicalRowsToListing', () => {
   it('prefers extraFields.record_json for a Shop-valid create', () => {
     const record = createCommerceListingFixture({ listingId: 'boots_01' });

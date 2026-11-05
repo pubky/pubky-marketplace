@@ -51,6 +51,7 @@ const view = vi.hoisted(() => ({
   hasManualDigitalLine: false,
   orderCount: 1,
   zoneShipping: null as null | ReturnType<typeof noZoneShipping>,
+  checkoutBusy: false,
   payResult: { ok: false, orderIds: [] as string[], boundOrders: [] as unknown[] } as {
     ok: boolean;
     orderIds: string[];
@@ -217,6 +218,7 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
         submit: vi.fn(async () => false),
         pay: checkoutActions.pay,
         isPaying: false,
+        checkoutBusy: view.checkoutBusy,
         needsSession: view.needsSession,
         sessionError: view.sessionError,
         hasMarketplaceSession: view.hasMarketplaceSession,
@@ -406,6 +408,7 @@ function resetCheckoutView() {
   checkoutActions.setDigitalChoice.mockReset();
   view.orderCount = 1;
   view.zoneShipping = null;
+  view.checkoutBusy = false;
   view.payResult = { ok: false, orderIds: [], boundOrders: [] };
   view.availability.clear();
   navigation.navigateTop.mockReset();
@@ -1749,6 +1752,21 @@ describe('MarketplaceCheckout digital lines (digital delivery design §3 "Checko
       }
     },
   );
+
+  it('freezes everything that decides the quote while a checkout is being sent', () => {
+    seededCart();
+    view.checkoutBusy = true;
+    render(<MarketplaceCheckout />);
+    for (const name of ['Delivery address', /^Items from /]) {
+      expect(screen.getByRole('region', { name })).toHaveAttribute('inert');
+    }
+  });
+
+  it('leaves those controls live when no checkout is in flight', () => {
+    seededCart();
+    render(<MarketplaceCheckout />);
+    expect(screen.getByRole('region', { name: 'Delivery address' })).not.toHaveAttribute('inert');
+  });
 
   it('offers no rate section for a cart with no zone-priced line', () => {
     seededCart();

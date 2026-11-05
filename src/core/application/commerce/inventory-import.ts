@@ -1152,7 +1152,7 @@ export class CommerceInventoryImportApplication {
       if (!parsed) return { status: 'error', message: IMPORT_PARSE_FAIL_COPY };
       payloads.push(parsed);
     }
-    const mapped = mapCanonicalRowsToListing(payloads, this.host.sellerPubky);
+    const mapped = mapCanonicalRowsToListing(payloads, this.host.sellerPubky, existing?.shippingProfileId ?? null);
     if (!mapped.ok) {
       const failure = classifyListingPublishFailure(mapped.message);
       const failureCode =
