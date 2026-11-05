@@ -134,4 +134,68 @@ describe('CommerceShippingProfilesApplication', () => {
     await CommerceShippingProfilesApplication.delete(OWNER, 'printful');
     expect(homeserver.files.has(shippingProfileUri(OWNER, 'printful'))).toBe(false);
   });
+
+  it('flags a directory with more entries than one bounded listing returns', async () => {
+    const urls = Array.from({ length: 51 }, (_, index) => shippingProfileUri(OWNER, `p${index}`));
+    for (const url of urls) homeserver.files.set(url, profile(url.slice(url.lastIndexOf('/') + 1)));
+    vi.spyOn(HomeserverService, 'list').mockResolvedValue(urls);
+
+    const listing = await CommerceShippingProfilesApplication.list(OWNER);
+
+    expect(listing.truncated).toBe(true);
+  });
+
+  it('refuses a profile too large to be read back before anything is written', async () => {
+    const huge = profile('huge', { name: 'x'.repeat(1024 * 1024 + 1) });
+
+    await expect(
+      CommerceShippingProfilesApplication.put(huge as Parameters<typeof CommerceShippingProfilesApplication.put>[0]),
+    ).rejects.toThrow(/too large/);
+    expect(homeserver.log.filter((entry) => entry.startsWith('PUT'))).toEqual([]);
+  });
+
+  describe('counting the listings that use a profile', () => {
+    const listingUrl = (id: string) => `pubky://${OWNER}/pub/pubky.app/marketplace/v1/listings/${id}`;
+    const seed = (id: string, record: Record<string, unknown>) => homeserver.files.set(listingUrl(id), record);
+
+    it('counts live listings on the homeserver that name the profile, whatever an indexer returns', async () => {
+      seed('a', { shippingProfileId: 'printful', state: 'active' });
+      seed('b', { shippingProfileId: 'printful', state: 'removed' });
+      seed('c', { shippingProfileId: 'other', state: 'active' });
+      seed('d', { state: 'active' });
+      seed('e', { shippingProfileId: 'printful', state: 'draft' });
+      vi.spyOn(HomeserverService, 'listAll').mockResolvedValue(['a', 'b', 'c', 'd', 'e'].map(listingUrl));
+
+      await expect(CommerceShippingProfilesApplication.countListingsUsing(OWNER, 'printful')).resolves.toBe(2);
+      expect(HomeserverService.listAll).toHaveBeenCalledWith({
+        baseDirectory: `pubky://${OWNER}/pub/pubky.app/marketplace/v1/listings/`,
+      });
+    });
+
+    it('skips a listing deleted while counting and refuses to answer when another cannot be read', async () => {
+      seed('a', { shippingProfileId: 'printful', state: 'active' });
+      vi.spyOn(HomeserverService, 'listAll').mockResolvedValue(['a', 'gone'].map(listingUrl));
+      await expect(CommerceShippingProfilesApplication.countListingsUsing(OWNER, 'printful')).resolves.toBe(1);
+
+      vi.mocked(HomeserverService.getBlob).mockImplementation(async ({ url }) => {
+        if (url === listingUrl('a')) throw homeserverHttpError(500, url);
+        return new TextEncoder().encode('{}') as Uint8Array<ArrayBuffer>;
+      });
+      await expect(CommerceShippingProfilesApplication.countListingsUsing(OWNER, 'printful')).rejects.toBeDefined();
+    });
+
+    it('refuses to answer on a listing that is not a JSON object', async () => {
+      vi.spyOn(HomeserverService, 'listAll').mockResolvedValue([listingUrl('a')]);
+      vi.mocked(HomeserverService.getBlob).mockResolvedValue(new TextEncoder().encode('[]') as Uint8Array<ArrayBuffer>);
+      await expect(CommerceShippingProfilesApplication.countListingsUsing(OWNER, 'printful')).rejects.toThrow(
+        /not an object/,
+      );
+      vi.mocked(HomeserverService.getBlob).mockResolvedValue(
+        new TextEncoder().encode('null') as Uint8Array<ArrayBuffer>,
+      );
+      await expect(CommerceShippingProfilesApplication.countListingsUsing(OWNER, 'printful')).rejects.toThrow(
+        /not an object/,
+      );
+    });
+  });
 });

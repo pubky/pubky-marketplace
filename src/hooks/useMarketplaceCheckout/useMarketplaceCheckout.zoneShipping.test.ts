@@ -277,6 +277,55 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
     expect(sent(1)?.shippingChoices?.[0]).toMatchObject({ profileSha256: SHA_B });
   });
 
+  it('sends one checkout when Pay and submit are triggered in the same tick', async () => {
+    const { result } = mount(profileItem(), 'DE');
+    await waitFor(() => expect(group(result)?.state.status).toBe('ready'));
+    let finish: (value: typeof CHECKOUT_OK) => void = () => {};
+    vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockImplementationOnce(
+      () => new Promise((resolve) => (finish = resolve)) as never,
+    );
+
+    let outcomes: unknown[] = [];
+    await act(async () => {
+      const first = result.current.pay(null);
+      const second = result.current.submit();
+      const third = result.current.pay(null);
+      await waitFor(() => expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledTimes(1));
+      finish(CHECKOUT_OK);
+      outcomes = await Promise.all([first, second, third]);
+    });
+
+    expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledTimes(1);
+    expect(outcomes[1]).toBe(false);
+    expect(outcomes[2]).toMatchObject({ ok: false });
+  });
+
+  it('sends the destination a flat-priced seller limits, even when the first read of the limit has not returned', async () => {
+    vi.mocked(CommerceController.refreshShop)
+      .mockImplementationOnce(() => new Promise(() => {}))
+      .mockResolvedValueOnce({ ownerPubky: listing.ownerPubky, shipsToCountries: ['DE'] } as never);
+    const { result } = mount(cartItem({}, 1), 'DE');
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(sent()).toMatchObject({ destinationCountry: 'DE' });
+    expect(sent()).not.toHaveProperty('shippingChoices');
+  });
+
+  it('seals the canonical country in the delivery address as well as sending it as the destination', async () => {
+    served.profile = snapshot(SHA_A, [standard(899, 450)], { countries: ['GB'] });
+    const { result } = mount(profileItem(), 'uk');
+    await waitFor(() => expect(group(result)?.state.status).toBe('ready'));
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(sent()).toMatchObject({ destinationCountry: 'GB', deliveryAddress: { countryCode: 'GB' } });
+  });
+
   it('sends the rate the buyer picked', async () => {
     const { result } = mount(profileItem(), 'DE');
     await waitFor(() => expect(group(result)?.state.status).toBe('ready'));

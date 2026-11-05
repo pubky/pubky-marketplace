@@ -450,7 +450,9 @@ describe('MarketplaceListing', () => {
       view.listing = zoned();
       view.addressCountry = 'DE';
       renderListing();
-      expect(screen.getByText('Ships to Germany: Standard $8.99, 6-12 days')).toBeInTheDocument();
+      expect(
+        screen.getByText('One item to Germany: Standard $8.99, 6-12 days. Final shipping is set at checkout.'),
+      ).toBeInTheDocument();
       expect(screen.queryByText(/Shipping: calculated/)).not.toBeInTheDocument();
     });
 
@@ -481,7 +483,9 @@ describe('MarketplaceListing', () => {
       };
       view.addressCountry = 'FR';
       renderListing();
-      expect(await screen.findByText('Ships to France: Standard $8.99, 6-12 days')).toBeInTheDocument();
+      expect(
+        await screen.findByText('One item to France: Standard $8.99, 6-12 days. Final shipping is set at checkout.'),
+      ).toBeInTheDocument();
     });
 
     it('prices a buyer whose address says UK against a GB zone', () => {
@@ -490,7 +494,9 @@ describe('MarketplaceListing', () => {
       });
       view.addressCountry = 'uk';
       renderListing();
-      expect(screen.getByText('Ships to United Kingdom: Standard $8.99, 6-12 days')).toBeInTheDocument();
+      expect(
+        screen.getByText('One item to United Kingdom: Standard $8.99, 6-12 days. Final shipping is set at checkout.'),
+      ).toBeInTheDocument();
     });
 
     it('prices no rate from a profile whose currency differs from the item', async () => {
@@ -509,7 +515,7 @@ describe('MarketplaceListing', () => {
       view.addressCountry = 'FR';
       renderListing();
       expect(await screen.findByText(/rates use a different currency than the item/)).toBeInTheDocument();
-      expect(screen.queryByText(/Ships to France/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/to France/)).not.toBeInTheDocument();
     });
 
     it('offers no bidding on an auction priced by zones', () => {

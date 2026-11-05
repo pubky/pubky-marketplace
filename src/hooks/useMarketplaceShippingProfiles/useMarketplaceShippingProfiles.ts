@@ -15,17 +15,16 @@ import { useAuthStore } from '@/stores/auth/auth.store';
 export type MarketplaceShippingProfilesState =
   | { status: 'loading' }
   | { status: 'error' }
-  | { status: 'ready'; profiles: ShippingProfileSnapshot[]; unreadable: string[] };
+  | { status: 'ready'; profiles: ShippingProfileSnapshot[]; unreadable: string[]; truncated: boolean };
 
 /**
- * How many of the seller's own listings name `profileId`, after refreshing
- * the seller's listings from the network so one published from another device
- * counts. A profile in use is not deleted: its listings would stop shipping.
+ * How many of the seller's own listings name `profileId`, read from the
+ * listing records on their homeserver so one published from another device or
+ * not yet indexed counts. A profile in use is not deleted: its listings would
+ * stop shipping. A listing that cannot be read rejects instead of counting.
  */
 export async function countListingsUsingProfile(ownerPubky: string, profileId: string): Promise<number> {
-  await CommerceController.refreshListingsBySeller(ownerPubky);
-  const listings = await CommerceController.getListingsBySeller(ownerPubky);
-  return listings.filter(({ record }) => record.shippingProfileId === profileId && record.state !== 'removed').length;
+  return await CommerceController.countListingsUsingShippingProfile(ownerPubky, profileId);
 }
 
 /**
@@ -50,8 +49,8 @@ export function useMarketplaceShippingProfiles() {
   const reload = useCallback(async () => {
     if (!ownerPubky) return;
     try {
-      const { profiles, unreadable } = await CommerceController.listShippingProfiles(ownerPubky);
-      setState({ status: 'ready', profiles, unreadable });
+      const { profiles, unreadable, truncated } = await CommerceController.listShippingProfiles(ownerPubky);
+      setState({ status: 'ready', profiles, unreadable, truncated });
     } catch {
       setState({ status: 'error' });
     }
@@ -67,7 +66,12 @@ export function useMarketplaceShippingProfiles() {
       profileId === null || state.status !== 'ready'
         ? null
         : (state.profiles.find(({ record }) => record.profileId === profileId)?.record ?? null);
-    if (profileId === null && state.status === 'ready' && state.profiles.length >= SHIPPING_PROFILE_MAX_COUNT) {
+    if (
+      profileId === null &&
+      (state.status !== 'ready' ||
+        state.truncated ||
+        state.profiles.length + state.unreadable.length >= SHIPPING_PROFILE_MAX_COUNT)
+    ) {
       toast({ variant: 'error', description: `You can keep up to ${SHIPPING_PROFILE_MAX_COUNT} shipping profiles.` });
       return false;
     }

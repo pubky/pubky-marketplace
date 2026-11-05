@@ -63,6 +63,11 @@ export class CommerceHomeserverService {
     return await HomeserverService.list({ baseDirectory: directoryUrl, limit, logUrl });
   }
 
+  /** Every file under a directory, paged until exhausted; a failed page rejects, so a caller never counts a partial listing. */
+  static async listAll(directoryUrl: string): Promise<string[]> {
+    return await HomeserverService.listAll({ baseDirectory: directoryUrl });
+  }
+
   static async exists(url: string): Promise<boolean> {
     return await HomeserverService.exists(url);
   }

@@ -90,4 +90,31 @@ describe('MarketplaceShippingProfilesCard', () => {
       }),
     );
   });
+
+  it.each([
+    { currency: 'XTS', exponent: 3, amountMinor: 4790, label: 'a currency the studio cannot author' },
+    { currency: 'USD', exponent: 3, amountMinor: 4790, label: 'a known currency with other decimals' },
+    { currency: 'JPY', exponent: 0, amountMinor: 479, label: 'a currency with no decimals' },
+  ])('keeps the stored asset when editing a profile in $label', async ({ currency, exponent, amountMinor }) => {
+    const user = userEvent.setup();
+    const stored = structuredClone(profile);
+    stored.record.currency = currency;
+    stored.record.exponent = exponent;
+    (stored.record.zones[0].rates[0] as { amountMinor: number }).amountMinor = amountMinor;
+    hook.profiles = [stored];
+    render(<MarketplaceShippingProfilesCard />);
+
+    await user.click(screen.getByRole('button', { name: 'Edit Worldwide' }));
+    await user.click(screen.getByRole('button', { name: 'Save profile' }));
+
+    await waitFor(() => expect(hook.save).toHaveBeenCalledTimes(1));
+    expect(hook.save).toHaveBeenCalledWith(
+      'worldwide',
+      expect.objectContaining({
+        currency,
+        exponent,
+        zones: [expect.objectContaining({ rates: [expect.objectContaining({ amountMinor })] })],
+      }),
+    );
+  });
 });

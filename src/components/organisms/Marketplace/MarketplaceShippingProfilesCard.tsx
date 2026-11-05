@@ -29,13 +29,23 @@ type Draft = {
   profileId: string | null;
   name: string;
   currency: string;
+  /** The stored profile's own decimals, kept when editing so its prices are never re-read in a different unit. */
+  exponent: number;
   origins: string;
   excluded: string;
   zones: ShippingZoneFormValue[];
 };
 
 function newDraft(): Draft {
-  return { profileId: null, name: '', currency: 'USD', origins: '', excluded: '', zones: [emptyShippingZone()] };
+  return {
+    profileId: null,
+    name: '',
+    currency: 'USD',
+    exponent: assetForListingCurrency('USD').exponent,
+    origins: '',
+    excluded: '',
+    zones: [emptyShippingZone()],
+  };
 }
 
 function draftFromProfile({ record }: ShippingProfileSnapshot): Draft {
@@ -43,6 +53,7 @@ function draftFromProfile({ record }: ShippingProfileSnapshot): Draft {
     profileId: record.profileId,
     name: record.name,
     currency: record.currency,
+    exponent: record.exponent,
     origins: record.origins.join(', '),
     excluded: record.excludedCountries.join(', '),
     zones: shippingZonesToForm(record.zones, { currency: record.currency, exponent: record.exponent }),
@@ -68,8 +79,13 @@ export function MarketplaceShippingProfilesCard() {
   const [problems, setProblems] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
+  const editingStored = draft !== null && draft.profileId !== null;
+  const knownCurrency = draft !== null && isListingCurrencyCode(draft.currency);
   const currency = draft && isListingCurrencyCode(draft.currency) ? draft.currency : 'USD';
-  const asset = assetForListingCurrency(currency);
+  const asset =
+    draft !== null && editingStored
+      ? { currency: draft.currency, exponent: draft.exponent }
+      : assetForListingCurrency(currency);
 
   const submit = async () => {
     if (!draft) return;
@@ -148,9 +164,15 @@ export function MarketplaceShippingProfilesCard() {
                   Currency
                 </Label>
                 <Select
-                  value={currency}
+                  value={editingStored ? draft.currency : currency}
                   disabled={draft.profileId !== null}
-                  onValueChange={(next) => setDraft({ ...draft, currency: next })}
+                  onValueChange={(next) =>
+                    setDraft({
+                      ...draft,
+                      currency: next,
+                      exponent: assetForListingCurrency(next as typeof currency).exponent,
+                    })
+                  }
                 >
                   <SelectTrigger theme="dashed" id="shipping-profile-currency">
                     <SelectValue />
@@ -161,6 +183,9 @@ export function MarketplaceShippingProfilesCard() {
                         {LISTING_CURRENCY_REGISTRY[code].pickerLabel}
                       </SelectItem>
                     ))}
+                    {editingStored && !knownCurrency && (
+                      <SelectItem value={draft.currency}>{draft.currency}</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
                 {draft.profileId !== null && (

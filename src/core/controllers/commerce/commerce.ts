@@ -142,6 +142,13 @@ export class CommerceController {
     return await CommerceShippingProfilesApplication.list(CommerceRecordNormalizer.pubky(ownerPubky));
   }
 
+  static async countListingsUsingShippingProfile(ownerPubky: unknown, profileId: unknown) {
+    return await CommerceShippingProfilesApplication.countListingsUsing(
+      CommerceRecordNormalizer.pubky(ownerPubky),
+      CommerceRecordNormalizer.entityId(profileId),
+    );
+  }
+
   static async putShippingProfile(record: unknown) {
     return await CommerceShippingProfilesApplication.put(CommerceRecordNormalizer.shippingProfile(record));
   }

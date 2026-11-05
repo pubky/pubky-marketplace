@@ -9,6 +9,7 @@ import {
 } from '@/application/commerce/inventory-import';
 import { listingToCanonicalRows } from '@/application/commerce/inventory-listing-map';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
+import { markShopBuiltImportFile } from '@/libs/commerce/shop-built-import-file';
 import { UNLIMITED_STOCK_RESERVED_MESSAGE } from '@/libs/commerce/unlimited-stock';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -159,6 +160,24 @@ describe('MarketplaceShopClientService import helpers', () => {
     const payload = (await store.getPayloadJson(planned.value.manifestId, manifest!.rows[0]!.rowIdentity)) ?? '';
     expect(payload).toContain('country_code');
     expect(payload).not.toContain('shipping_profile_id');
+  });
+
+  it('keeps the shipping_profile_id of a JSON file the Shop built from its own import settings', async () => {
+    const store = new MemoryImportStore();
+    const row = canonicalRow('boots_01', {
+      extraFields: { country_code: 'US', shipping_profile_id: 'worldwide' },
+    });
+    const file = markShopBuiltImportFile(
+      new BytesFile(utf8(JSON.stringify([row])), 'connector.json', 'application/json'),
+    );
+    const planned = await MarketplaceShopClientService.planBrowserFile(file, store);
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) return;
+    const manifest = await store.load(planned.value.manifestId);
+    const payload = JSON.parse(
+      (await store.getPayloadJson(planned.value.manifestId, manifest!.rows[0]!.rowIdentity)) ?? '{}',
+    );
+    expect(payload.extraFields).toEqual({ country_code: 'US', shipping_profile_id: 'worldwide' });
   });
 
   it('plans JSON rows and persists payloads without publishing', async () => {

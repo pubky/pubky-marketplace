@@ -15,7 +15,7 @@ import {
 } from '@/hooks/useDeliveryKeyGate/useDeliveryKeyGate';
 import type { MarketplaceCartItem } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import {
-  checkDestinationCountry,
+  resolveShipsToDestinations,
   useMarketplaceSellerShipsTo,
 } from '@/hooks/useMarketplaceSellerShipsTo/useMarketplaceSellerShipsTo';
 import {
@@ -57,7 +57,7 @@ import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
 import { pickupRefusalFailureMessage } from '@/libs/commerce/pickup';
 import { canonicalCountryCode } from '@/libs/commerce/postal-address';
 import type { ShippingChoicePayload } from '@/libs/commerce/shipping-groups';
-import { isDestinationAllowed } from '@/libs/commerce/ships-to';
+import { destinationCountryError, isDestinationAllowed } from '@/libs/commerce/ships-to';
 import {
   buildMarketplaceListingAggregateId,
   buildMarketplaceOrderAggregateId,
@@ -256,6 +256,7 @@ export function useMarketplaceCheckout(
   const [needsSession, setNeedsSession] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [isPaying, setIsPaying] = useState(false);
+  const checkoutInFlight = useRef(false);
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [pickupAvailable, setPickupAvailable] = useState<boolean | null>(null);
   const [choiceOverrides, setChoiceOverrides] = useState<Record<string, MarketplaceFulfillmentMethod>>({});
@@ -754,16 +755,18 @@ export function useMarketplaceCheckout(
     const shippedSellers = requiresDeliveryAddress
       ? CommerceController.getShippedSellers({ lines: checkoutLines, fulfillmentChoiceBySeller })
       : [];
-    if (shippedSellers.length > 0) {
-      const destinationError = await checkDestinationCountry(data.countryCode, shippedSellers);
+    // One fresh read of the sellers' destination lists decides both the refusal and whether the command carries a destination.
+    const freshDestinations = shippedSellers.length > 0 ? await resolveShipsToDestinations(shippedSellers) : null;
+    if (freshDestinations !== null) {
+      const destinationError = destinationCountryError(data.countryCode, freshDestinations);
       if (destinationError) {
         toast({ variant: 'error', description: destinationError });
         return { ok: false };
       }
     }
     const sendsDestination =
-      shippedSellers.length > 0 &&
-      (zoneShipping.hasZonedGroups || (shipsTo.status === 'ready' && shipsTo.countries !== null));
+      freshDestinations !== null &&
+      (zoneShipping.hasZonedGroups || (freshDestinations.status === 'ready' && freshDestinations.countries !== null));
     let shippingChoices: ShippingChoicePayload[] = [];
     if (shippedSellers.length > 0 && zoneShipping.hasZonedGroups) {
       const priced = zoneShipping.choices();
@@ -806,7 +809,7 @@ export function useMarketplaceCheckout(
               city: data.city,
               region: data.region,
               postalCode: data.postalCode,
-              countryCode: data.countryCode.toUpperCase(),
+              countryCode: addressCountry,
             },
           }
         : {}),
@@ -884,90 +887,104 @@ export function useMarketplaceCheckout(
   };
 
   const submit = async (): Promise<boolean> => {
-    if (!items.length) return false;
+    if (!items.length || checkoutInFlight.current) return false;
+    checkoutInFlight.current = true;
     let succeeded = false;
-    await form.handleSubmit(async (data) => {
-      try {
-        const created = await createCheckout(data);
-        if (!created.ok) return;
-        succeeded = true;
-        await finishCreatedCheckout(data);
-      } catch (checkoutError) {
-        handleCheckoutError(checkoutError);
-      }
-    })();
+    try {
+      await form.handleSubmit(async (data) => {
+        try {
+          const created = await createCheckout(data);
+          if (!created.ok) return;
+          succeeded = true;
+          await finishCreatedCheckout(data);
+        } catch (checkoutError) {
+          handleCheckoutError(checkoutError);
+        }
+      })();
+    } finally {
+      checkoutInFlight.current = false;
+    }
     return succeeded;
   };
 
   const pay = async (method: PaymentMethodKind | null, onRetry?: () => void): Promise<MarketplacePayResult> => {
     const empty: MarketplacePayResult = { ok: false, orderIds: [], boundOrders: [] };
-    if (!items.length || isPaying) return empty;
+    if (!items.length || isPaying || checkoutInFlight.current) return empty;
     const route = locksCheckoutRoute(getCommerceAdapterMode(), getPaykitServerApi(), items);
     if (route === 'mixed') {
       toast({ variant: 'error', description: LOCKS_MIXED_CHECKOUT_COPY });
       return empty;
     }
     let outcome = empty;
+    checkoutInFlight.current = true;
     setIsPaying(true);
-    await form.handleSubmit(async (data) => {
-      let createdIds: string[] = [];
-      try {
-        const created = await createCheckout(data);
-        if (!created.ok) {
-          if (created.refusal) outcome = { ...empty, refusal: created.refusal, soldOut: created.soldOut };
-          return;
-        }
-        let listed: MarketplaceOrder[] = [];
+    try {
+      await form.handleSubmit(async (data) => {
+        let createdIds: string[] = [];
         try {
-          listed = await CommerceController.getMarketplaceOrders();
-        } catch {
-          listed = [];
-        }
-        createdIds = resolveCreatedCheckoutOrderIds({
-          result: created.result,
-          orders: listed,
-          listingAggregateIds: listingAggregatesFromCheckoutLines(created.lines),
-          buyerPubky: currentUserPubky,
-        });
-        if (createdIds.length === 0) {
-          toast({ variant: 'error', description: MARKETPLACE_FAILURE_MESSAGES.checkout });
-          return;
-        }
-        const mode = getCommerceAdapterMode();
-        // Sandbox checkout already creates its simulated payment. Binding a
-        // real payment rail is only supported by the durable service. A Locks
-        // checkout on upstream Paykit pays from the order page instead (see
-        // `locksCheckoutRoute`).
-        const skipBind = mode === 'sandbox' || route === 'locks';
-        if (skipBind) {
-          await finishCreatedCheckout(data);
-          outcome = { ok: true, orderIds: createdIds, boundOrders: [] };
-          return;
-        }
-        if (!method) {
-          await cancelCreatedCheckouts(createdIds);
-          toast({ variant: 'error', description: 'Choose a payment method to pay.' });
-          return;
-        }
-        const boundOrders: MarketplaceOrder[] = [];
-        try {
-          for (const orderId of createdIds) {
-            boundOrders.push(await CommerceController.bindPaymentMethod(orderId, method));
+          const created = await createCheckout(data);
+          if (!created.ok) {
+            if (created.refusal) outcome = { ...empty, refusal: created.refusal, soldOut: created.soldOut };
+            return;
           }
-        } catch (bindError) {
-          await cancelCreatedCheckouts(createdIds);
-          showPaymentMethodRefusalToast({ error: bindError, fallback: MARKETPLACE_FAILURE_MESSAGES.checkout, onRetry });
-          if (isPaykitUnavailableRefusal(bindError)) outcome = { ...empty, paykitUnavailable: true };
-          return;
+          let listed: MarketplaceOrder[] = [];
+          try {
+            listed = await CommerceController.getMarketplaceOrders();
+          } catch {
+            listed = [];
+          }
+          createdIds = resolveCreatedCheckoutOrderIds({
+            result: created.result,
+            orders: listed,
+            listingAggregateIds: listingAggregatesFromCheckoutLines(created.lines),
+            buyerPubky: currentUserPubky,
+          });
+          if (createdIds.length === 0) {
+            toast({ variant: 'error', description: MARKETPLACE_FAILURE_MESSAGES.checkout });
+            return;
+          }
+          const mode = getCommerceAdapterMode();
+          // Sandbox checkout already creates its simulated payment. Binding a
+          // real payment rail is only supported by the durable service. A Locks
+          // checkout on upstream Paykit pays from the order page instead (see
+          // `locksCheckoutRoute`).
+          const skipBind = mode === 'sandbox' || route === 'locks';
+          if (skipBind) {
+            await finishCreatedCheckout(data);
+            outcome = { ok: true, orderIds: createdIds, boundOrders: [] };
+            return;
+          }
+          if (!method) {
+            await cancelCreatedCheckouts(createdIds);
+            toast({ variant: 'error', description: 'Choose a payment method to pay.' });
+            return;
+          }
+          const boundOrders: MarketplaceOrder[] = [];
+          try {
+            for (const orderId of createdIds) {
+              boundOrders.push(await CommerceController.bindPaymentMethod(orderId, method));
+            }
+          } catch (bindError) {
+            await cancelCreatedCheckouts(createdIds);
+            showPaymentMethodRefusalToast({
+              error: bindError,
+              fallback: MARKETPLACE_FAILURE_MESSAGES.checkout,
+              onRetry,
+            });
+            if (isPaykitUnavailableRefusal(bindError)) outcome = { ...empty, paykitUnavailable: true };
+            return;
+          }
+          await finishCreatedCheckout(data);
+          outcome = { ok: true, orderIds: createdIds, boundOrders };
+        } catch (checkoutError) {
+          if (createdIds.length > 0) await cancelCreatedCheckouts(createdIds);
+          handleCheckoutError(checkoutError);
         }
-        await finishCreatedCheckout(data);
-        outcome = { ok: true, orderIds: createdIds, boundOrders };
-      } catch (checkoutError) {
-        if (createdIds.length > 0) await cancelCreatedCheckouts(createdIds);
-        handleCheckoutError(checkoutError);
-      }
-    })();
-    setIsPaying(false);
+      })();
+    } finally {
+      checkoutInFlight.current = false;
+      setIsPaying(false);
+    }
     return outcome;
   };
 

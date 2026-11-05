@@ -891,7 +891,7 @@ function formatZoneShipping(
         ? `Does not ship to ${name}`
         : `Does not ship to ${name}. Ships to: ${formatShipsToCountries(countries)}`;
     }
-    return `Ships to ${name}: ${destination.quotes
+    return `One item to ${name}: ${destination.quotes
       .map((quote) => {
         const days =
           quote.estimatedMinDays === quote.estimatedMaxDays
@@ -907,7 +907,7 @@ function formatZoneShipping(
               });
         return `${quote.label} ${price}, ${days}`;
       })
-      .join(' · ')}`;
+      .join(' · ')}. Final shipping is set at checkout.`;
   }
   return countries === null
     ? 'Shipping: price depends on your country'

@@ -43,6 +43,7 @@ import {
   SHOPIFY_PRODUCT_CSV_HEADERS,
 } from '@bitcoinerrorlog/pubky-shop/connectors/shopify/map';
 import { getMarketplaceUrl } from '@/config/commerce';
+import { isShopBuiltImportFile } from '@/libs/commerce/shop-built-import-file';
 import { csvHeaderCells, parseCsvTable } from '@/pipes/commerce/import-csv-table';
 import type { ImportLossReport, ImportSourceFormat } from '@/pipes/commerce/import-loss-report';
 import type { PresetRow } from '@/pipes/commerce/import-preset-rows';
@@ -146,7 +147,7 @@ async function planPresetRows(
     limits: { maxBytes: DEFAULT_JSON_LIMITS.maxBytes },
   });
   if (!planned.ok) return planned;
-  const payloads = jsonPayloads(parseBoundedJson(json, { maxBytes: DEFAULT_JSON_LIMITS.maxBytes }));
+  const payloads = jsonPayloads(parseBoundedJson(json, { maxBytes: DEFAULT_JSON_LIMITS.maxBytes }), true);
   await store.persistPayloads(planned.value.manifestId, payloads);
   return {
     ok: true,
@@ -292,7 +293,7 @@ function quoteFormulaStrings(value: unknown, key?: string): unknown {
   return next;
 }
 
-function jsonPayloads(value: unknown): Map<string, string> {
+function jsonPayloads(value: unknown, keepShippingProfile: boolean): Map<string, string> {
   const items = Array.isArray(value)
     ? value
     : asObject(value) && Array.isArray(asObject(value)?.rows)
@@ -305,7 +306,7 @@ function jsonPayloads(value: unknown): Map<string, string> {
     const row = object as unknown as CanonicalCsvRow;
     payloads.set(
       canonicalCsvRowIdentity(row),
-      JSON.stringify(quoteFormulaStrings(withoutShippingProfileField(object))),
+      JSON.stringify(quoteFormulaStrings(keepShippingProfile ? object : withoutShippingProfileField(object))),
     );
   }
   return payloads;
@@ -596,7 +597,10 @@ export class MarketplaceShopClientService {
           limits: { maxBytes: DEFAULT_JSON_LIMITS.maxBytes },
         });
         if (!planned.ok) return planned;
-        const payloads = jsonPayloads(parseBoundedJson(bytes, { maxBytes: DEFAULT_JSON_LIMITS.maxBytes }));
+        const payloads = jsonPayloads(
+          parseBoundedJson(bytes, { maxBytes: DEFAULT_JSON_LIMITS.maxBytes }),
+          isShopBuiltImportFile(file),
+        );
         await store.persistPayloads(planned.value.manifestId, payloads);
         return { ok: true, value: { manifestId: planned.value.manifestId, rowCount: planned.value.rowCount } };
       }

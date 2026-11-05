@@ -18,6 +18,7 @@ import {
   connectorErrorMessage,
   type VariantMode,
 } from '@/libs/commerce/connectors';
+import { markShopBuiltImportFile } from '@/libs/commerce/shop-built-import-file';
 import { toast } from '@/molecules/Toaster/use-toast';
 import {
   type ConnectorImportLink,
@@ -38,6 +39,8 @@ export type ConnectorLinkState =
 type ImportConnection = Pick<ConnectorConnection, 'id' | 'provider' | 'domain'> & { variantMode?: VariantMode };
 
 const NO_SELECTION = 'Choose at least one product and save your choice first.';
+const PROFILE_UNUSABLE =
+  'The chosen shipping profile could not be read, or no longer prices in this currency. Check Settings > Shipping and try again.';
 const LOAD_FAILED = 'The chosen products could not be read from your store. Check the connection and try again.';
 
 function download(content: string, type: string, fileName: string) {
@@ -145,6 +148,11 @@ export function useConnectorCatalogImport(connection: ImportConnection | null) {
       values,
       values.shippingMode === 'profile' ? await readShippingProfilesNow(sellerPubky) : [],
     );
+    if (values.shippingMode === 'profile' && settings.shipping?.mode !== 'profile') {
+      setMessage(PROFILE_UNUSABLE);
+      return false;
+    }
+    setMessage(null);
     const mapped = mapConnectorCatalog({
       products,
       provider: connection.provider,
@@ -159,9 +167,9 @@ export function useConnectorCatalogImport(connection: ImportConnection | null) {
     if (mapped.rows.length === 0) return false;
     setPlanning(true);
     try {
-      const file = new File([JSON.stringify(mapped.rows)], `${connection.domain}.json`, {
-        type: 'application/json',
-      });
+      const file = markShopBuiltImportFile(
+        new File([JSON.stringify(mapped.rows)], `${connection.domain}.json`, { type: 'application/json' }),
+      );
       await importer.planFile(file);
       return true;
     } finally {
