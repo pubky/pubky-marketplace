@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { getMarketplaceNexusUrl } from '@/config/nexus';
+import { dropTransitions } from '@/libs/commerce/state-machines';
+import type { DropState } from '@/libs/commerce/transaction-contracts';
 
 /**
  * DELIBERATELY HOOK-LOCAL Nexus read (`GET v0/stream/drops`).
@@ -83,4 +85,31 @@ export function estimateDropBucket(entry: NexusDropStreamEntry, deviceNowMs: num
   const endMs = entry.ends_at ? Date.parse(entry.ends_at) : null;
   if (endMs !== null && !Number.isNaN(endMs) && deviceNowMs >= endMs) return 'ended';
   return 'live';
+}
+
+/**
+ * What the transaction service's public drop read said about an indexed
+ * drop: its state, `'unregistered'` for a 404, or `'unknown'` when the read
+ * failed.
+ */
+export type DropRegistration = DropState | 'unregistered' | 'unknown';
+
+/**
+ * The section an indexed drop renders in, or null when it leaves the Market.
+ * A drop the service never registered can never open, so once its start time
+ * has passed it is hidden; until then it stays upcoming, because sellers
+ * register a drop before its launch. A registered drop that has ended
+ * (including a cancelled one) moves to the ended section whatever its indexed
+ * times say. Otherwise, and when the read failed, the index-time estimate
+ * stands.
+ */
+export function placeDropEntry(
+  entry: NexusDropStreamEntry,
+  registration: DropRegistration,
+  deviceNowMs: number,
+): DropStreamBucket | null {
+  const estimate = estimateDropBucket(entry, deviceNowMs);
+  if (registration === 'unregistered') return estimate === 'upcoming' ? 'upcoming' : null;
+  if (registration !== 'unknown' && dropTransitions[registration].length === 0) return 'ended';
+  return estimate;
 }

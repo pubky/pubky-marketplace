@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { forgetOwnDrop } from '@/hooks/useDropStudio/drop-index';
 import { dropClockOffsetMs } from '@/libs/commerce/drop-clock';
 import {
   MARKETPLACE_FAILURE_MESSAGES,
@@ -42,6 +43,12 @@ export interface UseOwnDropResult {
   cancel: () => Promise<DropCommandOutcome>;
   /** Ended states only: `drop.release_listings`, CAS-guarded. */
   releaseListings: () => Promise<DropCommandOutcome>;
+  /**
+   * Withdraws a published-but-unregistered announcement by deleting its
+   * record. A conflict means the service registered it meanwhile: fresh state
+   * was refetched, and the cancel applies instead.
+   */
+  withdrawUnregistered: () => Promise<DropCommandOutcome>;
   /** Convergent `drop.sync` for a published-but-unregistered drop, then re-read. */
   syncRegistration: () => Promise<void>;
   isActing: boolean;
@@ -169,6 +176,38 @@ export function useOwnDrop(dropId: string): UseOwnDropResult {
   const releaseListings = () =>
     runLifecycleCommand('release', DROP_ENDED_STATES, 'Listings release only after the drop ends.');
 
+  const withdrawUnregistered = async (): Promise<DropCommandOutcome> => {
+    if (!currentUserPubky || !isDurable || dropRef.current !== null) {
+      return { ok: false, conflict: false, message: 'Only an unregistered announcement can be deleted.' };
+    }
+    setIsActing(true);
+    try {
+      const outcome = await CommerceController.withdrawUnregisteredDrop(dropId);
+      if (outcome === 'withdrawn') {
+        forgetOwnDrop(currentUserPubky, dropId);
+        return { ok: true, conflict: false, message: null };
+      }
+      await load();
+      return {
+        ok: false,
+        conflict: true,
+        message: 'The service registered this drop in the meantime. Fresh state is shown — withdraw it from there.',
+      };
+    } catch (commandError) {
+      return {
+        ok: false,
+        conflict: false,
+        message: marketplaceFailureMessage(
+          marketplaceErrorCode(commandError),
+          MARKETPLACE_FAILURE_MESSAGES.drop,
+          commandError,
+        ),
+      };
+    } finally {
+      setIsActing(false);
+    }
+  };
+
   const syncRegistration = async (): Promise<void> => {
     if (!currentUserPubky || !isDurable) return;
     setIsActing(true);
@@ -191,6 +230,7 @@ export function useOwnDrop(dropId: string): UseOwnDropResult {
     refresh: load,
     cancel,
     releaseListings,
+    withdrawUnregistered,
     syncRegistration,
     isActing,
   };

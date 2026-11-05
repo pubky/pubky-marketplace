@@ -3108,6 +3108,92 @@ describe('CommerceApplication', () => {
     expect(HomeserverService.listAll).toHaveBeenCalledWith({ baseDirectory: base });
   });
 
+  describe('withdrawing an unregistered drop announcement', () => {
+    const service = 'https://service.this-deployment.example';
+    const publicDropUrl = `${service}/v0/drops/${COMMERCE_FIXTURE_SELLER}/drop_faraday_01`;
+    const dropRecordUrl = `pubky://${COMMERCE_FIXTURE_SELLER}/pub/pubky.app/marketplace/v1/drops/drop_faraday_01`;
+    /** The service's 404 for a drop it never registered (captured from a deployed service). */
+    const notFound = () =>
+      new Response(JSON.stringify({ ok: false, error: { code: 'NOT_FOUND', message: 'The drop was not found.' } }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    const registered = () =>
+      new Response(
+        JSON.stringify({
+          drop: {
+            seller_pubky: COMMERCE_FIXTURE_SELLER,
+            drop_id: 'drop_faraday_01',
+            aggregate_id: `drop:${COMMERCE_FIXTURE_SELLER}_drop_faraday_01`,
+            state: 'announced',
+            format: 'fcfs',
+            starts_at: '2026-12-01T17:00:00.000Z',
+            ends_at: null,
+            stock_display: 'exact',
+            total_quantity: 3,
+            per_buyer_limit: 1,
+            remaining: 3,
+            remaining_band: null,
+            revision: 1,
+            server_time: '2026-11-05T06:00:00.000Z',
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    const fetchMock = vi.fn();
+
+    beforeEach(() => {
+      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
+      vi.spyOn(commerceConfig, 'getMarketplaceUrl').mockReturnValue(service);
+      vi.stubGlobal('fetch', fetchMock);
+      fetchMock.mockReset();
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('deletes the seller-signed record when the service never registered the drop', async () => {
+      fetchMock.mockImplementation(async () => notFound());
+      const remove = vi.spyOn(CommerceHomeserverService, 'delete').mockResolvedValue();
+
+      await expect(CommerceApplication.withdrawUnregisteredDrop(COMMERCE_FIXTURE_SELLER, 'drop_faraday_01')).resolves.toBe(
+        'withdrawn',
+      );
+      expect(remove).toHaveBeenCalledExactlyOnceWith(dropRecordUrl);
+      expect(fetchMock).toHaveBeenCalledWith(publicDropUrl, expect.objectContaining({ method: 'GET' }));
+    });
+
+    it('never deletes the record of a registered drop', async () => {
+      fetchMock.mockImplementation(async () => registered());
+      const remove = vi.spyOn(CommerceHomeserverService, 'delete').mockResolvedValue();
+
+      await expect(CommerceApplication.withdrawUnregisteredDrop(COMMERCE_FIXTURE_SELLER, 'drop_faraday_01')).resolves.toBe(
+        'registered',
+      );
+      expect(remove).not.toHaveBeenCalled();
+    });
+
+    it('reports a registration that landed while the delete was in flight', async () => {
+      fetchMock.mockImplementationOnce(async () => notFound()).mockImplementationOnce(async () => registered());
+      vi.spyOn(CommerceHomeserverService, 'delete').mockResolvedValue();
+
+      await expect(CommerceApplication.withdrawUnregisteredDrop(COMMERCE_FIXTURE_SELLER, 'drop_faraday_01')).resolves.toBe(
+        'registered',
+      );
+    });
+
+    it('deletes nothing when the service read fails', async () => {
+      fetchMock.mockImplementation(async () => new Response('upstream down', { status: 502 }));
+      const remove = vi.spyOn(CommerceHomeserverService, 'delete').mockResolvedValue();
+
+      await expect(
+        CommerceApplication.withdrawUnregisteredDrop(COMMERCE_FIXTURE_SELLER, 'drop_faraday_01'),
+      ).rejects.toBeDefined();
+      expect(remove).not.toHaveBeenCalled();
+    });
+  });
+
   it('deletes a listing from the homeserver, then every local cache, then its media', async () => {
     const record = createCommerceListingFixture();
     const compositeId = `${record.ownerPubky}:${record.listingId}`;

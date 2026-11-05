@@ -5771,6 +5771,27 @@ export class CommerceApplication {
   }
 
   /**
+   * Withdraws an announcement the transaction service never registered by
+   * deleting the seller-signed record from the seller's homeserver; Nexus
+   * removes it from discovery on the delete event. A registered drop is never
+   * deleted, because its record backs the public drop page: an announced one
+   * is withdrawn with `drop.cancel`, and an ended one keeps its archive.
+   * `'registered'` also covers a `drop.sync` that lands while the delete is in
+   * flight, so the caller re-reads and offers the cancel instead.
+   */
+  static async withdrawUnregisteredDrop(sellerPubky: string, dropId: string): Promise<'withdrawn' | 'registered'> {
+    if (!isDurableCommerceMode(getCommerceAdapterMode())) {
+      throw Err.client(ClientErrorCode.BAD_REQUEST, 'Drops require the durable transaction service.', {
+        service: ErrorService.Marketplace,
+        operation: 'withdrawUnregisteredDrop',
+      });
+    }
+    if ((await MarketplaceGatewayService.getPublicDrop(sellerPubky, dropId)) !== null) return 'registered';
+    await CommerceHomeserverService.delete(CommerceRecordNormalizer.dropUri(sellerPubky, dropId));
+    return (await MarketplaceGatewayService.getPublicDrop(sellerPubky, dropId)) === null ? 'withdrawn' : 'registered';
+  }
+
+  /**
    * Seller-only drop lifecycle commands, both CAS-guarded with the freshly
    * read revision: `drop.cancel` (kill switch, announced/live) and
    * `drop.release_listings` (return an ENDED drop's listings to open sale).

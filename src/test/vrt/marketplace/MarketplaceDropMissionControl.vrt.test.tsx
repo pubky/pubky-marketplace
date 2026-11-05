@@ -47,6 +47,7 @@ vi.mock('@/hooks/useOwnDrop/useOwnDrop', async () => {
       refresh: async () => undefined,
       cancel: async () => ({ ok: false, conflict: false, message: null }),
       releaseListings: async () => ({ ok: false, conflict: false, message: null }),
+      withdrawUnregistered: async () => ({ ok: false, conflict: false, message: null }),
       syncRegistration: async () => undefined,
       isActing: false,
     }),

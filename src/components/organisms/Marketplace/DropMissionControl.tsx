@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowLeft, Clock3, OctagonX, PackageOpen, RefreshCw } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, Clock3, OctagonX, PackageOpen, RefreshCw, Trash2 } from 'lucide-react';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
@@ -99,30 +100,121 @@ export function DropMissionControl({ dropId }: DropMissionControlProps) {
 
 function DropMissionControlUnregistered({ ownDrop }: { ownDrop: UseOwnDropResult }) {
   return (
-    <Card className="rounded-md p-0">
-      <CardContent className="flex flex-col gap-3 p-6">
-        <div className="flex items-center gap-2">
-          <Badge variant="outline">Unregistered</Badge>
-          <Typography as="p" className="text-sm font-semibold">
-            This drop is not ready to launch.
+    <div className="flex flex-col gap-6">
+      <Card className="rounded-md p-0">
+        <CardContent className="flex flex-col gap-3 p-6">
+          <div className="flex items-center gap-2">
+            <Badge variant="outline">Unregistered</Badge>
+            <Typography as="p" className="text-sm font-semibold">
+              This drop is not ready to launch.
+            </Typography>
+          </div>
+          <Typography as="p" className="text-sm text-muted-foreground">
+            {ownDrop.record
+              ? 'Your announcement is saved, but launch setup is incomplete. The schedule and stock limits are not active yet.'
+              : 'This drop could not be loaded. It may have been deleted.'}
           </Typography>
-        </div>
-        <Typography as="p" className="text-sm text-muted-foreground">
-          {ownDrop.record
-            ? 'Your announcement is saved, but launch setup is incomplete. The schedule and stock limits are not active yet.'
-            : 'This drop could not be loaded. It may have been deleted.'}
+          {ownDrop.record && (
+            <Button
+              className="w-fit rounded-full"
+              disabled={ownDrop.isActing}
+              onClick={() => void ownDrop.syncRegistration()}
+            >
+              <RefreshCw className="size-4" />
+              {ownDrop.isActing ? 'Registering…' : 'Register with the service'}
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+      {ownDrop.record && <DropMissionControlWithdrawUnregistered ownDrop={ownDrop} />}
+    </div>
+  );
+}
+
+function DropMissionControlWithdrawUnregistered({ ownDrop }: { ownDrop: UseOwnDropResult }) {
+  const router = useRouter();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const closeDialog = (open: boolean) => {
+    if (ownDrop.isActing) return;
+    setIsDialogOpen(open);
+    if (!open) setMessage(null);
+  };
+
+  const confirmWithdraw = async () => {
+    const outcome = await ownDrop.withdrawUnregistered();
+    if (outcome.ok) {
+      setIsDialogOpen(false);
+      toast({ title: 'Announcement withdrawn', description: 'The drop is deleted and leaves the Market.' });
+      router.push(MARKETPLACE_ROUTES.SELL_DROPS);
+    } else if (outcome.conflict) {
+      setIsDialogOpen(false);
+      toast({ title: 'Announcement not withdrawn', description: outcome.message ?? undefined, variant: 'warning' });
+    } else {
+      setMessage(outcome.message);
+    }
+  };
+
+  return (
+    <Card className="rounded-md p-0 shadow-lg">
+      <CardContent className="grid gap-6 p-6">
+        <Typography as="h2" className="text-lg font-semibold">
+          Withdraw announcement
         </Typography>
-        {ownDrop.record && (
+        <SettingsSectionContent>
+          <Typography as="p" className="text-sm text-muted-foreground">
+            Deletes this announcement. It was never registered, so nobody could buy from it.
+          </Typography>
           <Button
+            variant="destructive"
             className="w-fit rounded-full"
             disabled={ownDrop.isActing}
-            onClick={() => void ownDrop.syncRegistration()}
+            onClick={() => setIsDialogOpen(true)}
           >
-            <RefreshCw className="size-4" />
-            {ownDrop.isActing ? 'Registering…' : 'Register with the service'}
+            <Trash2 className="size-4" />
+            Withdraw announcement
           </Button>
-        )}
+        </SettingsSectionContent>
       </CardContent>
+
+      <Dialog open={isDialogOpen} onOpenChange={closeDialog}>
+        <DialogContent className="border-border bg-popover">
+          <DialogHeader>
+            <DialogTitle>Withdraw this announcement?</DialogTitle>
+            <DialogDescription asChild>
+              <ul className="list-disc pl-5 text-sm">
+                <li>The drop is deleted from your homeserver and leaves the Market.</li>
+                <li>Your listings stay in your shop.</li>
+                <li>This cannot be undone. Announce a new drop to try again.</li>
+              </ul>
+            </DialogDescription>
+          </DialogHeader>
+          {message && (
+            <Typography as="p" role="alert" className="text-sm text-destructive">
+              {message}
+            </Typography>
+          )}
+          <DialogFooter>
+            <Button
+              variant="secondary"
+              className="rounded-full"
+              disabled={ownDrop.isActing}
+              onClick={() => closeDialog(false)}
+            >
+              Keep the announcement
+            </Button>
+            <Button
+              variant="destructive"
+              className="rounded-full"
+              disabled={ownDrop.isActing}
+              onClick={() => void confirmWithdraw()}
+            >
+              {ownDrop.isActing ? 'Withdrawing…' : 'Withdraw the announcement'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
@@ -301,7 +393,28 @@ function DropMissionControlRelease({ ownDrop }: { ownDrop: UseOwnDropResult }) {
 
 const CANCEL_CONFIRM_WORD = 'CANCEL';
 
+/** Before launch the kill switch is the owner's "Withdraw announcement": the same `drop.cancel`. */
+const KILL_SWITCH_COPY = {
+  announced: {
+    heading: 'Withdraw announcement',
+    action: 'Withdraw announcement',
+    dialogTitle: 'Withdraw this announcement?',
+    confirm: 'Withdraw the announcement',
+    pending: 'Withdrawing…',
+    toastTitle: 'Announcement withdrawn',
+  },
+  live: {
+    heading: 'Kill switch',
+    action: 'Cancel drop',
+    dialogTitle: 'Cancel this drop?',
+    confirm: 'Cancel the drop',
+    pending: 'Cancelling…',
+    toastTitle: 'Drop cancelled',
+  },
+};
+
 function DropMissionControlKillSwitch({ ownDrop, state }: { ownDrop: UseOwnDropResult; state: DropState }) {
+  const copy = state === 'announced' ? KILL_SWITCH_COPY.announced : KILL_SWITCH_COPY.live;
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [message, setMessage] = useState<string | null>(null);
@@ -321,7 +434,7 @@ function DropMissionControlKillSwitch({ ownDrop, state }: { ownDrop: UseOwnDropR
       setIsDialogOpen(false);
       setConfirmText('');
       setMessage(null);
-      toast({ title: 'Drop cancelled', description: 'The drop is ended; paid orders continue through fulfillment.' });
+      toast({ title: copy.toastTitle, description: 'The drop is ended; paid orders continue through fulfillment.' });
     } else {
       // CAS conflict included: fresh state was refetched by the hook — the
       // dialog stays open with the honest explanation so the seller can
@@ -334,7 +447,7 @@ function DropMissionControlKillSwitch({ ownDrop, state }: { ownDrop: UseOwnDropR
     <Card className="rounded-md p-0 shadow-lg">
       <CardContent className="grid gap-6 p-6">
         <Typography as="h2" className="text-lg font-semibold">
-          Kill switch
+          {copy.heading}
         </Typography>
         <SettingsSectionContent>
           <Typography as="p" className="text-sm text-muted-foreground">
@@ -349,7 +462,7 @@ function DropMissionControlKillSwitch({ ownDrop, state }: { ownDrop: UseOwnDropR
             onClick={() => setIsDialogOpen(true)}
           >
             <OctagonX className="size-4" />
-            Cancel drop
+            {copy.action}
           </Button>
         </SettingsSectionContent>
       </CardContent>
@@ -357,7 +470,7 @@ function DropMissionControlKillSwitch({ ownDrop, state }: { ownDrop: UseOwnDropR
       <Dialog open={isDialogOpen} onOpenChange={closeDialog}>
         <DialogContent className="border-border bg-popover">
           <DialogHeader>
-            <DialogTitle>Cancel this drop?</DialogTitle>
+            <DialogTitle>{copy.dialogTitle}</DialogTitle>
             <DialogDescription asChild>
               <div className="flex flex-col gap-2">
                 <span>Honestly, what happens:</span>
@@ -406,7 +519,7 @@ function DropMissionControlKillSwitch({ ownDrop, state }: { ownDrop: UseOwnDropR
               disabled={ownDrop.isActing || confirmText !== CANCEL_CONFIRM_WORD}
               onClick={() => void confirmCancel()}
             >
-              {ownDrop.isActing ? 'Cancelling…' : 'Cancel the drop'}
+              {ownDrop.isActing ? copy.pending : copy.confirm}
             </Button>
           </DialogFooter>
         </DialogContent>
