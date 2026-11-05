@@ -229,7 +229,7 @@ describe('Header', () => {
       expect(container).toBeEmptyDOMElement();
     });
 
-    it('renders no header chrome on the signed-out landing route either', () => {
+    it('renders no header chrome on the signed-out root route either', () => {
       setEmbedded(true);
       mockUsePathname.mockReturnValue(ROOT_ROUTES);
 
@@ -690,7 +690,7 @@ describe('Header', () => {
       expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
     });
 
-    it('does not enable the landing join button on non-landing HeaderHome routes', () => {
+    it('renders the signed-out header on the sign-in route', () => {
       mockCurrentUserPubky = null;
       mockIsPublicRoute.mockReturnValue(false);
       mockIsCoreExploreRoute.mockReturnValue(false);

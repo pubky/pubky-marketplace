@@ -324,7 +324,7 @@ export function isPublicExploreRoute(pathname: string): boolean {
   return isCoreExploreRoute(pathname) || isDynamicPublicRoute(pathname);
 }
 
-/** Routes where the header logo links back to the landing page (`/`). */
+/** Routes where the header logo links to the root URL (`/`), which redirects to Market. */
 export const LOGO_LANDING_ROUTES: readonly string[] = [
   ROOT_ROUTES,
   ...Object.values(AUTH_ROUTES),
