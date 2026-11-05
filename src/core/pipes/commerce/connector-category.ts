@@ -34,10 +34,17 @@ export type StoreCategoryMatch = {
 type Audience = 'men' | 'women' | 'kids';
 
 /** A fixed category id, or a fashion leaf under the audience branch (`tops-hoodies` is `fashion-<audience>-tops-hoodies`). */
-type Target = { readonly id: string } | { readonly fashion: string; readonly audience?: Audience };
+type Target =
+  | { readonly id: string }
+  | { readonly fashion: string; readonly audience?: Audience; readonly fallbackAudience?: Audience };
 
 const fixed = (id: string): Target => ({ id });
-const fashion = (leaf: string, audience?: Audience): Target => ({ fashion: leaf, ...(audience ? { audience } : {}) });
+/** `audience` forces the branch; `fallbackAudience` is used when the text names none (a dress is for women unless it says otherwise). */
+const fashion = (leaf: string, audience?: Audience, fallbackAudience?: Audience): Target => ({
+  fashion: leaf,
+  ...(audience ? { audience } : {}),
+  ...(fallbackAudience ? { fallbackAudience } : {}),
+});
 
 /**
  * Shopify Standard Product Taxonomy path prefixes. A rule matches a product
@@ -70,11 +77,11 @@ const TAXONOMY_RULES: readonly (readonly [string, Target])[] = [
   ['Apparel & Accessories > Clothing > Outerwear', fashion('coats-jackets')],
   ['Apparel & Accessories > Clothing > Outerwear > Coats & Jackets', fashion('coats-jackets')],
   ['Apparel & Accessories > Clothing > Outerwear > Vests', fashion('coats-jackets-gilets')],
-  ['Apparel & Accessories > Clothing > Dresses', fashion('dresses')],
+  ['Apparel & Accessories > Clothing > Dresses', fashion('dresses', undefined, 'women')],
   ['Apparel & Accessories > Clothing > Pants', fashion('bottoms')],
   ['Apparel & Accessories > Clothing > Shorts', fashion('bottoms')],
-  ['Apparel & Accessories > Clothing > Skirts', fashion('bottoms')],
-  ['Apparel & Accessories > Clothing > Skorts', fashion('bottoms')],
+  ['Apparel & Accessories > Clothing > Skirts', fashion('bottoms', undefined, 'women')],
+  ['Apparel & Accessories > Clothing > Skorts', fashion('bottoms', undefined, 'women')],
   ['Apparel & Accessories > Clothing > One-Pieces', fashion('jumpsuit-and-playsuit')],
   ['Apparel & Accessories > Clothing > Suits', fashion('suits')],
   ['Apparel & Accessories > Clothing > Swimwear', fashion('swim-beach-wear')],
@@ -83,6 +90,24 @@ const TAXONOMY_RULES: readonly (readonly [string, Target])[] = [
   ['Apparel & Accessories > Clothing > Lingerie', fashion('underwear', 'women')],
   ["Apparel & Accessories > Clothing > Men's Undergarments", fashion('underwear', 'men')],
   ['Apparel & Accessories > Clothing > Activewear', fashion('tops')],
+  ['Apparel & Accessories > Clothing > Activewear > Activewear Pants', fashion('bottoms')],
+  ['Apparel & Accessories > Clothing > Activewear > Activewear Tops', fashion('tops')],
+  ['Apparel & Accessories > Clothing > Activewear > Activewear Tops > T-Shirts', fashion('tops-tshirts')],
+  ['Apparel & Accessories > Clothing > Activewear > Activewear Tops > Tank Tops', fashion('tops-vests-tanks-camis')],
+  ['Apparel & Accessories > Clothing > Activewear > Activewear Tops > Crop Tops', fashion('tops-crop-top')],
+  ['Apparel & Accessories > Clothing > Activewear > Activewear Vests & Jackets', fashion('coats-jackets')],
+  [
+    'Apparel & Accessories > Clothing > Activewear > Activewear Vests & Jackets > Jackets',
+    fashion('coats-jackets-jackets'),
+  ],
+  [
+    'Apparel & Accessories > Clothing > Activewear > Activewear Vests & Jackets > Vests',
+    fashion('coats-jackets-gilets'),
+  ],
+  [
+    'Apparel & Accessories > Clothing > Activewear > Activewear Sweatshirts & Hoodies > Track Jackets',
+    fashion('coats-jackets-jackets'),
+  ],
   ['Apparel & Accessories > Costumes & Accessories', fashion('fancy-dress')],
   ["Apparel & Accessories > Clothing > Baby & Children's Clothing", fashion('tops', 'kids')],
   [
@@ -205,10 +230,13 @@ const TAXONOMY_RULES: readonly (readonly [string, Target])[] = [
   ['Sporting Goods > Outdoor Recreation > Cycling', fixed('sports-cycling')],
   ['Sporting Goods > Outdoor Recreation > Camping & Hiking', fixed('sports-camping-hiking')],
   ['Health & Beauty > Personal Care', fixed('beauty')],
-  ['Health & Beauty > Personal Care > Cosmetics', fixed('beauty-makeup')],
+  ['Health & Beauty > Personal Care > Cosmetics', fixed('beauty')],
+  ['Health & Beauty > Personal Care > Cosmetics > Makeup', fixed('beauty-makeup')],
   ['Health & Beauty > Personal Care > Cosmetics > Nail Care', fixed('beauty-nails')],
+  ['Health & Beauty > Personal Care > Cosmetics > Skin Care', fixed('beauty-skincare')],
+  ['Health & Beauty > Personal Care > Cosmetics > Perfumes & Colognes', fixed('beauty-fragrance')],
+  ['Health & Beauty > Personal Care > Cosmetics > Bath & Body', fixed('beauty-bath-body')],
   ['Health & Beauty > Personal Care > Hair Care', fixed('beauty-haircare')],
-  ['Health & Beauty > Personal Care > Skin Care', fixed('beauty-skincare')],
   ['Health & Beauty > Personal Care > Shaving & Grooming', fixed('beauty-grooming')],
   ['Toys & Games', fixed('toys-games')],
   ['Toys & Games > Puzzles', fixed('toys-games-puzzles')],
@@ -225,7 +253,11 @@ const TAXONOMY_RULES: readonly (readonly [string, Target])[] = [
  */
 const KEYWORD_RULES: readonly (readonly [RegExp, Target])[] = [
   [/\blaptop (?:sleeves?|bags?|cases?)\b|\bnotebook sleeves?\b/i, fixed('electronics-tech-accessories-laptop-bags')],
-  [/\b(?:phone|iphone|galaxy|pixel) cases?\b/i, fixed('electronics-tech-accessories-phone-cases')],
+  [/\bairpods\b.*\bcases?\b|\bcases?\b.*\bairpods\b/i, fixed('electronics-tech-accessories')],
+  [
+    /\b(?:phone|iphone|samsung|galaxy|pixel|magsafe)\b.*\bcases?\b|\bcases?\b.*\b(?:phone|iphone|samsung|galaxy|pixel)\b/i,
+    fixed('electronics-tech-accessories-phone-cases'),
+  ],
   [/\bhood(?:ie|ies|y|ys)\b/i, fashion('tops-hoodies')],
   [/\bsweat ?shirts?\b|\bcrew ?necks?\b/i, fashion('tops-sweatshirts')],
   [/\bt-? ?shirts?\b|\btees?\b/i, fashion('tops-tshirts')],
@@ -234,15 +266,20 @@ const KEYWORD_RULES: readonly (readonly [RegExp, Target])[] = [
   [/\bsweaters?\b|\bjumpers?\b|\bpullovers?\b|\bknitwear\b/i, fashion('tops-jumpers')],
   [/\bcardigans?\b/i, fashion('tops-cardigans')],
   [/\bblouses?\b/i, fashion('tops-blouses')],
-  [/\bshirts?\b/i, fashion('tops-shirts')],
+  [/\bshirts?\b|\bjerseys?\b/i, fashion('tops-shirts')],
   [/\bvests?\b|\bgilets?\b/i, fashion('coats-jackets-gilets')],
   [/\bjackets?\b|\bwindbreakers?\b|\bbombers?\b/i, fashion('coats-jackets-jackets')],
   [/\bcoats?\b|\bparkas?\b/i, fashion('coats-jackets-coats')],
-  [/\bdress(?:es)?\b/i, fashion('dresses')],
-  [/\bleggings?\b|\bjoggers?\b|\bpants\b|\btrousers\b|\bjeans\b|\bshorts\b|\bskirts?\b/i, fashion('bottoms')],
-  [/\bswim ?(?:suits?|wear|trunks)\b|\bbikinis?\b/i, fashion('swim-beach-wear')],
+  [/\bdress(?:es)?\b/i, fashion('dresses', undefined, 'women')],
+  [/\bskirts?\b|\bleggings?\b/i, fashion('bottoms', undefined, 'women')],
+  [/\bjoggers?\b|\bpants\b|\btrousers\b|\bjeans\b|\bshorts\b/i, fashion('bottoms')],
+  [/\bswim ?suits?\b|\bbikinis?\b|\bone-?piece swim/i, fashion('swim-beach-wear', undefined, 'women')],
+  [/\bswim ?(?:wear|trunks)\b|\bboard ?shorts\b/i, fashion('swim-beach-wear')],
   [/\bsocks?\b|\bunderwear\b|\bboxers?\b|\bbriefs\b/i, fashion('underwear')],
-  [/\bsneakers?\b|\bboots?\b|\bsandals?\b|\bslippers?\b|\bshoes?\b|\bflip[- ]?flops?\b/i, fashion('footwear')],
+  [
+    /\bsneakers?\b|\bboots?\b|\bsandals?\b|\bslides\b|\bslippers?\b|\bshoes?\b|\bflip[- ]?flops?\b/i,
+    fashion('footwear'),
+  ],
   [/\bhats?\b|\bcaps?\b|\bbeanies?\b|\bsnapbacks?\b|\bvisors?\b|\bbucket hats?\b/i, fashion('accessories-hat')],
   [/\bscarf\b|\bscarves\b|\bbandanas?\b|\bneck gaiters?\b/i, fashion('accessories-scarf-wraps')],
   [/\bgloves?\b|\bmittens?\b/i, fashion('accessories-gloves')],
@@ -250,7 +287,7 @@ const KEYWORD_RULES: readonly (readonly [RegExp, Target])[] = [
   [/\bsunglasses\b/i, fashion('accessories-sunglasses')],
   [/\bwallets?\b|\bcard ?holders?\b|\bpurses?\b/i, fashion('accessories-wallet-purses')],
   [
-    /\btote(?: bags?)?s?\b|\bbackpacks?\b|\bduffel(?: bags?)?\b|\bfanny packs?\b|\bdrawstring bags?\b|\bmessenger bags?\b|\bhandbags?\b|\bbags?\b/i,
+    /\btote(?: bags?)?s?\b|\bsuitcases?\b|\bbackpacks?\b|\bduffel(?: bags?)?\b|\bfanny packs?\b|\bdrawstring bags?\b|\bmessenger bags?\b|\bhandbags?\b|\bbags?\b/i,
     fashion('accessories-bag'),
   ],
   [/\bnecklaces?\b|\bpendants?\b/i, fixed('jewelry-watches-necklaces')],
@@ -258,10 +295,16 @@ const KEYWORD_RULES: readonly (readonly [RegExp, Target])[] = [
   [/\bearrings?\b/i, fixed('jewelry-watches-earrings')],
   [/\bbracelets?\b/i, fixed('jewelry-watches-bracelets')],
   [/\bwatch(?:es)?\b/i, fixed('jewelry-watches-watches')],
-  [/\bmugs?\b|\bcups?\b/i, fixed('home-dinnerware')],
+  [
+    /\bmugs?\b|\bcups?\b|\b(?:pint|lowball|wine|shot) glass(?:es)?\b|\bglassware\b|\bcoasters?\b/i,
+    fixed('home-dinnerware'),
+  ],
   [/\btumblers?\b|\bwater bottles?\b|\bbottles?\b/i, fixed('home-kitchen')],
   [/\bcandles?\b/i, fixed('home-decor-candles')],
-  [/\bpillows?\b|\bcushions?\b|\bblankets?\b|\btowels?\b|\bthrows?\b/i, fixed('home-soft-furnishings')],
+  [
+    /\bpillows?\b|\bcushions?\b|\bblankets?\b|\btowels?\b|\bthrows?\b|\b(?:area )?rugs?\b/i,
+    fixed('home-soft-furnishings'),
+  ],
   [/\bstickers?\b|\bdecals?\b/i, fixed('art-stickers')],
   [/\bposters?\b|\bart prints?\b|\bprints?\b|\bcanvas\b|\bwall art\b/i, fixed('art-prints')],
   [/\bumbrellas?\b/i, fixed('other-umbrellas')],
@@ -286,12 +329,13 @@ function segmentsOf(path: string): string[] {
 
 const RULES_BY_SEGMENTS = TAXONOMY_RULES.map(([path, target]) => ({ segments: segmentsOf(path), target }));
 
-function audienceOf(texts: readonly string[], forced?: Audience): Audience {
+function audienceOf(texts: readonly string[], forced?: Audience, fallback: Audience = 'men'): Audience {
   if (forced) return forced;
   const text = texts.join(' | ');
   if (KIDS.test(text)) return 'kids';
-  if (WOMEN.test(text) && !MEN.test(text)) return 'women';
-  return 'men';
+  if (MEN.test(text)) return 'men';
+  if (WOMEN.test(text)) return 'women';
+  return fallback;
 }
 
 /** The closest id the tree knows: an id for a branch an audience lacks (men's dresses) climbs to its parent. */
@@ -306,7 +350,7 @@ function closestKnown(id: string): string {
 
 function resolveTarget(target: Target, texts: readonly string[]): string {
   if ('id' in target) return closestKnown(target.id);
-  return closestKnown(`fashion-${audienceOf(texts, target.audience)}-${target.fashion}`);
+  return closestKnown(`fashion-${audienceOf(texts, target.audience, target.fallbackAudience)}-${target.fashion}`);
 }
 
 function taxonomyTarget(category: string): Target | null {
@@ -322,7 +366,8 @@ function taxonomyTarget(category: string): Target | null {
   return best?.target ?? null;
 }
 
-function keywordTarget(text: string): Target | null {
+function keywordTarget(raw: string): Target | null {
+  const text = raw.replace(/[®™©]/g, '');
   for (const [pattern, target] of KEYWORD_RULES) {
     if (pattern.test(text)) return target;
   }

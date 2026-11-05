@@ -42,6 +42,20 @@ describe('mapStoreCategory from the store taxonomy', () => {
       'Electronics > Communications > Telephony > Mobile & Smart Phone Accessories > Mobile Phone Cases',
       'electronics-tech-accessories-phone-cases',
     ],
+    ['Apparel & Accessories > Clothing > Activewear > Activewear Pants > Joggers', 'fashion-men-bottoms'],
+    ['Apparel & Accessories > Clothing > Activewear > Activewear Tops > T-Shirts', 'fashion-men-tops-tshirts'],
+    [
+      'Apparel & Accessories > Clothing > Activewear > Activewear Vests & Jackets > Jackets',
+      'fashion-men-coats-jackets-jackets',
+    ],
+    [
+      'Apparel & Accessories > Clothing > Activewear > Activewear Sweatshirts & Hoodies > Track Jackets',
+      'fashion-men-coats-jackets-jackets',
+    ],
+    ['Health & Beauty > Personal Care > Cosmetics > Skin Care > Face Moisturizers', 'beauty-skincare'],
+    ['Health & Beauty > Personal Care > Cosmetics > Makeup > Lip Makeup', 'beauty-makeup'],
+    ['Health & Beauty > Personal Care > Cosmetics > Perfumes & Colognes', 'beauty-fragrance'],
+    ['Health & Beauty > Personal Care > Hair Care > Shampoo & Conditioner', 'beauty-haircare'],
     ['Electronics > Computers > Laptops', 'electronics-computers-laptops'],
     ['Electronics > Audio > Audio Components', 'electronics-audio'],
     ['Electronics > Networking', 'electronics'],
@@ -82,7 +96,8 @@ describe('mapStoreCategory from the store taxonomy', () => {
         "Apparel & Accessories > Clothing > Baby & Children's Clothing > Baby & Children's Tops > Hoodies",
       ]),
     ).toBe('fashion-kids-tops-hoodies');
-    expect(category('Summer dress', ['Apparel & Accessories > Clothing > Dresses'])).toBe('fashion-men');
+    expect(category('Summer dress', ['Apparel & Accessories > Clothing > Dresses'])).toBe('fashion-women-dresses');
+    expect(category("Men's summer dress", ['Apparel & Accessories > Clothing > Dresses'])).toBe('fashion-men');
     expect(category("Women's summer dress", ['Apparel & Accessories > Clothing > Dresses'])).toBe(
       'fashion-women-dresses',
     );
@@ -106,6 +121,13 @@ describe('mapStoreCategory audience', () => {
     expect(category("Men's and Women's Hoodie", hoodie)).toBe('fashion-men-tops-hoodies');
   });
 
+  it('lets a stated audience beat the item default, and an item default beat the men default', () => {
+    expect(category("Men's swimsuit")).toBe('fashion-men-swim-beach-wear');
+    expect(category('Kids dress')).toBe('fashion-kids-dresses');
+    expect(category("Women's Joggers")).toBe('fashion-women-bottoms');
+    expect(category('Dress')).toBe('fashion-women-dresses');
+  });
+
   it('does not read "men" inside "women"', () => {
     expect(category('Women Tee')).toBe('fashion-women-tops-tshirts');
   });
@@ -121,6 +143,7 @@ describe('mapStoreCategory keyword fallback', () => {
     ['Polo shirt', 'fashion-men-tops-polo-shirts'],
     ['Knit sweater', 'fashion-men-tops-jumpers'],
     ['Oxford shirt', 'fashion-men-tops-shirts'],
+    ['Sports Jersey', 'fashion-men-tops-shirts'],
     ['Bomber jacket', 'fashion-men-coats-jackets-jackets'],
     ['Trucker cap', 'fashion-men-accessories-hat'],
     ['Dad Hat', 'fashion-men-accessories-hat'],
@@ -135,7 +158,23 @@ describe('mapStoreCategory keyword fallback', () => {
     ['Poster', 'art-prints'],
     ['Throw pillow', 'home-soft-furnishings'],
     ['Soy candle', 'home-decor-candles'],
-    ['Leggings', 'fashion-men-bottoms'],
+    ['Leggings', 'fashion-women-bottoms'],
+    ['Joggers', 'fashion-men-bottoms'],
+    ['Swimsuit', 'fashion-women-swim-beach-wear'],
+    ['String bikini', 'fashion-women-swim-beach-wear'],
+    ['Swim trunks', 'fashion-men-swim-beach-wear'],
+    ['Floral dress', 'fashion-women-dresses'],
+    ['Lace-up canvas shoes', 'fashion-men-footwear'],
+    ['Slides', 'fashion-men-footwear'],
+    ['Neck gaiter', 'fashion-men-accessories-scarf-wraps'],
+    ['Duffle bag', 'fashion-men-accessories-bag'],
+    ['Suitcase', 'fashion-men-accessories-bag'],
+    ['MagSafe® iPhone® Case', 'electronics-tech-accessories-phone-cases'],
+    ['Case for Samsung®', 'electronics-tech-accessories-phone-cases'],
+    ['Case for AirPods®', 'electronics-tech-accessories'],
+    ['Pint Glass', 'home-dinnerware'],
+    ['Coaster', 'home-dinnerware'],
+    ['Area Rug', 'home-soft-furnishings'],
     ['Crew socks', 'fashion-men-underwear'],
   ])('reads the product type "%s" as %s', (productType, expected) => {
     expect(category('Something', [productType])).toBe(expected);
@@ -287,6 +326,12 @@ describe('a Printful catalog as a Shopify store lists it', () => {
     ['Hodl Tee', [], 'fashion-men-tops-tshirts'],
     ['Sats Embroidered Hat', [], 'fashion-men-accessories-hat'],
     ['Orange Pill All-Over Print Tote', [], 'fashion-men-accessories-bag'],
+    ['Neon Floral Swimsuit', [], 'fashion-women-swim-beach-wear'],
+    ["Waves Women's Slides", [], 'fashion-women-footwear'],
+    ['Floral iPhone® Case', [], 'electronics-tech-accessories-phone-cases'],
+    ['Magma Suitcase', [], 'fashion-men-accessories-bag'],
+    ['Orange Coin Mug', [], 'home-dinnerware'],
+    ['Spiral Notebook', [], ''],
     ['Not Your Keys Laptop Sleeve', [], 'electronics-tech-accessories-laptop-bags'],
   ];
 
