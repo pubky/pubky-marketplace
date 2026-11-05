@@ -62,6 +62,9 @@ mean exactly that.
   - Owner panel self-heals transaction-service registration (re-runs on
     session connect)
   - Listing thumbnails in seller lists
+  - Seller studio table: filters (state, format, checkout registration, store
+    source, stock), title/SKU search, sorts, 50-row pages, filter and sort kept
+    in the URL, select-all-matching, and bulk Register for checkout
 - **Drop Studio**
   - Compose FCFS drops over existing listings at `/marketplace/sell/drops`:
     schedule, total and per-buyer caps, stock-display policy
