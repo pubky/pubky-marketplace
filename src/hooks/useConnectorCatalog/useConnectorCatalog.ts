@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import {
   type ConnectorCatalogProduct,
@@ -15,6 +15,7 @@ import { useCommerceStore } from '@/stores/commerce/commerce.store';
 /** A catalog this big is paged in full so that search and "select all" see every product. */
 const MAX_CATALOG_PAGES = 100;
 const LOAD_FAILED = 'The store catalog could not be loaded. Check the connection and try again.';
+const LOAD_MORE_FAILED = 'The rest of the products could not be loaded yet.';
 
 function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
   if (a.size !== b.size) return false;
@@ -42,11 +43,46 @@ export function useConnectorCatalog(connection: Pick<ConnectorConnection, 'id'> 
   const [error, setError] = useState<string | null>(null);
   const [needsSession, setNeedsSession] = useState(false);
   const [search, setSearch] = useState('');
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+  const resumeFrom = useRef<string | null>(null);
+
+  /** Reads catalog pages from `startPage` on; products already shown stay when a later page fails. */
+  const loadPages = async (
+    id: string,
+    startPage: string | null,
+    initial: ConnectorCatalogProduct[],
+    isCurrent: () => boolean,
+  ) => {
+    let page = startPage;
+    let loaded = initial;
+    setLoadMoreError(null);
+    resumeFrom.current = null;
+    try {
+      for (let index = 0; index < MAX_CATALOG_PAGES; index += 1) {
+        const next = await ConnectorsController.fetchCatalogPage(id, { page });
+        if (!isCurrent()) return;
+        loaded = [...loaded, ...next.products];
+        setProducts(loaded);
+        if (startPage === null && index === 0) {
+          setIsLoading(false);
+          setIsLoadingMore(Boolean(next.nextPage));
+        }
+        if (!next.nextPage) return;
+        page = next.nextPage;
+      }
+    } catch (pageError) {
+      if (!isCurrent()) return;
+      if (loaded.length === 0) throw pageError;
+      resumeFrom.current = page;
+      setLoadMoreError(connectorErrorMessage(pageError, LOAD_MORE_FAILED));
+    }
+  };
 
   const load = async (isCurrent: () => boolean) => {
     if (!connectionId) return;
     setIsLoading(true);
     setError(null);
+    setLoadMoreError(null);
     try {
       const [selection, mappings] = await Promise.all([
         ConnectorsController.fetchSelection(connectionId),
@@ -57,20 +93,7 @@ export function useConnectorCatalog(connection: Pick<ConnectorConnection, 'id'> 
       setSaved(selectedSet);
       setChosen(selectedSet);
       setMapped(new Set(mappings.map((mapping) => mapping.providerProductId)));
-      let page: string | null = null;
-      let loaded: ConnectorCatalogProduct[] = [];
-      for (let index = 0; index < MAX_CATALOG_PAGES; index += 1) {
-        const next = await ConnectorsController.fetchCatalogPage(connectionId, { page });
-        if (!isCurrent()) return;
-        loaded = [...loaded, ...next.products];
-        setProducts(loaded);
-        if (index === 0) {
-          setIsLoading(false);
-          setIsLoadingMore(Boolean(next.nextPage));
-        }
-        if (!next.nextPage) break;
-        page = next.nextPage;
-      }
+      await loadPages(connectionId, null, [], isCurrent);
     } catch (loadError) {
       if (!isCurrent()) return;
       setNeedsSession(isMarketplaceSessionRequiredError(loadError));
@@ -80,6 +103,18 @@ export function useConnectorCatalog(connection: Pick<ConnectorConnection, 'id'> 
         setIsLoading(false);
         setIsLoadingMore(false);
       }
+    }
+  };
+
+  /** Carries on from the page that failed, keeping the products already shown. */
+  const resumeLoading = async () => {
+    const from = resumeFrom.current;
+    if (!connectionId || from === null) return;
+    setIsLoadingMore(true);
+    try {
+      await loadPages(connectionId, from, products, () => true);
+    } finally {
+      setIsLoadingMore(false);
     }
   };
 
@@ -149,6 +184,8 @@ export function useConnectorCatalog(connection: Pick<ConnectorConnection, 'id'> 
     isLoadingMore,
     isSaving,
     error,
+    loadMoreError,
+    resumeLoading,
     needsSession,
     search,
     setSearch,

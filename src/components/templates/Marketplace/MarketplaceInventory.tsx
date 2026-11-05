@@ -393,6 +393,7 @@ export function MarketplaceInventory() {
             fileName={importer.fileName}
             message={importer.message}
             counts={importer.counts}
+            {...(importer.listingCount === undefined ? {} : { listingCount: importer.listingCount })}
             progress={importer.progress}
             progressPhase={importer.progressPhase}
             batchInfo={importer.batchInfo}

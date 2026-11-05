@@ -47,6 +47,12 @@ export type MarketplaceInventoryImportProps = {
   fileName?: string;
   message?: string;
   counts?: InventoryImportDryRunCounts;
+  /**
+   * Listings the publish saves. The counts are rows, one per variant, so a
+   * product with four sizes is four rows and one listing; when the two differ
+   * the dry run and the progress name both.
+   */
+  listingCount?: number;
   progress?: { done: number; total: number };
   /** `photos` while product photos are fetched and saved, then `listings` while they are published. */
   progressPhase?: 'photos' | 'listings';
@@ -116,6 +122,7 @@ export function MarketplaceInventoryImport({
   fileName,
   message,
   counts,
+  listingCount,
   progress,
   progressPhase = 'listings',
   batchInfo,
@@ -145,6 +152,8 @@ export function MarketplaceInventoryImport({
   onExportListings,
   onExportOrders,
 }: MarketplaceInventoryImportProps) {
+  const variantRows = counts ? counts.create + counts.update + counts.end : undefined;
+  const rowsAreVariants = variantRows !== undefined && listingCount !== undefined && variantRows > listingCount;
   const currentStep = step || SCENE_STEP[scene];
 
   return (
@@ -286,10 +295,24 @@ export function MarketplaceInventoryImport({
           <Typography as="p" className="text-sm text-muted-foreground">
             Dry-run for {fileName ?? 'this file'}. Nothing has been published.
           </Typography>
+          {rowsAreVariants && (
+            <Typography as="p" className="text-sm" data-testid="inventory-import-listing-size">
+              {listingCount} {listingCount === 1 ? 'listing' : 'listings'} ({variantRows} variants) will be saved.
+            </Typography>
+          )}
           <ul className="grid grid-cols-2 gap-2 text-sm" data-testid="inventory-import-dry-run">
-            <li>Create {counts.create}</li>
-            <li>Update {counts.update}</li>
-            <li>End {counts.end}</li>
+            <li>
+              Create {counts.create}
+              {rowsAreVariants ? ' variants' : ''}
+            </li>
+            <li>
+              Update {counts.update}
+              {rowsAreVariants ? ' variants' : ''}
+            </li>
+            <li>
+              End {counts.end}
+              {rowsAreVariants ? ' variants' : ''}
+            </li>
             <li>Unchanged {counts.unchanged}</li>
             <li>Conflict {counts.conflict}</li>
           </ul>
@@ -369,6 +392,7 @@ export function MarketplaceInventoryImport({
           <Typography as="p" className="text-sm text-muted-foreground" data-testid="inventory-import-progress">
             {progressPhase === 'photos' ? 'Loading photos…' : 'Saving your listings…'} {progress?.done ?? 0} of{' '}
             {progress?.total ?? 0}
+            {progressPhase === 'listings' && rowsAreVariants ? ` (${variantRows} variants)` : ''}
             {progressPhase === 'photos' && batchInfo ? `, batch ${batchInfo.batch} of ${batchInfo.batches}` : ''}.
           </Typography>
           {progressPhase === 'photos' && waitSeconds !== null && (

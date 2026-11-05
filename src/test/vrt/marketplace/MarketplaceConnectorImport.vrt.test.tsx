@@ -78,6 +78,7 @@ function Harness({
     planning: false,
     nothingToImport: false,
     productCount: 5,
+    variantCount: 14,
     currency: 'CHF',
     untrackedVariants: 0,
     linkState: { status: 'none' },
@@ -111,6 +112,7 @@ function Harness({
         flow={value}
         connection={{ provider: 'woocommerce', domain: 'dezentralshop.ch', variantMode }}
         onBack={() => {}}
+        onVariantMode={async () => true}
       />
     </main>
   );

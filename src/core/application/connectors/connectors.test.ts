@@ -464,6 +464,98 @@ describe('ConnectorsApplication', () => {
     });
   });
 
+  describe('reading the catalog while the store throttles', () => {
+    const page = (id: string, nextPage: string | null) => ({
+      kind: 'connector_catalog' as const,
+      connectionId: ID,
+      products: [{ providerProductId: id, title: id, options: [], imageUrls: [], variants: [], selected: true }],
+      nextPage,
+    });
+
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('asks for the throttled page again after the wait the service names, then carries on', async () => {
+      const catalog = vi
+        .spyOn(MarketplaceConnectorsService, 'catalog')
+        .mockResolvedValueOnce(page('1', 'p2'))
+        .mockRejectedValueOnce(connectorRefusal('provider_rate_limited', 429, { retryAfter: 12 }))
+        .mockResolvedValueOnce(page('2', null));
+
+      const done = ConnectorsApplication.selectedProducts(ACTOR, ID);
+      await vi.advanceTimersByTimeAsync(11_999);
+      expect(catalog).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
+      const products = await done;
+
+      expect(products.map((product) => product.providerProductId)).toEqual(['1', '2']);
+      expect(catalog).toHaveBeenNthCalledWith(2, ACTOR, ID, { page: 'p2', selected: true });
+      expect(catalog).toHaveBeenNthCalledWith(3, ACTOR, ID, { page: 'p2', selected: true });
+    });
+
+    it('waits at least 2 s and at most 30 s whatever the service names, and 5 s when it names nothing', async () => {
+      const catalog = vi
+        .spyOn(MarketplaceConnectorsService, 'catalog')
+        .mockRejectedValueOnce(connectorRefusal('provider_rate_limited', 429, { retryAfter: 0 }))
+        .mockRejectedValueOnce(connectorRefusal('provider_rate_limited', 429, { retryAfter: 3600 }))
+        .mockRejectedValueOnce(connectorRefusal('provider_rate_limited', 429))
+        .mockResolvedValueOnce(page('1', null));
+
+      const done = ConnectorsApplication.catalogPage(ACTOR, ID);
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(catalog).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(catalog).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(catalog).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(catalog).toHaveBeenCalledTimes(3);
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(catalog).toHaveBeenCalledTimes(3);
+      await vi.advanceTimersByTimeAsync(1);
+
+      await expect(done).resolves.toMatchObject({ nextPage: null });
+      expect(catalog).toHaveBeenCalledTimes(4);
+    });
+
+    it('gives up after four retries and hands the store busy refusal to the caller', async () => {
+      const catalog = vi
+        .spyOn(MarketplaceConnectorsService, 'catalog')
+        .mockRejectedValue(connectorRefusal('provider_rate_limited', 429, { retryAfter: 2 }));
+
+      const done = ConnectorsApplication.catalogPage(ACTOR, ID);
+      const settled = expect(done).rejects.toMatchObject({ context: { reason: 'provider_rate_limited' } });
+      await vi.advanceTimersByTimeAsync(8_000);
+      await settled;
+
+      expect(catalog).toHaveBeenCalledTimes(5);
+    });
+
+    it('does not retry any other refusal', async () => {
+      const catalog = vi
+        .spyOn(MarketplaceConnectorsService, 'catalog')
+        .mockRejectedValue(connectorRefusal('credentials_rejected'));
+
+      await expect(ConnectorsApplication.catalogPage(ACTOR, ID)).rejects.toMatchObject({
+        context: { reason: 'credentials_rejected' },
+      });
+      expect(catalog).toHaveBeenCalledTimes(1);
+    });
+
+    it('retries the pages of a whole-catalog read too', async () => {
+      const catalog = vi
+        .spyOn(MarketplaceConnectorsService, 'catalog')
+        .mockRejectedValueOnce(connectorRefusal('provider_rate_limited', 429, { retryAfter: 2 }))
+        .mockResolvedValueOnce(page('1', null));
+
+      const done = ConnectorsApplication.allProducts(ACTOR, ID);
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      expect((await done).map((product) => product.providerProductId)).toEqual(['1']);
+      expect(catalog).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('pushOverview', () => {
     it('merges pushes of every finished connection, newest first, with unresolved alerts', async () => {
       const second = connection({ id: '33333333-3333-4333-8333-333333333333', domain: 'other.example' });

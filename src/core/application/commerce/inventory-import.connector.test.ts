@@ -161,6 +161,38 @@ describe('a connector re-import of a live listing, with a publish gate blocking 
     expect(stateOf('woo-1')).toBe('active');
   });
 
+  it('counts listings, not variant rows, and reports each listing as it is saved', async () => {
+    const sizes = (id: string, title: string): ConnectorCatalogProduct =>
+      connectorCatalogProductSchema.parse({
+        providerProductId: id,
+        title,
+        description: 'From the store.',
+        imageUrls: ['https://shop.example/a.jpg'],
+        options: [{ name: 'Size', values: ['S', 'M', 'L'] }],
+        variants: ['S', 'M', 'L'].map((size) => ({
+          providerVariantId: `${id}${size}`,
+          sku: `SKU-${id}-${size}`,
+          optionValues: [{ name: 'Size', value: size }],
+          price: { amountMinor: 2500, currency: 'USD', exponent: 2 },
+          stock: 4,
+        })),
+      });
+    const importer = app(false);
+    const planned = await importer.planFile(importFile([sizes('1', 'Socks'), sizes('2', 'Hats')]), SETTINGS);
+    if (planned.status !== 'planned') throw new Error('plan');
+    attachPhotos();
+    expect(planned.counts.create).toBe(6);
+    expect(planned.listingCount).toBe(2);
+
+    const reported: { done: number; total: number }[] = [];
+    await importer.publish(planned.manifestId, (progress) => reported.push(progress));
+
+    expect(reported[0]).toEqual({ done: 0, total: 2 });
+    expect(reported).toContainEqual({ done: 1, total: 2 });
+    expect(reported.at(-1)).toEqual({ done: 2, total: 2 });
+    expect(Math.max(...reported.map((entry) => entry.total))).toBe(2);
+  });
+
   it('publishes a first import live when the gates pass', async () => {
     const { planned } = await run([storeProduct('1', 'Socks', 2500)], false);
     expect(planned.publishGate.reason).toBeNull();
