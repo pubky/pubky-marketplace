@@ -19,6 +19,7 @@ import {
   ReceiptText,
   ShoppingBag,
   Store,
+  Trash2,
   TrendingUp,
   Truck,
   Wallet,
@@ -37,6 +38,7 @@ import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { useDeleteMarketplaceListings } from '@/hooks/useDeleteMarketplaceListings/useDeleteMarketplaceListings';
 import { useIsMobile } from '@/hooks/useIsMobile/useIsMobile';
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { useMarketplaceSellerDashboard } from '@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard';
@@ -56,6 +58,7 @@ import { SellingUnavailableNotice } from '@/molecules/Marketplace/SellingUnavail
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceListingDeleteDialog } from '@/organisms/Marketplace/MarketplaceListingDeleteDialog';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -69,6 +72,20 @@ export function MarketplaceDashboard() {
   // Blocked, or still reading the region: everything that publishes or sets up selling is off, the rest stays.
   const sellingHeld = selling.held;
   const [selected, setSelected] = useState<string[]>([]);
+  const deleting = useDeleteMarketplaceListings({
+    onDeleted: (deletedKeys) => setSelected((current) => current.filter((id) => !deletedKeys.includes(id))),
+  });
+  const requestDelete = (listingIds: string[]) =>
+    deleting.request(
+      dashboard.listings
+        .filter(({ id }) => listingIds.includes(id))
+        .map(({ seller_id, listing_id, record }) => ({
+          ownerPubky: seller_id,
+          listingId: listing_id,
+          title: record.title,
+          record,
+        })),
+    );
   const [showSellingApproval, setShowSellingApproval] = useState(false);
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
   const [pendingDuplicateId, setPendingDuplicateId] = useState<string | null>(null);
@@ -493,6 +510,16 @@ export function MarketplaceDashboard() {
                         <Download className="size-4" />
                         Export
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="rounded-full text-destructive max-sm:has-[>svg]:px-3"
+                        disabled={!selected.length}
+                        onClick={() => void requestDelete(selected)}
+                      >
+                        <Trash2 className="size-4" />
+                        <span className="max-sm:sr-only">Delete</span>
+                      </Button>
                     </div>
                   </div>
 
@@ -617,6 +644,16 @@ export function MarketplaceDashboard() {
                                         <Copy className="size-4" />
                                         Duplicate
                                       </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="rounded-full text-destructive"
+                                        aria-label={`Delete ${listing.record.title}`}
+                                        onClick={() => void requestDelete([listing.id])}
+                                      >
+                                        <Trash2 className="size-4" />
+                                        Delete
+                                      </Button>
                                       {isListingRegistrationPending(listing) &&
                                         !listing.registeredWithService &&
                                         dashboard.canOfferRegistration(listing) && (
@@ -664,6 +701,7 @@ export function MarketplaceDashboard() {
           />
         )}
       </Container>
+      <MarketplaceListingDeleteDialog controller={deleting} />
       <Dialog
         open={pendingDuplicateId !== null}
         onOpenChange={(open) => {

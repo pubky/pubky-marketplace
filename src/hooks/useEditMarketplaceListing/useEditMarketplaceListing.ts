@@ -62,6 +62,11 @@ export interface UseEditMarketplaceListingResult {
   publishBlocked: ListingPublishBlockReason | null;
   publishGuardReady: boolean;
   submit: (options?: { silent?: boolean }) => Promise<string | null>;
+  /**
+   * The seller's own record once it has loaded, including listings this studio cannot edit (`unsupported`):
+   * the edit page offers Delete for those too.
+   */
+  ownedListing: CommerceListingRecord | null;
 }
 
 /**
@@ -87,6 +92,7 @@ export function useEditMarketplaceListing(sellerPubky: string, listingId: string
   const media = useListingMediaManager();
   const [status, setStatus] = useState<EditMarketplaceListingStatus>('loading');
   const [record, setRecord] = useState<CommerceListingRecord | null>(null);
+  const [ownedListing, setOwnedListing] = useState<CommerceListingRecord | null>(null);
   const hydratedReservePriceRef = useRef<CommerceMoney | null | undefined>(undefined);
   const durablePublish = isDurableCommerceMode(getCommerceAdapterMode());
   const [publishBlocked, setPublishBlocked] = useState<ListingPublishBlockReason | null>(null);
@@ -115,6 +121,7 @@ export function useEditMarketplaceListing(sellerPubky: string, listingId: string
             ? await CommerceController.getMarketplaceSellerListingProjection(sellerPubky, listingId)
             : null;
         if (!active) return;
+        setOwnedListing(loaded);
         if (loaded.digitalLock !== undefined) {
           setStatus('unsupported');
           return;
@@ -238,6 +245,7 @@ export function useEditMarketplaceListing(sellerPubky: string, listingId: string
     publishBlocked,
     publishGuardReady,
     submit,
+    ownedListing,
   };
 }
 
