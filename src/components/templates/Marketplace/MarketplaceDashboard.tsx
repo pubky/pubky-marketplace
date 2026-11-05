@@ -60,6 +60,7 @@ import {
   paginateListingRows,
   sortListingRows,
 } from '@/libs/commerce/listing-table';
+import { cn } from '@/libs/utils/utils';
 import { SellingUnavailableNotice } from '@/molecules/Marketplace/SellingUnavailableNotice';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { toast } from '@/molecules/Toaster/use-toast';
@@ -533,7 +534,14 @@ export function MarketplaceDashboard() {
                         {dashboard.metrics.openOffers} open offers need attention.
                       </Typography>
                     </div>
-                    <div className="flex flex-nowrap gap-1.5 sm:gap-2" data-testid="marketplace-listing-actions">
+                    <div
+                      className={cn(
+                        'flex gap-1.5 sm:gap-2',
+                        // Five actions do not fit one phone row; the usual four stay on one.
+                        anyNeedsRegistration ? 'flex-wrap justify-end' : 'flex-nowrap',
+                      )}
+                      data-testid="marketplace-listing-actions"
+                    >
                       <Button
                         size="sm"
                         variant="secondary"
