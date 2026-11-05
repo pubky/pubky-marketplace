@@ -12,6 +12,7 @@ import type {
   ConnectorProvider,
   VariantMode,
 } from '@/libs/commerce/connectors';
+import { mapStoreCategory } from './connector-category';
 import { htmlToPlainText } from './import-html-text';
 import type { ImportLoss, ImportLossReport } from './import-loss-report';
 import {
@@ -223,6 +224,7 @@ export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): Connector
   const labels = new Map<string, string>();
   const usedListingIds = new Set<string>();
   const linksOfListing = new Map<string, ConnectorImportLink[]>();
+  const categoryOfListing = new Map<string, string>();
   let listingsRead = 0;
 
   /** One Pubky listing from the given variants of a store product. */
@@ -297,6 +299,8 @@ export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): Connector
     const description = htmlToPlainText(product.description ?? '');
     const recordUri = `pubky://${sellerPubky}/pub/pubky.app/marketplace/v1/listings/${listingId}`;
     const usedVariantIds = new Set<string>();
+    const categoryId = mapStoreCategory({ categories: product.categories ?? [], title: product.title }).categoryId;
+    categoryOfListing.set(listingId, categoryId);
     let unknownStock = 0;
     let unknownStockQuantity = 0;
     let madeToOrder = 0;
@@ -340,7 +344,7 @@ export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): Connector
         title,
         description,
         taxonomy: {},
-        category: '',
+        category: categoryId,
         condition: settings.condition,
         tags: [],
         amountMinor: listingPrice,
@@ -454,15 +458,33 @@ export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): Connector
 
   const imported = kept.size;
   if (imported > 0) {
+    const uncategorized = [...kept].filter((listingId) => !categoryOfListing.get(listingId)).length;
+    const categorized = imported - uncategorized;
+    if (categorized > 0) {
+      losses.push(
+        loss(
+          'category_mapped',
+          'changed',
+          'Categories',
+          "Your store's category was matched to the nearest Pubky category. Check it in the listing.",
+          undefined,
+          categorized,
+        ),
+      );
+    }
+    if (uncategorized > 0) {
+      losses.push(
+        loss(
+          'category_absent',
+          'changed',
+          'Categories',
+          "No Pubky category matched your store's category, so the listing is uncategorized. Choose one in the listing.",
+          undefined,
+          uncategorized,
+        ),
+      );
+    }
     losses.push(
-      loss(
-        'category_absent',
-        'changed',
-        'Categories',
-        'Your store catalog has no Pubky category, so listings are uncategorized.',
-        undefined,
-        imported,
-      ),
       loss(
         'condition_defaulted',
         'changed',

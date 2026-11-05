@@ -4,6 +4,8 @@ import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ClientErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { Logger } from '@/libs/logger/logger';
+import { mapConnectorCatalog } from '@/pipes/commerce/connector-catalog-rows';
+import { DEFAULT_IMPORT_SETTINGS } from '@/pipes/commerce/import-settings';
 import { MarketplaceConnectorsService } from './marketplace-connectors';
 import { MarketplaceSessionService } from './marketplace-session';
 
@@ -415,6 +417,69 @@ describe('MarketplaceConnectorsService', () => {
     const page = await MarketplaceConnectorsService.catalog(ACTOR, CONNECTION_ID, { page: 'p1 x', selected: true });
     expect(page.nextPage).toBe('p2');
     expect(lastCall().url).toBe(`${BASE}/v1/connectors/${CONNECTION_ID}/catalog?page=p1+x&selected=true`);
+  });
+
+  it('carries the store classification of a Shopify product from the wire to its Pubky category', async () => {
+    fetchMock.mockResolvedValue(
+      json({
+        kind: 'connector_catalog',
+        connection_id: CONNECTION_ID,
+        products: [
+          {
+            provider_product_id: 'gid://shopify/Product/9001',
+            handle: 'bitcoin-hoodie',
+            title: 'Bitcoin Unisex Hoodie',
+            description: 'Warm.',
+            url: null,
+            options: [{ name: 'Size', values: ['S'] }],
+            image_urls: ['https://cdn.shopify.com/a.jpg'],
+            variants: [
+              {
+                provider_variant_id: 'gid://shopify/ProductVariant/1',
+                sku: 'HOOD-S',
+                option_values: [{ name: 'Size', value: 'S' }],
+                price: { amount_minor: 4500, currency: 'USD', exponent: 2 },
+                stock: 3,
+              },
+            ],
+            categories: ['Apparel & Accessories > Clothing > Clothing Tops > Hoodies', 'Hoodie'],
+            attributes: [],
+          },
+          {
+            provider_product_id: 'gid://shopify/Product/9002',
+            title: 'Satoshi plush',
+            options: [],
+            image_urls: ['https://cdn.shopify.com/b.jpg'],
+            variants: [
+              {
+                provider_variant_id: 'gid://shopify/ProductVariant/2',
+                price: { amount_minor: 2000, currency: 'USD', exponent: 2 },
+                stock: 1,
+              },
+            ],
+          },
+        ],
+        next_page: null,
+      }),
+    );
+
+    const page = await MarketplaceConnectorsService.catalog(ACTOR, CONNECTION_ID);
+    expect(page.products[0]?.categories).toEqual([
+      'Apparel & Accessories > Clothing > Clothing Tops > Hoodies',
+      'Hoodie',
+    ]);
+    expect(page.products[1]?.categories).toBeUndefined();
+
+    const { rows } = mapConnectorCatalog({
+      products: page.products,
+      provider: 'shopify',
+      sellerPubky: ACTOR,
+      settings: { ...DEFAULT_IMPORT_SETTINGS, currency: 'USD', countryCode: 'US' },
+    });
+    expect(rows.map((row) => [row.listingId, row.category])).toEqual([
+      ['shopify-9001', 'fashion-men-tops-hoodies'],
+      ['shopify-9002', ''],
+    ]);
   });
 
   it('replaces the product selection as a whole set', async () => {

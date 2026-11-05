@@ -103,7 +103,7 @@ describe('mapConnectorCatalog', () => {
       variantQuantity: 8,
       options: { Size: 'S' },
       state: 'active',
-      category: '',
+      category: 'fashion-men-underwear',
       returnPolicy: { accepted: false },
     });
     expect(medium).toMatchObject({ variantId: 'v7720', variantQuantity: 0, options: { Size: 'M' } });
@@ -371,10 +371,51 @@ describe('mapConnectorCatalog', () => {
   });
 
   it('notes what every imported listing lacks, once', () => {
-    const { report } = mapped([simple('1'), simple('2')]);
+    const { report } = mapped([simple('1', { title: 'Thing' }), simple('2', { title: 'Other thing' })]);
     const codes = report.losses.map((entry) => entry.code);
     expect(codes).toEqual(expect.arrayContaining(['category_absent', 'condition_defaulted', 'return_policy_absent']));
     expect(report.losses.find((entry) => entry.code === 'category_absent')?.count).toBe(2);
+  });
+
+  it('puts a product in the Pubky category its store category maps to, and says so once', () => {
+    const { rows, report } = mapped(
+      [
+        simple('1', {
+          title: 'Bitcoin Unisex Hoodie',
+          categories: ['Apparel & Accessories > Clothing > Clothing Tops > Hoodies', 'Hoodie'],
+        }),
+        simple('2', { title: 'Plain thing', categories: ['Misc'] }),
+      ],
+      CHOSEN,
+      'shopify',
+    );
+    expect(rows.map((row) => [row.listingId, row.category])).toEqual([
+      ['shopify-1', 'fashion-men-tops-hoodies'],
+      ['shopify-2', ''],
+    ]);
+    expect(report.losses.find((entry) => entry.code === 'category_mapped')?.count).toBe(1);
+    expect(report.losses.find((entry) => entry.code === 'category_absent')?.count).toBe(1);
+  });
+
+  it('gives every variant listing of a split store the category of its product', () => {
+    const { rows } = mapped(
+      [
+        product({
+          title: 'Tote',
+          categories: ['Luggage & Bags > Tote Bags'],
+        }),
+      ],
+      CHOSEN,
+      'shopify',
+      'split',
+    );
+    expect(new Set(rows.map((row) => row.category))).toEqual(new Set(['fashion-men-accessories-bag']));
+    expect(rows.length).toBeGreaterThan(1);
+  });
+
+  it('notes no missing category when every product matched', () => {
+    const { report } = mapped([simple('1', { title: 'Logo Tee' })]);
+    expect(report.losses.some((entry) => entry.code === 'category_absent')).toBe(false);
   });
 
   it('reports nothing imported for an empty selection', () => {

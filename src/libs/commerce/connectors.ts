@@ -159,6 +159,12 @@ export const connectorCatalogProductSchema = z.object({
   options: z.array(z.object({ name: z.string(), values: z.array(z.string()) })).default([]),
   imageUrls: z.array(z.string()).default([]),
   variants: z.array(catalogVariantSchema).default([]),
+  /**
+   * The store's own classification: for Shopify its Standard Product Taxonomy
+   * full name and then its product type, for WooCommerce its category names.
+   * A service older than this field sends none.
+   */
+  categories: z.array(z.string()).optional(),
   selected: z.boolean().default(false),
 });
 
