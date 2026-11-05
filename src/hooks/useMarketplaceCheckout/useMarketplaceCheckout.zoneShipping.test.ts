@@ -335,6 +335,26 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
     expect(CommerceController.refreshListing).toHaveBeenCalled();
   });
 
+  it.each([
+    { label: 'older', delta: -1, sends: false },
+    { label: 'newer', delta: 1, sends: false },
+    { label: 'the same revision as', delta: 0, sends: true },
+  ])('in the sandbox, a projection $label than the cart record sends: $sends', async ({ delta, sends }) => {
+    const projection = await CommerceController.getMarketplaceListingProjection(listing.ownerPubky, listing.listingId);
+    vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue({
+      ...projection!,
+      listingRevision: listing.revision + delta,
+    });
+    const { result } = mount(cartItem({ shippingProfileId: 'worldwide' }, 2), 'DE');
+    await waitFor(() => expect(group(result)?.state.status).toBe('ready'));
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mock.calls.length).toBe(sends ? 1 : 0);
+  });
+
   it('sends one checkout when Pay and submit are triggered in the same tick', async () => {
     const { result } = mount(profileItem(), 'DE');
     await waitFor(() => expect(group(result)?.state.status).toBe('ready'));

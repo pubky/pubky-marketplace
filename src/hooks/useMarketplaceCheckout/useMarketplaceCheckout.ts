@@ -691,12 +691,12 @@ export function useMarketplaceCheckout(
           !synced &&
           projection.listingRevision !== record.revision;
         if (
-          durable &&
-          (zonePricedDrift ||
-            ((synced ||
+          zonePricedDrift ||
+          (durable &&
+            (synced ||
               projection.listingRevision > record.revision ||
               !commerceListingProjectionChargesRecordTerms(record, projection)) &&
-              !commerceListingProjectionMatchesRecord(record, projection)))
+            !commerceListingProjectionMatchesRecord(record, projection))
         ) {
           sawChangedListing = true;
           await CommerceController.refreshListing(record.ownerPubky, record.listingId).catch((error: unknown) => {

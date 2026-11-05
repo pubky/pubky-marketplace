@@ -1038,6 +1038,28 @@ describe('MarketplaceCheckout', () => {
     expect(checkoutActions.pay).toHaveBeenCalledWith('paypal', expect.any(Function));
   });
 
+  it('does nothing when an old Try again action is clicked after the checkout unmounted', async () => {
+    const user = userEvent.setup();
+    seededCart();
+    view.adapterMode = 'transaction-service';
+    view.hasMarketplaceSession = true;
+
+    const { unmount } = render(<MarketplaceCheckout />);
+    await user.click(await screen.findByTestId('marketplace-checkout-method-paykit'));
+    await fillValidDelivery(user);
+    const pay = screen.getByTestId('marketplace-checkout-pay');
+    await waitFor(() => expect(pay).toBeEnabled());
+    await user.click(pay);
+    const staleRetry = (checkoutActions.pay.mock.calls as unknown[][])[0]?.[1] as (() => void) | undefined;
+    expect(staleRetry).toBeInstanceOf(Function);
+
+    unmount();
+    checkoutActions.pay.mockClear();
+    await act(async () => staleRetry?.());
+
+    expect(checkoutActions.pay).not.toHaveBeenCalled();
+  });
+
   describe('sold-out items', () => {
     const soldListing = () => ({
       aggregateId: `listing:${listing.record.ownerPubky}_boots`,
@@ -2821,6 +2843,22 @@ describe('MarketplaceCheckout accepted-offer path', () => {
     expect(checkoutActions.remove).toHaveBeenCalledWith('s:boots', 'variant_42', 'award-1', false);
     expect(offerState.refresh).toHaveBeenCalledTimes(1);
     expect(checkoutActions.rememberAddress).toHaveBeenCalled();
+  });
+
+  it('retries an accepted offer from the latest render, not the one the old action was raised in', async () => {
+    const user = userEvent.setup();
+    offerState.submit.mockResolvedValue({ ok: false, code: 'PAYMENT_BIND_FAILED' });
+    const { rerender } = render(<MarketplaceCheckout />);
+    await fillAndPay(user);
+    const staleRetry = (offerState.submit.mock.calls as unknown[][])[0]?.[3] as (() => void) | undefined;
+    expect(staleRetry).toBeInstanceOf(Function);
+
+    offerState.offers = [{ ...acceptedOffer, award: { ...acceptedOffer.award, quantity: 2 } }];
+    rerender(<MarketplaceCheckout />);
+    offerState.submit.mockClear();
+    await act(async () => staleRetry?.());
+
+    expect((offerState.submit.mock.calls as unknown[][])[0]?.[0]).toMatchObject({ award: { quantity: 2 } });
   });
 
   it('hands an accepted offer to PayPal through the top window', async () => {

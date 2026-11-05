@@ -629,6 +629,7 @@ function MarketplaceCartCheckout() {
     if (line) await cart.remove(line.listingId, line.variantId, line.awardId ?? undefined, false);
   };
 
+  const latestPay = useRef<() => Promise<void>>(async () => {});
   const payOffer = async () => {
     if (!offer || !award || !offerEligible) return;
     const method = isSandbox && selectedMethod === null ? null : selectedMethod;
@@ -648,7 +649,7 @@ function MarketplaceCartCheckout() {
             countryCode: values.countryCode,
           },
       method,
-      () => void pay(),
+      () => void latestPay.current(),
     );
     if (result.ok) {
       await removeAwardLine();
@@ -690,7 +691,6 @@ function MarketplaceCartCheckout() {
     }
   };
 
-  const latestPay = useRef<() => Promise<void>>(async () => {});
   const pay = async () => {
     if (isOfferCheckout) {
       await payOffer();
@@ -724,6 +724,13 @@ function MarketplaceCartCheckout() {
   useEffect(() => {
     latestPay.current = pay;
   });
+  // After the checkout unmounts a still-open toast must not place another order.
+  useEffect(
+    () => () => {
+      latestPay.current = async () => {};
+    },
+    [],
+  );
 
   return (
     <ContentLayout
