@@ -48,19 +48,6 @@ vi.mock('@/hooks/useMarketplaceInventoryAutomations/useMarketplaceInventoryAutom
   }),
 }));
 
-vi.mock('@/hooks/useMarketplaceInventoryGrantConnect/useMarketplaceInventoryGrantConnect', () => ({
-  useMarketplaceInventoryGrantConnect: () => ({
-    status: 'idle',
-    authorizationUrl: '',
-    errorMessage: null,
-    isOpeningSigner: false,
-    start: () => {},
-    cancel: () => {},
-    copyAuthUrl: async () => {},
-    openInSigner: () => {},
-  }),
-}));
-
 vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({
   useMarketplaceCartCount: () => 0,
 }));

@@ -60,19 +60,6 @@ vi.mock('@/hooks/useMarketplaceInventory/useMarketplaceInventory', () => ({
   }),
 }));
 
-vi.mock('@/hooks/useMarketplaceInventoryGrantConnect/useMarketplaceInventoryGrantConnect', () => ({
-  useMarketplaceInventoryGrantConnect: () => ({
-    status: 'idle',
-    authorizationUrl: '',
-    errorMessage: null,
-    isOpeningSigner: false,
-    start: () => {},
-    cancel: () => {},
-    copyAuthUrl: async () => {},
-    openInSigner: () => {},
-  }),
-}));
-
 vi.mock('@/hooks/useMarketplaceInventoryImport/useMarketplaceInventoryImport', () => ({
   useMarketplaceInventoryImport: () => ({
     scene: 'upload',

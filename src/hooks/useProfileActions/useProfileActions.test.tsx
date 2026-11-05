@@ -1,7 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProfileController } from '@/controllers/profile/profile';
-import { ErrorMessages } from '@/libs/error/error.messages';
 import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
 import { toast } from '@/molecules/Toaster/use-toast';
@@ -194,7 +193,7 @@ describe('useProfileActions', () => {
       expect(Logger.error).toHaveBeenCalledWith('Failed to logout:', expect.any(Error));
       expect(toast).toHaveBeenCalledWith({
         variant: 'error',
-        description: ErrorMessages.LOGOUT_FAILED,
+        description: 'Could not log out. Try again.',
       });
       expect(mockPush).not.toHaveBeenCalled();
     });

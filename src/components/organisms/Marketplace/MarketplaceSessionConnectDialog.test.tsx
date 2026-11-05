@@ -36,7 +36,6 @@ const view = vi.hoisted(() => ({
   passportRefused: false,
   requiresSignIn: false,
   hosted: false,
-  isGrantSession: false,
   grantEnabled: false,
   cancel: vi.fn(),
   start: vi.fn(),
@@ -46,9 +45,6 @@ vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/libs/runtime-config/runtime-config')>()),
   getMarketplaceGrantFlowEnabled: () => view.grantEnabled,
   getPassportSignInEnabled: () => !view.passportRefused,
-}));
-vi.mock('@/hooks/useIsGrantSession/useIsGrantSession', () => ({
-  useIsGrantSession: () => view.isGrantSession,
 }));
 
 vi.mock('@/hooks/useGrantSigner/useGrantSigner', async (importOriginal) => ({
@@ -111,7 +107,6 @@ describe('MarketplaceSessionConnectDialog', () => {
     view.hosted = false;
     hostRequest.mockClear();
     useAuthStore.setState({ showSignInDialog: false });
-    view.isGrantSession = false;
     view.grantEnabled = true;
     view.cancel.mockClear();
     view.start.mockClear();
@@ -136,7 +131,6 @@ describe('MarketplaceSessionConnectDialog', () => {
   it('grant session sees refusal not classic qr (grant flow off)', () => {
     view.status = 'awaiting';
     view.authorizationUrl = 'pubkyauth:///?relay=https%3A%2F%2Frelay.example.com%2Finbox&secret=x';
-    view.isGrantSession = true;
     view.grantEnabled = false;
 
     render(<MarketplaceSessionConnectDialog autoOpen />);
@@ -150,7 +144,6 @@ describe('MarketplaceSessionConnectDialog', () => {
   it('grant session connect uses bootstrap (Bitkit copy, no refusal, flow starts)', () => {
     view.status = 'awaiting';
     view.authorizationUrl = 'pubkyauth://signin_grant?caps=%2Fpub%2Fpubky.app%2Fmarketplace-service%2Fv1%2F%3Arw';
-    view.isGrantSession = true;
     view.grantEnabled = true;
     view.requestsGrantBootstrap = true;
     view.requestsFullGrant = false;
@@ -212,7 +205,6 @@ describe('MarketplaceSessionConnectDialog', () => {
     function bitkitSession() {
       view.status = 'awaiting';
       view.authorizationUrl = grantUrl(MARKETPLACE_SESSION_GRANT);
-      view.isGrantSession = true;
       view.grantEnabled = true;
       view.requestsGrantBootstrap = true;
       view.requestsFullGrant = false;
@@ -391,7 +383,6 @@ describe('MarketplaceSessionConnectDialog', () => {
   ])('bootstrap QR for the captured %s grant discloses it in one sentence', (_label, caps, sentence) => {
     view.status = 'awaiting';
     view.authorizationUrl = grantUrl(caps);
-    view.isGrantSession = true;
     view.grantEnabled = true;
     view.requestsGrantBootstrap = true;
 
@@ -414,7 +405,6 @@ describe('MarketplaceSessionConnectDialog', () => {
 
   it('bootstrap creating state confirms with the homeserver', () => {
     view.status = 'creating';
-    view.isGrantSession = true;
     view.grantEnabled = true;
     view.requestsGrantBootstrap = true;
 
@@ -471,7 +461,6 @@ describe('MarketplaceSessionConnectDialog', () => {
 
   describe('Pubky Passport sign-in', () => {
     beforeEach(() => {
-      view.isGrantSession = true;
       view.grantEnabled = true;
       view.requestsPassport = true;
       view.approvalSigner = 'Pubky Passport';
@@ -552,7 +541,6 @@ describe('MarketplaceSessionConnectDialog', () => {
   });
 
   it('offers supported signers with accurate copy while Passport is switched off', () => {
-    view.isGrantSession = true;
     view.grantEnabled = true;
     view.passportRefused = true;
     view.approvalSigner = 'Pubky Passport';
