@@ -60,7 +60,6 @@ import {
   paginateListingRows,
   sortListingRows,
 } from '@/libs/commerce/listing-table';
-import { cn } from '@/libs/utils/utils';
 import { SellingUnavailableNotice } from '@/molecules/Marketplace/SellingUnavailableNotice';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { toast } from '@/molecules/Toaster/use-toast';
@@ -534,42 +533,38 @@ export function MarketplaceDashboard() {
                         {dashboard.metrics.openOffers} open offers need attention.
                       </Typography>
                     </div>
-                    <div
-                      className={cn(
-                        'flex gap-1.5 sm:gap-2',
-                        // Five actions do not fit one phone row; the usual four stay on one.
-                        anyNeedsRegistration ? 'flex-wrap justify-end' : 'flex-nowrap',
-                      )}
-                      data-testid="marketplace-listing-actions"
-                    >
+                    <div className="flex flex-nowrap gap-1.5 sm:gap-2" data-testid="marketplace-listing-actions">
                       <Button
                         size="sm"
                         variant="secondary"
                         className="rounded-full max-sm:has-[>svg]:px-3"
+                        title="Pause"
                         disabled={!selected.length}
                         onClick={() => updateListingState(selected, 'paused')}
                       >
                         <Pause className="size-4" />
-                        Pause
+                        <span className="max-sm:sr-only">Pause</span>
                       </Button>
                       <Button
                         size="sm"
                         variant="secondary"
                         className="rounded-full max-sm:has-[>svg]:px-3"
+                        title="Activate"
                         disabled={!selected.length || sellingHeld}
                         onClick={() => updateListingState(selected, 'active')}
                       >
                         <Play className="size-4" />
-                        Activate
+                        <span className="max-sm:sr-only">Activate</span>
                       </Button>
                       <Button
                         size="sm"
                         variant="secondary"
                         className="rounded-full max-sm:has-[>svg]:px-3"
+                        title="Export"
                         onClick={exportCsv}
                       >
                         <Download className="size-4" />
-                        Export
+                        <span className="max-sm:sr-only">Export</span>
                       </Button>
                       {anyNeedsRegistration && (
                         <Button
@@ -627,7 +622,7 @@ export function MarketplaceDashboard() {
                         </div>
                       </div>
                     ) : (
-                      <div className="grid gap-3 p-3">
+                      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 p-3">
                         <MarketplaceListingFilterBar
                           table={table}
                           counts={facetCounts}
