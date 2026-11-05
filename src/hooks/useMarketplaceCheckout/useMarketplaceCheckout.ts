@@ -57,6 +57,7 @@ import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
 import { pickupRefusalFailureMessage } from '@/libs/commerce/pickup';
 import { canonicalCountryCode } from '@/libs/commerce/postal-address';
 import type { ShippingChoicePayload } from '@/libs/commerce/shipping-groups';
+import { orderQuoteRefusalCopy } from '@/libs/commerce/shipping-quote-copy';
 import { destinationCountryError, isDestinationAllowed } from '@/libs/commerce/ships-to';
 import {
   buildMarketplaceListingAggregateId,
@@ -181,6 +182,8 @@ export function useMarketplaceCheckout(
   /** `onRetry` backs the Try again action of a wallet-setup refusal; it runs only on the buyer's click. */
   pay: (method: PaymentMethodKind | null, onRetry?: () => void) => Promise<MarketplacePayResult>;
   isPaying: boolean;
+  /** True from the moment a submit or Pay starts until it ends; the shipping picks do not change meanwhile. */
+  checkoutBusy: boolean;
   needsSession: boolean;
   sessionError: string | null;
   /** True when the store holds session facts and getActiveSession still accepts them. */
@@ -257,6 +260,7 @@ export function useMarketplaceCheckout(
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [isPaying, setIsPaying] = useState(false);
   const checkoutInFlight = useRef(false);
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [pickupAvailable, setPickupAvailable] = useState<boolean | null>(null);
   const [choiceOverrides, setChoiceOverrides] = useState<Record<string, MarketplaceFulfillmentMethod>>({});
@@ -771,7 +775,10 @@ export function useMarketplaceCheckout(
     if (shippedSellers.length > 0 && zoneShipping.hasZonedGroups) {
       const priced = zoneShipping.choices();
       if (!priced.ok) {
-        toast({ variant: 'error', description: ZONE_SHIPPING_BLOCKED_COPY[priced.reason] });
+        toast({
+          variant: 'error',
+          description: priced.code ? orderQuoteRefusalCopy(priced.code) : ZONE_SHIPPING_BLOCKED_COPY[priced.reason],
+        });
         return { ok: false };
       }
       shippingChoices = priced.choices;
@@ -889,6 +896,7 @@ export function useMarketplaceCheckout(
   const submit = async (): Promise<boolean> => {
     if (!items.length || checkoutInFlight.current) return false;
     checkoutInFlight.current = true;
+    setCheckoutBusy(true);
     let succeeded = false;
     try {
       await form.handleSubmit(async (data) => {
@@ -903,6 +911,7 @@ export function useMarketplaceCheckout(
       })();
     } finally {
       checkoutInFlight.current = false;
+      setCheckoutBusy(false);
     }
     return succeeded;
   };
@@ -917,6 +926,7 @@ export function useMarketplaceCheckout(
     }
     let outcome = empty;
     checkoutInFlight.current = true;
+    setCheckoutBusy(true);
     setIsPaying(true);
     try {
       await form.handleSubmit(async (data) => {
@@ -983,6 +993,7 @@ export function useMarketplaceCheckout(
       })();
     } finally {
       checkoutInFlight.current = false;
+      setCheckoutBusy(false);
       setIsPaying(false);
     }
     return outcome;
@@ -993,6 +1004,7 @@ export function useMarketplaceCheckout(
     submit,
     pay,
     isPaying,
+    checkoutBusy,
     needsSession,
     sessionError,
     hasMarketplaceSession: marketplaceSession !== null && hasActiveServiceSession,
@@ -1022,7 +1034,13 @@ export function useMarketplaceCheckout(
     isPickupCapabilityLoadingForSeller: (sellerPubky: string) =>
       pickupAvailable === null && sellersPublishingPickup.has(sellerPubky),
     orderCount,
-    zoneShipping,
+    zoneShipping: {
+      ...zoneShipping,
+      // The price the buyer sees while a checkout is in flight is the price it sends.
+      setRate: (groupKey: string, rateId: string) => {
+        if (!checkoutInFlight.current) zoneShipping.setRate(groupKey, rateId);
+      },
+    },
     pendingKeyChange,
     decideKeyChange,
     deliveryKeyBlock,

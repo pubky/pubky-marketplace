@@ -300,6 +300,36 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
     expect(outcomes[2]).toMatchObject({ ok: false });
   });
 
+  it('ignores a rate change while a checkout is in flight, so the price shown is the price sent', async () => {
+    const { result } = mount(profileItem(), 'DE');
+    await waitFor(() => expect(group(result)?.state.status).toBe('ready'));
+    act(() => result.current.zoneShipping.setRate(group(result)!.key, 'exp'));
+    let finish: (value: typeof CHECKOUT_OK) => void = () => {};
+    vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockImplementationOnce(
+      () => new Promise((resolve) => (finish = resolve)) as never,
+    );
+
+    let pending: Promise<unknown> = Promise.resolve();
+    await act(async () => {
+      pending = result.current.pay(null);
+      await waitFor(() => expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledTimes(1));
+    });
+    expect(result.current.checkoutBusy).toBe(true);
+
+    act(() => result.current.zoneShipping.setRate(group(result)!.key, 'std'));
+    expect(result.current.zoneShipping.amounts[0]?.amountMinor).toBe(2500);
+
+    await act(async () => {
+      finish(CHECKOUT_OK);
+      await pending;
+    });
+    expect(result.current.checkoutBusy).toBe(false);
+    expect(sent()?.shippingChoices?.[0]).toMatchObject({ rateId: 'exp' });
+
+    act(() => result.current.zoneShipping.setRate(group(result)!.key, 'std'));
+    expect(result.current.zoneShipping.amounts[0]?.amountMinor).toBe(1349);
+  });
+
   it('sends the destination a flat-priced seller limits, even when the first read of the limit has not returned', async () => {
     vi.mocked(CommerceController.refreshShop)
       .mockImplementationOnce(() => new Promise(() => {}))

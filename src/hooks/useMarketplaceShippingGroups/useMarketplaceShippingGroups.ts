@@ -182,9 +182,10 @@ export function useMarketplaceShippingGroups(shippedItems: readonly MarketplaceC
   /** The rate choices the checkout command carries, or why the order cannot be priced yet. */
   const choices = ():
     | { ok: true; choices: ShippingChoicePayload[] }
-    | { ok: false; reason: ShippingGroupView['state']['status'] } => {
+    | { ok: false; reason: ShippingGroupView['state']['status']; code?: ShippingQuoteErrorCode } => {
     const payload: ShippingChoicePayload[] = [];
     for (const view of views) {
+      if (view.state.status === 'refused') return { ok: false, reason: 'refused', code: view.state.code };
       if (view.state.status !== 'ready') return { ok: false, reason: view.state.status };
       const group = groups.find(({ key }) => key === view.key) as ShippingGroup;
       const card = cardFor(group);

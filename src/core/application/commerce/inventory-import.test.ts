@@ -162,6 +162,41 @@ describe('MarketplaceShopClientService import helpers', () => {
     expect(payload).not.toContain('shipping_profile_id');
   });
 
+  it('drops the profile a record_json column names, in JSON and canonical CSV rows', async () => {
+    const recordJson = JSON.stringify({ listingId: 'boots_01', title: 'Boots', shippingProfileId: 'someone-elses' });
+    const row = canonicalRow('boots_01', { extraFields: { country_code: 'US', record_json: recordJson } });
+    const sources = [
+      new BytesFile(utf8(JSON.stringify([row])), 'listings.json', 'application/json'),
+      new BytesFile(MarketplaceShopClientService.exportListingsCsv([row]), 'listings.csv', 'text/csv'),
+    ];
+    for (const file of sources) {
+      const store = new MemoryImportStore();
+      const planned = await MarketplaceShopClientService.planBrowserFile(file, store);
+      expect(planned.ok).toBe(true);
+      if (!planned.ok) return;
+      const manifest = await store.load(planned.value.manifestId);
+      const payload = (await store.getPayloadJson(planned.value.manifestId, manifest!.rows[0]!.rowIdentity)) ?? '';
+      expect(payload).toContain('boots_01');
+      expect(payload).not.toContain('shippingProfileId');
+    }
+  });
+
+  it('does not formula-quote a profile id that starts with a hyphen on a Shop-built file', async () => {
+    const store = new MemoryImportStore();
+    const row = canonicalRow('boots_01', { extraFields: { country_code: 'US', shipping_profile_id: '-worldwide' } });
+    const file = markShopBuiltImportFile(
+      new BytesFile(utf8(JSON.stringify([row])), 'connector.json', 'application/json'),
+    );
+    const planned = await MarketplaceShopClientService.planBrowserFile(file, store);
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) return;
+    const manifest = await store.load(planned.value.manifestId);
+    const payload = JSON.parse(
+      (await store.getPayloadJson(planned.value.manifestId, manifest!.rows[0]!.rowIdentity)) ?? '{}',
+    );
+    expect(payload.extraFields.shipping_profile_id).toBe('-worldwide');
+  });
+
   it('keeps the shipping_profile_id of a JSON file the Shop built from its own import settings', async () => {
     const store = new MemoryImportStore();
     const row = canonicalRow('boots_01', {

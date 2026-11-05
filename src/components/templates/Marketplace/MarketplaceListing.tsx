@@ -212,6 +212,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     listing?.record,
     region.buyerCountry ?? (defaultAddressCountry === '' ? null : defaultAddressCountry),
     listedPrice ? { currency: listedPrice.currency, exponent: listedPrice.exponent } : null,
+    shopShipsToCountries(shop?.record),
   );
   const declaration = shop ? sellerDeclaration(shop.record) : 'unknown';
 
@@ -909,9 +910,8 @@ function formatZoneShipping(
       })
       .join(' · ')}. Final shipping is set at checkout.`;
   }
-  return countries === null
-    ? 'Shipping: price depends on your country'
-    : `Ships to: ${formatShipsToCountries(countries)}`;
+  if (countries === null) return 'Shipping: price depends on your country';
+  return countries.length === 0 ? 'Does not ship to any country' : `Ships to: ${formatShipsToCountries(countries)}`;
 }
 
 function formatListingShipping(

@@ -542,6 +542,12 @@ function MarketplaceCartCheckout() {
     buyerWallet.recheck();
   };
 
+  // A group that is loading, unreadable, in another currency or refused cannot be charged; a missing country
+  // is left to the form, which shows the buyer which input to fix.
+  const zoneShippingBlocksPay = checkout.zoneShipping.groups.some(
+    ({ state }) => state.status !== 'ready' && state.status !== 'needs-destination',
+  );
+
   // Everything but the delivery form: when only the form blocks Pay, the button
   // stays tappable and shows the buyer which input to fix (#355).
   const canPayButForm =
@@ -559,6 +565,7 @@ function MarketplaceCartCheckout() {
     (!isOfferCheckout || offerEligible) &&
     !paykitBlocksPay &&
     !stock.hasSoldOut &&
+    !zoneShippingBlocksPay &&
     (isSandbox || (sharedMethods !== null && sharedMethods.length > 0 && selectedMethod !== null));
   const canPay = canPayButForm && formValid;
   const formBlocksPay = canPayButForm && !formValid;
@@ -607,7 +614,9 @@ function MarketplaceCartCheckout() {
                             ? 'Check your Bitkit connection to pay with Paykit.'
                             : isOfferCheckout && !offerEligible
                               ? 'This offer is not available for checkout.'
-                              : 'Fill in delivery details and choose a payment method to pay.';
+                              : zoneShippingBlocksPay
+                                ? 'Pay unlocks once every shipping price above is ready.'
+                                : 'Fill in delivery details and choose a payment method to pay.';
   const payDisabledReason =
     locksRoute === 'mixed'
       ? LOCKS_MIXED_CHECKOUT_COPY
@@ -1173,6 +1182,7 @@ function MarketplaceCartCheckout() {
                   <MarketplaceCheckoutShippingRates
                     groups={checkout.zoneShipping.groups}
                     onChange={checkout.zoneShipping.setRate}
+                    disabled={checkout.checkoutBusy}
                   />
                 </section>
               )}

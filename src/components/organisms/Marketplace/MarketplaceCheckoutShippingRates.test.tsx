@@ -54,6 +54,28 @@ describe('MarketplaceCheckoutShippingRates', () => {
     expect(trigger).toHaveTextContent('6-12 days');
   });
 
+  it('locks the rate pick while a checkout is being sent', () => {
+    const ready = view({
+      status: 'ready',
+      selectedRateId: 'std',
+      amount: { amountMinor: 1349, ...asset },
+      quotes: [
+        {
+          zoneId: 'eu',
+          rateId: 'std',
+          label: 'Standard',
+          amountMinor: 1349,
+          estimatedMinDays: 6,
+          estimatedMaxDays: 12,
+        },
+      ],
+    });
+    const { rerender } = render(<MarketplaceCheckoutShippingRates groups={[ready]} onChange={vi.fn()} />);
+    expect(screen.getByRole('combobox')).toBeEnabled();
+    rerender(<MarketplaceCheckoutShippingRates groups={[ready]} onChange={vi.fn()} disabled />);
+    expect(screen.getByRole('combobox')).toBeDisabled();
+  });
+
   it.each([
     ['loading', 'Loading shipping prices.'],
     ['unreadable', 'This seller’s shipping prices could not be read.'],

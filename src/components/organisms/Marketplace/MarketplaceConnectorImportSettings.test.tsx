@@ -22,6 +22,7 @@ function Harness({
   onReview = vi.fn(),
   onChooseFreeShipping = vi.fn(),
   onBack = vi.fn(),
+  message = null,
 }: {
   values?: Partial<ImportSettingsFormData>;
   untrackedVariants?: number;
@@ -33,6 +34,7 @@ function Harness({
   onReview?: () => void;
   onChooseFreeShipping?: () => void;
   onBack?: () => void;
+  message?: string | null;
 }) {
   const form = useForm<ImportSettingsFormData>({
     resolver: zodResolver(importSettingsFormSchema),
@@ -54,6 +56,7 @@ function Harness({
       {...(onVariantMode ? { onVariantMode } : {})}
       variantModeBusy={variantModeBusy}
       busy={false}
+      message={message}
       onReview={onReview}
       onChooseFreeShipping={onChooseFreeShipping}
       onBack={onBack}
@@ -198,5 +201,15 @@ describe('MarketplaceConnectorImportSettings', () => {
       await user.click(screen.getByRole('switch', { name: 'One listing per size or variant' }));
       expect(onVariantMode).toHaveBeenLastCalledWith('native');
     });
+  });
+
+  it('says why a review attempt stopped', () => {
+    render(<Harness message="The shipping profile you chose could not be read." />);
+    expect(screen.getByRole('alert')).toHaveTextContent('The shipping profile you chose could not be read.');
+  });
+
+  it('shows no alert when the review is not blocked', () => {
+    render(<Harness />);
+    expect(screen.queryByTestId('connector-import-message')).not.toBeInTheDocument();
   });
 });

@@ -270,6 +270,7 @@ const FORMULA_IDENTITY_KEYS = new Set([
   'variantId',
   'variant_id',
   'rowIdentity',
+  'shipping_profile_id',
 ]);
 
 function formulaProtected(value: string): string {

@@ -1711,6 +1711,45 @@ describe('MarketplaceCheckout digital lines (digital delivery design §3 "Checko
     expect(summary.getByText('Total').parentElement).toHaveTextContent('$25.49');
   });
 
+  it.each(['loading', 'unreadable', 'asset-mismatch', 'refused'] as const)(
+    'keeps Pay off while a zone-priced group is %s, and says why',
+    async (status) => {
+      const user = userEvent.setup();
+      const asset = { currency: 'USD', exponent: 2 };
+      seededCart();
+      view.adapterMode = 'transaction-service';
+      view.hasMarketplaceSession = true;
+      const state = status === 'refused' ? ({ status, code: 'INVALID_QUANTITY' } as const) : ({ status } as const);
+      view.zoneShipping = noZoneShipping({
+        hasZonedGroups: true,
+        groups: [
+          {
+            key: 'profile:s:worldwide',
+            sellerPubky: listing.record.ownerPubky,
+            label: 'Worldwide',
+            units: 1,
+            asset,
+            state,
+          },
+        ],
+      });
+
+      render(<MarketplaceCheckout />);
+      await fillValidDelivery(user);
+
+      const pay = screen.getByTestId('marketplace-checkout-pay');
+      await waitFor(() => expect(document.getElementById('checkout-pay-reason')).toBeInTheDocument());
+      expect(pay).toBeDisabled();
+      expect(document.getElementById('checkout-pay-reason')).toHaveTextContent('every shipping price above is ready');
+      if (status === 'refused') {
+        expect(screen.getByRole('region', { name: 'Shipping rates' })).toHaveTextContent(
+          'This quantity cannot be shipped in one parcel',
+        );
+        expect(screen.getByRole('region', { name: 'Shipping rates' })).not.toHaveTextContent('does not ship');
+      }
+    },
+  );
+
   it('offers no rate section for a cart with no zone-priced line', () => {
     seededCart();
 

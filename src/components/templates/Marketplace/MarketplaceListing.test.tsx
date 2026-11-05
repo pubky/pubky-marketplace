@@ -468,6 +468,23 @@ describe('MarketplaceListing', () => {
       expect(screen.getByText('Does not ship to Brazil. Ships to: Germany, France, and Portugal')).toBeInTheDocument();
     });
 
+    it('does not quote a country the shop itself does not ship to', () => {
+      view.shop = toCommerceShopModel(createCommerceShopFixture({ shipsToCountries: ['DE'] }));
+      view.listing = zoned();
+      view.addressCountry = 'FR';
+      renderListing();
+      expect(screen.getByText('Does not ship to France. Ships to: Germany')).toBeInTheDocument();
+      expect(screen.queryByText(/One item to France/)).not.toBeInTheDocument();
+    });
+
+    it('says it ships nowhere when every country is excluded or outside the shop list', () => {
+      view.shop = toCommerceShopModel(createCommerceShopFixture({ shipsToCountries: ['BR'] }));
+      view.listing = zoned();
+      view.addressCountry = '';
+      renderListing();
+      expect(screen.getByText('Does not ship to any country')).toBeInTheDocument();
+    });
+
     it('reads a shared profile for the price', async () => {
       view.listing = toCommerceListingModel(createCommerceListingFixture({ shippingProfileId: 'worldwide' }));
       view.shippingProfile = {

@@ -17,10 +17,16 @@ export function previewListingShipping(
   zones: readonly ShippingZone[],
   excludedCountries: readonly string[],
   viewerCountry: string | null,
+  shopCountries: readonly string[] | null = null,
 ): ListingShippingPreview {
-  const countries = shippedCountries(zones, excludedCountries);
+  const shop = shopCountries === null ? null : shopCountries.map(canonicalCountryCode);
+  const zoned = shippedCountries(zones, excludedCountries);
+  // A shop that lists where it ships narrows every listing: checkout refuses anything outside the list.
+  const countries =
+    shop === null ? zoned : zoned === null ? [...shop] : zoned.filter((country) => shop.includes(country));
   const country = viewerCountry === null ? '' : canonicalCountryCode(viewerCountry);
   if (!/^[A-Z]{2}$/.test(country)) return { countries, destination: null };
+  if (shop !== null && !shop.includes(country)) return { countries, destination: { country, quotes: null } };
   const quotes = quoteAllShippingRates(zones, excludedCountries, country, 1);
   return { countries, destination: { country, quotes: quotes.ok ? quotes.value : null } };
 }

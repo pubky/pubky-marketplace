@@ -1,3 +1,4 @@
+import { isEqual } from 'lodash-es';
 import type { CommerceShippingProfileRecord } from '@/libs/commerce/marketplace-records';
 import {
   parseShippingProfileBytes,
@@ -21,6 +22,8 @@ export type ShippingProfileListing = {
   truncated: boolean;
 };
 
+const READ_BACK_ATTEMPTS = 3;
+const READ_BACK_DELAY_MS = 300;
 const LISTING_READ_CONCURRENCY = 8;
 const LISTING_MAX_BYTES = 1024 * 1024;
 const LISTINGS_PATH = '/pub/pubky.app/marketplace/v1/listings/';
@@ -104,10 +107,15 @@ export class CommerceShippingProfilesApplication {
     if (new TextEncoder().encode(JSON.stringify({ ...record })).byteLength > SHIPPING_PROFILE_MAX_BYTES) {
       throw new TypeError('The shipping profile is too large.');
     }
+    const written: unknown = JSON.parse(JSON.stringify({ ...record }));
     await CommerceHomeserverService.putJson(shippingProfileUri(record.ownerPubky, record.profileId), { ...record });
-    const stored = await this.fetch(record.ownerPubky, record.profileId);
-    if (!stored) throw new Error('The shipping profile was not found after it was saved.');
-    return stored;
+    // A read that returns an older revision or another writer's content is not a confirmation of this save.
+    for (let attempt = 0; attempt < READ_BACK_ATTEMPTS; attempt += 1) {
+      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, READ_BACK_DELAY_MS));
+      const stored = await this.fetch(record.ownerPubky, record.profileId);
+      if (stored && isEqual(JSON.parse(JSON.stringify(stored.record)), written)) return stored;
+    }
+    throw new Error('The shipping profile could not be confirmed after it was saved.');
   }
 
   static async delete(ownerPubky: string, profileId: string): Promise<void> {

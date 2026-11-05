@@ -4,11 +4,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Typography } from '@/atoms/Typography/Typography';
 import type { ShippingGroupView } from '@/hooks/useMarketplaceShippingGroups/useMarketplaceShippingGroups';
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import { groupQuoteRefusalCopy } from '@/libs/commerce/shipping-quote-copy';
 import type { ShippingQuote } from '@/libs/commerce/shipping-zones';
 
 type Props = {
   groups: readonly ShippingGroupView[];
   onChange: (groupKey: string, rateId: string) => void;
+  /** True while a checkout is being sent: the picks stay as the buyer saw them. */
+  disabled?: boolean;
 };
 
 function estimate(quote: ShippingQuote): string {
@@ -18,7 +21,7 @@ function estimate(quote: ShippingQuote): string {
 }
 
 /** One rate choice per shipping group whose price depends on the delivery country. */
-export function MarketplaceCheckoutShippingRates({ groups, onChange }: Props) {
+export function MarketplaceCheckoutShippingRates({ groups, onChange, disabled = false }: Props) {
   if (groups.length === 0) return null;
   return (
     <div className="grid gap-4" data-testid="checkout-shipping-rates">
@@ -31,7 +34,11 @@ export function MarketplaceCheckoutShippingRates({ groups, onChange }: Props) {
               Shipping for {group.label}
             </label>
             {state.status === 'ready' ? (
-              <Select value={state.selectedRateId} onValueChange={(rateId) => onChange(group.key, rateId)}>
+              <Select
+                value={state.selectedRateId}
+                disabled={disabled}
+                onValueChange={(rateId) => onChange(group.key, rateId)}
+              >
                 <SelectTrigger theme="secondary" id={selectId} className="w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -51,7 +58,7 @@ export function MarketplaceCheckoutShippingRates({ groups, onChange }: Props) {
                 {state.status === 'asset-mismatch' &&
                   'This seller’s shipping rates are priced in a different currency than the item.'}
                 {state.status === 'needs-destination' && 'Enter your delivery country to see shipping prices.'}
-                {state.status === 'refused' && 'This seller does not ship to your country.'}
+                {state.status === 'refused' && groupQuoteRefusalCopy(state.code)}
               </Typography>
             )}
           </div>

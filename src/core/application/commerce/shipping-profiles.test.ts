@@ -145,6 +145,43 @@ describe('CommerceShippingProfilesApplication', () => {
     expect(listing.truncated).toBe(true);
   });
 
+  describe('confirming a save by reading it back', () => {
+    const record = () => profile('printful', { revision: 2, name: 'New name' }) as never;
+    const urlOf = shippingProfileUri(OWNER, 'printful');
+
+    it('waits out a read that still returns the previous revision', async () => {
+      vi.useFakeTimers();
+      try {
+        const reads = [
+          profile('printful', { revision: 1, name: 'Old name' }),
+          profile('printful', { revision: 2, name: 'New name' }),
+        ];
+        vi.mocked(HomeserverService.getBlob).mockImplementation(
+          async () => new TextEncoder().encode(JSON.stringify(reads.shift() ?? reads[0])) as Uint8Array<ArrayBuffer>,
+        );
+        const saved = CommerceShippingProfilesApplication.put(record());
+        await vi.runAllTimersAsync();
+        await expect(saved).resolves.toMatchObject({ record: { revision: 2, name: 'New name' } });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not report success when the stored profile is another writer’s', async () => {
+      vi.useFakeTimers();
+      try {
+        homeserver.files.set(urlOf, profile('printful', { revision: 9, name: 'Someone else' }));
+        vi.spyOn(HomeserverService, 'request').mockResolvedValue(undefined as never);
+        const saved = CommerceShippingProfilesApplication.put(record());
+        const outcome = expect(saved).rejects.toThrow(/could not be confirmed/);
+        await vi.runAllTimersAsync();
+        await outcome;
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   it('refuses a profile too large to be read back before anything is written', async () => {
     const huge = profile('huge', { name: 'x'.repeat(1024 * 1024 + 1) });
 

@@ -75,4 +75,15 @@ describe('previewListingShipping', () => {
       quotes: [expect.objectContaining({ rateId: 'std' })],
     });
   });
+
+  it('narrows the countries and the viewer’s quote to the shop’s own ships-to list', () => {
+    expect(previewListingShipping(ZONES, [], null, ['de', 'IT']).countries).toEqual(['DE', 'IT']);
+    expect(previewListingShipping([ZONES[0] as ShippingZone], [], null, ['DE', 'IT']).countries).toEqual(['DE']);
+    expect(previewListingShipping(ZONES, [], 'FR', ['DE']).destination).toEqual({ country: 'FR', quotes: null });
+    expect(previewListingShipping(ZONES, [], 'DE', ['DE']).destination?.quotes).not.toBeNull();
+  });
+
+  it('reports no countries when the shop list and the zones share none', () => {
+    expect(previewListingShipping([ZONES[0] as ShippingZone], [], null, ['BR']).countries).toEqual([]);
+  });
 });

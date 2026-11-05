@@ -37,6 +37,8 @@ type MarketplaceConnectorImportSettingsProps = {
   onVariantMode?: (mode: VariantMode) => Promise<boolean>;
   variantModeBusy?: boolean;
   busy: boolean;
+  /** Why the last review attempt stopped, shown above the buttons. */
+  message?: string | null;
   onReview: () => void;
   onChooseFreeShipping: () => void;
   onBack: () => void;
@@ -77,6 +79,7 @@ export function MarketplaceConnectorImportSettings({
   onVariantMode,
   variantModeBusy = false,
   busy,
+  message = null,
   onReview,
   onChooseFreeShipping,
   onBack,
@@ -346,6 +349,12 @@ export function MarketplaceConnectorImportSettings({
               />
             )}
           </div>
+
+          {message && (
+            <Typography as="p" role="alert" className="text-sm text-destructive" data-testid="connector-import-message">
+              {message}
+            </Typography>
+          )}
 
           <div className="flex flex-wrap gap-2">
             <Button type="submit" className="rounded-full" disabled={busy || variantModeBusy}>

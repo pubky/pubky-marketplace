@@ -24,6 +24,7 @@ export function useListingShippingPreview(
   record: Pick<CommerceListingRecord, 'ownerPubky' | 'shippingProfileId' | 'shippingZones'> | undefined,
   viewerCountry: string | null,
   asset: { currency: string; exponent: number } | null,
+  shopCountries: readonly string[] | null = null,
 ): ListingShippingPreviewState {
   const pricing = record ? listingZonePricing(record) : null;
   const profileKey = pricing?.kind === 'profile' && record ? `${record.ownerPubky}/${pricing.profileId}` : null;
@@ -62,10 +63,12 @@ export function useListingShippingPreview(
   const zoned = pricing !== null;
   const assetCurrency = asset?.currency ?? null;
   const assetExponent = asset?.exponent ?? null;
+  const shopCountriesKey = shopCountries === null ? null : shopCountries.join(',');
   return useMemo<ListingShippingPreviewState>(() => {
     if (!zoned) return { status: 'none' };
+    const shopList = shopCountriesKey === null ? null : shopCountriesKey === '' ? [] : shopCountriesKey.split(',');
     if (inlineZones !== null) {
-      return { status: 'ready', preview: previewListingShipping(inlineZones, [], viewerCountry) };
+      return { status: 'ready', preview: previewListingShipping(inlineZones, [], viewerCountry, shopList) };
     }
     if (current === null) return { status: 'loading' };
     if ('failed' in current) return { status: 'unreadable' };
@@ -77,7 +80,7 @@ export function useListingShippingPreview(
       return { status: 'asset-mismatch' };
     return {
       status: 'ready',
-      preview: previewListingShipping(current.zones, current.excludedCountries, viewerCountry),
+      preview: previewListingShipping(current.zones, current.excludedCountries, viewerCountry, shopList),
     };
-  }, [zoned, inlineZones, current, viewerCountry, assetCurrency, assetExponent]);
+  }, [zoned, inlineZones, current, viewerCountry, assetCurrency, assetExponent, shopCountriesKey]);
 }
