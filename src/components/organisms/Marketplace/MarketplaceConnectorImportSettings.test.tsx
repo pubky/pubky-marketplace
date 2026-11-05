@@ -16,6 +16,9 @@ function Harness({
   untrackedVariants = 0,
   madeToOrderVariants = 0,
   variantMode = 'native',
+  variantCount = 3,
+  onVariantMode,
+  variantModeBusy = false,
   onReview = vi.fn(),
   onChooseFreeShipping = vi.fn(),
   onBack = vi.fn(),
@@ -24,6 +27,9 @@ function Harness({
   untrackedVariants?: number;
   madeToOrderVariants?: number;
   variantMode?: 'native' | 'split';
+  variantCount?: number;
+  onVariantMode?: (mode: 'native' | 'split') => Promise<boolean>;
+  variantModeBusy?: boolean;
   onReview?: () => void;
   onChooseFreeShipping?: () => void;
   onBack?: () => void;
@@ -40,10 +46,13 @@ function Harness({
       domain="dezentralshop.ch"
       currency="USD"
       productCount={3}
+      variantCount={variantCount}
       untrackedVariants={untrackedVariants}
       madeToOrderVariants={madeToOrderVariants}
       conditionOptions={IMPORT_CONDITION_OPTIONS}
       variantMode={variantMode}
+      {...(onVariantMode ? { onVariantMode } : {})}
+      variantModeBusy={variantModeBusy}
       busy={false}
       onReview={onReview}
       onChooseFreeShipping={onChooseFreeShipping}
@@ -125,12 +134,69 @@ describe('MarketplaceConnectorImportSettings', () => {
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 
-  it('says each size or variant becomes its own listing only when the store is set that way', () => {
-    const { rerender } = render(<Harness variantMode="native" />);
-    expect(screen.queryByTestId('connector-import-split-note')).not.toBeInTheDocument();
-    rerender(<Harness variantMode="split" />);
-    expect(screen.getByTestId('connector-import-split-note')).toHaveTextContent(
-      'Every size or variant becomes its own listing',
-    );
+  describe('how the store variants become listings', () => {
+    it('says sizes and colours stay together as one listing, with the listing and variant counts', () => {
+      render(<Harness variantMode="native" variantCount={12} />);
+      expect(screen.getByTestId('connector-import-variant-mode-state')).toHaveTextContent(
+        'Sizes and colours stay together as one listing: 3 listings with 12 variants.',
+      );
+    });
+
+    it('does not repeat the count when every product has one variant', () => {
+      render(<Harness variantMode="native" variantCount={3} />);
+      expect(screen.getByTestId('connector-import-variant-mode-state')).toHaveTextContent(
+        'Sizes and colours stay together as one listing: 3 listings.',
+      );
+    });
+
+    it('says every size or variant becomes its own listing, counting one listing per variant', () => {
+      render(<Harness variantMode="split" variantCount={12} />);
+      expect(screen.getByTestId('connector-import-variant-mode-state')).toHaveTextContent(
+        'Every size or variant becomes its own listing: 12 listings.',
+      );
+    });
+
+    it('shows the setting without a switch when it cannot be changed here', () => {
+      render(<Harness />);
+      expect(screen.queryByRole('switch', { name: 'One listing per size or variant' })).not.toBeInTheDocument();
+    });
+
+    it('keeps Review, free shipping and Enter off while the setting is being saved, so the dry run uses the new mode', async () => {
+      const user = userEvent.setup();
+      const onReview = vi.fn();
+      const onChooseFreeShipping = vi.fn();
+      render(
+        <Harness
+          variantMode="native"
+          onVariantMode={async () => true}
+          variantModeBusy
+          onReview={onReview}
+          onChooseFreeShipping={onChooseFreeShipping}
+        />,
+      );
+      expect(screen.getByRole('switch', { name: 'One listing per size or variant' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Review import' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Use free shipping (3–10 days)' })).toBeDisabled();
+
+      await user.type(screen.getByLabelText('Ships from (country code)'), 'CH{Enter}');
+      expect(onReview).not.toHaveBeenCalled();
+      expect(onChooseFreeShipping).not.toHaveBeenCalled();
+    });
+
+    it('switches to one listing per variant from the settings step, and back', async () => {
+      const user = userEvent.setup();
+      const onVariantMode = vi.fn(async () => true);
+      const { rerender } = render(<Harness variantMode="native" onVariantMode={onVariantMode} />);
+      const toggle = screen.getByRole('switch', { name: 'One listing per size or variant' });
+      expect(toggle).not.toBeChecked();
+
+      await user.click(toggle);
+      expect(onVariantMode).toHaveBeenLastCalledWith('split');
+
+      rerender(<Harness variantMode="split" onVariantMode={onVariantMode} />);
+      expect(screen.getByRole('switch', { name: 'One listing per size or variant' })).toBeChecked();
+      await user.click(screen.getByRole('switch', { name: 'One listing per size or variant' }));
+      expect(onVariantMode).toHaveBeenLastCalledWith('native');
+    });
   });
 });

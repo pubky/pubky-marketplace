@@ -8,6 +8,7 @@ import {
   evaluateListingActivationGuards,
   seedDraftFormFromListing,
 } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing';
+import { useListingSources } from '@/hooks/useListingSources/useListingSources';
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
 import { useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplaceOrders';
 import { cacheProjection } from '@/hooks/useMarketplaceProjection/useMarketplaceProjection';
@@ -23,6 +24,7 @@ import {
   markListingDraftResumeId,
 } from '@/libs/commerce/listing-drafts';
 import { listingPublishBlockToast } from '@/libs/commerce/listing-publish-guards';
+import { toListingTableRow } from '@/libs/commerce/listing-table';
 import { sumMoneyByAsset } from '@/libs/commerce/pricing';
 import {
   countableStockQuantity,
@@ -30,6 +32,7 @@ import {
   isUnlimitedStock,
   UNLIMITED_STOCK_LABEL,
 } from '@/libs/commerce/unlimited-stock';
+import { isListingRegistrationPending } from '@/models/commerce/commerce.schema';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
@@ -38,6 +41,10 @@ const REVENUE_ORDER_STATES = ['paid', 'processing', 'shipped', 'delivered', 'com
 
 /** Shown in place of a listing's stock, and the stock total, while the service has not yet answered for it. */
 const STOCK_UNKNOWN_LABEL = '—';
+
+const REGISTER_CONCURRENCY = 4;
+
+const PROJECTION_READ_CONCURRENCY = 6;
 
 type LocalListing = Awaited<ReturnType<typeof CommerceController.getListingsBySeller>>[number];
 
@@ -118,21 +125,32 @@ export function useMarketplaceSellerDashboard() {
     const sellerPubky = currentUserPubky;
     stockReadFailed.current = false;
     void (async () => {
-      for (const listing of await CommerceController.getListingsBySeller(sellerPubky)) {
-        try {
-          const projection = await CommerceController.getMarketplaceListingProjection(sellerPubky, listing.listing_id);
-          if (projection) await cacheProjection(projection);
-          setUnregisteredIds((ids) => {
-            if (ids.has(listing.id) === !projection) return ids;
-            const next = new Set(ids);
-            if (projection) next.delete(listing.id);
-            else next.add(listing.id);
-            return next;
-          });
-        } catch {
-          stockReadFailed.current = true;
+      const listings = await CommerceController.getListingsBySeller(sellerPubky);
+      let next = 0;
+      // A few reads at a time: one after another, a few hundred listings left the Checkout filter and the stock
+      // column filling in for minutes.
+      const worker = async () => {
+        while (next < listings.length) {
+          const listing = listings[next++];
+          try {
+            const projection = await CommerceController.getMarketplaceListingProjection(
+              sellerPubky,
+              listing.listing_id,
+            );
+            if (projection) await cacheProjection(projection);
+            setUnregisteredIds((ids) => {
+              if (ids.has(listing.id) === !projection) return ids;
+              const updated = new Set(ids);
+              if (projection) updated.delete(listing.id);
+              else updated.add(listing.id);
+              return updated;
+            });
+          } catch {
+            stockReadFailed.current = true;
+          }
         }
-      }
+      };
+      await Promise.all(Array.from({ length: Math.min(PROJECTION_READ_CONCURRENCY, listings.length) }, worker));
     })();
   }, [currentUserPubky, marketplaceSession, catalogFetchState, stockKey]);
   const activeListings = (localListings ?? []).filter(
@@ -221,6 +239,66 @@ export function useMarketplaceSellerDashboard() {
       toast({ variant: 'error', description: 'Could not update selected listings.' });
       return false;
     }
+  };
+
+  const listingSources = useListingSources();
+  // The row's Register for checkout button and the Checkout filter both ask this: offered only once the service
+  // said it holds no projection for a listing the seller published.
+  const needsRegistration = (listing: LocalListing) =>
+    isListingRegistrationPending(listing) && !listing.registeredWithService && canOfferRegistration(listing);
+  const tableRows = (localListings ?? []).map((listing) =>
+    toListingTableRow(listing, {
+      nowMs,
+      needsRegistration,
+      stockKnown: isStockKnown,
+      sourcesOf: listingSources.sourcesOf,
+    }),
+  );
+  const [registering, setRegistering] = useState<{ done: number; total: number } | null>(null);
+  const registeringNow = useRef(false);
+
+  /**
+   * Registers every selected listing the service does not hold yet, a few at a time, through the same call as the
+   * row button. One summary toast, with the titles that failed; listings that did not need it are left alone.
+   */
+  const registerListings = async (listingIds: string[]) => {
+    const targets = (localListings ?? []).filter(
+      (listing) => listingIds.includes(listing.id) && needsRegistration(listing),
+    );
+    if (targets.length === 0 || registeringNow.current) return { registered: 0, failed: [] as string[] };
+    registeringNow.current = true;
+    setRegistering({ done: 0, total: targets.length });
+    const failed: string[] = [];
+    let next = 0;
+    let done = 0;
+    const worker = async () => {
+      while (next < targets.length) {
+        const listing = targets[next++];
+        const ok = await CommerceController.ensureListingRegistered(listing.record).catch(() => false);
+        if (!ok) failed.push(listing.record.title);
+        done += 1;
+        setRegistering({ done, total: targets.length });
+      }
+    };
+    try {
+      await Promise.all(Array.from({ length: Math.min(REGISTER_CONCURRENCY, targets.length) }, worker));
+    } finally {
+      registeringNow.current = false;
+      setRegistering(null);
+    }
+    const registered = targets.length - failed.length;
+    if (failed.length === 0) {
+      toast({ title: `${registered} ${registered === 1 ? 'listing' : 'listings'} registered for checkout` });
+    } else {
+      const shown = failed.slice(0, 3).join(', ');
+      const more = failed.length > 3 ? ` and ${failed.length - 3} more` : '';
+      toast({
+        variant: 'error',
+        title: `Registered ${registered} of ${targets.length} for checkout`,
+        description: `Could not register ${shown}${more}. Select them again to retry.`,
+      });
+    }
+    return { registered, failed };
   };
 
   const retryListingRegistration = async (listingId: string): Promise<boolean> => {
@@ -347,6 +425,11 @@ export function useMarketplaceSellerDashboard() {
     updateListingState,
     retryListingRegistration,
     canOfferRegistration,
+    needsRegistration,
+    registerListings,
+    registering,
+    tableRows,
+    sourcesReady: listingSources.ready,
     listingStockLabel,
     duplicateListing,
     hasUnsavedListingDraft,

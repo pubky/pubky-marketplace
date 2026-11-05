@@ -46,6 +46,8 @@ function Harness({ overrides = {}, save = vi.fn() }: { overrides?: Partial<Catal
     isLoadingMore: false,
     isSaving: false,
     error: null,
+    loadMoreError: null,
+    resumeLoading: async () => {},
     needsSession: false,
     search,
     setSearch,
@@ -142,6 +144,27 @@ describe('MarketplaceConnectorCatalogPicker', () => {
     expect(screen.getByTestId('connector-catalog-loading')).toBeInTheDocument();
     rerender(<Harness overrides={{ isLoadingMore: true }} />);
     expect(screen.getByTestId('connector-selected-count')).toHaveTextContent('loading more');
+  });
+
+  it('keeps the products shown and offers the rest again when a later page failed', async () => {
+    const user = userEvent.setup();
+    const resumeLoading = vi.fn(async () => {});
+    render(
+      <Harness overrides={{ loadMoreError: 'The store is busy. Wait a minute, then try again.', resumeLoading }} />,
+    );
+    expect(screen.getAllByTestId('connector-product')).toHaveLength(3);
+    expect(screen.getByTestId('connector-catalog-load-more-error')).toHaveTextContent(
+      'The store is busy. Wait a minute, then try again. The products shown so far are kept.',
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Load the rest' }));
+
+    expect(resumeLoading).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows no load-more notice when every page arrived', () => {
+    render(<Harness />);
+    expect(screen.queryByTestId('connector-catalog-load-more-error')).not.toBeInTheDocument();
   });
 
   it('shows a store photo only from an https address', () => {

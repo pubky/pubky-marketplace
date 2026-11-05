@@ -8,6 +8,7 @@ import { Heading } from '@/atoms/Heading/Heading';
 import { Input } from '@/atoms/Input/Input';
 import { Label } from '@/atoms/Label/Label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
+import { Switch } from '@/atoms/Switch/Switch';
 import { Typography } from '@/atoms/Typography/Typography';
 import {
   IMPORT_SETTINGS_FIELDS,
@@ -22,6 +23,8 @@ type MarketplaceConnectorImportSettingsProps = {
   /** The currency the store prices in; prices are not converted. */
   currency: string;
   productCount: number;
+  /** Every size or variant of the chosen products; one listing each when the store is set to `split`. */
+  variantCount: number;
   /** Variants whose stock the store does not track and does not make to order. */
   untrackedVariants: number;
   /** Variants the store sells without a stock limit (print-on-demand): always available on Pubky. */
@@ -29,6 +32,9 @@ type MarketplaceConnectorImportSettingsProps = {
   conditionOptions: readonly string[];
   /** `split`: every size or variant becomes its own listing. */
   variantMode: VariantMode;
+  /** Changes the store's setting; resolves true when it took. Absent: the setting is shown, not changed here. */
+  onVariantMode?: (mode: VariantMode) => Promise<boolean>;
+  variantModeBusy?: boolean;
   busy: boolean;
   onReview: () => void;
   onChooseFreeShipping: () => void;
@@ -62,10 +68,13 @@ export function MarketplaceConnectorImportSettings({
   domain,
   currency,
   productCount,
+  variantCount,
   untrackedVariants,
   madeToOrderVariants = 0,
   conditionOptions,
   variantMode,
+  onVariantMode,
+  variantModeBusy = false,
   busy,
   onReview,
   onChooseFreeShipping,
@@ -92,10 +101,35 @@ export function MarketplaceConnectorImportSettings({
             to every one of them. Prices stay in {currency}: nothing is converted. Nothing is published until you
             confirm the dry-run.
           </Typography>
-          {variantMode === 'split' && (
-            <Typography as="p" className="text-sm text-muted-foreground" data-testid="connector-import-split-note">
-              Every size or variant becomes its own listing, as set for this store in Store connections.
+        </div>
+
+        <div
+          className="flex items-start justify-between gap-4 rounded-md border border-dashed border-border p-3"
+          data-testid="connector-import-variant-mode"
+        >
+          <div className="grid gap-1">
+            <Typography as="label" htmlFor="connector-import-variant-mode" className="text-sm font-semibold">
+              One listing per size or variant
             </Typography>
+            <Typography as="p" className="text-sm" data-testid="connector-import-variant-mode-state">
+              {variantMode === 'split'
+                ? `Every size or variant becomes its own listing: ${variantCount} ${variantCount === 1 ? 'listing' : 'listings'}.`
+                : `Sizes and colours stay together as one listing: ${productCount} ${productCount === 1 ? 'listing' : 'listings'}${variantCount > productCount ? ` with ${variantCount} variants` : ''}.`}
+            </Typography>
+            <Typography as="p" className="text-xs text-muted-foreground">
+              {onVariantMode
+                ? 'This is the setting of this store in Store connections; changing it here changes it there. It applies to the products you publish from now on.'
+                : 'This is the setting of this store in Store connections.'}
+            </Typography>
+          </div>
+          {onVariantMode && (
+            <Switch
+              id="connector-import-variant-mode"
+              checked={variantMode === 'split'}
+              disabled={variantModeBusy || busy}
+              onCheckedChange={(checked) => void onVariantMode(checked ? 'split' : 'native')}
+              aria-label="One listing per size or variant"
+            />
           )}
         </div>
 
@@ -103,7 +137,7 @@ export function MarketplaceConnectorImportSettings({
           className="grid gap-4"
           onSubmit={(event) => {
             event.preventDefault();
-            onReview();
+            if (!variantModeBusy) onReview();
           }}
         >
           <div className="grid gap-4 sm:grid-cols-2">
@@ -161,7 +195,7 @@ export function MarketplaceConnectorImportSettings({
                           variant="secondary"
                           size="sm"
                           className="rounded-full"
-                          disabled={busy}
+                          disabled={busy || variantModeBusy}
                           onClick={onChooseFreeShipping}
                         >
                           Use free shipping ({minDays}–{maxDays} days)
@@ -300,7 +334,7 @@ export function MarketplaceConnectorImportSettings({
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" className="rounded-full" disabled={busy}>
+            <Button type="submit" className="rounded-full" disabled={busy || variantModeBusy}>
               {busy && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
               Review import
             </Button>

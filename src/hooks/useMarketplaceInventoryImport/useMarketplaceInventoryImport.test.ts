@@ -399,6 +399,43 @@ describe('useMarketplaceInventoryImport', () => {
       expect(result.current.progressPhase).toBe('listings');
     });
 
+    it('counts the listings, not the variant rows, and follows the listing the publish reports', async () => {
+      let report: (progress: { done: number; total: number }) => void = () => undefined;
+      let finish: () => void = () => undefined;
+      mocks.plan.mockResolvedValue(
+        planned({ listingCount: 183, counts: { create: 705, update: 0, end: 0, unchanged: 0, conflict: 0 } }),
+      );
+      mocks.targets.mockResolvedValue([]);
+      mocks.publish.mockImplementation(
+        (_seller: string, _manifest: string, onProgress: (progress: { done: number; total: number }) => void) =>
+          new Promise((resolvePublish) => {
+            report = onProgress;
+            finish = () => resolvePublish(COMPLETE);
+          }),
+      );
+      const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+      await act(async () => {
+        await result.current.planFile(FILE);
+      });
+      expect(result.current.listingCount).toBe(183);
+
+      let publishing: Promise<void> = Promise.resolve();
+      await act(async () => {
+        publishing = result.current.publish();
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(result.current.progress).toEqual({ done: 0, total: 183 }));
+      expect(result.current.progressPhase).toBe('listings');
+
+      act(() => report({ done: 76, total: 183 }));
+      expect(result.current.progress).toEqual({ done: 76, total: 183 });
+
+      await act(async () => {
+        finish();
+        await publishing;
+      });
+    });
+
     it('only attaches, and fetches nothing, for a stored listing whose photos are unchanged', async () => {
       mocks.targets.mockResolvedValue([
         { listingId: '7718', images: [], keptMedia: [{ id: 'm1' }], sync: { removed: 0, handKept: 0 } },
@@ -1182,7 +1219,7 @@ describe('useMarketplaceInventoryImport, an unfinished import', () => {
     });
     expect(mocks.targets).toHaveBeenCalledWith('seller', 'manifest_old');
     expect(mocks.attach).toHaveBeenCalledWith('seller', 'manifest_old', expect.any(Array));
-    expect(mocks.resume).toHaveBeenCalledWith('seller', 'manifest_old');
+    expect(mocks.resume).toHaveBeenCalledWith('seller', 'manifest_old', expect.any(Function));
     expect(mocks.plan).not.toHaveBeenCalled();
     expect(mocks.publish).not.toHaveBeenCalled();
     expect(mocks.markStarted).not.toHaveBeenCalled();
@@ -1207,7 +1244,7 @@ describe('useMarketplaceInventoryImport, an unfinished import', () => {
     await act(async () => {
       await result.current.resume();
     });
-    expect(mocks.resume).toHaveBeenCalledWith('seller', 'manifest_old');
+    expect(mocks.resume).toHaveBeenCalledWith('seller', 'manifest_old', expect.any(Function));
     expect(result.current.scene).toBe('result');
   });
 

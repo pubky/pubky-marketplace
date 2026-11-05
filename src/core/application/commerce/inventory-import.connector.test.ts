@@ -54,12 +54,18 @@ function syncAll(listings: readonly { listing_id: string }[]): { readonly ok: tr
   };
 }
 
-function storeProduct(id: string, title: string, amountMinor: number): ConnectorCatalogProduct {
+function storeProduct(
+  id: string,
+  title: string,
+  amountMinor: number,
+  categories: string[] = [],
+): ConnectorCatalogProduct {
   return connectorCatalogProductSchema.parse({
     providerProductId: id,
     title,
     description: 'From the store.',
     imageUrls: ['https://shop.example/a.jpg'],
+    categories,
     variants: [
       {
         providerVariantId: `${id}1`,
@@ -125,6 +131,67 @@ describe('a connector re-import of a live listing, with a publish gate blocking 
 
   const stateOf = (listingId: string) => stored.find((entry) => entry.listingId === listingId)?.state;
   const putsFor = (listingId: string) => puts.filter((entry) => entry.listingId === listingId);
+
+  const categoryOf = (listingId: string) => stored.find((entry) => entry.listingId === listingId)?.categoryId;
+  const HOODIE = ['Apparel & Accessories > Clothing > Clothing Tops > Hoodies', 'Hoodie'];
+
+  it('files a live listing that was imported uncategorized under its store category on the next import', async () => {
+    await run([storeProduct('1', 'Satoshi Unisex Hoodie', 2500)], false);
+    expect(categoryOf('woo-1')).toBe('fashion-men-tops-hoodies');
+
+    await run([storeProduct('2', 'Satoshi plush', 2500)], false);
+    expect(categoryOf('woo-2')).toBe('uncategorized');
+    expect(stateOf('woo-2')).toBe('active');
+
+    const { planned: refiled } = await run([storeProduct('2', 'Satoshi plush hoodie', 2500, HOODIE)], false);
+    expect(refiled.counts).toMatchObject({ create: 0, update: 1 });
+    expect(categoryOf('woo-2')).toBe('fashion-men-tops-hoodies');
+    expect(stateOf('woo-2')).toBe('active');
+  });
+
+  it('refiles a live listing even while a publish gate keeps it live', async () => {
+    await run([storeProduct('1', 'Satoshi plush', 2500)], false);
+    expect(categoryOf('woo-1')).toBe('uncategorized');
+
+    const { planned } = await run([storeProduct('1', 'Satoshi plush', 2500, ['Hat'])], true);
+
+    expect(planned.counts).toMatchObject({ create: 0, update: 1 });
+    expect(planned.publishGate).toMatchObject({ reason: 'no-method', pausing: 0 });
+    expect(categoryOf('woo-1')).toBe('fashion-men-accessories-hat');
+    expect(stateOf('woo-1')).toBe('active');
+  });
+
+  it('counts listings, not variant rows, and reports each listing as it is saved', async () => {
+    const sizes = (id: string, title: string): ConnectorCatalogProduct =>
+      connectorCatalogProductSchema.parse({
+        providerProductId: id,
+        title,
+        description: 'From the store.',
+        imageUrls: ['https://shop.example/a.jpg'],
+        options: [{ name: 'Size', values: ['S', 'M', 'L'] }],
+        variants: ['S', 'M', 'L'].map((size) => ({
+          providerVariantId: `${id}${size}`,
+          sku: `SKU-${id}-${size}`,
+          optionValues: [{ name: 'Size', value: size }],
+          price: { amountMinor: 2500, currency: 'USD', exponent: 2 },
+          stock: 4,
+        })),
+      });
+    const importer = app(false);
+    const planned = await importer.planFile(importFile([sizes('1', 'Socks'), sizes('2', 'Hats')]), SETTINGS);
+    if (planned.status !== 'planned') throw new Error('plan');
+    attachPhotos();
+    expect(planned.counts.create).toBe(6);
+    expect(planned.listingCount).toBe(2);
+
+    const reported: { done: number; total: number }[] = [];
+    await importer.publish(planned.manifestId, (progress) => reported.push(progress));
+
+    expect(reported[0]).toEqual({ done: 0, total: 2 });
+    expect(reported).toContainEqual({ done: 1, total: 2 });
+    expect(reported.at(-1)).toEqual({ done: 2, total: 2 });
+    expect(Math.max(...reported.map((entry) => entry.total))).toBe(2);
+  });
 
   it('publishes a first import live when the gates pass', async () => {
     const { planned } = await run([storeProduct('1', 'Socks', 2500)], false);

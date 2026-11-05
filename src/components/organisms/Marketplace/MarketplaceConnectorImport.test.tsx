@@ -97,6 +97,40 @@ describe('MarketplaceConnectorImport', () => {
     expect(value.publish).toHaveBeenCalledTimes(1);
   });
 
+  it('labels the photos as photos while they load, and the listings as listings after', () => {
+    const photos = flow(
+      {},
+      {
+        scene: 'progress',
+        step: 5,
+        progressPhase: 'photos',
+        progress: { done: 76, total: 705 },
+        batchInfo: { batch: 2, batches: 8 },
+        waitSeconds: null,
+      },
+    );
+    const { rerender } = render(<MarketplaceConnectorImport flow={photos} connection={CONNECTION} onBack={vi.fn()} />);
+    expect(screen.getByTestId('inventory-import-progress')).toHaveTextContent(
+      'Loading photos… 76 of 705, batch 2 of 8.',
+    );
+
+    const listings = flow(
+      {},
+      {
+        scene: 'progress',
+        step: 5,
+        progressPhase: 'listings',
+        progress: { done: 76, total: 183 },
+        counts: { create: 705, update: 0, end: 0, unchanged: 0, conflict: 0 },
+        listingCount: 183,
+      },
+    );
+    rerender(<MarketplaceConnectorImport flow={listings} connection={CONNECTION} onBack={vi.fn()} />);
+    expect(screen.getByTestId('inventory-import-progress')).toHaveTextContent(
+      'Saving your listings… 76 of 183 (705 variants).',
+    );
+  });
+
   it('carries the publish gate notice of the Studio import', () => {
     render(
       <MarketplaceConnectorImport

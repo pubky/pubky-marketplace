@@ -54,7 +54,10 @@ export class ConnectorsController {
     return await ConnectorsApplication.checkConnection(this.actor(), connectionId);
   }
 
-  static async fetchCatalogPage(connectionId: string, options: { page?: string | null; selected?: boolean } = {}) {
+  static async fetchCatalogPage(
+    connectionId: string,
+    options: { page?: string | null; selected?: boolean; signal?: AbortSignal } = {},
+  ) {
     return await ConnectorsApplication.catalogPage(this.actor(), connectionId, options);
   }
 
