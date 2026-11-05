@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { bareHttpFailure, connectorRefusal } from '@/test-utils/connector-errors';
 import { connectionFixture } from '@/test-utils/connector-fixtures';
 import {
+  classifyShopifyAddress,
   connectionHealth,
   CONNECTOR_ALERT_KINDS,
   connectorAlertAction,
@@ -17,6 +18,7 @@ import {
   connectorListSchema,
   CONNECTORS_UNAVAILABLE_COPY,
   connectorSettingsResultSchema,
+  connectorShopSchema,
   isConnectorsUnavailableError,
   isWooAuthorizeUrlFor,
   normalizeShopifyDomain,
@@ -48,6 +50,8 @@ describe('normalizeShopifyDomain', () => {
     ['  Your-Store  ', 'your-store.myshopify.com'],
     ['https://Your-Store.myshopify.com/admin/settings', 'your-store.myshopify.com'],
     ['your-store.myshopify.com:443', 'your-store.myshopify.com'],
+    ['https://admin.shopify.com/store/Your-Store/products', 'your-store.myshopify.com'],
+    ['admin.shopify.com/store/your-store', 'your-store.myshopify.com'],
   ])('reads %s', (input, expected) => {
     expect(normalizeShopifyDomain(input)).toBe(expected);
   });
@@ -60,8 +64,64 @@ describe('normalizeShopifyDomain', () => {
     'a b.myshopify.com',
     '-bad.myshopify.com',
     '.myshopify.com',
+    'admin.shopify.com/store/',
+    'admin.shopify.com/store/-bad',
   ])('refuses %j', (input) => {
     expect(normalizeShopifyDomain(input)).toBeNull();
+  });
+});
+
+describe('classifyShopifyAddress', () => {
+  it.each([
+    ['your-store', { kind: 'myshopify', domain: 'your-store.myshopify.com' }],
+    ['https://Your-Store.myshopify.com/admin', { kind: 'myshopify', domain: 'your-store.myshopify.com' }],
+    ['admin.shopify.com/store/your-store', { kind: 'myshopify', domain: 'your-store.myshopify.com' }],
+    ['intranet', { kind: 'myshopify', domain: 'intranet.myshopify.com' }],
+    ['shop.example', { kind: 'custom', host: 'shop.example' }],
+    ['  https://WWW.Shop.Example.com/collections/all?x=1#top ', { kind: 'custom', host: 'www.shop.example.com' }],
+    ['shop.example.co.uk:443', { kind: 'custom', host: 'shop.example.co.uk' }],
+    ['münchen-shop.example', null],
+    ['xn--mnchen-3ya.example', { kind: 'custom', host: 'xn--mnchen-3ya.example' }],
+  ])('reads %j', (input, expected) => {
+    expect(classifyShopifyAddress(input)).toEqual(expected);
+  });
+
+  it.each([
+    '',
+    '   ',
+    '127.0.0.1',
+    '10.0.0.5',
+    'user@shop.example',
+    'a b.example',
+    'shop.example.',
+    '-bad.example',
+    'shop..example',
+    'shop.123',
+    'x.myshopify.com.',
+    'a.b.shopify.com',
+    'foo.shopify.com',
+  ])('refuses %j', (input) => {
+    expect(classifyShopifyAddress(input)).toBeNull();
+  });
+});
+
+describe('connectorShopSchema', () => {
+  it('reads the resolve answer with and without a looked-up domain', () => {
+    expect(
+      connectorShopSchema.parse({
+        kind: 'connector_shop',
+        provider: 'shopify',
+        shop: 'a.myshopify.com',
+        domain: 'shop.example',
+      }),
+    ).toMatchObject({ shop: 'a.myshopify.com', domain: 'shop.example' });
+    expect(
+      connectorShopSchema.parse({ kind: 'connector_shop', provider: 'shopify', shop: 'a.myshopify.com', domain: null })
+        .domain,
+    ).toBeNull();
+    expect(connectorShopSchema.safeParse({ kind: 'connector_shop', provider: 'shopify', domain: null }).success).toBe(
+      false,
+    );
   });
 });
 

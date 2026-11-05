@@ -9,6 +9,7 @@ import { shopifyKeysFormDefaults } from './useConnectShopify.types';
 
 vi.mock('@/controllers/connectors/connectors', () => ({
   ConnectorsController: {
+    fetchResolveShopifyAddress: vi.fn(),
     commitCreateShopifyDraft: vi.fn(),
     commitShopifyCredentials: vi.fn(),
   },
@@ -84,12 +85,63 @@ describe('useConnectShopify', () => {
 
   it('refuses an address that is not a Shopify store', async () => {
     const { result } = renderShopify();
-    act(() => result.current.domainForm.setValue('domain', 'example.com'));
+    act(() => result.current.domainForm.setValue('domain', 'not a store address'));
     await act(async () => {
       expect(await result.current.createDraft()).toBe(false);
     });
     expect(result.current.domainForm.formState.errors.domain?.message).toContain('your-store.myshopify.com');
+    expect(ConnectorsController.fetchResolveShopifyAddress).not.toHaveBeenCalled();
     expect(ConnectorsController.commitCreateShopifyDraft).not.toHaveBeenCalled();
+  });
+
+  it('resolves the store domain the seller typed, then creates the draft for the shop it names', async () => {
+    vi.mocked(ConnectorsController.fetchResolveShopifyAddress).mockResolvedValue({
+      shop: 'your-store.myshopify.com',
+      domain: 'shop.example',
+    });
+    vi.mocked(ConnectorsController.commitCreateShopifyDraft).mockResolvedValue(draftConnection());
+    const { result } = renderShopify();
+    act(() => result.current.domainForm.setValue('domain', 'https://Shop.Example/'));
+    await act(async () => {
+      expect(await result.current.createDraft()).toBe(true);
+    });
+
+    expect(ConnectorsController.fetchResolveShopifyAddress).toHaveBeenCalledWith('https://Shop.Example/');
+    expect(ConnectorsController.commitCreateShopifyDraft).toHaveBeenCalledWith('your-store.myshopify.com');
+    expect(result.current.draft?.domain).toBe('your-store.myshopify.com');
+    expect(result.current.resolvedFrom).toBe('shop.example');
+
+    act(() => result.current.startOver());
+    expect(result.current.resolvedFrom).toBeNull();
+  });
+
+  it('does not look anything up for a myshopify.com address', async () => {
+    const { result } = renderShopify();
+    await createDraft(result);
+    expect(ConnectorsController.fetchResolveShopifyAddress).not.toHaveBeenCalled();
+    expect(result.current.resolvedFrom).toBeNull();
+  });
+
+  it.each([
+    ['not_a_shopify_store', 422, /does not look like a Shopify store/],
+    ['not_primary_domain', 422, /not your store's main domain/],
+    ['provider_unavailable', 502, /Could not look up that address/],
+  ])('says so when the lookup is refused with %s, and creates nothing', async (reason, status, copy) => {
+    vi.mocked(ConnectorsController.fetchResolveShopifyAddress).mockRejectedValue(connectorRefusal(reason, status));
+    const { result } = renderShopify();
+    act(() => result.current.domainForm.setValue('domain', 'shop.example'));
+    await act(async () => {
+      expect(await result.current.createDraft()).toBe(false);
+    });
+    expect(ConnectorsController.commitCreateShopifyDraft).not.toHaveBeenCalled();
+    expect(result.current.draft).toBeNull();
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        variant: 'error',
+        title: 'Could not find your store',
+        description: expect.stringMatching(copy),
+      }),
+    );
   });
 
   it('explains a refusal when the draft cannot be created', async () => {

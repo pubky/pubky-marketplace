@@ -22,6 +22,8 @@ import {
   connectorSelectionSchema,
   type ConnectorSettingsResult,
   connectorSettingsResultSchema,
+  type ConnectorShop,
+  connectorShopSchema,
   isConnectorsUnavailableAnswer,
   type VariantMode,
 } from '@/libs/commerce/connectors';
@@ -69,6 +71,21 @@ export class MarketplaceConnectorsService {
       body: { provider: input.provider, domain: input.domain },
     });
     return this.parse('connectStore', connectorConnectSchema, raw);
+  }
+
+  /**
+   * `GET /v1/connectors/resolve`: the `*.myshopify.com` shop a store's own
+   * domain belongs to. The service reads it from the storefront and has Shopify
+   * confirm it; nothing is stored. A refusal carries `not_a_shopify_store`,
+   * `not_primary_domain` or `invalid_domain`.
+   */
+  static async resolveShop(
+    actor: string,
+    input: { provider: ConnectorProvider; domain: string },
+  ): Promise<ConnectorShop> {
+    const query = new URLSearchParams({ provider: input.provider, domain: input.domain });
+    const raw = await this.request('resolveConnectorShop', actor, `/v1/connectors/resolve?${query.toString()}`);
+    return this.parse('resolveConnectorShop', connectorShopSchema, raw);
   }
 
   /**

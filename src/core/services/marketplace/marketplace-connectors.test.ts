@@ -166,6 +166,48 @@ describe('MarketplaceConnectorsService', () => {
     ).rejects.toMatchObject({ message: 'The marketplace service returned an unexpected response.' });
   });
 
+  it('resolves a store domain with a bearer GET, the domain in the query, and reads the shop back', async () => {
+    fetchMock.mockResolvedValue(
+      json({
+        schema_version: 1,
+        kind: 'connector_shop',
+        provider: 'shopify',
+        shop: 'your-store.myshopify.com',
+        domain: 'shop.example',
+      }),
+    );
+
+    const resolved = await MarketplaceConnectorsService.resolveShop(ACTOR, {
+      provider: 'shopify',
+      domain: 'shop.example/a b',
+    });
+
+    expect(resolved).toMatchObject({ shop: 'your-store.myshopify.com', domain: 'shop.example' });
+    const { url, init } = lastCall();
+    expect(url).toBe(`${BASE}/v1/connectors/resolve?provider=shopify&domain=shop.example%2Fa+b`);
+    expect(init.method ?? 'GET').toBe('GET');
+    expect(init.body).toBeUndefined();
+  });
+
+  it.each([
+    ['not_a_shopify_store', 422],
+    ['not_primary_domain', 422],
+    ['invalid_domain', 422],
+    ['provider_unavailable', 502],
+  ])('carries the service refusal %s from a resolve call', async (code, status) => {
+    fetchMock.mockResolvedValue(json({ ok: false, error: { code, message: 'x' } }, status));
+    await expect(
+      MarketplaceConnectorsService.resolveShop(ACTOR, { provider: 'shopify', domain: 'shop.example' }),
+    ).rejects.toMatchObject({ context: { reason: code, statusCode: status } });
+  });
+
+  it('refuses a resolve answer that does not name a shop', async () => {
+    fetchMock.mockResolvedValue(json({ kind: 'connector_shop', provider: 'shopify', domain: null }));
+    await expect(
+      MarketplaceConnectorsService.resolveShop(ACTOR, { provider: 'shopify', domain: 'shop.example' }),
+    ).rejects.toMatchObject({ message: 'The marketplace service returned an unexpected response.' });
+  });
+
   it('connects a WooCommerce draft with a pasted key pair, snake_case, and reads the connected store back', async () => {
     fetchMock.mockResolvedValue(
       json({
