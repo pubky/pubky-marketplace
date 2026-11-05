@@ -111,7 +111,8 @@ Logging happens in `Err.*` factories — Application code should usually **not**
 ### Controllers
 
 Wrap entry points with a small helper that normalizes anything non-`AppError`.
-Convert `AppError` to UI/API responses (status code, toast copy) using `ErrorMessages`.
+Use `AppError` categories and codes to choose the response. UI error copy can use
+`getErrorMessage` from `@/libs/error/error.utils` or a message specific to the action.
 
 ### UI Layer (`src/components/`, `src/hooks/`)
 

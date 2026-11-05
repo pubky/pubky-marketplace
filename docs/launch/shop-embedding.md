@@ -186,7 +186,7 @@ These are prior embedding observations, not a completed live test of the new sha
 
 ### Where it is used
 
-- Every signer deep link, all from inside the tap handler with no async boundary before the call (each has a test that asserts this, via `navigatesWithinGesture` in `src/test-utils/user-gesture.ts`): `useMobileAuth`, `useStepUpReauth`, `useMarketplaceSessionConnect`, `useMarketplaceMessagingEnable`, `useMarketplaceInventoryGrantConnect`.
+- Every signer deep link, all from inside the tap handler with no async boundary before the call (each has a test that asserts this, via `navigatesWithinGesture` in `src/test-utils/user-gesture.ts`): `useMobileAuth`, `useStepUpReauth`, `useMarketplaceSessionConnect`, `useMarketplaceMessagingEnable`.
 - The PayPal checkout hand-off, in the cart and accepted-offer paths.
 - Social-host profile links render `target="_top"` when embedded.
 

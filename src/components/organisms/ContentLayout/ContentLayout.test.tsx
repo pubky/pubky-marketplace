@@ -161,12 +161,6 @@ vi.mock('@/organisms/WhoToFollowSidebar/WhoToFollowSidebar', () => {
   };
 });
 
-vi.mock('@/organisms/RightSidebar/RightSidebar', () => {
-  return {
-    RightSidebar: () => <div data-testid="right-sidebar">Right Sidebar</div>,
-  };
-});
-
 describe('ContentLayout', () => {
   beforeEach(() => {
     mockUseCustomFeed.mockReturnValue(undefined);

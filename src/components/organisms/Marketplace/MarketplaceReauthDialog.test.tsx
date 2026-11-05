@@ -27,12 +27,7 @@ vi.mock('@/hooks/useStepUpReauth/useStepUpReauth', () => ({
 }));
 
 vi.mock('@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner', () => ({
-  useMarketplaceApprovalSigner: () => 'Bitkit',
-}));
-
-const signIn = vi.hoisted(() => ({ isGrantSession: false }));
-vi.mock('@/hooks/useIsGrantSession/useIsGrantSession', () => ({
-  useIsGrantSession: () => signIn.isGrantSession,
+  useMarketplaceApprovalSigner: () => connect.approvalSigner,
 }));
 
 const config = vi.hoisted(() => ({ mode: 'transaction-service' as string }));
@@ -52,7 +47,7 @@ const RECONNECT_URL =
 const connect = vi.hoisted(() => ({
   start: vi.fn(),
   bootstrap: false,
-  approvalSigner: 'Bitkit' as 'Bitkit' | 'Pubky Ring or Bitkit',
+  approvalSigner: 'Bitkit' as 'Bitkit' | 'Pubky Ring',
 }));
 vi.mock('@/hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect', () => ({
   useMarketplaceSessionConnect: () => ({
@@ -77,7 +72,6 @@ describe('MarketplaceReauthDialog', () => {
     connect.start.mockClear();
     connect.bootstrap = false;
     connect.approvalSigner = 'Bitkit';
-    signIn.isGrantSession = false;
     config.mode = 'transaction-service';
     reauth.status = 'idle';
     reauth.authorizationUrl = '';
@@ -131,7 +125,6 @@ describe('MarketplaceReauthDialog', () => {
   });
 
   it('repairs homeserver permissions with homeserver approval for a grant session', async () => {
-    signIn.isGrantSession = true;
     render(<MarketplaceReauthDialog refusal="homeserver" triggerLabel="Sign in again" />);
     await userEvent.setup().click(screen.getByRole('button', { name: 'Sign in again' }));
     expect(reauth.start).toHaveBeenCalledOnce();
@@ -146,13 +139,10 @@ describe('MarketplaceReauthDialog', () => {
     expect(screen.queryByLabelText('Copy authorization link')).toBeNull();
   });
 
-  it.each([
-    ['a Pubky Ring sign-in', false],
-    ['a Bitkit sign-in', true],
-  ])(
-    'sends %s refused the private data key to the marketplace approval, never the homeserver step-up',
-    async (_label, isGrantSession) => {
-      signIn.isGrantSession = isGrantSession;
+  it.each(['Pubky Ring', 'Bitkit'] as const)(
+    'sends a %s sign-in refused the private data key to the marketplace approval, never the homeserver step-up',
+    async (approvalSigner) => {
+      connect.approvalSigner = approvalSigner;
       render(<MarketplaceReauthDialog refusal="purchase_session" triggerLabel="Approve private sync" />);
 
       await userEvent.setup().click(screen.getByRole('button', { name: 'Approve private sync' }));

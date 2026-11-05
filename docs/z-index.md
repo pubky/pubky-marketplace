@@ -6,7 +6,7 @@ Standard z-index values for consistent stacking order throughout the application
 
 | Value   | Purpose                     | Examples                                 |
 | ------- | --------------------------- | ---------------------------------------- |
-| `-z-10` | Background elements         | `ImageBackground` — fixed backgrounds    |
+| `-z-10` | Background elements         | Fixed background layers                  |
 | `z-10`  | Sticky/relative overlays    | `ProgressSteps`, `ButtonFilters`, badges |
 | `z-30`  | Floating buttons (scrolled) | `NewPostsButton` when scrolled           |
 | `z-40`  | Fixed navigation & FAB      | `Fab`, `MobileFooter`, dialog overlay    |
@@ -30,9 +30,7 @@ z-0   ─────────────  Normal document flow
 ### `-z-10` Background
 
 ```tsx
-<div className="fixed inset-0 -z-10">
-  <ImageBackground src={bg} />
-</div>
+<div aria-hidden className="fixed inset-0 -z-10 bg-background" />
 ```
 
 ### `z-10` Sticky/Relative
@@ -96,7 +94,7 @@ z-0   ─────────────  Normal document flow
 
 ### Background (`-z-10`)
 
-- `ImageBackground`
+- Fixed background layers
 
 ### Sticky/Relative (`z-10`)
 
