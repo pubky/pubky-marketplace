@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { readOwnDropIndex, rememberOwnDrop } from '@/hooks/useDropStudio/drop-index';
 import { OWN_DROP_POLL_MS, useOwnDrop } from './useOwnDrop';
 
 const SELLER = vi.hoisted(() => 'y'.repeat(52));
@@ -24,6 +25,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     cancelDrop: vi.fn(),
     releaseDropListings: vi.fn(),
     syncDropRegistration: vi.fn(),
+    withdrawUnregisteredDrop: vi.fn(),
   },
 }));
 
@@ -66,6 +68,7 @@ async function flush() {
 describe('useOwnDrop', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     vi.useFakeTimers();
     config.mode = 'transaction-service';
     Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
@@ -212,6 +215,92 @@ describe('useOwnDrop', () => {
     });
     expect(CommerceController.releaseDropListings).toHaveBeenCalledWith('drop1', 9);
     expect(outcome).toMatchObject({ ok: true });
+  });
+
+  it('withdraws an unregistered announcement and forgets it on this device', async () => {
+    vi.mocked(CommerceController.getOwnDrop).mockResolvedValue(null as never);
+    vi.mocked(CommerceController.withdrawUnregisteredDrop).mockResolvedValue('withdrawn');
+    rememberOwnDrop(SELLER, 'other_drop');
+    rememberOwnDrop(SELLER, 'drop1');
+    const { result } = renderHook(() => useOwnDrop('drop1'));
+    await flush();
+
+    let outcome: Awaited<ReturnType<typeof result.current.withdrawUnregistered>> | undefined;
+    await act(async () => {
+      outcome = await result.current.withdrawUnregistered();
+    });
+
+    expect(CommerceController.withdrawUnregisteredDrop).toHaveBeenCalledWith({ title: 'Winter capsule' });
+    expect(outcome).toEqual({ ok: true, conflict: false, message: null });
+    expect(readOwnDropIndex(SELLER)).toEqual(['other_drop']);
+  });
+
+  it('never deletes a registered drop: the withdraw refuses without touching the homeserver', async () => {
+    vi.mocked(CommerceController.getOwnDrop).mockResolvedValue(sellerDrop({ state: 'announced' }) as never);
+    const { result } = renderHook(() => useOwnDrop('drop1'));
+    await flush();
+
+    let outcome: Awaited<ReturnType<typeof result.current.withdrawUnregistered>> | undefined;
+    await act(async () => {
+      outcome = await result.current.withdrawUnregistered();
+    });
+
+    expect(CommerceController.withdrawUnregisteredDrop).not.toHaveBeenCalled();
+    expect(outcome).toMatchObject({ ok: false, conflict: false });
+  });
+
+  it('refuses without a readable record: there is nothing to withdraw or put back', async () => {
+    vi.mocked(CommerceController.getOwnDrop).mockResolvedValue(null as never);
+    vi.mocked(CommerceController.fetchDrop).mockRejectedValue(new Error('not found'));
+    const { result } = renderHook(() => useOwnDrop('drop1'));
+    await flush();
+
+    let outcome: Awaited<ReturnType<typeof result.current.withdrawUnregistered>> | undefined;
+    await act(async () => {
+      outcome = await result.current.withdrawUnregistered();
+    });
+
+    expect(CommerceController.withdrawUnregisteredDrop).not.toHaveBeenCalled();
+    expect(outcome).toMatchObject({ ok: false, conflict: false });
+  });
+
+  it('re-reads both sources after a failed withdraw', async () => {
+    vi.mocked(CommerceController.getOwnDrop).mockResolvedValue(null as never);
+    vi.mocked(CommerceController.withdrawUnregisteredDrop).mockRejectedValue({
+      name: 'AppError',
+      code: 'SERVICE_UNAVAILABLE',
+      message: 'upstream down',
+    });
+    const { result } = renderHook(() => useOwnDrop('drop1'));
+    await flush();
+    expect(CommerceController.fetchDrop).toHaveBeenCalledTimes(1);
+
+    let outcome: Awaited<ReturnType<typeof result.current.withdrawUnregistered>> | undefined;
+    await act(async () => {
+      outcome = await result.current.withdrawUnregistered();
+    });
+
+    expect(outcome).toMatchObject({ ok: false, conflict: false });
+    expect(outcome?.message).not.toContain('upstream down');
+    expect(CommerceController.fetchDrop).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports a conflict and shows fresh state when the service registered the drop meanwhile', async () => {
+    vi.mocked(CommerceController.getOwnDrop).mockResolvedValue(null as never);
+    vi.mocked(CommerceController.withdrawUnregisteredDrop).mockResolvedValue('registered');
+    rememberOwnDrop(SELLER, 'drop1');
+    const { result } = renderHook(() => useOwnDrop('drop1'));
+    await flush();
+
+    vi.mocked(CommerceController.getOwnDrop).mockResolvedValue(sellerDrop({ state: 'announced' }) as never);
+    let outcome: Awaited<ReturnType<typeof result.current.withdrawUnregistered>> | undefined;
+    await act(async () => {
+      outcome = await result.current.withdrawUnregistered();
+    });
+
+    expect(outcome).toMatchObject({ ok: false, conflict: true });
+    expect(result.current.drop).toMatchObject({ state: 'announced' });
+    expect(readOwnDropIndex(SELLER)).toEqual(['drop1']);
   });
 
   it('measures the service clock offset from the projection\u2019s serverTime', async () => {

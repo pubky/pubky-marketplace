@@ -1,0 +1,1 @@
+Drops the service never registered leave the Market once their start time passes, and cancelled drops move to "End time passed" instead of staying under "Upcoming" or "Start time passed". Sellers can withdraw an announcement in Drop Studio: an unregistered drop is deleted, and an announced drop is cancelled. Ended drops keep their archive.

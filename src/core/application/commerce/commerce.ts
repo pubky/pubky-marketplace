@@ -343,6 +343,9 @@ export const LISTING_REGISTRATION_LOCK_PREFIX = 'pubky-listing-registration|';
 /** Deadline for the service requests one attempt makes while holding the lock. */
 export const LISTING_REGISTRATION_TIMEOUT_MS = 20_000;
 
+/** When a drop withdraw re-reads the registration after deleting the record. */
+export const DROP_WITHDRAW_RECHECK_DELAYS_MS = [0, 2_000] as const;
+
 /**
  * One registration, publish or delete of a listing. Its session binding
  * (`authEpoch`, the signed-in `pubky`, the marketplace `sessionToken`) is
@@ -5768,6 +5771,57 @@ export class CommerceApplication {
       payload: { sellerPubky, dropId },
     });
     return await MarketplaceGatewayService.execute(actorPubky, command);
+  }
+
+  /**
+   * Withdraws an announcement the transaction service never registered by
+   * deleting the seller-signed record from the seller's homeserver; Nexus
+   * removes it from discovery on the delete event. A registered drop keeps
+   * its record, because the record backs the public drop page: an announced
+   * one is withdrawn with `drop.cancel`, and an ended one keeps its archive.
+   *
+   * Any signed-in viewer may run `drop.sync`, and one that fetched the record
+   * just before the delete can commit after the first check. The registration
+   * is therefore re-read after the delete, again after
+   * {@link DROP_WITHDRAW_RECHECK_DELAYS_MS} (a sync commits milliseconds after
+   * its homeserver fetch), and if the drop turned out registered, or the
+   * re-read failed, the same record is published back before returning.
+   */
+  static async withdrawUnregisteredDrop(
+    actorPubky: string,
+    record: CommerceDropRecord,
+  ): Promise<'withdrawn' | 'registered'> {
+    if (!isDurableCommerceMode(getCommerceAdapterMode())) {
+      throw Err.client(ClientErrorCode.BAD_REQUEST, 'Drops require the durable transaction service.', {
+        service: ErrorService.Marketplace,
+        operation: 'withdrawUnregisteredDrop',
+      });
+    }
+    if (record.ownerPubky !== actorPubky) {
+      throw Err.auth(AuthErrorCode.FORBIDDEN, 'Only the seller can withdraw a drop announcement.', {
+        service: ErrorService.Marketplace,
+        operation: 'withdrawUnregisteredDrop',
+      });
+    }
+    const { ownerPubky, dropId } = record;
+    if ((await MarketplaceGatewayService.getPublicDrop(ownerPubky, dropId)) !== null) return 'registered';
+    await CommerceHomeserverService.delete(CommerceRecordNormalizer.dropUri(ownerPubky, dropId));
+    let registeredMeanwhile = false;
+    try {
+      for (const delayMs of DROP_WITHDRAW_RECHECK_DELAYS_MS) {
+        if (delayMs > 0) await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+        if ((await MarketplaceGatewayService.getPublicDrop(ownerPubky, dropId)) !== null) {
+          registeredMeanwhile = true;
+          break;
+        }
+      }
+    } catch (readError) {
+      await this.commitPublishDrop(record);
+      throw readError;
+    }
+    if (!registeredMeanwhile) return 'withdrawn';
+    await this.commitPublishDrop(record);
+    return 'registered';
   }
 
   /**

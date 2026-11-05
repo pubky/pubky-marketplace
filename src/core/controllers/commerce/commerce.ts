@@ -907,6 +907,14 @@ export class CommerceController {
     return await CommerceApplication.commitPublishDrop(CommerceRecordNormalizer.drop(record));
   }
 
+  /** Deletes the current seller's drop record when the service never registered the drop. */
+  static async withdrawUnregisteredDrop(record: unknown) {
+    return await CommerceApplication.withdrawUnregisteredDrop(
+      this.getCurrentUserPubky(),
+      CommerceRecordNormalizer.drop(record),
+    );
+  }
+
   /** Seller kill switch: announced/live → ended_cancelled (CAS). */
   static async cancelDrop(dropId: string, expectedRevision: number) {
     return await CommerceApplication.cancelDrop(this.getCurrentUserPubky(), dropId, expectedRevision);
