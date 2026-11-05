@@ -316,6 +316,37 @@ export const marketplaceNotificationReviewReasonSchema = z.enum([
   'seller_response_overdue',
 ]);
 
+/**
+ * The statement of reasons on a `moderation_decision` notification
+ * (pubky/pubky-marketplace-service `docs/moderation-decisions.md`), sent to
+ * the owner of the restricted listing, shop or review only.
+ */
+export const marketplaceModerationDecisionSchema = z
+  .object({
+    id: z.uuid(),
+    restriction: z.enum(['listing_removed', 'shop_suspended', 'review_text_hidden', 'review_excluded']),
+    targetUri: z.string().min(1),
+    territorialScope: z.string().min(1),
+    endsAt: z.iso.datetime({ offset: true }).nullable(),
+    decidedAt: z.iso.datetime({ offset: true }),
+    basis: z.enum(['notice', 'own_initiative']),
+    facts: z.string().min(1),
+    automatedDetection: z.boolean(),
+    automatedDecision: z.boolean(),
+    automatedMeans: z.string().min(1).nullable(),
+    ground: z.enum(['illegal_content', 'terms']),
+    groundReference: z.string().min(1),
+    explanation: z.string().min(1),
+  })
+  // The service describes automated means exactly when they were used; a
+  // statement that says otherwise would misstate how it was decided.
+  .refine(
+    (decision) => (decision.automatedDetection || decision.automatedDecision) === (decision.automatedMeans !== null),
+    { message: 'automatedMeans must be present exactly when automated means were used' },
+  );
+
+export type MarketplaceModerationDecision = z.infer<typeof marketplaceModerationDecisionSchema>;
+
 export const marketplaceNotificationSchema = z
   .object({
     id: z.uuid(),
@@ -381,6 +412,9 @@ export const marketplaceNotificationSchema = z
       // A verified PayPal `Canceled_Reversal`: the disputed money went back
       // to the seller, and a fully reversed order returned to its prior state.
       'payment_reversal_cancelled',
+      // A moderator restricted the recipient's listing, shop or review; the
+      // statement of reasons rides on `moderationDecision`.
+      'moderation_decision',
     ]),
     aggregateId: z.string(),
     // Optional monetary context (ADR-0019 §8: present only where the
@@ -400,6 +434,10 @@ export const marketplaceNotificationSchema = z
     // `bitcoin_payment_seen`. An unknown reason becomes null rather than
     // failing the row.
     reviewReason: marketplaceNotificationReviewReasonSchema.nullable().optional().catch(null),
+    // Present on `moderation_decision`, null on every other type. A statement
+    // this build cannot read becomes null; the row still renders and points
+    // to the appeal route.
+    moderationDecision: marketplaceModerationDecisionSchema.nullable().optional().catch(null),
   })
   .passthrough();
 

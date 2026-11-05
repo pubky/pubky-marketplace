@@ -67,6 +67,7 @@ const MARKETPLACE_TAB_NOTIFICATION_TYPES = {
   payment_refund_required: true,
   drop_sold_out: true,
   payment_reversal_cancelled: true,
+  moderation_decision: true,
 } as const satisfies Record<MarketplaceNotification['type'], true>;
 
 const SOCIAL_TAB_NOTIFICATION_TYPES = {

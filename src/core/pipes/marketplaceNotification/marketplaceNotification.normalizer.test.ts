@@ -224,6 +224,7 @@ describe('MarketplaceNotificationNormalizer.toDeepLink', () => {
     payment_refund_required: MARKETPLACE_ROUTES.ORDERS,
     drop_sold_out: MARKETPLACE_ROUTES.SELL_DROPS,
     payment_reversal_cancelled: MARKETPLACE_ROUTES.ORDERS,
+    moderation_decision: MARKETPLACE_ROUTES.NOTIFICATIONS,
   };
 
   it.each(NOTIFICATION_TYPES)('routes %s to its marketplace surface', (type) => {

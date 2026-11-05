@@ -25,6 +25,7 @@ import { Logger } from '@/libs/logger/logger';
 import { formatDateTime } from '@/libs/utils/dateTime';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceModerationDecisionCard } from '@/organisms/Marketplace/MarketplaceModerationDecisionCard';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
 import {
@@ -217,6 +218,12 @@ export function MarketplaceNotifications() {
                 <KnownOrGapActivityRow
                   key={`unrecognized:${notification.type}:${notification.createdAt}:${notification.id}`}
                   type={notification.type}
+                  createdAt={notification.createdAt}
+                />
+              ) : notification.type === 'moderation_decision' ? (
+                <MarketplaceModerationDecisionCard
+                  key={notification.id}
+                  decision={notification.moderationDecision}
                   createdAt={notification.createdAt}
                 />
               ) : (

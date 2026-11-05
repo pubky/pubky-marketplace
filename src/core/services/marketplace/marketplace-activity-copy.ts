@@ -18,7 +18,9 @@ import type { MarketplaceNotification } from '@/services/marketplace/marketplace
  * (double-blind reviews behind `REVIEW_BLIND_WINDOW_DAYS`). `usdt_payment_seen`
  * and `paypal_payment_seen` are the seller-confirmed payment notices
  * (`PAYMENT_CONFIRMATION=seller`); `digital_released` is the buyer's notice
- * of a seller's release (`DIGITAL_RELEASE=seller`).
+ * of a seller's release (`DIGITAL_RELEASE=seller`). `moderation_decision` is
+ * from pubky/pubky-marketplace-service#206 (`moderation-decision-admin`,
+ * recipient: the owner of the restricted listing, shop or review).
  *
  * Shop-only types (`message_received`, `order_cancelled_terms_change`) are
  * mapped too, but they are not in this list because that service revision
@@ -60,6 +62,7 @@ export const SERVICE_NOTIFICATION_TYPES = [
   'review_waiting',
   'tracking_updated',
   'usdt_payment_seen',
+  'moderation_decision',
 ] as const;
 
 export type ServiceNotificationType = (typeof SERVICE_NOTIFICATION_TYPES)[number];
@@ -109,6 +112,7 @@ export const MARKETPLACE_ACTIVITY_LABELS = {
   payment_refund_required: 'Payment requires a refund',
   drop_sold_out: 'Drop sold out',
   payment_reversal_cancelled: 'Disputed payment restored',
+  moderation_decision: 'Moderation decision',
 } as const satisfies Record<MarketplaceNotification['type'], string>;
 
 /** One plain sentence per `review_reason` on `bitcoin_manual_review`, plus the feed's "<actor> <action>". */

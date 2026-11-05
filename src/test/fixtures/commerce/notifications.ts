@@ -1,4 +1,5 @@
 import type { MarketplaceNotification, MarketplaceNotificationPreferences } from '@/services/marketplace/marketplace';
+import type { MarketplaceModerationDecision } from '@/services/marketplace/marketplace-projections';
 
 export const NOTIFICATION_FIXTURE_RECIPIENT = 'b'.repeat(52);
 export const NOTIFICATION_FIXTURE_ACTOR = 's'.repeat(52);
@@ -47,6 +48,7 @@ const NOTIFICATION_TYPE_UNREAD = {
   payment_refund_required: true,
   drop_sold_out: false,
   payment_reversal_cancelled: true,
+  moderation_decision: true,
 } as const satisfies Record<MarketplaceNotification['type'], boolean>;
 
 /** Every notification type the marketplace notification schema defines. */
@@ -72,6 +74,29 @@ export function createNotificationFixture(
     aggregateId: `notification:${uuid(100 + typeIndex)}`,
     createdAt: '2026-08-19T12:00:00.000Z',
     readAt: NOTIFICATION_TYPE_UNREAD[type] ? null : '2026-08-19T18:00:00.000Z',
+    ...(type === 'moderation_decision' ? { moderationDecision: createModerationDecisionFixture() } : {}),
+    ...overrides,
+  };
+}
+
+export function createModerationDecisionFixture(
+  overrides: Partial<MarketplaceModerationDecision> = {},
+): MarketplaceModerationDecision {
+  return {
+    id: uuid(900),
+    restriction: 'listing_removed',
+    targetUri: `pubky://${NOTIFICATION_FIXTURE_RECIPIENT}/pub/pubky.app/marketplace/v1/listings/boots_01`,
+    territorialScope: 'Every region where Pubky Market is offered',
+    endsAt: null,
+    decidedAt: '2026-08-19T11:55:00.000Z',
+    basis: 'notice',
+    facts: 'A report said the listing offers counterfeit boots. The photos show a copied brand logo.',
+    automatedDetection: false,
+    automatedDecision: false,
+    automatedMeans: null,
+    ground: 'terms',
+    groundReference: 'Pubky Terms of Service, Prohibited goods',
+    explanation: 'The Terms prohibit listing anything that is illegal to offer, and counterfeit goods are.',
     ...overrides,
   };
 }

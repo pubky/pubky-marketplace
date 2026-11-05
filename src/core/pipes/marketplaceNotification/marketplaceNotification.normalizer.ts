@@ -126,6 +126,10 @@ export class MarketplaceNotificationNormalizer {
         return MARKETPLACE_ROUTES.ORDERS;
       case 'drop_sold_out':
         return MARKETPLACE_ROUTES.SELL_DROPS;
+      // The statement of reasons is shown in full on the Marketplace
+      // notifications page, never in the general feed.
+      case 'moderation_decision':
+        return MARKETPLACE_ROUTES.NOTIFICATIONS;
     }
   }
 }
