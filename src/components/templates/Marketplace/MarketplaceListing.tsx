@@ -424,7 +424,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
             {stateNotice && (
               <div
                 role="status"
-                className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200"
+                className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-notice-foreground"
               >
                 {stateNotice}
               </div>
@@ -452,7 +452,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                   </Badge>
                 )}
                 {shop?.record.vacationMode && (
-                  <Badge variant="outline" className="border-amber-500/50 bg-amber-500/10 text-amber-300">
+                  <Badge variant="outline" className="border-amber-500/50 bg-amber-500/10 text-warning-foreground">
                     <PlaneTakeoff className="mr-1 size-3" />
                     Seller on vacation
                   </Badge>
@@ -541,7 +541,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
 
             <div className="flex flex-wrap items-center gap-2" data-surface="marketplace-listing-purchase">
               {record.sale.format === 'auction' ? (
-                <div className="[&_[data-slot=button]]:border-brand [&_[data-slot=button]]:bg-brand [&_[data-slot=button]]:text-background [&_[data-slot=button]:hover]:bg-brand/90">
+                <div className="[&_[data-slot=button]]:border-brand [&_[data-slot=button]]:bg-brand [&_[data-slot=button]]:text-brand-foreground [&_[data-slot=button]:hover]:bg-brand/90">
                   <MarketplaceBidDialog
                     aggregateId={aggregateId}
                     projection={negotiation.projection}
@@ -695,7 +695,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
               />
             )}
             {isTransactionalCommerceMode(adapterMode) && negotiation.error && !negotiation.needsSession && (
-              <Typography as="p" role="alert" className="text-center text-sm text-amber-300">
+              <Typography as="p" role="alert" className="text-center text-sm text-warning-foreground">
                 {auctionPhase === 'ended' && negotiation.error === MARKETPLACE_FAILURE_MESSAGES.claimListingUnavailable
                   ? MARKETPLACE_FAILURE_MESSAGES.bidClosed
                   : negotiation.error}

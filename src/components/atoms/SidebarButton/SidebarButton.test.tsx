@@ -44,7 +44,7 @@ describe('SidebarButton', () => {
 describe('SidebarButton - Rendering', () => {
   it('applies the sidebar button classes', () => {
     render(<SidebarButton icon={FileText}>Terms of service</SidebarButton>);
-    expect(screen.getByRole('button')).toHaveClass('w-full', 'border-border', 'bg-white/5', 'text-xs', 'font-bold');
+    expect(screen.getByRole('button')).toHaveClass('w-full', 'border-border', 'bg-glass', 'text-xs', 'font-bold');
   });
 
   it('renders the icon at the fixed size', () => {

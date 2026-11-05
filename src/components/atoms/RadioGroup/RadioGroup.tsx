@@ -36,7 +36,7 @@ const RadioGroupItem = React.forwardRef<React.ComponentRef<typeof RadioGroupPrim
         id={itemId}
         className={cn(
           'peer size-4 shrink-0 rounded-full',
-          'border border-input bg-white/5 shadow-sm',
+          'border border-input bg-glass shadow-sm',
           'transition-colors',
           'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
           'disabled:cursor-not-allowed disabled:opacity-50',
@@ -46,7 +46,7 @@ const RadioGroupItem = React.forwardRef<React.ComponentRef<typeof RadioGroupPrim
         {...props}
       >
         <RadioGroupPrimitive.Indicator className="flex items-center justify-center">
-          <span className="block size-2 rounded-full bg-background" />
+          <span className="block size-2 rounded-full bg-brand-foreground" />
         </RadioGroupPrimitive.Indicator>
       </RadioGroupPrimitive.Item>
     );

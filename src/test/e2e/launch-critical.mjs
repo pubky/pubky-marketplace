@@ -133,6 +133,31 @@ async function waitForJoinPubky(page) {
   return expectVisible(page, heading, 'join-pubky-dialog', 20_000);
 }
 
+async function setStoredTheme(page, theme) {
+  // Mirrors pubky-app saving `pubky-theme` from another browsing context on the origin.
+  await page.evaluate((value) => {
+    const oldValue = window.localStorage.getItem('pubky-theme');
+    if (value === null) window.localStorage.removeItem('pubky-theme');
+    else window.localStorage.setItem('pubky-theme', value);
+    window.dispatchEvent(
+      new StorageEvent('storage', { key: 'pubky-theme', oldValue, newValue: value, storageArea: window.localStorage }),
+    );
+  }, theme);
+  await page.waitForFunction(
+    (dark) => document.documentElement.classList.contains('light') !== dark,
+    theme !== 'light',
+  );
+  // Colour transitions would otherwise be audited half way between the two themes.
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((animation) => animation instanceof CSSTransition)
+        .map((animation) => animation.finished.catch(() => undefined)),
+    ),
+  );
+}
+
 async function runAxe(page, pageId) {
   await page.addScriptTag({ path: path.join(ROOT, 'node_modules/axe-core/axe.min.js') });
   const dialogVisible = (await page.locator('[role="dialog"]:visible').count()) > 0;
@@ -1071,6 +1096,10 @@ async function main() {
 
     await expectVisible(page, page.getByText(fixture.listingTitle, { exact: false }), 'catalog:fixture-title');
     await runAxe(page, 'catalog');
+    // An unset `pubky-theme` paints dark, so audit the light Shop through the live sync too.
+    await setStoredTheme(page, 'light');
+    await runAxe(page, 'catalog-light');
+    await setStoredTheme(page, null);
 
     await gotoAndSettle(page, '/marketplace/drops');
     const dropsHeading = page.getByRole('heading', { level: 1, name: 'Drops' });

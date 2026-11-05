@@ -188,7 +188,7 @@ function MarketplacePhotoViewer({
       >
         <DialogClose
           aria-label="Close photos"
-          className="absolute top-4 right-4 z-60 flex size-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-foreground transition-colors hover:bg-white/20"
+          className="absolute top-4 right-4 z-60 flex size-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-foreground transition-colors hover:bg-white/20 [.light_&]:text-white"
         >
           <X className="size-5" aria-hidden="true" />
         </DialogClose>

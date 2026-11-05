@@ -187,13 +187,19 @@ export function MarketplaceDrop({ sellerPubky, dropId }: MarketplaceDropProps) {
       </Card>
 
       {state === 'unavailable' && (
-        <div role="status" className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+        <div
+          role="status"
+          className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-notice-foreground"
+        >
           This drop cannot go live here. You can still view the announcement below.
         </div>
       )}
 
       {state === 'unregistered' && (
-        <div role="status" className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+        <div
+          role="status"
+          className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-notice-foreground"
+        >
           This drop is not ready yet. The start time is provisional, and availability is not confirmed.
         </div>
       )}

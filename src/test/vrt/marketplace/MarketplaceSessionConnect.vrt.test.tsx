@@ -7,6 +7,7 @@ import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.view
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
 import { MarketplaceSessionRequiredCard } from '@/organisms/Marketplace/MarketplaceSessionRequiredCard';
 import { BOOTSTRAP_APPROVAL_EXPIRED } from '@/libs/commerce/failure-messages';
+import { expectGraphicContrast, expectTextContrast } from '@/test-utils/color-contrast';
 
 // The QR encodes the authorization URL verbatim, so it must be a FIXED fake
 // for a byte-stable matrix across runs and OSes. It is never dereferenced.
@@ -306,6 +307,24 @@ describe('Marketplace session connect — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('session-connect-generating-desktop');
   });
 
+  it('keeps the QR loading text and spinner visible in light mode', async () => {
+    view.status = 'idle';
+    const screen = await renderForVRT(
+      <Harness>
+        <MarketplaceSessionConnectDialog triggerLabel="Approve in Pubky Ring" />
+      </Harness>,
+      { viewport: VRT_VIEWPORT_DESKTOP, theme: 'light' },
+    );
+    await openDialog(screen.getByRole('button', { name: 'Approve in Pubky Ring' }));
+    const qrButton = screen.getByRole('button', { name: 'Copy authorization link' });
+    await expect(qrButton).toBeDisabled();
+    await expect(screen.getByText('Generating QR Code...')).toBeVisible();
+    expectTextContrast(screen.getByText('Generating QR Code...').element());
+    const spinner = qrButton.element().querySelector('svg');
+    expect(spinner).not.toBeNull();
+    expectGraphicContrast(spinner!, qrButton.element());
+  });
+
   it('renders the failure state with the real error and retry at desktop viewport', async () => {
     view.status = 'error';
     view.errorMessage = 'The authorization request expired before it was approved. Start a new connection attempt.';
@@ -318,6 +337,21 @@ describe('Marketplace session connect — visual regression', () => {
     );
     await openDialog(screen.getByRole('button', { name: 'Approve in Pubky Ring' }));
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('session-connect-error-desktop');
+  });
+
+  it.each(['dark', 'light'] as const)('keeps the approval failure text contrast in %s mode', async (theme) => {
+    view.status = 'error';
+    view.errorMessage = 'The authorization request expired before it was approved. Start a new connection attempt.';
+    const screen = await renderForVRT(
+      <Harness>
+        <MarketplaceSessionConnectDialog triggerLabel="Approve in Pubky Ring" />
+      </Harness>,
+      { viewport: VRT_VIEWPORT_DESKTOP, theme },
+    );
+    await openDialog(screen.getByRole('button', { name: 'Approve in Pubky Ring' }));
+    const message = screen.getByText(view.errorMessage);
+    await expect(message).toBeVisible();
+    expectTextContrast(message.element());
   });
 
   it('renders the signer-neutral BFF creating state at desktop viewport', async () => {

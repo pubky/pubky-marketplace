@@ -378,7 +378,7 @@ export function MarketplacePaymentStatusCard({
         <Typography
           as="p"
           role="note"
-          className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
+          className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-notice-foreground"
         >
           {stagingUsdtPossible ? STAGING_USDT_FUNDS_NOTE : 'Staging environment — test rails, no real funds move'}
         </Typography>
@@ -460,7 +460,12 @@ export function MarketplacePaymentStatusCard({
         !reviewAbandoned &&
         order.paykitDeliveryState !== 'delivered' &&
         !isBuyerCancelledUnpaid(order) && (
-          <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
+          <Typography
+            as="p"
+            role="alert"
+            className="text-sm text-warning-foreground"
+            data-testid="paykit-delivery-failed"
+          >
             {PAYKIT_DELIVERY_ELAPSED_COPY}
           </Typography>
         )}
@@ -556,7 +561,7 @@ export function MarketplacePaymentStatusCard({
       {usesMethodFlow && isBuyer && !order.paymentMethod && (
         <div className="grid gap-2">
           {methodPayment.configError ? (
-            <Typography as="p" role="alert" className="text-sm text-amber-300">
+            <Typography as="p" role="alert" className="text-sm text-warning-foreground">
               {methodPayment.configError}
             </Typography>
           ) : methodPayment.availableMethods === null ? (
@@ -749,7 +754,7 @@ export function MarketplacePaymentStatusCard({
                 Cancel checkout
               </Button>
               {releaseHoldError && (
-                <Typography as="p" role="alert" className="text-sm text-amber-300">
+                <Typography as="p" role="alert" className="text-sm text-warning-foreground">
                   {releaseHoldError}
                 </Typography>
               )}
@@ -838,7 +843,7 @@ export function MarketplacePaymentStatusCard({
                     <Typography
                       as="p"
                       role="alert"
-                      className="text-sm text-amber-300"
+                      className="text-sm text-warning-foreground"
                       data-testid="paypal-checkout-url-refused"
                     >
                       {PAYPAL_CHECKOUT_URL_REFUSED_COPY}
@@ -931,7 +936,7 @@ export function MarketplacePaymentStatusCard({
           <Typography
             as="p"
             role="alert"
-            className="flex items-center gap-2 text-sm text-amber-300"
+            className="flex items-center gap-2 text-sm text-warning-foreground"
             data-testid="locks-admission-failed"
           >
             <FileWarning className="size-4 shrink-0" />
@@ -1019,7 +1024,7 @@ export function MarketplacePaymentStatusCard({
       )}
 
       {locks.error && (
-        <Typography as="p" role="alert" className="flex items-center gap-2 text-sm text-amber-300">
+        <Typography as="p" role="alert" className="flex items-center gap-2 text-sm text-warning-foreground">
           <FileWarning className="size-4" />
           {locks.error}
         </Typography>
@@ -1104,7 +1109,12 @@ function BuyerBitcoinPaymentProgress({
     <div className="grid gap-2">
       {order.paykitDeliveryState === 'failed' ? (
         <div className="grid justify-items-start gap-2">
-          <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
+          <Typography
+            as="p"
+            role="alert"
+            className="text-sm text-warning-foreground"
+            data-testid="paykit-delivery-failed"
+          >
             {PAYKIT_DELIVERY_FAILED_COPY}
           </Typography>
           {checkoutActions}
@@ -1153,7 +1163,12 @@ function BuyerPaykitPaymentProgress({
       </Typography>
       {order.paykitDeliveryState === 'failed' ? (
         <div className="grid justify-items-start gap-2">
-          <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
+          <Typography
+            as="p"
+            role="alert"
+            className="text-sm text-warning-foreground"
+            data-testid="paykit-delivery-failed"
+          >
             {PAYKIT_DELIVERY_FAILED_COPY}
           </Typography>
           {checkoutActions}
@@ -1248,7 +1263,12 @@ function BuyerUsdtPaymentProgress({
       )}
       {order.paykitDeliveryState === 'failed' ? (
         <div className="grid justify-items-start gap-2">
-          <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
+          <Typography
+            as="p"
+            role="alert"
+            className="text-sm text-warning-foreground"
+            data-testid="paykit-delivery-failed"
+          >
             {PAYKIT_DELIVERY_FAILED_COPY}
           </Typography>
           {checkoutActions}
@@ -1465,12 +1485,12 @@ function SellerBitcoinConfirmationReview({
               maxLength={500}
               aria-describedby="bitcoin-confirm-error"
             />
-            {fieldState.error && <span className="text-amber-300">{fieldState.error.message}</span>}
+            {fieldState.error && <span className="text-warning-foreground">{fieldState.error.message}</span>}
           </label>
         )}
       />
       {error && (
-        <Typography id="bitcoin-confirm-error" role="alert" className="text-sm text-amber-300">
+        <Typography id="bitcoin-confirm-error" role="alert" className="text-sm text-warning-foreground">
           {error}
         </Typography>
       )}
@@ -1566,7 +1586,7 @@ function SellerBitcoinResolutionReview({
                 aria-invalid={!validRefundReference}
                 inputMode="text"
               />
-              {fieldState.error && <span className="text-amber-300">{fieldState.error.message}</span>}
+              {fieldState.error && <span className="text-warning-foreground">{fieldState.error.message}</span>}
             </label>
           )}
         />
@@ -1578,17 +1598,17 @@ function SellerBitcoinResolutionReview({
           <label className="grid gap-1 text-sm" htmlFor="bitcoin-resolution-reason">
             Reason (optional)
             <Input theme="dashed" {...field} id="bitcoin-resolution-reason" maxLength={500} />
-            {fieldState.error && <span className="text-amber-300">{fieldState.error.message}</span>}
+            {fieldState.error && <span className="text-warning-foreground">{fieldState.error.message}</span>}
           </label>
         )}
       />
       {outcome === 'refunded' && !validRefundReference && (
-        <Typography id="bitcoin-resolution-reference-error" role="alert" className="text-sm text-amber-300">
+        <Typography id="bitcoin-resolution-reference-error" role="alert" className="text-sm text-warning-foreground">
           Enter a printable ASCII refund reference from 1 to 64 characters.
         </Typography>
       )}
       {error && (
-        <Typography id="bitcoin-resolution-error" role="alert" className="text-sm text-amber-300">
+        <Typography id="bitcoin-resolution-error" role="alert" className="text-sm text-warning-foreground">
           {error}
         </Typography>
       )}

@@ -106,7 +106,7 @@ export function SellerUsdtResolutionReview({
             <Typography
               as="p"
               role="status"
-              className="text-sm text-amber-300"
+              className="text-sm text-warning-foreground"
               data-testid="usdt-resolution-no-address"
             >
               {USDT_PAYMENT_REVIEW_COPY.refundAddressMissing}
@@ -142,7 +142,7 @@ export function SellerUsdtResolutionReview({
             <Typography
               id="usdt-resolution-reference-error"
               role="alert"
-              className="text-sm text-amber-300"
+              className="text-sm text-warning-foreground"
               data-testid="usdt-resolution-reference-error"
             >
               {USDT_PAYMENT_REVIEW_COPY.referenceError}
@@ -160,12 +160,12 @@ export function SellerUsdtResolutionReview({
           <label className="grid gap-1 text-sm" htmlFor="usdt-resolution-reason">
             Reason (optional)
             <Input theme="dashed" {...field} id="usdt-resolution-reason" maxLength={500} />
-            {fieldState.error && <span className="text-amber-300">{fieldState.error.message}</span>}
+            {fieldState.error && <span className="text-warning-foreground">{fieldState.error.message}</span>}
           </label>
         )}
       />
       {error && (
-        <Typography id="usdt-resolution-error" role="alert" className="text-sm text-amber-300">
+        <Typography id="usdt-resolution-error" role="alert" className="text-sm text-warning-foreground">
           {error}
         </Typography>
       )}

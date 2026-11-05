@@ -195,7 +195,7 @@ export function DropStudioComposer({ studio }: DropStudioComposerProps) {
             </ul>
           )}
           {form.formState.errors.listingIds && (
-            <Typography as="p" role="alert" className="text-sm text-destructive">
+            <Typography as="p" role="alert" className="text-sm text-destructive [.light_&]:text-error-foreground">
               {form.formState.errors.listingIds.message}
             </Typography>
           )}
@@ -336,12 +336,12 @@ export function DropStudioComposer({ studio }: DropStudioComposerProps) {
       <section className="flex flex-col gap-3">
         {studio.publishErrors.length > 0 && (
           <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 p-4">
-            <Typography as="p" className="text-sm font-semibold text-destructive">
+            <Typography as="p" className="text-sm font-semibold text-destructive [.light_&]:text-error-foreground">
               The drop record is not valid yet:
             </Typography>
             <ul className="mt-1 list-disc pl-5">
               {studio.publishErrors.map((message) => (
-                <li key={message} className="text-sm text-destructive">
+                <li key={message} className="text-sm text-destructive [.light_&]:text-error-foreground">
                   {message}
                 </li>
               ))}
@@ -362,9 +362,9 @@ export function DropStudioComposer({ studio }: DropStudioComposerProps) {
                 description: message,
                 onSelect: () => scrollToDropStudioField(field),
               }))}
-              titleClassName="text-sm font-semibold text-destructive"
+              titleClassName="text-sm font-semibold text-destructive [.light_&]:text-error-foreground"
               listClassName="mt-1 list-disc pl-5 text-sm"
-              itemClassName="text-destructive underline underline-offset-2"
+              itemClassName="text-destructive underline underline-offset-2 [.light_&]:text-error-foreground"
             />
           </div>
         )}
@@ -475,7 +475,9 @@ function DropStudioTruthRow({ label, state }: { label: string; state: 'ok' | 'pe
     <span className="inline-flex items-center gap-1.5 text-sm">
       {state === 'ok' && <CheckCircle2 className="size-4 text-brand" aria-hidden />}
       {state === 'pending' && <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />}
-      {state === 'failed' && <XCircle className="size-4 text-destructive" aria-hidden />}
+      {state === 'failed' && (
+        <XCircle className="size-4 text-destructive [.light_&]:text-error-foreground" aria-hidden />
+      )}
       {label}
       <span className="sr-only">{state === 'ok' ? '— done' : state === 'pending' ? '— in progress' : '— failed'}</span>
     </span>
@@ -575,7 +577,7 @@ function DropStudioScheduleField({
         </Typography>
       )}
       {error && (
-        <Typography as="p" role="alert" className="text-sm text-destructive">
+        <Typography as="p" role="alert" className="text-sm text-destructive [.light_&]:text-error-foreground">
           {error.message}
         </Typography>
       )}

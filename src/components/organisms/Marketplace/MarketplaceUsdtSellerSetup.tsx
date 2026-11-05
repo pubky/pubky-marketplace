@@ -93,7 +93,7 @@ export function MarketplaceUsdtSellerSetup({
           )}
           {readiness === 'unavailable' && (
             <>
-              <Typography as="p" role="status" className="text-sm text-amber-300">
+              <Typography as="p" role="status" className="text-sm text-warning-foreground">
                 USDT can&apos;t be checked right now. Try again later.
               </Typography>
               <Button variant="secondary" className="w-fit" disabled={isRetrying} onClick={onRetry}>

@@ -213,7 +213,7 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
               <div className="h-28 bg-linear-to-br from-brand/24 to-brand/8 sm:h-40" />
               <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-end sm:justify-between">
                 <div className="-mt-16">
-                  <div className="mb-4 flex size-20 items-center justify-center rounded-2xl border-4 border-card bg-brand text-primary-foreground shadow-lg">
+                  <div className="mb-4 flex size-20 items-center justify-center rounded-2xl border-4 border-card bg-brand text-bright-fill-foreground shadow-lg">
                     <Store className="size-9" aria-hidden="true" />
                   </div>
                   <Heading level={1} size="xl" className="text-3xl break-all sm:text-5xl">

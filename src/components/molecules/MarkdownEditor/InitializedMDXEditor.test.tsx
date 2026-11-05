@@ -152,6 +152,11 @@ vi.mock('@/molecules/EmojiPickerDialog/EmojiPickerDialog', () => {
   };
 });
 
+let mockResolvedTheme: 'dark' | 'light' = 'dark';
+vi.mock('@/hooks/useResolvedTheme/useResolvedTheme', () => ({
+  useResolvedTheme: () => mockResolvedTheme,
+}));
+
 // Mock useEmojiInsert hook
 const mockHandleMarkdownEmojiSelect = vi.fn();
 vi.mock('@/hooks/useEmojiInsert/useEmojiInsert', () => ({
@@ -288,6 +293,22 @@ describe('InitializedMDXEditor', () => {
       expect(contentEditableClass).toContain('prose');
       expect(contentEditableClass).toContain('prose-neutral');
       expect(contentEditableClass).toContain('prose-invert');
+    });
+
+    it('drops the dark editor theme and inverted prose when the page is light', () => {
+      mockResolvedTheme = 'light';
+      try {
+        render(<InitializedMDXEditor editorRef={null} markdown="" />);
+
+        const editor = screen.getByTestId('mdx-editor');
+        expect(editor).not.toHaveClass('dark-theme');
+        expect(editor).toHaveClass('cursor-auto');
+        const contentEditableClass = editor.getAttribute('data-content-editable-class');
+        expect(contentEditableClass).toContain('prose-neutral');
+        expect(contentEditableClass).not.toContain('prose-invert');
+      } finally {
+        mockResolvedTheme = 'dark';
+      }
     });
 
     it('configures plugins correctly', () => {
@@ -838,7 +859,7 @@ describe('InitializedMDXEditor', () => {
       const warning = screen.getByTestId('max-length-warning');
       expect(warning).toBeInTheDocument();
       expect(warning).toHaveClass('bg-red-500/15');
-      expect(warning).toHaveClass('text-red-500');
+      expect(warning).toHaveClass('text-error-foreground');
       expect(screen.getByText("You've reached the maximum character limit.")).toBeInTheDocument();
     });
 

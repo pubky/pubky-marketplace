@@ -11,6 +11,7 @@ import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.view
 import { setEmbedded } from '@/test-utils/embedded';
 import { EmbeddedLegalFooter } from '@/molecules/EmbeddedLegalFooter/EmbeddedLegalFooter';
 import { ChatConversation } from '@/templates/Chat/ChatConversation';
+import { expectTextContrast } from '@/test-utils/color-contrast';
 
 /**
  * `/messages/[pubky]`: one thread — day separators, received and sent bubbles
@@ -26,6 +27,7 @@ const ME = vi.hoisted(() => 'm'.repeat(52));
 const PEER = vi.hoisted(() => 's'.repeat(52));
 const LISTING_ID = vi.hoisted(() => 'boots-1');
 const ORDER_ID = vi.hoisted(() => 'ord_8f2c1a9e7b3d');
+const retryMessage = vi.hoisted(() => vi.fn(async (_id: string) => {}));
 
 const scene = vi.hoisted(() => ({
   messages: [] as ChatMessageView[],
@@ -59,7 +61,7 @@ vi.mock('@/hooks/useChatConversation/useChatConversation', () => ({
     loadOlder: () => {},
     openState: scene.openState,
     reopen: async () => {},
-    retryMessage: async () => {},
+    retryMessage,
     isSelf: false,
   }),
 }));
@@ -208,6 +210,7 @@ describe('Chat conversation — visual regression', () => {
   afterEach(() => setEmbedded(false));
 
   beforeEach(() => {
+    retryMessage.mockClear();
     scene.messages = [];
     scene.conversation = null;
     scene.openState = 'ready';
@@ -218,6 +221,33 @@ describe('Chat conversation — visual regression', () => {
     scene.showNote = true;
     scene.inboxStatus = 'ready';
     scene.keyboardHeight = 0;
+  });
+
+  it.each([
+    ['waiting message', 'I will follow up once messages are ready.'],
+    ['failed status', 'Not sent'],
+  ] as const)('keeps %s text contrast in light mode and retry available', async (_state, text) => {
+    scene.messages = [
+      ...thread(),
+      message({
+        id: 'waiting',
+        body: 'I will follow up once messages are ready.',
+        status: 'queued',
+        last_error: 'peer_not_enabled',
+      }),
+    ];
+    scene.conversation = conversation();
+
+    const screen = await renderForVRT(<ChatConversation peerPubky={PEER} />, {
+      viewport: VRT_VIEWPORT_DESKTOP,
+      theme: 'light',
+    });
+    await expect.element(screen.getByText('Waiting for them to set up messages')).toBeVisible();
+    const statusText = screen.getByText(text, { exact: true });
+    await expect.element(statusText).toBeVisible();
+    expectTextContrast(statusText.element());
+    await screen.getByRole('button', { name: 'Retry', exact: true }).click();
+    expect(retryMessage).toHaveBeenCalledWith('m6');
   });
 
   it('renders a thread with every delivery state and a listing context at desktop viewport', async () => {

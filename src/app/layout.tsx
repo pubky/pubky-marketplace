@@ -14,6 +14,7 @@ import { Fab } from '@/molecules/Fab/Fab';
 import { Metadata } from '@/molecules/Metadata/Metadata';
 import { ServiceWorkerRegistration } from '@/molecules/ServiceWorkerRegistration/ServiceWorkerRegistration';
 import { StructuredData } from '@/molecules/StructuredData/StructuredData';
+import { ThemeSync } from '@/molecules/ThemeSync/ThemeSync';
 import { Toaster } from '@/molecules/Toaster/Toaster';
 import { CoordinatorsManager } from '@/organisms/CoordinatorsManager/CoordinatorsManager';
 import { DialogSignIn } from '@/organisms/DialogSignIn/DialogSignIn';
@@ -55,6 +56,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         readiness, so anything inside them is missing from the initial server-rendered HTML.
       */}
       <StructuredData />
+      <ThemeSync />
       <TooltipProvider delayDuration={TOOLTIP_DELAY_MS}>
         <GlobalErrorHandlerProvider>
           <ErrorBoundaryProvider>

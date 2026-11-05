@@ -220,8 +220,8 @@ describe('FeedNavigation', () => {
 
     const links = screen.getAllByTestId('link');
     const homeLink = links.find((link) => link.getAttribute('href') === '/home');
-    expect(homeLink).toHaveClass('border-white');
-    expect(homeLink).toHaveClass('text-white');
+    expect(homeLink).toHaveClass('border-foreground-strong');
+    expect(homeLink).toHaveClass('text-foreground-strong');
   });
 
   it('applies muted styling to Home link when pathname is not /home', () => {
@@ -285,8 +285,8 @@ describe('FeedNavigation', () => {
 
     const links = screen.getAllByTestId('link');
     const activeLink = links.find((link) => link.getAttribute('href') === '/feed/feed-active');
-    expect(activeLink).toHaveClass('border-white');
-    expect(activeLink).toHaveClass('text-white');
+    expect(activeLink).toHaveClass('border-foreground-strong');
+    expect(activeLink).toHaveClass('text-foreground-strong');
   });
 
   it('applies muted styling to a custom feed when its route does not match pathname', () => {

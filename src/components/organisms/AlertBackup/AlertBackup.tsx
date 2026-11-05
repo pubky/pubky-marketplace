@@ -34,8 +34,8 @@ export const AlertBackup = () => {
   return (
     <Container className="flex-row items-center gap-3 rounded-lg bg-brand px-6 py-3">
       <Container className="flex-1 flex-row items-center gap-3">
-        <TriangleAlert className="h-4 w-4 font-bold text-primary-foreground" />
-        <Typography size="sm" className="font-bold whitespace-nowrap text-primary-foreground">
+        <TriangleAlert className="h-4 w-4 font-bold text-bright-fill-foreground" />
+        <Typography size="sm" className="font-bold whitespace-nowrap text-bright-fill-foreground">
           <span className="md:hidden">{'Back up now'}</span>
           <span className="hidden md:inline">{'Back up now to avoid losing your account!'}</span>
         </Typography>

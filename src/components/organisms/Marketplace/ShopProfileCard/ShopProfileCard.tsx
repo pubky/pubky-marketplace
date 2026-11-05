@@ -46,7 +46,7 @@ const STOREFRONT_STYLE = {
   content: 'flex flex-col gap-4 p-6 sm:flex-row sm:items-end sm:justify-between',
   avatarLift: '-mt-16',
   avatar:
-    'mb-4 flex size-20 items-center justify-center overflow-hidden rounded-2xl border-4 border-card bg-brand text-primary-foreground shadow-lg',
+    'mb-4 flex size-20 items-center justify-center overflow-hidden rounded-2xl border-4 border-card bg-brand text-bright-fill-foreground shadow-lg',
   storeIcon: 'size-9',
   headingSize: 'xl',
   headingClass: 'text-3xl sm:text-5xl',

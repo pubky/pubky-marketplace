@@ -124,7 +124,7 @@ export function MarketplaceReputationHeader({
       )}
       {variant === 'full' && (
         <Typography as="p" className="flex items-center gap-1 text-xs text-muted-foreground">
-          <BadgeCheck className="size-3.5 text-emerald-400" />
+          <BadgeCheck className="size-3.5 text-emerald-400 [.light_&]:text-emerald-700" />
           {countedBasisLine(counted, summary.count)}
         </Typography>
       )}
@@ -208,7 +208,7 @@ function LegacyReputationHeader({
       />
       {variant === 'full' && (
         <Typography as="p" className="flex items-center gap-1 text-xs text-muted-foreground">
-          <BadgeCheck className="size-3.5 text-emerald-400" />
+          <BadgeCheck className="size-3.5 text-emerald-400 [.light_&]:text-emerald-700" />
           {trustedVerifiedCount > 0
             ? `${trustedVerifiedCount} of ${summary.count} ${summary.count === 1 ? 'review' : 'reviews'} verified by the marketplace attestor`
             : summary.verifiedCount > 0

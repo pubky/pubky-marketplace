@@ -67,15 +67,25 @@ export function Logo({
   );
 }
 
-const LogoImage = ({ width, height, className }: { width: number; height: number; className?: string }) => {
-  return (
+// Both wordmarks are rendered and the `.light` class on <html> picks one via
+// CSS, so the logo is right from the first paint without reading the theme in JS.
+const LogoImage = ({ width, height, className }: { width: number; height: number; className?: string }) => (
+  <>
     <Image
       src="/pubky-logo.svg"
       alt="Pubky"
-      className={logoImageClassName(width, height, className)}
+      className={logoImageClassName(width, height, cn('[.light_&]:hidden', className))}
       style={logoImageStyle(width, height)}
       width={width}
       height={height}
     />
-  );
-};
+    <Image
+      src="/pubky-logo-on-light.svg"
+      alt="Pubky"
+      className={logoImageClassName(width, height, cn('hidden [.light_&]:block', className))}
+      style={logoImageStyle(width, height)}
+      width={width}
+      height={height}
+    />
+  </>
+);

@@ -516,6 +516,22 @@ describe('Marketplace checkout — visual regression', () => {
     await captureCheckout('checkout-single-seller-desktop');
   });
 
+  it('renders a single-seller checkout in light mode at desktop viewport', async () => {
+    const { singleSeller } = await fixtures;
+    view.items = singleSeller;
+
+    await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP, theme: 'light' });
+    await captureCheckout('checkout-single-seller-light-desktop');
+  });
+
+  it('renders a single-seller checkout in light mode at mobile viewport', async () => {
+    const { singleSeller } = await fixtures;
+    view.items = singleSeller;
+
+    await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_MOBILE, theme: 'light' });
+    await captureCheckout('checkout-single-seller-light-mobile');
+  });
+
   for (const [name, viewport] of [
     ['desktop', VRT_VIEWPORT_DESKTOP],
     ['mobile', VRT_VIEWPORT_MOBILE],

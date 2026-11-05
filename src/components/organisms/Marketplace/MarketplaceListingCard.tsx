@@ -96,7 +96,7 @@ export function MarketplaceListingCard({ listing, shopName, layout = 'grid', ind
         ref={liveBidRef}
         className={cn(
           cn(
-            'h-full gap-0 overflow-hidden border-0 py-0 transition-all group-hover:shadow-[0_24px_64px_-8px_rgba(0,0,0,0.8),0_8px_24px_rgba(0,0,0,0.5)]',
+            'h-full gap-0 overflow-hidden border-0 py-0 transition-all group-hover:shadow-[0_24px_64px_-8px_rgba(0,0,0,0.8),0_8px_24px_rgba(0,0,0,0.5)] [.light_&]:group-hover:shadow-[0_24px_64px_-8px_rgba(5,5,10,0.25),0_8px_24px_rgba(5,5,10,0.12)]',
             layout === 'list' && 'flex-row',
           ),
           'p-0',
