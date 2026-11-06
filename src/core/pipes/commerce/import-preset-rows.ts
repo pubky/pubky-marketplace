@@ -7,7 +7,13 @@ import {
   COMMERCE_LISTING_TITLE_MIN_CHARS,
 } from '@/config/commerce';
 import type { ImportLoss } from './import-loss-report';
-import { IMPORT_CONDITIONS_SET, type ImportSettings, shippingOptionRow } from './import-settings';
+import {
+  IMPORT_CONDITIONS_SET,
+  type ImportSettings,
+  SHIPPING_PROFILE_ID_FIELD,
+  shippingOptionRow,
+  withoutShippingProfileField,
+} from './import-settings';
 
 /** JSON-safe value carried in a canonical import row. */
 export type PresetJson = string | number | boolean | null | PresetJson[] | { [key: string]: PresetJson };
@@ -318,9 +324,13 @@ export function finalizePresetRows(input: FinalizeInput): FinalizeResult {
         options,
         variantQuantity: quantities[index] ?? 0,
         shippingOptions: shipping,
-        extraFields: settings.countryCode
-          ? { ...row.extraFields, [COUNTRY_CODE_FIELD]: settings.countryCode }
-          : { ...row.extraFields },
+        extraFields: {
+          ...withoutShippingProfileField(row).extraFields,
+          ...(settings.countryCode ? { [COUNTRY_CODE_FIELD]: settings.countryCode } : {}),
+          ...(settings.shipping?.mode === 'profile'
+            ? { [SHIPPING_PROFILE_ID_FIELD]: settings.shipping.profileId }
+            : {}),
+        },
       });
     });
     losses.push(...rowLosses);

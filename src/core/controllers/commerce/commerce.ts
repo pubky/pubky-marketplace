@@ -18,6 +18,7 @@ import {
 } from '@/application/commerce/inventory-import';
 import { CommercePrivKeyringApplication } from '@/application/commerce/priv-keyring';
 import { CommerceShippingApplication } from '@/application/commerce/shipping';
+import { CommerceShippingProfilesApplication } from '@/application/commerce/shipping-profiles';
 import { ProfileApplication } from '@/application/profile/profile';
 import { TagKind } from '@/application/tag/tag.types';
 import { UserApplication } from '@/application/user/user';
@@ -128,6 +129,35 @@ export class CommerceController {
 
   static async getShop(ownerPubky: unknown) {
     return await CommerceApplication.getShop(CommerceRecordNormalizer.pubky(ownerPubky));
+  }
+
+  static async fetchShippingProfile(ownerPubky: unknown, profileId: unknown) {
+    return await CommerceShippingProfilesApplication.fetch(
+      CommerceRecordNormalizer.pubky(ownerPubky),
+      CommerceRecordNormalizer.entityId(profileId),
+    );
+  }
+
+  static async listShippingProfiles(ownerPubky: unknown) {
+    return await CommerceShippingProfilesApplication.list(CommerceRecordNormalizer.pubky(ownerPubky));
+  }
+
+  static async countListingsUsingShippingProfile(ownerPubky: unknown, profileId: unknown) {
+    return await CommerceShippingProfilesApplication.countListingsUsing(
+      CommerceRecordNormalizer.pubky(ownerPubky),
+      CommerceRecordNormalizer.entityId(profileId),
+    );
+  }
+
+  static async putShippingProfile(record: unknown) {
+    return await CommerceShippingProfilesApplication.put(CommerceRecordNormalizer.shippingProfile(record));
+  }
+
+  static async deleteShippingProfile(ownerPubky: unknown, profileId: unknown) {
+    await CommerceShippingProfilesApplication.delete(
+      CommerceRecordNormalizer.pubky(ownerPubky),
+      CommerceRecordNormalizer.entityId(profileId),
+    );
   }
 
   static async getAllShops() {

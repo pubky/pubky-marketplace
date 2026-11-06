@@ -9,6 +9,7 @@ import {
 } from '@/application/commerce/inventory-import';
 import { listingToCanonicalRows } from '@/application/commerce/inventory-listing-map';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
+import { markShopBuiltImportFile } from '@/libs/commerce/shop-built-import-file';
 import { UNLIMITED_STOCK_RESERVED_MESSAGE } from '@/libs/commerce/unlimited-stock';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -125,6 +126,74 @@ describe('MarketplaceShopClientService import helpers', () => {
     const payload = await store.getPayloadJson(planned.value.manifestId, manifest!.rows[0]!.rowIdentity);
     expect(payload).toContain("'=HYPERLINK");
     expect(payload).not.toMatch(/"title":"=HYPERLINK/);
+  });
+
+  it('drops a shipping_profile_id column from JSON rows before they are stored', async () => {
+    const store = new MemoryImportStore();
+    const row = canonicalRow('boots_01', {
+      extraFields: { country_code: 'US', shipping_profile_id: 'someone-elses' },
+    });
+    const file = new BytesFile(utf8(JSON.stringify([row])), 'listings.json', 'application/json');
+    const planned = await MarketplaceShopClientService.planBrowserFile(file, store);
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) return;
+    const manifest = await store.load(planned.value.manifestId);
+    const payload = JSON.parse(
+      (await store.getPayloadJson(planned.value.manifestId, manifest!.rows[0]!.rowIdentity)) ?? '{}',
+    );
+    expect(payload.extraFields).toEqual({ country_code: 'US' });
+  });
+
+  it('drops a shipping_profile_id column from canonical CSV rows before they are stored', async () => {
+    const store = new MemoryImportStore();
+    const row = canonicalRow('csv_01', {
+      extraFields: { country_code: 'US', shipping_profile_id: 'someone-elses' },
+    });
+    const csv = MarketplaceShopClientService.exportListingsCsv([row]);
+    const planned = await MarketplaceShopClientService.planBrowserFile(
+      new BytesFile(csv, 'listings.csv', 'text/csv'),
+      store,
+    );
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) return;
+    const manifest = await store.load(planned.value.manifestId);
+    const payload = (await store.getPayloadJson(planned.value.manifestId, manifest!.rows[0]!.rowIdentity)) ?? '';
+    expect(payload).toContain('country_code');
+    expect(payload).not.toContain('shipping_profile_id');
+  });
+
+  it('does not formula-quote a profile id that starts with a hyphen on a Shop-built file', async () => {
+    const store = new MemoryImportStore();
+    const row = canonicalRow('boots_01', { extraFields: { country_code: 'US', shipping_profile_id: '-worldwide' } });
+    const file = markShopBuiltImportFile(
+      new BytesFile(utf8(JSON.stringify([row])), 'connector.json', 'application/json'),
+    );
+    const planned = await MarketplaceShopClientService.planBrowserFile(file, store);
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) return;
+    const manifest = await store.load(planned.value.manifestId);
+    const payload = JSON.parse(
+      (await store.getPayloadJson(planned.value.manifestId, manifest!.rows[0]!.rowIdentity)) ?? '{}',
+    );
+    expect(payload.extraFields.shipping_profile_id).toBe('-worldwide');
+  });
+
+  it('keeps the shipping_profile_id of a JSON file the Shop built from its own import settings', async () => {
+    const store = new MemoryImportStore();
+    const row = canonicalRow('boots_01', {
+      extraFields: { country_code: 'US', shipping_profile_id: 'worldwide' },
+    });
+    const file = markShopBuiltImportFile(
+      new BytesFile(utf8(JSON.stringify([row])), 'connector.json', 'application/json'),
+    );
+    const planned = await MarketplaceShopClientService.planBrowserFile(file, store);
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) return;
+    const manifest = await store.load(planned.value.manifestId);
+    const payload = JSON.parse(
+      (await store.getPayloadJson(planned.value.manifestId, manifest!.rows[0]!.rowIdentity)) ?? '{}',
+    );
+    expect(payload.extraFields).toEqual({ country_code: 'US', shipping_profile_id: 'worldwide' });
   });
 
   it('plans JSON rows and persists payloads without publishing', async () => {
@@ -280,6 +349,35 @@ describe('CommerceInventoryImportApplication', () => {
     await importer.publish(planned.manifestId);
 
     expect(puts).toEqual(['guide_01']);
+  });
+
+  it.each([
+    { label: 'an update of the stored listing', stored: true, profile: 'worldwide' },
+    { label: 'a create with no stored listing', stored: false, profile: undefined },
+  ])('publishes an edited export of a profile-priced listing as $label', async ({ stored, profile }) => {
+    const record = createCommerceListingFixture({ listingId: 'boots_01', shippingProfileId: 'worldwide' });
+    const published: Array<{ title: string; shippingProfileId: string | undefined }> = [];
+    const importer = CommerceInventoryImportApplication.forSeller(PUBKY, {
+      ...IMPORT_GATES_PASSING,
+      store,
+      currentItems: async () => ({}),
+      localRecords: async () => (stored ? [record] : []),
+      putListing: async (next) => {
+        published.push({ title: next.title, shippingProfileId: next.shippingProfileId });
+      },
+      listingExists: async () => false,
+      syncMany: async (listings) =>
+        syncOk(listings.map((listing) => ({ listing_id: listing.listing_id, status: 200 }))),
+    });
+    const rows = listingToCanonicalRows({ ...record, title: 'Boots, edited' });
+    const planned = await importer.planFile(
+      new BytesFile(utf8(JSON.stringify(rows)), 'export.json', 'application/json'),
+    );
+    if (planned.status !== 'planned') throw new Error(`not planned: ${planned.status}`);
+
+    await importer.publish(planned.manifestId);
+
+    expect(published).toEqual([{ title: 'Boots, edited', shippingProfileId: profile }]);
   });
 
   it('checkpoints conflict on CAS 409 and does not overwrite', async () => {

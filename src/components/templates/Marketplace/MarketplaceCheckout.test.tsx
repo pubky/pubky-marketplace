@@ -10,6 +10,7 @@ import { formatCommerceMoney } from '@/libs/commerce/format';
 import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
 import { createPaykitOrderFixture } from '@/test/fixtures/commerce/paykit-orders';
 import { setHeavySuiteBudgets } from '@/test-utils/load-budget';
+import { noZoneShipping } from '@/test-utils/zone-shipping';
 import { MarketplaceCheckout } from './MarketplaceCheckout';
 
 setHeavySuiteBudgets();
@@ -49,6 +50,8 @@ const view = vi.hoisted(() => ({
   hasInstantDigitalLine: false,
   hasManualDigitalLine: false,
   orderCount: 1,
+  zoneShipping: null as null | ReturnType<typeof noZoneShipping>,
+  checkoutBusy: false,
   payResult: { ok: false, orderIds: [] as string[], boundOrders: [] as unknown[] } as {
     ok: boolean;
     orderIds: string[];
@@ -215,6 +218,7 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
         submit: vi.fn(async () => false),
         pay: checkoutActions.pay,
         isPaying: false,
+        checkoutBusy: view.checkoutBusy,
         needsSession: view.needsSession,
         sessionError: view.sessionError,
         hasMarketplaceSession: view.hasMarketplaceSession,
@@ -239,6 +243,7 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
         hasFulfillmentConflict: view.hasFulfillmentConflict,
         isPickupCapabilityLoadingForSeller: () => view.isPickupCapabilityLoading,
         orderCount: view.orderCount,
+        zoneShipping: view.zoneShipping ?? noZoneShipping(),
         fulfillmentForItem: (itemId: string) => {
           const line = (view.items as Array<{ id: string; listing: { record: { ownerPubky: string } } }>).find(
             ({ id }) => id === itemId,
@@ -402,6 +407,8 @@ function resetCheckoutView() {
   view.hasManualDigitalLine = false;
   checkoutActions.setDigitalChoice.mockReset();
   view.orderCount = 1;
+  view.zoneShipping = null;
+  view.checkoutBusy = false;
   view.payResult = { ok: false, orderIds: [], boundOrders: [] };
   view.availability.clear();
   navigation.navigateTop.mockReset();
@@ -1007,6 +1014,50 @@ describe('MarketplaceCheckout', () => {
     await user.click(pay);
 
     expect(checkoutActions.pay).toHaveBeenCalledWith(method, expect.any(Function));
+  });
+
+  it('runs the latest pay, with the rail now selected, when an old Try again action is clicked', async () => {
+    const user = userEvent.setup();
+    seededCart();
+    view.adapterMode = 'transaction-service';
+    view.hasMarketplaceSession = true;
+
+    render(<MarketplaceCheckout />);
+    await user.click(await screen.findByTestId('marketplace-checkout-method-paykit'));
+    await fillValidDelivery(user);
+    const pay = screen.getByTestId('marketplace-checkout-pay');
+    await waitFor(() => expect(pay).toBeEnabled());
+    await user.click(pay);
+    const staleRetry = (checkoutActions.pay.mock.calls as unknown[][])[0]?.[1] as (() => void) | undefined;
+    expect(staleRetry).toBeInstanceOf(Function);
+
+    await user.click(screen.getByTestId('marketplace-checkout-method-paypal'));
+    checkoutActions.pay.mockClear();
+    await act(async () => staleRetry?.());
+
+    expect(checkoutActions.pay).toHaveBeenCalledWith('paypal', expect.any(Function));
+  });
+
+  it('does nothing when an old Try again action is clicked after the checkout unmounted', async () => {
+    const user = userEvent.setup();
+    seededCart();
+    view.adapterMode = 'transaction-service';
+    view.hasMarketplaceSession = true;
+
+    const { unmount } = render(<MarketplaceCheckout />);
+    await user.click(await screen.findByTestId('marketplace-checkout-method-paykit'));
+    await fillValidDelivery(user);
+    const pay = screen.getByTestId('marketplace-checkout-pay');
+    await waitFor(() => expect(pay).toBeEnabled());
+    await user.click(pay);
+    const staleRetry = (checkoutActions.pay.mock.calls as unknown[][])[0]?.[1] as (() => void) | undefined;
+    expect(staleRetry).toBeInstanceOf(Function);
+
+    unmount();
+    checkoutActions.pay.mockClear();
+    await act(async () => staleRetry?.());
+
+    expect(checkoutActions.pay).not.toHaveBeenCalled();
   });
 
   describe('sold-out items', () => {
@@ -1655,6 +1706,118 @@ describe('MarketplaceCheckout digital lines (digital delivery design §3 "Checko
     expect(screen.queryByText('Shipping')).not.toBeInTheDocument();
     expect(screen.getByText('Delivery').parentElement).not.toHaveTextContent('$');
     expect(screen.getByText('No shipping for digital items.')).toBeInTheDocument();
+  });
+
+  it('shows a rate choice per zone-priced group and adds the chosen rate to the shipping and the total', () => {
+    const asset = { currency: 'USD', exponent: 2 };
+    view.items = [
+      {
+        id: CART_ITEM_ID,
+        listingId: listing.id,
+        variantId: 'variant_42',
+        quantity: 1,
+        listing: { ...listing, record: { ...listing.record, shippingProfileId: 'worldwide' } },
+      },
+    ];
+    const setRate = vi.fn();
+    view.zoneShipping = noZoneShipping({
+      hasZonedGroups: true,
+      amounts: [{ amountMinor: 1349, ...asset }],
+      setRate,
+      groups: [
+        {
+          key: 'profile:s:worldwide',
+          sellerPubky: listing.record.ownerPubky,
+          label: 'Worldwide',
+          units: 1,
+          asset,
+          state: {
+            status: 'ready',
+            selectedRateId: 'std',
+            amount: { amountMinor: 1349, ...asset },
+            quotes: [
+              {
+                zoneId: 'eu',
+                rateId: 'std',
+                label: 'Standard',
+                amountMinor: 1349,
+                estimatedMinDays: 6,
+                estimatedMaxDays: 12,
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    render(<MarketplaceCheckout />);
+
+    expect(screen.getByRole('region', { name: 'Shipping rates' })).toHaveTextContent('Shipping for Worldwide');
+    const summary = within(screen.getByTestId('marketplace-checkout-summary'));
+    expect(summary.getByText('Shipping').parentElement).toHaveTextContent('$13.49');
+    expect(summary.getByText('Total').parentElement).toHaveTextContent('$25.49');
+  });
+
+  it.each(['loading', 'unreadable', 'asset-mismatch', 'refused'] as const)(
+    'keeps Pay off while a zone-priced group is %s, and says why',
+    async (status) => {
+      const user = userEvent.setup();
+      const asset = { currency: 'USD', exponent: 2 };
+      seededCart();
+      view.adapterMode = 'transaction-service';
+      view.hasMarketplaceSession = true;
+      const state = status === 'refused' ? ({ status, code: 'INVALID_QUANTITY' } as const) : ({ status } as const);
+      view.zoneShipping = noZoneShipping({
+        hasZonedGroups: true,
+        groups: [
+          {
+            key: 'profile:s:worldwide',
+            sellerPubky: listing.record.ownerPubky,
+            label: 'Worldwide',
+            units: 1,
+            asset,
+            state,
+          },
+        ],
+      });
+
+      render(<MarketplaceCheckout />);
+      await fillValidDelivery(user);
+
+      const pay = screen.getByTestId('marketplace-checkout-pay');
+      await waitFor(() => expect(document.getElementById('checkout-pay-reason')).toBeInTheDocument());
+      expect(pay).toBeDisabled();
+      expect(document.getElementById('checkout-pay-reason')).toHaveTextContent('every shipping price above is ready');
+      if (status === 'refused') {
+        expect(screen.getByRole('region', { name: 'Shipping rates' })).toHaveTextContent(
+          'This quantity cannot be shipped in one parcel',
+        );
+        expect(screen.getByRole('region', { name: 'Shipping rates' })).not.toHaveTextContent('does not ship');
+      }
+    },
+  );
+
+  it('freezes everything that decides the quote while a checkout is being sent', () => {
+    seededCart();
+    view.checkoutBusy = true;
+    render(<MarketplaceCheckout />);
+    for (const name of ['Delivery address', /^Items from /]) {
+      expect(screen.getByRole('region', { name })).toHaveAttribute('inert');
+    }
+  });
+
+  it('leaves those controls live when no checkout is in flight', () => {
+    seededCart();
+    render(<MarketplaceCheckout />);
+    expect(screen.getByRole('region', { name: 'Delivery address' })).not.toHaveAttribute('inert');
+  });
+
+  it('offers no rate section for a cart with no zone-priced line', () => {
+    seededCart();
+
+    render(<MarketplaceCheckout />);
+
+    expect(screen.queryByRole('region', { name: 'Shipping rates' })).not.toBeInTheDocument();
   });
 
   it('shows no fulfillment conflict for a seller whose lines are all digital', () => {
@@ -2680,6 +2843,22 @@ describe('MarketplaceCheckout accepted-offer path', () => {
     expect(checkoutActions.remove).toHaveBeenCalledWith('s:boots', 'variant_42', 'award-1', false);
     expect(offerState.refresh).toHaveBeenCalledTimes(1);
     expect(checkoutActions.rememberAddress).toHaveBeenCalled();
+  });
+
+  it('retries an accepted offer from the latest render, not the one the old action was raised in', async () => {
+    const user = userEvent.setup();
+    offerState.submit.mockResolvedValue({ ok: false, code: 'PAYMENT_BIND_FAILED' });
+    const { rerender } = render(<MarketplaceCheckout />);
+    await fillAndPay(user);
+    const staleRetry = (offerState.submit.mock.calls as unknown[][])[0]?.[3] as (() => void) | undefined;
+    expect(staleRetry).toBeInstanceOf(Function);
+
+    offerState.offers = [{ ...acceptedOffer, award: { ...acceptedOffer.award, quantity: 2 } }];
+    rerender(<MarketplaceCheckout />);
+    offerState.submit.mockClear();
+    await act(async () => staleRetry?.());
+
+    expect((offerState.submit.mock.calls as unknown[][])[0]?.[0]).toMatchObject({ award: { quantity: 2 } });
   });
 
   it('hands an accepted offer to PayPal through the top window', async () => {

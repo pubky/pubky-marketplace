@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { HandCoins, LoaderCircle, ShoppingCart, WalletCards } from 'lucide-react';
 import { Controller, useWatch } from 'react-hook-form';
@@ -90,6 +90,7 @@ import {
 } from '@/libs/commerce/paykit-wallet';
 import { availablePaymentMethods, type PaymentMethodKind, sellerPaykitAssets } from '@/libs/commerce/payment-methods';
 import { formatUsdt, type PaymentAsset } from '@/libs/commerce/payment-options';
+import { sumMoneyByAsset } from '@/libs/commerce/pricing';
 import {
   PAYKIT_USDT_FINALITY_EXPECTATION_COPY,
   USDT_MULTI_SELLER_COPY,
@@ -120,6 +121,7 @@ import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionCont
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceBuyerBitkitConnectDialog } from '@/organisms/Marketplace/MarketplaceBuyerBitkitConnectDialog';
 import { MarketplaceCheckoutItem } from '@/organisms/Marketplace/MarketplaceCheckoutItem';
+import { MarketplaceCheckoutShippingRates } from '@/organisms/Marketplace/MarketplaceCheckoutShippingRates';
 import { MarketplaceCheckoutStoreShare } from '@/organisms/Marketplace/MarketplaceCheckoutStoreShare';
 import { MarketplaceDeliveryKeyChangeDialog } from '@/organisms/Marketplace/MarketplaceDeliveryKeyChangeDialog';
 import { MarketplaceDeliveryTerms } from '@/organisms/Marketplace/MarketplaceDeliveryTerms';
@@ -287,7 +289,13 @@ function MarketplaceCartCheckout() {
   // The award renders as its own fulfillment section (no cart line cards).
   const fulfillmentGroups = awardSeller ? [{ sellerPubky: awardSeller, items: [], subtotals: [] }] : displayGroups;
   const sellerDeliveryTerms = useMarketplaceSellerDeliveryTerms(fulfillmentGroups.map((group) => group.sellerPubky));
-  const shipping = marketplaceCartShippingTotals(displayGroups, (item) => checkout.fulfillmentForItem(item.id));
+  const flatShipping = marketplaceCartShippingTotals(displayGroups, (item) => checkout.fulfillmentForItem(item.id));
+  const shipping = {
+    hasCalculatedShipping: flatShipping.hasCalculatedShipping,
+    totals: sumMoneyByAsset(
+      [...flatShipping.totals, ...checkout.zoneShipping.amounts].map((money) => ({ money, quantity: 1 })),
+    ),
+  };
   // A pickup award pays the accepted merchandise only; its shipping is zero.
   const isPickupAward = Boolean(awardSeller && checkout.fulfillmentForSeller(awardSeller) === 'pickup');
   const lineMethods = [
@@ -534,6 +542,12 @@ function MarketplaceCartCheckout() {
     buyerWallet.recheck();
   };
 
+  // A group that is loading, unreadable, in another currency or refused cannot be charged; a missing country
+  // is left to the form, which shows the buyer which input to fix.
+  const zoneShippingBlocksPay = checkout.zoneShipping.groups.some(
+    ({ state }) => state.status !== 'ready' && state.status !== 'needs-destination',
+  );
+
   // Everything but the delivery form: when only the form blocks Pay, the button
   // stays tappable and shows the buyer which input to fix (#355).
   const canPayButForm =
@@ -551,6 +565,7 @@ function MarketplaceCartCheckout() {
     (!isOfferCheckout || offerEligible) &&
     !paykitBlocksPay &&
     !stock.hasSoldOut &&
+    !zoneShippingBlocksPay &&
     (isSandbox || (sharedMethods !== null && sharedMethods.length > 0 && selectedMethod !== null));
   const canPay = canPayButForm && formValid;
   const formBlocksPay = canPayButForm && !formValid;
@@ -599,7 +614,9 @@ function MarketplaceCartCheckout() {
                             ? 'Check your Bitkit connection to pay with Paykit.'
                             : isOfferCheckout && !offerEligible
                               ? 'This offer is not available for checkout.'
-                              : 'Fill in delivery details and choose a payment method to pay.';
+                              : zoneShippingBlocksPay
+                                ? 'Pay unlocks once every shipping price above is ready.'
+                                : 'Fill in delivery details and choose a payment method to pay.';
   const payDisabledReason =
     locksRoute === 'mixed'
       ? LOCKS_MIXED_CHECKOUT_COPY
@@ -612,6 +629,7 @@ function MarketplaceCartCheckout() {
     if (line) await cart.remove(line.listingId, line.variantId, line.awardId ?? undefined, false);
   };
 
+  const latestPay = useRef<() => Promise<void>>(async () => {});
   const payOffer = async () => {
     if (!offer || !award || !offerEligible) return;
     const method = isSandbox && selectedMethod === null ? null : selectedMethod;
@@ -631,7 +649,7 @@ function MarketplaceCartCheckout() {
             countryCode: values.countryCode,
           },
       method,
-      () => void pay(),
+      () => void latestPay.current(),
     );
     if (result.ok) {
       await removeAwardLine();
@@ -682,7 +700,7 @@ function MarketplaceCartCheckout() {
     // real rail. A Locks checkout binds none either (`locksCheckoutRoute`).
     const method = isSandbox || isLocksCheckout ? null : selectedMethod;
     setPayRefusal(null);
-    const result = await checkout.pay(method, () => void pay());
+    const result = await checkout.pay(method, () => void latestPay.current());
     if (!result.ok) {
       if (result.paykitUnavailable) markPaykitRefused();
       if (result.refusal) setPayRefusal(result.refusal);
@@ -702,6 +720,17 @@ function MarketplaceCartCheckout() {
     }
     await orders.refresh();
   };
+  // The wallet-setup Try again toast outlives this render; it runs the latest pay, never the one that raised it.
+  useEffect(() => {
+    latestPay.current = pay;
+  });
+  // After the checkout unmounts a still-open toast must not place another order.
+  useEffect(
+    () => () => {
+      latestPay.current = async () => {};
+    },
+    [],
+  );
 
   return (
     <ContentLayout
@@ -912,6 +941,7 @@ function MarketplaceCartCheckout() {
                     key={group.sellerPubky}
                     className="grid gap-3"
                     aria-label={`Items from ${group.sellerPubky}`}
+                    inert={checkout.checkoutBusy}
                     data-surface={isPickupGroup ? 'checkout-pickup-group' : undefined}
                   >
                     {isPickupCapabilityLoading ? (
@@ -1069,7 +1099,11 @@ function MarketplaceCartCheckout() {
               {approvalNeeded && !region.commerce.blocked && <MarketplaceSessionRequiredCard />}
 
               {region.needsCountryField && (
-                <section className="grid min-w-0 gap-4 rounded-md bg-card p-6 shadow-lg" aria-label="Your country">
+                <section
+                  className="grid min-w-0 gap-4 rounded-md bg-card p-6 shadow-lg"
+                  aria-label="Your country"
+                  inert={checkout.checkoutBusy}
+                >
                   <BuyerCountryField
                     value={region.buyerCountry}
                     onChange={region.setBuyerCountry}
@@ -1079,7 +1113,11 @@ function MarketplaceCartCheckout() {
               )}
 
               {checkout.requiresDeliveryAddress && (
-                <section className="grid min-w-0 gap-6 rounded-md bg-card p-6 shadow-lg" aria-label="Delivery address">
+                <section
+                  className="grid min-w-0 gap-6 rounded-md bg-card p-6 shadow-lg"
+                  aria-label="Delivery address"
+                  inert={checkout.checkoutBusy}
+                >
                   <Heading level={2} size="sm" className="text-xl font-semibold">
                     Delivery address
                   </Heading>
@@ -1154,6 +1192,19 @@ function MarketplaceCartCheckout() {
                       )}
                     </div>
                   </SettingsSectionContent>
+                </section>
+              )}
+
+              {checkout.zoneShipping.hasZonedGroups && (
+                <section className="grid min-w-0 gap-4 rounded-md bg-card p-6 shadow-lg" aria-label="Shipping rates">
+                  <Heading level={2} size="sm" className="text-xl font-semibold">
+                    Shipping rates
+                  </Heading>
+                  <MarketplaceCheckoutShippingRates
+                    groups={checkout.zoneShipping.groups}
+                    onChange={checkout.zoneShipping.setRate}
+                    disabled={checkout.checkoutBusy}
+                  />
                 </section>
               )}
 

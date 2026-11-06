@@ -15,9 +15,13 @@ import {
 } from '@/hooks/useDeliveryKeyGate/useDeliveryKeyGate';
 import type { MarketplaceCartItem } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import {
-  checkDestinationCountry,
+  resolveShipsToDestinations,
   useMarketplaceSellerShipsTo,
 } from '@/hooks/useMarketplaceSellerShipsTo/useMarketplaceSellerShipsTo';
+import {
+  type ShippingGroupView,
+  useMarketplaceShippingGroups,
+} from '@/hooks/useMarketplaceShippingGroups/useMarketplaceShippingGroups';
 import {
   BIND_FAIL_CANCEL_REASON,
   listingAggregatesFromCheckoutLines,
@@ -37,6 +41,7 @@ import {
   marketplaceFailureMessage,
   marketplaceListingNotActiveMessage,
   marketplaceRegionRefusalMessage,
+  marketplaceShippingRefusalMessage,
 } from '@/libs/commerce/failure-messages';
 import { tracksVariantStock } from '@/libs/commerce/listing-variants';
 import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/locks-payment';
@@ -50,7 +55,9 @@ import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
 import { pickupRefusalFailureMessage } from '@/libs/commerce/pickup';
 import { canonicalCountryCode } from '@/libs/commerce/postal-address';
-import { isDestinationAllowed } from '@/libs/commerce/ships-to';
+import type { ShippingChoicePayload } from '@/libs/commerce/shipping-groups';
+import { orderQuoteRefusalCopy } from '@/libs/commerce/shipping-quote-copy';
+import { destinationCountryError, isDestinationAllowed } from '@/libs/commerce/ships-to';
 import {
   buildMarketplaceListingAggregateId,
   buildMarketplaceOrderAggregateId,
@@ -80,6 +87,17 @@ import {
  * The bare (non-owner-prefixed) address id the controller works with — the
  * stored primary key is `${owner_id}:${addressId}`.
  */
+/** Why an order with zone-priced shipping cannot be sent yet, in words the buyer can act on. */
+const ZONE_SHIPPING_BLOCKED_COPY: Record<ShippingGroupView['state']['status'], string> = {
+  loading: 'Shipping prices are still loading. Try again in a moment.',
+  unreadable: 'A seller’s shipping prices could not be read. Nothing was reserved. Try again in a moment.',
+  'asset-mismatch':
+    'A seller’s shipping rates are priced in a different currency than their item, so it cannot ship yet.',
+  'needs-destination': 'Enter your delivery country to see shipping prices.',
+  refused: 'A seller in your cart does not ship to that country. Choose another address or remove their items.',
+  ready: '',
+};
+
 function bareAddressId(address: CommerceDeliveryAddressModelSchema): string {
   return address.id.slice(address.owner_id.length + 1);
 }
@@ -163,6 +181,8 @@ export function useMarketplaceCheckout(
   /** `onRetry` backs the Try again action of a wallet-setup refusal; it runs only on the buyer's click. */
   pay: (method: PaymentMethodKind | null, onRetry?: () => void) => Promise<MarketplacePayResult>;
   isPaying: boolean;
+  /** True from the moment a submit or Pay starts until it ends; the shipping picks do not change meanwhile. */
+  checkoutBusy: boolean;
   needsSession: boolean;
   sessionError: string | null;
   /** True when the store holds session facts and getActiveSession still accepts them. */
@@ -221,6 +241,8 @@ export function useMarketplaceCheckout(
   isPickupCapabilityLoadingForSeller: (sellerPubky: string) => boolean;
   /** The number of durable rows this checkout creates — one per (seller, fulfillment) group. */
   orderCount: number;
+  /** The zone-priced shipping groups: each one's rates, the buyer's pick and what it adds to the order. */
+  zoneShipping: ReturnType<typeof useMarketplaceShippingGroups>;
   /** Persist a used or newly saved address after a successful create (offer or cart). */
   pendingKeyChange: PendingDeliveryKeyChange | null;
   decideKeyChange: (accepted: boolean) => void;
@@ -236,6 +258,8 @@ export function useMarketplaceCheckout(
   const [needsSession, setNeedsSession] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [isPaying, setIsPaying] = useState(false);
+  const checkoutInFlight = useRef(false);
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [pickupAvailable, setPickupAvailable] = useState<boolean | null>(null);
   const [choiceOverrides, setChoiceOverrides] = useState<Record<string, MarketplaceFulfillmentMethod>>({});
@@ -456,6 +480,9 @@ export function useMarketplaceCheckout(
     ...(award && fulfillmentForSeller(award.sellerPubky) === 'shipping' ? [award.sellerPubky] : []),
   ];
   const shipsTo = useMarketplaceSellerShipsTo(shippedSellerPubkys);
+  const shippedItems = physicalItems.filter((item) => fulfillmentForItem(item.id) === 'shipping');
+  const watchedDestination = useWatch({ control: form.control, name: 'countryCode' });
+  const zoneShipping = useMarketplaceShippingGroups(shippedItems, watchedDestination ?? '');
   const storeShare = useConnectorStoreShare(shippedSellerPubkys);
   const orderCount = new Set([
     ...items.map((item) => `${item.listing.record.ownerPubky}|${fulfillmentForItem(item.id) ?? ''}`),
@@ -657,12 +684,19 @@ export function useMarketplaceCheckout(
         // the buyer saw it: the cart's record is refreshed and the buyer reviews the new terms. A projection
         // whose price or shipping differs stops checkout even when its sync failed. Any other unsynced
         // mismatch charges what the buyer saw, and the service refuses an unpublished method itself.
+        // A projection does not carry zone pricing, and an inline-zone choice has no digest to pin it, so a
+        // zone-priced line is charged only from a projection of the cart's own revision.
+        const zonePricedDrift =
+          (record.shippingProfileId !== undefined || record.shippingZones !== undefined) &&
+          !synced &&
+          projection.listingRevision !== record.revision;
         if (
-          durable &&
-          (synced ||
-            projection.listingRevision > record.revision ||
-            !commerceListingProjectionChargesRecordTerms(record, projection)) &&
-          !commerceListingProjectionMatchesRecord(record, projection)
+          zonePricedDrift ||
+          (durable &&
+            (synced ||
+              projection.listingRevision > record.revision ||
+              !commerceListingProjectionChargesRecordTerms(record, projection)) &&
+            !commerceListingProjectionMatchesRecord(record, projection))
         ) {
           sawChangedListing = true;
           await CommerceController.refreshListing(record.ownerPubky, record.listingId).catch((error: unknown) => {
@@ -731,12 +765,29 @@ export function useMarketplaceCheckout(
     const shippedSellers = requiresDeliveryAddress
       ? CommerceController.getShippedSellers({ lines: checkoutLines, fulfillmentChoiceBySeller })
       : [];
-    if (shippedSellers.length > 0) {
-      const destinationError = await checkDestinationCountry(data.countryCode, shippedSellers);
+    // One fresh read of the sellers' destination lists decides both the refusal and whether the command carries a destination.
+    const freshDestinations = shippedSellers.length > 0 ? await resolveShipsToDestinations(shippedSellers) : null;
+    if (freshDestinations !== null) {
+      const destinationError = destinationCountryError(data.countryCode, freshDestinations);
       if (destinationError) {
         toast({ variant: 'error', description: destinationError });
         return { ok: false };
       }
+    }
+    const sendsDestination =
+      freshDestinations !== null &&
+      (zoneShipping.hasZonedGroups || (freshDestinations.status === 'ready' && freshDestinations.countries !== null));
+    let shippingChoices: ShippingChoicePayload[] = [];
+    if (shippedSellers.length > 0 && zoneShipping.hasZonedGroups) {
+      const priced = zoneShipping.choices();
+      if (!priced.ok) {
+        toast({
+          variant: 'error',
+          description: priced.code ? orderQuoteRefusalCopy(priced.code) : ZONE_SHIPPING_BLOCKED_COPY[priced.reason],
+        });
+        return { ok: false };
+      }
+      shippingChoices = priced.choices;
     }
     const sealedTo = await resolveKeys(shippedSellers);
     if (!sealedTo.ok) return { ok: false };
@@ -755,6 +806,8 @@ export function useMarketplaceCheckout(
         ? { buyerCountry: addressCountry }
         : {}),
       fulfillmentChoiceBySeller,
+      ...(sendsDestination ? { destinationCountry: canonicalCountryCode(data.countryCode) } : {}),
+      ...(shippingChoices.length > 0 ? { shippingChoices } : {}),
       deliveryKeys: sealedTo.keys,
       ...(storeShare.selected.some((store) => shippedSellers.includes(store.sellerPubky))
         ? { connectorShares: storeShare.selected.filter((store) => shippedSellers.includes(store.sellerPubky)) }
@@ -769,7 +822,7 @@ export function useMarketplaceCheckout(
               city: data.city,
               region: data.region,
               postalCode: data.postalCode,
-              countryCode: data.countryCode.toUpperCase(),
+              countryCode: addressCountry,
             },
           }
         : {}),
@@ -790,6 +843,13 @@ export function useMarketplaceCheckout(
       const variantRefusal = variantRefusalMessage(response.error);
       if (variantRefusal) {
         return refuse(variantRefusal, classifyVariantRefusal(response.error) === 'variant_sold_out');
+      }
+      const shippingRefusal = marketplaceShippingRefusalMessage(response.error);
+      if (shippingRefusal) {
+        if (response.error.code === 'SHIPPING_CHANGED' || response.error.code === 'SHIPPING_UNAVAILABLE') {
+          zoneShipping.refresh();
+        }
+        return refuse(shippingRefusal);
       }
       const pickupRefusal = classifyMarketplacePickupCommandRefusal(response);
       if (pickupRefusal) return refuse(pickupRefusalFailureMessage(pickupRefusal));
@@ -842,90 +902,108 @@ export function useMarketplaceCheckout(
   };
 
   const submit = async (): Promise<boolean> => {
-    if (!items.length) return false;
+    if (!items.length || checkoutInFlight.current) return false;
+    checkoutInFlight.current = true;
+    setCheckoutBusy(true);
     let succeeded = false;
-    await form.handleSubmit(async (data) => {
-      try {
-        const created = await createCheckout(data);
-        if (!created.ok) return;
-        succeeded = true;
-        await finishCreatedCheckout(data);
-      } catch (checkoutError) {
-        handleCheckoutError(checkoutError);
-      }
-    })();
+    try {
+      await form.handleSubmit(async (data) => {
+        try {
+          const created = await createCheckout(data);
+          if (!created.ok) return;
+          succeeded = true;
+          await finishCreatedCheckout(data);
+        } catch (checkoutError) {
+          handleCheckoutError(checkoutError);
+        }
+      })();
+    } finally {
+      checkoutInFlight.current = false;
+      setCheckoutBusy(false);
+    }
     return succeeded;
   };
 
   const pay = async (method: PaymentMethodKind | null, onRetry?: () => void): Promise<MarketplacePayResult> => {
     const empty: MarketplacePayResult = { ok: false, orderIds: [], boundOrders: [] };
-    if (!items.length || isPaying) return empty;
+    if (!items.length || isPaying || checkoutInFlight.current) return empty;
     const route = locksCheckoutRoute(getCommerceAdapterMode(), getPaykitServerApi(), items);
     if (route === 'mixed') {
       toast({ variant: 'error', description: LOCKS_MIXED_CHECKOUT_COPY });
       return empty;
     }
     let outcome = empty;
+    checkoutInFlight.current = true;
+    setCheckoutBusy(true);
     setIsPaying(true);
-    await form.handleSubmit(async (data) => {
-      let createdIds: string[] = [];
-      try {
-        const created = await createCheckout(data);
-        if (!created.ok) {
-          if (created.refusal) outcome = { ...empty, refusal: created.refusal, soldOut: created.soldOut };
-          return;
-        }
-        let listed: MarketplaceOrder[] = [];
+    try {
+      await form.handleSubmit(async (data) => {
+        let createdIds: string[] = [];
         try {
-          listed = await CommerceController.getMarketplaceOrders();
-        } catch {
-          listed = [];
-        }
-        createdIds = resolveCreatedCheckoutOrderIds({
-          result: created.result,
-          orders: listed,
-          listingAggregateIds: listingAggregatesFromCheckoutLines(created.lines),
-          buyerPubky: currentUserPubky,
-        });
-        if (createdIds.length === 0) {
-          toast({ variant: 'error', description: MARKETPLACE_FAILURE_MESSAGES.checkout });
-          return;
-        }
-        const mode = getCommerceAdapterMode();
-        // Sandbox checkout already creates its simulated payment. Binding a
-        // real payment rail is only supported by the durable service. A Locks
-        // checkout on upstream Paykit pays from the order page instead (see
-        // `locksCheckoutRoute`).
-        const skipBind = mode === 'sandbox' || route === 'locks';
-        if (skipBind) {
-          await finishCreatedCheckout(data);
-          outcome = { ok: true, orderIds: createdIds, boundOrders: [] };
-          return;
-        }
-        if (!method) {
-          await cancelCreatedCheckouts(createdIds);
-          toast({ variant: 'error', description: 'Choose a payment method to pay.' });
-          return;
-        }
-        const boundOrders: MarketplaceOrder[] = [];
-        try {
-          for (const orderId of createdIds) {
-            boundOrders.push(await CommerceController.bindPaymentMethod(orderId, method));
+          const created = await createCheckout(data);
+          if (!created.ok) {
+            if (created.refusal) outcome = { ...empty, refusal: created.refusal, soldOut: created.soldOut };
+            return;
           }
-        } catch (bindError) {
-          await cancelCreatedCheckouts(createdIds);
-          showPaymentMethodRefusalToast({ error: bindError, fallback: MARKETPLACE_FAILURE_MESSAGES.checkout, onRetry });
-          if (isPaykitUnavailableRefusal(bindError)) outcome = { ...empty, paykitUnavailable: true };
-          return;
+          let listed: MarketplaceOrder[] = [];
+          try {
+            listed = await CommerceController.getMarketplaceOrders();
+          } catch {
+            listed = [];
+          }
+          createdIds = resolveCreatedCheckoutOrderIds({
+            result: created.result,
+            orders: listed,
+            listingAggregateIds: listingAggregatesFromCheckoutLines(created.lines),
+            buyerPubky: currentUserPubky,
+          });
+          if (createdIds.length === 0) {
+            toast({ variant: 'error', description: MARKETPLACE_FAILURE_MESSAGES.checkout });
+            return;
+          }
+          const mode = getCommerceAdapterMode();
+          // Sandbox checkout already creates its simulated payment. Binding a
+          // real payment rail is only supported by the durable service. A Locks
+          // checkout on upstream Paykit pays from the order page instead (see
+          // `locksCheckoutRoute`).
+          const skipBind = mode === 'sandbox' || route === 'locks';
+          if (skipBind) {
+            await finishCreatedCheckout(data);
+            outcome = { ok: true, orderIds: createdIds, boundOrders: [] };
+            return;
+          }
+          if (!method) {
+            await cancelCreatedCheckouts(createdIds);
+            toast({ variant: 'error', description: 'Choose a payment method to pay.' });
+            return;
+          }
+          const boundOrders: MarketplaceOrder[] = [];
+          try {
+            for (const orderId of createdIds) {
+              boundOrders.push(await CommerceController.bindPaymentMethod(orderId, method));
+            }
+          } catch (bindError) {
+            await cancelCreatedCheckouts(createdIds);
+            showPaymentMethodRefusalToast({
+              error: bindError,
+              fallback: MARKETPLACE_FAILURE_MESSAGES.checkout,
+              onRetry,
+            });
+            if (isPaykitUnavailableRefusal(bindError)) outcome = { ...empty, paykitUnavailable: true };
+            return;
+          }
+          await finishCreatedCheckout(data);
+          outcome = { ok: true, orderIds: createdIds, boundOrders };
+        } catch (checkoutError) {
+          if (createdIds.length > 0) await cancelCreatedCheckouts(createdIds);
+          handleCheckoutError(checkoutError);
         }
-        await finishCreatedCheckout(data);
-        outcome = { ok: true, orderIds: createdIds, boundOrders };
-      } catch (checkoutError) {
-        if (createdIds.length > 0) await cancelCreatedCheckouts(createdIds);
-        handleCheckoutError(checkoutError);
-      }
-    })();
-    setIsPaying(false);
+      })();
+    } finally {
+      checkoutInFlight.current = false;
+      setCheckoutBusy(false);
+      setIsPaying(false);
+    }
     return outcome;
   };
 
@@ -934,6 +1012,7 @@ export function useMarketplaceCheckout(
     submit,
     pay,
     isPaying,
+    checkoutBusy,
     needsSession,
     sessionError,
     hasMarketplaceSession: marketplaceSession !== null && hasActiveServiceSession,
@@ -963,6 +1042,13 @@ export function useMarketplaceCheckout(
     isPickupCapabilityLoadingForSeller: (sellerPubky: string) =>
       pickupAvailable === null && sellersPublishingPickup.has(sellerPubky),
     orderCount,
+    zoneShipping: {
+      ...zoneShipping,
+      // The price the buyer sees while a checkout is in flight is the price it sends.
+      setRate: (groupKey: string, rateId: string) => {
+        if (!checkoutInFlight.current) zoneShipping.setRate(groupKey, rateId);
+      },
+    },
     pendingKeyChange,
     decideKeyChange,
     deliveryKeyBlock,

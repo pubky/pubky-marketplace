@@ -32,6 +32,14 @@ import {
 import type { MarketplaceFulfillmentMethod } from './pickup';
 import { canonicalCountryCode } from './postal-address';
 import {
+  SHIPPING_MAX_COUNTRIES,
+  SHIPPING_MAX_NAME_CHARS,
+  SHIPPING_MAX_ORIGINS,
+  shippingCountryListSchema,
+  shippingZonesSchema,
+} from './shipping-zones';
+import {
+  commerceCurrencySchema,
   commerceEntityIdSchema,
   commerceMoneySchema,
   commercePositiveMoneySchema,
@@ -414,14 +422,18 @@ export function commerceListingProjectionMatchesRecord(
  * Whether the listing offers **Make offer**: a fixed-price sale that accepts
  * offers and publishes a physical fulfillment (shipping or pickup). Digital
  * items, Locks listings included, take no offers; the service refuses them
- * (`offers_unavailable_for_digital`).
+ * (`offers_unavailable_for_digital`). A zone-priced listing takes none either:
+ * its shipping depends on a destination and a rate the offer flow does not
+ * collect yet.
  */
 export function commerceListingTakesOffers(
-  record: Pick<CommerceListingRecord, 'sale' | 'fulfillmentMethods'>,
+  record: Pick<CommerceListingRecord, 'sale' | 'fulfillmentMethods' | 'shippingProfileId' | 'shippingZones'>,
 ): boolean {
   return (
     record.sale.format === 'fixed_price' &&
     record.sale.acceptsOffers &&
+    record.shippingProfileId === undefined &&
+    record.shippingZones === undefined &&
     commerceListingFulfillmentMethods(record.fulfillmentMethods).some(
       (method) => method === 'shipping' || method === 'pickup',
     )
@@ -652,6 +664,11 @@ const commerceListingRecordSchemaInner = commercePublicRecordBaseSchema
       .max(4),
     package: commercePackageSchema.optional(),
     shippingOptions: z.array(commerceShippingOptionSchema).max(20),
+    // Zone-priced shipping (shipping profiles): the id of the seller's profile whose zones price this
+    // listing, or zones that price it alone; never both. `shippingOptions` still carries the one legacy
+    // option that readers predating zones price from.
+    shippingProfileId: commerceEntityIdSchema.optional(),
+    shippingZones: shippingZonesSchema.optional(),
     returnPolicy: commerceReturnPolicySchema,
     digitalLock: commerceDigitalLockSchema.optional(),
     adultOnly: z.boolean(),
@@ -745,6 +762,20 @@ const commerceListingRecordSchemaInner = commercePublicRecordBaseSchema
         path: ['shippingOptions'],
       });
     }
+    if (listing.shippingProfileId !== undefined && listing.shippingZones !== undefined) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A listing names a shipping profile or carries its own zones, not both',
+        path: ['shippingZones'],
+      });
+    }
+    if ((listing.shippingProfileId !== undefined || listing.shippingZones !== undefined) && !hasPhysical) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Shipping zones require physical fulfillment',
+        path: ['fulfillmentMethods'],
+      });
+    }
     if (!hasPhysical && (listing.package !== undefined || listing.shippingOptions.length > 0)) {
       context.addIssue({
         code: 'custom',
@@ -823,6 +854,26 @@ const commerceListingRecordSchemaInner = commercePublicRecordBaseSchema
       }
     });
   });
+
+/**
+ * A seller's reusable shipping rules at `shipping_profiles/{profileId}`: where
+ * the goods ship from, the countries never served, and what each zone charges.
+ * Amounts are minor units of the profile's own asset; a listing can use the
+ * profile only in the same asset.
+ */
+export const commerceShippingProfileRecordSchemaInner = commercePublicRecordBaseSchema
+  .extend({
+    recordType: z.literal('shipping_profile'),
+    profileId: commerceEntityIdSchema,
+    name: z.string().trim().min(1).max(SHIPPING_MAX_NAME_CHARS),
+    currency: commerceCurrencySchema,
+    exponent: z.number().int().min(0).max(18),
+    origins: shippingCountryListSchema(SHIPPING_MAX_ORIGINS).default([]),
+    excludedCountries: shippingCountryListSchema(SHIPPING_MAX_COUNTRIES).default([]),
+    zones: shippingZonesSchema,
+  })
+  .passthrough()
+  .superRefine((profile, context) => validateRecordDates(profile, context));
 
 const commerceReviewRecordSchemaInner = commercePublicRecordBaseSchema
   .extend({
@@ -1140,6 +1191,10 @@ export const commerceShopRecordSchema = z.preprocess(stripSerializedNulls, comme
 export const commerceListingRecordSchema = reserveFreePublicRecordInputSchema
   .transform(stripSerializedNulls)
   .pipe(commerceListingRecordSchemaInner);
+export const commerceShippingProfileRecordSchema = z.preprocess(
+  stripSerializedNulls,
+  commerceShippingProfileRecordSchemaInner,
+);
 export const commerceReviewRecordSchema = z.preprocess(stripSerializedNulls, commerceReviewRecordSchemaInner);
 export const commerceReviewResponseRecordSchema = z.preprocess(
   stripSerializedNulls,
@@ -1172,6 +1227,7 @@ export const commerceAuctionReserveRecordSchema = z
 
 export type CommerceShopRecord = z.infer<typeof commerceShopRecordSchema>;
 export type CommerceListingRecord = z.infer<typeof commerceListingRecordSchema>;
+export type CommerceShippingProfileRecord = z.infer<typeof commerceShippingProfileRecordSchema>;
 export type CommerceReviewRecord = z.infer<typeof commerceReviewRecordSchema>;
 export type CommerceReviewResponseRecord = z.infer<typeof commerceReviewResponseRecordSchema>;
 export type CommerceCollectionRecord = z.infer<typeof commerceCollectionRecordSchema>;

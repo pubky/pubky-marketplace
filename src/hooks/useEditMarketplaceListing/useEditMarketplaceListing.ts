@@ -12,6 +12,7 @@ import {
   deriveTags,
   describeMediaFailure,
   listingAttributesFromFormData,
+  resolveListingShipping,
   sellerDeliveryKeyRequirement,
   uploadListingMedia,
 } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing';
@@ -35,6 +36,7 @@ import {
   type ListingPublishBlockReason,
   listingPublishBlockToast,
 } from '@/libs/commerce/listing-publish-guards';
+import { listingShippingFormFromRecord, type ListingShippingRecordFields } from '@/libs/commerce/listing-shipping';
 import { type CommerceListingRecord, commerceListingRecordSchema } from '@/libs/commerce/marketplace-records';
 import {
   amountInputFromMoney,
@@ -204,9 +206,15 @@ export function useEditMarketplaceListing(sellerPubky: string, listingId: string
         return;
       }
 
+      const shipping = await resolveListingShipping(currentUserPubky, data, record.shippingZones);
+      if (!shipping.ok) {
+        toast({ variant: 'error', description: shipping.errors[0] });
+        return;
+      }
+
       try {
         await uploadListingMedia(preparedMedia.uploads);
-        const updated = buildUpdatedRecord(record, data, preparedMedia.media);
+        const updated = buildUpdatedRecord(record, data, preparedMedia.media, shipping.fields);
         const reservePrice =
           updated.sale.format === 'auction' && data.reservePrice !== ''
             ? amountInputToMoney(data.reservePrice, assetForListingCurrency(data.currency))
@@ -349,6 +357,7 @@ export function formDataFromRecord(
       priceOverride: variant.priceOverride ? amountInputFromMoney(variant.priceOverride) : '',
     })),
     fulfillment,
+    ...listingShippingFormFromRecord(record, assetForListingCurrency(currency)),
     shippingLabel: shippingOption ? shippingOption.label : createMarketplaceListingDefaults.shippingLabel,
     freeShipping: freeShipping !== undefined,
     shippingPrice: flatShipping ? amountInputFromMoney(flatShipping.price) : '',
@@ -377,6 +386,7 @@ function buildUpdatedRecord(
   record: CommerceListingRecord,
   data: CreateMarketplaceListingData,
   media: CommerceListingRecord['media'],
+  shipping: ListingShippingRecordFields,
 ): CommerceListingRecord {
   const now = new Date().toISOString();
   const asset = assetForListingCurrency(data.currency);
@@ -416,26 +426,9 @@ function buildUpdatedRecord(
     sale,
     fulfillmentMethods: fulfillmentMethodsFromForm(data.fulfillment),
     package: requiresShipping ? buildPackageRecord(data) : undefined,
-    shippingOptions: requiresShipping
-      ? [
-          data.freeShipping
-            ? {
-                id: 'seller_flat_rate',
-                pricing: 'free' as const,
-                label: data.shippingLabel,
-                estimatedMinDays: Number(data.shippingMinDays),
-                estimatedMaxDays: Number(data.shippingMaxDays),
-              }
-            : {
-                id: 'seller_flat_rate',
-                pricing: 'flat' as const,
-                label: data.shippingLabel,
-                price: amountInputToMoney(data.shippingPrice, asset),
-                estimatedMinDays: Number(data.shippingMinDays),
-                estimatedMaxDays: Number(data.shippingMaxDays),
-              },
-        ]
-      : [],
+    shippingOptions: requiresShipping ? shipping.shippingOptions : [],
+    shippingProfileId: requiresShipping ? shipping.shippingProfileId : undefined,
+    shippingZones: requiresShipping ? shipping.shippingZones : undefined,
     returnPolicy: {
       acceptsReturns: returnWindowDays !== undefined,
       returnWindowDays,

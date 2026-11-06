@@ -60,6 +60,7 @@ export function MarketplaceConnectorImport({
         {...(onVariantMode ? { onVariantMode } : {})}
         variantModeBusy={variantModeBusy}
         busy={importer.busy}
+        message={flow.message}
         onReview={() => void flow.review()}
         onChooseFreeShipping={() => void flow.chooseFreeShipping()}
         onBack={onBack}

@@ -6,6 +6,7 @@ import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.view
 import { MarketplaceShippingSettings } from '@/templates/Marketplace/MarketplaceShippingSettings';
 
 const view = vi.hoisted(() => ({
+  profiles: [] as unknown[],
   presets: [] as unknown[],
   isLoading: false,
   rates: null as unknown,
@@ -80,6 +81,122 @@ vi.mock('@/hooks/useMarketplaceShippingPresets/useMarketplaceShippingPresets', a
   };
 });
 
+const profileFixtures = vi.hoisted(() => {
+  const owner = 'y'.repeat(52);
+  const base = {
+    schemaVersion: 1,
+    recordType: 'shipping_profile',
+    ownerPubky: owner,
+    revision: 1,
+    createdAt: '2026-10-01T10:00:00.000Z',
+    updatedAt: '2026-10-01T10:00:00.000Z',
+    currency: 'USD',
+    exponent: 2,
+  };
+  return [
+    {
+      sha256: 'a'.repeat(64),
+      record: {
+        ...base,
+        profileId: 'printful_worldwide',
+        name: 'Printful worldwide',
+        origins: ['US', 'DE'],
+        excludedCountries: ['RU'],
+        zones: [
+          {
+            zoneId: 'us',
+            name: 'United States',
+            countries: ['US'],
+            rates: [
+              {
+                pricing: 'per_item',
+                rateId: 'std',
+                label: 'Standard',
+                firstMinor: 479,
+                additionalMinor: 240,
+                estimatedMinDays: 4,
+                estimatedMaxDays: 8,
+              },
+            ],
+          },
+          {
+            zoneId: 'eu',
+            name: 'Europe',
+            countries: ['DE', 'FR', 'PT'],
+            rates: [
+              {
+                pricing: 'per_item',
+                rateId: 'std',
+                label: 'Standard',
+                firstMinor: 899,
+                additionalMinor: 450,
+                estimatedMinDays: 6,
+                estimatedMaxDays: 12,
+              },
+              {
+                pricing: 'flat',
+                rateId: 'exp',
+                label: 'Express',
+                amountMinor: 2500,
+                estimatedMinDays: 2,
+                estimatedMaxDays: 4,
+              },
+            ],
+          },
+          {
+            zoneId: 'row',
+            name: 'Rest of world',
+            countries: [],
+            restOfWorld: true,
+            rates: [
+              {
+                pricing: 'flat',
+                rateId: 'int',
+                label: 'International',
+                amountMinor: 2900,
+                estimatedMinDays: 9,
+                estimatedMaxDays: 20,
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      sha256: 'b'.repeat(64),
+      record: {
+        ...base,
+        profileId: 'local_pickup_free',
+        name: 'Free shipping in the US',
+        origins: ['US'],
+        excludedCountries: [],
+        zones: [
+          {
+            zoneId: 'us',
+            name: 'United States',
+            countries: ['US'],
+            rates: [{ pricing: 'free', rateId: 'free', label: 'Free', estimatedMinDays: 3, estimatedMaxDays: 7 }],
+          },
+        ],
+      },
+    },
+  ];
+});
+
+vi.mock('@/hooks/useMarketplaceShippingProfiles/useMarketplaceShippingProfiles', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/hooks/useMarketplaceShippingProfiles/useMarketplaceShippingProfiles')>();
+  return {
+    ...actual,
+    useMarketplaceShippingProfiles: () => ({
+      state: { status: 'ready', profiles: view.profiles, unreadable: [] },
+      reload: vi.fn(async () => {}),
+      save: vi.fn(async () => true),
+      remove: vi.fn(async () => true),
+    }),
+  };
+});
+
 vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
   ContentLayout: ({ children }: { children: React.ReactNode }) => <main className="w-full py-6">{children}</main>,
 }));
@@ -137,5 +254,40 @@ describe('Marketplace shipping presets settings — visual regression', () => {
       if (!screen.container.querySelector('#shippingLabel')) throw new Error('The preset form has not opened yet.');
     });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('shipping-settings-create-desktop');
+  });
+
+  it('renders saved shipping profiles at desktop viewport', async () => {
+    view.presets = presetFixtures;
+    view.profiles = profileFixtures;
+    view.isLoading = false;
+
+    const screen = await renderForVRT(<MarketplaceShippingSettings />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('shipping-profiles-list-desktop');
+    view.profiles = [];
+  });
+
+  it('renders saved shipping profiles at mobile viewport', async () => {
+    view.presets = presetFixtures;
+    view.profiles = profileFixtures;
+    view.isLoading = false;
+
+    const screen = await renderForVRT(<MarketplaceShippingSettings />, { viewport: VRT_VIEWPORT_MOBILE });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('shipping-profiles-list-mobile');
+    view.profiles = [];
+  });
+
+  it('renders the shipping profile editor at desktop viewport', async () => {
+    view.presets = presetFixtures;
+    view.profiles = [];
+    view.isLoading = false;
+
+    const screen = await renderForVRT(<MarketplaceShippingSettings />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await screen.getByRole('button', { name: 'Add profile' }).click();
+    await vi.waitFor(() => {
+      if (!screen.container.querySelector('[role="group"][aria-label="New shipping profile"]')) {
+        throw new Error('The profile editor has not opened yet.');
+      }
+    });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('shipping-profiles-editor-desktop');
   });
 });

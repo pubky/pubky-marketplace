@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import { type ConnectorCatalogProduct, connectorCatalogProductSchema } from '@/libs/commerce/connectors';
+import { isShopBuiltImportFile } from '@/libs/commerce/shop-built-import-file';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { connectorRefusal } from '@/test-utils/connector-errors';
 import { useConnectorCatalogImport } from './useConnectorCatalogImport';
@@ -42,7 +43,7 @@ vi.mock('@/hooks/useMarketplaceInventoryImport/useMarketplaceInventoryImport', a
 });
 
 vi.mock('@/controllers/commerce/commerce', () => ({
-  CommerceController: { inventoryImportDefaults: vi.fn() },
+  CommerceController: { inventoryImportDefaults: vi.fn(), listShippingProfiles: vi.fn() },
 }));
 
 vi.mock('@/controllers/connectors/connectors', () => ({
@@ -167,6 +168,86 @@ describe('useConnectorCatalogImport', () => {
     expect(result.current.stage).toBe('review');
     expect(result.current.importer.lossSummary?.listingsImported).toBe(2);
     expect(importerFns.planFile.mock.calls.at(-1)?.[0]).toBeInstanceOf(File);
+  });
+
+  describe('shipping profile mode', () => {
+    const profile = (overrides: Record<string, unknown> = {}) => ({
+      sha256: 'a'.repeat(64),
+      record: {
+        profileId: 'worldwide',
+        name: 'Worldwide',
+        currency: 'USD',
+        exponent: 2,
+        excludedCountries: [],
+        zones: [
+          {
+            zoneId: 'row',
+            name: 'Rest of world',
+            countries: [],
+            restOfWorld: true,
+            rates: [
+              {
+                pricing: 'flat',
+                rateId: 'int',
+                label: 'International',
+                amountMinor: 1500,
+                estimatedMinDays: 9,
+                estimatedMaxDays: 20,
+              },
+            ],
+          },
+        ],
+        ...overrides,
+      },
+    });
+
+    async function chooseProfile() {
+      const hook = renderHook(() => useConnectorCatalogImport(CONNECTION));
+      await act(async () => {
+        await hook.result.current.start();
+      });
+      act(() => {
+        hook.result.current.form.setValue('shippingMode', 'profile');
+        hook.result.current.form.setValue('shippingProfileId', 'worldwide');
+      });
+      return hook;
+    }
+
+    it('plans the rows under the chosen profile, in a file only the Shop could have built', async () => {
+      vi.mocked(CommerceController.listShippingProfiles).mockResolvedValue({
+        profiles: [profile()],
+        unreadable: [],
+      } as never);
+      const { result } = await chooseProfile();
+
+      await act(async () => {
+        expect(await result.current.review()).toBe(true);
+      });
+
+      const rows = await planned();
+      expect(rows.every((row) => row.extraFields.shipping_profile_id === 'worldwide')).toBe(true);
+      expect(isShopBuiltImportFile(importerFns.planFile.mock.calls.at(-1)?.[0] as File)).toBe(true);
+    });
+
+    it.each([
+      ['the read fails', () => Promise.reject(new Error('offline'))],
+      ['the profile is gone', () => Promise.resolve({ profiles: [], unreadable: [] })],
+      [
+        'the profile prices in another currency',
+        () => Promise.resolve({ profiles: [profile({ currency: 'EUR' })], unreadable: [] }),
+      ],
+    ])('stays on settings and plans nothing when %s', async (_name, read) => {
+      vi.mocked(CommerceController.listShippingProfiles).mockImplementation(read as never);
+      const { result } = await chooseProfile();
+
+      await act(async () => {
+        expect(await result.current.review()).toBe(false);
+      });
+
+      expect(importerFns.planFile).not.toHaveBeenCalled();
+      expect(result.current.stage).toBe('settings');
+      expect(result.current.message).toMatch(/shipping profile could not be read/);
+    });
   });
 
   it('plans one listing per store variant when the connection is set to one listing per variant', async () => {

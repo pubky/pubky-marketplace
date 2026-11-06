@@ -11,9 +11,11 @@ import { commerceListingRecordSchema } from '@/libs/commerce/marketplace-records
 import type { CommerceListingDraftModelSchema } from '@/models/commerce/commerce.schema';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
+import { asOpaque } from '@/test-utils/type-assertions';
 import {
   buildListingVariants,
   normalizeDraftForm,
+  resolveListingShipping,
   seedDraftFormFromListing,
   useCreateMarketplaceListing,
 } from './useCreateMarketplaceListing';
@@ -128,6 +130,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
       paypalAvailable: false,
     })),
     getMyDeliveryKeyStatus: vi.fn(),
+    fetchShippingProfile: vi.fn(),
   },
 }));
 
@@ -1189,3 +1192,28 @@ describe('normalizeDraftForm', () => {
 function fixtureSellerPubky(): string {
   return createCommerceListingFixture().ownerPubky;
 }
+
+describe('resolveListingShipping', () => {
+  const profileData = () =>
+    asOpaque<Parameters<typeof resolveListingShipping>[1]>({
+      fulfillment: 'shipping',
+      shippingMode: 'profile',
+      shippingProfileId: 'worldwide',
+      currency: 'USD',
+    });
+
+  it.each([
+    ['the network fails', () => Promise.reject(new Error('offline'))],
+    [
+      'the profile is malformed or too large',
+      () => Promise.reject(new TypeError('The shipping profile is too large.')),
+    ],
+    ['the profile is missing', () => Promise.resolve(null)],
+  ])('refuses the save with the could-not-be-read message when %s', async (_name, read) => {
+    vi.mocked(CommerceController.fetchShippingProfile).mockImplementationOnce(read);
+
+    const result = await resolveListingShipping(OWNER, profileData());
+
+    expect(result).toMatchObject({ ok: false, reason: 'profile-missing' });
+  });
+});

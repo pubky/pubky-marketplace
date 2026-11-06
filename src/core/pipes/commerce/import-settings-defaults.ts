@@ -1,6 +1,6 @@
 import { type CommerceListingRecord, type CommerceShopRecord } from '@/libs/commerce/marketplace-records';
 import { DEFAULT_SHOP_COUNTRY_CODE } from './default-shop';
-import { currencyExponent, type ImportShipping } from './import-settings';
+import { currencyExponent, type ImportRateShipping } from './import-settings';
 
 /**
  * What the dry run can prefill from the seller's own Shop data, so the import
@@ -22,7 +22,7 @@ export function shopCountryForImport(shop: Pick<CommerceShopRecord, 'revision' |
 }
 
 export type ImportShippingDefault = {
-  readonly shipping: ImportShipping;
+  readonly shipping: ImportRateShipping;
   /** The currency of the listing it came from, so a flat price keeps its meaning. */
   readonly currency: string;
 };
@@ -33,9 +33,16 @@ export type ImportShippingDefault = {
  * policy, so an existing listing is the seller's own structured choice.
  */
 export function shippingDefaultFromListings(
-  records: readonly Pick<CommerceListingRecord, 'updatedAt' | 'sale' | 'shippingOptions'>[],
+  records: readonly Pick<
+    CommerceListingRecord,
+    'updatedAt' | 'sale' | 'shippingOptions' | 'shippingProfileId' | 'shippingZones'
+  >[],
 ): ImportShippingDefault | null {
-  const newestFirst = [...records].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  // A zone-priced listing's legacy option is a summary, not a rate the seller chose.
+  const flatPriced = records.filter(
+    (record) => record.shippingProfileId === undefined && record.shippingZones === undefined,
+  );
+  const newestFirst = [...flatPriced].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   for (const record of newestFirst) {
     const unit = record.sale.format === 'fixed_price' ? record.sale.unitPrice : record.sale.startingPrice;
     for (const option of record.shippingOptions ?? []) {

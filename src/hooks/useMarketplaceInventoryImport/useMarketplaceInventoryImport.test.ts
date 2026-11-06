@@ -88,6 +88,78 @@ function planned(extra: Record<string, unknown> = {}) {
 
 const FILE = new File(['x'], 'products.csv', { type: 'text/csv' });
 
+describe('import settings with a shipping profile', () => {
+  const profile = (currency: string, exponent = 2) =>
+    ({
+      sha256: 'a'.repeat(64),
+      record: {
+        profileId: 'worldwide',
+        name: 'Worldwide',
+        currency,
+        exponent,
+        excludedCountries: [],
+        zones: [
+          {
+            zoneId: 'us',
+            name: 'United States',
+            countries: ['US'],
+            rates: [
+              {
+                pricing: 'flat',
+                rateId: 'std',
+                label: 'Standard',
+                amountMinor: 899,
+                estimatedMinDays: 4,
+                estimatedMaxDays: 8,
+              },
+            ],
+          },
+        ],
+      },
+    }) as never;
+  const chosen = { ...importSettingsFormDefaults, countryCode: 'US', shippingMode: 'profile' as const };
+
+  it('asks for a profile before applying', () => {
+    const result = importSettingsFormSchema.safeParse(chosen);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((issue) => issue.path[0])).toContain('shippingProfileId');
+    expect(importSettingsFormSchema.safeParse({ ...chosen, shippingProfileId: 'worldwide' }).success).toBe(true);
+  });
+
+  it('ignores delivery days that profile mode hides, and still checks them for free and flat shipping', () => {
+    const hidden = { ...chosen, shippingProfileId: 'worldwide', shippingMinDays: '9', shippingMaxDays: 'x' };
+    expect(importSettingsFormSchema.safeParse(hidden).success).toBe(true);
+    for (const shippingMode of ['free', 'flat'] as const) {
+      const result = importSettingsFormSchema.safeParse({
+        ...hidden,
+        shippingMode,
+        shippingPrice: '5',
+      });
+      expect(result.error?.issues.map((issue) => issue.path[0])).toEqual(['shippingMaxDays']);
+    }
+    const reversed = importSettingsFormSchema.safeParse({
+      ...hidden,
+      shippingMode: 'free',
+      shippingMaxDays: '2',
+    });
+    expect(reversed.error?.issues[0]?.message).toBe('Maximum delivery must not be before the minimum.');
+  });
+
+  it('names the profile and derives the legacy option from it', () => {
+    const settings = toImportSettings({ ...chosen, shippingProfileId: 'worldwide' }, [profile('USD')]);
+    expect(settings.shipping).toMatchObject({
+      mode: 'profile',
+      profileId: 'worldwide',
+      option: { pricing: 'flat', price: { amountMinor: 899, currency: 'USD' } },
+    });
+  });
+
+  it('leaves shipping unchosen when the profile is unknown or priced in another currency', () => {
+    expect(toImportSettings({ ...chosen, shippingProfileId: 'worldwide' }, []).shipping).toBeNull();
+    expect(toImportSettings({ ...chosen, shippingProfileId: 'worldwide' }, [profile('EUR')]).shipping).toBeNull();
+  });
+});
+
 describe('import settings form schema', () => {
   it('offers the currencies and conditions of the listing schema', () => {
     expect(IMPORT_CURRENCY_OPTIONS).toEqual(expect.arrayContaining(['USD', 'BTC']));

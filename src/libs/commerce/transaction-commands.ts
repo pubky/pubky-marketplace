@@ -249,6 +249,43 @@ export const releaseDropListingsCommandSchema = createCommerceCommandSchema(
  */
 export const buyerCountrySchema = z.string().regex(/^[A-Z]{2}$/, 'Expected an ISO 3166-1 alpha-2 code');
 
+/**
+ * The buyer's rate for one shipping group of a checkout: the lines of one seller that share a
+ * profile (pinned by the SHA-256 of the profile bytes the buyer saw), or the one listing whose
+ * inline zones price it.
+ */
+export const shippingChoiceSchema = z
+  .object({
+    sellerPubky: commercePubkySchema,
+    profileId: commerceEntityIdSchema.optional(),
+    listingAggregateId: z.string().min(1).max(200).optional(),
+    rateId: commerceEntityIdSchema,
+    profileSha256: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/, 'Expected a 64-character lowercase hex hash')
+      .optional(),
+  })
+  .strict()
+  .superRefine((choice, context) => {
+    const profileGroup = choice.profileId !== undefined && choice.listingAggregateId === undefined;
+    const inlineGroup = choice.profileId === undefined && choice.listingAggregateId !== undefined;
+    if (!profileGroup && !inlineGroup) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A shipping choice names a profile or a listing, not both and not neither.',
+      });
+    }
+    if (profileGroup !== (choice.profileSha256 !== undefined)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['profileSha256'],
+        message: 'A profile choice carries the digest of the profile read, and an inline choice carries none.',
+      });
+    }
+  });
+
+export type ShippingChoice = z.infer<typeof shippingChoiceSchema>;
+
 const offerTermsSchema = z
   .object({
     amount: commercePositiveMoneySchema,
@@ -423,6 +460,11 @@ export const createMarketplaceCheckoutCommandSchema = createCommerceCommandSchem
       // checkout hook decides and this schema checks only its form.
       deliveryEmail: marketplaceDeliveryEmailSchema.optional(),
       buyerCountry: buyerCountrySchema.optional(),
+      // Where the order ships, in clear text: the service prices zone rates and applies a shop's
+      // ships-to list and the region block from it. Sent only when a line is zone-priced or a
+      // shipped seller limits its destinations.
+      destinationCountry: buyerCountrySchema.optional(),
+      shippingChoices: z.array(shippingChoiceSchema).min(1).max(50).optional(),
     })
     .strict()
     .superRefine((payload, context) => {

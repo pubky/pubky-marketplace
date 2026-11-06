@@ -71,7 +71,11 @@ import {
   pausedSummary,
   payloadShips,
 } from '@/pipes/commerce/import-publish-gate';
-import { DEFAULT_IMPORT_SETTINGS, type ImportSettings, type ImportShipping } from '@/pipes/commerce/import-settings';
+import {
+  DEFAULT_IMPORT_SETTINGS,
+  type ImportRateShipping,
+  type ImportSettings,
+} from '@/pipes/commerce/import-settings';
 import { shippingDefaultFromListings, shopCountryForImport } from '@/pipes/commerce/import-settings-defaults';
 import type { WooStoreCatalog } from '@/pipes/commerce/import-woo-store';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
@@ -149,7 +153,7 @@ const IMPORT_STARTED_FIELD = 'import_started_at';
 /** What the dry run can prefill from the seller's Shop data. */
 export type InventoryImportDefaults = {
   countryCode: string | null;
-  shipping: ImportShipping | null;
+  shipping: ImportRateShipping | null;
   /** The currency of the listing the shipping option came from. */
   currency: string | null;
 };
@@ -1148,7 +1152,7 @@ export class CommerceInventoryImportApplication {
       if (!parsed) return { status: 'error', message: IMPORT_PARSE_FAIL_COPY };
       payloads.push(parsed);
     }
-    const mapped = mapCanonicalRowsToListing(payloads, this.host.sellerPubky);
+    const mapped = mapCanonicalRowsToListing(payloads, this.host.sellerPubky, existing?.shippingProfileId ?? null);
     if (!mapped.ok) {
       const failure = classifyListingPublishFailure(mapped.message);
       const failureCode =

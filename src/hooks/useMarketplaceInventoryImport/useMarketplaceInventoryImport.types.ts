@@ -1,9 +1,13 @@
 import { z } from 'zod';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { createMarketplaceListingSchema } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing.types';
+import { ZONE_LEGACY_OPTION_ID } from '@/libs/commerce/listing-shipping';
+import { shippingProfileFitsAsset, type ShippingProfileSnapshot } from '@/libs/commerce/shipping-profile';
+import { legacyShippingOption } from '@/libs/commerce/shipping-zones';
 import { countryFieldError, publishedCountryCode } from '@/libs/commerce/ships-to';
 import {
   currencyExponent,
+  type ImportRateShipping,
   type ImportSettings,
   type ImportShipping,
   majorToMinor,
@@ -15,6 +19,7 @@ export const IMPORT_SETTINGS_FIELDS = {
   COUNTRY_CODE: 'countryCode',
   CONDITION: 'condition',
   SHIPPING_MODE: 'shippingMode',
+  SHIPPING_PROFILE: 'shippingProfileId',
   SHIPPING_PRICE: 'shippingPrice',
   SHIPPING_MIN_DAYS: 'shippingMinDays',
   SHIPPING_MAX_DAYS: 'shippingMaxDays',
@@ -31,12 +36,11 @@ const listingShape = createMarketplaceListingSchema.shape;
 export const IMPORT_CURRENCY_OPTIONS: readonly string[] = listingShape.currency.options;
 export const IMPORT_CONDITION_OPTIONS: readonly string[] = listingShape.condition.options;
 
-const dayCount = (label: string) =>
-  z
-    .string()
-    .trim()
-    .regex(/^\d{1,3}$/, `${label} must be a whole number of days.`)
-    .refine((value) => Number(value) <= 365, `${label} must be 365 days or fewer.`);
+/** The message for a delivery-day entry that is not a whole number of days up to 365, or null. */
+const dayCountError = (label: string, value: string): string | null => {
+  if (!/^\d{1,3}$/.test(value)) return `${label} must be a whole number of days.`;
+  return Number(value) <= 365 ? null : `${label} must be 365 days or fewer.`;
+};
 
 export const importSettingsFormSchema = z
   .object({
@@ -51,11 +55,12 @@ export const importSettingsFormSchema = z
       }),
     [IMPORT_SETTINGS_FIELDS.CONDITION]: listingShape.condition,
     [IMPORT_SETTINGS_FIELDS.SHIPPING_MODE]: z
-      .enum(['', 'free', 'flat'])
+      .enum(['', 'free', 'flat', 'profile'])
       .refine((mode): boolean => mode !== '', 'Choose a shipping option.'),
+    [IMPORT_SETTINGS_FIELDS.SHIPPING_PROFILE]: z.string().trim(),
     [IMPORT_SETTINGS_FIELDS.SHIPPING_PRICE]: z.string().trim(),
-    [IMPORT_SETTINGS_FIELDS.SHIPPING_MIN_DAYS]: dayCount('Minimum delivery'),
-    [IMPORT_SETTINGS_FIELDS.SHIPPING_MAX_DAYS]: dayCount('Maximum delivery'),
+    [IMPORT_SETTINGS_FIELDS.SHIPPING_MIN_DAYS]: z.string().trim(),
+    [IMPORT_SETTINGS_FIELDS.SHIPPING_MAX_DAYS]: z.string().trim(),
     [IMPORT_SETTINGS_FIELDS.USE_CSV_QUANTITIES]: z.boolean(),
     [IMPORT_SETTINGS_FIELDS.UNMANAGED_STOCK]: z
       .string()
@@ -64,11 +69,29 @@ export const importSettingsFormSchema = z
       .refine((value) => Number(value) < COMMERCE_LISTING_MAX_QUANTITY, 'That is more copies than a listing can hold.'),
   })
   .superRefine((data, context) => {
-    if (Number(data.shippingMaxDays) < Number(data.shippingMinDays)) {
+    // Profile mode hides the delivery-day fields, so only free and flat shipping read them.
+    if (data.shippingMode === 'free' || data.shippingMode === 'flat') {
+      const minError = dayCountError('Minimum delivery', data.shippingMinDays);
+      const maxError = dayCountError('Maximum delivery', data.shippingMaxDays);
+      if (minError) {
+        context.addIssue({ code: 'custom', path: [IMPORT_SETTINGS_FIELDS.SHIPPING_MIN_DAYS], message: minError });
+      }
+      if (maxError) {
+        context.addIssue({ code: 'custom', path: [IMPORT_SETTINGS_FIELDS.SHIPPING_MAX_DAYS], message: maxError });
+      }
+      if (!minError && !maxError && Number(data.shippingMaxDays) < Number(data.shippingMinDays)) {
+        context.addIssue({
+          code: 'custom',
+          path: [IMPORT_SETTINGS_FIELDS.SHIPPING_MAX_DAYS],
+          message: 'Maximum delivery must not be before the minimum.',
+        });
+      }
+    }
+    if (data.shippingMode === 'profile' && data.shippingProfileId === '') {
       context.addIssue({
         code: 'custom',
-        path: [IMPORT_SETTINGS_FIELDS.SHIPPING_MAX_DAYS],
-        message: 'Maximum delivery must not be before the minimum.',
+        path: [IMPORT_SETTINGS_FIELDS.SHIPPING_PROFILE],
+        message: 'Choose a shipping profile.',
       });
     }
     if (data.shippingMode !== 'flat') return;
@@ -93,6 +116,7 @@ export const importSettingsFormDefaults: ImportSettingsFormData = {
   [IMPORT_SETTINGS_FIELDS.COUNTRY_CODE]: '',
   [IMPORT_SETTINGS_FIELDS.CONDITION]: 'new',
   [IMPORT_SETTINGS_FIELDS.SHIPPING_MODE]: '',
+  [IMPORT_SETTINGS_FIELDS.SHIPPING_PROFILE]: '',
   [IMPORT_SETTINGS_FIELDS.SHIPPING_PRICE]: '',
   [IMPORT_SETTINGS_FIELDS.SHIPPING_MIN_DAYS]: '3',
   [IMPORT_SETTINGS_FIELDS.SHIPPING_MAX_DAYS]: '10',
@@ -102,7 +126,7 @@ export const importSettingsFormDefaults: ImportSettingsFormData = {
 
 /** Form values for a shipping option the seller already has. */
 export function shippingFormValues(
-  shipping: ImportShipping,
+  shipping: ImportRateShipping,
   currency: string,
 ): Pick<ImportSettingsFormData, 'shippingMode' | 'shippingPrice' | 'shippingMinDays' | 'shippingMaxDays'> {
   const price =
@@ -122,14 +146,27 @@ export function shippingFormValues(
  * are `null` until the seller (or their shop) has given a valid answer: there
  * is no silent default, so a plan made before they choose carries neither.
  */
-export function toImportSettings(data: ImportSettingsFormData): ImportSettings {
+export function toImportSettings(
+  data: ImportSettingsFormData,
+  profiles: readonly ShippingProfileSnapshot[] = [],
+): ImportSettings {
   const dayNumber = (value: string, fallback: number) => (/^\d{1,3}$/.test(value.trim()) ? Number(value) : fallback);
   const minDays = dayNumber(data.shippingMinDays, 3);
   const maxDays = Math.max(minDays, dayNumber(data.shippingMaxDays, 10));
   const priceMinor = majorToMinor(data.shippingPrice, currencyExponent(data.currency));
   let shipping: ImportShipping | null = null;
   if (data.shippingMode === 'free') shipping = { mode: 'free', minDays, maxDays };
-  else if (data.shippingMode === 'flat' && priceMinor !== null && priceMinor > 0) {
+  else if (data.shippingMode === 'profile') {
+    const profile = profiles.find(({ record }) => record.profileId === data.shippingProfileId);
+    const asset = { currency: data.currency, exponent: currencyExponent(data.currency) };
+    if (profile && shippingProfileFitsAsset(profile.record, asset)) {
+      shipping = {
+        mode: 'profile',
+        profileId: profile.record.profileId,
+        option: legacyShippingOption(profile.record.zones, asset, ZONE_LEGACY_OPTION_ID, profile.record.name),
+      };
+    }
+  } else if (data.shippingMode === 'flat' && priceMinor !== null && priceMinor > 0) {
     shipping = { mode: 'flat', priceMinor, minDays, maxDays };
   }
   const country = data.countryCode.trim();

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { IMPORT_SETTINGS_COMPLETE } from '@/test-utils/import-settings';
 import { entityIdFrom, finalizePresetRows, isEntityId, type PresetRow } from './import-preset-rows';
-import { DEFAULT_IMPORT_SETTINGS } from './import-settings';
+import { DEFAULT_IMPORT_SETTINGS, SHIPPING_PROFILE_ID_FIELD } from './import-settings';
 
 function row(overrides: Partial<PresetRow> = {}): PresetRow {
   return {
@@ -127,5 +127,37 @@ describe('finalizePresetRows', () => {
     expect(result.rows[0]?.shippingOptions).toEqual([]);
     expect(result.rows[0]?.extraFields.country_code).toBeUndefined();
     expect(result.rows[0]?.state).toBe('active');
+  });
+});
+
+describe('finalizePresetRows shipping profile', () => {
+  const option = {
+    id: 'zone_pricing',
+    pricing: 'flat',
+    label: 'Worldwide',
+    price: { amountMinor: 899, currency: 'USD', exponent: 2 },
+    estimatedMinDays: 6,
+    estimatedMaxDays: 12,
+  };
+  const run = (settings: typeof IMPORT_SETTINGS_COMPLETE, extraFields: Record<string, string> = {}) =>
+    finalizePresetRows({
+      rows: [row({ extraFields })],
+      settings,
+      labelFor: (id) => `label ${id}`,
+      lineFor: () => 4,
+    });
+
+  it('names the chosen profile on every row and carries the legacy option beside it', () => {
+    const result = run({
+      ...IMPORT_SETTINGS_COMPLETE,
+      shipping: { mode: 'profile', profileId: 'worldwide', option: option as never },
+    });
+    expect(result.rows[0]?.extraFields[SHIPPING_PROFILE_ID_FIELD]).toBe('worldwide');
+    expect(result.rows[0]?.shippingOptions).toEqual([option]);
+  });
+
+  it('drops a profile id the file carries when the seller chose another shipping', () => {
+    const result = run(IMPORT_SETTINGS_COMPLETE, { [SHIPPING_PROFILE_ID_FIELD]: 'from-the-file' });
+    expect(result.rows[0]?.extraFields).not.toHaveProperty(SHIPPING_PROFILE_ID_FIELD);
   });
 });

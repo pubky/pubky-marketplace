@@ -3,6 +3,65 @@ import { PHOTO_REQUIRED_MESSAGE } from '@/pipes/commerce/import-publish-failure'
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { listingToCanonicalRows, mapCanonicalRowsToListing } from './inventory-listing-map';
 
+describe('mapCanonicalRowsToListing shipping profile', () => {
+  it('publishes the listing under the profile its row names and keeps the legacy option', () => {
+    const record = createCommerceListingFixture();
+    const [row] = listingToCanonicalRows(record);
+    const mapped = mapCanonicalRowsToListing(
+      [
+        {
+          ...row!,
+          extraFields: {
+            country_code: 'US',
+            media_json: JSON.stringify(record.media),
+            shipping_profile_id: 'worldwide',
+          },
+        },
+      ],
+      record.ownerPubky,
+    );
+    expect(mapped.ok).toBe(true);
+    if (mapped.ok) {
+      expect(mapped.record.shippingProfileId).toBe('worldwide');
+      expect(mapped.record.shippingOptions.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('leaves the profile off when the row names none', () => {
+    const record = createCommerceListingFixture();
+    const [row] = listingToCanonicalRows(record);
+    const mapped = mapCanonicalRowsToListing(
+      [{ ...row!, extraFields: { country_code: 'US', media_json: JSON.stringify(record.media) } }],
+      record.ownerPubky,
+    );
+    expect(mapped.ok && mapped.record.shippingProfileId).toBeFalsy();
+  });
+});
+
+describe('mapCanonicalRowsToListing profile in a whole-record round trip', () => {
+  const priced = () => createCommerceListingFixture({ listingId: 'boots_01', shippingProfileId: 'worldwide' });
+  const edited = (title: string) => {
+    const record = priced();
+    const rows = listingToCanonicalRows({ ...record, title });
+    return { record, rows };
+  };
+
+  it('keeps the profile of the stored listing when an edited export is re-imported over it', () => {
+    const { record, rows } = edited('Boots, edited');
+    const mapped = mapCanonicalRowsToListing(rows, record.ownerPubky, 'worldwide');
+    expect(mapped.ok && mapped.record.title).toBe('Boots, edited');
+    expect(mapped.ok && mapped.record.shippingProfileId).toBe('worldwide');
+  });
+
+  it('never lets a file introduce a profile on a create or an unpriced listing', () => {
+    const { record, rows } = edited('Boots');
+    const created = mapCanonicalRowsToListing(rows, record.ownerPubky);
+    expect(created.ok && created.record.shippingProfileId).toBeUndefined();
+    const other = mapCanonicalRowsToListing(rows, record.ownerPubky, 'someone-elses');
+    expect(other.ok && other.record.shippingProfileId).toBeUndefined();
+  });
+});
+
 describe('mapCanonicalRowsToListing', () => {
   it('prefers extraFields.record_json for a Shop-valid create', () => {
     const record = createCommerceListingFixture({ listingId: 'boots_01' });
