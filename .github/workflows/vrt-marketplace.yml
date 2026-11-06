@@ -1,6 +1,7 @@
 name: Marketplace VRT
 
 on:
+  merge_group:
   pull_request:
     branches:
       - master
@@ -21,6 +22,8 @@ concurrency:
 # .nvmrc, tsconfig*.json (path aliases, read by vite-tsconfig-paths),
 # vitest.config.*, vite.config.*, postcss.config.*, tailwind.config.*;
 # plus this workflow and the VRT scripts it runs.
+# merge_group always runs both jobs: the queue builds the merge commit and a
+# required check that never reports stalls the queue.
 # scripts/ci-vrt-paths-test.sh runs this filter against sample changes.
 #
 # vrt-core runs the other Linux VRT project (`vrt`: feed, messages,
@@ -41,9 +44,15 @@ jobs:
       - name: Match VRT paths
         id: filter
         env:
+          EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "vrt paths match: true (not a pull request)"
+            exit 0
+          fi
           git diff --name-only "$BASE_SHA" HEAD > "$RUNNER_TEMP/changed.txt"
           run=false
           while IFS= read -r file; do

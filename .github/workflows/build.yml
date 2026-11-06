@@ -164,7 +164,7 @@ jobs:
           test -s public/sw.js
 
       - name: Upload Next build for launch-e2e
-        if: github.event_name == 'pull_request' && (github.base_ref == 'master' || startsWith(github.base_ref, 'release/shop-'))
+        if: ((github.event_name == 'pull_request' && (github.base_ref == 'master' || startsWith(github.base_ref, 'release/shop-'))) || github.event_name == 'merge_group')
         uses: actions/upload-artifact@v4
         with:
           name: next-build
@@ -184,7 +184,7 @@ jobs:
     # successful required-check status (success, skipped, or neutral): it does
     # not stay Pending. Unrelated pull requests skip the build, and this job
     # skips with it for the same reason.
-    if: always() && needs.build.result == 'success' && github.event_name == 'pull_request' && (github.base_ref == 'master' || startsWith(github.base_ref, 'release/shop-'))
+    if: always() && needs.build.result == 'success' && ((github.event_name == 'pull_request' && (github.base_ref == 'master' || startsWith(github.base_ref, 'release/shop-'))) || github.event_name == 'merge_group')
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.60.0-noble
@@ -274,7 +274,7 @@ jobs:
     name: chat-e2e
     needs: build
     # Same gate as launch-e2e: Shop pull requests that have a Next build artifact.
-    if: always() && needs.build.result == 'success' && github.event_name == 'pull_request' && (github.base_ref == 'master' || startsWith(github.base_ref, 'release/shop-'))
+    if: always() && needs.build.result == 'success' && ((github.event_name == 'pull_request' && (github.base_ref == 'master' || startsWith(github.base_ref, 'release/shop-'))) || github.event_name == 'merge_group')
     # No job container: the stack's ports (homeserver, relays, Nexus, inbox) must
     # be localhost for the browser, the Node signer and the Shop alike.
     runs-on: ubuntu-latest
