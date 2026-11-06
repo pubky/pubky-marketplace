@@ -49,6 +49,7 @@ import { DeliveryPrivacyCard } from '@/molecules/Marketplace/DeliveryPrivacyCard
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
+import { MarketplaceShippingProfilesCard } from '@/organisms/Marketplace/MarketplaceShippingProfilesCard';
 
 const shippoFormSchema = z.object({
   shippoApiKey: z
@@ -465,6 +466,8 @@ export function MarketplaceShippingSettings() {
         <DeliveryPrivacySection returnPath={returnPath} />
 
         <ShippoIntegrationCard />
+
+        <MarketplaceShippingProfilesCard />
 
         {editingId !== 'new' && presetFormCard}
 

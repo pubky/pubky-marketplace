@@ -8,10 +8,13 @@ import { asOpaque } from '@/test-utils/type-assertions';
 import { MarketplaceConnectorImport } from './MarketplaceConnectorImport';
 
 vi.mock('./MarketplaceConnectorImportSettings', () => ({
-  MarketplaceConnectorImportSettings: ({ onReview }: { onReview: () => void }) => (
-    <button type="button" onClick={onReview}>
-      settings
-    </button>
+  MarketplaceConnectorImportSettings: ({ onReview, message }: { onReview: () => void; message?: string | null }) => (
+    <>
+      <button type="button" onClick={onReview}>
+        settings
+      </button>
+      {message && <p data-testid="settings-message">{message}</p>}
+    </>
   ),
 }));
 
@@ -83,6 +86,17 @@ describe('MarketplaceConnectorImport', () => {
     render(<MarketplaceConnectorImport flow={value} connection={CONNECTION} onBack={vi.fn()} />);
     await userEvent.setup().click(screen.getByRole('button', { name: 'settings' }));
     expect(value.review).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands the reason a review stopped to the settings stage', () => {
+    render(
+      <MarketplaceConnectorImport
+        flow={flow({ stage: 'settings', message: 'The chosen shipping profile could not be read.' })}
+        connection={CONNECTION}
+        onBack={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('settings-message')).toHaveTextContent('could not be read');
   });
 
   it('shows the Studio dry run with the store loss report, and publishes through the flow', async () => {

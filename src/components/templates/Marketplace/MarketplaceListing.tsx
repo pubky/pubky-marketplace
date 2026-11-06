@@ -28,6 +28,11 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode, isDurableCommerceMode, isTransactionalCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useCommerceFavorite } from '@/hooks/useCommerceFavorite/useCommerceFavorite';
+import { useDefaultAddressCountry } from '@/hooks/useDefaultAddressCountry/useDefaultAddressCountry';
+import {
+  type ListingShippingPreviewState,
+  useListingShippingPreview,
+} from '@/hooks/useListingShippingPreview/useListingShippingPreview';
 import { useLiveSellerShop } from '@/hooks/useLiveSellerShop/useLiveSellerShop';
 import { useMarketplaceCart } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import { useMarketplaceMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
@@ -70,7 +75,12 @@ import {
   commerceVariantUnitPrice,
 } from '@/libs/commerce/marketplace-records';
 import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
-import { formatShipsToCountries, shopShipsToCountries } from '@/libs/commerce/ships-to';
+import {
+  countryDisplayName,
+  formatShipsToCountries,
+  shopShipsToCountries,
+  shopShipsToRestriction,
+} from '@/libs/commerce/ships-to';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { formatPackageDimensions, formatWeight } from '@/libs/commerce/units';
 import { RegionAvailabilityNotice } from '@/molecules/Marketplace/RegionAvailabilityNotice';
@@ -200,6 +210,16 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   });
   const regionRefused = region.refusal !== null || region.needsCountry;
   const regionBlocked = regionRefused || region.commerce.held;
+  const defaultAddressCountry = useDefaultAddressCountry();
+  const listedSale = listing?.record.sale;
+  const listedPrice = listedSale?.format === 'fixed_price' ? listedSale.unitPrice : listedSale?.startingPrice;
+  const shopRestriction = shopShipsToRestriction(shop?.record);
+  const zoneShipping = useListingShippingPreview(
+    listing?.record,
+    region.buyerCountry ?? (defaultAddressCountry === '' ? null : defaultAddressCountry),
+    listedPrice ? { currency: listedPrice.currency, exponent: listedPrice.exponent } : null,
+    shopRestriction === undefined ? 'unusable' : shopRestriction,
+  );
   const declaration = shop ? sellerDeclaration(shop.record) : 'unknown';
 
   useEffect(() => {
@@ -278,9 +298,15 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   // with neither takes no offers.
   const offersPhysical = shipsItem || methods.includes('pickup');
   const offersDigitalOnly = offersDigital && !offersPhysical;
-  const shippingCopy = formatListingShipping(record, methods);
+  const shippingCopy =
+    shipsItem && zoneShipping.status !== 'none'
+      ? formatZoneShipping(zoneShipping, price)
+      : formatListingShipping(record, methods);
   const hasFreeShipping = shippingCopy === 'Shipping: free';
-  const flatShipping = shipsItem ? record.shippingOptions.find((option) => option.pricing === 'flat') : undefined;
+  const flatShipping =
+    shipsItem && zoneShipping.status === 'none'
+      ? record.shippingOptions.find((option) => option.pricing === 'flat')
+      : undefined;
   const shippingBadge =
     hasFreeShipping || flatShipping?.price.amountMinor === 0
       ? 'Shipping: Free'
@@ -478,7 +504,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                   {shippingCopy}
                 </Typography>
               )}
-              {shipsItem && shipsToCountries && (
+              {shipsItem && shipsToCountries && zoneShipping.status === 'none' && (
                 <Typography
                   as="p"
                   className="mt-1 text-sm text-muted-foreground"
@@ -524,7 +550,11 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
             )}
 
             <div className="flex flex-wrap items-center gap-2" data-surface="marketplace-listing-purchase">
-              {record.sale.format === 'auction' ? (
+              {record.sale.format === 'auction' && zoneShipping.status !== 'none' ? (
+                <Typography as="p" className="text-sm text-muted-foreground" data-testid="zone-priced-auction-notice">
+                  Shipping on this auction is priced by destination, which this Shop cannot collect when bidding yet.
+                </Typography>
+              ) : record.sale.format === 'auction' ? (
                 <div className="[&_[data-slot=button]]:border-brand [&_[data-slot=button]]:bg-brand [&_[data-slot=button]]:text-brand-foreground [&_[data-slot=button]:hover]:bg-brand/90">
                   <MarketplaceBidDialog
                     aggregateId={aggregateId}
@@ -630,19 +660,21 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                       }
                     />
                   )}
-                  {record.sale.acceptsOffers && offersDigital && (
-                    <Typography
-                      as="p"
-                      className="w-full text-sm text-muted-foreground"
-                      data-testid="marketplace-listing-digital-offer-note"
-                    >
-                      {offersDigitalOnly
-                        ? DIGITAL_DELIVERY_COPY.offersUnavailable
-                        : shipsItem
-                          ? DIGITAL_DELIVERY_COPY.offersBuyShipped
-                          : DIGITAL_DELIVERY_COPY.offersBuyPickup}
-                    </Typography>
-                  )}
+                  {record.sale.acceptsOffers &&
+                    offersDigital &&
+                    (offersDigitalOnly || commerceListingTakesOffers(record)) && (
+                      <Typography
+                        as="p"
+                        className="w-full text-sm text-muted-foreground"
+                        data-testid="marketplace-listing-digital-offer-note"
+                      >
+                        {offersDigitalOnly
+                          ? DIGITAL_DELIVERY_COPY.offersUnavailable
+                          : shipsItem
+                            ? DIGITAL_DELIVERY_COPY.offersBuyShipped
+                            : DIGITAL_DELIVERY_COPY.offersBuyPickup}
+                      </Typography>
+                    )}
                 </>
               )}
               <Button
@@ -835,6 +867,43 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
       </Container>
     </MarketplaceContentLayout>
   );
+}
+
+function formatZoneShipping(
+  state: Exclude<ListingShippingPreviewState, { status: 'none' }>,
+  asset: { currency: string; exponent: number },
+): string {
+  if (state.status === 'loading') return 'Shipping: loading prices';
+  if (state.status === 'unreadable') return 'Shipping: prices could not be loaded';
+  if (state.status === 'asset-mismatch') return 'Shipping: the seller’s rates use a different currency than the item';
+  const { destination, countries } = state.preview;
+  if (destination) {
+    const name = countryDisplayName(destination.country);
+    if (destination.quotes === null) {
+      return countries === null || countries.length === 0
+        ? `Does not ship to ${name}`
+        : `Does not ship to ${name}. Ships to: ${formatShipsToCountries(countries)}`;
+    }
+    return `One item to ${name}: ${destination.quotes
+      .map((quote) => {
+        const days =
+          quote.estimatedMinDays === quote.estimatedMaxDays
+            ? `${quote.estimatedMinDays} days`
+            : `${quote.estimatedMinDays}-${quote.estimatedMaxDays} days`;
+        const price =
+          quote.amountMinor === 0
+            ? 'free'
+            : formatCommerceMoney({
+                amountMinor: quote.amountMinor,
+                currency: asset.currency,
+                exponent: asset.exponent,
+              });
+        return `${quote.label} ${price}, ${days}`;
+      })
+      .join(' · ')}. Final shipping is set at checkout.`;
+  }
+  if (countries === null) return 'Shipping: price depends on your country';
+  return countries.length === 0 ? 'Does not ship to any country' : `Ships to: ${formatShipsToCountries(countries)}`;
 }
 
 function formatListingShipping(

@@ -57,6 +57,12 @@ const view = vi.hoisted(() => ({
   hasFullHomeserverGrant: true,
   orders: [] as Array<{ order: ReturnType<typeof createOrderFixture> }>,
   offers: [] as MarketplaceOffer[],
+  addressCountry: '',
+  shippingProfile: null as unknown,
+}));
+
+vi.mock('@/hooks/useDefaultAddressCountry/useDefaultAddressCountry', () => ({
+  useDefaultAddressCountry: () => view.addressCountry,
 }));
 
 vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({ useMarketplaceCartCount: () => 0 }));
@@ -97,6 +103,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     },
     getPublicListingAvailability: publicAvailabilityRead,
     fetchSellerPaymentBadges: paymentBadgesRead,
+    fetchShippingProfile: () => Promise.resolve(view.shippingProfile),
     hasFullHomeserverGrant: () => view.hasFullHomeserverGrant,
     canRegisterListings: () => false,
     ensureListingRegistered: vi.fn(async () => {}),
@@ -236,6 +243,8 @@ describe('MarketplaceListing', () => {
     view.shop = toCommerceShopModel(createCommerceShopFixture());
     view.projection = createListingProjectionFixture();
     view.projectionError = null;
+    view.addressCountry = '';
+    view.shippingProfile = null;
     view.listingRemoved = false;
     view.fetchFailure = null;
     view.confirmedRemoved = false;
@@ -413,6 +422,189 @@ describe('MarketplaceListing', () => {
     expect(screen.getByTestId('marketplace-listing-ships-to')).toHaveTextContent(
       'Ships to: Switzerland and Liechtenstein',
     );
+  });
+
+  describe('zone-priced shipping', () => {
+    const zones = [
+      {
+        zoneId: 'eu',
+        name: 'Europe',
+        countries: ['DE', 'FR', 'PT'],
+        rates: [
+          {
+            pricing: 'per_item' as const,
+            rateId: 'std',
+            label: 'Standard',
+            estimatedMinDays: 6,
+            estimatedMaxDays: 12,
+            firstMinor: 899,
+            additionalMinor: 450,
+          },
+        ],
+      },
+    ];
+    const zoned = (overrides: Record<string, unknown> = {}) =>
+      toCommerceListingModel(createCommerceListingFixture({ shippingZones: zones, ...overrides }));
+
+    it('shows the rate to the buyer’s country with its delivery estimate', () => {
+      view.listing = zoned();
+      view.addressCountry = 'DE';
+      renderListing();
+      expect(
+        screen.getByText('One item to Germany: Standard $8.99, 6-12 days. Final shipping is set at checkout.'),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/Shipping: calculated/)).not.toBeInTheDocument();
+    });
+
+    it('lists where it ships when the buyer’s country is unknown, and says so when the country is not served', () => {
+      view.listing = zoned();
+      view.addressCountry = '';
+      renderListing();
+      expect(screen.getByText('Ships to: Germany, France, and Portugal')).toBeInTheDocument();
+      cleanup();
+
+      view.addressCountry = 'BR';
+      renderListing();
+      expect(screen.getByText('Does not ship to Brazil. Ships to: Germany, France, and Portugal')).toBeInTheDocument();
+    });
+
+    it('does not quote a country the shop itself does not ship to', () => {
+      view.shop = toCommerceShopModel(createCommerceShopFixture({ shipsToCountries: ['DE'] }));
+      view.listing = zoned();
+      view.addressCountry = 'FR';
+      renderListing();
+      expect(screen.getByText('Does not ship to France. Ships to: Germany')).toBeInTheDocument();
+      expect(screen.queryByText(/One item to France/)).not.toBeInTheDocument();
+    });
+
+    it('says it ships nowhere when every country is excluded or outside the shop list', () => {
+      view.shop = toCommerceShopModel(createCommerceShopFixture({ shipsToCountries: ['BR'] }));
+      view.listing = zoned();
+      view.addressCountry = '';
+      renderListing();
+      expect(screen.getByText('Does not ship to any country')).toBeInTheDocument();
+    });
+
+    it('reads a shared profile for the price', async () => {
+      view.listing = toCommerceListingModel(createCommerceListingFixture({ shippingProfileId: 'worldwide' }));
+      view.shippingProfile = {
+        sha256: 'a'.repeat(64),
+        record: {
+          profileId: 'worldwide',
+          name: 'Worldwide',
+          currency: 'USD',
+          exponent: 2,
+          excludedCountries: [],
+          zones,
+        },
+      };
+      view.addressCountry = 'FR';
+      renderListing();
+      expect(
+        await screen.findByText('One item to France: Standard $8.99, 6-12 days. Final shipping is set at checkout.'),
+      ).toBeInTheDocument();
+    });
+
+    it('prices a buyer whose address says UK against a GB zone', () => {
+      view.listing = zoned({
+        shippingZones: [{ ...zones[0]!, countries: ['GB'] }],
+      });
+      view.addressCountry = 'uk';
+      renderListing();
+      expect(
+        screen.getByText('One item to United Kingdom: Standard $8.99, 6-12 days. Final shipping is set at checkout.'),
+      ).toBeInTheDocument();
+    });
+
+    it('prices no rate from a profile whose currency differs from the item', async () => {
+      view.listing = toCommerceListingModel(createCommerceListingFixture({ shippingProfileId: 'worldwide' }));
+      view.shippingProfile = {
+        sha256: 'a'.repeat(64),
+        record: {
+          profileId: 'worldwide',
+          name: 'Worldwide',
+          currency: 'EUR',
+          exponent: 2,
+          excludedCountries: [],
+          zones,
+        },
+      };
+      view.addressCountry = 'FR';
+      renderListing();
+      expect(await screen.findByText(/rates use a different currency than the item/)).toBeInTheDocument();
+      expect(screen.queryByText(/to France/)).not.toBeInTheDocument();
+    });
+
+    it('offers no bidding on an auction priced by zones', () => {
+      const auction = {
+        format: 'auction' as const,
+        startingPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+        minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
+        startsAt: new Date(Date.now() - 60_000).toISOString(),
+        endsAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+        antiSnipingWindowSeconds: 300,
+        antiSnipingExtensionSeconds: 300,
+      };
+      view.listing = toCommerceListingModel(createCommerceListingFixture({ sale: auction }));
+      renderListing();
+      expect(screen.getByRole('button', { name: 'Place a bid' })).toBeInTheDocument();
+      cleanup();
+
+      view.listing = zoned({ sale: auction });
+      renderListing();
+      expect(screen.getByTestId('zone-priced-auction-notice')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Place a bid' })).not.toBeInTheDocument();
+    });
+
+    it('shows only the listing’s own destinations, not the shop’s wider list', () => {
+      view.shop = toCommerceShopModel(createCommerceShopFixture({ shipsToCountries: ['DE', 'IT'] }));
+      view.listing = zoned();
+      view.addressCountry = '';
+      renderListing();
+      expect(screen.getByText('Ships to: Germany')).toBeInTheDocument();
+      expect(screen.queryByTestId('marketplace-listing-ships-to')).not.toBeInTheDocument();
+    });
+
+    it('quotes nothing under a shop restriction that names no usable country', () => {
+      view.shop = toCommerceShopModel(createCommerceShopFixture({ shipsToCountries: ['CHE'] }));
+      view.listing = zoned();
+      view.addressCountry = 'DE';
+      renderListing();
+      expect(screen.queryByText(/One item to Germany/)).not.toBeInTheDocument();
+      expect(screen.getByText(/Does not ship to/)).toBeInTheDocument();
+    });
+
+    it('does not say offers buy the shipped version on a zone-priced listing that delivers digitally', () => {
+      const sale = {
+        format: 'fixed_price' as const,
+        unitPrice: { amountMinor: 12_500, currency: 'USD', exponent: 2 },
+        acceptsOffers: true,
+      };
+      view.listing = zoned({ sale, fulfillmentMethods: ['physical', 'shipping', 'digital'] });
+      view.projection = createListingProjectionFixture({
+        fulfillmentMethods: ['shipping', 'digital'],
+        digitalDelivery: { kind: 'email' },
+      });
+      renderListing();
+      expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
+      expect(screen.queryByTestId('marketplace-listing-digital-offer-note')).not.toBeInTheDocument();
+    });
+
+    it('offers no Make offer on a zone-priced listing that accepts offers', () => {
+      const sale = {
+        format: 'fixed_price' as const,
+        unitPrice: { amountMinor: 12_500, currency: 'USD', exponent: 2 },
+        acceptsOffers: true,
+      };
+      view.listing = toCommerceListingModel(createCommerceListingFixture({ sale }));
+      renderListing();
+      expect(screen.getByRole('button', { name: /Make offer/ })).toBeInTheDocument();
+      cleanup();
+
+      view.listing = zoned({ sale });
+      renderListing();
+      expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
+    });
   });
 
   it("badges the seller's accepted payment methods", async () => {

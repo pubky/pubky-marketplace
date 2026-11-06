@@ -1162,6 +1162,37 @@ describe('commerceListingTakesOffers (offers settle through shipping or pickup)'
     expect(commerceListingTakesOffers(listing({ fulfillmentMethods: ['physical', 'shipping', 'digital'] }))).toBe(true);
   });
 
+  it('takes no offers on a zone-priced listing, whose shipping needs a destination and a rate', () => {
+    expect(commerceListingTakesOffers(listing({ fulfillmentMethods: ['shipping'] }))).toBe(true);
+    expect(
+      commerceListingTakesOffers(listing({ fulfillmentMethods: ['shipping'], shippingProfileId: 'worldwide' })),
+    ).toBe(false);
+    expect(
+      commerceListingTakesOffers(
+        listing({
+          fulfillmentMethods: ['shipping'],
+          shippingZones: [
+            {
+              zoneId: 'us',
+              name: 'United States',
+              countries: ['US'],
+              rates: [
+                {
+                  pricing: 'flat',
+                  rateId: 'std',
+                  label: 'Standard',
+                  estimatedMinDays: 3,
+                  estimatedMaxDays: 7,
+                  amountMinor: 500,
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it('takes no offers on a Locks listing, which is a digital listing', () => {
     expect(commerceListingTakesOffers(listing({ fulfillmentMethods: ['digital'], digitalLock: lock }))).toBe(false);
   });

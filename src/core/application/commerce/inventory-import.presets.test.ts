@@ -325,6 +325,71 @@ describe('shop-system CSV presets through plan, dry-run and publish', () => {
     });
   });
 
+  describe('shipping profile mode', () => {
+    const PROFILE_SETTINGS = {
+      ...IMPORT_SETTINGS_COMPLETE,
+      shipping: {
+        mode: 'profile' as const,
+        profileId: 'worldwide',
+        option: {
+          id: 'zones',
+          label: 'Worldwide',
+          estimatedMinDays: 4,
+          estimatedMaxDays: 12,
+          pricing: 'flat',
+          price: { amountMinor: 899, currency: 'USD', exponent: 2 },
+        },
+      },
+    };
+
+    it('publishes a Woo import under the chosen profile', async () => {
+      const importer = app();
+      const planned = await importer.planFile(
+        new BytesFile(bytesOf('woocommerce/sample_products.csv'), 'sample_products.csv', 'text/csv'),
+        PROFILE_SETTINGS,
+      );
+      if (planned.status !== 'planned') throw new Error('plan');
+      expect(payloads().every((row) => row.extraFields?.shipping_profile_id === 'worldwide')).toBe(true);
+      attachPhotos(['woo-polo']);
+
+      await importer.publish(planned.manifestId);
+
+      expect(puts.map((record) => [record.listingId, record.shippingProfileId])).toEqual([['woo-polo', 'worldwide']]);
+      expect(puts[0]?.shippingOptions).toEqual([expect.objectContaining({ id: 'zones' })]);
+    });
+
+    it('publishes a Shopify import under the chosen profile', async () => {
+      const importer = app();
+      const planned = await importer.planFile(
+        new BytesFile(bytesOf('shopify/product-current.csv'), 'product-current.csv', 'text/csv'),
+        { ...PROFILE_SETTINGS, useCsvQuantities: true },
+      );
+      if (planned.status !== 'planned') throw new Error('plan');
+      expect(payloads().every((row) => row.extraFields?.shipping_profile_id === 'worldwide')).toBe(true);
+      attachPhotos([...new Set(payloads().map((row) => row.listingId))]);
+
+      await importer.publish(planned.manifestId);
+
+      expect(puts.length).toBeGreaterThan(0);
+      expect(puts.every((record) => record.shippingProfileId === 'worldwide')).toBe(true);
+    });
+
+    it('ignores a shipping_profile_id column in the file itself', async () => {
+      const csv = new TextDecoder().decode(bytesOf('woocommerce/sample_products.csv'));
+      const [header, ...lines] = csv.split('\n');
+      const withColumn = [
+        `${header},shipping_profile_id`,
+        ...lines.map((line) => (line === '' ? line : `${line},evil`)),
+      ];
+      const planned = await app().planFile(
+        new BytesFile(utf8(withColumn.join('\n')), 'with-column.csv', 'text/csv'),
+        IMPORT_SETTINGS_COMPLETE,
+      );
+      if (planned.status !== 'planned') throw new Error('plan');
+      expect(payloads().some((row) => row.extraFields?.shipping_profile_id !== undefined)).toBe(false);
+    });
+  });
+
   describe('Shopify', () => {
     const shopify = () => new BytesFile(bytesOf('shopify/product-current.csv'), 'product-current.csv', 'text/csv');
 

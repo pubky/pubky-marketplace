@@ -12,6 +12,7 @@ import {
   resolveCommerceCategory,
 } from '@/config/taxonomy/taxonomy';
 import { DIGITAL_DELIVERY_COPY } from '@/libs/commerce/digital';
+import { listingShippingModeSchema } from '@/libs/commerce/listing-shipping';
 import { commerceListingFulfillmentMethods, type CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import {
   amountInputSchemaForAsset,
@@ -19,6 +20,7 @@ import {
   assetForListingCurrency,
   type ListingCurrencyChoice,
 } from '@/libs/commerce/pricing';
+import { shippingZoneFormValueSchema, shippingZonesFromForm } from '@/libs/commerce/shipping-zones-form';
 import { countryFieldError } from '@/libs/commerce/ships-to';
 import { gramsFromWeightInput, type MeasurementSystem, millimetersFromDimensionInput } from '@/libs/commerce/units';
 import { isUnlimitedStockSentinel, UNLIMITED_STOCK_RESERVED_MESSAGE } from '@/libs/commerce/unlimited-stock';
@@ -48,6 +50,9 @@ export const CREATE_MARKETPLACE_LISTING_FIELDS = {
   AUCTION_DURATION: 'auctionDurationMinutes',
   VARIANTS: 'variants',
   FULFILLMENT: 'fulfillment',
+  SHIPPING_MODE: 'shippingMode',
+  SHIPPING_PROFILE: 'shippingProfileId',
+  SHIPPING_ZONES: 'shippingZoneValues',
   SHIPPING_LABEL: 'shippingLabel',
   FREE_SHIPPING: 'freeShipping',
   SHIPPING_PRICE: 'shippingPrice',
@@ -329,6 +334,10 @@ export const createMarketplaceListingSchema = z
     auctionDurationMinutes: z.string().trim(),
     variants: z.array(listingVariantSchema).min(1, 'Add at least one variant.').max(100, 'Too many variants.'),
     fulfillment: listingFulfillmentSchema,
+    /** `flat` is the single seller-priced option; `profile` and `custom` price by destination country. */
+    shippingMode: listingShippingModeSchema,
+    shippingProfileId: z.string().trim(),
+    shippingZoneValues: z.array(shippingZoneFormValueSchema),
     shippingLabel: z.string().trim().max(100, 'Keep the shipping label under 100 characters.'),
     /** When true the listing ships free: the price field is skipped and the record emits a `pricing: 'free'` option. */
     freeShipping: z.boolean(),
@@ -368,45 +377,71 @@ export const createMarketplaceListingSchema = z
       }
     });
     if (fulfillmentFlags(data.fulfillment).ship) {
-      // Free shipping emits the record's `pricing: 'free'` option — there is
-      // no price to validate. The label is still required either way.
-      if (!data.freeShipping) {
-        validateMoneyField(
-          data.shippingPrice,
-          data.currency,
-          [CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_PRICE],
-          context,
-        );
-      }
-      if (!data.shippingLabel) {
+      if (data.shippingMode === 'profile' && data.shippingProfileId === '') {
         context.addIssue({
           code: 'custom',
-          path: ['shippingLabel'],
-          message: 'Give the shipping option a label buyers will see.',
+          path: [CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_PROFILE],
+          message: 'Choose a shipping profile.',
         });
       }
-      const minDaysValid = /^\d+$/.test(data.shippingMinDays) && Number(data.shippingMinDays) <= 365;
-      const maxDaysValid = /^\d+$/.test(data.shippingMaxDays) && Number(data.shippingMaxDays) <= 365;
-      if (!minDaysValid) {
+      if (data.shippingMode === 'custom') {
+        const zones = shippingZonesFromForm(data.shippingZoneValues, assetForListingCurrency(data.currency));
+        if (!zones.ok) {
+          context.addIssue({
+            code: 'custom',
+            path: [CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_ZONES],
+            message: zones.errors[0],
+          });
+        }
+      }
+      if (data.saleFormat === 'auction' && data.shippingMode !== 'flat') {
         context.addIssue({
           code: 'custom',
-          path: ['shippingMinDays'],
-          message: 'Enter an estimate in whole days (0\u2013365).',
+          path: [CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_MODE],
+          message: 'Auctions use one flat shipping price.',
         });
       }
-      if (!maxDaysValid) {
-        context.addIssue({
-          code: 'custom',
-          path: ['shippingMaxDays'],
-          message: 'Enter an estimate in whole days (0\u2013365).',
-        });
-      }
-      if (minDaysValid && maxDaysValid && Number(data.shippingMaxDays) < Number(data.shippingMinDays)) {
-        context.addIssue({
-          code: 'custom',
-          path: ['shippingMaxDays'],
-          message: 'The maximum estimate cannot precede the minimum.',
-        });
+      if (data.shippingMode === 'flat') {
+        // Free shipping emits the record's `pricing: 'free'` option — there is
+        // no price to validate. The label is still required either way.
+        if (!data.freeShipping) {
+          validateMoneyField(
+            data.shippingPrice,
+            data.currency,
+            [CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_PRICE],
+            context,
+          );
+        }
+        if (!data.shippingLabel) {
+          context.addIssue({
+            code: 'custom',
+            path: ['shippingLabel'],
+            message: 'Give the shipping option a label buyers will see.',
+          });
+        }
+        const minDaysValid = /^\d+$/.test(data.shippingMinDays) && Number(data.shippingMinDays) <= 365;
+        const maxDaysValid = /^\d+$/.test(data.shippingMaxDays) && Number(data.shippingMaxDays) <= 365;
+        if (!minDaysValid) {
+          context.addIssue({
+            code: 'custom',
+            path: ['shippingMinDays'],
+            message: 'Enter an estimate in whole days (0\u2013365).',
+          });
+        }
+        if (!maxDaysValid) {
+          context.addIssue({
+            code: 'custom',
+            path: ['shippingMaxDays'],
+            message: 'Enter an estimate in whole days (0\u2013365).',
+          });
+        }
+        if (minDaysValid && maxDaysValid && Number(data.shippingMaxDays) < Number(data.shippingMinDays)) {
+          context.addIssue({
+            code: 'custom',
+            path: ['shippingMaxDays'],
+            message: 'The maximum estimate cannot precede the minimum.',
+          });
+        }
       }
       validatePackageWeight(data.packageWeight, data.measurementSystem, context);
       for (const field of [
@@ -505,6 +540,10 @@ export const createMarketplaceListingDraftSchema = z
     ),
     /** Legacy drafts stored the shipping choice as 'physical'; accepted here and migrated to 'shipping' on restore. */
     fulfillment: z.union([listingFulfillmentSchema, z.literal('physical')]),
+    /** Older drafts omit the shipping mode; a missing mode is the flat option. */
+    shippingMode: listingShippingModeSchema.optional(),
+    shippingProfileId: z.string().optional(),
+    shippingZoneValues: z.array(shippingZoneFormValueSchema).optional(),
     shippingLabel: z.string(),
     freeShipping: z.boolean(),
     shippingPrice: z.string(),
@@ -649,6 +688,9 @@ export const createMarketplaceListingDefaults: CreateMarketplaceListingData = {
   auctionDurationMinutes: '',
   variants: [{ sku: '', size: '', color: '', style: '', quantity: '1', unlimited: false, priceOverride: '' }],
   fulfillment: 'shipping',
+  shippingMode: 'flat',
+  shippingProfileId: '',
+  shippingZoneValues: [],
   shippingLabel: 'Seller shipping',
   freeShipping: false,
   shippingPrice: '',
