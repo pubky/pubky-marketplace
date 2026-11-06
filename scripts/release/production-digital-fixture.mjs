@@ -462,6 +462,8 @@ async function fillDigitalListing(page, title) {
     .first()
     .fill('Digital delivery proof fixture cover photo');
   await page.getByLabel(/^Title$/i).fill(title);
+  const country = page.getByLabel(/^Country$/i).first();
+  if ((await country.inputValue()) === '') await country.fill('US');
   await page
     .getByLabel(/^Description$/i)
     .fill('Staging smoke fixture for the release hold-smoke (digital delivery). Do not purchase.');
