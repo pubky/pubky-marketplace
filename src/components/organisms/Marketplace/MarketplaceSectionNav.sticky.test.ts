@@ -19,9 +19,9 @@ describe('sticky Market section navigation wiring', () => {
     '%s does not clip the pinned bar inside the main content column',
     (_file, source) => {
       const navAt = source.indexOf('<MarketplaceSectionNav');
-      const layoutAt = source.lastIndexOf('<ContentLayout', navAt);
+      const layoutAt = source.lastIndexOf('<MarketplaceContentLayout', navAt);
       const layoutTag = source.slice(layoutAt, source.indexOf('>\n', layoutAt));
-      // ContentLayout clips its main column at lg+ (overflow-hidden), which turns the column into
+      // MarketplaceContentLayout clips its main column at lg+ (overflow-hidden), which turns the column into
       // the scroll container for the sticky bar and stops it pinning to the page.
       expect(layoutTag).toMatch(/disableMainContentOverflow|overflow-visible/);
     },

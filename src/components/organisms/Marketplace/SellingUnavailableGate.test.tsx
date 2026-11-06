@@ -16,8 +16,8 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: { getShop: vi.fn() },
 }));
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 
 const SELLER = 's'.repeat(52);

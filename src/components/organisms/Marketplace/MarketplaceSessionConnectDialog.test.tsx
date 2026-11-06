@@ -47,11 +47,6 @@ vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => ({
   getPassportSignInEnabled: () => !view.passportRefused,
 }));
 
-vi.mock('@/hooks/useGrantSigner/useGrantSigner', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/hooks/useGrantSigner/useGrantSigner')>()),
-  isPassportApprovalRefused: () => view.passportRefused,
-}));
-
 vi.mock('@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner', () => ({
   useMarketplaceApprovalSigner: () => view.approvalSigner,
 }));

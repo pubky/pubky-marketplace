@@ -70,7 +70,6 @@ vi.mock('@/stores/search/search.store', () => ({
     addUser: vi.fn(),
     addTag: vi.fn(),
     setActiveTags: vi.fn(),
-    addActiveTag: vi.fn(),
     removeActiveTag: vi.fn(),
   })),
 }));

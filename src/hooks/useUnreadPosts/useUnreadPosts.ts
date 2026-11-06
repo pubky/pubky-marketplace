@@ -40,6 +40,5 @@ export function useUnreadPosts({ streamId }: UseUnreadPostsOptions): UseUnreadPo
 
   return {
     unreadPostIds: unreadStream?.stream ?? [],
-    unreadCount: unreadStream?.stream?.length ?? 0,
   };
 }

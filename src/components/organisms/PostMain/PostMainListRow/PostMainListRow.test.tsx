@@ -222,11 +222,9 @@ describe('PostMainListRow', () => {
     vi.mocked(useRelativeTime).mockReturnValue({ formatRelativeTime: () => '1m' });
     vi.mocked(useRepostInfo).mockReturnValue({
       isRepost: false,
-      repostAuthorId: null,
+
       isCurrentUserRepost: false,
       originalPostId: null,
-      isLoading: false,
-      hasError: false,
     });
     vi.mocked(useUserDetails).mockReturnValue({
       userDetails: {
@@ -420,11 +418,9 @@ describe('PostMainListRow', () => {
     vi.mocked(useRelativeTime).mockReturnValue({ formatRelativeTime: () => '1m' });
     vi.mocked(useRepostInfo).mockReturnValue({
       isRepost: true,
-      repostAuthorId: 'author',
+
       isCurrentUserRepost: true,
       originalPostId: 'original-author:original-post',
-      isLoading: false,
-      hasError: false,
     });
     vi.mocked(usePostDetails).mockImplementation((postId) => ({
       postDetails:
@@ -486,11 +482,9 @@ describe('PostMainListRow', () => {
     vi.mocked(useRelativeTime).mockReturnValue({ formatRelativeTime: () => '1m' });
     vi.mocked(useRepostInfo).mockReturnValue({
       isRepost: true,
-      repostAuthorId: 'author',
+
       isCurrentUserRepost: true,
       originalPostId: 'original-author:original-post',
-      isLoading: false,
-      hasError: false,
     });
     vi.mocked(usePostDetails).mockImplementation((postId) => ({
       postDetails:
@@ -534,11 +528,9 @@ describe('PostMainListRow', () => {
   it('does not expose deleted original content in compact simple repost rows', () => {
     vi.mocked(useRepostInfo).mockReturnValue({
       isRepost: true,
-      repostAuthorId: 'author',
+
       isCurrentUserRepost: true,
       originalPostId: 'original-author:original-post',
-      isLoading: false,
-      hasError: false,
     });
     vi.mocked(usePostDetails).mockImplementation((postId) => ({
       postDetails:
@@ -577,11 +569,9 @@ describe('PostMainListRow', () => {
     vi.mocked(useRelativeTime).mockReturnValue({ formatRelativeTime: () => '1m' });
     vi.mocked(useRepostInfo).mockReturnValue({
       isRepost: true,
-      repostAuthorId: 'author',
+
       isCurrentUserRepost: true,
       originalPostId: 'original-author:missing-post',
-      isLoading: false,
-      hasError: false,
     });
     vi.mocked(usePostDetails).mockImplementation((postId) => ({
       postDetails: postId === 'author:post' ? createPostDetails('author:post', '') : null,

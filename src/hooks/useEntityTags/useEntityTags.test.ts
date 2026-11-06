@@ -85,8 +85,6 @@ describe('useEntityTags', () => {
     const { result } = renderHook(() => useEntityTags('user-123', TagKind.USER));
 
     expect(result.current).toHaveProperty('tags');
-    expect(result.current).toHaveProperty('count');
-    expect(result.current).toHaveProperty('isLoading');
     expect(result.current).toHaveProperty('isViewerTagger');
     expect(result.current).toHaveProperty('handleTagToggle');
     expect(result.current).toHaveProperty('handleTagAdd');
@@ -99,8 +97,6 @@ describe('useEntityTags', () => {
     const { result } = renderHook(() => useEntityTags('post-123', TagKind.POST));
 
     expect(result.current).toHaveProperty('tags');
-    expect(result.current).toHaveProperty('count');
-    expect(result.current).toHaveProperty('isLoading');
     expect(result.current).toHaveProperty('isViewerTagger');
     expect(result.current).toHaveProperty('handleTagToggle');
     expect(result.current).toHaveProperty('handleTagAdd');
@@ -303,46 +299,6 @@ describe('useEntityTags', () => {
     });
 
     expect(addResult).toEqual({ success: false, error: 'Tag already exists' });
-  });
-
-  // =============================================================================
-  // Functional Tests - Loading States
-  // =============================================================================
-
-  it('reflects loading state from USER hook', () => {
-    mockUseTaggedResult.isLoading = true;
-
-    const { result } = renderHook(() => useEntityTags('user-123', TagKind.USER));
-
-    expect(result.current.isLoading).toBe(true);
-  });
-
-  it('reflects loading state from POST hook', () => {
-    mockUsePostTagsResult.isLoading = true;
-
-    const { result } = renderHook(() => useEntityTags('post-123', TagKind.POST));
-
-    expect(result.current.isLoading).toBe(true);
-  });
-
-  // =============================================================================
-  // Functional Tests - Count
-  // =============================================================================
-
-  it('returns count from underlying USER hook', () => {
-    mockUseTaggedResult.count = 42;
-
-    const { result } = renderHook(() => useEntityTags('user-123', TagKind.USER));
-
-    expect(result.current.count).toBe(42);
-  });
-
-  it('returns count from underlying POST hook', () => {
-    mockUsePostTagsResult.count = 15;
-
-    const { result } = renderHook(() => useEntityTags('post-123', TagKind.POST));
-
-    expect(result.current.count).toBe(15);
   });
 
   // =============================================================================

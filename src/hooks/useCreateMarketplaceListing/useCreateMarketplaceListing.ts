@@ -117,8 +117,6 @@ export interface ListingDraftRestorePrompt {
 export interface UseCreateMarketplaceListingResult {
   form: UseFormReturn<CreateMarketplaceListingData>;
   media: UseListingMediaManagerResult;
-  /** The draft's listing id — also the id the publish path reuses. */
-  draftId: string;
   /** True when the form was hydrated from a locally autosaved draft. */
   restoredDraft: boolean;
   /** Contentful draft waiting on Resume / Discard. Null after a choice or a one-shot resume. */
@@ -466,7 +464,6 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
   return {
     form,
     media,
-    draftId,
     restoredDraft,
     pendingRestore,
     activeSectionId,

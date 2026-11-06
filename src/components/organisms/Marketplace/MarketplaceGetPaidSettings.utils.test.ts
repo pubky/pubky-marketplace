@@ -1,15 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { bitcoinSetupClaim, type SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
 import {
-  atLeastOneMethodSentence,
   BITCOIN_TOGGLE_BLOCKER_COPY,
   canOfferBitkitSetup,
-  countReadyPaymentMethods,
   deriveBitcoinStatus,
   deriveBitcoinToggleBlocker,
   derivePaypalStatus,
-  isReadyPaymentMethodStatus,
-  type PaymentMethodStatus,
 } from './MarketplaceGetPaidSettings.utils';
 
 const baseConfig: SellerPaymentConfigOwnView = {
@@ -67,10 +63,6 @@ describe('MarketplaceGetPaidSettings status derivation', () => {
       expect(deriveBitcoinStatus(claimed)).toBe('needs_attention');
       expect(canOfferBitkitSetup(claimed)).toBe(false);
     });
-
-    it('never counts an unknown answer as a ready method', () => {
-      expect(isReadyPaymentMethodStatus(deriveBitcoinStatus(null))).toBe(false);
-    });
   });
 
   describe('deriveBitcoinToggleBlocker', () => {
@@ -94,22 +86,6 @@ describe('MarketplaceGetPaidSettings status derivation', () => {
         'bitkit-reconnect': 'Reconnect Bitkit first.',
         'bitkit-unknown': "We can't check Bitkit right now.",
       });
-    });
-  });
-
-  describe('ready-method counting', () => {
-    it('counts only Connected and Email saved', () => {
-      const statuses: PaymentMethodStatus[] = ['not_set_up', 'email_saved', 'connected', 'needs_attention'];
-      expect(statuses.map(isReadyPaymentMethodStatus)).toEqual([false, true, true, false]);
-      expect(countReadyPaymentMethods(statuses)).toBe(2);
-      expect(countReadyPaymentMethods(['not_set_up', 'needs_attention', 'not_set_up'])).toBe(0);
-    });
-
-    it('writes the at-least-one sentence from the ready count only', () => {
-      expect(atLeastOneMethodSentence(0)).toMatch(/^Add a payment method to start selling\./);
-      expect(atLeastOneMethodSentence(1)).toMatch(/^1 payment method set up\./);
-      expect(atLeastOneMethodSentence(2)).toMatch(/^2 payment methods set up\./);
-      expect(atLeastOneMethodSentence(3)).toMatch(/^3 payment methods set up\./);
     });
   });
 });

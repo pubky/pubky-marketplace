@@ -15,7 +15,6 @@ import {
   isBuyerCheckoutInProgress,
   isBuyerOrderHistory,
   isSellerBoundBitcoinOrder,
-  isSellerPaidOrder,
   isSellerReservation,
   isSellerSalesOrder,
   isSellerUsdtReviewOrder,
@@ -96,19 +95,19 @@ describe('checkout-phase', () => {
 
     expect(isAbandonedCheckout(unpaidCancel, BUYER)).toBe(true);
     expect(isBuyerOrderHistory(unpaidCancel, BUYER)).toBe(false);
-    expect(isSellerPaidOrder(unpaidCancel, SELLER)).toBe(false);
+    expect(isSellerSalesOrder(unpaidCancel, SELLER)).toBe(false);
 
     expect(isAbandonedCheckout(paidCancel, BUYER)).toBe(false);
     expect(isBuyerOrderHistory(paidCancel, BUYER)).toBe(true);
-    expect(isSellerPaidOrder(paidCancel, SELLER)).toBe(true);
+    expect(isSellerSalesOrder(paidCancel, SELLER)).toBe(true);
 
     expect(isAbandonedCheckout(paid, BUYER)).toBe(false);
     expect(isBuyerOrderHistory(paid, BUYER)).toBe(true);
-    expect(isSellerPaidOrder(paid, SELLER)).toBe(true);
+    expect(isSellerSalesOrder(paid, SELLER)).toBe(true);
 
     expect(isAbandonedCheckout(pending, BUYER)).toBe(false);
     expect(isBuyerOrderHistory(pending, BUYER)).toBe(false);
-    expect(isSellerPaidOrder(pending, SELLER)).toBe(false);
+    expect(isSellerSalesOrder(pending, SELLER)).toBe(false);
     expect(isBuyerCheckoutInProgress(pending, BUYER)).toBe(true);
   });
 
@@ -122,7 +121,7 @@ describe('checkout-phase', () => {
     };
     const returning = { state: 'return_requested', sellerPubky: SELLER, buyerPubky: BUYER };
     expect(isSellerReservation(unpaid, SELLER)).toBe(true);
-    expect(isSellerPaidOrder(unpaid, SELLER)).toBe(false);
+    expect(isSellerSalesOrder(unpaid, SELLER)).toBe(false);
     expect(isSellerSalesOrder(unpaid, SELLER)).toBe(false);
     const boundBitcoin = { ...unpaid, paymentMethod: 'bitcoin' as const };
     expect(isSellerBoundBitcoinOrder(boundBitcoin)).toBe(true);
@@ -131,10 +130,10 @@ describe('checkout-phase', () => {
     expect(isSellerReservation({ ...unpaid, paymentMethod: 'paypal' }, SELLER)).toBe(true);
     expect(isSellerSalesOrder({ ...unpaid, paymentMethod: 'paypal' }, SELLER)).toBe(false);
     expect(isSellerReservation(paid, SELLER)).toBe(false);
-    expect(isSellerPaidOrder(paid, SELLER)).toBe(true);
-    expect(isSellerPaidOrder(returning, SELLER)).toBe(true);
+    expect(isSellerSalesOrder(paid, SELLER)).toBe(true);
+    expect(isSellerSalesOrder(returning, SELLER)).toBe(true);
     expect(
-      isSellerPaidOrder({ state: 'cancelled', sellerPubky: SELLER, buyerPubky: BUYER, receiptId: null }, SELLER),
+      isSellerSalesOrder({ state: 'cancelled', sellerPubky: SELLER, buyerPubky: BUYER, receiptId: null }, SELLER),
     ).toBe(false);
   });
 

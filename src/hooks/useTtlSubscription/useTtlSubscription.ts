@@ -73,5 +73,5 @@ export function useTtlSubscription(options: UseTtlSubscriptionOptions): UseTtlSu
     };
   }, [type, id, isVisible, enabled]);
 
-  return { ref, isVisible };
+  return { ref };
 }

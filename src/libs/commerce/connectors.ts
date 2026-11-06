@@ -41,16 +41,12 @@ const connectionPushCountsSchema = z.object({
   quarantined: z.number().int().nonnegative().default(0),
 });
 
-export type ConnectorPushCounts = z.infer<typeof connectionPushCountsSchema>;
-
 /** The URLs a merchant configures their store with; `launch` is Shopify's App URL and absent for WooCommerce. */
 export const connectorUrlsSchema = z.object({
   launch: z.string().min(1).optional(),
   oauthCallback: z.string().min(1),
   webhooks: z.string().min(1),
 });
-
-export type ConnectorUrls = z.infer<typeof connectorUrlsSchema>;
 
 export const CONNECTOR_STATUSES = ['draft', 'connected', 'needs_attention', 'error'] as const;
 export const VARIANT_MODES = ['native', 'split'] as const;
@@ -268,8 +264,6 @@ export const connectorAlertActionSchema = z.object({
   orderId: z.string().min(1),
   label: z.string().min(1),
 });
-
-export type ConnectorAlertAction = z.infer<typeof connectorAlertActionSchema>;
 
 export const connectorAlertSchema = z.object({
   id: z.string().min(1),

@@ -98,8 +98,8 @@ vi.mock('@/organisms/FullUserListItemSkeleton/FullUserListItemSkeleton', () => {
 
 vi.mock('@/organisms/UserListItem/UserListItem', () => {
   return {
-    UserListItem: ({ user, followButtonVariant }: { user: { id: string }; followButtonVariant?: string }) => (
-      <div data-testid="user-list-item" data-user-id={user.id} data-follow-button-variant={followButtonVariant}>
+    UserListItem: ({ user }: { user: { id: string } }) => (
+      <div data-testid="user-list-item" data-user-id={user.id}>
         User item
       </div>
     ),
@@ -188,15 +188,5 @@ describe('ProfileFriends', () => {
     expect(userItems).toHaveLength(2);
     expect(userItems[0]).toHaveAttribute('data-user-id', 'user-1');
     expect(userItems[1]).toHaveAttribute('data-user-id', 'user-2');
-  });
-
-  it('passes followButtonVariant="icon" to UserListItem', () => {
-    vi.mocked(useProfileConnections).mockReturnValue(mockConnectionsResult);
-
-    render(<ProfileFriends />);
-    const userItems = screen.getAllByTestId('user-list-item');
-    userItems.forEach((item) => {
-      expect(item).toHaveAttribute('data-follow-button-variant', 'icon');
-    });
   });
 });

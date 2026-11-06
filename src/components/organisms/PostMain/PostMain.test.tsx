@@ -327,10 +327,7 @@ describe('PostMain', () => {
       remove: vi.fn(),
     });
     vi.mocked(usePostNavigation).mockReturnValue({
-      getPostHref: vi.fn(() => '/post/author/post-abc'),
       navigateToPost: vi.fn(),
-      getCollectionHref: vi.fn(() => '/collections/author/collection-abc'),
-      navigateToCollection: vi.fn(),
       handlePostClick: mockHandlePostClick,
       handlePostAuxClick: mockHandlePostAuxClick,
       handlePostKeyDown: vi.fn(),

@@ -4,7 +4,6 @@ import {
   BITCOIN_CURRENCY_CODE,
   CURRENCY_FORMAT_LOCALE,
   isListingCurrencyCode,
-  isListingFiatCurrencyCode,
   LISTING_CURRENCY_CODES,
   LISTING_CURRENCY_REGISTRY,
   LISTING_FIAT_CURRENCY_CODES,
@@ -81,12 +80,6 @@ describe('isListingCurrencyCode', () => {
     expect(isListingCurrencyCode(undefined)).toBe(false);
     expect(isListingCurrencyCode(null)).toBe(false);
     expect(isListingCurrencyCode(840)).toBe(false);
-  });
-
-  it('separates fiat from bitcoin', () => {
-    expect(isListingFiatCurrencyCode('EUR')).toBe(true);
-    expect(isListingFiatCurrencyCode('BTC')).toBe(false);
-    expect(isListingFiatCurrencyCode('SEK')).toBe(false);
   });
 });
 

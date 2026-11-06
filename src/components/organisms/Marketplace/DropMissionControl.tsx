@@ -32,7 +32,7 @@ import {
 import type { DropState } from '@/libs/commerce/transaction-contracts';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { toast } from '@/molecules/Toaster/use-toast';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import type { MarketplaceSellerDrop } from '@/services/marketplace/marketplace-projections';
 
 export interface DropMissionControlProps {
@@ -50,14 +50,7 @@ export function DropMissionControl({ dropId }: DropMissionControlProps) {
   const ownDrop = useOwnDrop(dropId);
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      className="pb-28 lg:pb-16"
-      classNameWrapperContent="max-w-4xl"
-    >
+    <MarketplaceContentLayout className="pb-28 lg:pb-16" classNameWrapperContent="max-w-4xl">
       <Container overrideDefaults className="flex w-full flex-col gap-6 px-4 sm:px-6 lg:px-8">
         <Link
           href={MARKETPLACE_ROUTES.SELL_DROPS}
@@ -94,7 +87,7 @@ export function DropMissionControl({ dropId }: DropMissionControlProps) {
           <DropMissionControlPanel ownDrop={ownDrop} drop={ownDrop.drop} />
         )}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }
 

@@ -6,12 +6,12 @@ import { renderForVRT } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE, type VrtViewport } from '@/test-utils/vrt.viewports';
 import { setEmbedded } from '@/test-utils/embedded';
 import { EmbeddedDocumentFlag } from '@/molecules/EmbeddedDocumentFlag/EmbeddedDocumentFlag';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { Header } from '@/organisms/Header/Header';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 
 // The section bar pins under the chrome while the page scrolls beneath it. Each scene mounts the
-// real shell (Header, ContentLayout with its mobile header and footer) around the real section
+// real shell (Header, MarketplaceContentLayout with its mobile header and footer) around the real section
 // bar, scrolls a page-sized container, and measures where the bar settles against the real chrome:
 // directly below the mobile header or the site header, and flush with the top of the frame when
 // the Shop is embedded and the host owns the chrome.
@@ -74,20 +74,14 @@ function ScrollingShopPage({ viewport }: { viewport: VrtViewport }) {
     <div data-testid={SCROLL_TESTID} style={{ width: viewport.width, height: viewport.height, overflowY: 'auto' }}>
       <EmbeddedDocumentFlag />
       <Header />
-      <ContentLayout
-        showLeftSidebar={false}
-        showRightSidebar={false}
-        showLeftMobileButton={false}
-        showRightMobileButton={false}
-        disableMainContentOverflow
-      >
+      <MarketplaceContentLayout disableMainContentOverflow>
         <div className="flex w-full flex-col gap-6">
           <MarketplaceSectionNav />
           <div style={{ height: 3000 }} data-testid="sticky-page-body">
             A long page
           </div>
         </div>
-      </ContentLayout>
+      </MarketplaceContentLayout>
     </div>
   );
 }

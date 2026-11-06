@@ -248,8 +248,6 @@ export const getPassportSignInEnabled = (): boolean => getRuntimeConfig().passpo
 export const getUsdtPaymentsEnabled = (): boolean => getRuntimeConfig().usdtPaymentsEnabled;
 /** C3 and C4 are on for the regions that are nuanced (the EU fence flag, unless the region modes say otherwise). */
 export const getEuFenceEnabled = (): boolean => getRegionPolicy().fenceActive;
-/** C3b is on for the regions that are nuanced (the digital hold flag, unless the region modes say otherwise). */
-export const getDigitalRegionBlockEnabled = (): boolean => getRegionPolicy().digitalHoldActive;
 export const getClientRegionHeader = (): string => getRuntimeConfig().clientRegionHeader;
 
 const regionPolicyByConfig = new WeakMap<RuntimeConfig, RegionPolicy>();

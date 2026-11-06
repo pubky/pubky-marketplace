@@ -34,8 +34,6 @@ export interface SearchActions {
   clearRecentSearches: () => void;
   /** Set active tags (used for URL → store sync) */
   setActiveTags: (tags: string[]) => void;
-  /** Add a tag to active tags (optimistic update). Tag should be normalized (lowercase, trimmed) before calling */
-  addActiveTag: (tag: string) => void;
   /** Remove a tag from active tags (optimistic update). Tag should be normalized (lowercase, trimmed) before calling */
   removeActiveTag: (tag: string) => void;
   /** Reset search store to initial state */
@@ -64,7 +62,6 @@ export enum SearchActionTypes {
   ADD_TAG = 'ADD_TAG',
   CLEAR_RECENT_SEARCHES = 'CLEAR_RECENT_SEARCHES',
   SET_ACTIVE_TAGS = 'SET_ACTIVE_TAGS',
-  ADD_ACTIVE_TAG = 'ADD_ACTIVE_TAG',
   REMOVE_ACTIVE_TAG = 'REMOVE_ACTIVE_TAG',
   RESET = 'RESET',
 }

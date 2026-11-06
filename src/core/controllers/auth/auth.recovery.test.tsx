@@ -393,7 +393,7 @@ it.each(['alice', 'bob'])('preserves settings only when replacing with the same 
   await approve(old);
   await AuthController.initializeAuthenticatedSession({ session: old });
   useSettingsStore.getState().setHideSearch(true);
-  useSettingsStore.getState().setMutedUsers(['muted-by-alice']);
+  useSettingsStore.setState({ muted: ['muted-by-alice'] });
   useSearchStore.getState().addTag('alice-private-search');
   vi.mocked(AuthApplication.userIsSignedUp).mockResolvedValue(true);
   vi.mocked(SettingsApplication.initializeSettings).mockClear();

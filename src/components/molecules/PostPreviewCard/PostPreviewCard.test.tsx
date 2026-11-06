@@ -5,12 +5,10 @@ import { PostPreviewCard } from './PostPreviewCard';
 
 // Mock hooks
 const mockNavigateToPost = vi.fn();
-const mockNavigateToCollection = vi.fn();
 const mockTtlRef = vi.fn();
 vi.mock('@/hooks/usePostNavigation/usePostNavigation', () => ({
   usePostNavigation: () => ({
     navigateToPost: mockNavigateToPost,
-    navigateToCollection: mockNavigateToCollection,
   }),
 }));
 
@@ -143,7 +141,6 @@ const collectionPost = {
 describe('PostPreviewCard', () => {
   beforeEach(() => {
     mockNavigateToPost.mockClear();
-    mockNavigateToCollection.mockClear();
     mockUsePostDetails.mockReturnValue(resolvedPost);
   });
 
@@ -185,7 +182,6 @@ describe('PostPreviewCard', () => {
     fireEvent.click(card);
 
     expect(mockNavigateToPost).toHaveBeenCalledWith('test-post-123');
-    expect(mockNavigateToCollection).not.toHaveBeenCalled();
   });
 
   it('navigates to post page on Enter key', () => {
@@ -195,7 +191,6 @@ describe('PostPreviewCard', () => {
     fireEvent.keyDown(card, { key: 'Enter' });
 
     expect(mockNavigateToPost).toHaveBeenCalledWith('test-post-123');
-    expect(mockNavigateToCollection).not.toHaveBeenCalled();
   });
 
   it('navigates to post page on Space key', () => {
@@ -205,7 +200,6 @@ describe('PostPreviewCard', () => {
     fireEvent.keyDown(card, { key: ' ' });
 
     expect(mockNavigateToPost).toHaveBeenCalledWith('test-post-123');
-    expect(mockNavigateToCollection).not.toHaveBeenCalled();
   });
 
   it('does not navigate on other keys', () => {

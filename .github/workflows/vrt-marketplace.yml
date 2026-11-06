@@ -23,7 +23,7 @@ concurrency:
 # plus this workflow and the VRT scripts it runs.
 # scripts/ci-vrt-paths-test.sh runs this filter against sample changes.
 #
-# vrt-core runs the other Linux VRT project (`vrt`: feed, landing, messages,
+# vrt-core runs the other Linux VRT project (`vrt`: feed, messages,
 # onboarding) under the same filter. The default pre-push gate runs no VRT,
 # so these two jobs are the VRT gate for every Shop pull request.
 jobs:

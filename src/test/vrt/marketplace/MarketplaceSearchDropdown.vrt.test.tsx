@@ -162,8 +162,10 @@ vi.mock('@/hooks/useSearchAutocomplete/useSearchAutocomplete', async () => {
   };
 });
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main className="w-full py-6">{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => (
+    <main className="w-full py-6">{children}</main>
+  ),
 }));
 
 // `Header` hides itself below `lg` for signed-in users, so the mobile scene

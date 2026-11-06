@@ -36,7 +36,7 @@ export function useFollowUser(): UseFollowUserResult {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingAction, setLoadingAction] = useState<UseFollowUserResult['loadingAction']>(null);
   const [loadingUserId, setLoadingUserId] = useState<Pubky | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [, setError] = useState<string | null>(null);
 
   const toggleFollow = useCallback(
     async (userId: Pubky, isCurrentlyFollowing: boolean, displayName?: string) => {
@@ -103,8 +103,6 @@ export function useFollowUser(): UseFollowUserResult {
     toggleFollow,
     isLoading,
     loadingAction,
-    loadingUserId,
     isUserLoading,
-    error,
   };
 }

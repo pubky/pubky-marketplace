@@ -1,26 +1,11 @@
 import type { TFetchMorePostTagsParams, TFetchPostTaggersParams } from '@/controllers/post/post.types';
 import { parseCompositeId } from '@/models/models.utils';
-import type { NexusPost, NexusTag, NexusTaggers } from '@/services/nexus/nexus.types';
+import type { NexusTag, NexusTaggers } from '@/services/nexus/nexus.types';
 import { queryNexus } from '@/services/nexus/nexus.utils';
 import { postApi } from '@/services/nexus/post/post.api';
-import type { TCompositeId } from '@/services/nexus/post/post.types';
 
 export class NexusPostService {
   private constructor() {}
-
-  /**
-   * Fetches a single post with all related data from Nexus
-   *
-   * @param compositeId - Composite post ID in format "authorId:postId"
-   * @returns Complete post view (details, tags, counts, relationships)
-   * @throws {NexusError} When post is not found or request fails
-   */
-  static async getPost({ compositeId }: TCompositeId): Promise<NexusPost> {
-    const { pubky: author_id, id: post_id } = parseCompositeId(compositeId);
-
-    const url = postApi.view({ author_id, post_id });
-    return await queryNexus<NexusPost>({ url });
-  }
 
   /**
    * Fetches tags for a post from Nexus API

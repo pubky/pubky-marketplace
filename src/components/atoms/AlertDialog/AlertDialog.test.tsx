@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -10,13 +11,16 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from './AlertDialog';
 
 function Example({ onConfirm }: { onConfirm: () => void }) {
+  const [open, setOpen] = useState(false);
+
   return (
-    <AlertDialog>
-      <AlertDialogTrigger>Open</AlertDialogTrigger>
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <button type="button" onClick={() => setOpen(true)}>
+        Open
+      </button>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Sure?</AlertDialogTitle>

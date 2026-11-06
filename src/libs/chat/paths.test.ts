@@ -7,7 +7,6 @@ import {
   fileNameFromUrl,
   mintChatFileName,
   parseChatEventPath,
-  parseChatFileName,
   peerFromConversationUrl,
 } from './paths';
 
@@ -25,13 +24,11 @@ describe('chat paths', () => {
     expect(chatFolderPath(FOLDER)).toBe(`/pub/chat/v0/${FOLDER}/`);
   });
 
-  it('mints chronological file names and parses them back', () => {
+  it('mints chronological file names', () => {
     const name = mintChatFileName(1_700_000_000_000, 'deadbeef');
     expect(name).toBe('1700000000000-deadbeef.json');
-    expect(parseChatFileName(name)).toEqual({ sentAt: 1_700_000_000_000 });
     expect(mintChatFileName(42, 'deadbeef')).toBe('0000000000042-deadbeef.json');
     expect(mintChatFileName(1)).toMatch(/^0000000000001-[0-9a-f]{8}\.json$/u);
-    expect(parseChatFileName('nope.json')).toBeNull();
     expect(mintChatFileName(1, 'aaaaaaaa') < mintChatFileName(2, '00000000')).toBe(true);
   });
 

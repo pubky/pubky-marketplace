@@ -1,4 +1,4 @@
-import React, { createRef } from 'react';
+import { createRef } from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StickyNote, Tag, UsersRound } from 'lucide-react';
@@ -70,22 +70,15 @@ describe('MobileTabBar', () => {
   it('applies sticky positioning by default', () => {
     const { container } = render(<MobileTabBar items={makeItems()} />);
     const root = container.firstChild as HTMLElement;
-    expect(root).toHaveClass('sticky', 'top-(--header-height-mobile)');
+    expect(root).toHaveClass('sticky', 'top-(--header-height-settings)');
     expect(root).not.toHaveClass('fixed');
   });
 
   it('applies fixed positioning when requested', () => {
     const { container } = render(<MobileTabBar items={makeItems()} position="fixed" />);
     const root = container.firstChild as HTMLElement;
-    expect(root).toHaveClass('fixed', 'top-(--header-height-mobile)', 'right-0', 'left-0');
+    expect(root).toHaveClass('fixed', 'top-(--header-height-settings)', 'right-0', 'left-0');
     expect(root).not.toHaveClass('sticky');
-  });
-
-  it('uses compact header top offset when headerTop is compact', () => {
-    const { container } = render(<MobileTabBar items={makeItems()} position="fixed" headerTop="compact" />);
-    const root = container.firstChild as HTMLElement;
-    expect(root).toHaveClass('top-(--header-height-settings)');
-    expect(root).not.toHaveClass('top-(--header-height-mobile)');
   });
 
   it('always applies shared root classes', () => {

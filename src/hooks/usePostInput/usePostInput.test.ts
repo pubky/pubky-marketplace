@@ -169,7 +169,6 @@ describe('usePostInput', () => {
 
       expect(result.current.isExpanded).toBe(false);
       expect(result.current.showEmojiPicker).toBe(false);
-      expect(result.current.hasContent).toBe(false);
       expect(result.current.isDragging).toBe(false);
       expect(result.current.currentUserPubky).toBe('test-user-pubky');
       expect(result.current.currentUserDetails).toEqual({ name: 'Test Author' });
@@ -1197,44 +1196,6 @@ describe('usePostInput', () => {
           }),
         );
       }).not.toThrow();
-    });
-  });
-
-  describe('hasContent derived value', () => {
-    it('returns false when content is empty', () => {
-      mockContent = '';
-
-      const { result } = renderHook(() =>
-        usePostInput({
-          variant: 'post',
-        }),
-      );
-
-      expect(result.current.hasContent).toBe(false);
-    });
-
-    it('returns false when content is only whitespace', () => {
-      mockContent = '   \n\t  ';
-
-      const { result } = renderHook(() =>
-        usePostInput({
-          variant: 'post',
-        }),
-      );
-
-      expect(result.current.hasContent).toBe(false);
-    });
-
-    it('returns true when content has non-whitespace characters', () => {
-      mockContent = 'Hello';
-
-      const { result } = renderHook(() =>
-        usePostInput({
-          variant: 'post',
-        }),
-      );
-
-      expect(result.current.hasContent).toBe(true);
     });
   });
 

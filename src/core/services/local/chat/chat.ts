@@ -305,10 +305,6 @@ export class LocalChatService {
     }
   }
 
-  static async putSyncState(row: ChatSyncStateModelSchema): Promise<void> {
-    await ChatSyncStateModel.upsert(row);
-  }
-
   static async updateSyncState(owner: string, peer: string, changes: Partial<ChatSyncStateModelSchema>): Promise<void> {
     try {
       const id = ChatConversationModel.conversationId(owner, peer);

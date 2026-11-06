@@ -86,21 +86,6 @@ export class UserStreamApplication {
   }
 
   /**
-   * Reads one page of a user stream's ids straight from Nexus, leaving the
-   * local stream cache untouched. For callers that need the current list
-   * every time (a cached slice never sees later followers) without
-   * reshaping the cache the stream screens page through.
-   */
-  static async fetchStreamIds({
-    streamId,
-    skip,
-    limit,
-    viewerId,
-  }: Pick<TFetchUserStreamChunkParams, 'streamId' | 'skip' | 'limit' | 'viewerId'>): Promise<Pubky[]> {
-    return await NexusUserStreamService.fetch({ streamId, params: { skip, limit, viewer_id: viewerId } });
-  }
-
-  /**
    * Fetch missing user details from Nexus
    * Called in background to populate cache with full user data
    *

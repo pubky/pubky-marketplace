@@ -8,11 +8,6 @@
 import type { UseViewportObserverOptions } from '../useViewportObserver/useViewportObserver.types';
 
 /**
- * Entity types supported by the TTL subscription hook
- */
-export type TtlEntityType = 'post' | 'user';
-
-/**
  * Base options shared by all entity types
  */
 interface BaseTtlSubscriptionOptions extends Omit<UseViewportObserverOptions, 'enabled'> {
@@ -69,9 +64,4 @@ export interface UseTtlSubscriptionResult {
    * Use this ref on the container element
    */
   ref: (node: HTMLElement | null) => void;
-
-  /**
-   * Whether the element is currently visible in the viewport
-   */
-  isVisible: boolean;
 }

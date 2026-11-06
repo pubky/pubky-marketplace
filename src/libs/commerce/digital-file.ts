@@ -33,10 +33,6 @@ export function newDigitalDeliverableId(): string {
   return bytesToHex(crypto.getRandomValues(new Uint8Array(DELIVERABLE_ID_BYTES)));
 }
 
-export function isDigitalDeliverableId(value: string): boolean {
-  return isLowerHex(value, DELIVERABLE_ID_BYTES * 2);
-}
-
 /** `pubky-marketplace-deliverable/v1|{seller_pubky}|{deliverable_id}|{version}` as UTF-8. */
 export function digitalDeliverableAad(
   sellerPubky: string,

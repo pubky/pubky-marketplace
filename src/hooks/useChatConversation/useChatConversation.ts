@@ -5,13 +5,12 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import type { ChatOpenResult } from '@/application/chat/chat.types';
 import { CHAT_OPEN_THREAD_POLL_MS, CHAT_THREAD_PAGE } from '@/config/chat';
 import { ChatController } from '@/controllers/chat/chat';
-import type { ChatConversationView, ChatMessageView } from '@/controllers/chat/chat.types';
+import type { ChatMessageView } from '@/controllers/chat/chat.types';
 import { Logger } from '@/libs/logger/logger';
 import type { ChatContext } from '@/models/chat/chat.schema';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 export type UseChatConversationResult = {
-  conversation: ChatConversationView | null | undefined;
   messages: ChatMessageView[];
   hasMore: boolean;
   loadOlder: () => void;
@@ -95,7 +94,6 @@ export function useChatConversation(peerPubky: string, context?: ChatContext): U
   }, [conversation, newestReceived, peerPubky]);
 
   return {
-    conversation,
     messages,
     hasMore: (page?.total ?? 0) > messages.length,
     loadOlder: () => setLimit((current) => current + CHAT_THREAD_PAGE),

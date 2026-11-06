@@ -35,7 +35,6 @@ import { canonicalizePostalCode, canonicalizeRegion, refinePostalAddressFields }
 import { type MarketplaceCommand, marketplaceCommandSchema } from '@/libs/commerce/transaction-commands';
 import type { CommerceJsonValue, CommerceMoney } from '@/libs/commerce/transaction-contracts';
 import {
-  commerceAggregateIdSchema,
   commerceEntityIdSchema,
   commercePubkySchema,
   commerceTimestampSchema,
@@ -518,18 +517,7 @@ export class CommerceRecordNormalizer {
   }
 
   /**
-   * Validates a Nexus review-stream payload (`v0/shop/{seller}/reviews` or
-   * `v0/listing/{seller}/{listing}/reviews`) and normalizes it into the
-   * camelCase review views the marketplace surfaces render. The `verified`
-   * flag is passed through as the cryptographic fact Nexus recorded at
-   * ingest; attestor TRUST is applied at display time, not here.
-   */
-  static nexusReviewStream(input: unknown): CommerceIndexedReview[] {
-    return this.nexusReviewPage(input).reviews;
-  }
-
-  /**
-   * `nexusReviewStream` for either answer shape, also telling which one the
+   * Normalizes review entries for either answer shape, also telling which one the
    * index served: `envelope` is true only for the `{reviews, matched}` form,
    * which an index answers when it honoured a sort or filter parameter, and
    * carrying its `matched` figures (null for a bare list or a malformed
@@ -721,10 +709,6 @@ export class CommerceRecordNormalizer {
           : this.toCatalogMoney(listing, listing.auction_buy_now_price_minor),
       minimumIncrement: this.toCatalogMoney(listing, auction_minimum_increment_minor),
     };
-  }
-
-  static aggregateId(input: unknown): string {
-    return this.parse(commerceAggregateIdSchema, input, 'aggregateId');
   }
 
   static lockResource(input: unknown): string {

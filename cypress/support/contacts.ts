@@ -1,6 +1,6 @@
 import { userIdFromPubky } from './common';
 import { clickFollowButton } from './profile';
-import { CheckForNewPosts, PostType, WaitForNewPosts } from './types/enums';
+import { CheckForNewPosts, PostType } from './types/enums';
 
 /**
  * Follow a user from the post menu on one of their posts in the feed.

@@ -1290,43 +1290,6 @@ describe('LocalStreamPostsService', () => {
     });
   });
 
-  describe('bulkSave', () => {
-    it('should save multiple streams', async () => {
-      const streamId1 = PostStreamTypes.TIMELINE_ALL_ALL;
-      const streamId2 = PostStreamTypes.TIMELINE_FOLLOWING_ALL;
-      const stream1 = [postId('post-1'), postId('post-2')];
-      const stream2 = [postId('post-3'), postId('post-4')];
-
-      await LocalStreamPostsService.bulkSave({
-        postStreams: [
-          { streamId: streamId1, stream: stream1 },
-          { streamId: streamId2, stream: stream2 },
-        ],
-      });
-
-      const result1 = await LocalStreamPostsService.read({ streamId: streamId1 });
-      const result2 = await LocalStreamPostsService.read({ streamId: streamId2 });
-
-      expect(result1?.stream).toEqual(stream1);
-      expect(result2?.stream).toEqual(stream2);
-    });
-
-    it('should propagate error when upsert throws', async () => {
-      const databaseError = Err.database(DatabaseErrorCode.WRITE_FAILED, 'Failed to upsert stream', {
-        service: ErrorService.Local,
-        operation: 'bulkSave',
-        context: { streamId },
-      });
-      vi.spyOn(PostStreamModel, 'upsert').mockRejectedValue(databaseError);
-
-      await expect(
-        LocalStreamPostsService.bulkSave({
-          postStreams: [{ streamId, stream: [postId('post-1')] }],
-        }),
-      ).rejects.toThrow('Failed to upsert stream');
-    });
-  });
-
   describe('readUnreadStream', () => {
     it('should return unread stream when it exists', async () => {
       const unreadPostIds = [postId('unread-1'), postId('unread-2')];

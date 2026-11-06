@@ -136,10 +136,7 @@ See `docs/components.md` — _Toasts_ for variant usage and copy conventions.
 
 ```typescript
 // Category predicates
-isNetworkError(error);
-isServerError(error);
 isAuthError(error);
-isDatabaseError(error);
 
 // Decision helpers
 isRetryable(error); // Network, Timeout, Server, RateLimit → true

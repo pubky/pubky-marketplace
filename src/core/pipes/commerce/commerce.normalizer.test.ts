@@ -354,7 +354,7 @@ describe('CommerceRecordNormalizer', () => {
     });
   });
 
-  describe('nexusReviewStream', () => {
+  describe('nexusReviewPage reviews', () => {
     const REVIEWER = 'a'.repeat(52);
 
     function reviewEntry(review: Record<string, unknown> = {}) {
@@ -384,7 +384,7 @@ describe('CommerceRecordNormalizer', () => {
     }
 
     it('reads a missing moderation field, from an index older than review moderation, as not moderated', () => {
-      const [review] = CommerceRecordNormalizer.nexusReviewStream([reviewEntry()]);
+      const [review] = CommerceRecordNormalizer.nexusReviewPage([reviewEntry()]).reviews;
 
       expect(review.moderation).toBeNull();
       expect(review.text).toBe('Arrived late.');
@@ -392,16 +392,16 @@ describe('CommerceRecordNormalizer', () => {
     });
 
     it('reads a null moderation as not moderated', () => {
-      const [review] = CommerceRecordNormalizer.nexusReviewStream([reviewEntry({ moderation: null })]);
+      const [review] = CommerceRecordNormalizer.nexusReviewPage([reviewEntry({ moderation: null })]).reviews;
 
       expect(review.moderation).toBeNull();
       expect(review.text).toBe('Arrived late.');
     });
 
     it.each(['text_hidden', 'excluded'] as const)('carries %s moderation with its reason and no text', (state) => {
-      const [review] = CommerceRecordNormalizer.nexusReviewStream([
+      const [review] = CommerceRecordNormalizer.nexusReviewPage([
         reviewEntry({ text: '', moderation: { state, reason: 'hatespeech' } }),
-      ]);
+      ]).reviews;
 
       expect(review.moderation).toEqual({ state, reason: 'hatespeech' });
       expect(review.ratingOverall).toBe(2);
@@ -409,32 +409,34 @@ describe('CommerceRecordNormalizer', () => {
     });
 
     it('drops text an index sent alongside moderation', () => {
-      const [review] = CommerceRecordNormalizer.nexusReviewStream([
+      const [review] = CommerceRecordNormalizer.nexusReviewPage([
         reviewEntry({ moderation: { state: 'text_hidden', reason: 'harassement' } }),
-      ]);
+      ]).reviews;
 
       expect(review.text).toBe('');
     });
 
     it('carries iat and price weight when the index serves them, null for an unverified review', () => {
-      const [verified, unverified] = CommerceRecordNormalizer.nexusReviewStream([
+      const [verified, unverified] = CommerceRecordNormalizer.nexusReviewPage([
         reviewEntry({ verified: true, attestor_id: 'w'.repeat(52), iat: 1_788_220_800, price_weight: 3 }),
         reviewEntry({ iat: null, price_weight: null }),
-      ]);
+      ]).reviews;
 
       expect(verified).toMatchObject({ iat: 1_788_220_800, priceWeight: 3 });
       expect(unverified).toMatchObject({ iat: null, priceWeight: null });
     });
 
     it('leaves iat absent for a review from an older index', () => {
-      const [review] = CommerceRecordNormalizer.nexusReviewStream([reviewEntry()]);
+      const [review] = CommerceRecordNormalizer.nexusReviewPage([reviewEntry()]).reviews;
 
       expect(review).not.toHaveProperty('iat');
       expect(review).not.toHaveProperty('priceWeight');
     });
 
     it('rejects a price weight outside 1 to 5', () => {
-      expect(() => CommerceRecordNormalizer.nexusReviewStream([reviewEntry({ iat: 1, price_weight: 6 })])).toThrow();
+      expect(
+        () => CommerceRecordNormalizer.nexusReviewPage([reviewEntry({ iat: 1, price_weight: 6 })]).reviews,
+      ).toThrow();
     });
 
     describe('answer shapes', () => {
@@ -461,9 +463,9 @@ describe('CommerceRecordNormalizer', () => {
 
         expect(page.envelope).toBe(true);
         expect(page.reviews).toEqual(CommerceRecordNormalizer.nexusReviewPage(listed()).reviews);
-        expect(CommerceRecordNormalizer.nexusReviewStream({ reviews: listed(), matched: { buyers: 0 } })).toHaveLength(
-          2,
-        );
+        expect(
+          CommerceRecordNormalizer.nexusReviewPage({ reviews: listed(), matched: { buyers: 0 } }).reviews,
+        ).toHaveLength(2);
       });
 
       it('reads an empty envelope, with a null average, and an empty bare list', () => {
@@ -508,10 +510,10 @@ describe('CommerceRecordNormalizer', () => {
       const ORDER_REF = 'ab'.repeat(32);
 
       it('carries the order ref of an attested review and null for an unattested one', () => {
-        const [attested, unattested] = CommerceRecordNormalizer.nexusReviewStream([
+        const [attested, unattested] = CommerceRecordNormalizer.nexusReviewPage([
           reviewEntry({ order_ref: ORDER_REF }),
           reviewEntry({ order_ref: null }),
-        ]);
+        ]).reviews;
 
         expect(attested?.orderRef).toBe(ORDER_REF);
         expect(unattested?.orderRef).toBeNull();
@@ -521,19 +523,23 @@ describe('CommerceRecordNormalizer', () => {
         const entry = reviewEntry();
         delete (entry.review as Record<string, unknown>).order_ref;
 
-        const [review] = CommerceRecordNormalizer.nexusReviewStream([entry]);
+        const [review] = CommerceRecordNormalizer.nexusReviewPage([entry]).reviews;
 
         expect(review).not.toHaveProperty('orderRef');
       });
 
       it('rejects an order ref that is not a 64-character hash', () => {
-        expect(() => CommerceRecordNormalizer.nexusReviewStream([reviewEntry({ order_ref: 'not-a-hash' })])).toThrow();
+        expect(
+          () => CommerceRecordNormalizer.nexusReviewPage([reviewEntry({ order_ref: 'not-a-hash' })]).reviews,
+        ).toThrow();
       });
     });
 
     it('rejects a moderation state the frozen contract does not define', () => {
-      expect(() =>
-        CommerceRecordNormalizer.nexusReviewStream([reviewEntry({ moderation: { state: 'hidden', reason: 'x' } })]),
+      expect(
+        () =>
+          CommerceRecordNormalizer.nexusReviewPage([reviewEntry({ moderation: { state: 'hidden', reason: 'x' } })])
+            .reviews,
       ).toThrow();
     });
   });

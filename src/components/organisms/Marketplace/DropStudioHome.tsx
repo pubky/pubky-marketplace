@@ -14,8 +14,8 @@ import { useDropStudio } from '@/hooks/useDropStudio/useDropStudio';
 import { type OwnDropRow, useOwnDrops } from '@/hooks/useOwnDrops/useOwnDrops';
 import type { DropState } from '@/libs/commerce/transaction-contracts';
 import { formatDateTime } from '@/libs/utils/dateTime';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DropStudioComposer } from '@/organisms/Marketplace/DropStudioComposer';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
@@ -38,14 +38,7 @@ export function DropStudioHome() {
     drops.rows.some((row) => row.projection.status === 'session-unavailable');
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      className="pb-28 lg:pb-16"
-      classNameWrapperContent="max-w-4xl"
-    >
+    <MarketplaceContentLayout className="pb-28 lg:pb-16" classNameWrapperContent="max-w-4xl">
       <Container
         overrideDefaults
         data-surface="drop-studio-home"
@@ -154,7 +147,7 @@ export function DropStudioHome() {
           </>
         )}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }
 

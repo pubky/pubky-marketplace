@@ -62,9 +62,6 @@ export interface UsePostInputReturn {
   mentionIsOpen: boolean;
   mentionSelectedIndex: number | null;
   setMentionSelectedIndex: (index: number | null) => void;
-
-  // Derived values
-  hasContent: boolean;
   displayPlaceholder: string;
   currentUserPubky: string | null;
   currentUserDetails?: NexusUserDetails | null;

@@ -14,7 +14,7 @@ import {
 } from '../support/posts';
 import { followFromPostMenu, searchAndFollowProfile, searchForProfileByPubky } from '../support/contacts';
 import { addProfileTags } from '../support/profile';
-import { BackupType, HasBackedUp, PostType, WaitForNewPosts } from '../support/types/enums';
+import { BackupType, HasBackedUp, PostType } from '../support/types/enums';
 import { defaultMs, fastMs, slowMs } from '../support/slow-down';
 
 // Temporary extra delay around filtered-feed sign-in/clicks (https://github.com/pubky/pubky-app/issues/2142).

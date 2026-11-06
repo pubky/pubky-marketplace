@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { Toast, ToastAction, ToastClose, ToastDescription, ToastProvider, ToastTitle, ToastViewport } from './Toast';
+import { Toast, ToastAction, ToastDescription, ToastProvider, ToastTitle, ToastViewport } from './Toast';
 import type { ToastVariant } from './Toast.variants';
 
 function renderToast(variant: ToastVariant = 'default') {
@@ -98,17 +98,5 @@ describe('ToastTitle and ToastDescription', () => {
       </ToastProvider>,
     );
     expect(screen.getByText('Description text')).toHaveClass('text-sm', 'text-popover-foreground');
-  });
-
-  it('renders a close button', () => {
-    render(
-      <ToastProvider>
-        <Toast open>
-          <ToastClose />
-        </Toast>
-        <ToastViewport />
-      </ToastProvider>,
-    );
-    expect(screen.getByRole('button')).toBeInTheDocument();
   });
 });

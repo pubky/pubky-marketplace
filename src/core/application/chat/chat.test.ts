@@ -49,7 +49,7 @@ describe('ChatApplication', () => {
   describe('identity', () => {
     it('creates, stores and publishes the key once', async () => {
       expect(await ChatApplication.ensureIdentity(ALICE)).toBe('ready');
-      const identity = await ChatApplication.getIdentity(ALICE);
+      const identity = await LocalChatService.getIdentity(ALICE);
       expect(identity?.published).toBe(true);
       expect(homeserver.files.get(chatPrivateKeyUrl(ALICE))).toMatchObject({ v: 0, alg: 'x25519', kid: identity?.kid });
       expect(homeserver.files.get(chatPublicKeyUrl(ALICE))).toMatchObject({ kid: identity?.kid });
@@ -62,12 +62,12 @@ describe('ChatApplication', () => {
 
     it('reuses a key stored on the homeserver and republishes a missing public key', async () => {
       await ChatApplication.ensureIdentity(ALICE);
-      const kid = (await ChatApplication.getIdentity(ALICE))?.kid;
+      const kid = (await LocalChatService.getIdentity(ALICE))?.kid;
       await LocalChatService.clearAll();
       homeserver.files.delete(chatPublicKeyUrl(ALICE));
 
       expect(await ChatApplication.ensureIdentity(ALICE)).toBe('ready');
-      expect((await ChatApplication.getIdentity(ALICE))?.kid).toBe(kid);
+      expect((await LocalChatService.getIdentity(ALICE))?.kid).toBe(kid);
       expect(homeserver.files.get(chatPublicKeyUrl(ALICE))).toMatchObject({ kid });
     });
 
@@ -489,7 +489,7 @@ describe('ChatApplication', () => {
       // Bob resets his key (new install without his private key).
       const oldFolder = alice!.folder_id;
       homeserver.files.delete(chatPrivateKeyUrl(BOB));
-      await LocalChatService.saveIdentity({ ...(await ChatApplication.getIdentity(BOB))!, published: false });
+      await LocalChatService.saveIdentity({ ...(await LocalChatService.getIdentity(BOB))!, published: false });
       await LocalChatService.clearAll();
       await ChatApplication.ensureIdentity(ALICE);
       await ChatApplication.ensureIdentity(BOB);

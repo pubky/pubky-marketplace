@@ -44,16 +44,8 @@ export const homegateApi = {
   createLnVerification: () => buildHomegateUrl('/ln_verification'),
 
   /**
-   * Gets the status of a Lightning Network verification by verification ID
-   * @param verificationId - The verification ID (UUID format)
-   */
-  getLnVerification: (verificationId: string) => buildHomegateUrl(`/ln_verification/${verificationId}`),
-
-  /**
    * Long-polls for Lightning Network verification confirmation
    * @param verificationId - The verification ID (UUID format)
    */
   awaitLnVerification: (verificationId: string) => buildHomegateUrl(`/ln_verification/${verificationId}/await`),
 };
-
-export type HomegateApiEndpoint = keyof typeof homegateApi;

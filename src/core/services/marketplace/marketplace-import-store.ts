@@ -121,14 +121,11 @@ export type InventoryManifestStore = {
   ): Promise<HostRowPatchResult>;
   persistPayloads(manifestId: string, payloads: ReadonlyMap<string, string>): Promise<void>;
   getPayloadJson(manifestId: string, rowIdentity: string): Promise<string | null>;
-  listProgress(manifestId: string): Promise<readonly CommerceImportRowModelSchema[]>;
   pruneExpired(now?: number): Promise<void>;
   /** The seller's stored imports, newest first: what a resume can offer after the dialog was closed or the page reloaded. */
   listManifests(): Promise<readonly StoredImportSummary[]>;
   /** Removes an import and its rows, for a seller who discards an unfinished import. */
   deleteManifest(manifestId: string): Promise<void>;
-  getMapping(): Promise<Record<string, string> | null>;
-  putMapping(mapping: Record<string, string>): Promise<void>;
 };
 
 /**
@@ -312,11 +309,6 @@ export class DexieManifestStore implements InventoryManifestStore {
     return row.payload_json;
   }
 
-  async listProgress(manifestId: string): Promise<readonly CommerceImportRowModelSchema[]> {
-    const rows = await this.database.commerce_import_rows.where('manifestId').equals(manifestId).toArray();
-    return rows.filter((row) => row.seller_id === this.sellerId);
-  }
-
   async pruneExpired(now = Date.now()): Promise<void> {
     const cutoff = now - IMPORT_MANIFEST_RETENTION_MS;
     await this.database.transaction(
@@ -356,22 +348,6 @@ export class DexieManifestStore implements InventoryManifestStore {
         await this.database.commerce_import_manifests.delete(manifestId);
       },
     );
-  }
-
-  async getMapping(): Promise<Record<string, string> | null> {
-    const row = await this.database.commerce_import_mappings.get(this.sellerId);
-    if (!row) return null;
-    const parsed: unknown = JSON.parse(row.mapping_json);
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
-    return parsed as Record<string, string>;
-  }
-
-  async putMapping(mapping: Record<string, string>): Promise<void> {
-    await this.database.commerce_import_mappings.put({
-      seller_id: this.sellerId,
-      mapping_json: JSON.stringify(mapping),
-      updated_at: Date.now(),
-    });
   }
 
   private async loadInTransaction(manifestId: string): Promise<HostImportManifest | null> {

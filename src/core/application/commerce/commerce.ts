@@ -859,16 +859,6 @@ export class CommerceApplication {
     await LocalCommerceService.cacheListingProjection(projection);
   }
 
-  static async getOrFetchListingsBySeller(sellerPubky: string) {
-    const listings = await LocalCommerceService.getListingsBySeller(sellerPubky);
-    if (listings.length > 0) return listings;
-
-    await this.fetchSellerCatalogListings(sellerPubky);
-    const entries = await LocalCommerceService.getCatalogEntriesBySeller(sellerPubky);
-    await Promise.all(entries.map((entry) => this.getOrFetchListing(sellerPubky, entry.listing_id)));
-    return await LocalCommerceService.getListingsBySeller(sellerPubky);
-  }
-
   /**
    * Refreshes one seller's discovery stream, then hydrates only records that
    * are absent locally or newer than the canonical record already cached.
@@ -942,10 +932,6 @@ export class CommerceApplication {
       recordsToCommit,
       { sellerPubky, deletedListingIds: deleted },
     );
-  }
-
-  static async getListingsByCategory(categoryId: string) {
-    return await LocalCommerceService.getListingsByCategory(categoryId);
   }
 
   static async getAllListings() {
@@ -3313,10 +3299,6 @@ export class CommerceApplication {
 
   static async isShopFollowed(ownerPubky: string, sellerPubky: string): Promise<boolean> {
     return await LocalCommerceService.isShopFollowed(ownerPubky, sellerPubky);
-  }
-
-  static async getShopFollows(ownerPubky: string) {
-    return await LocalCommerceService.getShopFollows(ownerPubky);
   }
 
   static async commitCreateShopFollow(ownerPubky: string, sellerPubky: string): Promise<void> {

@@ -24,12 +24,12 @@ export function useSearchAutocomplete({
 }: UseSearchAutocompleteParams): UseSearchAutocompleteResult {
   const [tags, setTags] = useState<AutocompleteTag[]>([]);
   const [userIds, setUserIds] = useState<Pubky[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+  const [, setIsSearching] = useState(false);
   // Guards against out-of-order async responses overwriting newer results.
   const requestIdRef = useRef(0);
 
   // Get user details from IDs using shared hook
-  const { users, isLoading: isLoadingUsers } = useUserDetailsFromIds({ userIds });
+  const { users } = useUserDetailsFromIds({ userIds });
 
   // Debounced search function
   const debouncedSearchRef = useRef(
@@ -136,12 +136,8 @@ export function useSearchAutocomplete({
     };
   }, [query, enabled]);
 
-  // Loading state: searching OR waiting for user details to load
-  const isLoading = isSearching || isLoadingUsers;
-
   return {
     tags,
     users,
-    isLoading,
   };
 }

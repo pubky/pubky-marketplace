@@ -48,7 +48,6 @@ export function useCommerceFavorite(listingCompositeId: string) {
 
   return {
     isFavorite: favorite ?? false,
-    isLoading: Boolean(currentUserPubky) && favorite === undefined,
     isMutating,
     toggle,
   };

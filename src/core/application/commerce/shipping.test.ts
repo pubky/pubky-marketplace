@@ -156,8 +156,6 @@ describe('CommerceShippingApplication quote and purchase', () => {
     expect(await CommerceShippingApplication.getLabel(OWNER, 'order-1')).toEqual(first);
     expect(await CommerceShippingApplication.getLabel(OWNER, 'order-2')).toBeNull();
     expect(await CommerceShippingApplication.getLabel(OTHER, 'order-1')).toBeNull();
-    await CommerceShippingApplication.deleteLabel(OWNER, 'order-1');
-    expect(await CommerceShippingApplication.getLabel(OWNER, 'order-1')).toBeNull();
   });
 
   it('does not buy without a stored token', async () => {

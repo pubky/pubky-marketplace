@@ -41,7 +41,7 @@ const DialogNewCollection = dynamic(
  * Visibility rules:
  * - Shows for authenticated users (opens the context dialog)
  * - Shows for unauthenticated users on public explore routes (opens sign-in)
- * - Hidden on landing page and other non-public routes for unauthenticated users
+ * - Hidden on the root URL and other non-public routes for unauthenticated users
  * - Hidden while a collection is in reorder mode (reorder mode is for
  *   reordering, not adding posts; the flag bridges from the page via the
  *   `collectionReorder` store since the FAB lives outside the page tree)

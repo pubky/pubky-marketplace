@@ -289,7 +289,7 @@ describe('Users Stream API - Error Control', () => {
     });
   });
 
-  describe('UserStreamApiEndpoint type', () => {
+  describe('userStreamApi endpoint contract', () => {
     it('should have exactly 10 endpoints', () => {
       const endpointKeys = Object.keys(userStreamApi);
       expect(endpointKeys).toHaveLength(10);

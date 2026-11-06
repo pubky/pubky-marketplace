@@ -311,20 +311,11 @@ export function matchPostRoute(pathname: string): { userId: string; postId: stri
   return { userId, postId };
 }
 
-/** `/post/[userId]/[postId]` — browsable without auth; uses explore header chrome for guests. */
-export function isPostRoute(pathname: string): boolean {
-  return matchPostRoute(pathname) !== null;
-}
-
 export function isCoreExploreRoute(pathname: string): boolean {
   return EXPLORE_ROUTES.includes(pathname);
 }
 
-export function isPublicExploreRoute(pathname: string): boolean {
-  return isCoreExploreRoute(pathname) || isDynamicPublicRoute(pathname);
-}
-
-/** Routes where the header logo links back to the landing page (`/`). */
+/** Routes where the header logo links to the root URL (`/`), which redirects to Market. */
 export const LOGO_LANDING_ROUTES: readonly string[] = [
   ROOT_ROUTES,
   ...Object.values(AUTH_ROUTES),
@@ -425,19 +416,6 @@ export function getChatRoute(peerPubky: string, context?: ChatRouteContext): str
   if (context?.orderId) params.set('order', context.orderId);
   const query = params.toString();
   return `${APP_ROUTES.MESSAGES}/${peerPubky}${query ? `?${query}` : ''}`;
-}
-
-/**
- * Matches `/messages/[pubky]` and returns its param, or `null` for any other
- * path. Shape-only matching — identifier validation is the caller's concern
- * (mirrors `matchPostRoute`).
- */
-export function matchChatRoute(pathname: string): { peerPubky: string } | null {
-  const segments = pathname.split('/').filter(Boolean);
-  if (segments[0] !== 'messages' || segments.length !== 2) {
-    return null;
-  }
-  return { peerPubky: segments[1] };
 }
 
 export function getMarketplaceListingRoute(sellerPubky: string, listingId: string): string {

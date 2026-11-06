@@ -114,7 +114,7 @@ describe('Logo', () => {
     expect(setItemSpy).toHaveBeenCalledWith(FORCE_FEED_SCROLL_TOP_KEY, '1');
   });
 
-  it.each(LOGO_LANDING_ROUTES)('links to the landing page on %s', (pathname) => {
+  it.each(LOGO_LANDING_ROUTES)('links to the root URL on %s', (pathname) => {
     vi.mocked(usePathname).mockReturnValue(pathname);
 
     render(<Logo />);
@@ -172,7 +172,7 @@ describe('Logo - social link-out', () => {
     expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' });
   });
 
-  it('keeps landing routes on the landing page while on', () => {
+  it('keeps root-linked routes pointing to root with social link-out on', () => {
     setSocialHost('https://pubky.app');
     vi.mocked(usePathname).mockReturnValue('/sign-in');
     render(<Logo />);

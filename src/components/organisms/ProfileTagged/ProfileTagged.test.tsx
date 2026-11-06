@@ -29,7 +29,7 @@ vi.mock('@/hooks/useTagged/useTagged', () => ({
 }));
 
 vi.mock('@/hooks/useEnrichedTags/useEnrichedTags', () => ({
-  useEnrichedTags: vi.fn((tags: unknown[]) => ({ enrichedTags: tags, isLoading: false })),
+  useEnrichedTags: vi.fn((tags: unknown[]) => ({ enrichedTags: tags })),
 }));
 
 // Mock molecules
@@ -107,7 +107,6 @@ beforeEach(() => {
   } as ReturnType<typeof useUserProfile>);
   mockUseEnrichedTags.mockImplementation((tags: unknown[]) => ({
     enrichedTags: tags as ReturnType<typeof useEnrichedTags>['enrichedTags'],
-    isLoading: false,
   }));
 });
 
@@ -135,7 +134,7 @@ describe('ProfileTagged', () => {
         relationship: false,
       },
     ];
-    mockUseEnrichedTags.mockReturnValue({ enrichedTags, isLoading: false });
+    mockUseEnrichedTags.mockReturnValue({ enrichedTags });
 
     render(<ProfileTagged />);
 

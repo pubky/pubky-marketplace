@@ -1,11 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import {
-  buildWrapAad,
-  isUnwrapAuthenticationError,
-  unwrapPayload,
-  WRAP_IV_BYTES,
-  wrapPayload,
-} from './secret-wrapping';
+import { buildWrapAad, unwrapPayload, WRAP_IV_BYTES, wrapPayload } from './secret-wrapping';
 
 const TABLE = 'commerce_delivery_keys';
 const ROW_ID = 'a'.repeat(52);
@@ -57,47 +51,38 @@ describe('wrapPayload/unwrapPayload', () => {
 
   it('fails authentication when unwrapped under a different row id (transplanted ciphertext)', async () => {
     const wrapped = await wrapPayload(key, buildWrapAad(TABLE, ROW_ID), new Uint8Array(32).fill(3));
-    await expect(unwrapPayload(key, buildWrapAad(TABLE, 'b'.repeat(52)), wrapped)).rejects.toSatisfy(
-      isUnwrapAuthenticationError,
-    );
+    await expect(unwrapPayload(key, buildWrapAad(TABLE, 'b'.repeat(52)), wrapped)).rejects.toMatchObject({
+      name: 'OperationError',
+    });
   });
 
   it('fails authentication when unwrapped under a different table', async () => {
     const wrapped = await wrapPayload(key, buildWrapAad(TABLE, ROW_ID), new Uint8Array(32).fill(3));
-    await expect(unwrapPayload(key, buildWrapAad('commerce_delivery_records', ROW_ID), wrapped)).rejects.toSatisfy(
-      isUnwrapAuthenticationError,
-    );
+    await expect(unwrapPayload(key, buildWrapAad('commerce_delivery_records', ROW_ID), wrapped)).rejects.toMatchObject({
+      name: 'OperationError',
+    });
   });
 
   it('fails authentication under a different wrapping key (lost/rotated key)', async () => {
     const otherKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
     const wrapped = await wrapPayload(key, buildWrapAad(TABLE, ROW_ID), new Uint8Array(32).fill(3));
-    await expect(unwrapPayload(otherKey, buildWrapAad(TABLE, ROW_ID), wrapped)).rejects.toSatisfy(
-      isUnwrapAuthenticationError,
-    );
+    await expect(unwrapPayload(otherKey, buildWrapAad(TABLE, ROW_ID), wrapped)).rejects.toMatchObject({
+      name: 'OperationError',
+    });
   });
 
   it('fails authentication on a tampered ciphertext', async () => {
     const wrapped = await wrapPayload(key, buildWrapAad(TABLE, ROW_ID), new Uint8Array(32).fill(3));
     const tampered = new Uint8Array(wrapped);
     tampered[tampered.byteLength - 1] ^= 0xff;
-    await expect(unwrapPayload(key, buildWrapAad(TABLE, ROW_ID), tampered)).rejects.toSatisfy(
-      isUnwrapAuthenticationError,
-    );
+    await expect(unwrapPayload(key, buildWrapAad(TABLE, ROW_ID), tampered)).rejects.toMatchObject({
+      name: 'OperationError',
+    });
   });
 
   it('rejects a payload too short to hold an IV and tag as an authentication failure', async () => {
-    await expect(unwrapPayload(key, buildWrapAad(TABLE, ROW_ID), new Uint8Array(5))).rejects.toSatisfy(
-      isUnwrapAuthenticationError,
-    );
-  });
-});
-
-describe('isUnwrapAuthenticationError', () => {
-  it('classifies OperationError as authentication failure and everything else as environmental', () => {
-    expect(isUnwrapAuthenticationError(new DOMException('bad tag', 'OperationError'))).toBe(true);
-    expect(isUnwrapAuthenticationError(new Error('OperationError-free message'))).toBe(false);
-    expect(isUnwrapAuthenticationError(new DOMException('idb gone', 'UnknownError'))).toBe(false);
-    expect(isUnwrapAuthenticationError('not an error')).toBe(false);
+    await expect(unwrapPayload(key, buildWrapAad(TABLE, ROW_ID), new Uint8Array(5))).rejects.toMatchObject({
+      name: 'OperationError',
+    });
   });
 });

@@ -17,7 +17,6 @@ import {
   type InventoryAdjustmentEnvelope,
   type InventoryAdjustRequest,
   type InventoryProjection,
-  listingIdentity,
   type LosslessJsonObject,
   type ManifestStore,
   normalizedCsvRowHash,
@@ -28,10 +27,7 @@ import {
   type PlannedImportRow,
   PubkyShopClient,
   PubkyShopError,
-  type ResumeTask,
-  resumeTasks,
   type SdkResult,
-  streamResumeTasks,
   SYNC_MANY_LIMIT,
   type SyncManyClassification,
   type SyncManyEnvelope,
@@ -468,26 +464,6 @@ export class MarketplaceShopClientService {
     return dryRunCounts(manifest);
   }
 
-  static resumeTasks(manifest: ImportManifest): readonly ResumeTask[] {
-    return resumeTasks(manifest);
-  }
-
-  static streamResumeTasks(store: ManifestStore, manifestId: string): AsyncGenerator<ResumeTask> {
-    return streamResumeTasks(store, manifestId);
-  }
-
-  static listingIdentity(row: CanonicalCsvRow): string {
-    return listingIdentity(row);
-  }
-
-  static rowIdentity(row: CanonicalCsvRow): string {
-    return canonicalCsvRowIdentity(row);
-  }
-
-  static rowHash(row: CanonicalCsvRow): string {
-    return normalizedCsvRowHash(row);
-  }
-
   static currentItemsFromRows(rows: readonly CanonicalCsvRow[]): Record<string, CurrentImportItem> {
     const items: Record<string, CurrentImportItem> = {};
     for (const row of rows) {
@@ -656,7 +632,6 @@ export type {
   InventoryProjection,
   LosslessJsonObject,
   PlannedImportRow,
-  ResumeTask,
   SdkResult,
   SyncManyClassification,
   SyncManyEnvelope,

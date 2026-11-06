@@ -68,7 +68,6 @@ export function ContentLayout({
   classNameWrapperContent,
   classNameMobileHeader,
   feedVariant,
-  layoutOverride,
   disableWideShellLayout,
   disableMainContentOverflow = false,
 }: ContentLayoutProps) {
@@ -78,7 +77,7 @@ export function ContentLayout({
     feedVariant === TIMELINE_FEED_VARIANT.CUSTOM && customFeed?.layout !== undefined
       ? pubkyLayoutToHomeLayout(customFeed.layout)
       : undefined;
-  const requestedLayout = layoutOverride ?? customFeedLayout ?? homeLayout;
+  const requestedLayout = customFeedLayout ?? homeLayout;
 
   const [drawerFilterOpen, setDrawerFilterOpen] = useState(false);
   const [drawerRightOpen, setDrawerRightOpen] = useState(false);

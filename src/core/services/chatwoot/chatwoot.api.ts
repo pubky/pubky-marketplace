@@ -41,5 +41,3 @@ export const chatwootApi = {
    */
   createConversation: (accountId: string) => buildChatwootUrl(accountId, '/conversations'),
 };
-
-export type ChatwootApiEndpoint = keyof typeof chatwootApi;

@@ -82,7 +82,6 @@ describe('useMarketplaceLocksPayment', () => {
     const { result } = renderHook(() =>
       useMarketplaceLocksPayment({ order, payment, digitalLock, isBuyer: true, onPaymentChanged: vi.fn() }),
     );
-    expect(result.current.enabled).toBe(false);
     await act(async () => {
       expect(await result.current.start()).toBe(false);
       expect(await result.current.unlock()).toBe(false);

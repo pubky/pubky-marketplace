@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { ContentCard, ContentContainer, ContentImage } from './Content';
+import { ContentCard, ContentImage } from './Content';
 
 // Mock Next.js Image component
 vi.mock('next/image', () => ({
@@ -35,16 +35,6 @@ vi.mock('@/atoms/Card/Card', () => {
   };
 });
 
-vi.mock('@/atoms/Container/Container', () => {
-  return {
-    Container: ({ children, className }: { children: React.ReactNode; className?: string }) => (
-      <div data-testid="container" className={className}>
-        {children}
-      </div>
-    ),
-  };
-});
-
 describe('ContentCard', () => {
   it('renders with default props', () => {
     render(
@@ -68,19 +58,6 @@ describe('ContentCard', () => {
     expect(imageContainer).toHaveStyle({ width: '200px', height: '200px' });
     expect(imageContainer).toHaveClass('hidden', 'lg:flex');
     expect(imageContainer?.parentElement).not.toHaveClass('w-48', 'shrink-0');
-  });
-});
-
-describe('ContentContainer', () => {
-  it('renders with default props', () => {
-    render(
-      <ContentContainer>
-        <div>Container content</div>
-      </ContentContainer>,
-    );
-
-    expect(screen.getByTestId('container')).toBeInTheDocument();
-    expect(screen.getByText('Container content')).toBeInTheDocument();
   });
 });
 

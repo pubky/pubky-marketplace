@@ -41,7 +41,7 @@ vi.mock('@/hooks/useMutedUsers/useMutedUsers', () => ({
 }));
 
 vi.mock('@/hooks/useUnreadPosts/useUnreadPosts', () => ({
-  useUnreadPosts: vi.fn(() => ({ unreadPostIds: [], unreadCount: 0 })),
+  useUnreadPosts: vi.fn(() => ({ unreadPostIds: [] })),
 }));
 
 vi.mock('@/hooks/useIsScrolledFromTop/useIsScrolledFromTop', () => ({

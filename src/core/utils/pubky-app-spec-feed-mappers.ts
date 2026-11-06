@@ -49,24 +49,6 @@ export function pubkyLayoutToHomeLayout(layout: PubkyAppFeedLayout): LayoutType 
   }
 }
 
-/**
- * Maps home LayoutType to PubkyAppFeedLayout enum
- */
-export function homeLayoutToPubkyLayout(layout: LayoutType): PubkyAppFeedLayout | undefined {
-  switch (layout) {
-    case LAYOUT.COLUMNS:
-      return PubkyAppFeedLayout.Columns;
-    case LAYOUT.WIDE:
-      return PubkyAppFeedLayout.Wide;
-    case LAYOUT.LIST:
-      return PubkyAppFeedLayout.List;
-    case LAYOUT.VISUAL:
-      return PubkyAppFeedLayout.Visual;
-    default:
-      return undefined;
-  }
-}
-
 // ============================================================================
 // Reach Mappers
 // ============================================================================
@@ -95,26 +77,6 @@ export function pubkyReachToHomeReach(reach: PubkyAppFeedReach): ReachType | und
   }
 }
 
-/**
- * Maps home ReachType to PubkyAppFeedReach enum
- */
-export function homeReachToPubkyReach(reach: ReachType): PubkyAppFeedReach | undefined {
-  switch (reach) {
-    case REACH.FOLLOWING:
-      return PubkyAppFeedReach.Following;
-    case REACH.FRIENDS:
-      return PubkyAppFeedReach.Friends;
-    case REACH.ALL:
-      return PubkyAppFeedReach.All;
-    case REACH.NETWORK:
-      return PubkyAppFeedReach.Wot;
-    case REACH.ME:
-      return PubkyAppFeedReach.Me;
-    default:
-      return undefined;
-  }
-}
-
 // ============================================================================
 // Sort Mappers
 // ============================================================================
@@ -128,20 +90,6 @@ export function pubkySortToHomeSort(sort: PubkyAppFeedSort): SortType | undefine
       return SORT.TIMELINE;
     case PubkyAppFeedSort.Popularity:
       return SORT.ENGAGEMENT;
-    default:
-      return undefined;
-  }
-}
-
-/**
- * Maps home SortType to PubkyAppFeedSort enum
- */
-export function homeSortToPubkySort(sort: SortType): PubkyAppFeedSort | undefined {
-  switch (sort) {
-    case SORT.TIMELINE:
-      return PubkyAppFeedSort.Recent;
-    case SORT.ENGAGEMENT:
-      return PubkyAppFeedSort.Popularity;
     default:
       return undefined;
   }
@@ -170,34 +118,6 @@ export function pubkyPostKindToHomeContent(postKind: PubkyAppPostKind): ContentT
       return CONTENT.FILES;
     case PubkyAppPostKind.Collection:
       return CONTENT.COLLECTIONS;
-    default:
-      return undefined;
-  }
-}
-
-/**
- * Maps home ContentType to PubkyAppPostKind enum
- * Note: CONTENT.ALL has no PubkyAppPostKind equivalent and returns undefined
- */
-export function homeContentToPubkyPostKind(content: ContentType): PubkyAppPostKind | undefined {
-  switch (content) {
-    case CONTENT.SHORT:
-      return PubkyAppPostKind.Short;
-    case CONTENT.LONG:
-      return PubkyAppPostKind.Long;
-    case CONTENT.IMAGES:
-      return PubkyAppPostKind.Image;
-    case CONTENT.VIDEOS:
-      return PubkyAppPostKind.Video;
-    case CONTENT.LINKS:
-      return PubkyAppPostKind.Link;
-    case CONTENT.FILES:
-      return PubkyAppPostKind.File;
-    case CONTENT.COLLECTIONS:
-      return PubkyAppPostKind.Collection;
-    case CONTENT.ALL:
-      // No PubkyAppPostKind equivalent for ALL
-      return undefined;
     default:
       return undefined;
   }

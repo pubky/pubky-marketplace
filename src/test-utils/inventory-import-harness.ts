@@ -88,10 +88,6 @@ export class MemoryImportStore implements InventoryManifestStore {
     return this.payloads.get(`${manifestId}:${rowIdentity}`) ?? null;
   }
 
-  async listProgress(_manifestId: string) {
-    return [];
-  }
-
   async pruneExpired(): Promise<void> {}
 
   async listManifests() {
@@ -104,12 +100,6 @@ export class MemoryImportStore implements InventoryManifestStore {
     this.manifests.delete(manifestId);
     for (const key of [...this.payloads.keys()]) if (key.startsWith(`${manifestId}:`)) this.payloads.delete(key);
   }
-
-  async getMapping(): Promise<Record<string, string> | null> {
-    return null;
-  }
-
-  async putMapping(_mapping: Record<string, string>): Promise<void> {}
 }
 
 export class BytesFile implements ShopBrowserFile {

@@ -5,7 +5,7 @@ import { activityRowHref } from '@/libs/commerce/activity-links';
 import { getMarketplaceNotificationActionText } from '@/organisms/MarketplaceNotificationItem/MarketplaceNotificationItem.utils';
 import { MarketplaceNotificationNormalizer } from '@/pipes/marketplaceNotification/marketplaceNotification.normalizer';
 import { createNotificationFixture } from '@/test/fixtures/commerce/notifications';
-import { isServiceNotificationType, MARKETPLACE_ACTIVITY_LABELS } from './marketplace-activity-copy';
+import { MARKETPLACE_ACTIVITY_LABELS, SERVICE_NOTIFICATION_TYPES } from './marketplace-activity-copy';
 import { isRecognizedMarketplaceNotification, parseMarketplaceNotificationEntries } from './marketplace-projections';
 
 describe.each(['review_waiting', 'review_released'] as const)('%s notification', (type) => {
@@ -16,7 +16,7 @@ describe.each(['review_waiting', 'review_released'] as const)('%s notification',
     expect(entries).toHaveLength(1);
     expect(isRecognizedMarketplaceNotification(entries[0])).toBe(true);
     expect(entries[0]).toMatchObject({ type, aggregateId: row.aggregateId });
-    expect(isServiceNotificationType(type)).toBe(true);
+    expect(SERVICE_NOTIFICATION_TYPES).toContain(type);
   });
 
   it('links to the order it names', () => {

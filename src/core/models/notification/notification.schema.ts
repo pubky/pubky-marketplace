@@ -1,7 +1,3 @@
-import { FlatNotification } from './notification.types';
-
-export type NotificationModelSchema = FlatNotification;
-
 // Schema design rationale:
 // - id: Business key as primary key (type:timestamp:actor) - provides natural deduplication
 // - timestamp: Most common query pattern (recent notifications, sorting)

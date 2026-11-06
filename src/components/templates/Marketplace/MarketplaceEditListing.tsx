@@ -12,7 +12,7 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { useDeleteMarketplaceListings } from '@/hooks/useDeleteMarketplaceListings/useDeleteMarketplaceListings';
 import { useEditMarketplaceListing } from '@/hooks/useEditMarketplaceListing/useEditMarketplaceListing';
 import { ListingPublishGuardNotice } from '@/molecules/Marketplace/ListingPublishGuardNotice';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceListingDeleteDialog } from '@/organisms/Marketplace/MarketplaceListingDeleteDialog';
 import { MarketplaceListingForm } from '@/organisms/Marketplace/MarketplaceListingForm';
 import { MarketplaceSkeleton } from './Marketplace.skeleton';
@@ -76,12 +76,7 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
 
   if (editing.status !== 'ready') {
     return (
-      <ContentLayout
-        showLeftSidebar={false}
-        showRightSidebar={false}
-        showLeftMobileButton={false}
-        showRightMobileButton={false}
-      >
+      <MarketplaceContentLayout>
         <Container overrideDefaults className="w-full">
           {editing.status === 'loading' ? (
             <MarketplaceSkeleton count={1} />
@@ -113,19 +108,12 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
             </Container>
           )}
         </Container>
-      </ContentLayout>
+      </MarketplaceContentLayout>
     );
   }
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      disableMainContentOverflow
-      className="pb-28 lg:pb-16"
-    >
+    <MarketplaceContentLayout disableMainContentOverflow className="pb-28 lg:pb-16">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <Link
           href={listingRoute}
@@ -176,6 +164,6 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
         </Button>
         {deleteSection}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }

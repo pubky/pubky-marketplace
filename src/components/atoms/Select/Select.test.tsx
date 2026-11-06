@@ -1,15 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from './Select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './Select';
 
 // Mock DOM APIs not available in JSDOM that Radix Select requires
 beforeAll(() => {
@@ -109,48 +100,6 @@ describe('Select', () => {
     );
     const item = document.querySelector('[data-slot="select-item"]');
     expect(item).toBeInTheDocument();
-  });
-
-  it('renders select group with label', () => {
-    render(
-      <Select open={true}>
-        <SelectTrigger>
-          <SelectValue placeholder="Select" />
-        </SelectTrigger>
-        <SelectContent position="popper">
-          <SelectGroup>
-            <SelectLabel>Fruits</SelectLabel>
-            <SelectItem value="apple">Apple</SelectItem>
-          </SelectGroup>
-        </SelectContent>
-      </Select>,
-    );
-    expect(screen.getByText('Fruits')).toBeInTheDocument();
-    const label = document.querySelector('[data-slot="select-label"]');
-    expect(label).toBeInTheDocument();
-  });
-
-  it('renders separator between groups', () => {
-    render(
-      <Select open={true}>
-        <SelectTrigger>
-          <SelectValue placeholder="Select" />
-        </SelectTrigger>
-        <SelectContent position="popper">
-          <SelectGroup>
-            <SelectLabel>Fruits</SelectLabel>
-            <SelectItem value="apple">Apple</SelectItem>
-          </SelectGroup>
-          <SelectSeparator />
-          <SelectGroup>
-            <SelectLabel>Vegetables</SelectLabel>
-            <SelectItem value="carrot">Carrot</SelectItem>
-          </SelectGroup>
-        </SelectContent>
-      </Select>,
-    );
-    const separator = document.querySelector('[data-slot="select-separator"]');
-    expect(separator).toBeInTheDocument();
   });
 
   it('displays selected value in trigger when controlled', () => {

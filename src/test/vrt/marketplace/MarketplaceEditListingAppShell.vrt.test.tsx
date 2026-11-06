@@ -7,7 +7,7 @@ import { Header } from '@/organisms/Header/Header';
 import { MarketplaceEditListing } from '@/templates/Marketplace/MarketplaceEditListing';
 
 // The edit studio inside the real app shell: the root layout's `Header` and
-// the page's real `ContentLayout` (not mocked here). The VRT root is the
+// the page's real `MarketplaceContentLayout` (not mocked here). The VRT root is the
 // scroller, as the window is in the app. Sticky step rails stick only when
 // no ancestor between them and that scroller clips overflow.
 

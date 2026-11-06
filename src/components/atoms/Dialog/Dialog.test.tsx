@@ -6,7 +6,6 @@ import { Dialog, DialogContent } from './Dialog';
 
 const mockUseDialogKeyboardOrchestrator = vi.hoisted(() =>
   vi.fn<() => UseDialogKeyboardOrchestratorResult>(() => ({
-    isKeyboardVisible: false,
     spacerHeight: 0,
     contentStyle: undefined,
     layerStyle: undefined,
@@ -19,7 +18,6 @@ vi.mock('@/hooks/useDialogKeyboardOrchestrator/useDialogKeyboardOrchestrator', (
 
 beforeEach(() => {
   mockUseDialogKeyboardOrchestrator.mockReturnValue({
-    isKeyboardVisible: false,
     spacerHeight: 0,
     contentStyle: undefined,
     layerStyle: undefined,
@@ -69,7 +67,6 @@ describe('Dialog', () => {
 
   it('does not apply keyboard orchestrator styles by default', () => {
     mockUseDialogKeyboardOrchestrator.mockReturnValue({
-      isKeyboardVisible: true,
       spacerHeight: 120,
       contentStyle: { scrollPaddingBottom: '144px' },
       layerStyle: { top: '40px', bottom: 'auto', height: '420px' },
@@ -92,7 +89,6 @@ describe('Dialog', () => {
 
   it('applies keyboard spacer and scroll padding when keyboard is visible', () => {
     mockUseDialogKeyboardOrchestrator.mockReturnValue({
-      isKeyboardVisible: true,
       spacerHeight: 120,
       contentStyle: { scrollPaddingBottom: '144px' },
       layerStyle: { top: '40px', bottom: 'auto', height: '420px' },
@@ -119,7 +115,6 @@ describe('Dialog', () => {
 
   it('fits the dialog layer to the visible area above the keyboard', () => {
     mockUseDialogKeyboardOrchestrator.mockReturnValue({
-      isKeyboardVisible: true,
       spacerHeight: 0,
       contentStyle: { maxHeight: '372px' },
       layerStyle: { top: '40px', bottom: 'auto', height: '420px' },

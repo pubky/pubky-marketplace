@@ -90,8 +90,10 @@ vi.mock('@/hooks/useRelativeTime/useRelativeTime', () => {
   return { useRelativeTime: () => result };
 });
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main className="w-full py-6">{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => (
+    <main className="w-full py-6">{children}</main>
+  ),
 }));
 
 function conversation(peer: string, overrides: Partial<ChatConversationView> = {}): ChatConversationView {

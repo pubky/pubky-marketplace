@@ -15,18 +15,4 @@ export const createOnboardingSelectors = (get: ZustandGet<OnboardingStore>) => (
     }
     return secretKey;
   },
-
-  /**
-   * Gets the mnemonic recovery phrase
-   * @returns The mnemonic as a string
-   * @throws Error if mnemonic is not available
-   */
-  selectMnemonic: () => {
-    const mnemonic = get().mnemonic;
-    if (!mnemonic) {
-      // TODO: Specific error type
-      throw new Error('Mnemonic is not available. Please generate a keypair first.');
-    }
-    return mnemonic;
-  },
 });

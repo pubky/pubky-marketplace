@@ -29,71 +29,30 @@ import type {
 
 /**
  * FollowButton
- * Renders follow/unfollow button in icon or text variant
+ * Renders an icon follow/unfollow button
  */
-function FollowButton({ isFollowing, isLoading, isStatusLoading, displayName, variant, onClick }: FollowButtonProps) {
+function FollowButton({ isFollowing, isLoading, isStatusLoading, displayName, onClick }: FollowButtonProps) {
   // Show loading if action is in progress OR if status is still being loaded
   const showLoading = isLoading || isStatusLoading;
-  if (variant === 'icon') {
-    return (
-      <Button
-        data-cy="user-list-item-follow-toggle-btn"
-        variant="secondary"
-        size="icon"
-        onClick={onClick}
-        disabled={showLoading}
-        className="group size-8 shrink-0 rounded-full p-1"
-        aria-label={isFollowing ? `${'Unfollow'} ${displayName}` : `${'Follow'} ${displayName}`}
-      >
-        {showLoading ? (
-          <Loader2 className="size-5 animate-spin" />
-        ) : isFollowing ? (
-          <>
-            <Check className="size-5 group-hover:hidden" />
-            <UserMinus className="hidden size-5 group-hover:block" />
-          </>
-        ) : (
-          <UserRoundPlus className="size-5" />
-        )}
-      </Button>
-    );
-  }
-
-  // iconWithText variant with hover states
   return (
     <Button
       data-cy="user-list-item-follow-toggle-btn"
       variant="secondary"
-      size="sm"
-      className="group w-[110px] justify-center"
+      size="icon"
       onClick={onClick}
       disabled={showLoading}
-      aria-label={isFollowing ? 'Unfollow' : 'Follow'}
+      className="group size-8 shrink-0 rounded-full p-1"
+      aria-label={isFollowing ? `${'Unfollow'} ${displayName}` : `${'Follow'} ${displayName}`}
     >
       {showLoading ? (
-        <Loader2 className="size-4 animate-spin" />
+        <Loader2 className="size-5 animate-spin" />
       ) : isFollowing ? (
         <>
-          <Container overrideDefaults className="flex items-center gap-1.5 group-hover:hidden">
-            <Check className="size-4" />
-            <span>{'Following'}</span>
-          </Container>
-          <Container overrideDefaults className="hidden items-center gap-1.5 group-hover:flex">
-            <UserMinus className="size-4" />
-            <span>{'Unfollow'}</span>
-          </Container>
+          <Check className="size-5 group-hover:hidden" />
+          <UserMinus className="hidden size-5 group-hover:block" />
         </>
       ) : (
-        <>
-          <Container overrideDefaults className="flex items-center gap-1.5 group-hover:hidden">
-            <UserRoundPlus className="size-4" />
-            <span>{'Follow'}</span>
-          </Container>
-          <Container overrideDefaults className="hidden items-center gap-1.5 group-hover:flex">
-            <Check className="size-4" />
-            <span>{'Follow'}</span>
-          </Container>
-        </>
+        <UserRoundPlus className="size-5" />
       )}
     </Button>
   );
@@ -103,33 +62,19 @@ function FollowButton({ isFollowing, isLoading, isStatusLoading, displayName, va
  * MeButton
  * Disabled button shown when viewing own profile
  */
-function MeButton({ variant = 'icon', className }: { variant?: 'iconWithText' | 'icon'; className?: string }) {
-  if (variant === 'icon') {
-    return (
-      <Button
-        data-cy="user-list-item-me-btn"
-        variant="secondary"
-        size="icon"
-        className={cn(
-          'size-8 shrink-0 cursor-not-allowed border-none bg-transparent p-1 opacity-100 hover:bg-transparent',
-          className,
-        )}
-        aria-label={'This is you'}
-      >
-        <UserRound strokeWidth={2} className="size-5" />
-      </Button>
-    );
-  }
+function MeButton({ className }: { className?: string }) {
   return (
     <Button
       data-cy="user-list-item-me-btn"
       variant="secondary"
-      size="sm"
-      className={cn('w-[110px] cursor-not-allowed justify-center text-muted-foreground opacity-50', className)}
-      disabled
+      size="icon"
+      className={cn(
+        'size-8 shrink-0 cursor-not-allowed border-none bg-transparent p-1 opacity-100 hover:bg-transparent',
+        className,
+      )}
       aria-label={'This is you'}
     >
-      <span>{'Me'}</span>
+      <UserRound strokeWidth={2} className="size-5" />
     </Button>
   );
 }
@@ -223,7 +168,6 @@ function CompactVariant({
   isStatusLoading,
   isCurrentUser,
   showStats,
-  followButtonVariant,
   className,
   dataTestId,
   onUserClick,
@@ -272,14 +216,13 @@ function CompactVariant({
 
       {/* Follow button or Me button */}
       {isCurrentUser ? (
-        <MeButton variant={followButtonVariant} />
+        <MeButton />
       ) : (
         <FollowButton
           isFollowing={isFollowing}
           isLoading={isLoading}
           isStatusLoading={isStatusLoading}
           displayName={displayName}
-          variant={followButtonVariant}
           onClick={onFollowClick}
         />
       )}
@@ -301,7 +244,6 @@ function FullVariant({
   isLoading,
   isStatusLoading,
   isCurrentUser,
-  followButtonVariant,
   className,
   dataTestId,
   onFollowClick,
@@ -339,7 +281,7 @@ function FullVariant({
 
         {/* Desktop: Follow Button */}
         {isCurrentUser ? (
-          <MeButton variant={followButtonVariant} className="hidden lg:flex" />
+          <MeButton className="hidden lg:flex" />
         ) : (
           <Container overrideDefaults className="hidden lg:flex">
             <FollowButton
@@ -347,7 +289,6 @@ function FullVariant({
               isLoading={isLoading}
               isStatusLoading={isStatusLoading}
               displayName={displayName}
-              variant={followButtonVariant}
               onClick={onFollowClick}
             />
           </Container>
@@ -359,14 +300,13 @@ function FullVariant({
         <TagsList userId={user.id} className="flex-1" />
         <Container overrideDefaults className="ml-auto">
           {isCurrentUser ? (
-            <MeButton variant={followButtonVariant} />
+            <MeButton />
           ) : (
             <FollowButton
               isFollowing={isFollowing}
               isLoading={isLoading}
               isStatusLoading={isStatusLoading}
               displayName={displayName}
-              variant={followButtonVariant}
               onClick={onFollowClick}
             />
           )}
@@ -386,7 +326,7 @@ function FullVariant({
  * Unified component for displaying user items in lists.
  * Supports two variants:
  * - `compact`: For sidebars (WhoToFollow, ActiveUsers) - avatar, name, subtitle, icon button
- * - `full`: For profile pages (Followers, Following) - avatar, name, pubky, tags, stats, text button
+ * - `full`: For profile pages (Followers, Following) - avatar, name, pubky, tags, stats, icon button
  *
  * **TTL Tracking:**
  * Subscribes the user to TTL tracking when visible in the viewport.
@@ -400,7 +340,6 @@ export function UserListItem({
   isStatusLoading = false,
   isCurrentUser = false,
   showStats = false,
-  followButtonVariant: followButtonVariantProp,
   onUserClick,
   onFollowClick,
   className,
@@ -425,7 +364,6 @@ export function UserListItem({
   const formattedPublicKey = formatPublicKey({
     key: user.id,
   });
-  const tags = user.tags || [];
   const stats = user.stats ||
     user.counts || {
       tags: 0,
@@ -447,7 +385,6 @@ export function UserListItem({
     avatarUrl,
     displayName,
     formattedPublicKey,
-    tags,
     stats,
     isFollowing,
     isLoading,
@@ -457,7 +394,6 @@ export function UserListItem({
     className,
     dataTestId,
     onUserClick: handleUserClick,
-    followButtonVariant: followButtonVariantProp ?? 'icon',
     onFollowClick: handleFollowClick,
     ttlRef,
   };

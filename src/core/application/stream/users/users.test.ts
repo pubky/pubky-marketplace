@@ -405,28 +405,6 @@ describe('UserStreamApplication', () => {
     });
   });
 
-  describe('fetchStreamIds', () => {
-    it('reads the page from Nexus even when the cache holds the stream, and leaves the cache as it was', async () => {
-      const streamId = buildUserCompositeId({ userId: DEFAULT_USER_ID, reach: 'followers' });
-      await LocalStreamUsersService.upsert({ streamId, stream: ['cached-1', 'cached-2'] as Pubky[] });
-      const fetchSpy = vi.spyOn(NexusUserStreamService, 'fetch').mockResolvedValue(['live-3'] as Pubky[]);
-
-      const ids = await UserStreamApplication.fetchStreamIds({
-        streamId,
-        skip: 20,
-        limit: 20,
-        viewerId: DEFAULT_VIEWER_ID,
-      });
-
-      expect(ids).toEqual(['live-3']);
-      expect(fetchSpy).toHaveBeenCalledWith({
-        streamId,
-        params: { skip: 20, limit: 20, viewer_id: DEFAULT_VIEWER_ID },
-      });
-      expect((await LocalStreamUsersService.findById(streamId))?.stream).toEqual(['cached-1', 'cached-2']);
-    });
-  });
-
   // ============================================================================
   // fetchMissingUsersFromNexus Tests
   // ============================================================================

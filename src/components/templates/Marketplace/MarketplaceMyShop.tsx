@@ -15,7 +15,7 @@ import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard/useUnsave
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
 import { SellingUnavailableNotice } from '@/molecules/Marketplace/SellingUnavailableNotice';
 import { UnsavedChangesDialog } from '@/molecules/Marketplace/UnsavedChangesDialog';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceShopSettingsFormView } from '@/organisms/Marketplace/MarketplaceShopSettingsForm';
 import { ShopProfileCard } from '@/organisms/Marketplace/ShopProfileCard/ShopProfileCard';
@@ -47,14 +47,7 @@ export function MarketplaceMyShop() {
   }, [settings.isLoading]);
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      disableMainContentOverflow
-      className="pb-28"
-    >
+    <MarketplaceContentLayout disableMainContentOverflow className="pb-28">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <MarketplaceSectionNav />
         <BackToMyShop />
@@ -112,6 +105,6 @@ export function MarketplaceMyShop() {
         onStay={leaveGuard.stay}
         onLeave={leaveGuard.leave}
       />
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }

@@ -438,7 +438,6 @@ describe('OnboardingStore', () => {
 
       // Verify that selector functions exist
       expect(typeof state.selectSecretKey).toBe('function');
-      expect(typeof state.selectMnemonic).toBe('function');
 
       // Actions should not be persisted (this is tested implicitly by the partialize function)
       // The partialize function only includes data properties, not function properties

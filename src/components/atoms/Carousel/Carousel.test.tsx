@@ -1,4 +1,3 @@
-import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import useEmblaCarousel from 'embla-carousel-react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';

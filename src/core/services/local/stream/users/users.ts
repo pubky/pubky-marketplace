@@ -41,14 +41,6 @@ export class LocalStreamUsersService {
   }
 
   /**
-   * Delete a user stream from cache
-   * @param streamId - Composite ID in format 'userId:streamType' (e.g., 'user-ABC:followers')
-   */
-  static async deleteById(streamId: string): Promise<void> {
-    await UserStreamModel.deleteById(streamId);
-  }
-
-  /**
    * Prepend user ID(s) to a stream
    * Only adds users if not already present
    *

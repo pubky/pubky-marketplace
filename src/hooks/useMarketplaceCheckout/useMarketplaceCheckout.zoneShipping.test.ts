@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { MarketplaceCartItem } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import { SHIPPING_CHANGED_MESSAGE } from '@/libs/commerce/failure-messages';
@@ -8,6 +8,7 @@ import { createCommerceSandboxCatalog } from '@/libs/commerce/sandbox-catalog';
 import type { ShippingProfileSnapshot } from '@/libs/commerce/shipping-profile';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
+import { createOrderFixture } from '@/test/fixtures/commerce/orders';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { useMarketplaceCheckout } from './useMarketplaceCheckout';
 
@@ -135,6 +136,22 @@ vi.mock('@/stores/auth/auth.store', () => ({
 }));
 
 const SELLER_KEY = { keyId: 'a'.repeat(32), publicKey: new Uint8Array(32).fill(7) };
+const order = createOrderFixture('pending_payment', {
+  id: '018f47d2-6a27-7c23-a49d-000000001200',
+  sellerPubky: listing.ownerPubky,
+  buyerPubky: 'b'.repeat(52),
+  lines: [
+    {
+      listingAggregateId: `listing:${listing.ownerPubky}_${listing.listingId}`,
+      listingRevision: listing.revision,
+      contentHash: listing.media[0].contentHash,
+      title: listing.title,
+      quantity: 2,
+      unitPrice: price,
+      subtotal: { ...price, amountMinor: price.amountMinor * 2 },
+    },
+  ],
+});
 const CHECKOUT_OK = {
   ok: true as const,
   version: 1 as const,
@@ -142,7 +159,7 @@ const CHECKOUT_OK = {
   aggregateId: 'checkout:00000000-0000-4000-8000-000000001100',
   revision: 1,
   eventIds: ['00000000-0000-4000-8000-000000001101'],
-  result: { kind: 'checkout' as const },
+  result: { kind: 'checkout' as const, orders: [{ id: order.id }] },
 };
 
 beforeEach(() => {
@@ -174,16 +191,18 @@ beforeEach(() => {
     ok: true,
     keys: new Map([[listing.ownerPubky, SELLER_KEY]]),
   });
+  vi.mocked(CommerceController.getMarketplaceOrders).mockResolvedValue([order]);
+  vi.mocked(CommerceController.bindPaymentMethod).mockResolvedValue({ ...order, paymentMethod: 'bitcoin' });
   vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValue(CHECKOUT_OK);
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 function mount(item: MarketplaceCartItem, countryCode: string) {
-  const hook = renderHook(() =>
-    useMarketplaceCheckout(
-      [item],
-      vi.fn(async () => {}),
-    ),
-  );
+  const onComplete = vi.fn(async () => {});
+  const hook = renderHook(() => useMarketplaceCheckout([item], onComplete));
   act(() => {
     hook.result.current.form.setValue('name', 'Alice Buyer');
     hook.result.current.form.setValue('line1', '1 Market Street');
@@ -192,7 +211,7 @@ function mount(item: MarketplaceCartItem, countryCode: string) {
     hook.result.current.form.setValue('postalCode', '10115');
     hook.result.current.form.setValue('countryCode', countryCode);
   });
-  return hook;
+  return { ...hook, onComplete };
 }
 
 const group = (result: { current: ReturnType<typeof useMarketplaceCheckout> }) => result.current.zoneShipping.groups[0];
@@ -201,24 +220,34 @@ const sent = (call = 0) => vi.mocked(CommerceController.commitCreateMarketplaceC
 describe('useMarketplaceCheckout with zone-priced shipping', () => {
   const profileItem = () => cartItem({ shippingProfileId: 'worldwide' }, 2);
 
-  it('prices the group for the address country and sends the destination and the pinned choice', async () => {
-    const { result } = mount(profileItem(), 'de');
-    await waitFor(() => expect(group(result)?.state.status).toBe('ready'));
+  it.each(['sandbox', 'transaction-service'])(
+    'in %s, prices the group for the address country and sends the destination and the pinned choice',
+    async (mode) => {
+      config.mode = mode;
+      const { result, onComplete } = mount(profileItem(), 'de');
+      await waitFor(() => expect(group(result)?.state.status).toBe('ready'));
 
-    expect(result.current.zoneShipping.amounts).toEqual([
-      { amountMinor: 899 + 450, currency: price.currency, exponent: price.exponent },
-    ]);
-    await act(async () => {
-      await result.current.submit();
-    });
+      expect(result.current.zoneShipping.amounts).toEqual([
+        { amountMinor: 899 + 450, currency: price.currency, exponent: price.exponent },
+      ]);
+      await act(async () => {
+        expect(await result.current.pay('bitcoin')).toMatchObject({ ok: true, orderIds: [order.id] });
+      });
 
-    expect(sent()).toMatchObject({
-      destinationCountry: 'DE',
-      shippingChoices: [
-        { sellerPubky: listing.ownerPubky, profileId: 'worldwide', rateId: 'std', profileSha256: SHA_A },
-      ],
-    });
-  });
+      expect(sent()).toMatchObject({
+        destinationCountry: 'DE',
+        shippingChoices: [
+          { sellerPubky: listing.ownerPubky, profileId: 'worldwide', rateId: 'std', profileSha256: SHA_A },
+        ],
+      });
+      expect(onComplete).toHaveBeenCalledTimes(1);
+      if (mode === 'transaction-service') {
+        expect(CommerceController.bindPaymentMethod).toHaveBeenCalledExactlyOnceWith(order.id, 'bitcoin');
+      } else {
+        expect(CommerceController.bindPaymentMethod).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   it('prices a UK address against a GB zone and sends the canonical country', async () => {
     served.profile = snapshot(SHA_A, [standard(899, 450)], { countries: ['GB'] });
@@ -226,7 +255,7 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
     await waitFor(() => expect(group(result)?.state.status).toBe('ready'));
 
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
 
     expect(sent()).toMatchObject({ destinationCountry: 'GB' });
@@ -239,7 +268,7 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
 
     expect(result.current.zoneShipping.amounts).toEqual([]);
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
 
     expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
@@ -261,20 +290,20 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
     );
 
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
     expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledTimes(1);
     expect(group(result)?.state.status).toBe('loading');
 
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
     expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledTimes(1);
 
     await act(async () => finishRead(snapshot(SHA_B, [standard(999, 500)])));
     await waitFor(() => expect(group(result)?.state.status).toBe('ready'));
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
     expect(sent(1)?.shippingChoices?.[0]).toMatchObject({ profileSha256: SHA_B });
   });
@@ -289,12 +318,12 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
     vi.mocked(CommerceController.fetchShippingProfile).mockResolvedValueOnce(null as never);
 
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
     await waitFor(() => expect(group(result)?.state.status).toBe('unreadable'));
 
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
     expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledTimes(1);
   });
@@ -328,7 +357,7 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
     await waitFor(() => expect(group(result)?.state.status).toBe('ready'));
 
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
 
     expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
@@ -349,14 +378,14 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
     await waitFor(() => expect(group(result)?.state.status).toBe('ready'));
 
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
 
     expect(vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mock.calls.length).toBe(sends ? 1 : 0);
   });
 
-  it('sends one checkout when Pay and submit are triggered in the same tick', async () => {
-    const { result } = mount(profileItem(), 'DE');
+  it('sends one checkout when Pay is triggered repeatedly in the same tick', async () => {
+    const { result, onComplete } = mount(profileItem(), 'DE');
     await waitFor(() => expect(group(result)?.state.status).toBe('ready'));
     let finish: (value: typeof CHECKOUT_OK) => void = () => {};
     vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockImplementationOnce(
@@ -365,16 +394,20 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
 
     let outcomes: unknown[] = [];
     await act(async () => {
-      const first = result.current.pay(null);
-      const second = result.current.submit();
-      const third = result.current.pay(null);
+      const first = result.current.pay('bitcoin');
+      const second = result.current.pay('bitcoin');
+      const third = result.current.pay('bitcoin');
       await waitFor(() => expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledTimes(1));
       finish(CHECKOUT_OK);
       outcomes = await Promise.all([first, second, third]);
     });
 
     expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledTimes(1);
-    expect(outcomes[1]).toBe(false);
+    expect(outcomes[0]).toMatchObject({ ok: true, orderIds: [order.id] });
+    expect(outcomes[1]).toMatchObject({ ok: false });
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(result.current.checkoutBusy).toBe(false);
+    expect(result.current.isPaying).toBe(false);
     expect(outcomes[2]).toMatchObject({ ok: false });
   });
 
@@ -389,7 +422,7 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
 
     let pending: Promise<unknown> = Promise.resolve();
     await act(async () => {
-      pending = result.current.pay(null);
+      pending = result.current.pay('bitcoin');
       await waitFor(() => expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledTimes(1));
     });
     expect(result.current.checkoutBusy).toBe(true);
@@ -399,7 +432,7 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
 
     await act(async () => {
       finish(CHECKOUT_OK);
-      await pending;
+      expect(await pending).toMatchObject({ ok: true, orderIds: [order.id] });
     });
     expect(result.current.checkoutBusy).toBe(false);
     expect(sent()?.shippingChoices?.[0]).toMatchObject({ rateId: 'exp' });
@@ -415,7 +448,7 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
     const { result } = mount(cartItem({}, 1), 'DE');
 
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
 
     expect(sent()).toMatchObject({ destinationCountry: 'DE' });
@@ -428,7 +461,7 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
     await waitFor(() => expect(group(result)?.state.status).toBe('ready'));
 
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
 
     expect(sent()).toMatchObject({ destinationCountry: 'GB', deliveryAddress: { countryCode: 'GB' } });
@@ -441,7 +474,7 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
     expect(result.current.zoneShipping.amounts[0]?.amountMinor).toBe(2500);
 
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
 
     expect(sent()?.shippingChoices?.[0]).toMatchObject({ rateId: 'exp', profileSha256: SHA_A });
@@ -460,7 +493,7 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
     } as never);
 
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
 
     expect(sent(0)?.shippingChoices?.[0]).toMatchObject({ rateId: 'exp', profileSha256: SHA_A });
@@ -469,7 +502,7 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
     expect(CommerceController.fetchShippingProfile).toHaveBeenCalledTimes(2);
 
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
 
     expect(sent(1)?.shippingChoices?.[0]).toMatchObject({ rateId: 'exp', profileSha256: SHA_B });
@@ -494,7 +527,7 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
     await waitFor(() => expect(group(result)?.state.status).toBe('unreadable'));
 
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
 
     expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
@@ -508,7 +541,7 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
     await waitFor(() => expect(group(result)?.state.status).toBe('refused'));
 
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
 
     expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
@@ -523,7 +556,7 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
 
     await waitFor(() => expect(group(result)?.state.status).toBe('ready'));
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
 
     expect(CommerceController.fetchShippingProfile).not.toHaveBeenCalled();
@@ -541,7 +574,7 @@ describe('useMarketplaceCheckout with zone-priced shipping', () => {
     const { result } = mount(cartItem({}, 1), 'DE');
 
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
 
     expect(result.current.zoneShipping.hasZonedGroups).toBe(false);

@@ -37,7 +37,7 @@ import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/Con
 import { CommerceBlockedNotice } from '@/molecules/Marketplace/CommerceBlockedNotice';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
 import { MarketplaceProductSummary } from '@/molecules/Marketplace/MarketplaceProductSummary';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import type { MarketplaceOffer, MarketplaceOrder } from '@/services/marketplace/marketplace';
@@ -94,14 +94,7 @@ export function MarketplaceOffers() {
   };
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      disableMainContentOverflow
-      className="pb-28"
-    >
+    <MarketplaceContentLayout disableMainContentOverflow className="pb-28">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <MarketplaceSectionNav />
         <div>
@@ -340,7 +333,7 @@ export function MarketplaceOffers() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }
 

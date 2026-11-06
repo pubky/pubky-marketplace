@@ -60,11 +60,9 @@ describe('PostContent', () => {
     });
     mockUseRepostInfo.mockReturnValue({
       isRepost: false,
-      repostAuthorId: null,
+
       isCurrentUserRepost: false,
       originalPostId: null,
-      isLoading: false,
-      hasError: false,
     });
   });
 
@@ -88,11 +86,9 @@ describe('PostContent', () => {
     });
     mockUseRepostInfo.mockReturnValue({
       isRepost: false,
-      repostAuthorId: null,
+
       isCurrentUserRepost: false,
       originalPostId: null,
-      isLoading: false,
-      hasError: false,
     });
 
     render(<PostContent postId="post-123" />);
@@ -107,11 +103,9 @@ describe('PostContent', () => {
     });
     mockUseRepostInfo.mockReturnValue({
       isRepost: true,
-      repostAuthorId: 'author',
+
       isCurrentUserRepost: false,
       originalPostId: null,
-      isLoading: false,
-      hasError: false,
     });
 
     render(<PostContent postId="repost-123" />);
@@ -126,11 +120,9 @@ describe('PostContent', () => {
     });
     mockUseRepostInfo.mockReturnValue({
       isRepost: true,
-      repostAuthorId: 'author',
+
       isCurrentUserRepost: false,
       originalPostId: 'orig-post',
-      isLoading: false,
-      hasError: false,
     });
 
     render(<PostContent postId="plain-repost-123" />);

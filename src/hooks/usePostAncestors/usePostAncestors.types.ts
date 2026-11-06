@@ -20,6 +20,4 @@ export interface UsePostAncestorsResult {
   ancestors: Ancestor[];
   /** True while the ancestor chain is being fetched */
   isLoading: boolean;
-  /** True if there was an error fetching the ancestor chain */
-  hasError: boolean;
 }

@@ -7,12 +7,12 @@ import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.view
 import { setEmbedded } from '@/test-utils/embedded';
 import { EmbeddedLegalFooter } from '@/molecules/EmbeddedLegalFooter/EmbeddedLegalFooter';
 import { Fab } from '@/molecules/Fab/Fab';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { Header } from '@/organisms/Header/Header';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 
 // The Shop shell as pubky.app's iframe shows it: the real root-layout chrome (Header, Fab) and
-// the real ContentLayout (mobile header and footer) around the marketplace section bar, plus the
+// the real MarketplaceContentLayout (mobile header and footer) around the marketplace section bar, plus the
 // legal strip the root layout adds when embedded. Embedded, the host app owns the page chrome, so
 // only the Shop's own content and the legal strip may remain. Scenes exist for the embedded
 // variant only; the standalone shell is covered by the existing scenes.
@@ -78,11 +78,11 @@ function EmbeddedShopPage() {
   return (
     <>
       <Header />
-      <ContentLayout showLeftSidebar={false} showRightSidebar={false}>
+      <MarketplaceContentLayout>
         <MarketplaceSectionNav />
         <h1 className="text-2xl font-semibold">Orders</h1>
         <p className="text-muted-foreground">Your purchases and sales appear here.</p>
-      </ContentLayout>
+      </MarketplaceContentLayout>
       <EmbeddedLegalFooter />
       <Fab />
     </>

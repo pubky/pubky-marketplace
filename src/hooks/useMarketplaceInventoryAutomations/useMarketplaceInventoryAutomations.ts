@@ -122,7 +122,6 @@ export function useMarketplaceInventoryAutomations() {
   );
 
   return {
-    sellerPubky,
     load,
     isLoading,
     pendingId,

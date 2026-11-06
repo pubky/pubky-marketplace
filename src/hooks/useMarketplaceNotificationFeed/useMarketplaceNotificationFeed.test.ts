@@ -1,5 +1,5 @@
-import { renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { MarketplaceFeedNotification } from '@/pipes/marketplaceNotification/marketplaceNotification.types';
 import { useMarketplaceNotificationFeed } from './useMarketplaceNotificationFeed';
@@ -41,6 +41,8 @@ function feedItem(overrides: Partial<MarketplaceFeedNotification> = {}): Marketp
 }
 
 describe('useMarketplaceNotificationFeed', () => {
+  afterEach(() => vi.useRealTimers());
+
   beforeEach(() => {
     vi.clearAllMocks();
     config.mode = 'sandbox';
@@ -65,15 +67,20 @@ describe('useMarketplaceNotificationFeed', () => {
   });
 
   it('keeps a row highlighted for this mount even after a refresh reports it read', async () => {
+    vi.useFakeTimers();
     const { result } = renderHook(() => useMarketplaceNotificationFeed());
-    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    await act(async () => {});
+    expect(result.current.items).toHaveLength(1);
     expect(result.current.items[0].isUnread).toBe(true);
 
     // Mark-all-read on page entry flips the backend row to read; the row the
     // user is looking at keeps its highlight, mirroring the social list's
     // frozen lastRead.
     vi.mocked(CommerceController.getMarketplaceFeedNotifications).mockResolvedValue([feedItem({ isUnread: false })]);
-    await result.current.refresh();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    vi.useRealTimers();
 
     await waitFor(() => expect(result.current.items[0].isUnread).toBe(true));
   });
@@ -88,18 +95,25 @@ describe('useMarketplaceNotificationFeed', () => {
   });
 
   it('keeps the last loaded items when a refresh fails, so the shared surface never blanks on commerce errors', async () => {
+    vi.useFakeTimers();
     const { result } = renderHook(() => useMarketplaceNotificationFeed());
-    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    await act(async () => {});
+    expect(result.current.items).toHaveLength(1);
 
     vi.mocked(CommerceController.getMarketplaceFeedNotifications).mockRejectedValue(new Error('backend down'));
-    await result.current.refresh();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    vi.useRealTimers();
 
     expect(result.current.items).toHaveLength(1);
   });
 
   it('delegates mark-all-read to the controller, which no-ops outside the sandbox', async () => {
+    vi.useFakeTimers();
     const { result } = renderHook(() => useMarketplaceNotificationFeed());
-    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    await act(async () => {});
+    expect(result.current.items).toHaveLength(1);
 
     await result.current.markAllRead();
 

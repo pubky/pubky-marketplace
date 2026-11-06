@@ -209,7 +209,7 @@ describe('useMentionAutocomplete', () => {
     expect(mockFetchUsersById).not.toHaveBeenCalled();
   });
 
-  it('closes popover when close is called', async () => {
+  it('closes popover on Escape', async () => {
     setMockUserDetailsMap(new Map([['user1', { id: 'user1', name: 'User One', image: null } as NexusUserDetails]]));
 
     const { result, rerender } = renderHook(({ content }) => useMentionAutocomplete({ content }), {
@@ -229,7 +229,7 @@ describe('useMentionAutocomplete', () => {
 
     // Close the popover
     act(() => {
-      result.current.close();
+      result.current.handleKeyDown(mockKeyboardEvent({ key: 'Escape', preventDefault: vi.fn() }));
     });
 
     expect(result.current.isOpen).toBe(false);

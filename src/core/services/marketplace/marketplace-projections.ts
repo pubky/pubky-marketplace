@@ -594,8 +594,6 @@ export const marketplaceFxConversionSchema = z
   })
   .passthrough();
 
-export type MarketplaceFxConversion = z.infer<typeof marketplaceFxConversionSchema>;
-
 const marketplaceDeliveryAddressValueSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
@@ -645,8 +643,6 @@ export const marketplaceDeliveryAddressSchema = z.preprocess(
     .optional()
     .catch({ format: 'unsupported' }),
 );
-
-export type MarketplaceDeliveryAddress = z.infer<typeof marketplaceDeliveryAddressSchema>;
 
 export const marketplaceOrderProjectionSchema = z
   .object({

@@ -1,7 +1,6 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import type { MouseEvent } from 'react';
 import { AUTH_ROUTES } from '@/app/routes';
 import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
 import { usePublicRoute } from '@/hooks/usePublicRoute/usePublicRoute';
@@ -27,7 +26,6 @@ export function Header() {
 
   const isOnboarding = pathname?.startsWith('/onboarding') ?? false;
   const isAuthFlowLayout = isOnboarding || pathname === AUTH_ROUTES.SIGN_IN || pathname === AUTH_ROUTES.LOGOUT;
-  const isLandingPage = pathname === '/';
   const isCopyrightPage = pathname === '/copyright';
   const stepConfig = pathname ? pathToStepConfig[pathname] : undefined;
   const currentStep = stepConfig?.step ?? 1;
@@ -53,7 +51,7 @@ export function Header() {
   // - Onboarding: HeaderOnboarding
   // - Authenticated: HeaderSignIn (navigation + avatar)
   // - Unauthenticated on core explore or dynamic public routes (home/hot/search/collections/post/profile): explore navigation + join
-  // - Unauthenticated on landing/other: HeaderHome (social links + sign in)
+  // - Unauthenticated on other routes: HeaderHome (social links + sign in)
   const renderHeaderContent = () => {
     if (isOnboarding) {
       return <HeaderOnboarding currentStep={currentStep} />;
@@ -81,35 +79,19 @@ export function Header() {
     );
   }
 
-  const handleLandingLogoClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (!isLandingPage) return;
-
-    event.preventDefault();
-    window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
-  };
-
   return (
-    <HeaderContainer
-      classNameNav={classNameNav}
-      className={cn(isLandingPage && 'p-0 sm:py-6', shouldHideHeaderOnMobile && 'hidden lg:block')}
-    >
-      <StagingLogo noLink={currentStep === 5} onClick={handleLandingLogoClick} />
+    <HeaderContainer classNameNav={classNameNav} className={cn(shouldHideHeaderOnMobile && 'hidden lg:block')}>
+      <StagingLogo noLink={currentStep === 5} />
       {shouldShowTitle && <HeaderTitle currentTitle={currentTitle} />}
       {renderHeaderContent()}
     </HeaderContainer>
   );
 }
 
-function StagingLogo({
-  noLink,
-  onClick,
-}: {
-  noLink?: boolean;
-  onClick?: (event: MouseEvent<HTMLAnchorElement>) => void;
-}) {
+function StagingLogo({ noLink }: { noLink?: boolean }) {
   return (
     <div className="flex shrink-0 flex-col items-center gap-1">
-      <Logo noLink={noLink} onClick={onClick} />
+      <Logo noLink={noLink} />
       <EnvironmentLabel />
     </div>
   );

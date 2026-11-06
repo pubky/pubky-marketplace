@@ -61,7 +61,6 @@ describe('usePostAncestors', () => {
 
       expect(result.current.isLoading).toBe(true);
       expect(result.current.ancestors).toEqual([]);
-      expect(result.current.hasError).toBe(false);
     });
 
     it('returns isLoading false when query resolves', () => {
@@ -81,7 +80,6 @@ describe('usePostAncestors', () => {
 
       expect(result.current.isLoading).toBe(false);
       expect(result.current.ancestors).toEqual([]);
-      expect(result.current.hasError).toBe(false);
     });
 
     it('returns empty ancestors when postId is undefined', () => {
@@ -91,7 +89,6 @@ describe('usePostAncestors', () => {
 
       expect(result.current.isLoading).toBe(false);
       expect(result.current.ancestors).toEqual([]);
-      expect(result.current.hasError).toBe(false);
     });
 
     it('does not call fetch when postId is null', () => {
@@ -122,7 +119,6 @@ describe('usePostAncestors', () => {
 
       expect(result.current.ancestors).toEqual([{ postId: 'user1:post1', userId: 'user1' }]);
       expect(result.current.isLoading).toBe(false);
-      expect(result.current.hasError).toBe(false);
     });
 
     it('returns ancestor chain for reply post', () => {
@@ -141,7 +137,6 @@ describe('usePostAncestors', () => {
       expect(result.current.ancestors[0]).toEqual({ postId: 'user1:post1', userId: 'user1' });
       expect(result.current.ancestors[1]).toEqual({ postId: 'user2:post2', userId: 'user2' });
       expect(result.current.ancestors[2]).toEqual({ postId: 'user3:post3', userId: 'user3' });
-      expect(result.current.hasError).toBe(false);
     });
 
     it('does not call fetch when chain is complete', () => {
@@ -216,10 +211,9 @@ describe('usePostAncestors', () => {
       // Ancestors are buffered while the chain is still resolving
       expect(result.current.ancestors).toEqual([]);
       expect(result.current.isLoading).toBe(true);
-      expect(result.current.hasError).toBe(false);
     });
 
-    it('sets hasError when fetch rejects (network error)', async () => {
+    it('stops loading when the ancestor fetch rejects', async () => {
       mockFetch.mockRejectedValue(new Error('Network error'));
       setMockQueryResult({
         ancestors: [],
@@ -229,12 +223,12 @@ describe('usePostAncestors', () => {
       const { result } = renderHook(() => usePostAncestors(mockPostId));
 
       await waitFor(() => {
-        expect(result.current.hasError).toBe(true);
+        expect(result.current.isLoading).toBe(false);
       });
       expect(result.current.isLoading).toBe(false);
     });
 
-    it('does not call fetch again after hasError is set', async () => {
+    it('does not repeat a failed ancestor fetch', async () => {
       // First render: fetch rejects → hasError = true
       mockFetch.mockRejectedValue(new Error('Network error'));
       setMockQueryResult({
@@ -245,7 +239,7 @@ describe('usePostAncestors', () => {
       const { result } = renderHook(() => usePostAncestors(mockPostId));
 
       await waitFor(() => {
-        expect(result.current.hasError).toBe(true);
+        expect(result.current.isLoading).toBe(false);
       });
 
       // Clear calls after error was set
@@ -255,7 +249,7 @@ describe('usePostAncestors', () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
-    it('does not set hasError when fetch resolves successfully', () => {
+    it('keeps resolving the chain after a successful fetch', () => {
       mockFetch.mockResolvedValue({ id: 'fetched-post' });
       setMockQueryResult({
         ancestors: [{ postId: 'user2:post2', userId: 'user2' }],
@@ -267,7 +261,6 @@ describe('usePostAncestors', () => {
       expect(mockFetch).toHaveBeenCalledWith({ compositeId: 'user1:post1' });
       // Still resolving (Dexie would re-fire useLiveQuery after persist)
       expect(result.current.isLoading).toBe(true);
-      expect(result.current.hasError).toBe(false);
     });
   });
 
@@ -293,7 +286,6 @@ describe('usePostAncestors', () => {
         expect(result.current.isLoading).toBe(false);
       });
       expect(result.current.ancestors).toHaveLength(2);
-      expect(result.current.hasError).toBe(false);
     });
 
     it('does not retry fetch for the same stalled ID', async () => {
@@ -316,7 +308,7 @@ describe('usePostAncestors', () => {
   });
 
   describe('Local traversal error', () => {
-    it('returns hasError true when traversal returns null (queryFn error)', () => {
+    it('returns an empty settled chain when local traversal fails', () => {
       // null signals that the queryFn caught an internal error
       setMockQueryResult(null);
 
@@ -324,7 +316,7 @@ describe('usePostAncestors', () => {
 
       expect(result.current.ancestors).toEqual([]);
       expect(result.current.isLoading).toBe(false);
-      expect(result.current.hasError).toBe(true);
+      expect(result.current.isLoading).toBe(false);
     });
 
     it('does not call fetch when traversal errors', () => {
@@ -336,16 +328,16 @@ describe('usePostAncestors', () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
-    it('returns hasError true when postId is invalid (null from useLiveQuery)', () => {
+    it('returns an empty settled chain for an invalid post id', () => {
       // When postId is invalid, the useLiveQuery callback returns null,
-      // which surfaces as hasError: true to consumers
+      // which leaves consumers with an empty settled chain.
       setMockQueryResult(null);
 
       const { result } = renderHook(() => usePostAncestors('invalid-no-delimiter'));
 
       expect(result.current.ancestors).toEqual([]);
       expect(result.current.isLoading).toBe(false);
-      expect(result.current.hasError).toBe(true);
+      expect(result.current.isLoading).toBe(false);
     });
   });
 });

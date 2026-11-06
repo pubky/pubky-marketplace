@@ -34,10 +34,6 @@ export interface UseNestedRepliesResult {
    */
   replyCount: number;
   /**
-   * Whether all replies are being shown (showAll mode)
-   */
-  showAll: boolean;
-  /**
    * Whether expand-all pagination is currently running
    */
   isExpandingAll: boolean;

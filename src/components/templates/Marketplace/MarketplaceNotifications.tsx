@@ -24,7 +24,7 @@ import { returnActivityTitles } from '@/libs/commerce/return-activity-titles';
 import { Logger } from '@/libs/logger/logger';
 import { formatDateTime } from '@/libs/utils/dateTime';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceModerationDecisionCard } from '@/organisms/Marketplace/MarketplaceModerationDecisionCard';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
@@ -112,14 +112,7 @@ export function MarketplaceNotifications() {
   };
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      disableMainContentOverflow
-      className="pb-28"
-    >
+    <MarketplaceContentLayout disableMainContentOverflow className="pb-28">
       <Container overrideDefaults className="flex w-full flex-col gap-6" data-surface="marketplace-transaction-history">
         <MarketplaceSectionNav />
         <div className="flex flex-wrap items-end justify-between gap-4">
@@ -248,7 +241,7 @@ export function MarketplaceNotifications() {
           />
         )}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }
 

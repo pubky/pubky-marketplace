@@ -5,6 +5,7 @@ import type { MarketplaceCartItem } from '@/hooks/useMarketplaceCart/useMarketpl
 import { commerceListingShippingMinor } from '@/libs/commerce/marketplace-records';
 import { createCommerceSandboxCatalog } from '@/libs/commerce/sandbox-catalog';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
+import { createOrderFixture } from '@/test/fixtures/commerce/orders';
 import { resetRegionState, setRegionModes } from '@/test-utils/region-modes';
 import { useMarketplaceCheckout } from './useMarketplaceCheckout';
 
@@ -107,6 +108,24 @@ describe('useMarketplaceCheckout buyer country under the region modes', () => {
     config.paykitServerApi = 'fork';
     authMock.currentUserPubky = null;
     useCommerceStore.setState({ marketplaceSession: null });
+    const order = createOrderFixture('pending_payment', {
+      id: '018f47d2-6a27-7c23-a49d-000000001200',
+      sellerPubky: listing.ownerPubky,
+      buyerPubky: 'b'.repeat(52),
+      lines: [
+        {
+          listingAggregateId: `listing:${listing.ownerPubky}_${listing.listingId}`,
+          listingRevision: listing.revision,
+          contentHash: listing.media[0].contentHash,
+          title: listing.title,
+          quantity: 1,
+          unitPrice: price,
+          subtotal: price,
+        },
+      ],
+    });
+    vi.mocked(CommerceController.getMarketplaceOrders).mockResolvedValue([order]);
+    vi.mocked(CommerceController.bindPaymentMethod).mockResolvedValue({ ...order, paymentMethod: 'bitcoin' });
     vi.mocked(CommerceController.getDeliveryAddresses).mockResolvedValue([]);
     vi.mocked(CommerceController.commitUpsertDeliveryAddress).mockResolvedValue(undefined);
     vi.mocked(CommerceController.commitMarkDeliveryAddressUsed).mockResolvedValue(undefined);
@@ -139,7 +158,7 @@ describe('useMarketplaceCheckout buyer country under the region modes', () => {
       aggregateId: 'checkout:00000000-0000-4000-8000-000000001100',
       revision: 1,
       eventIds: ['00000000-0000-4000-8000-000000001101'],
-      result: { kind: 'checkout' },
+      result: { kind: 'checkout', orders: [{ id: '018f47d2-6a27-7c23-a49d-000000001200' }] },
     });
   });
 
@@ -159,7 +178,7 @@ describe('useMarketplaceCheckout buyer country under the region modes', () => {
       result.current.form.setValue('countryCode', countryCode);
     });
     await act(async () => {
-      await result.current.submit();
+      expect((await result.current.pay('bitcoin')).ok).toBe(true);
     });
     return vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mock.calls[0]?.[0];
   }

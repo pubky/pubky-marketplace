@@ -93,10 +93,6 @@ export class AuthController {
   private static hostTransition: Promise<HostSessionApplyStatus> = Promise.resolve('signed-out');
   private static hostReadAbort = new AbortController();
 
-  static isHostSessionMode(): boolean {
-    return this.hostMode;
-  }
-
   static setHostSessionMode(enabled: boolean): void {
     if (enabled === this.hostMode) return;
     this.hostMode = enabled;

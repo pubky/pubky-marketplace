@@ -16,8 +16,8 @@ import {
   COMMERCE_SHOP_TERM_DAYS_MAX,
   COMMERCE_SHOP_TERM_DAYS_MIN,
 } from '@/config/commerce';
-import {
-  type ShopImageSlot,
+import type {
+  ShopImageSlot,
   useMarketplaceShopSettings,
 } from '@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings';
 import type { MarketplaceShopSettingsData } from '@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings.types';
@@ -41,12 +41,6 @@ import { useAuthStore } from '@/stores/auth/auth.store';
 
 export interface MarketplaceShopSettingsFormProps {
   onSaved?: () => void;
-}
-
-export function MarketplaceShopSettingsForm({ onSaved }: MarketplaceShopSettingsFormProps) {
-  const settings = useMarketplaceShopSettings();
-
-  return <MarketplaceShopSettingsFormView settings={settings} onSaved={onSaved} />;
 }
 
 export type MarketplaceShopSettings = ReturnType<typeof useMarketplaceShopSettings>;

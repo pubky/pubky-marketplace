@@ -40,8 +40,6 @@ vi.mock('@/atoms/Dialog/Dialog', () => {
     DialogContent: ({
       children,
       className,
-      _onOpenAutoFocus,
-      _onCloseAutoFocus,
       'data-testid': dataTestId,
     }: {
       children: React.ReactNode;

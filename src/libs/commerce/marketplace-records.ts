@@ -1234,7 +1234,5 @@ export type CommerceCollectionRecord = z.infer<typeof commerceCollectionRecordSc
 export type CommerceWatchlistRecord = z.infer<typeof commerceWatchlistRecordSchema>;
 export type CommerceOrderReceiptRecord = z.infer<typeof commerceOrderReceiptRecordSchema>;
 export type CommerceDropRecord = z.infer<typeof commerceDropRecordSchema>;
-export type CommerceAuctionReserveRecord = z.infer<typeof commerceAuctionReserveRecordSchema>;
 export type CommerceWatchlistRecordItem = CommerceWatchlistRecord['items'][number];
 export type CommerceWatchlistRecordTombstone = CommerceWatchlistRecord['tombstones'][number];
-export type CommercePublicRecord = z.infer<typeof commercePublicRecordSchema>;

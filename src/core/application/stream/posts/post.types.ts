@@ -15,12 +15,6 @@ export interface TFetchStreamParams {
   order?: StreamOrder;
 }
 
-export interface TInitialStreamParams {
-  streamId: PostStreamId;
-  limit: number;
-  cachedStream: { stream: string[] } | null;
-}
-
 export interface TPostStreamChunkResponse {
   nextPageIds: string[];
   cacheMissPostIds: string[];

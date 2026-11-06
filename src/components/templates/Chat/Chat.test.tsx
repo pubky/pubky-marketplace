@@ -18,8 +18,8 @@ vi.mock('@/stores/auth/auth.store', () => ({
   useAuthStore: (selector: (state: { setShowSignInDialog: () => void }) => unknown) =>
     selector({ setShowSignInDialog: vi.fn() }),
 }));
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 const commerce = vi.hoisted(() => ({ mode: 'transaction-service' }));
 vi.mock('@/config/commerce', async (importOriginal) => ({

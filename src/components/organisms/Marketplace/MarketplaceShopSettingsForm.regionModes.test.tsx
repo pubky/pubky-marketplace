@@ -2,13 +2,19 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { useMarketplaceShopSettings } from '@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings';
 import { SELLING_BLOCKED_COUNTRY_MESSAGE, SHOP_COUNTRY_LOCKED_MESSAGE } from '@/libs/commerce/region-modes';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { createCommerceShopFixture } from '@/test/fixtures/commerce/commerce';
 import { resetRegionState, setRegionModes, stubClientRegion } from '@/test-utils/region-modes';
-import { MarketplaceShopSettingsForm } from './MarketplaceShopSettingsForm';
+import { MarketplaceShopSettingsFormView } from './MarketplaceShopSettingsForm';
+
+function ShopSettingsHarness() {
+  const settings = useMarketplaceShopSettings();
+  return <MarketplaceShopSettingsFormView settings={settings} />;
+}
 
 const OWNER = 'y'.repeat(52);
 
@@ -58,7 +64,7 @@ afterEach(() => resetRegionState());
 describe('the shop settings country field under the region modes', () => {
   it('starts empty, so no blocked country is pre-selected', async () => {
     setRegionModes(LAUNCH);
-    render(<MarketplaceShopSettingsForm />);
+    render(<ShopSettingsHarness />);
 
     expect(await screen.findByLabelText('Country')).toHaveValue('');
     expect(hint()).not.toBeInTheDocument();
@@ -67,7 +73,7 @@ describe('the shop settings country field under the region modes', () => {
   it.each(['US', 'de', 'GB'])('says selling is not available from %s as soon as it is typed', async (code) => {
     const user = userEvent.setup();
     setRegionModes(LAUNCH);
-    render(<MarketplaceShopSettingsForm />);
+    render(<ShopSettingsHarness />);
     await user.type(await screen.findByLabelText('Country'), code);
 
     expect(hint()).toHaveTextContent(SELLING_BLOCKED_COUNTRY_MESSAGE);
@@ -76,7 +82,7 @@ describe('the shop settings country field under the region modes', () => {
   it('says nothing for a country that is open, and clears the line when the country changes', async () => {
     const user = userEvent.setup();
     setRegionModes(LAUNCH);
-    render(<MarketplaceShopSettingsForm />);
+    render(<ShopSettingsHarness />);
     await user.type(await screen.findByLabelText('Country'), 'US');
     expect(hint()).toBeInTheDocument();
 
@@ -88,7 +94,7 @@ describe('the shop settings country field under the region modes', () => {
   it('refuses to save a blocked country and shows the sentence once', async () => {
     const user = userEvent.setup();
     setRegionModes(LAUNCH);
-    render(<MarketplaceShopSettingsForm />);
+    render(<ShopSettingsHarness />);
     await user.type(await screen.findByLabelText('Country'), 'US');
     await user.type(screen.getByLabelText('Shipping policy'), 'Ships within a week.');
     await user.type(screen.getByLabelText('Return policy'), 'Returns within 14 days.');
@@ -102,7 +108,7 @@ describe('the shop settings country field under the region modes', () => {
   it('keeps the US as ordinary a choice as any while no region is blocked', async () => {
     const user = userEvent.setup();
     setRegionModes('EU=nuanced,GB=nuanced');
-    render(<MarketplaceShopSettingsForm />);
+    render(<ShopSettingsHarness />);
     await user.type(await screen.findByLabelText('Country'), 'US');
 
     expect(hint()).not.toBeInTheDocument();
@@ -119,7 +125,7 @@ describe('the shop country of a shop that already has one', () => {
   it('is read-only from a visitor region inside the block, with the reason under it', async () => {
     setRegionModes(LAUNCH);
     stubClientRegion('DE');
-    render(<MarketplaceShopSettingsForm />);
+    render(<ShopSettingsHarness />);
 
     await waitFor(() => expect(country()).toBeDisabled());
     expect(country()).toHaveValue('CH');
@@ -130,7 +136,7 @@ describe('the shop country of a shop that already has one', () => {
   it('can be edited from a visitor region outside the block', async () => {
     setRegionModes(LAUNCH);
     stubClientRegion('CH');
-    render(<MarketplaceShopSettingsForm />);
+    render(<ShopSettingsHarness />);
 
     await waitFor(() => expect(country()).toHaveValue('CH'));
     await waitFor(() => expect(country()).toBeEnabled());
@@ -139,7 +145,7 @@ describe('the shop country of a shop that already has one', () => {
 
   it('can be edited while no region is blocked', async () => {
     setRegionModes('EU=nuanced');
-    render(<MarketplaceShopSettingsForm />);
+    render(<ShopSettingsHarness />);
 
     await waitFor(() => expect(country()).toHaveValue('CH'));
     expect(country()).toBeEnabled();

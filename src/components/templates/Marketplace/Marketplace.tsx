@@ -31,8 +31,8 @@ import type { CommerceShopRecord } from '@/libs/commerce/marketplace-records';
 import { paymentFilterUnavailableCopy } from '@/libs/commerce/payment-method-filter';
 import { removeMarketplacePromoPrepaintStyle } from '@/libs/commerce/promo-prepaint';
 import { cn } from '@/libs/utils/utils';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DropCard } from '@/organisms/Marketplace/DropCard';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceFilters } from '@/organisms/Marketplace/MarketplaceFilters';
 import { MarketplaceListingCard } from '@/organisms/Marketplace/MarketplaceListingCard';
 import { MarketplaceSavedSearches } from '@/organisms/Marketplace/MarketplaceSavedSearches';
@@ -149,11 +149,7 @@ export function Marketplace({
   };
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
+    <MarketplaceContentLayout
       hasGradientBackground={false}
       className="marketplace-surface pb-28 lg:pb-16"
       classNameWrapperContent="overflow-visible lg:overflow-visible"
@@ -368,7 +364,7 @@ export function Marketplace({
           }}
         />
       )}
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }
 

@@ -1,16 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   availablePaymentMethods,
-  isPlausibleAccountXpub,
   isValidPaypalMerchantEmail,
   sellerPaykitAssets,
   sellerPaymentConfigOwnViewSchema,
   sellerPaymentConfigSchema,
 } from './payment-methods';
 import { PAYMENT_METHOD_KINDS } from './payment-options';
-
-const TPUB =
-  'tpubDC5FSnBiZDMmhiuCmWAYsLwgLYrrT9rAqvTySfuCCrgsWz8wxMXUS9Tb9iVMvcRbvFcAHGkMD5Kx8koh4GquNGNTfohfk7pgjhaPCdXpoba';
 
 describe('payment-methods', () => {
   describe('availablePaymentMethods', () => {
@@ -213,21 +209,6 @@ describe('payment-methods', () => {
       });
 
       expect(availablePaymentMethods(config)).toEqual(['paykit']);
-    });
-  });
-
-  describe('isPlausibleAccountXpub', () => {
-    it('accepts a real tpub and tolerates surrounding whitespace', () => {
-      expect(isPlausibleAccountXpub(TPUB)).toBe(true);
-      expect(isPlausibleAccountXpub(`  ${TPUB}\n`)).toBe(true);
-    });
-
-    it('rejects wrong prefixes, wrong lengths, and non-base58 content', () => {
-      expect(isPlausibleAccountXpub('')).toBe(false);
-      expect(isPlausibleAccountXpub('npub1abcdef')).toBe(false);
-      expect(isPlausibleAccountXpub('tpubshort')).toBe(false);
-      expect(isPlausibleAccountXpub(`${TPUB}0`)).toBe(false); // '0' is not base58
-      expect(isPlausibleAccountXpub('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4')).toBe(false);
     });
   });
 

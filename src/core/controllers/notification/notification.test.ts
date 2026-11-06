@@ -421,33 +421,4 @@ describe('NotificationController', () => {
       });
     });
   });
-
-  describe('getAllFromCache', () => {
-    it('should delegate to NotificationApplication.getAllFromCache', async () => {
-      const expected = [
-        { type: NotificationType.Follow, timestamp: 3000, followed_by: 'user-1' },
-        { type: NotificationType.Follow, timestamp: 2000, followed_by: 'user-2' },
-      ] as FlatNotification[];
-      const applicationSpy = vi.spyOn(NotificationApplication, 'getAllFromCache').mockResolvedValue(expected);
-
-      const result = await NotificationController.getAllFromCache();
-
-      expect(applicationSpy).toHaveBeenCalled();
-      expect(result).toEqual(expected);
-    });
-
-    it('should return empty array when no notifications exist', async () => {
-      vi.spyOn(NotificationApplication, 'getAllFromCache').mockResolvedValue([]);
-
-      const result = await NotificationController.getAllFromCache();
-
-      expect(result).toEqual([]);
-    });
-
-    it('should bubble application errors', async () => {
-      vi.spyOn(NotificationApplication, 'getAllFromCache').mockRejectedValue(new Error('app-fail'));
-
-      await expect(NotificationController.getAllFromCache()).rejects.toThrow('app-fail');
-    });
-  });
 });

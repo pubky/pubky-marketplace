@@ -294,24 +294,6 @@ export class HomegateService {
   }
 
   /**
-   * Gets the current status of a Lightning Network payment verification.
-   * @param verificationId - The verification ID (UUID format) from createLnVerification.
-   * @returns The verification status.
-   */
-  static async getLnVerification(verificationId: string): Promise<TLnVerificationStatus> {
-    assertValidVerificationId({ verificationId, operation: 'getLnVerification' });
-    const url = homegateApi.getLnVerification(verificationId);
-    const response = await safeFetch(url, { method: HttpMethod.GET }, ErrorService.Homegate, 'getLnVerification');
-
-    if (!response.ok) {
-      throw httpResponseToError(response, ErrorService.Homegate, 'getLnVerification', url);
-    }
-
-    const json = await parseResponseOrThrow<TRawApiResponse>(response, ErrorService.Homegate, 'getLnVerification', url);
-    return parseLnVerificationStatus(json);
-  }
-
-  /**
    * Long-polling endpoint that waits for a Lightning Network payment to be confirmed.
    * Returns immediately if payment is already confirmed, otherwise waits up to 60 seconds.
    * @param verificationId - The verification ID (UUID format) from createLnVerification.

@@ -116,5 +116,3 @@ export const MARKETPLACE_CHECKOUT_ADDRESS_FIELDS = [
   'postalCode',
   'countryCode',
 ] as const;
-
-export type MarketplaceCheckoutAddressField = (typeof MARKETPLACE_CHECKOUT_ADDRESS_FIELDS)[number];

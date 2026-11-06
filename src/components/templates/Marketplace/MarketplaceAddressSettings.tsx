@@ -29,7 +29,7 @@ import type { CommerceDeliveryAddressModelSchema } from '@/models/commerce/comme
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { MarketplaceAddressFields } from '@/molecules/MarketplaceAddressFields/MarketplaceAddressFields';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 
 export function MarketplaceAddressSettings() {
   const router = useRouter();
@@ -75,13 +75,7 @@ export function MarketplaceAddressSettings() {
   });
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      className="pb-28"
-    >
+    <MarketplaceContentLayout className="pb-28">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <Link
           href={APP_ROUTES.MARKETPLACE}
@@ -199,6 +193,6 @@ export function MarketplaceAddressSettings() {
           </div>
         ) : null}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }

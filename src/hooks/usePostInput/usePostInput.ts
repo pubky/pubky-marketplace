@@ -511,7 +511,6 @@ export function usePostInput({
   const handleArticleClick = () => setIsArticle(true);
 
   // Derived values
-  const hasContent = content.trim().length > 0;
   const displayPlaceholder = placeholder ?? POST_INPUT_PLACEHOLDER[variant];
 
   return {
@@ -543,9 +542,6 @@ export function usePostInput({
     mentionIsOpen,
     mentionSelectedIndex,
     setMentionSelectedIndex,
-
-    // Derived values
-    hasContent,
     displayPlaceholder,
     currentUserPubky,
     currentUserDetails,

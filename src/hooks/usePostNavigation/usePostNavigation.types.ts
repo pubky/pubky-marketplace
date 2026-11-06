@@ -2,21 +2,9 @@ import type React from 'react';
 
 export interface UsePostNavigationResult {
   /**
-   * Build the post detail URL for a composite post ID.
-   */
-  getPostHref: (postId: string) => string;
-  /**
    * Navigate to a post detail page using composite ID.
    */
   navigateToPost: (postId: string) => void;
-  /**
-   * Build the collection detail URL for a composite post ID.
-   */
-  getCollectionHref: (postId: string) => string;
-  /**
-   * Navigate to a collection detail page using composite ID.
-   */
-  navigateToCollection: (postId: string) => void;
   /**
    * Click handler for clickable post wrappers (e.g., feed cards).
    * Plain left click → SPA navigation. Cmd/Ctrl/Shift+Click → opens in a new tab.

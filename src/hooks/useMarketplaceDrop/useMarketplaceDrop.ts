@@ -53,7 +53,6 @@ export interface UseMarketplaceDropResult {
   readyCheck: MarketplaceDropReadyCheck | null;
   displayState: MarketplaceDropDisplayState;
   isLoading: boolean;
-  adapterMode: ReturnType<typeof getCommerceAdapterMode>;
   refresh: () => Promise<void>;
 }
 
@@ -223,7 +222,6 @@ export function useMarketplaceDrop(sellerPubky: string, dropId: string): UseMark
     readyCheck,
     displayState: deriveDropDisplayState({ adapterMode, projection }),
     isLoading,
-    adapterMode,
     refresh,
   };
 }

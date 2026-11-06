@@ -9,7 +9,7 @@ import {
   searchInitialState,
   SearchStore,
 } from './search.types';
-import { addItemToTop, addTagToArray } from './search.utils';
+import { addItemToTop } from './search.utils';
 
 /**
  * Actions/Mutators - State modification functions
@@ -78,23 +78,6 @@ export const createSearchActions = (set: ZustandSet<SearchStore>): SearchActions
       }),
       false,
       SearchActionTypes.SET_ACTIVE_TAGS,
-    );
-  },
-
-  /**
-   * Add a tag to active tags (optimistic update)
-   * Moves existing tag to end if already present
-   * Removes oldest tag if at max capacity
-   * Note: Tag should be normalized (lowercase, trimmed) before calling
-   */
-  addActiveTag: (tag: string) => {
-    set(
-      (state) => {
-        const newTags = addTagToArray(state.activeTags, tag);
-        return { activeTags: newTags };
-      },
-      false,
-      SearchActionTypes.ADD_ACTIVE_TAG,
     );
   },
 

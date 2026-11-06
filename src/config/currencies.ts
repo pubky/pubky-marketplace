@@ -140,10 +140,6 @@ export function isListingCurrencyCode(value: unknown): value is ListingCurrencyC
   return typeof value === 'string' && Object.hasOwn(LISTING_CURRENCY_REGISTRY, value);
 }
 
-export function isListingFiatCurrencyCode(value: unknown): value is ListingFiatCurrencyCode {
-  return isListingCurrencyCode(value) && LISTING_CURRENCY_REGISTRY[value].kind === 'fiat';
-}
-
 /** The registry entry for a stored asset (`SAT` at exponent 0 resolves to bitcoin), or `null` for any other asset. */
 export function resolveListingCurrency(asset: { currency: string; exponent: number }): CurrencyDefinition | null {
   if (asset.currency === SATOSHI_CURRENCY_CODE && asset.exponent === SATOSHI_EXPONENT) {

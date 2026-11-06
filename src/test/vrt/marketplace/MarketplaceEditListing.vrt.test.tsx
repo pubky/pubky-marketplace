@@ -138,8 +138,10 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main className="w-full py-6">{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => (
+    <main className="w-full py-6">{children}</main>
+  ),
 }));
 
 async function waitForHydration(screen: { container: HTMLElement }, title: string) {
@@ -212,7 +214,7 @@ describe('Marketplace edit listing — visual regression', () => {
     view.record = record;
     view.currentUserPubky = seller;
 
-    // ContentLayout is mocked in this file; the edit page's real mobile chrome
+    // MarketplaceContentLayout is mocked in this file; the edit page's real mobile chrome
     // is this header with both side buttons off.
     const screen = await renderForVRT(
       <>

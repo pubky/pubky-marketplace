@@ -227,16 +227,6 @@ export async function getCurrentDeliveryKey(owner: string): Promise<StoredDelive
   }
 }
 
-export async function listDeliveryKeys(owner: string): Promise<StoredDeliveryKey[]> {
-  assertAvailable('listDeliveryKeys');
-  try {
-    const rows = await readAllRows(await openDb(), owner);
-    return rows.map(toPublic).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  } catch (error) {
-    return fail('listDeliveryKeys', 'Failed to list delivery keys.', error);
-  }
-}
-
 /**
  * The private key for `keyId`, or `null` when this device holds no such key
  * (it was created elsewhere, or the browser profile was cleared). Throws when

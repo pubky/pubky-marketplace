@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildFeatureDiscoveryStorageKey, COLLECTIONS_NAV_NEW_BADGE_STORAGE_ID } from '@/config/featureDiscovery';
 import { useCollectionsNavDiscovery } from './useCollectionsNavDiscovery';
@@ -20,81 +20,54 @@ describe('useCollectionsNavDiscovery', () => {
     mocks.currentUserPubky = 'pk:test-user-pubky';
   });
 
-  it('shows the Collections NEW treatment for authenticated users who have not seen it locally', async () => {
+  it('persists Collections navigation discovery for an authenticated user', () => {
     const { result } = renderHook(() => useCollectionsNavDiscovery());
-
-    await waitFor(() => {
-      expect(result.current.showCollectionsNew).toBe(true);
-    });
-  });
-
-  it('does not show the treatment for guests', async () => {
-    mocks.currentUserPubky = null;
-
-    const { result } = renderHook(() => useCollectionsNavDiscovery());
-
-    await waitFor(() => {
-      expect(result.current.showCollectionsNew).toBe(false);
-    });
-  });
-
-  it('does not show the treatment after local dismissal', async () => {
-    window.localStorage.setItem(
-      buildFeatureDiscoveryStorageKey('pk:test-user-pubky', COLLECTIONS_NAV_NEW_BADGE_STORAGE_ID),
-      'seen',
-    );
-
-    const { result } = renderHook(() => useCollectionsNavDiscovery());
-
-    await waitFor(() => {
-      expect(result.current.showCollectionsNew).toBe(false);
-    });
-  });
-
-  it('marks Collections nav as seen in per-user localStorage only while the treatment is visible', async () => {
-    const { result, rerender } = renderHook(() => useCollectionsNavDiscovery());
-
-    await waitFor(() => {
-      expect(result.current.showCollectionsNew).toBe(true);
-    });
-
     act(() => result.current.markCollectionsNavSeen());
-
     expect(
       window.localStorage.getItem(
         buildFeatureDiscoveryStorageKey('pk:test-user-pubky', COLLECTIONS_NAV_NEW_BADGE_STORAGE_ID),
       ),
     ).toBe('seen');
-    expect(result.current.showCollectionsNew).toBe(false);
-
-    rerender();
-
-    act(() => result.current.markCollectionsNavSeen());
-
-    expect(window.localStorage.length).toBe(1);
   });
 
-  it('does not reuse dismissal while switching users in the same tab', async () => {
-    const { result, rerender } = renderHook(() => useCollectionsNavDiscovery());
-
-    await waitFor(() => {
-      expect(result.current.showCollectionsNew).toBe(true);
-    });
-
+  it('does not persist discovery for guests', () => {
+    mocks.currentUserPubky = null;
+    const { result } = renderHook(() => useCollectionsNavDiscovery());
     act(() => result.current.markCollectionsNavSeen());
-    expect(result.current.showCollectionsNew).toBe(false);
+    expect(window.localStorage.length).toBe(0);
+  });
 
+  it('does not rewrite a previously seen discovery', () => {
+    window.localStorage.setItem(
+      buildFeatureDiscoveryStorageKey('pk:test-user-pubky', COLLECTIONS_NAV_NEW_BADGE_STORAGE_ID),
+      'seen',
+    );
+    const write = vi.spyOn(Storage.prototype, 'setItem');
+    const { result } = renderHook(() => useCollectionsNavDiscovery());
+    act(() => result.current.markCollectionsNavSeen());
+    expect(write).not.toHaveBeenCalled();
+    write.mockRestore();
+  });
+
+  it('persists only the first mark in this mount', () => {
+    const write = vi.spyOn(Storage.prototype, 'setItem');
+    const { result, rerender } = renderHook(() => useCollectionsNavDiscovery());
+    act(() => result.current.markCollectionsNavSeen());
+    rerender();
+    act(() => result.current.markCollectionsNavSeen());
+    expect(write).toHaveBeenCalledTimes(1);
+    write.mockRestore();
+  });
+
+  it('keeps discovery persistence separate when switching users', () => {
+    const { result, rerender } = renderHook(() => useCollectionsNavDiscovery());
+    act(() => result.current.markCollectionsNavSeen());
     mocks.currentUserPubky = 'pk:second-user';
     rerender();
-
-    await waitFor(() => {
-      expect(result.current.showCollectionsNew).toBe(true);
-    });
-
-    expect(
-      window.localStorage.getItem(
-        buildFeatureDiscoveryStorageKey('pk:second-user', COLLECTIONS_NAV_NEW_BADGE_STORAGE_ID),
-      ),
-    ).toBeNull();
+    const secondKey = buildFeatureDiscoveryStorageKey('pk:second-user', COLLECTIONS_NAV_NEW_BADGE_STORAGE_ID);
+    expect(window.localStorage.getItem(secondKey)).toBeNull();
+    act(() => result.current.markCollectionsNavSeen());
+    expect(window.localStorage.getItem(secondKey)).toBe('seen');
+    expect(window.localStorage.length).toBe(2);
   });
 });

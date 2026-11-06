@@ -12,5 +12,4 @@ export interface UseSearchAutocompleteParams {
 export interface UseSearchAutocompleteResult {
   tags: AutocompleteTag[];
   users: AutocompleteUserData[];
-  isLoading: boolean;
 }

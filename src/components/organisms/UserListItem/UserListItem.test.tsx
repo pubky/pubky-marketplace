@@ -98,8 +98,8 @@ const mockUser: UserListItemData = {
   isFollowing: false,
 };
 
-describe('UserListItem - followButtonVariant', () => {
-  it('defaults to icon variant for compact layout', () => {
+describe('UserListItem - follow button', () => {
+  it('renders an icon button for compact layout', () => {
     render(<UserListItem user={mockUser} variant="compact" onFollowClick={vi.fn()} />);
 
     // Icon variant: aria-label includes user name, button has size="icon"
@@ -109,7 +109,7 @@ describe('UserListItem - followButtonVariant', () => {
     expect(screen.queryByText('Follow')).not.toBeInTheDocument();
   });
 
-  it('defaults to icon variant for full layout', () => {
+  it('renders an icon button for full layout', () => {
     render(<UserListItem user={mockUser} variant="full" onFollowClick={vi.fn()} />);
 
     // Full variant renders desktop + mobile follow buttons, both should be icon
@@ -119,47 +119,6 @@ describe('UserListItem - followButtonVariant', () => {
       expect(btn).toHaveAttribute('data-size', 'icon');
     });
     expect(screen.queryByText('Follow')).not.toBeInTheDocument();
-  });
-
-  it('shows icon and text when followButtonVariant="iconWithText"', () => {
-    render(
-      <UserListItem user={mockUser} variant="compact" followButtonVariant="iconWithText" onFollowClick={vi.fn()} />,
-    );
-
-    // iconWithText variant shows both icon and visible "Follow" text
-    const followBtn = screen.getByRole('button', { name: /^Follow$/i });
-    expect(followBtn.querySelector('.lucide-user-round-plus')).toBeInTheDocument();
-    expect(screen.getAllByText('Follow').length).toBeGreaterThan(0);
-  });
-
-  it('shows check icon and "Following" text when iconWithText and isFollowing', () => {
-    render(
-      <UserListItem
-        user={{ ...mockUser, isFollowing: true }}
-        variant="compact"
-        followButtonVariant="iconWithText"
-        onFollowClick={vi.fn()}
-      />,
-    );
-
-    const followingText = screen.getByText('Following');
-    expect(followingText).toBeInTheDocument();
-    const followToggle = followingText.closest('button') as HTMLButtonElement;
-    expect(followToggle.querySelector('.lucide-check')).toBeInTheDocument();
-    // Hover state also renders "Unfollow" text and UserMinus icon
-    expect(followToggle.querySelector('.lucide-user-minus')).toBeInTheDocument();
-    const unfollowText = screen.getByText('Unfollow');
-    expect(unfollowText).toBeInTheDocument();
-
-    // Verify the button has "group" class to enable group-hover for children
-    const button = followingText.closest('button');
-    expect(button).toHaveClass('group');
-
-    // Verify CSS classes that swap visibility on hover
-    const followingContainer = followingText.closest('div');
-    expect(followingContainer).toHaveClass('group-hover:hidden');
-    const unfollowContainer = unfollowText.closest('div');
-    expect(unfollowContainer).toHaveClass('group-hover:flex');
   });
 
   it('labels the icon button as Unfollow with a check icon when following', () => {
@@ -183,18 +142,12 @@ describe('UserListItem - followButtonVariant', () => {
     },
   );
 
-  it('defaults to icon variant for MeButton when isCurrentUser', () => {
+  it('renders an icon button for MeButton when isCurrentUser', () => {
     render(<UserListItem user={mockUser} variant="compact" isCurrentUser />);
 
     // MeButton icon variant: aria-label "This is you", size="icon", no "Me" text
     const meButton = screen.getByRole('button', { name: /This is you/i });
     expect(meButton).toHaveAttribute('data-size', 'icon');
     expect(screen.queryByText('Me')).not.toBeInTheDocument();
-  });
-
-  it('shows Me text when followButtonVariant="iconWithText" and isCurrentUser', () => {
-    render(<UserListItem user={mockUser} variant="compact" isCurrentUser followButtonVariant="iconWithText" />);
-
-    expect(screen.getByText('Me')).toBeInTheDocument();
   });
 });

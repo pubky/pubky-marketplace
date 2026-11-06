@@ -13,9 +13,9 @@ import { useConnectorCatalog } from '@/hooks/useConnectorCatalog/useConnectorCat
 import { useConnectorCatalogImport } from '@/hooks/useConnectorCatalogImport/useConnectorCatalogImport';
 import { useStoreConnections } from '@/hooks/useStoreConnections/useStoreConnections';
 import { CONNECTOR_PROVIDER_LABELS } from '@/libs/commerce/connectors';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceConnectorCatalogPicker } from '@/organisms/Marketplace/MarketplaceConnectorCatalogPicker';
 import { MarketplaceConnectorImport } from '@/organisms/Marketplace/MarketplaceConnectorImport';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSessionRequiredCard } from '@/organisms/Marketplace/MarketplaceSessionRequiredCard';
 import { MarketplaceUnmappedListingsNotice } from '@/organisms/Marketplace/MarketplaceUnmappedListingsNotice';
@@ -40,14 +40,7 @@ export function MarketplaceConnectorCatalog({ connectionId }: { connectionId: st
   };
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      disableMainContentOverflow
-      className="pb-28"
-    >
+    <MarketplaceContentLayout disableMainContentOverflow className="pb-28">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <MarketplaceSectionNav />
         <Link
@@ -161,6 +154,6 @@ export function MarketplaceConnectorCatalog({ connectionId }: { connectionId: st
           </>
         )}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }

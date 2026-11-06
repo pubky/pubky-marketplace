@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getMarketplaceNotificationActionText } from '@/organisms/MarketplaceNotificationItem/MarketplaceNotificationItem.utils';
 import { createNotificationFixture } from '@/test/fixtures/commerce/notifications';
-import { isServiceNotificationType, MARKETPLACE_ACTIVITY_LABELS } from './marketplace-activity-copy';
+import { MARKETPLACE_ACTIVITY_LABELS, SERVICE_NOTIFICATION_TYPES } from './marketplace-activity-copy';
 import { isRecognizedMarketplaceNotification, parseMarketplaceNotificationEntries } from './marketplace-projections';
 
 describe('tracking_updated notification', () => {
@@ -12,7 +12,7 @@ describe('tracking_updated notification', () => {
     expect(entries).toHaveLength(1);
     expect(isRecognizedMarketplaceNotification(entries[0])).toBe(true);
     expect(entries[0]).toMatchObject({ type: 'tracking_updated', aggregateId: row.aggregateId, readAt: null });
-    expect(isServiceNotificationType('tracking_updated')).toBe(true);
+    expect(SERVICE_NOTIFICATION_TYPES).toContain('tracking_updated');
   });
 
   it('reads one plain line to the buyer', () => {

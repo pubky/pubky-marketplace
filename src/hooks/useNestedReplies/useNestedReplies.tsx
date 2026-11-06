@@ -33,7 +33,7 @@ export function useNestedReplies(
 
   const enabled = depth < maxDepth;
 
-  const { replyIds, adjustedTotalCount, hasMore, showAll, isExpandingAll, expandAll } = useReplyStream(replyId, {
+  const { replyIds, adjustedTotalCount, hasMore, isExpandingAll, expandAll } = useReplyStream(replyId, {
     maxReplies: maxNestedReplies,
     enabled,
   });
@@ -43,7 +43,6 @@ export function useNestedReplies(
     hasMoreReplies: hasMore,
     hasNestedReplies: replyIds.length > 0,
     replyCount: adjustedTotalCount,
-    showAll,
     isExpandingAll,
     expandAll,
   };

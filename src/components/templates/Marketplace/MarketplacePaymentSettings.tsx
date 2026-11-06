@@ -23,7 +23,7 @@ import {
 import type { SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceDeliveryKeyStep } from '@/organisms/Marketplace/MarketplaceDeliveryKeyStep';
 import { MarketplaceGetPaidSettings } from '@/organisms/Marketplace/MarketplaceGetPaidSettings';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
@@ -87,14 +87,7 @@ export function MarketplacePaymentSettings() {
   };
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      disableMainContentOverflow
-      className="pb-28"
-    >
+    <MarketplaceContentLayout disableMainContentOverflow className="pb-28">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <MarketplaceSectionNav />
         <BackToMyShop />
@@ -200,6 +193,6 @@ export function MarketplacePaymentSettings() {
 
         {isSocialLinkOutEnabled() && <MarketplaceSignOutCard />}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }

@@ -2,13 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { marketplaceSessionIdSchema } from '@/core/services/marketplace/marketplace-session-id';
 import type { MarketplaceGrantConfig } from './config';
-import {
-  canonicalJson,
-  signBootstrapAssertion,
-  signDeliveryAssertion,
-  signResultProof,
-  signServiceBody,
-} from './crypto';
+import { signBootstrapAssertion, signDeliveryAssertion, signResultProof, signServiceBody } from './crypto';
 
 const PUBKY = /^[ybndrfg8ejkmcpqxot1uwisza345h769]{52}$/;
 const BEARER = /^[A-Za-z0-9_-]{43}$/;
@@ -358,8 +352,4 @@ export async function cancelGrant(config: MarketplaceGrantConfig, flowId: string
     body: signed.bytes as BodyInit,
   });
   if (response.status !== 204) await jsonOrError(response);
-}
-
-export function canonicalBody(value: unknown): string {
-  return canonicalJson(value);
 }

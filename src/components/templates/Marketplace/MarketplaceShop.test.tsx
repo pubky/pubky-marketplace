@@ -15,8 +15,8 @@ import {
 } from '@/test/fixtures/commerce/commerce';
 import { MarketplaceShop } from './MarketplaceShop';
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 vi.mock('@/hooks/useCommerceShopFollow/useCommerceShopFollow', () => ({
   useCommerceShopFollow: () => ({ isFollowing: false, isMutating: false, isLoading: false, toggle: vi.fn() }),

@@ -14,7 +14,7 @@ vi.mock('@/hooks/useIsScrolledFromTop/useIsScrolledFromTop', () => ({
 }));
 
 vi.mock('@/hooks/useUnreadPosts/useUnreadPosts', () => ({
-  useUnreadPosts: vi.fn(() => ({ unreadPostIds: [], unreadCount: 0 })),
+  useUnreadPosts: vi.fn(() => ({ unreadPostIds: [] })),
 }));
 
 const mockUseUnreadPosts = vi.mocked(useUnreadPosts);
@@ -76,7 +76,7 @@ const defaultProps = {
 describe('NewPostsSection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: [], unreadCount: 0 });
+    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: [] });
     vi.mocked(MuteFilter.filterPostsSafe).mockImplementation((ids: string[]) => ids);
     vi.mocked(PostController.getDetailsByIds).mockResolvedValue([{ kind: 'short' } as never]);
     window.scrollTo = vi.fn();
@@ -88,33 +88,33 @@ describe('NewPostsSection', () => {
   });
 
   it('renders the new posts button when there are unread posts', () => {
-    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: ['new1', 'new2'], unreadCount: 2 });
+    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: ['new1', 'new2'] });
     render(<NewPostsSection {...defaultProps} />);
     expect(screen.getByTestId('new-posts-button')).toBeInTheDocument();
     expect(screen.getByTestId('new-posts-button')).toHaveAttribute('data-count', '2');
   });
 
   it('does not show button for already-displayed posts', () => {
-    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: ['post1'], unreadCount: 1 });
+    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: ['post1'] });
     render(<NewPostsSection {...defaultProps} />);
     expect(screen.queryByTestId('new-posts-button')).not.toBeInTheDocument();
   });
 
   it('hides the button while loading', () => {
-    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: ['new1'], unreadCount: 1 });
+    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: ['new1'] });
     render(<NewPostsSection {...defaultProps} loading={true} />);
     expect(screen.queryByTestId('new-posts-button')).not.toBeInTheDocument();
   });
 
   it('filters muted users from new post count', () => {
-    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: ['new1', 'muted1'], unreadCount: 2 });
+    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: ['new1', 'muted1'] });
     vi.mocked(MuteFilter.filterPostsSafe).mockReturnValue(['new1']);
     render(<NewPostsSection {...defaultProps} />);
     expect(screen.getByTestId('new-posts-button')).toHaveAttribute('data-count', '1');
   });
 
   it('does not mute-filter new post count on bookmarks feed', () => {
-    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: ['muted-user:post-9'], unreadCount: 1 });
+    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: ['muted-user:post-9'] });
     const filterSpy = vi.mocked(MuteFilter.filterPostsSafe);
 
     render(
@@ -131,7 +131,7 @@ describe('NewPostsSection', () => {
   });
 
   it('calls stream controllers and prependPosts on click', async () => {
-    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: ['new1'], unreadCount: 1 });
+    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: ['new1'] });
     const prependPosts = vi.fn();
     render(<NewPostsSection {...defaultProps} prependPosts={prependPosts} />);
 
@@ -149,7 +149,7 @@ describe('NewPostsSection', () => {
   });
 
   it('prepends posts whose local details are not yet available', async () => {
-    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: ['new1'], unreadCount: 1 });
+    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: ['new1'] });
     vi.mocked(PostController.getDetailsByIds).mockResolvedValue([undefined as never]);
     const prependPosts = vi.fn();
 
@@ -163,7 +163,7 @@ describe('NewPostsSection', () => {
   });
 
   it('does not prepend posts whose kind does not match the stream content filter', async () => {
-    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: ['new1'], unreadCount: 1 });
+    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: ['new1'] });
     vi.mocked(PostController.getDetailsByIds).mockResolvedValue([{ kind: 'short' } as never]);
     const prependPosts = vi.fn();
 
@@ -184,7 +184,7 @@ describe('NewPostsSection', () => {
   });
 
   it('does not prepend posts whose kind does not match a wot_domain stream kind', async () => {
-    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: ['new1'], unreadCount: 1 });
+    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: ['new1'] });
     vi.mocked(PostController.getDetailsByIds).mockResolvedValue([{ kind: 'short' } as never]);
     const prependPosts = vi.fn();
 
@@ -205,7 +205,7 @@ describe('NewPostsSection', () => {
   });
 
   it('scrolls to top after loading new posts', async () => {
-    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: ['new1'], unreadCount: 1 });
+    mockUseUnreadPosts.mockReturnValue({ unreadPostIds: ['new1'] });
     render(<NewPostsSection {...defaultProps} />);
 
     fireEvent.click(screen.getByTestId('new-posts-button'));

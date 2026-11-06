@@ -294,29 +294,6 @@ describe('LocalBookmarkService', () => {
     });
   });
 
-  describe('getAllBookmarks', () => {
-    it('should return all bookmarked post IDs', async () => {
-      const postId1 = 'author1:post1';
-      const postId2 = 'author2:post2';
-      const postId3 = 'author3:post3';
-
-      await BookmarkModel.upsert({ id: postId1, created_at: Date.now() });
-      await BookmarkModel.upsert({ id: postId2, created_at: Date.now() });
-      await BookmarkModel.upsert({ id: postId3, created_at: Date.now() });
-
-      const bookmarks = await LocalBookmarkService.getAllBookmarks();
-      expect(bookmarks).toHaveLength(3);
-      expect(bookmarks).toContain(postId1);
-      expect(bookmarks).toContain(postId2);
-      expect(bookmarks).toContain(postId3);
-    });
-
-    it('should return empty array when no bookmarks exist', async () => {
-      const bookmarks = await LocalBookmarkService.getAllBookmarks();
-      expect(bookmarks).toEqual([]);
-    });
-  });
-
   describe('getAllBookmarksSorted', () => {
     it('returns bookmark IDs sorted by created_at descending (newest first)', async () => {
       const olderId = 'author1:p-older';
