@@ -121,6 +121,13 @@ describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => 
     const iframe = paykitFrame('Reconnect Bitkit');
     expect(framePath(iframe)).toBe('https://paykit.example/setup/reconnect');
     expect(new URL(iframe.src).searchParams.get('creator')).toBe(PUBKY);
+    // The Bitcoin reconnect is the full one: no USDT-only asset.
+    expect(mocked.getPaykitReconnectUrl).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      expect.any(String),
+      undefined,
+    );
     expect(mocked.getPaykitSetupUrl).not.toHaveBeenCalled();
     expect(screen.getByText(/Paykit already has a Bitkit setup for this pubky/)).toBeInTheDocument();
     expect(

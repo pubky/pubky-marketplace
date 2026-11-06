@@ -274,11 +274,11 @@ export class LocksGatewayService {
   }
 
   /**
-   * Upstream paykit-server reconnect URL (`GET /setup/reconnect`), the flow
-   * that adds a previously omitted USDT address to an existing Bitkit account.
-   * It also asks Bitkit for a Bitcoin account, so the approval moves Bitcoin
-   * receiving to a new account and cancels unaccepted requests on the old
-   * one (paykit-server#106). Unlike
+   * Upstream paykit-server reconnect URL (`GET /setup/reconnect`). Without
+   * `asset` it also asks Bitkit for a Bitcoin account, so the approval moves
+   * Bitcoin receiving to a new account and cancels unaccepted requests on the
+   * old one (paykit-server#106). `asset: 'USDT'` asks for the USDT address
+   * alone and keeps the Bitcoin account (paykit-server#111). Unlike
    * `/setup` (which rejects `creator`), reconnect requires it, so it is always
    * sent regardless of `paykitSetupCreatorParam`. The configured
    * `paykitSetupUrl` is the full setup URL (it already ends in `/setup`), so
@@ -288,11 +288,12 @@ export class LocksGatewayService {
    * controller passes only a validated bare 52-character id, so the prefix is
    * added unconditionally, as the service's `pubky_app_key` does.
    */
-  static buildPaykitReconnectUrl(returnTo: string, state: string, creator: string): string {
+  static buildPaykitReconnectUrl(returnTo: string, state: string, creator: string, asset?: 'USDT'): string {
     const url = new URL('/setup/reconnect', new URL(getPaykitSetupUrl()).origin);
     url.searchParams.set('creator', `pubky${creator}`);
     url.searchParams.set('return_to', returnTo);
     url.searchParams.set('state', state);
+    if (asset) url.searchParams.set('asset', asset);
     return url.toString();
   }
 
