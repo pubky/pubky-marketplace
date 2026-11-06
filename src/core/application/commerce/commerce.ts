@@ -163,6 +163,7 @@ import {
   type MarketplaceCommand,
   type MarketplaceCommandResponse,
   orderIdFromMarketplaceAggregateId,
+  type ShippingChoice,
 } from '@/libs/commerce/transaction-commands';
 import type { CommerceJsonValue, CommerceMoney } from '@/libs/commerce/transaction-contracts';
 import { assertPublishableListingStock } from '@/libs/commerce/unlimited-stock';
@@ -489,6 +490,10 @@ export type CommerceCheckoutFulfillmentInput = {
   deliveryEmail?: string;
   /** The buyer's country, sent in clear text so the service can apply the EU fence (plan C2). */
   buyerCountry?: string;
+  /** The country the order ships to, for zone pricing and a shop's ships-to list. */
+  destinationCountry?: string;
+  /** One rate per zone-priced shipping group of the order. */
+  shippingChoices?: readonly ShippingChoice[];
 };
 
 export type ConnectorShareChoice = {
@@ -1526,6 +1531,10 @@ export class CommerceApplication {
         ...(await this.sealConnectorShares(actorPubky, commandId, input, sealedAddress)),
         ...(input.deliveryEmail !== undefined ? { deliveryEmail: input.deliveryEmail } : {}),
         ...(input.buyerCountry !== undefined ? { buyerCountry: input.buyerCountry } : {}),
+        ...(input.destinationCountry !== undefined ? { destinationCountry: input.destinationCountry } : {}),
+        ...(input.shippingChoices !== undefined && input.shippingChoices.length > 0
+          ? { shippingChoices: input.shippingChoices }
+          : {}),
       },
     });
     return await this.executeMarketplaceCommand(actorPubky, command);

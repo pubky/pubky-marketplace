@@ -570,3 +570,29 @@ export function marketplaceListingNotActiveMessage(error: { code?: unknown; reas
     LISTING_NOT_FOR_SALE
   );
 }
+
+/** Shown when the seller changed a shipping profile between the buyer's quote and Pay. */
+export const SHIPPING_CHANGED_MESSAGE =
+  'The seller changed their shipping prices while you were checking out. Review the new shipping rates and pay again.';
+
+/**
+ * Service refusals about where and at what price an order ships: a destination no zone serves, a seller's
+ * shipping terms that cannot be read, a profile changed since the quote, and a destination the seller's
+ * shop does not ship to. `null` for any other refusal.
+ */
+export function marketplaceShippingRefusalMessage(error: {
+  code?: unknown;
+  reason?: unknown;
+  message?: unknown;
+}): string | null {
+  switch (error.code) {
+    case 'SHIPPING_CHANGED':
+      return SHIPPING_CHANGED_MESSAGE;
+    case 'SHIPPING_UNAVAILABLE_TO_COUNTRY':
+      return 'A seller in your cart does not ship to that country. Choose another address or remove their items.';
+    case 'SHIPPING_UNAVAILABLE':
+      return 'A seller’s shipping prices could not be read or applied right now. Nothing was reserved. Try again in a moment.';
+    default:
+      return null;
+  }
+}

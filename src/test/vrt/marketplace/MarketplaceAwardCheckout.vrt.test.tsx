@@ -9,6 +9,7 @@ import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
 import { ACCEPTED_OFFER_AWARD_WIRE_FIXTURE } from '@/test/fixtures/commerce/offers';
 import type { MarketplaceOffer } from '@/services/marketplace/marketplace';
 import { asOpaque } from '@/test-utils/type-assertions';
+import { noZoneShipping } from '@/test-utils/zone-shipping';
 
 const state = vi.hoisted(() => ({
   outcome: 'active' as 'active' | 'expired' | 'success',
@@ -104,6 +105,7 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
       hasFulfillmentConflict: false,
       isPickupCapabilityLoadingForSeller: () => false,
       orderCount: 1,
+      zoneShipping: noZoneShipping(),
       rememberAddress: vi.fn(async () => {}),
       pendingKeyChange: null,
       decideKeyChange: vi.fn(),

@@ -39,10 +39,15 @@ import {
   SHOPIFY_PRODUCT_CSV_HEADERS,
 } from '@bitcoinerrorlog/pubky-shop/connectors/shopify/map';
 import { getMarketplaceUrl } from '@/config/commerce';
+import { isShopBuiltImportFile } from '@/libs/commerce/shop-built-import-file';
 import { csvHeaderCells, parseCsvTable } from '@/pipes/commerce/import-csv-table';
 import type { ImportLossReport, ImportSourceFormat } from '@/pipes/commerce/import-loss-report';
 import type { PresetRow } from '@/pipes/commerce/import-preset-rows';
-import { type ImportSettings, shopifyWorkExponent } from '@/pipes/commerce/import-settings';
+import {
+  type ImportSettings,
+  shopifyWorkExponent,
+  withoutShippingProfileField,
+} from '@/pipes/commerce/import-settings';
 import { buildShopifyPresetRows } from '@/pipes/commerce/import-shopify-csv';
 import { isWooProductCsv, mapWooProductCsv } from '@/pipes/commerce/import-woo-csv';
 import { looksLikeUnknownLanguageWooExport, WOO_UNKNOWN_LANGUAGE_MESSAGE } from '@/pipes/commerce/import-woo-headers';
@@ -138,7 +143,7 @@ async function planPresetRows(
     limits: { maxBytes: DEFAULT_JSON_LIMITS.maxBytes },
   });
   if (!planned.ok) return planned;
-  const payloads = jsonPayloads(parseBoundedJson(json, { maxBytes: DEFAULT_JSON_LIMITS.maxBytes }));
+  const payloads = jsonPayloads(parseBoundedJson(json, { maxBytes: DEFAULT_JSON_LIMITS.maxBytes }), true);
   await store.persistPayloads(planned.value.manifestId, payloads);
   return {
     ok: true,
@@ -261,6 +266,7 @@ const FORMULA_IDENTITY_KEYS = new Set([
   'variantId',
   'variant_id',
   'rowIdentity',
+  'shipping_profile_id',
 ]);
 
 function formulaProtected(value: string): string {
@@ -284,7 +290,7 @@ function quoteFormulaStrings(value: unknown, key?: string): unknown {
   return next;
 }
 
-function jsonPayloads(value: unknown): Map<string, string> {
+function jsonPayloads(value: unknown, keepShippingProfile: boolean): Map<string, string> {
   const items = Array.isArray(value)
     ? value
     : asObject(value) && Array.isArray(asObject(value)?.rows)
@@ -295,7 +301,10 @@ function jsonPayloads(value: unknown): Map<string, string> {
     const object = asObject(item);
     if (!object) continue;
     const row = object as unknown as CanonicalCsvRow;
-    payloads.set(canonicalCsvRowIdentity(row), JSON.stringify(quoteFormulaStrings(object)));
+    payloads.set(
+      canonicalCsvRowIdentity(row),
+      JSON.stringify(quoteFormulaStrings(keepShippingProfile ? object : withoutShippingProfileField(object))),
+    );
   }
   return payloads;
 }
@@ -565,7 +574,10 @@ export class MarketplaceShopClientService {
           limits: { maxBytes: DEFAULT_JSON_LIMITS.maxBytes },
         });
         if (!planned.ok) return planned;
-        const payloads = jsonPayloads(parseBoundedJson(bytes, { maxBytes: DEFAULT_JSON_LIMITS.maxBytes }));
+        const payloads = jsonPayloads(
+          parseBoundedJson(bytes, { maxBytes: DEFAULT_JSON_LIMITS.maxBytes }),
+          isShopBuiltImportFile(file),
+        );
         await store.persistPayloads(planned.value.manifestId, payloads);
         return { ok: true, value: { manifestId: planned.value.manifestId, rowCount: planned.value.rowCount } };
       }
@@ -593,7 +605,7 @@ export class MarketplaceShopClientService {
       if (!planned.ok) return planned;
       const payloads = new Map<string, string>();
       await parseCanonicalCsvStream(browserFileSource(file, DEFAULT_CSV_LIMITS.maxBytes), (row) => {
-        payloads.set(canonicalCsvRowIdentity(row), JSON.stringify(row));
+        payloads.set(canonicalCsvRowIdentity(row), JSON.stringify(withoutShippingProfileField(row)));
       });
       await store.persistPayloads(planned.value.manifest.manifestId, payloads);
       return {

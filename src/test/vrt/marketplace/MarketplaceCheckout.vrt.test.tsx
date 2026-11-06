@@ -7,6 +7,7 @@ import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.view
 import { MarketplaceCheckout } from '@/templates/Marketplace/MarketplaceCheckout';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import type { BuyerPaykitWalletState } from '@/hooks/useBuyerPaykitWallet/useBuyerPaykitWallet';
+import { noZoneShipping } from '@/test-utils/zone-shipping';
 
 const VRT_VIEWPORT_LAPTOP = { width: 1280, height: 800 };
 
@@ -154,6 +155,7 @@ const view = vi.hoisted(() => ({
   requiresDeliveryAddress: true,
   allowedDestinationCountries: null as string[] | null,
   orderCount: 1,
+  zoneShipping: null as null | ReturnType<typeof noZoneShipping>,
   fulfillmentByItem: {} as Record<string, 'shipping' | 'pickup' | 'digital'>,
   digitalKinds: {} as Record<string, 'file' | 'link' | 'text' | 'email' | 'message' | null>,
   digitalChoosable: [] as string[],
@@ -302,6 +304,7 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
       hasFulfillmentConflict: false,
       isPickupCapabilityLoadingForSeller: () => false,
       orderCount: view.orderCount,
+      zoneShipping: view.zoneShipping ?? noZoneShipping(),
       rememberAddress: vi.fn(async () => {}),
       pendingKeyChange: null,
       decideKeyChange: vi.fn(),
@@ -430,6 +433,7 @@ beforeEach(async () => {
   view.requiresDeliveryAddress = true;
   view.allowedDestinationCountries = null;
   view.orderCount = 1;
+  view.zoneShipping = null;
   view.fulfillmentByItem = {};
   view.digitalKinds = {};
   view.digitalChoosable = [];
@@ -516,6 +520,59 @@ describe('Marketplace checkout — visual regression', () => {
 
     await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
     await captureCheckout('checkout-single-seller-desktop');
+  });
+
+  it('renders the shipping rate choice of a zone-priced order at desktop viewport', async () => {
+    const { singleSeller } = await fixtures;
+    view.items = singleSeller.map((item) => ({
+      ...item,
+      listing: { ...item.listing, record: { ...item.listing.record, shippingProfileId: 'printful_worldwide' } },
+    }));
+    const asset = { currency: 'USD', exponent: 2 };
+    view.zoneShipping = noZoneShipping({
+      hasZonedGroups: true,
+      amounts: [{ amountMinor: 1349, ...asset }],
+      groups: [
+        {
+          key: 'profile:seller:worldwide',
+          sellerPubky: 'y'.repeat(52),
+          label: 'Printful worldwide',
+          units: 2,
+          asset,
+          state: {
+            status: 'ready',
+            selectedRateId: 'std',
+            amount: { amountMinor: 1349, ...asset },
+            quotes: [
+              {
+                zoneId: 'eu',
+                rateId: 'std',
+                label: 'Standard',
+                amountMinor: 1349,
+                estimatedMinDays: 6,
+                estimatedMaxDays: 12,
+              },
+              {
+                zoneId: 'eu',
+                rateId: 'exp',
+                label: 'Express',
+                amountMinor: 2500,
+                estimatedMinDays: 2,
+                estimatedMaxDays: 4,
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await vi.waitFor(() => {
+      if (!document.querySelector('[data-testid="checkout-shipping-rates"]')) {
+        throw new Error('The rate choice has not rendered yet.');
+      }
+    });
+    await captureCheckout('checkout-zone-shipping-desktop');
   });
 
   it('renders a single-seller checkout in light mode at desktop viewport', async () => {

@@ -11,6 +11,7 @@ import {
   IMPORT_SETTINGS_FIELDS,
   type ImportSettingsFormData,
 } from '@/hooks/useMarketplaceInventoryImport/useMarketplaceInventoryImport.types';
+import { MarketplaceImportShippingProfilePicker } from '@/organisms/Marketplace/MarketplaceImportShippingProfilePicker';
 import type { ImportSourceFormat } from '@/pipes/commerce/import-loss-report';
 
 export type InventoryImportSettingsProps = {
@@ -156,6 +157,7 @@ export function MarketplaceInventoryImportSettings({
                 <SelectContent>
                   <SelectItem value="free">Free shipping</SelectItem>
                   <SelectItem value="flat">Flat rate</SelectItem>
+                  <SelectItem value="profile">Shipping profile</SelectItem>
                 </SelectContent>
               </Select>
               {field.value === '' && (
@@ -195,41 +197,49 @@ export function MarketplaceInventoryImportSettings({
           />
         )}
 
-        <Controller
-          name={IMPORT_SETTINGS_FIELDS.SHIPPING_MIN_DAYS}
-          control={control}
-          render={({ field, fieldState }) => (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="import-shipping-min">Delivery, fewest days</Label>
-              <Input
-                {...field}
-                id="import-shipping-min"
-                theme="outline"
-                inputMode="numeric"
-                aria-invalid={fieldState.error ? true : undefined}
-              />
-              <FieldError message={fieldState.error?.message} />
-            </div>
-          )}
-        />
+        {shippingMode === 'profile' && (
+          <MarketplaceImportShippingProfilePicker control={control} currency={currency} idPrefix="import" />
+        )}
 
-        <Controller
-          name={IMPORT_SETTINGS_FIELDS.SHIPPING_MAX_DAYS}
-          control={control}
-          render={({ field, fieldState }) => (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="import-shipping-max">Delivery, most days</Label>
-              <Input
-                {...field}
-                id="import-shipping-max"
-                theme="outline"
-                inputMode="numeric"
-                aria-invalid={fieldState.error ? true : undefined}
-              />
-              <FieldError message={fieldState.error?.message} />
-            </div>
-          )}
-        />
+        {shippingMode !== 'profile' && (
+          <>
+            <Controller
+              name={IMPORT_SETTINGS_FIELDS.SHIPPING_MIN_DAYS}
+              control={control}
+              render={({ field, fieldState }) => (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="import-shipping-min">Delivery, fewest days</Label>
+                  <Input
+                    {...field}
+                    id="import-shipping-min"
+                    theme="outline"
+                    inputMode="numeric"
+                    aria-invalid={fieldState.error ? true : undefined}
+                  />
+                  <FieldError message={fieldState.error?.message} />
+                </div>
+              )}
+            />
+
+            <Controller
+              name={IMPORT_SETTINGS_FIELDS.SHIPPING_MAX_DAYS}
+              control={control}
+              render={({ field, fieldState }) => (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="import-shipping-max">Delivery, most days</Label>
+                  <Input
+                    {...field}
+                    id="import-shipping-max"
+                    theme="outline"
+                    inputMode="numeric"
+                    aria-invalid={fieldState.error ? true : undefined}
+                  />
+                  <FieldError message={fieldState.error?.message} />
+                </div>
+              )}
+            />
+          </>
+        )}
 
         {(format === 'woocommerce' || format === 'woocommerce_store') && (
           <Controller
