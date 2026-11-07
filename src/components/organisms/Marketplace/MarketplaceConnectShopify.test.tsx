@@ -124,7 +124,7 @@ describe('MarketplaceConnectShopify', () => {
     expect(within(step4).getByRole('button', { name: 'Copy Allowed redirection URL' })).toBeInTheDocument();
     expect(within(step4).getByRole('button', { name: 'Copy all Scopes' })).toBeInTheDocument();
     expect(step4).toHaveTextContent('Embed app in Shopify admin: off');
-    expect(step4).toHaveTextContent('Use legacy install flow: on');
+    expect(step4).toHaveTextContent('Use legacy install flow: leave the default');
     expect(step4).toHaveTextContent('Webhooks API version: 2026-10');
     expect(within(step4).queryByText('Webhooks URL for privacy requests')).not.toBeInTheDocument();
     expect(step4).toHaveTextContent('Then click Release.');

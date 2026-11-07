@@ -196,16 +196,11 @@ export function MarketplaceConnectShopify({ shopify, statusCheck, onCheck }: Mar
                   copiedMessage="Redirection URL copied."
                 />
                 <Typography as="p">
-                  <strong className="text-foreground">Use legacy install flow:</strong> on
+                  <strong className="text-foreground">Use legacy install flow:</strong> leave the default
                 </Typography>
                 <CopyField label="Scopes" value={scopes} copyLabel="Copy all" copiedMessage="Scopes copied." />
                 <Typography as="p">
                   <strong className="text-foreground">Webhooks API version:</strong> <code>{SHOPIFY_API_VERSION}</code>
-                </Typography>
-                <Typography as="p" data-testid="shopify-legacy-note">
-                  The legacy install flow makes Shopify open the App URL when you install, which is how Pubky asks you
-                  to approve the connection. With it off, Shopify installs the app without calling Pubky and the
-                  connection never starts.
                 </Typography>
                 <Typography as="p" data-testid="shopify-compliance-note">
                   Pubky sets up its store updates itself after the install. Shopify&apos;s three privacy webhooks (

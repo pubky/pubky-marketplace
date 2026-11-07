@@ -179,13 +179,10 @@ Where the Shop still differs from the service, and what it does:
   menu, not the dashboard's Home; on the app's page the Installs card's **Test
   app** button, which asks for the store and opens Shopify's install screen in
   a new window; approving returns to the Shop with the store Connected.
-- **Install flow.** Step 4 says "Use legacy install flow: on". The service
-  builds the authorize URL with a `scope` parameter after Shopify opens the App
-  URL, which is the authorization code grant that Shopify's documentation ties
-  to the legacy install flow; with Shopify-managed install Shopify installs the
-  app without calling it. Field order in step 4 follows the form: App URL,
-  Embed app in Shopify admin, Allowed redirection URL, Use legacy install flow,
-  Scopes, Webhooks API version.
+- **Install flow.** Step 4 says to leave "Use legacy install flow" at its
+  default. Field order in step 4 follows the form: App URL, Embed app in
+  Shopify admin, Allowed redirection URL, Use legacy install flow, Scopes,
+  Webhooks API version.
 - **Privacy webhooks.** Shopify's three privacy topics are required only for
   apps listed in the Shopify App Store. The Dev Dashboard version form has no
   field for them; Shopify documents them in `shopify.app.toml`

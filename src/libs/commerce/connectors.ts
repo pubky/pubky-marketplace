@@ -48,7 +48,7 @@ export const connectorUrlsSchema = z.object({
   webhooks: z.string().min(1),
 });
 
-/** `GET /v1/connectors/resolve`: the canonical shop for an address, and the custom domain that was looked up. */
+/** `POST /v1/connectors/resolve`: the canonical shop for an address, and the custom domain that was looked up. */
 export const connectorShopSchema = z.object({
   kind: z.literal('connector_shop'),
   provider: z.enum(CONNECTOR_PROVIDERS),
