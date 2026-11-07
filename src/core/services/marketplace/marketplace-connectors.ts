@@ -22,6 +22,8 @@ import {
   connectorSelectionSchema,
   type ConnectorSettingsResult,
   connectorSettingsResultSchema,
+  type ConnectorShop,
+  connectorShopSchema,
   isConnectorsUnavailableAnswer,
   type VariantMode,
 } from '@/libs/commerce/connectors';
@@ -69,6 +71,24 @@ export class MarketplaceConnectorsService {
       body: { provider: input.provider, domain: input.domain },
     });
     return this.parse('connectStore', connectorConnectSchema, raw);
+  }
+
+  /**
+   * `POST /v1/connectors/resolve`: the `*.myshopify.com` shop a store's own
+   * domain belongs to. The service reads it from the storefront and has Shopify
+   * confirm it; nothing is stored. The address goes in the body, never in the
+   * URL, so it cannot reach an error context or a log. A refusal carries
+   * `not_a_shopify_store`, `not_primary_domain` or `invalid_domain`.
+   */
+  static async resolveShop(
+    actor: string,
+    input: { provider: ConnectorProvider; domain: string },
+  ): Promise<ConnectorShop> {
+    const raw = await this.request('resolveConnectorShop', actor, '/v1/connectors/resolve', {
+      method: 'POST',
+      body: { provider: input.provider, domain: input.domain },
+    });
+    return this.parse('resolveConnectorShop', connectorShopSchema, raw);
   }
 
   /**

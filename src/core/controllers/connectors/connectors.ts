@@ -27,6 +27,10 @@ export class ConnectorsController {
     return await ConnectorsApplication.connectWooCommerceWithKeys(this.actor(), input);
   }
 
+  static async fetchResolveShopifyAddress(input: string) {
+    return await ConnectorsApplication.resolveShopifyAddress(this.actor(), input);
+  }
+
   static async commitCreateShopifyDraft(domain: string) {
     return await ConnectorsApplication.startShopify(this.actor(), domain);
   }

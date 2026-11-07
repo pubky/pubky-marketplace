@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { normalizeShopifyDomain } from '@/libs/commerce/connectors';
+import { classifyShopifyAddress } from '@/libs/commerce/connectors';
 
 export const SHOPIFY_CONNECT_FIELDS = {
   DOMAIN: 'domain',
@@ -14,8 +14,8 @@ export const shopifyDomainFormSchema = z.object({
     .trim()
     .min(1, 'Enter your store address.')
     .refine(
-      (value) => normalizeShopifyDomain(value) !== null,
-      'Use your store address, like your-store.myshopify.com.',
+      (value) => classifyShopifyAddress(value) !== null,
+      'Use your store address, like your-store.myshopify.com, or the domain your store uses.',
     ),
 });
 

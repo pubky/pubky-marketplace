@@ -1,0 +1,1 @@
+Connect Shopify with the domain your store uses, such as shop.example, as well as your-store.myshopify.com. The Shop shows which myshopify.com store the domain belongs to and continues. The Shopify guide now matches the Dev Dashboard: it follows the form's field order, says the privacy webhooks are optional for your own app, and sends you to Test app in the app's Installs card.

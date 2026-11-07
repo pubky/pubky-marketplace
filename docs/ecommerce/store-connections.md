@@ -174,10 +174,23 @@ Where the Shop still differs from the service, and what it does:
   again.
 - **Install from the Shop.** The launch URL needs Shopify's own signature, so the
   Shop cannot start the install. The guide's Install button opens the Dev
-  Dashboard, and the step says to use the app's Home, Install app.
-- **Privacy webhooks.** Shopify's three privacy topics can only be set in the
-  app, so step 4 shows the webhooks URL for them. The wording of this note is
-  approved (C21/SH2) as written.
+  Dashboard (Shopify documents no link to an app's own page from a client ID
+  or store). The step says: Pubky Market under Apps in the left
+  menu, not the dashboard's Home; on the app's page the Installs card's **Test
+  app** button, which asks for the store and opens Shopify's install screen in
+  a new window; approving returns to the Shop with the store Connected.
+- **Install flow.** Step 4 says to leave "Use legacy install flow" at its
+  default. Field order in step 4 follows the form: App URL, Embed app in
+  Shopify admin, Allowed redirection URL, Use legacy install flow, Scopes,
+  Webhooks API version.
+- **Privacy webhooks.** Shopify's three privacy topics are required only for
+  apps listed in the Shopify App Store. The Dev Dashboard version form has no
+  field for them; Shopify documents them in `shopify.app.toml`
+  (`compliance_topics`), deployed with Shopify CLI. Step 4 says to skip them
+  for this private app and what is lost (no notice of customer or shop erasure
+  requests); the webhooks URL is not shown there. The service still accepts
+  and verifies the three topics on the connection's webhooks URL if a merchant
+  deploys them.
 - **WooCommerce.** The connect domain is sent as `host[/path]`, the returned
   approval link must be on that host, and the return is `?success=1|0`; the
   service contract does not state these.
