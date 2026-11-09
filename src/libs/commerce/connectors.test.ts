@@ -82,6 +82,8 @@ describe('classifyShopifyAddress', () => {
     ['shop.example.co.uk:443', { kind: 'custom', host: 'shop.example.co.uk' }],
     ['münchen-shop.example', null],
     ['xn--mnchen-3ya.example', { kind: 'custom', host: 'xn--mnchen-3ya.example' }],
+    ['https://shop.example/collections/all?email=alice@example.com', { kind: 'custom', host: 'shop.example' }],
+    ['shop.example/pages/contact#write to us', { kind: 'custom', host: 'shop.example' }],
   ])('reads %j', (input, expected) => {
     expect(classifyShopifyAddress(input)).toEqual(expected);
   });
@@ -92,6 +94,8 @@ describe('classifyShopifyAddress', () => {
     '127.0.0.1',
     '10.0.0.5',
     'user@shop.example',
+    'https://user:secret@shop.example/collections/all',
+    'https://shop.example@evil.example/',
     'a b.example',
     'shop.example.',
     '-bad.example',

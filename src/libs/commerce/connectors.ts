@@ -385,7 +385,7 @@ export function normalizeShopifyDomain(raw: string): string | null {
   return HOST_LABEL.test(handle) && handle.length <= 60 ? full : null;
 }
 
-export type ShopifyAddress = { kind: 'myshopify'; domain: string } | { kind: 'custom'; host: string };
+type ShopifyAddress = { kind: 'myshopify'; domain: string } | { kind: 'custom'; host: string };
 
 /**
  * What the seller typed for a Shopify store: a `*.myshopify.com` address (or a
@@ -396,7 +396,11 @@ export type ShopifyAddress = { kind: 'myshopify'; domain: string } | { kind: 'cu
 export function classifyShopifyAddress(raw: string): ShopifyAddress | null {
   const domain = normalizeShopifyDomain(raw);
   if (domain) return { kind: 'myshopify', domain };
-  if (/\s|@/.test(raw.trim())) return null;
+  const [authority = ''] = raw
+    .trim()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
+    .split(/[/?#]/, 1);
+  if (/\s|@/.test(authority)) return null;
   const host = stripToHost(raw);
   const labels = host.split('.');
   const publicName =
