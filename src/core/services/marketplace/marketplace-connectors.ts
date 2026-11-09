@@ -5,6 +5,7 @@ import {
   connectorAlertsSchema,
   type ConnectorCatalogPage,
   connectorCatalogSchema,
+  type ConnectorChangeResolution,
   type ConnectorCheck,
   connectorCheckSchema,
   type ConnectorConnection,
@@ -14,6 +15,8 @@ import {
   connectorListSchema,
   type ConnectorMapping,
   connectorMappingsSchema,
+  type ConnectorProductChange,
+  connectorProductChangesSchema,
   type ConnectorProvider,
   type ConnectorPush,
   connectorPushesSchema,
@@ -22,6 +25,10 @@ import {
   connectorSelectionSchema,
   type ConnectorSettingsResult,
   connectorSettingsResultSchema,
+  type ConnectorSync,
+  type ConnectorSyncDirection,
+  type ConnectorSyncGroup,
+  connectorSyncSchema,
   isConnectorsUnavailableAnswer,
   type VariantMode,
 } from '@/libs/commerce/connectors';
@@ -131,6 +138,70 @@ export class MarketplaceConnectorsService {
       ...(options.signal ? { signal: options.signal } : {}),
     });
     return this.parse('getConnectorCatalog', connectorCatalogSchema, raw);
+  }
+
+  /** `GET /v1/connectors/{id}/sync`: the direction of each field group and the listings' own overrides. */
+  static async sync(actor: string, connectionId: string): Promise<ConnectorSync> {
+    const raw = await this.request('getConnectorSync', actor, `${this.path(connectionId)}/sync`);
+    return this.parse('getConnectorSync', connectorSyncSchema, raw);
+  }
+
+  /** `PUT /v1/connectors/{id}/sync`: sets the connection's direction for the groups given; the others keep theirs. */
+  static async putSync(
+    actor: string,
+    connectionId: string,
+    groups: Partial<Record<ConnectorSyncGroup, ConnectorSyncDirection>>,
+  ): Promise<ConnectorSync> {
+    const raw = await this.request('putConnectorSync', actor, `${this.path(connectionId)}/sync`, {
+      method: 'PUT',
+      body: { groups },
+    });
+    return this.parse('putConnectorSync', connectorSyncSchema, raw);
+  }
+
+  /**
+   * `PUT /v1/connectors/{id}/sync/listings/{listingId}`: a linked listing's own direction per group; `null`
+   * returns the group to the connection's setting. A listing that is no longer linked answers
+   * `listing_not_linked`.
+   */
+  static async putListingSync(
+    actor: string,
+    connectionId: string,
+    listingId: string,
+    groups: Partial<Record<ConnectorSyncGroup, ConnectorSyncDirection | null>>,
+  ): Promise<ConnectorSync> {
+    const raw = await this.request(
+      'putConnectorListingSync',
+      actor,
+      `${this.path(connectionId)}/sync/listings/${encodeURIComponent(listingId)}`,
+      { method: 'PUT', body: { groups } },
+    );
+    return this.parse('putConnectorListingSync', connectorSyncSchema, raw);
+  }
+
+  /** `GET /v1/connectors/{id}/changes`: the store changes waiting for the seller, oldest first. */
+  static async changes(actor: string, connectionId: string, limit = 200): Promise<ConnectorProductChange[]> {
+    const raw = await this.request('getConnectorChanges', actor, `${this.path(connectionId)}/changes?limit=${limit}`);
+    return this.parse('getConnectorChanges', connectorProductChangesSchema, raw).changes;
+  }
+
+  /**
+   * `POST /v1/connectors/{id}/changes/{changeId}/resolve` with the proposal hash the Shop acted on. A proposal
+   * replaced or resolved since it was read is refused with `change_stale`; a withdrawn one with
+   * `change_not_found`.
+   */
+  static async resolveChange(
+    actor: string,
+    connectionId: string,
+    change: Pick<ConnectorProductChange, 'id' | 'proposedHash'>,
+    resolution: ConnectorChangeResolution,
+  ): Promise<void> {
+    await this.request(
+      'resolveConnectorChange',
+      actor,
+      `${this.path(connectionId)}/changes/${encodeURIComponent(change.id)}/resolve`,
+      { method: 'POST', body: { resolution, proposedHash: change.proposedHash } },
+    );
   }
 
   static async selection(actor: string, connectionId: string): Promise<string[]> {

@@ -634,3 +634,124 @@ export function parseConnectionReturn(params: URLSearchParams): ConnectionReturn
   if (success === '1' || success === '0') return { kind: 'woo_returned', approved: success === '1' };
   return null;
 }
+
+// === Product sync =============================================================
+
+/** The parts of a linked listing that can follow the store. */
+export const CONNECTOR_SYNC_GROUPS = ['content', 'price', 'variants'] as const;
+export type ConnectorSyncGroup = (typeof CONNECTOR_SYNC_GROUPS)[number];
+
+/** `from_store`: the store is the truth and its changes are queued for review. `off`: not synced. */
+export const CONNECTOR_SYNC_DIRECTIONS = ['from_store', 'off'] as const;
+export type ConnectorSyncDirection = (typeof CONNECTOR_SYNC_DIRECTIONS)[number];
+
+export const connectorSyncSchema = z.object({
+  kind: z.literal('connector_sync'),
+  connectionId: z.string().min(1),
+  groups: z.array(
+    z.object({
+      fieldGroup: z.enum(CONNECTOR_SYNC_GROUPS),
+      direction: z.enum(CONNECTOR_SYNC_DIRECTIONS),
+      default: z.enum(CONNECTOR_SYNC_DIRECTIONS),
+    }),
+  ),
+  overrides: z.array(
+    z.object({
+      listingId: z.string().min(1),
+      fieldGroup: z.enum(CONNECTOR_SYNC_GROUPS),
+      direction: z.enum(CONNECTOR_SYNC_DIRECTIONS),
+    }),
+  ),
+});
+
+export type ConnectorSync = z.infer<typeof connectorSyncSchema>;
+
+const contentValueSchema = z.object({
+  title: z.string(),
+  description: z.string().nullable(),
+  imageUrls: z.array(z.string()),
+});
+
+const priceValueSchema = z.object({
+  variants: z.array(
+    z.object({
+      providerVariantId: z.string().min(1),
+      amountMinor: z.number().int().nonnegative(),
+      currency: z.string().min(1),
+      exponent: z.number().int().nonnegative(),
+    }),
+  ),
+});
+
+const variantsValueSchema = z.object({
+  options: z.array(z.object({ name: z.string(), values: z.array(z.string()) })),
+  variants: z.array(
+    z.object({
+      providerVariantId: z.string().min(1),
+      title: z.string().nullable(),
+      sku: z.string().nullable(),
+      optionValues: z.array(z.object({ name: z.string(), value: z.string() })),
+    }),
+  ),
+});
+
+const statusValueSchema = z.object({ available: z.boolean() });
+
+export type ConnectorContentValue = z.infer<typeof contentValueSchema>;
+export type ConnectorPriceValue = z.infer<typeof priceValueSchema>;
+export type ConnectorVariantsValue = z.infer<typeof variantsValueSchema>;
+export type ConnectorStatusValue = z.infer<typeof statusValueSchema>;
+
+const changeCommon = {
+  id: z.string().min(1),
+  providerProductId: z.string().min(1),
+  /** Hex SHA-256 of the canonical proposal; resolving sends it back, so a replaced proposal is refused. */
+  proposedHash: z.string().regex(/^[0-9a-f]{64}$/),
+  detectedAt: isoTimestamp,
+  updatedAt: isoTimestamp,
+  listings: z.array(
+    z.object({
+      listingId: z.string().min(1),
+      /** The listing's direction for the change's group; `always` for a status change. */
+      direction: z.enum(['from_store', 'off', 'always']),
+      variants: z.array(z.object({ variantId: z.string(), providerVariantId: z.string() })),
+    }),
+  ),
+};
+
+export const connectorProductChangeSchema = z.discriminatedUnion('fieldGroup', [
+  z.object({
+    ...changeCommon,
+    fieldGroup: z.literal('content'),
+    base: contentValueSchema.nullable(),
+    proposed: contentValueSchema,
+  }),
+  z.object({
+    ...changeCommon,
+    fieldGroup: z.literal('price'),
+    base: priceValueSchema.nullable(),
+    proposed: priceValueSchema,
+  }),
+  z.object({
+    ...changeCommon,
+    fieldGroup: z.literal('variants'),
+    base: variantsValueSchema.nullable(),
+    proposed: variantsValueSchema,
+  }),
+  z.object({
+    ...changeCommon,
+    fieldGroup: z.literal('status'),
+    base: statusValueSchema.nullable(),
+    proposed: statusValueSchema,
+  }),
+]);
+
+export type ConnectorProductChange = z.infer<typeof connectorProductChangeSchema>;
+
+export const connectorProductChangesSchema = z.object({
+  kind: z.literal('connector_product_changes'),
+  connectionId: z.string().min(1),
+  changes: z.array(connectorProductChangeSchema),
+});
+
+export type ConnectorChangeResolution = 'applied' | 'dismissed';

@@ -4,12 +4,17 @@ import {
   type ConnectorAlert,
   type ConnectorCatalogPage,
   type ConnectorCatalogProduct,
+  type ConnectorChangeResolution,
   type ConnectorCheck,
   type ConnectorConnection,
   type ConnectorMapping,
+  type ConnectorProductChange,
   type ConnectorProvider,
   type ConnectorPush,
   connectorRefusalReason,
+  type ConnectorSync,
+  type ConnectorSyncDirection,
+  type ConnectorSyncGroup,
   type ConnectorUnmappedListing,
   isWooAuthorizeUrlFor,
   normalizeShopifyDomain,
@@ -454,6 +459,40 @@ export class ConnectorsApplication {
 
   static async mappings(actor: string, connectionId: string): Promise<ConnectorMapping[]> {
     return await MarketplaceConnectorsService.mappings(actor, connectionId);
+  }
+
+  static async sync(actor: string, connectionId: string): Promise<ConnectorSync> {
+    return await MarketplaceConnectorsService.sync(actor, connectionId);
+  }
+
+  static async saveSync(
+    actor: string,
+    connectionId: string,
+    groups: Partial<Record<ConnectorSyncGroup, ConnectorSyncDirection>>,
+  ): Promise<ConnectorSync> {
+    return await MarketplaceConnectorsService.putSync(actor, connectionId, groups);
+  }
+
+  static async saveListingSync(
+    actor: string,
+    connectionId: string,
+    listingId: string,
+    groups: Partial<Record<ConnectorSyncGroup, ConnectorSyncDirection | null>>,
+  ): Promise<ConnectorSync> {
+    return await MarketplaceConnectorsService.putListingSync(actor, connectionId, listingId, groups);
+  }
+
+  static async changes(actor: string, connectionId: string): Promise<ConnectorProductChange[]> {
+    return await MarketplaceConnectorsService.changes(actor, connectionId);
+  }
+
+  static async resolveChange(
+    actor: string,
+    connectionId: string,
+    change: Pick<ConnectorProductChange, 'id' | 'proposedHash'>,
+    resolution: ConnectorChangeResolution,
+  ): Promise<void> {
+    await MarketplaceConnectorsService.resolveChange(actor, connectionId, change, resolution);
   }
 
   /**
