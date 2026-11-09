@@ -26,7 +26,10 @@ export interface MarketplaceEditListingProps {
 export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEditListingProps) {
   const router = useRouter();
   const storeSync = useListingStoreSync(listingId);
-  const editing = useEditMarketplaceListing(sellerPubky, listingId, { follows: storeSync.follows });
+  const editing = useEditMarketplaceListing(sellerPubky, listingId, {
+    follows: storeSync.follows,
+    storeSyncReady: storeSync.ready,
+  });
   const [isSaving, setIsSaving] = useState(false);
   const listingRoute = getMarketplaceListingRoute(sellerPubky, listingId);
   const deleting = useDeleteMarketplaceListings({ onDeleted: () => router.push(MARKETPLACE_ROUTES.DASHBOARD) });

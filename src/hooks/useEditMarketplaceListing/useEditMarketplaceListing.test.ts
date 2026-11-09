@@ -262,6 +262,26 @@ describe('useEditMarketplaceListing', () => {
       expect(saved().variants.map(({ id }) => id)).toEqual(['variant_1', 'variant_2']);
     });
 
+    it('writes nothing while the linked stores are not known, whichever button asks, and says why unless silent', async () => {
+      vi.mocked(CommerceController.getOrFetchListing).mockResolvedValue(storeListing());
+      const { result } = renderHook(() => useEditMarketplaceListing(OWNER, LISTING_ID, { storeSyncReady: false }));
+      await waitFor(() => expect(result.current.status).toBe('ready'));
+
+      await act(async () => {
+        await result.current.submit();
+      });
+      expect(toast).toHaveBeenCalledWith(
+        expect.objectContaining({ description: expect.stringContaining('store connection') }),
+      );
+      vi.mocked(toast).mockClear();
+      await act(async () => {
+        await result.current.submit({ silent: true });
+      });
+
+      expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+      expect(toast).not.toHaveBeenCalled();
+    });
+
     it('refuses to save when a variant row was removed while their prices follow the store', async () => {
       const result = await open({ content: false, price: true, variants: false });
       act(() => result.current.form.setValue('variants', [result.current.form.getValues('variants.1')]));

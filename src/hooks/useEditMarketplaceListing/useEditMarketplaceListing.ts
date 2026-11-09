@@ -85,6 +85,11 @@ export interface UseEditMarketplaceListingOptions {
    * has it, whatever the form holds, and its photos are not uploaded.
    */
   follows?: FollowedGroups;
+  /**
+   * False while the connected stores the listing is linked to are not known yet, or could not be asked. No
+   * save goes out then, whichever button asks for it: the form cannot tell what is read-only.
+   */
+  storeSyncReady?: boolean;
 }
 
 /**
@@ -109,6 +114,7 @@ export function useEditMarketplaceListing(
   options: UseEditMarketplaceListingOptions = {},
 ): UseEditMarketplaceListingResult {
   const follows = options.follows ?? NO_FOLLOWED_GROUPS;
+  const storeSyncReady = options.storeSyncReady !== false;
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
   const measurementSystem = useMeasurementSystem();
@@ -203,6 +209,15 @@ export function useEditMarketplaceListing(
 
   const submit = async (options?: { silent?: boolean }): Promise<string | null> => {
     if (!currentUserPubky || !record) return null;
+    if (!storeSyncReady) {
+      if (!options?.silent) {
+        toast({
+          variant: 'error',
+          description: 'Your store connection is still being checked. Try again in a moment.',
+        });
+      }
+      return null;
+    }
     setPublishBlocked(null);
     if (durablePublish) {
       const reason = await evaluateDurableListingPublishGuards({

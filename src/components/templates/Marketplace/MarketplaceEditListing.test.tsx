@@ -195,7 +195,10 @@ describe('MarketplaceEditListing store sync', () => {
 
     render(<MarketplaceEditListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots" />);
 
-    expect(editOptions.value).toEqual({ follows: { content: true, price: false, variants: true } });
+    expect(editOptions.value).toEqual({
+      follows: { content: true, price: false, variants: true },
+      storeSyncReady: true,
+    });
     expect(formProps.value.storeSync.syncs).toEqual([sync]);
   });
 
@@ -205,6 +208,7 @@ describe('MarketplaceEditListing store sync', () => {
     render(<MarketplaceEditListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots" />);
 
     expect(formProps.value.publishGuardReady).toBe(false);
+    expect(editOptions.value).toMatchObject({ storeSyncReady: false });
   });
 
   it('says saving is paused when the store link could not be checked, and offers to try again', () => {

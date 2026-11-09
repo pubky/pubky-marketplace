@@ -6,7 +6,7 @@ import { runImportImageBatches } from '@/hooks/useImportImageUpload/runImportIma
 import type { ConnectorProductChange } from '@/libs/commerce/connectors';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { toast } from '@/molecules/Toaster/toast';
-import { sourceUrlHash } from '@/pipes/commerce/import-image-phase';
+import { outcomesFromResults, sourceUrlHash } from '@/pipes/commerce/import-image-phase';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import {
   bootsFollowingTheStore,
@@ -532,6 +532,44 @@ describe('useConnectorChanges', () => {
     expect(rig.pending).toHaveLength(1);
     expect(items.map((item) => [item.change.fieldGroup, item.state])).toEqual([['content', 'unsupported']]);
     expect(runImportImageBatches).not.toHaveBeenCalled();
+  });
+
+  it('writes the photo that fits, does not call the one with no room a failed upload, and keeps the change for the seller', async () => {
+    const rig = setup();
+    const hand = (id: string) => ({ ...createCommerceListingFixture().media[0]!, id });
+    rig.listings.set(
+      'boots_01',
+      bootsFollowingTheStore({ media: Array.from({ length: 11 }, (_, i) => hand(`hand_${i}`)) }),
+    );
+    const content = recordedChange('content');
+    if (content.fieldGroup !== 'content') throw new Error('not content');
+    const PHOTO_3 = 'https://cdn.shopify.com/s/files/boots-3.jpg';
+    rig.pending = [
+      linked({
+        ...content,
+        proposed: { ...content.proposed, imageUrls: [content.proposed.imageUrls[0]!, PHOTO_2, PHOTO_3] },
+      } as ConnectorProductChange),
+    ];
+    const uploaded = { ...createCommerceListingFixture().media[0]!, id: 'image_new' };
+    vi.mocked(runImportImageBatches).mockImplementation(async (params) => {
+      const [target] = await params.loadTargets();
+      await params.attach(
+        outcomesFromResults([target!], [{ url: PHOTO_2, status: 'uploaded', media: uploaded as never }]),
+      );
+      return { status: 'complete', remaining: 0, done: 1, total: 1 };
+    });
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const items = await ready(result);
+
+    const written = rig.listings.get('boots_01');
+    expect(written?.title).toBe('Trail Boots II');
+    expect(written?.media).toHaveLength(12);
+    expect(rig.pending).toHaveLength(1);
+    expect(items.map((item) => [item.state, item.failure])).toEqual([['unsupported', null]]);
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({ description: expect.stringContaining('Some photos were not added') }),
+    );
   });
 
   it('keeps a price change with no usable variant link in the review instead of resolving it unapplied', async () => {

@@ -23,7 +23,7 @@ import {
   type ListingVerdict,
   photoTarget,
 } from '@/pipes/commerce/connector-change-apply';
-import type { ListingImageOutcome } from '@/pipes/commerce/import-image-phase';
+import { type ListingImageOutcome, normalizeImageUrl } from '@/pipes/commerce/import-image-phase';
 import type { PresetJson } from '@/pipes/commerce/import-preset-rows';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
@@ -166,7 +166,12 @@ async function mergePhotos(
   });
   const outcome = outcomes[0];
   if (run.status !== 'complete' || !outcome) return { media: [...plan.keptMedia], failed: plan.toUpload.length };
-  return { media: [...outcome.media], failed: outcome.results.filter(({ status }) => status === 'failed').length };
+  // Photos the listing had no room for come back as failed results too; only a photo that was meant to upload counts.
+  const uploading = new Set(plan.toUpload.map(({ url }) => normalizeImageUrl(url)));
+  const failed = outcome.results.filter(
+    ({ status, url }) => status === 'failed' && uploading.has(normalizeImageUrl(url)),
+  ).length;
+  return { media: [...outcome.media], failed };
 }
 
 /**
@@ -272,6 +277,7 @@ export function useConnectorChanges(connectionId: string | null) {
       const records = await readListings(sellerPubky, changes, false);
       let items: ReviewItem[] = [];
       let appliedCount = 0;
+      let leftPhotosOut = false;
       let unsettled = 0;
       for (const change of changes) {
         let seen = records;
@@ -318,6 +324,7 @@ export function useConnectorChanges(connectionId: string | null) {
           if (result.reason === 'failed') item = { ...item, failure: result.failure };
           if (result.reason === 'partial') {
             appliedCount += 1;
+            leftPhotosOut = true;
             const after = await readListings(sellerPubky, [change], true).catch(() => null);
             if (!after) {
               unsettled += 1;
@@ -342,7 +349,9 @@ export function useConnectorChanges(connectionId: string | null) {
       if (appliedCount > 0) {
         toast({
           title: `${appliedCount} ${appliedCount === 1 ? 'change' : 'changes'} from your store applied`,
-          description: 'Your listings now match the store.',
+          description: leftPhotosOut
+            ? 'Some photos were not added because a listing holds as many as it can.'
+            : 'Your listings now match the store.',
         });
       }
     } catch (error) {
