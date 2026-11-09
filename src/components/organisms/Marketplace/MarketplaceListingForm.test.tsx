@@ -1798,6 +1798,33 @@ describe('MarketplaceListingForm store sync', () => {
     expect(screen.getByRole('textbox', { name: /^Quantity/ })).toBeEnabled();
   });
 
+  it('does not let variants be added or removed while their prices follow the store', () => {
+    const two = createCommerceListingFixture({
+      variants: [
+        { id: 'variant_01', options: { size: '42' }, quantity: 2, mediaIds: [], enabled: true },
+        { id: 'variant_02', options: { size: '43' }, quantity: 3, mediaIds: [], enabled: true },
+      ],
+    });
+    const form = (sync: MarketplaceListingStoreSync) => (
+      <FormHarness
+        mode="edit"
+        listingId="boots_01"
+        media={buildMedia([photoItem('p1', 'Front')])}
+        defaultValues={formDataFromRecord(two, 'USD', 'metric', null)}
+        storeSync={sync}
+      />
+    );
+    const { rerender } = render(form(storeSync([syncFor({ content: false, price: true, variants: false })])));
+
+    expect(screen.getByRole('button', { name: 'Add variant' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Remove variant 1' })).toBeDisabled();
+    expect(screen.getAllByRole('textbox', { name: 'Seller SKU' })[0]).toBeEnabled();
+
+    rerender(form(storeSync([syncFor({ content: false, price: false, variants: false })])));
+    expect(screen.getByRole('button', { name: 'Add variant' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Remove variant 1' })).toBeEnabled();
+  });
+
   it('refuses photos dropped on a listing whose photos follow the store', () => {
     const media = buildMedia([photoItem('p1', 'Front')]);
     const { rerender } = render(

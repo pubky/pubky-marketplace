@@ -262,6 +262,33 @@ describe('useEditMarketplaceListing', () => {
       expect(saved().variants.map(({ id }) => id)).toEqual(['variant_1', 'variant_2']);
     });
 
+    it('refuses to save when a variant row was removed while their prices follow the store', async () => {
+      const result = await open({ content: false, price: true, variants: false });
+      act(() => result.current.form.setValue('variants', [result.current.form.getValues('variants.1')]));
+
+      await act(async () => {
+        await result.current.submit();
+      });
+
+      expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+      expect(toast).toHaveBeenCalledWith(
+        expect.objectContaining({ description: expect.stringContaining('cannot be added or removed') }),
+      );
+    });
+
+    it('takes every variant row back when a row was removed here and the group follows the store again', async () => {
+      const result = await open({ content: false, price: false, variants: false });
+      act(() => result.current.form.setValue('variants', [result.current.form.getValues('variants.1')]));
+      expect(result.current.form.getValues('variants')).toHaveLength(1);
+
+      act(() => result.current.resetFollowedGroup('variants'));
+
+      expect(result.current.form.getValues('variants').map(({ sku, quantity }) => [sku, quantity])).toEqual([
+        ['A', '3'],
+        ['B', '2'],
+      ]);
+    });
+
     it('puts a followed group’s fields back to the published values', async () => {
       const result = await open({ content: false, price: false, variants: false });
       act(() => {

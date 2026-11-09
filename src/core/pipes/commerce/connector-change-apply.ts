@@ -206,14 +206,14 @@ function effectivePrice(record: CommerceListingRecord, variantId: string): Comme
 }
 
 /**
- * The links that name a variant the listing still has. Links the listing cannot use (a blank store or listing
- * variant id, or only links to variants the seller deleted) mean the change cannot be told apart from "nothing
- * to do", so they are refused instead of read as an empty change.
+ * The links that name a variant the listing still has. No links, links the listing cannot use (a blank store
+ * or listing variant id) and links only to variants the seller deleted mean the change cannot be told apart
+ * from "nothing to do", so they are refused instead of read as an empty change.
  */
 function resolvableLinks(record: CommerceListingRecord, links: readonly ChangeLink[]): readonly ChangeLink[] | null {
   if (links.some(({ variantId, providerVariantId }) => variantId === '' || providerVariantId === '')) return null;
   const usable = links.filter(({ variantId }) => record.variants.some(({ id }) => id === variantId));
-  return links.length > 0 && usable.length === 0 ? null : usable;
+  return usable.length === 0 ? null : usable;
 }
 
 function hasStock(variants: CommerceListingRecord['variants']): boolean {

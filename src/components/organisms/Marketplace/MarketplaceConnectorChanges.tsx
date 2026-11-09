@@ -256,7 +256,7 @@ export function MarketplaceConnectorChanges({ connection, changes }: Marketplace
       </div>
     );
   }
-  if (state.status !== 'ready' || state.items.length === 0) return null;
+  if (state.status !== 'ready' || (state.items.length === 0 && state.unsettled === 0)) return null;
 
   return (
     <Card
@@ -268,13 +268,35 @@ export function MarketplaceConnectorChanges({ connection, changes }: Marketplace
       <CardContent className="grid gap-4 p-6">
         <div className="grid gap-1">
           <Heading level={2} size="md">
-            Shopify changes ({state.items.length})
+            Shopify changes{state.items.length > 0 ? ` (${state.items.length})` : ''}
           </Heading>
           <Typography as="p" className="text-sm text-muted-foreground">
             Changes made in {connection.domain} that your listings have not taken yet. Nothing changes until you apply
             it.
           </Typography>
         </div>
+        {state.unsettled > 0 && (
+          <div
+            role="status"
+            className="flex flex-col gap-2 rounded-md border border-border p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+            data-testid="store-changes-unsettled"
+          >
+            <span>
+              {state.unsettled} {state.unsettled === 1 ? 'change' : 'changes'} could not be checked against your
+              homeserver yet.
+            </span>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="w-fit rounded-full"
+              onClick={() => void changes.refresh()}
+            >
+              <RefreshCw className="size-4" aria-hidden="true" />
+              Try again
+            </Button>
+          </div>
+        )}
         <ul className="grid list-none gap-3 p-0">
           {state.items.map((item) => (
             <ChangeRow

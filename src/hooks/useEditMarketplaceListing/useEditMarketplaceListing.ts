@@ -221,6 +221,13 @@ export function useEditMarketplaceListing(
     let savedListingId: string | null = null;
 
     await form.handleSubmit(async (data) => {
+      if ((follows.price || follows.variants) && data.variants.length !== record.variants.length) {
+        toast({
+          variant: 'error',
+          description: 'Variants cannot be added or removed here while they, or their prices, follow your store.',
+        });
+        return;
+      }
       const preparedMedia = follows.content
         ? { ok: true as const, media: record.media as typeof record.media, uploads: [] }
         : await media.prepare(currentUserPubky);
@@ -281,6 +288,10 @@ export function useEditMarketplaceListing(
       form.setValue('title', published.title, touch);
       form.setValue('description', published.description, touch);
       media.seed(record.media);
+    } else if (form.getValues('variants').length !== published.variants.length) {
+      // A row was removed or added here, so rows no longer line up with the published variants: take them all back.
+      if (group === 'price') form.setValue('price', published.price, touch);
+      form.setValue('variants', published.variants, touch);
     } else if (group === 'price') {
       form.setValue('price', published.price, touch);
       published.variants.forEach((variant, index) => {

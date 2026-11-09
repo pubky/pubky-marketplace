@@ -719,6 +719,20 @@ describe('links the listing cannot use', () => {
     });
   });
 
+  it('refuses a price or variants change that names no link at all', () => {
+    const price = recordedChange('price');
+    const none = { ...price, listings: [{ ...price.listings[0]!, variants: [] }] } as ConnectorProductChange;
+
+    expect(
+      evaluateChange({
+        change: none,
+        record: bootsFollowingTheStore(),
+        links: [],
+        linkedProviderVariantIds: new Set(),
+      }),
+    ).toEqual({ kind: 'unsupported', reason: 'link_incomplete' });
+  });
+
   it('refuses a change whose only links name variants the seller deleted, and ignores a stale link beside a good one', () => {
     const price = recordedChange('price');
     const record = bootsFollowingTheStore();

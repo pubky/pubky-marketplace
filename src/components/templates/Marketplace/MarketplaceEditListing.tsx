@@ -137,6 +137,27 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
           </Typography>
         </div>
 
+        {storeSync.failed && (
+          <div
+            role="alert"
+            className="flex flex-col gap-3 rounded-md border border-destructive/40 p-4 text-sm sm:flex-row sm:items-center sm:justify-between"
+            data-testid="edit-listing-store-sync-failed"
+          >
+            <span>
+              Saving is paused: your store connection could not be checked, and this listing may follow your store.
+            </span>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="w-fit rounded-full"
+              onClick={storeSync.retry}
+            >
+              Try again
+            </Button>
+          </div>
+        )}
+
         {editing.publishBlocked && (
           <ListingPublishGuardNotice
             reason={editing.publishBlocked}

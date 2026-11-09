@@ -158,10 +158,15 @@ changes either way; see "Product changes" in the marketplace service's
   the saved record takes a followed group's values from the published record,
   whatever the form holds (`src/core/pipes/commerce/listing-followed-fields.ts`).
   A listing whose variants follow the store keeps its own variants, ids and
-  disabled ones, and takes only stock from the form; photos are not uploaded and
-  dropping files does nothing. The save is held until the linked stores have been
-  asked. When a group follows the store again after being edited here, its fields go
-  back to the published values.
+  disabled ones, and takes only stock from the form (and each variant's price
+  override while price does not follow); photos are not uploaded and dropping files
+  does nothing. While variants or prices follow the store, variants cannot be added
+  or removed in the editor, because each variant's price is paired with the
+  published variant. The save is held until the linked stores have been asked: a
+  server with no store connections or a missing marketplace session ends the lookup
+  with nothing followed, any other failure keeps the save held with "Try again".
+  When a group follows the store again after being edited here, its fields go back
+  to the published values (all variant rows, if a row was removed).
 
 ### What applies when
 
@@ -193,9 +198,9 @@ followed it) and the `proposed` value:
 A change with no base cannot tell, so it conflicts. Photos are a set, not a value:
 a photo the store added or removed is merged one by one, and a photo the seller
 removed stays removed while the store still has it, so photos never conflict. A
-listing holds at most 12 photos: store photos with no room are named in the review,
-and when they are the only work the change is shown with the reason instead of
-being resolved as done. A change that would leave the listing without an image (a
+listing holds at most 12 photos: when store photos find no room, the rest of the
+change applies and the change stays in the review with the reason until the seller
+removes a photo or dismisses it, instead of being resolved as done. A change that would leave the listing without an image (a
 video does not count) is refused. Photos go through the import's photo phase
 (`runImportImageBatches`): fetched through the server route, stripped of metadata
 and uploaded to the seller's homeserver, never referenced by the store's address.
@@ -207,7 +212,7 @@ each linked variant's price, with the lowest as the listing price and the others
 as price overrides, as the import writes them; it is refused, with the reason, for
 an auction, a currency other than the listing's (nothing is converted), a price
 that does not fit the listing's decimals, or a price of zero. A link the listing
-cannot use (a blank store or listing variant id, or only links to variants the
+cannot use (no link, a blank store or listing variant id, or only links to variants the
 seller deleted) is refused as an incomplete link instead of being read as an empty
 change. A removed store variant is turned off, the listing price is rebuilt from
 the variants left, and the listing is paused when no enabled variant with stock is
@@ -232,7 +237,9 @@ after a crash writes nothing twice. A write the homeserver has not served back y
 leaves the change pending ("has not confirmed the update yet") until the revision
 shows. A resolve answered `change_stale` or `change_not_found` is not an error: the
 Shop reads the changes again. A change whose every listing is switched off or gone
-has nothing to apply and is dismissed. If some photos fail to load, the listing
+has nothing to apply and is dismissed. A change that looks done but cannot be
+confirmed against the homeserver yet stays pending and is counted in the review
+("could not be checked yet", with Try again). If some photos fail to load, the listing
 keeps the ones that loaded and the change stays pending with the reason; the next
 try loads only the missing ones, and photos already uploaded in the same visit are
 reused.

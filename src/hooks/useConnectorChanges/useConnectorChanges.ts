@@ -45,7 +45,12 @@ export type ReviewItem = {
 
 export type ConnectorChangesState =
   | { status: 'idle' | 'loading' | 'unavailable' }
-  | { status: 'ready'; items: readonly ReviewItem[] }
+  | {
+      status: 'ready';
+      items: readonly ReviewItem[];
+      /** Changes that look done but could not be confirmed against the homeserver yet; Try again settles them. */
+      unsettled: number;
+    }
   | { status: 'failed'; message: string };
 
 export const CHANGE_FAILURE_COPY: Readonly<Record<ChangeFailure, string>> = {
@@ -61,6 +66,8 @@ const LOAD_FAILED = 'Your store changes could not be loaded. Try again in a mome
 type ApplyResult =
   | { ok: true }
   | { ok: false; reason: 'stale' | 'conflict' | 'needs_import' | 'unsupported' }
+  /** Written, but some store photos found no room: the change stays pending so the seller decides. */
+  | { ok: false; reason: 'partial' }
   | { ok: false; reason: 'failed'; failure: ChangeFailure };
 
 /**
@@ -221,8 +228,10 @@ export function useConnectorChanges(connectionId: string | null) {
     const next = changeState(verdicts);
     if (next === 'conflict' || next === 'needs_import' || next === 'unsupported') return { ok: false, reason: next };
 
+    let leftPhotosOut = false;
     for (const { listingId, evaluation } of verdicts) {
       if (evaluation.kind !== 'apply') continue;
+      if (evaluation.changes.some((line) => line.kind === 'photos' && line.notAdded > 0)) leftPhotosOut = true;
       const record = records.get(listingId);
       if (!record) continue;
       const merged = await mergePhotos(sellerPubky, listingId, evaluation.patch);
@@ -251,6 +260,7 @@ export function useConnectorChanges(connectionId: string | null) {
         uploadedPhotos.delete(photoKey(sellerPubky, image.url.trim()));
       }
     }
+    if (leftPhotosOut) return { ok: false, reason: 'partial' };
     return (await resolve(change, 'applied')) ? { ok: true } : { ok: false, reason: 'stale' };
   };
 
@@ -262,6 +272,7 @@ export function useConnectorChanges(connectionId: string | null) {
       const records = await readListings(sellerPubky, changes, false);
       let items: ReviewItem[] = [];
       let appliedCount = 0;
+      let unsettled = 0;
       for (const change of changes) {
         let seen = records;
         let verdicts = evaluateChangeListings(change, seen);
@@ -272,12 +283,18 @@ export function useConnectorChanges(connectionId: string | null) {
           // the change is only settled from what the homeserver serves. One whose every listing is switched
           // off or gone has nothing to apply and is dismissed, so it does not sit pending out of sight.
           const fresh = await readListings(sellerPubky, [change], true).catch(() => null);
-          if (!fresh) continue;
+          if (!fresh) {
+            unsettled += 1;
+            continue;
+          }
           seen = fresh;
           verdicts = evaluateChangeListings(change, seen);
           next = changeState(verdicts);
           if (next === 'nothing_to_do') {
-            await resolve(change, hasWork(verdicts, 'nothing_to_do') ? 'applied' : 'dismissed').catch(() => false);
+            const settled = await resolve(change, hasWork(verdicts, 'nothing_to_do') ? 'applied' : 'dismissed').catch(
+              () => null,
+            );
+            if (settled === null) unsettled += 1;
             continue;
           }
         }
@@ -299,11 +316,29 @@ export function useConnectorChanges(connectionId: string | null) {
           }
           if (result.reason === 'stale') continue;
           if (result.reason === 'failed') item = { ...item, failure: result.failure };
+          if (result.reason === 'partial') {
+            appliedCount += 1;
+            const after = await readListings(sellerPubky, [change], true).catch(() => null);
+            if (!after) {
+              unsettled += 1;
+              continue;
+            }
+            const afterVerdicts = evaluateChangeListings(change, after);
+            const afterState = changeState(afterVerdicts);
+            if (afterState === 'nothing_to_do') continue;
+            item = {
+              ...item,
+              verdicts: afterVerdicts,
+              state: afterState,
+              titles: titlesOf(after),
+              variantLabels: variantLabelsOf(after),
+            };
+          }
         }
         items = [...items, item];
       }
       if (!isCurrent()) return;
-      setState({ status: 'ready', items });
+      setState({ status: 'ready', items, unsettled });
       if (appliedCount > 0) {
         toast({
           title: `${appliedCount} ${appliedCount === 1 ? 'change' : 'changes'} from your store applied`,
@@ -346,6 +381,11 @@ export function useConnectorChanges(connectionId: string | null) {
   const afterApply = async (item: ReviewItem, result: ApplyResult) => {
     if (result.ok) {
       toast({ title: 'Listing updated from your store' });
+    } else if (result.reason === 'partial') {
+      toast({
+        title: 'Listing updated from your store',
+        description: 'Some photos were not added because the listing holds as many as it can.',
+      });
     } else if (result.reason === 'failed') {
       toast({
         variant: 'error',

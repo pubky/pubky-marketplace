@@ -8,10 +8,6 @@ export type FollowedGroups = { readonly content: boolean; readonly price: boolea
 
 export const NO_FOLLOWED_GROUPS: FollowedGroups = { content: false, price: false, variants: false };
 
-export function anyGroupFollowed(follows: FollowedGroups): boolean {
-  return follows.content || follows.price || follows.variants;
-}
-
 /** The fields the editor rebuilds from its form on every save. */
 export type EditedListingFields = {
   readonly title: string;

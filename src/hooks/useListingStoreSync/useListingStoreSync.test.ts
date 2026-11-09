@@ -4,7 +4,7 @@ import { ConnectorsController } from '@/controllers/connectors/connectors';
 import type { ConnectorSync } from '@/libs/commerce/connectors';
 import { toast } from '@/molecules/Toaster/toast';
 import { recordedSync } from '@/test-utils/connector-changes';
-import { connectorRefusal } from '@/test-utils/connector-errors';
+import { bareHttpFailure, connectorRefusal } from '@/test-utils/connector-errors';
 import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { useListingStoreSync } from './useListingStoreSync';
 
@@ -212,13 +212,36 @@ describe('useListingStoreSync', () => {
     expect(toast).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' }));
   });
 
-  it('ends ready with nothing followed when the connections cannot be read', async () => {
-    vi.mocked(ConnectorsController.fetchConnections).mockRejectedValue(connectorRefusal('connectors_disabled', 404));
+  it('ends ready with nothing followed on a server with no store connections or without a session', async () => {
+    vi.mocked(ConnectorsController.fetchConnections).mockRejectedValueOnce(
+      connectorRefusal('connectors_disabled', 404),
+    );
+    const first = renderHook(() => useListingStoreSync('boots_01'));
+    await waitFor(() => expect(first.result.current.ready).toBe(true));
+    expect(first.result.current.syncs).toEqual([]);
+    expect(first.result.current.failed).toBe(false);
 
+    vi.mocked(ConnectorsController.fetchConnections).mockRejectedValueOnce(
+      connectorRefusal('marketplace_session_required', 401),
+    );
+    const second = renderHook(() => useListingStoreSync('boots_01'));
+    await waitFor(() => expect(ConnectorsController.fetchConnections).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(second.result.current.ready).toBe(true));
+  });
+
+  it('keeps the editor not ready when the lookup fails for any other reason, and asks again on retry', async () => {
+    vi.mocked(ConnectorsController.fetchConnections).mockRejectedValueOnce(bareHttpFailure(503));
     const { result } = renderHook(() => useListingStoreSync('boots_01'));
 
-    await waitFor(() => expect(result.current.ready).toBe(true));
+    await waitFor(() => expect(result.current.failed).toBe(true));
+    expect(result.current.ready).toBe(false);
     expect(result.current.syncs).toEqual([]);
+
+    act(() => result.current.retry());
+
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.failed).toBe(false);
+    expect(result.current.syncs).toHaveLength(1);
   });
 
   it('does nothing while the store sync switch is off', () => {

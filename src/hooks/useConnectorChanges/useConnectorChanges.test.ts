@@ -153,7 +153,7 @@ describe('useConnectorChanges', () => {
 
     expect(rig.listings.get('boots_01')?.sale).toMatchObject({ unitPrice: { amountMinor: 13000 } });
     expect(rig.log.map((entry) => entry.split(':')[0])).toEqual(['write', 'resolve']);
-    await waitFor(() => expect(result.current.state).toEqual({ status: 'ready', items: [] }));
+    await waitFor(() => expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 0 }));
   });
 
   it('only resolves a change whose listing already equals the proposal', async () => {
@@ -194,7 +194,7 @@ describe('useConnectorChanges', () => {
 
     expect(rig.writes).toEqual([]);
     expect(rig.log).toEqual([expect.stringMatching(/^resolve:.*:dismissed$/)]);
-    await waitFor(() => expect(result.current.state).toEqual({ status: 'ready', items: [] }));
+    await waitFor(() => expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 0 }));
   });
 
   it("detaches a listing's field from the store, then reads the changes again", async () => {
@@ -507,6 +507,56 @@ describe('useConnectorChanges', () => {
     expect(rig.listings.get('boots_01')?.title).toBe('Trail Boots II');
     expect(rig.pending).toHaveLength(1);
     expect(item?.failure).toBe('photos');
+  });
+
+  it('writes what fits but keeps a change pending when store photos found no room, and shows what is left', async () => {
+    const rig = setup();
+    const hand = (id: string) => ({ ...createCommerceListingFixture().media[0]!, id });
+    rig.listings.set(
+      'boots_01',
+      bootsFollowingTheStore({ media: Array.from({ length: 12 }, (_, i) => hand(`hand_${i}`)) }),
+    );
+    const content = recordedChange('content');
+    if (content.fieldGroup !== 'content') throw new Error('not content');
+    rig.pending = [
+      linked({
+        ...content,
+        proposed: { ...content.proposed, imageUrls: [content.proposed.imageUrls[0]!, PHOTO_2] },
+      } as ConnectorProductChange),
+    ];
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const items = await ready(result);
+
+    expect(rig.listings.get('boots_01')?.title).toBe('Trail Boots II');
+    expect(rig.pending).toHaveLength(1);
+    expect(items.map((item) => [item.change.fieldGroup, item.state])).toEqual([['content', 'unsupported']]);
+    expect(runImportImageBatches).not.toHaveBeenCalled();
+  });
+
+  it('keeps a price change with no usable variant link in the review instead of resolving it unapplied', async () => {
+    const rig = setup();
+    const price = recordedChange('price');
+    rig.pending = [{ ...price, listings: [{ ...price.listings[0]!, variants: [] }] } as ConnectorProductChange];
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const [item] = await ready(result);
+
+    expect(item?.state).toBe('unsupported');
+    expect(rig.log).toEqual([]);
+  });
+
+  it('counts a change it could not confirm against the homeserver, instead of showing an empty review', async () => {
+    const rig = setup(recordedChange('content'));
+    rig.cache.set('boots_01', bootsFollowingTheStore({ title: 'Trail Boots II', description: 'Waterproof now.' }));
+    vi.mocked(CommerceController.refreshListing).mockRejectedValueOnce(new Error('offline'));
+    vi.mocked(CommerceController.isListingConfirmedRemoved).mockResolvedValueOnce(false);
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    await waitFor(() => expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 1 }));
+
+    expect(rig.pending).toHaveLength(1);
+    expect(rig.log).toEqual([]);
   });
 
   it('says nothing when the server has no store connections', async () => {

@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
-import {
-  anyGroupFollowed,
-  type EditedListingFields,
-  keepFollowedFields,
-  NO_FOLLOWED_GROUPS,
-} from './listing-followed-fields';
+import { type EditedListingFields, keepFollowedFields, NO_FOLLOWED_GROUPS } from './listing-followed-fields';
 
 const usd = (amountMinor: number) => ({ amountMinor, currency: 'USD', exponent: 2 });
 
@@ -111,12 +106,5 @@ describe('keepFollowedFields', () => {
     expect(result.sale).toEqual(record.sale);
     expect(result.variants[1]?.priceOverride).toEqual(usd(20000));
     expect(result.variants.map(({ quantity }) => quantity)).toEqual([9, 8]);
-  });
-});
-
-describe('anyGroupFollowed', () => {
-  it('is true when one part follows', () => {
-    expect(anyGroupFollowed(NO_FOLLOWED_GROUPS)).toBe(false);
-    expect(anyGroupFollowed({ content: false, price: true, variants: false })).toBe(true);
   });
 });

@@ -9,8 +9,10 @@ import {
   type ConnectorSync,
   type ConnectorSyncDirection,
   type ConnectorSyncGroup,
+  isConnectorsUnavailableError,
   normalizeShopifyDomain,
 } from '@/libs/commerce/connectors';
+import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import { toast } from '@/molecules/Toaster/toast';
 import { SYNC_GROUP_LABELS } from '@/pipes/commerce/connector-change-copy';
 import type { FollowedGroups } from '@/pipes/commerce/listing-followed-fields';
@@ -64,22 +66,26 @@ function connectionDirection(sync: ConnectorSync, group: ConnectorSyncGroup): Co
  * Whether a listing follows each connected store it is linked to, for its title and photos, price and
  * variants, so the editor can show those fields read-only. A listing follows a connection's setting unless
  * the seller overrides it for this listing. A part follows when any store it is linked to says so. `ready`
- * is false until the stores have been asked, so the editor does not save before it knows what is read-only;
- * a listing no store is linked to, a server with no store connections and a failed lookup all end as ready
- * with nothing followed (a later collision with the store is a conflict in the review, never a lost edit).
- */
+ * is false until the stores have been asked, so the editor does not save before it knows what is read-only.
+ * A listing no store is linked to, a server with no store connections and a missing marketplace session
+ * (which the publish guards already hold) end as ready with nothing followed. Any other failed lookup ends
+ * as `failed`: the editor keeps the save held and offers `retry`, because saving without knowing could
+ * publish a field that follows the store. */
 export function useListingStoreSync(listingId: string) {
   const sellerPubky = useAuthStore((auth) => auth.currentUserPubky);
   const marketplaceSession = useCommerceStore((commerce) => commerce.marketplaceSession);
   const enabled = getStoreSyncEnabled() && isDurableCommerceMode(getCommerceAdapterMode()) && Boolean(sellerPubky);
   const [linked, setLinked] = useState<Linked[]>([]);
   const [asked, setAsked] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [saving, setSaving] = useState<string | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
     let current = true;
     setAsked(false);
+    setFailed(false);
     void (async () => {
       try {
         const connections = (await ConnectorsController.fetchConnections()).filter(
@@ -98,8 +104,11 @@ export function useListingStoreSync(listingId: string) {
           });
         }
         if (current) setLinked(found);
-      } catch {
-        if (current) setLinked([]);
+      } catch (error) {
+        if (current) {
+          setLinked([]);
+          setFailed(!isConnectorsUnavailableError(error) && !isMarketplaceSessionRequiredError(error));
+        }
       } finally {
         if (current) setAsked(true);
       }
@@ -107,7 +116,7 @@ export function useListingStoreSync(listingId: string) {
     return () => {
       current = false;
     };
-  }, [enabled, listingId, sellerPubky, marketplaceSession]);
+  }, [enabled, listingId, sellerPubky, marketplaceSession, attempt]);
 
   const syncs: ListingStoreSync[] = linked.map((entry) => ({
     connectionId: entry.connection.id,
@@ -156,5 +165,13 @@ export function useListingStoreSync(listingId: string) {
     }
   };
 
-  return { ready: !enabled || asked, syncs, follows, saving, toggleOverride };
+  return {
+    ready: !enabled || (asked && !failed),
+    failed,
+    retry: () => setAttempt((count) => count + 1),
+    syncs,
+    follows,
+    saving,
+    toggleOverride,
+  };
 }

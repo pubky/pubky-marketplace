@@ -744,7 +744,13 @@ export function MarketplaceListingForm({
               size="sm"
               variant="secondary"
               className="shrink-0 rounded-full"
-              disabled={isPublishing || followsVariants || saleFormat === 'auction' || variants.fields.length >= 100}
+              disabled={
+                isPublishing ||
+                followsVariants ||
+                followsPrice ||
+                saleFormat === 'auction' ||
+                variants.fields.length >= 100
+              }
               onClick={() =>
                 variants.append({
                   sku: '',
@@ -853,7 +859,7 @@ export function MarketplaceListingForm({
                     variant="ghost"
                     className="absolute top-2 right-2 rounded-full"
                     aria-label={`Remove variant ${index + 1}`}
-                    disabled={isPublishing || followsVariants}
+                    disabled={isPublishing || followsVariants || followsPrice}
                     onClick={() => variants.remove(index)}
                   >
                     <Trash2 className="size-4" />

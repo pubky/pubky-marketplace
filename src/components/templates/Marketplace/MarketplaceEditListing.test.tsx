@@ -17,6 +17,8 @@ const editOptions = vi.hoisted(() => ({ value: undefined as unknown }));
 const storeSync = vi.hoisted(() => ({
   value: {
     ready: true,
+    failed: false,
+    retry: vi.fn(),
     syncs: [] as unknown[],
     follows: { content: false, price: false, variants: false },
     saving: null,
@@ -94,6 +96,8 @@ describe('MarketplaceEditListing delete', () => {
     router.push.mockClear();
     storeSync.value = {
       ready: true,
+      failed: false,
+      retry: vi.fn(),
       syncs: [],
       follows: { content: false, price: false, variants: false },
       saving: null,
@@ -201,6 +205,18 @@ describe('MarketplaceEditListing store sync', () => {
     render(<MarketplaceEditListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots" />);
 
     expect(formProps.value.publishGuardReady).toBe(false);
+  });
+
+  it('says saving is paused when the store link could not be checked, and offers to try again', () => {
+    const retry = vi.fn();
+    storeSync.value = { ...storeSync.value, ready: false, failed: true, retry };
+
+    render(<MarketplaceEditListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots" />);
+
+    expect(screen.getByTestId('edit-listing-store-sync-failed')).toHaveTextContent('Saving is paused');
+    expect(formProps.value.publishGuardReady).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(retry).toHaveBeenCalledTimes(1);
   });
 
   it('puts the form back to the published values when a part follows the store again, and only then', async () => {
