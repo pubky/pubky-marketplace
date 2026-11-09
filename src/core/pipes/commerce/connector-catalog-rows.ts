@@ -122,21 +122,33 @@ export function connectorStoreCurrency(products: readonly ConnectorCatalogProduc
   return null;
 }
 
-function optionsOf(product: ConnectorCatalogProduct, variant: ConnectorCatalogVariant): Record<string, string> {
+/**
+ * The option choices a store variant becomes on a listing variant (`Size: M`). A Shopify product with no
+ * options has one variant titled "Default Title", which carries none.
+ */
+export function storeVariantOptions(
+  variantCount: number,
+  optionValues: readonly { readonly name: string; readonly value: string }[],
+): Record<string, string> {
   const isShopifyDefault =
-    product.variants.length === 1 &&
-    variant.optionValues.length === 1 &&
-    variant.optionValues[0]?.name === 'Title' &&
-    variant.optionValues[0]?.value === 'Default Title';
+    variantCount === 1 &&
+    optionValues.length === 1 &&
+    optionValues[0]?.name === 'Title' &&
+    optionValues[0]?.value === 'Default Title';
   if (isShopifyDefault) return {};
   const options: Record<string, string> = {};
-  for (const { name, value } of variant.optionValues) {
+  for (const { name, value } of optionValues) {
     if (name.trim() !== '' && value.trim() !== '') options[name.trim()] = value.trim();
   }
   return options;
 }
 
-function imagesOf(urls: readonly string[], label: string, losses: ImportLoss[]): readonly SourceImage[] {
+function optionsOf(product: ConnectorCatalogProduct, variant: ConnectorCatalogVariant): Record<string, string> {
+  return storeVariantOptions(product.variants.length, variant.optionValues);
+}
+
+/** The photo links a listing can use, each once and as a normalised secure address; `invalid` counts the rest. */
+export function secureImageUrls(urls: readonly string[]): { readonly valid: string[]; readonly invalid: number } {
   const seen = new Set<string>();
   const valid: string[] = [];
   let invalid = 0;
@@ -156,6 +168,11 @@ function imagesOf(urls: readonly string[], label: string, losses: ImportLoss[]):
       valid.push(parsed.href);
     }
   }
+  return { valid, invalid };
+}
+
+function imagesOf(urls: readonly string[], label: string, losses: ImportLoss[]): readonly SourceImage[] {
+  const { valid, invalid } = secureImageUrls(urls);
   if (invalid > 0) {
     losses.push(
       loss(
