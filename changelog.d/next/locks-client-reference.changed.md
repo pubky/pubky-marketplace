@@ -1,0 +1,1 @@
+A paid digital purchase now counts only for the order it was paid for. The Shop sends each payment its own reference to the Lock Server, and the order is confirmed only when the completed Lock Server task carries that reference, so a task completed for another order or lock cannot unlock it.

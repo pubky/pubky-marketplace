@@ -1832,26 +1832,6 @@ export class CommerceController {
     );
   }
 
-  static async submitLocksPaykitProof({
-    creatorPubky,
-    bundleId,
-    lockResource,
-    criterionId,
-  }: {
-    creatorPubky: unknown;
-    bundleId: unknown;
-    lockResource: unknown;
-    criterionId: unknown;
-  }) {
-    return await CommerceApplication.submitLocksPaykitProof({
-      creatorPubky: CommerceRecordNormalizer.pubky(creatorPubky),
-      readerPubky: this.getCurrentUserPubky(),
-      bundleId: CommerceRecordNormalizer.entityId(bundleId),
-      lockResource: CommerceRecordNormalizer.lockResource(lockResource),
-      criterionId: CommerceRecordNormalizer.entityId(criterionId),
-    });
-  }
-
   /**
    * Starts (or retries) the real Locks/Paykit payment for one of the current
    * user's orders. The order, payment, and digital lock come from projections

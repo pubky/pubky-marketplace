@@ -55,6 +55,15 @@ const lifecycleSchema = z.object({
   status_message: z.string().nullable().optional(),
   admission_deadline_at: z.string().nullable().optional(),
   terminal_reason: z.string().nullable().optional(),
+  // Lock Servers from v0.1.1-rc2 echo the proof bundle's `client_reference` with
+  // the lock terms the task verifies (pubky/locks#52); older ones omit it.
+  client_binding: z
+    .object({
+      client_reference: z.string(),
+      pubky_lock_resource: z.string(),
+      criterion_ids: z.array(z.string()),
+    })
+    .nullish(),
 });
 
 const accessCredentialSchema = z.object({
@@ -68,6 +77,31 @@ const frontendSessionSchema = z.object({
 });
 
 export type LocksVerificationLifecycle = z.infer<typeof lifecycleSchema>;
+
+const MAX_CLIENT_REFERENCE_BYTES = 64;
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/u;
+
+/**
+ * The Lock Server accepts a `client_reference` of 1 to 64 UTF-8 bytes without
+ * control characters and stores it verbatim (pubky/locks#52).
+ */
+export function isValidLocksClientReference(value: string): boolean {
+  return (
+    value.length > 0 &&
+    new TextEncoder().encode(value).length <= MAX_CLIENT_REFERENCE_BYTES &&
+    !CONTROL_CHARACTERS.test(value)
+  );
+}
+
+/**
+ * Whether the task carries `clientReference`. The transaction service confirms
+ * a completed task only when its echoed binding equals the reference it minted
+ * for the payment, so a task without it can never pay the order. A Lock Server
+ * older than v0.1.1-rc2 echoes no binding at all.
+ */
+export function locksTaskCarriesClientReference(task: LocksVerificationLifecycle, clientReference: string): boolean {
+  return task.client_binding?.client_reference === clientReference;
+}
 export type LocksAccessCredential = z.infer<typeof accessCredentialSchema>;
 
 /**
@@ -128,19 +162,43 @@ export class LocksGatewayService {
     }
   }
 
+  /**
+   * Submits the Paykit proof bundle for one payment. `clientReference` is the
+   * value the transaction service minted for that payment in
+   * `payment.prepare_locks`; the Lock Server stores it with the task and echoes
+   * it, so the service can confirm only the task submitted for that payment.
+   * A Lock Server older than v0.1.1-rc2 refuses the unknown field outright
+   * (`deny_unknown_fields`, 400 `invalid_request`), so no task or payment
+   * request exists. Should a server accept the field without binding it, this
+   * fails when the answer does not echo the reference, and the buyer must not
+   * pay a request the service will refuse to confirm.
+   */
   static async submitPaykitProof({
     creatorPubky,
     readerPubky,
     bundleId,
     lockResource,
     criterionId,
+    clientReference,
   }: {
     creatorPubky: string;
     readerPubky: string;
     bundleId: string;
     lockResource: string;
     criterionId: string;
+    clientReference: string;
   }): Promise<LocksVerificationLifecycle> {
+    if (!isValidLocksClientReference(clientReference)) {
+      throw Err.validation(
+        ValidationErrorCode.INVALID_INPUT,
+        'The payment reference is not valid for the Lock Server.',
+        {
+          service: ErrorService.Locks,
+          operation: 'submitPaykitProof',
+          context: { clientReferenceValid: false },
+        },
+      );
+    }
     if (!lockResource.startsWith(`pubky://${creatorPubky}/`)) {
       throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Locks resource owner does not match the creator.', {
         service: ErrorService.Locks,
@@ -149,12 +207,13 @@ export class LocksGatewayService {
       });
     }
     const url = `${getLocksUrl()}/proof-bundles`;
-    return await this.postLifecycle(url, {
+    const lifecycle = await this.postLifecycle(url, {
       submitted_proof_bundle: {
         version: 1,
         bundle_id: bundleId,
         pubky_lock_resource: toLocksResource(lockResource),
         reader_public_key: withPubkyPrefix(readerPubky),
+        client_reference: clientReference,
         proofs: [
           {
             criterion_id: criterionId,
@@ -164,6 +223,14 @@ export class LocksGatewayService {
         ],
       },
     });
+    if (!locksTaskCarriesClientReference(lifecycle, clientReference)) {
+      throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'The Lock Server did not bind the payment reference.', {
+        service: ErrorService.Locks,
+        operation: 'submitPaykitProof',
+        context: { clientBindingEchoed: lifecycle.client_binding != null },
+      });
+    }
+    return lifecycle;
   }
 
   static async lookupVerification(creatorPubky: string, bundleId: string): Promise<LocksVerificationLifecycle> {
