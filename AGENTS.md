@@ -1,11 +1,32 @@
-# Pubky App
+# Pubky Market
 
-Decentralized social app. Tech stack in `package.json`.
-Local-first architecture with Dexie (IndexedDB), Zustand, Next.js, Tailwind CSS, Shadcn UI.
+Peer-to-peer marketplace client built on Pubky App, with standalone and embedded Shop modes. Tech stack and versions
+live in `package.json`: Next.js App Router, React with the React Compiler, TypeScript, Tailwind + Shadcn UI, Zustand,
+Dexie and TanStack Query. This file is the entry point for Claude Code, Codex and Cursor; `docs/` is the canonical
+source for project conventions and takes precedence over summaries here. Start with `docs/development-workflow.md`.
+
+## Commands
+
+Use Node 24 (`.nvmrc`) and `npm ci`. Read `docs/ecommerce/onboarding.md` for setup and
+`docs/ecommerce/RUNNING.md` for backend modes and suite prerequisites.
+
+| Task                          | Command                                                                       |
+| ----------------------------- | ----------------------------------------------------------------------------- |
+| Dev server                    | `npm run dev`                                                                 |
+| Format, lint, types           | `npm run format:check`, `npm run lint`, `npm run typecheck`                   |
+| Unit tests                    | `npm test`; one file: `npm test -- <path>`                                    |
+| Sandbox service tests         | `npm run test:marketplace`                                                    |
+| Pre-push gate                 | `bash scripts/prepush.sh` (fast by default)                                   |
+| Full/release gate             | `PREPUSH_FULL=1 bash scripts/prepush.sh`                                      |
+| Linux VRT                     | `npm run test:vrt` or `bash scripts/vrt-linux.sh <spec>` (Docker)             |
+| Production build              | `npm run build`                                                               |
+| Synthetic launch-critical E2E | `LAUNCH_E2E_MODE=synthetic bash scripts/ci-launch-e2e.sh` (see prerequisites) |
+
+The pre-commit hook runs `lint-staged` and typecheck. Keep the active Market pre-push gate, Linux VRT and browser CI
+checks; App's disabled pre-push hook and different VRT workflow are not replacements. Live signer/backend/payment
+verification has separate prerequisites and authorization; a synthetic pass is not a live payment result.
 
 ## Architecture
-
-Layered architecture in `src/core/` (see `docs/architecture.md` for full details):
 
 ```
 UI (user actions) → Controllers → Application → Services → Models
@@ -13,72 +34,110 @@ Coordinators (system) ↗            ↓              ↓
                        Stores     Pipes         Database
 ```
 
-Import modules through the path aliases in `tsconfig.json` (for example `@/hooks/*`, `@/controllers/*`, `@/services/*`, `@/models/*`, `@/stores/*`). Keep imports pointed at concrete source modules rather than aggregate re-export files.
+Hard constraints (`docs/architecture.md`):
 
-### Hard constraints
+- Controllers never call Services directly; go through Application.
+- Coordinators never call Application; go through Controllers.
+- Application never accesses Stores; controllers own UI state orchestration.
+- Pipes are pure: no IO or side effects. Services never call up into Application or Controllers.
+- Only PostApplication, NotificationApplication, BootstrapApplication, MigrationApplication, HotApplication,
+  PostStreamApplication and TtlApplication may call other Applications. Maximum depth is 1, except
+  PostApplication/NotificationApplication/TtlApplication → PostStreamApplication → FileApplication may reach depth 2;
+  no cycles.
+- HomeserverService may read the current auth store for session, capability/ownership and logout checks. This narrow
+  read-only exception does not permit service writes to stores or general access to business/UI state.
 
-- Controllers NEVER call Services directly — go through Application
-- Coordinators NEVER call Application — go through Controllers
-- Application NEVER accesses Stores — only Controllers manage stores
-- Pipes are pure — NO IO, NO side effects
-- Only PostApplication, NotificationApplication, BootstrapApplication, MigrationApplication, HotApplication, PostStreamApplication, TtlApplication may call other Applications (max depth 1 by default; only PostApplication/NotificationApplication/TtlApplication → PostStreamApplication → FileApplication attachment persistence may reach depth 2; no cycles)
+Use concrete `tsconfig.json` aliases: `@/atoms/Button/Button`, `@/hooks/*`, `@/controllers/*`, `@/application/*`,
+`@/services/*`, `@/models/*`, `@/pipes/*`, `@/stores/*`, `@/config/<module>`, `@/app/routes`, `@/icons`, `@/libs/*`.
+No aggregate re-export `index.ts` files under components; no `src/config/index.ts`.
 
-### Controller naming
+Controller names describe IO: `fetch*` network only, `get*` local only, `getMany*` bulk local returning `Map<Pubky, T>`,
+`getOrFetch*` local then network, `getMany*OrFetch` bulk local then fetch missing, `subscribe*` long-lived streams,
+`commitCreate* | commitUpdate* | commitDelete*` optimistic writes and sync.
 
-- `fetch*` — network only, no cache
-- `get*` — local only
-- `getMany*` — bulk local reads, returns `Map<Pubky, T>`
-- `getOrFetch*` — local first, network fallback
-- `getMany*OrFetch` — bulk local first, fetch missing (e.g., `getManyTagsOrFetch`)
-- `commitCreate*` / `commitUpdate*` / `commitDelete*` — optimistic local write + network sync
-- `subscribe*` — long-lived live stream subscription (e.g., homeserver event streams), not a one-shot fetch
+## Non-negotiables
 
-### Errors
-
-Use `Err.*` factories (never raw `Error`). Factories log automatically — don't double-log. See `docs/error-handling.md`.
-
-## Key conventions
-
-- Composite post IDs: `author:postId` format
-- Local-first writes: Dexie first, homeserver sync in background
-- Shadcn First: always check for Shadcn equivalent before building custom UI
-- Atomic design: atoms → molecules → organisms → templates
-- Components: do not add `index.ts` / `index.tsx` under `src/components` that only re-export children; import concrete component files via `@/atoms/*`, `@/molecules/*`, `@/organisms/*`, or `@/templates/*` (for example `@/atoms/Button/Button`)
-- Config: import from `@/config/<module>` (concrete files under `src/config/`). There is no aggregate `src/config/index.ts`.
-- App routes: import route enums, maps, and helpers from `@/app/routes` (`src/app/routes.ts`); prefer that over route-only imports through a re-export entrypoint.
-- Z-index scale: -z-10, z-10, z-30, z-40, z-50, z-60 (see `docs/z-index.md`)
-- **Icons**: stock Lucide from `lucide-react`; custom/brand SVG components from `@/icons` (`src/libs/icons/icons.tsx` via `tsconfig` path alias). URL→icon helpers (`getIconFromUrl`) live in `@/libs/utils/urlToIcon` — see `docs/components.md` — _Icons (Lucide and custom)_.
-- **Visual regression tests (VRT)**: surfaces with a sibling `*.vrt.test.tsx` (e.g. `src/components/templates/Feed/Home/Home.vrt.test.tsx`) have a pixel baseline checked in under `__screenshots__/`. When you change a UI surface, check whether a VRT exists next to it. If yes, the baseline likely needs regenerating — surface that to the user before reporting the task done. If you're touching a template-level surface that has no VRT yet, mention adding one as an option. The VRT harness lives in `src/test-utils/vrt.tsx`; fixtures in `src/test/fixtures/`; deterministic mocks in `src/test/mocks/`.
-- **Forms (standard)**: build new forms with `react-hook-form` + `zod` (via `@hookform/resolvers/zod`). Wrap field components with `Controller` (use the `ControlledInputField` / `ControlledTextareaField` molecules where applicable). Keep the schema + types + defaults in a sibling `*.types.ts` file next to the hook (see `src/hooks/useCreateCollection/useCreateCollection.types.ts` for the canonical layout). Components must not call controllers directly — wrap the mutation in a hook (`use{Action}Form` or `use{Verb}{Entity}`) that returns `{ form, submit, reset, ... }`, where `submit()` returns `Promise<boolean>` so the caller can decide what to do on success (a form hook may instead return the created entity id as `Promise<string | null>` when the caller needs to navigate to it, e.g. `useCreateCollection`). Non-text inputs (file pickers, rich text, etc.) live in their own dedicated hooks (e.g. `useCoverImagePicker`) and the form hook composes them. Schemas carry their user-facing validation messages as literal US English strings.
-- **Memoization**: do not add `useCallback` / `useMemo` — the React Compiler (`reactCompiler: true` in `next.config.ts`) handles memoization. Reach for them only after profiling proves the compiler missed something.
+- Errors: use `Err.*` factories; no raw `Error` or log-then-throw. Follow documented boundary exceptions in
+  `docs/error-handling.md`.
+- Local-first reads in hooks: use `useLocalFirstQuery` for the standard local-read/network-fallback pattern. Keep network,
+  TanStack Query and retry logic outside `useLiveQuery`. Purely local reactive reads still use `useLiveQuery`.
+  `docs/local-first.md` owns the detailed contract and limitations.
+- Local-first writes: Dexie first, then homeserver sync, with rollback and affected TTL updates. Preserve dependency
+  persistence order and use `buildCompositeId` / `parseCompositeId` for composite post IDs. Commerce transaction authority
+  belongs to its configured backend; do not substitute a local optimistic record for an authoritative receipt or order.
+- Shadcn first, atomic tiers atoms → molecules → organisms → templates, existing design tokens and the fixed z-index
+  scale `-z-10, z-10, z-30, z-40, z-50, z-60`. See `docs/components.md` and `docs/z-index.md`.
+- When matching Figma navigation/icons, confirm active versus inactive states from the Shadcn button variants
+  (Selected/Default background, border and shadow), not just another surface or the parent frame.
+- Stock Lucide icons come from `lucide-react`; custom/brand SVGs from `@/icons`; URL-to-icon helpers from
+  `@/libs/utils/urlToIcon`. Do not copy SVGs into individual features.
+- No `useCallback` / `useMemo` without profiler evidence; the React Compiler handles memoization.
 - **Toasts**: use `toast()` from `@/molecules/Toaster/use-toast` with `variant` (`default` | `error` | `warning` | `info`). No `showErrorToast` wrappers or `className` destructive hacks. See `docs/components.md` — _Toasts_.
-- **Testing**: behaviour and prop contracts in unit tests — for atoms/primitives assert the prop→element/class mapping directly (`as="h2"` renders an `h2`, `variant="destructive"` sets `data-variant`), default variant included; appearance in VRT. No snapshot tests. See `docs/component-testing.md`.
+- Forms use react-hook-form + zod in a form hook; schema/types/defaults go in a sibling `*.types.ts`. Components call the
+  hook, not mutation controllers directly. Preserve the existing submit result contract (`boolean` or a created id).
+  Use Zod v4 `z.url()`, not deprecated `z.string().url()`.
+- Copy is inline US English. Do not restore removed i18n infrastructure or introduce a replacement message registry.
+- Bug fixes must preserve existing visible behavior. `src/config/*` limits are product-wide policy; do not tune one for
+  a local fix. Preserve broader active prefixes when navigation links to a default child route.
+- Database schema, indexes, versions and persisted keys need explicit review. Follow the actual migration/reset paths in
+  `docs/data-patterns.md`; do not import App's different database-version assumptions. Register persisted store keys in
+  `src/core/stores/persistedKeys.ts` and preserve the Shop storage namespace.
+- Generated assets and lockfiles are produced by their tools, not edited by hand. Keep unrelated CI, dependency and
+  deployment changes out of feature work.
+- Build-time `Env` and runtime `PUBKY_RUNTIME_*` configuration have different lifetimes. Use the documented getters,
+  base-path/public-path helpers and storage namespace; never put secrets in public runtime config. `docs/environment.md`.
+- Observability uses the `Err.*` capture funnel and documented Sentry boundaries; never attach raw user data.
+  `docs/sentry.md` owns filtering and privacy rules.
+- Unit tests cover behavior and prop contracts; VRT covers appearance. No classic snapshot tests; no test escape casts
+  `as any` or `as unknown as T` outside the designated typed helpers. See `docs/component-testing.md`.
+
+## Before you edit, read
+
+- Any change → `docs/development-workflow.md` and `docs/commit-message.md`.
+- `src/core/**` → `docs/architecture.md`, `docs/local-first.md`, `docs/data-patterns.md`, `docs/error-handling.md`.
+- `src/hooks/**` → `docs/local-first.md`, `docs/data-patterns.md`, `docs/components.md` (Forms).
+- `src/components/**`, `src/app/**` → `docs/components.md`, `docs/z-index.md`, `docs/skeleton-architecture.md`,
+  `docs/component-testing.md`.
+- VRT changes → `docs/visual-regression-testing.md`; onboarding/release gates → `docs/ecommerce/onboarding.md`,
+  `docs/ecommerce/release.md`.
+- Env/runtime config, base paths or persistence namespaces → `docs/environment.md`, `docs/launch/shop-embedding.md`.
+- Authentication, session lifecycle, approvals or embedded handoff → `docs/launch/grant-auth-session.md`,
+  `docs/launch/shop-embedding.md` and the current implementation. Historical cookie/vibe docs are not current recipes.
+- Commerce/backend integration → `docs/ecommerce/RUNNING.md`, `docs/ecommerce/status.md`, relevant domain docs and ADRs.
+- Chat → `docs/chat/README.md`; observability → `docs/sentry.md`.
+- Service worker/PWA → existing `src/sw.ts`, `next.config.ts`, `docs/environment.md` and `docs/launch/shop-embedding.md`;
+  preserve Market standalone/embedded differences. The implementation uses Serwist.
+
+## How to work here
+
+1. Restate the requested behavior, find the nearest existing feature, trace the path and identify the affected layers.
+2. Reuse before creating: search components, hooks, libs, core utilities and config for an existing equivalent.
+3. Make the smallest coherent change. No unrelated cleanup, renames, reformatting, dependency swaps or pattern migrations.
+4. Run the checks appropriate to the change (`docs/development-workflow.md`), including the existing pre-push gate.
+5. Read your own diff for regressions, boundary violations, unexplained exceptions and stale documentation.
+6. Call out schema/migration, product-limit, architecture and VRT-baseline decisions. Do not silently expand the scope.
+
+Definition of done: the correct layers and existing primitives are used; naming/imports follow conventions; errors do not
+log twice; visible behavior is preserved; relevant tests, lint and typecheck pass; pre-push evidence and any skipped
+checks are reported honestly; VRT/ADR/schema/config impacts are explicit; docs describe the resulting implementation.
+
+Commits, branches and PRs follow `docs/commit-message.md`. Use the actual intended base (`master` or an explicitly selected
+train); never assume `dev`. Keep PRs draft unless requested otherwise. Release/train rules remain in
+`docs/ecommerce/release.md`; changing agent instructions does not authorize deployment or a merge.
 
 ## People and names
 
-- In code, comments, docs, fixtures, commit messages and PR text, refer to people only by GitHub handle. Never use real names.
-- Do not attribute opinions, decisions or personal matters to people.
-- Test fixtures use clearly fictional names (`Alice Example`, `Bob Example`).
-- This is a public repo and history is kept forever: a scrubbed name stays in earlier commits, so get it right the first time.
+Use GitHub handles for real people and clearly fictional names in test fixtures. Do not attribute opinions, decisions or
+personal matters to people. See `docs/development-workflow.md` for the full policy.
 
-## Learned User Preferences
+## Tooling map
 
-- Bug fixes must not regress existing visible functionality (e.g., reducing displayed item count from 3 to 2)
-- For icon / circular nav matching Figma, confirm active vs inactive from the Shadcn button component variants (Selected vs Default: background, border, shadow), not only the parent frame or another surface’s pattern
-
-## Learned Workspace Facts
-
-- Nav items that link to a default child route (e.g. footer Settings → `SETTINGS_ROUTES.ACCOUNT`) but must stay visually active on sibling routes under the parent (e.g. `/settings/notifications`) need active detection on a broader prefix (e.g. `activePrefix: APP_ROUTES.SETTINGS`), not only `href` or `pathname.startsWith(href + '/')`
-- Config constants in `src/config/` (e.g., `USER_LIST_TAGS_MAX_TOTAL_CHARS`, tag limits) are project-wide hard limits — do not modify them for individual component fixes
-- This project uses Zod v4 — use `z.url()` for URL validation, not the deprecated `z.string().url()`
-- PWA / service worker: Serwist via `@serwist/next` in `next.config` (core package `serwist`), not Workbox or `next-pwa`
-
-## Documentation
-
-Consult `docs/` before making changes:
-
-- `src/core/` changes → `docs/architecture.md`, `docs/local-first.md`, `docs/error-handling.md`, `docs/data-patterns.md`
-- `src/components/` changes → `docs/components.md`, `docs/z-index.md`, `docs/component-testing.md`, `docs/skeleton-architecture.md`
-- `src/libs/env/` changes → `docs/environment.md`
-- Commits → `docs/commit-message.md`
-- Architecture decisions → `docs/adr/`
+- `CLAUDE.md` imports this file. Detailed conventions live in `docs/`, not in tool-specific copies.
+- `.cursor/rules/*.mdc` and `.claude/rules/*.md` point to relevant docs for matching files. Claude adapters use plain-text
+  paths, not `@` imports. The existing Cursor toast rule retains its Market-specific instructions.
+- Shared skills live in `.agents/skills/`, with Claude symlinks in `.claude/skills/`: `pubky-code-review` and
+  `sentry-nextjs-sdk`. Cursor's `/review` entry points to the shared review skill; the Market installation-verification
+  procedure remains in `.cursor/skills/marketplace-install-verify/`.
+- Greptile configuration lives in `.greptile/config.json` and `.greptile/files.json`; keep referenced review guidance in
+  sync. Configuration is not evidence that the external review service is enabled.
+- Update canonical docs first, then their summary here and the relevant Greptile instructions. Keep adapters as pointers.

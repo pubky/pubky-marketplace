@@ -1,5 +1,7 @@
 # Architecture Decision Enforcement
 
+`docs/` is canonical. This summary and `.greptile/config.json` apply those rules during review; consult the attached per-path docs before reporting a conflict. `AGENTS.md` indexes the current workflow and Marketplace-specific contracts.
+
 ## Layer Boundary Summary
 
 Entry points (UI, Coordinators) -> Controllers -> Application -> Services -> Models
@@ -28,7 +30,7 @@ Entry points (UI, Coordinators) -> Controllers -> Application -> Services -> Mod
 ## Data Patterns
 
 - Posts use composite IDs: `author:postId`
-- Always update TTL after writes
+- Update the affected TTL rows after writes to TTL-managed entities; commerce records retain their own persistence contract
 - External data must pass through pipes before reaching controllers
 - Pipes are pure — no IO, no side effects
 
