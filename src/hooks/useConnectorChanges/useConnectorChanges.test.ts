@@ -1,0 +1,432 @@
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { CommerceController } from '@/controllers/commerce/commerce';
+import { ConnectorsController } from '@/controllers/connectors/connectors';
+import { runImportImageBatches } from '@/hooks/useImportImageUpload/runImportImageBatches';
+import type { ConnectorProductChange } from '@/libs/commerce/connectors';
+import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
+import { toast } from '@/molecules/Toaster/toast';
+import { sourceUrlHash } from '@/pipes/commerce/import-image-phase';
+import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
+import {
+  bootsFollowingTheStore,
+  RECORDED_CONNECTION_ID,
+  recordedChange,
+  withLinkedVariantIds,
+} from '@/test-utils/connector-changes';
+import { connectorRefusal } from '@/test-utils/connector-errors';
+import { useConnectorChanges } from './useConnectorChanges';
+
+const mode = vi.hoisted(() => ({ value: 'transaction-service' as string }));
+
+vi.mock('@/config/commerce', async () => {
+  const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
+  return { ...actual, getCommerceAdapterMode: () => mode.value };
+});
+
+vi.mock('@/stores/auth/auth.store', () => ({
+  useAuthStore: (selector: (state: { currentUserPubky: string }) => unknown) =>
+    selector({ currentUserPubky: 'y'.repeat(52) }),
+}));
+
+vi.mock('@/controllers/connectors/connectors', () => ({
+  ConnectorsController: { fetchChanges: vi.fn(), commitResolveChange: vi.fn(), commitListingSync: vi.fn() },
+}));
+
+vi.mock('@/controllers/commerce/commerce', () => ({
+  CommerceController: {
+    getOrFetchListingIfFound: vi.fn(),
+    refreshListing: vi.fn(),
+    isListingConfirmedRemoved: vi.fn(),
+    commitUpsertListing: vi.fn(),
+  },
+}));
+
+vi.mock('@/hooks/useImportImageUpload/runImportImageBatches', () => ({ runImportImageBatches: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
+
+const CONNECTION = RECORDED_CONNECTION_ID;
+const V1 = 'gid://shopify/ProductVariant/50001';
+const V10 = 'gid://shopify/ProductVariant/50010';
+const PHOTO_2 = 'https://cdn.shopify.com/s/files/boots-2.jpg';
+
+/** The homeserver and the service as one in-memory pair, so the hook is driven through what it reads back. */
+class Rig {
+  listings = new Map<string, CommerceListingRecord>();
+  pending: ConnectorProductChange[] = [];
+  log: string[] = [];
+  writes: CommerceListingRecord[] = [];
+  verifyWrites = true;
+
+  constructor() {
+    vi.mocked(ConnectorsController.fetchChanges).mockImplementation(async () => structuredClone(this.pending));
+    vi.mocked(ConnectorsController.commitResolveChange).mockImplementation(async (_id, change, resolution) => {
+      const found = this.pending.find(({ id }) => id === change.id);
+      if (!found) throw connectorRefusal('change_not_found', 404);
+      if (found.proposedHash !== change.proposedHash) throw connectorRefusal('change_stale', 409);
+      this.log.push(`resolve:${change.id}:${resolution}`);
+      this.pending = this.pending.filter(({ id }) => id !== change.id);
+    });
+    vi.mocked(ConnectorsController.commitListingSync).mockResolvedValue({} as never);
+    const read = async (_owner: unknown, id: unknown) => this.listings.get(String(id)) ?? null;
+    vi.mocked(CommerceController.getOrFetchListingIfFound).mockImplementation(read as never);
+    vi.mocked(CommerceController.refreshListing).mockImplementation((async (_owner: unknown, id: unknown) => {
+      const found = this.listings.get(String(id));
+      if (!found) throw new Error('not found');
+      return found;
+    }) as never);
+    vi.mocked(CommerceController.isListingConfirmedRemoved).mockImplementation(
+      (async (_owner: unknown, id: unknown) => !this.listings.has(String(id))) as never,
+    );
+    vi.mocked(CommerceController.commitUpsertListing).mockImplementation((async (input: CommerceListingRecord) => {
+      this.log.push(`write:${input.listingId}:r${input.revision}`);
+      this.writes.push(input);
+      if (this.verifyWrites) this.listings.set(input.listingId, input);
+      return { registered: true, verified: this.verifyWrites };
+    }) as never);
+  }
+}
+
+const mug = () => createCommerceListingFixture({ listingId: 'mug_01', title: 'Mug' });
+
+function linked(change: ConnectorProductChange) {
+  return withLinkedVariantIds(change, { [V1]: 'variant_01', [V10]: 'variant_01' });
+}
+
+function setup(...changes: ConnectorProductChange[]) {
+  const rig = new Rig();
+  rig.listings.set('boots_01', bootsFollowingTheStore());
+  rig.listings.set('mug_01', mug());
+  rig.pending = changes.map(linked);
+  return rig;
+}
+
+async function ready(hook: { current: ReturnType<typeof useConnectorChanges> }) {
+  await waitFor(() => expect(hook.current.state.status).toBe('ready'));
+  const state = hook.current.state;
+  if (state.status !== 'ready') throw new Error('not ready');
+  return state.items;
+}
+
+describe('useConnectorChanges', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mode.value = 'transaction-service';
+  });
+
+  it('applies store text and a product the store stopped selling on open, and holds the price for review', async () => {
+    const rig = setup(recordedChange('content'), recordedChange('price'), recordedChange('status'));
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const items = await ready(result);
+
+    expect(rig.listings.get('boots_01')).toMatchObject({
+      title: 'Trail Boots II',
+      description: 'Waterproof now.',
+      revision: 2,
+    });
+    expect(rig.listings.get('mug_01')?.state).toBe('paused');
+    expect(rig.log).toEqual([
+      expect.stringMatching(/^write:boots_01:r2$/),
+      expect.stringMatching(/^resolve:.*:applied$/),
+      expect.stringMatching(/^write:mug_01:r2$/),
+      expect.stringMatching(/^resolve:.*:applied$/),
+    ]);
+    expect(items.map((item) => [item.change.fieldGroup, item.state])).toEqual([['price', 'applicable']]);
+    expect(rig.listings.get('boots_01')?.sale).toMatchObject({ unitPrice: { amountMinor: 12500 } });
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: '2 changes from your store applied' }));
+  });
+
+  it('applies a price only when the seller taps, writing the new price before resolving', async () => {
+    const rig = setup(recordedChange('price'));
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const [item] = await ready(result);
+
+    await act(async () => result.current.apply(item!));
+
+    expect(rig.listings.get('boots_01')?.sale).toMatchObject({ unitPrice: { amountMinor: 13000 } });
+    expect(rig.log.map((entry) => entry.split(':')[0])).toEqual(['write', 'resolve']);
+    await waitFor(() => expect(result.current.state).toEqual({ status: 'ready', items: [] }));
+  });
+
+  it('only resolves a change whose listing already equals the proposal', async () => {
+    const rig = setup(recordedChange('content'));
+    rig.listings.set('boots_01', bootsFollowingTheStore({ title: 'Trail Boots II', description: 'Waterproof now.' }));
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    await ready(result);
+
+    expect(rig.writes).toEqual([]);
+    expect(rig.log).toEqual([expect.stringMatching(/^resolve:.*:applied$/)]);
+  });
+
+  it('shows a conflict and writes nothing until the seller chooses', async () => {
+    const rig = setup(recordedChange('content'));
+    rig.listings.set('boots_01', bootsFollowingTheStore({ title: 'My own title' }));
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const [item] = await ready(result);
+
+    expect(item?.state).toBe('conflict');
+    expect(rig.writes).toEqual([]);
+    expect(rig.pending).toHaveLength(1);
+
+    await act(async () => result.current.apply(item!, { takeStore: true }));
+
+    expect(rig.listings.get('boots_01')?.title).toBe('Trail Boots II');
+    expect(rig.pending).toEqual([]);
+  });
+
+  it("keeps the seller's own value by dismissing the change without a write", async () => {
+    const rig = setup(recordedChange('content'));
+    rig.listings.set('boots_01', bootsFollowingTheStore({ title: 'My own title' }));
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const [item] = await ready(result);
+
+    await act(async () => result.current.dismiss(item!));
+
+    expect(rig.writes).toEqual([]);
+    expect(rig.log).toEqual([expect.stringMatching(/^resolve:.*:dismissed$/)]);
+    await waitFor(() => expect(result.current.state).toEqual({ status: 'ready', items: [] }));
+  });
+
+  it("detaches a listing's field from the store, then reads the changes again", async () => {
+    const rig = setup(recordedChange('content'));
+    rig.listings.set('boots_01', bootsFollowingTheStore({ title: 'My own title' }));
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const [item] = await ready(result);
+
+    await act(async () => result.current.detach(item!, 'boots_01'));
+
+    expect(ConnectorsController.commitListingSync).toHaveBeenCalledWith(CONNECTION, 'boots_01', { content: 'off' });
+    expect(vi.mocked(ConnectorsController.fetchChanges).mock.calls.length).toBeGreaterThan(1);
+    expect(rig.writes).toEqual([]);
+  });
+
+  it('does not apply a proposal the service replaced after the list was read', async () => {
+    const rig = setup(recordedChange('price'));
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const [item] = await ready(result);
+    rig.pending = rig.pending.map((change) => ({ ...change, proposedHash: 'f'.repeat(64) }));
+
+    await act(async () => result.current.apply(item!));
+
+    expect(rig.writes).toEqual([]);
+    const next = await ready(result);
+    expect(next[0]?.change.proposedHash).toBe('f'.repeat(64));
+  });
+
+  it('re-reads the listing before a tap and shows a conflict when the seller edited it meanwhile', async () => {
+    const rig = setup(recordedChange('price'));
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const [item] = await ready(result);
+    const edited = bootsFollowingTheStore({
+      sale: {
+        format: 'fixed_price',
+        unitPrice: { amountMinor: 11000, currency: 'USD', exponent: 2 },
+        acceptsOffers: true,
+      },
+    });
+    rig.listings.set('boots_01', edited);
+
+    await act(async () => result.current.apply(item!));
+
+    expect(rig.writes).toEqual([]);
+    expect(rig.pending).toHaveLength(1);
+    const [now] = await ready(result);
+    expect(now?.state).toBe('conflict');
+  });
+
+  it('leaves the change pending when the write is not confirmed, and finishes it on a retry', async () => {
+    const rig = setup(recordedChange('price'));
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const [item] = await ready(result);
+    rig.verifyWrites = false;
+
+    await act(async () => result.current.apply(item!));
+
+    expect(rig.pending).toHaveLength(1);
+    expect(rig.log.some((entry) => entry.startsWith('resolve'))).toBe(false);
+    const [failed] = await ready(result);
+    expect(failed?.failure).toBe('unconfirmed');
+
+    rig.verifyWrites = true;
+    await act(async () => result.current.apply(failed!));
+
+    expect(rig.listings.get('boots_01')?.sale).toMatchObject({ unitPrice: { amountMinor: 13000 } });
+    expect(rig.pending).toEqual([]);
+  });
+
+  it('treats a write the homeserver serves back late as confirmed', async () => {
+    const rig = setup(recordedChange('price'));
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const [item] = await ready(result);
+    rig.verifyWrites = false;
+    vi.mocked(CommerceController.commitUpsertListing).mockImplementationOnce((async (input: CommerceListingRecord) => {
+      rig.listings.set(input.listingId, input);
+      return { registered: true, verified: false };
+    }) as never);
+
+    await act(async () => result.current.apply(item!));
+
+    expect(rig.pending).toEqual([]);
+  });
+
+  it('survives the service refusing the resolve as stale after the write', async () => {
+    const rig = setup(recordedChange('price'));
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const [item] = await ready(result);
+    vi.mocked(ConnectorsController.commitResolveChange).mockRejectedValueOnce(connectorRefusal('change_stale', 409));
+
+    await act(async () => result.current.apply(item!));
+
+    expect(rig.writes).toHaveLength(1);
+    expect(vi.mocked(toast).mock.calls.some(([arg]) => (arg as { variant?: string }).variant === 'error')).toBe(false);
+    await ready(result);
+  });
+
+  it('pauses a listing whose store sync is off when the product leaves the store', async () => {
+    const rig = setup(recordedChange('status'));
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    await ready(result);
+
+    expect(rig.listings.get('mug_01')?.state).toBe('paused');
+  });
+
+  it('offers to make a listing active again instead of doing it', async () => {
+    const rig = setup();
+    rig.listings.set('mug_01', createCommerceListingFixture({ listingId: 'mug_01', state: 'paused' }));
+    rig.pending = [
+      linked({
+        ...recordedChange('status'),
+        base: { available: false },
+        proposed: { available: true },
+      } as ConnectorProductChange),
+    ];
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const [item] = await ready(result);
+
+    expect(item?.state).toBe('applicable');
+    expect(rig.writes).toEqual([]);
+  });
+
+  it('keeps a change that needs the import flow, and one that cannot be applied, in the review', async () => {
+    const rig = setup();
+    const added = {
+      id: 'c-variants',
+      providerProductId: 'gid://shopify/Product/9001',
+      fieldGroup: 'variants',
+      base: { options: [], variants: [{ providerVariantId: V1, title: 'Default', sku: null, optionValues: [] }] },
+      proposed: {
+        options: [],
+        variants: [
+          { providerVariantId: V1, title: 'Default', sku: null, optionValues: [] },
+          { providerVariantId: 'gid://shopify/ProductVariant/50003', title: 'Large', sku: null, optionValues: [] },
+        ],
+      },
+      proposedHash: 'a'.repeat(64),
+      detectedAt: '2026-08-19T22:00:00.000Z',
+      updatedAt: '2026-08-19T22:00:00.000Z',
+      listings: [
+        {
+          listingId: 'boots_01',
+          direction: 'from_store',
+          variants: [{ variantId: 'variant_01', providerVariantId: V1 }],
+        },
+      ],
+    } as ConnectorProductChange;
+    const euros = linked({
+      ...recordedChange('price'),
+      id: 'c-euro',
+      proposed: { variants: [{ providerVariantId: V1, amountMinor: 1000, currency: 'EUR', exponent: 2 }] },
+    } as ConnectorProductChange);
+    rig.pending = [added, euros];
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const items = await ready(result);
+
+    expect(items.map((item) => item.state)).toEqual(['needs_import', 'unsupported']);
+    expect(rig.writes).toEqual([]);
+  });
+
+  it('uploads the photos a change adds, writes them with the listing and resolves once all of them loaded', async () => {
+    const rig = setup();
+    const content = recordedChange('content');
+    if (content.fieldGroup !== 'content') throw new Error('not content');
+    rig.pending = [
+      linked({
+        ...content,
+        proposed: { ...content.proposed, imageUrls: [content.proposed.imageUrls[0]!, PHOTO_2] },
+      } as ConnectorProductChange),
+    ];
+    const photo = createCommerceListingFixture().media[0]!;
+    vi.mocked(runImportImageBatches).mockImplementation(async (params) => {
+      const [target] = await params.loadTargets();
+      await params.attach([
+        {
+          listingId: target!.listingId,
+          media: [
+            ...(target!.keptMedia ?? []),
+            { ...photo, id: 'image_02', importSourceHash: sourceUrlHash(PHOTO_2) },
+          ] as never,
+          results: [{ url: PHOTO_2, status: 'uploaded' }],
+        },
+      ]);
+      return { status: 'complete', remaining: 0, done: 1, total: 1 };
+    });
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    await ready(result);
+
+    expect(rig.listings.get('boots_01')?.media.map(({ id }) => id)).toEqual(['image_01', 'image_02']);
+    expect(rig.pending).toEqual([]);
+  });
+
+  it('writes the photos that loaded but leaves the change pending when one failed', async () => {
+    const rig = setup();
+    const content = recordedChange('content');
+    if (content.fieldGroup !== 'content') throw new Error('not content');
+    rig.pending = [
+      linked({
+        ...content,
+        proposed: { ...content.proposed, imageUrls: [content.proposed.imageUrls[0]!, PHOTO_2] },
+      } as ConnectorProductChange),
+    ];
+    vi.mocked(runImportImageBatches).mockImplementation(async (params) => {
+      const [target] = await params.loadTargets();
+      await params.attach([
+        {
+          listingId: target!.listingId,
+          media: [...(target!.keptMedia ?? [])] as never,
+          results: [{ url: PHOTO_2, status: 'failed', reason: 'timeout' }],
+        },
+      ]);
+      return { status: 'complete', remaining: 0, done: 1, total: 1 };
+    });
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const [item] = await ready(result);
+
+    expect(rig.listings.get('boots_01')?.title).toBe('Trail Boots II');
+    expect(rig.pending).toHaveLength(1);
+    expect(item?.failure).toBe('photos');
+  });
+
+  it('says nothing when the server has no store connections', async () => {
+    vi.mocked(ConnectorsController.fetchChanges).mockRejectedValue(connectorRefusal('connectors_disabled', 404));
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+
+    await waitFor(() => expect(result.current.state.status).toBe('unavailable'));
+  });
+
+  it('does nothing outside the live marketplace', () => {
+    mode.value = 'local';
+
+    renderHook(() => useConnectorChanges(CONNECTION));
+
+    expect(ConnectorsController.fetchChanges).not.toHaveBeenCalled();
+  });
+});

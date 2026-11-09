@@ -13,8 +13,7 @@ import { htmlToPlainText } from './import-html-text';
 import {
   type ImageSyncPlan,
   IMPORT_SOURCE_HASH_KEY,
-  type ImportImageResult,
-  outcomesFromResults,
+  type ImportImageTarget,
   planImageSync,
   sourceUrlHash,
 } from './import-image-phase';
@@ -484,19 +483,9 @@ export function applyListingPatch(
   return parsed.success ? { ok: true, record: parsed.data } : { ok: false, reason: 'record_invalid' };
 }
 
-/** The photos a listing ends up with once the uploads of its photo merge have run, and how many failed. */
-export function mergedMedia(
-  plan: ImageSyncPlan,
-  results: readonly ImportImageResult[],
-): { readonly media: PresetJson[]; readonly failed: number } {
-  const [outcome] = outcomesFromResults(
-    [{ listingId: 'merge', images: plan.toUpload, skipped: plan.overflow, keptMedia: plan.keptMedia }],
-    results,
-  );
-  return {
-    media: [...(outcome?.media ?? plan.keptMedia)],
-    failed: (outcome?.results ?? []).filter(({ status }) => status === 'failed').length,
-  };
+/** The photo phase's work for a listing's photo merge: the photos to fetch and upload, and the media it keeps. */
+export function photoTarget(listingId: string, plan: ImageSyncPlan): ImportImageTarget {
+  return { listingId, images: plan.toUpload, skipped: plan.overflow, keptMedia: plan.keptMedia };
 }
 
 export type ListingVerdict = {

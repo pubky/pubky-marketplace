@@ -11,9 +11,9 @@ import {
   evaluateChangeListings,
   isAutoApplied,
   type ListingPatch,
-  mergedMedia,
+  photoTarget,
 } from './connector-change-apply';
-import { sourceUrlHash } from './import-image-phase';
+import { outcomesFromResults, sourceUrlHash } from './import-image-phase';
 
 const NOW = '2026-11-09T21:00:00.000Z';
 const V1 = 'gid://shopify/ProductVariant/50001';
@@ -187,9 +187,12 @@ describe('content changes', () => {
     expect(patch.photos?.toUpload.map(({ url }) => url)).toEqual([PHOTO_2]);
     const uploaded = mediaWithSource('image_02', PHOTO_2);
     const { importSourceHash: _hash, ...media } = uploaded;
-    const merged = mergedMedia(patch.photos!, [{ url: PHOTO_2, status: 'uploaded', media: media as never }]);
-    expect(merged.failed).toBe(0);
-    const result = build(record, patch, merged.media);
+    const [outcome] = outcomesFromResults(
+      [photoTarget('boots_01', patch.photos!)],
+      [{ url: PHOTO_2, status: 'uploaded', media: media as never }],
+    );
+    expect(outcome?.results).toEqual([{ url: PHOTO_2, status: 'uploaded' }]);
+    const result = build(record, patch, outcome?.media);
     expect(result.media.map(({ id }) => id)).toEqual(['image_01', 'image_02']);
   });
 
@@ -202,10 +205,13 @@ describe('content changes', () => {
     } as ConnectorProductChange;
     const patch = applied(evaluate(withPhoto, bootsFollowingTheStore()));
 
-    const merged = mergedMedia(patch.photos!, [{ url: PHOTO_2, status: 'failed', reason: 'timeout' }]);
+    const [outcome] = outcomesFromResults(
+      [photoTarget('boots_01', patch.photos!)],
+      [{ url: PHOTO_2, status: 'failed', reason: 'timeout' }],
+    );
 
-    expect(merged.failed).toBe(1);
-    expect(merged.media).toHaveLength(1);
+    expect(outcome?.results).toEqual([{ url: PHOTO_2, status: 'failed', reason: 'timeout' }]);
+    expect(outcome?.media).toHaveLength(1);
   });
 
   it('drops a photo the store removed and the variants that pointed at it', () => {
