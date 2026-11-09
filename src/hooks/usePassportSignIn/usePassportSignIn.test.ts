@@ -46,7 +46,7 @@ vi.mock('@/libs/passport/passport-popup', async (importOriginal) => {
   return { ...actual, startPassportAttempt: mocks.startPassportAttempt, passportCallbacks: mocks.passportCallbacks };
 });
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: mocks.toast }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: mocks.toast }));
 
 const session = asOpaque<Session>({ info: { publicKey: { z32: () => 'pubky' } }, grant: {} });
 

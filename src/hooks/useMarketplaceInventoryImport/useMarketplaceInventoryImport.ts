@@ -14,7 +14,7 @@ import {
   readShippingProfilesNow,
   useMarketplaceShippingProfiles,
 } from '@/hooks/useMarketplaceShippingProfiles/useMarketplaceShippingProfiles';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import type {
   InventoryImportDryRunCounts,
   InventoryImportScene,

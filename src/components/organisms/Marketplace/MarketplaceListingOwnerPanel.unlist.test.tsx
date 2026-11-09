@@ -27,7 +27,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast }));
 
 /** The listing page's own wiring: the panel renders from the local row, which the commit stages before the write. */
 function ListingPage({ listingId }: { listingId: string }) {

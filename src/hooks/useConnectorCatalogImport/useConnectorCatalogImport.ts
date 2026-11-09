@@ -19,7 +19,7 @@ import {
   type VariantMode,
 } from '@/libs/commerce/connectors';
 import { markShopBuiltImportFile } from '@/libs/commerce/shop-built-import-file';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import {
   type ConnectorImportLink,
   connectorMappingsFor,

@@ -6,8 +6,8 @@ import type { NexusFileDetails } from '@/services/nexus/nexus.types';
 import { asInvalid } from '@/test-utils/type-assertions';
 import { PostAttachments } from './PostAttachments';
 
-// Mock useToast
-const mockToast = vi.fn();
+// Mock toast
+const mockToast = vi.hoisted(() => vi.fn());
 vi.mock('@/molecules/PostAttachmentsAudios/PostAttachmentsAudios', () => {
   return {
     PostAttachmentsAudios: vi.fn(({ audios }) => (
@@ -44,9 +44,9 @@ vi.mock('@/molecules/PostAttachmentsImagesAndVideos/PostAttachmentsImagesAndVide
   };
 });
 
-vi.mock('@/molecules/Toaster/use-toast', () => {
+vi.mock('@/molecules/Toaster/toast', () => {
   return {
-    useToast: () => ({ toast: mockToast }),
+    toast: mockToast,
   };
 });
 

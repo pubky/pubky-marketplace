@@ -10,7 +10,7 @@ import { isMarketplaceRevisionConflict } from '@/libs/commerce/transaction-comma
 import { PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
 import { isPaymentNotFinalRefusal } from '@/libs/commerce/usdt-settlement-contract';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import { type OrderTrackingFormData, orderTrackingFormSchema } from './useOrderTracking.types';
 

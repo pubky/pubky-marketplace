@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { REVIEW_REMOVAL_COPY } from '@/config/commerce-copy';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 
 export interface UseRemoveOwnMarketplaceReviewResult {
   /** The order whose review is being removed, or null. */

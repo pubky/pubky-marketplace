@@ -25,7 +25,7 @@ vi.mock('@/hooks/useMarketplaceOffers/useMarketplaceOffers', () => ({
   useMarketplaceOffers: () => ({ offers: [], isLoading: false, needsSession: false, error: null }),
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 describe('useMarketplaceSellerDashboard stock from the local database', () => {
   beforeEach(() => {

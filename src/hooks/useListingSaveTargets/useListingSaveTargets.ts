@@ -8,7 +8,7 @@ import { useAuthoredCollections } from '@/hooks/useAuthoredCollections/useAuthor
 import type { PostSaveCollectionTarget } from '@/hooks/usePostSaveTargets/usePostSaveTargets';
 import { isAppError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
-import { useToast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 type UseListingSaveTargetsResult = {
@@ -34,7 +34,6 @@ type UseListingSaveTargetsResult = {
 export function useListingSaveTargets(sellerPubky: string, listingId: string): UseListingSaveTargetsResult {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const { collections, isLoading: isCollectionsLoading } = useAuthoredCollections(Boolean(currentUserPubky));
-  const { toast } = useToast();
   const [updatingCollectionIds, setUpdatingCollectionIds] = useState<Set<string>>(new Set());
   const [isCreatingCollection, setIsCreatingCollection] = useState(false);
 

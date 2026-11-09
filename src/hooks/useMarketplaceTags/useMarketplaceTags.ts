@@ -7,7 +7,7 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import { TagController } from '@/controllers/tag/tag';
 import type { TagWithAvatars } from '@/molecules/TaggedItem/TaggedItem.types';
 import { transformTagsForViewer } from '@/molecules/TaggedItem/TaggedItem.utils';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 export type MarketplaceTagTarget =

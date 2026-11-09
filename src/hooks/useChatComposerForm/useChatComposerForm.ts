@@ -7,7 +7,7 @@ import { ChatController } from '@/controllers/chat/chat';
 import { utf8Bytes } from '@/libs/chat/encoding';
 import { Logger } from '@/libs/logger/logger';
 import type { ChatContext } from '@/models/chat/chat.schema';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { chatComposerDefaults, chatComposerFormSchema, type ChatComposerFormValues } from './useChatComposerForm.types';
 
 /**

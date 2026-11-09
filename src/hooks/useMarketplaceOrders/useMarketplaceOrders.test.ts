@@ -6,7 +6,7 @@ import { PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
 import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { USDT_WIRE_PAYMENT_NOT_FINAL_REFUSAL } from '@/test/fixtures/commerce/usdt-orders';
@@ -46,7 +46,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 
@@ -144,7 +144,7 @@ describe('useMarketplaceOrders', () => {
   });
 
   it('says a payment was seen when the service refuses a checkout cancel, and re-reads the orders (#347)', async () => {
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const { result } = renderHook(() => useMarketplaceOrders());
     await waitFor(() => expect(result.current.orders).toHaveLength(1));
     const order = result.current.orders[0].order;
@@ -171,7 +171,7 @@ describe('useMarketplaceOrders', () => {
 
   it('maps server and thrown sentinel failures to static copy', async () => {
     const sentinel = 'SENTINEL_SERVER_TEXT_orders';
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const { result } = renderHook(() => useMarketplaceOrders());
     await waitFor(() => expect(result.current.orders).toHaveLength(1));
     const payment = result.current.orders[0].payment!;
@@ -292,7 +292,7 @@ describe('useMarketplaceOrders', () => {
     );
     // The conflict refetched the timeline so the retry starts from truth.
     expect(CommerceController.getMarketplaceOrders).toHaveBeenCalled();
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: expect.stringContaining('reloaded') }),
     );
@@ -326,7 +326,7 @@ describe('useMarketplaceOrders', () => {
         ...change,
       },
     ]);
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     vi.mocked(toast).mockClear();
 
     await act(async () => {
@@ -358,7 +358,7 @@ describe('useMarketplaceOrders', () => {
         },
       },
     ]);
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     vi.mocked(toast).mockClear();
 
     let succeeded = false;
@@ -546,7 +546,7 @@ describe('useMarketplaceOrders', () => {
     });
 
     expect(succeeded).toBe(false);
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith({
       variant: 'error',
       description: 'The pickup request was refused.',
@@ -560,7 +560,7 @@ describe('useMarketplaceOrders', () => {
       const { result } = renderHook(() => useMarketplaceOrders());
       await waitFor(() => expect(result.current.orders).toHaveLength(1));
       const order = result.current.orders[0].order;
-      const { toast } = await import('@/molecules/Toaster/use-toast');
+      const { toast } = await import('@/molecules/Toaster/toast');
       vi.mocked(toast).mockClear();
 
       vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce(
@@ -581,7 +581,7 @@ describe('useMarketplaceOrders', () => {
     const { result } = renderHook(() => useMarketplaceOrders());
     await waitFor(() => expect(result.current.orders).toHaveLength(1));
     const order = result.current.orders[0].order;
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
 
     vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
       ok: false,
@@ -665,7 +665,7 @@ describe('useMarketplaceOrders', () => {
     const { result } = renderHook(() => useMarketplaceOrders());
     await waitFor(() => expect(result.current.orders).toHaveLength(1));
     const order = result.current.orders[0].order;
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     vi.mocked(toast).mockClear();
     vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
       ok: false,
@@ -688,7 +688,7 @@ describe('useMarketplaceOrders', () => {
       const { result } = renderHook(() => useMarketplaceOrders());
       await waitFor(() => expect(result.current.orders).toHaveLength(1));
       const order = result.current.orders[0].order;
-      const { toast } = await import('@/molecules/Toaster/use-toast');
+      const { toast } = await import('@/molecules/Toaster/toast');
       vi.mocked(toast).mockClear();
       vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
         ok: false,

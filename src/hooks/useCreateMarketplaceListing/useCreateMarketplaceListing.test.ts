@@ -9,7 +9,7 @@ import {
 } from '@/libs/commerce/listing-drafts';
 import { commerceListingRecordSchema } from '@/libs/commerce/marketplace-records';
 import type { CommerceListingDraftModelSchema } from '@/models/commerce/commerce.schema';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { asOpaque } from '@/test-utils/type-assertions';
 import {
@@ -134,7 +134,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 

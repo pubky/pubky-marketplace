@@ -13,7 +13,7 @@ import { isAuthError, isWritePathNotAllowedError, requiresLogin } from '@/libs/e
 import { getImageUploadSizeLimitToastMessage } from '@/libs/image/imageUploadSizeLimit';
 import { Logger } from '@/libs/logger/logger';
 import { safeExternalUrlSchema } from '@/libs/utils/safeExternalUrl';
-import { useToast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { UserValidator } from '@/pipes/user/user.validator';
 import { useLocalFilesStore } from '@/stores/localFiles/localFiles.store';
 import {
@@ -47,7 +47,6 @@ export function useProfileForm(props: UseProfileFormProps): UseProfileFormReturn
   const setShowWelcomeDialog = props.mode === 'create' ? props.setShowWelcomeDialog : undefined;
 
   const router = useRouter();
-  const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Form state
@@ -437,7 +436,6 @@ export function useProfileForm(props: UseProfileFormProps): UseProfileFormReturn
     userDetails,
     setShowWelcomeDialog,
     router,
-    toast,
   ]);
 
   const handleCancel = useCallback(() => {
