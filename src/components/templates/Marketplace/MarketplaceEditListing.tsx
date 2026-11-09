@@ -11,6 +11,7 @@ import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useDeleteMarketplaceListings } from '@/hooks/useDeleteMarketplaceListings/useDeleteMarketplaceListings';
 import { useEditMarketplaceListing } from '@/hooks/useEditMarketplaceListing/useEditMarketplaceListing';
+import { useListingStoreSync } from '@/hooks/useListingStoreSync/useListingStoreSync';
 import { ListingPublishGuardNotice } from '@/molecules/Marketplace/ListingPublishGuardNotice';
 import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceListingDeleteDialog } from '@/organisms/Marketplace/MarketplaceListingDeleteDialog';
@@ -25,6 +26,7 @@ export interface MarketplaceEditListingProps {
 export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEditListingProps) {
   const router = useRouter();
   const editing = useEditMarketplaceListing(sellerPubky, listingId);
+  const storeSync = useListingStoreSync(listingId);
   const [isSaving, setIsSaving] = useState(false);
   const listingRoute = getMarketplaceListingRoute(sellerPubky, listingId);
   const deleting = useDeleteMarketplaceListings({ onDeleted: () => router.push(MARKETPLACE_ROUTES.DASHBOARD) });
@@ -153,6 +155,15 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
           listingId={listingId}
           mode="edit"
           saleTermsLocked={editing.saleTermsLocked}
+          storeSync={
+            storeSync.sync
+              ? {
+                  sync: storeSync.sync,
+                  savingGroup: storeSync.savingGroup,
+                  onToggle: (group) => void storeSync.toggleOverride(group),
+                }
+              : null
+          }
           publishBlocked={editing.publishBlocked}
           publishGuardReady={editing.publishGuardReady}
           returnTo={getMarketplaceListingEditRoute(sellerPubky, listingId)}

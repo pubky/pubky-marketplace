@@ -1,9 +1,16 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { CommerceController } from '@/controllers/commerce/commerce';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import { connectorAlertSchema, SHOPIFY_REQUIRED_SCOPES } from '@/libs/commerce/connectors';
 import { toast } from '@/molecules/Toaster/toast';
+import {
+  bootsFollowingTheStore,
+  recordedChange,
+  recordedSync,
+  withLinkedVariantIds,
+} from '@/test-utils/connector-changes';
 import { bareHttpFailure, connectorRefusal } from '@/test-utils/connector-errors';
 import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { MarketplaceStoreConnections } from './MarketplaceStoreConnections';
@@ -50,8 +57,26 @@ vi.mock('@/controllers/connectors/connectors', () => ({
     commitCreateShopifyDraft: vi.fn(),
     commitShopifyCredentials: vi.fn(),
     commitReplaceCredentials: vi.fn(),
+    fetchChanges: vi.fn(async () => []),
+    fetchSync: vi.fn(),
+    commitResolveChange: vi.fn(),
   },
 }));
+
+vi.mock('@/controllers/commerce/commerce', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/controllers/commerce/commerce')>();
+  return {
+    ...actual,
+    CommerceController: {
+      ...actual.CommerceController,
+      getOrFetchListingIfFound: vi.fn(),
+      refreshListing: vi.fn(),
+      isListingConfirmedRemoved: vi.fn(),
+      commitUpsertListing: vi.fn(),
+      getListingsBySeller: vi.fn(async () => []),
+    },
+  };
+});
 
 vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
@@ -104,6 +129,35 @@ describe('MarketplaceStoreConnections', () => {
 
     const cards = await screen.findAllByTestId('store-connection');
     expect(cards.map((card) => card.getAttribute('data-state'))).toEqual(['connected', 'needs_attention']);
+  });
+
+  it('shows the Sync table and the Shopify changes under a connected Shopify store, and nothing for WooCommerce', async () => {
+    const shop = connection('s1', { provider: 'shopify', domain: 'demo.myshopify.com' });
+    vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([connection('w1'), shop]);
+    vi.mocked(ConnectorsController.fetchSync).mockResolvedValue(recordedSync());
+    vi.mocked(ConnectorsController.fetchChanges).mockResolvedValue([
+      withLinkedVariantIds(recordedChange('price'), { 'gid://shopify/ProductVariant/50001': 'variant_01' }),
+    ]);
+    vi.mocked(CommerceController.getOrFetchListingIfFound).mockResolvedValue(bootsFollowingTheStore());
+    render(<MarketplaceStoreConnections />);
+
+    expect(await screen.findByRole('heading', { name: 'Shopify changes (1)' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Sync with demo.myshopify.com' })).toBeInTheDocument();
+    expect(screen.getAllByTestId('store-sync')).toHaveLength(1);
+    expect(ConnectorsController.fetchSync).toHaveBeenCalledTimes(1);
+    expect(ConnectorsController.fetchSync).toHaveBeenCalledWith('s1');
+  });
+
+  it('shows no review when the store has made no changes', async () => {
+    vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([
+      connection('s1', { provider: 'shopify', domain: 'demo.myshopify.com' }),
+    ]);
+    vi.mocked(ConnectorsController.fetchSync).mockResolvedValue(recordedSync());
+    vi.mocked(ConnectorsController.fetchChanges).mockResolvedValue([]);
+    render(<MarketplaceStoreConnections />);
+
+    await screen.findByTestId('store-sync');
+    expect(screen.queryByTestId('store-changes')).not.toBeInTheDocument();
   });
 
   it('resumes an unfinished Shopify draft in the guide', async () => {

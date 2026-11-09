@@ -19,6 +19,10 @@ vi.mock('@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl', async () => {
   return createMarketplaceMediaHooks((uri) => (uri ? MEDIA_DATA_URL : null));
 });
 
+vi.mock('@/hooks/useListingStoreSync/useListingStoreSync', () => ({
+  useListingStoreSync: () => ({ sync: null, savingGroup: null, toggleOverride: async () => true }),
+}));
+
 const fixtures = vi.hoisted(async () => {
   const { createCommerceListingFixture, COMMERCE_FIXTURE_SELLER } = await import('@/test/fixtures/commerce/commerce');
   const seller = COMMERCE_FIXTURE_SELLER;

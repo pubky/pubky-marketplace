@@ -23,7 +23,7 @@ import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { setHeavySuiteBudgets } from '@/test-utils/load-budget';
-import { MarketplaceListingForm } from './MarketplaceListingForm';
+import { MarketplaceListingForm, type MarketplaceListingStoreSync } from './MarketplaceListingForm';
 
 setHeavySuiteBudgets();
 
@@ -219,6 +219,7 @@ function FormHarness({
   submittedFulfillment,
   publishBlocked = null,
   publishGuardReady = true,
+  storeSync = null,
   formRef,
 }: {
   fulfillment?: CreateMarketplaceListingData['fulfillment'];
@@ -233,6 +234,7 @@ function FormHarness({
   listingId?: string;
   publishBlocked?: import('@/libs/commerce/listing-publish-guards').ListingPublishBlockReason | null;
   publishGuardReady?: boolean;
+  storeSync?: MarketplaceListingStoreSync | null;
   formRef?: { current: UseFormReturn<CreateMarketplaceListingData> | null };
 }) {
   const form = useForm<CreateMarketplaceListingData>({
@@ -256,6 +258,7 @@ function FormHarness({
       listingId={listingId}
       publishBlocked={publishBlocked}
       publishGuardReady={publishGuardReady}
+      storeSync={storeSync}
     />
   );
 }
@@ -1744,5 +1747,79 @@ describe('MarketplaceListingForm unlimited stock leaving digital-only', () => {
     await user.type(screen.getByRole('textbox', { name: 'Quantity' }), '3');
     expect(form().getValues('variants.0.quantity')).toBe('3');
     expect(inventoryBlocked(form().getValues())).toBe(false);
+  });
+});
+
+describe('MarketplaceListingForm store sync', () => {
+  const storeSync = (
+    follows: { content: boolean; price: boolean; variants: boolean },
+    onToggle = vi.fn(),
+  ): MarketplaceListingStoreSync => ({
+    sync: {
+      connectionId: 'c1',
+      domain: 'demo.myshopify.com',
+      editInStoreUrl: 'https://demo.myshopify.com/admin/products/9001',
+      groups: {
+        content: { follows: follows.content, overridden: !follows.content },
+        price: { follows: follows.price, overridden: !follows.price },
+        variants: { follows: follows.variants, overridden: !follows.variants },
+      },
+    },
+    savingGroup: null,
+    onToggle,
+  });
+  const record = () => createCommerceListingFixture();
+  const edit = (sync: MarketplaceListingStoreSync | null) => (
+    <FormHarness
+      mode="edit"
+      listingId="boots_01"
+      media={buildMedia([photoItem('p1', 'Front')])}
+      defaultValues={formDataFromRecord(record(), 'USD', 'metric', null)}
+      storeSync={sync}
+    />
+  );
+
+  it('shows the parts that follow the store read-only, with a way to edit them in the store', () => {
+    render(edit(storeSync({ content: true, price: true, variants: true })));
+
+    expect(screen.getByRole('textbox', { name: /^Title/ })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: /^Description/ })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: /^Price \(/ })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: 'Seller SKU' })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: /^Price override/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Add photos/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Remove photo 1' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add variant' })).toBeDisabled();
+    expect(screen.getAllByRole('link', { name: /Edit in Shopify/ })[0]).toHaveAttribute(
+      'href',
+      'https://demo.myshopify.com/admin/products/9001',
+    );
+    expect(screen.getByRole('textbox', { name: /^Quantity/ })).toBeEnabled();
+  });
+
+  it('keeps stock editable and unlocks only the parts the listing overrides', () => {
+    render(edit(storeSync({ content: true, price: false, variants: true })));
+
+    expect(screen.getByRole('textbox', { name: /^Title/ })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: /^Price \(/ })).toBeEnabled();
+    expect(screen.getByRole('textbox', { name: /^Price override/ })).toBeEnabled();
+    expect(screen.getByRole('textbox', { name: 'Seller SKU' })).toBeDisabled();
+  });
+
+  it('leaves every field editable for a listing no store is linked to', () => {
+    render(edit(null));
+
+    expect(screen.getByRole('textbox', { name: /^Title/ })).toBeEnabled();
+    expect(screen.getByRole('textbox', { name: /^Price \(/ })).toBeEnabled();
+    expect(screen.queryByTestId('store-follow-content')).not.toBeInTheDocument();
+  });
+
+  it('turns a part into the listing’s own through its switch', async () => {
+    const onToggle = vi.fn();
+    render(edit(storeSync({ content: true, price: true, variants: true }, onToggle)));
+
+    await userEvent.click(screen.getByRole('switch', { name: 'Price follow the connection' }));
+
+    expect(onToggle).toHaveBeenCalledWith('price');
   });
 });

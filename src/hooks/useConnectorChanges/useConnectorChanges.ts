@@ -38,6 +38,8 @@ export type ReviewItem = {
   state: Exclude<ChangeState, 'nothing_to_do'>;
   /** The title of each listing the change names, for the review. */
   titles: Readonly<Record<string, string>>;
+  /** What a listing's variants are called (`Size 42`), by listing id then variant id; empty for a single variant. */
+  variantLabels: Readonly<Record<string, Readonly<Record<string, string>>>>;
   failure: ChangeFailure | null;
 };
 
@@ -99,6 +101,30 @@ async function readListings(
 
 function titlesOf(records: ReadonlyMap<string, CommerceListingRecord | null>): Record<string, string> {
   return Object.fromEntries([...records].map(([id, record]) => [id, record?.title ?? id]));
+}
+
+function variantLabelsOf(
+  records: ReadonlyMap<string, CommerceListingRecord | null>,
+): Record<string, Record<string, string>> {
+  return Object.fromEntries(
+    [...records].flatMap(([id, record]) =>
+      record
+        ? [
+            [
+              id,
+              Object.fromEntries(
+                record.variants.map((variant) => [
+                  variant.id,
+                  record.variants.length === 1
+                    ? ''
+                    : Object.values(variant.options).join(' / ') || variant.sku || variant.id,
+                ]),
+              ),
+            ],
+          ]
+        : [],
+    ),
+  );
 }
 
 function hasWork(verdicts: readonly ListingVerdict[], kind: 'apply' | 'nothing_to_do'): boolean {
@@ -232,7 +258,14 @@ export function useConnectorChanges(connectionId: string | null) {
           if (options.auto && hasWork(verdicts, 'nothing_to_do')) await resolve(change, 'applied').catch(() => false);
           continue;
         }
-        let item: ReviewItem = { change, verdicts, state: next, titles: titlesOf(records), failure: null };
+        let item: ReviewItem = {
+          change,
+          verdicts,
+          state: next,
+          titles: titlesOf(records),
+          variantLabels: variantLabelsOf(records),
+          failure: null,
+        };
         if (options.auto && next === 'applicable' && isAutoApplied(change)) {
           const result = await applyOne(change, false).catch(
             (): ApplyResult => ({ ok: false, reason: 'failed', failure: 'failed' }),
