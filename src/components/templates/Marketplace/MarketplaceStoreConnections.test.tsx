@@ -16,7 +16,7 @@ import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { MarketplaceStoreConnections } from './MarketplaceStoreConnections';
 
 const nav = vi.hoisted(() => ({ query: '', replace: vi.fn() }));
-const mode = vi.hoisted(() => ({ value: 'transaction-service' as string }));
+const mode = vi.hoisted(() => ({ value: 'transaction-service' as string, sync: true }));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: nav.replace, push: vi.fn() }),
@@ -26,7 +26,7 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
-  return { ...actual, getCommerceAdapterMode: () => mode.value };
+  return { ...actual, getCommerceAdapterMode: () => mode.value, getStoreSyncEnabled: () => mode.sync };
 });
 
 vi.mock('@/stores/auth/auth.store', () => ({
@@ -96,6 +96,7 @@ describe('MarketplaceStoreConnections', () => {
     vi.clearAllMocks();
     nav.query = '';
     mode.value = 'transaction-service';
+    mode.sync = true;
     vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([]);
   });
 
@@ -146,6 +147,20 @@ describe('MarketplaceStoreConnections', () => {
     expect(screen.getAllByTestId('store-sync')).toHaveLength(1);
     expect(ConnectorsController.fetchSync).toHaveBeenCalledTimes(1);
     expect(ConnectorsController.fetchSync).toHaveBeenCalledWith('s1');
+  });
+
+  it('shows neither the review nor the Sync table while the store sync switch is off', async () => {
+    mode.sync = false;
+    vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([
+      connection('s1', { provider: 'shopify', domain: 'demo.myshopify.com' }),
+    ]);
+    render(<MarketplaceStoreConnections />);
+
+    await screen.findByTestId('store-connection');
+    expect(screen.queryByTestId('store-sync')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('store-changes')).not.toBeInTheDocument();
+    expect(ConnectorsController.fetchChanges).not.toHaveBeenCalled();
+    expect(ConnectorsController.fetchSync).not.toHaveBeenCalled();
   });
 
   it('shows no review when the store has made no changes', async () => {

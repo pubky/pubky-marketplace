@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
+import { getCommerceAdapterMode, getStoreSyncEnabled, isDurableCommerceMode } from '@/config/commerce';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import {
   type ConnectorConnection,
@@ -58,7 +58,7 @@ function connectionDirection(sync: ConnectorSync, group: ConnectorSyncGroup): Co
 export function useListingStoreSync(listingId: string) {
   const sellerPubky = useAuthStore((auth) => auth.currentUserPubky);
   const marketplaceSession = useCommerceStore((commerce) => commerce.marketplaceSession);
-  const enabled = isDurableCommerceMode(getCommerceAdapterMode()) && Boolean(sellerPubky);
+  const enabled = getStoreSyncEnabled() && isDurableCommerceMode(getCommerceAdapterMode()) && Boolean(sellerPubky);
   const [linked, setLinked] = useState<{
     connection: Pick<ConnectorConnection, 'id' | 'domain'>;
     editInStoreUrl: string | null;

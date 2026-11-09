@@ -6,11 +6,11 @@ import { RECORDED_CONNECTION_ID, recordedSync } from '@/test-utils/connector-cha
 import { bareHttpFailure, connectorRefusal } from '@/test-utils/connector-errors';
 import { useConnectorSync } from './useConnectorSync';
 
-const mode = vi.hoisted(() => ({ value: 'transaction-service' as string }));
+const mode = vi.hoisted(() => ({ value: 'transaction-service' as string, sync: true }));
 
 vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
-  return { ...actual, getCommerceAdapterMode: () => mode.value };
+  return { ...actual, getCommerceAdapterMode: () => mode.value, getStoreSyncEnabled: () => mode.sync };
 });
 
 vi.mock('@/stores/auth/auth.store', () => ({
@@ -28,6 +28,7 @@ describe('useConnectorSync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mode.value = 'transaction-service';
+    mode.sync = true;
     vi.mocked(ConnectorsController.fetchSync).mockResolvedValue(recordedSync());
   });
 
@@ -93,6 +94,14 @@ describe('useConnectorSync', () => {
     vi.mocked(ConnectorsController.fetchSync).mockRejectedValueOnce(bareHttpFailure(503));
     const second = renderHook(() => useConnectorSync(RECORDED_CONNECTION_ID));
     await waitFor(() => expect(second.result.current.state.status).toBe('failed'));
+  });
+
+  it('does nothing while the store sync switch is off', () => {
+    mode.sync = false;
+
+    renderHook(() => useConnectorSync(RECORDED_CONNECTION_ID));
+
+    expect(ConnectorsController.fetchSync).not.toHaveBeenCalled();
   });
 
   it('does nothing outside the live marketplace', () => {

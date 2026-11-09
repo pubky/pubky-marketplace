@@ -540,6 +540,7 @@ export const APP_RUNTIME_DEFAULTS = {
   marketplaceGrantPollMilliseconds: 1_000,
   passportSignIn: true,
   usdtPaymentsEnabled: false,
+  storeSyncEnabled: false,
   euFenceEnabled: false,
   digitalRegionBlockEnabled: false,
   clientRegionHeader: 'x-client-region',
@@ -687,6 +688,14 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
    * without a service deploy. It never gates the display of an existing USDT order.
    */
   usdtPaymentsEnabled: z.boolean().default(APP_RUNTIME_DEFAULTS.usdtPaymentsEnabled),
+  /**
+   * Shop-side switch for syncing linked listings with a connected Shopify store
+   * (docs/ecommerce/store-connections.md, "Product sync"). Off by default. On, the Store connections
+   * page shows the Shopify changes review and the Sync table, the Shop applies store text and a product
+   * the store stopped selling when the page opens, and the listing editor shows the parts that follow the
+   * store read-only. Off hides all of it and applies nothing, without a service deploy.
+   */
+  storeSyncEnabled: z.boolean().default(APP_RUNTIME_DEFAULTS.storeSyncEnabled),
   /**
    * Shop-side switch for the EU scope fence (legal launch plan C2-C4), mirroring the
    * marketplace service's `EU_FENCE_ENABLED`. Off by default. On, the Shop asks the buyer
@@ -869,6 +878,7 @@ export const runtimeEnvInputSchema = z
     marketplaceGrantPollMilliseconds: optionalPositiveIntFromString,
     passportSignIn: optionalBooleanFromString,
     usdtPaymentsEnabled: optionalBooleanFromString,
+    storeSyncEnabled: optionalBooleanFromString,
     euFenceEnabled: optionalBooleanFromString,
     digitalRegionBlockEnabled: optionalBooleanFromString,
     regionModes: optionalRegionModesFromString,
@@ -982,6 +992,7 @@ export const runtimeEnvInputSchemaWithDefaults = z
     marketplaceGrantPollMilliseconds: optionalPositiveIntFromString,
     passportSignIn: optionalBooleanFromString,
     usdtPaymentsEnabled: optionalBooleanFromString,
+    storeSyncEnabled: optionalBooleanFromString,
     euFenceEnabled: optionalBooleanFromString,
     digitalRegionBlockEnabled: optionalBooleanFromString,
     regionModes: optionalRegionModesFromString,
@@ -1086,6 +1097,7 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   marketplaceGrantPollMilliseconds: 'PUBKY_RUNTIME_MARKETPLACE_GRANT_POLL_MILLISECONDS',
   passportSignIn: 'PUBKY_RUNTIME_PASSPORT_SIGN_IN',
   usdtPaymentsEnabled: 'PUBKY_RUNTIME_USDT_PAYMENTS_ENABLED',
+  storeSyncEnabled: 'PUBKY_RUNTIME_STORE_SYNC_ENABLED',
   euFenceEnabled: 'PUBKY_RUNTIME_EU_FENCE_ENABLED',
   digitalRegionBlockEnabled: 'PUBKY_RUNTIME_DIGITAL_REGION_BLOCK_ENABLED',
   regionModes: 'PUBKY_RUNTIME_REGION_MODES',

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
+import { getCommerceAdapterMode, getStoreSyncEnabled, isDurableCommerceMode } from '@/config/commerce';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import {
   connectorErrorMessage,
@@ -30,7 +30,11 @@ const LOAD_FAILED = 'The sync settings could not be loaded. Try again in a momen
 export function useConnectorSync(connectionId: string | null, options: { onSaved?: () => void } = {}) {
   const sellerPubky = useAuthStore((auth) => auth.currentUserPubky);
   const marketplaceSession = useCommerceStore((commerce) => commerce.marketplaceSession);
-  const enabled = isDurableCommerceMode(getCommerceAdapterMode()) && Boolean(sellerPubky) && connectionId !== null;
+  const enabled =
+    getStoreSyncEnabled() &&
+    isDurableCommerceMode(getCommerceAdapterMode()) &&
+    Boolean(sellerPubky) &&
+    connectionId !== null;
   const [state, setState] = useState<ConnectorSyncState>({ status: 'idle' });
   const [savingGroup, setSavingGroup] = useState<ConnectorSyncGroup | null>(null);
 

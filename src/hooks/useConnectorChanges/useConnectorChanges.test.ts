@@ -17,11 +17,11 @@ import {
 import { connectorRefusal } from '@/test-utils/connector-errors';
 import { useConnectorChanges } from './useConnectorChanges';
 
-const mode = vi.hoisted(() => ({ value: 'transaction-service' as string }));
+const mode = vi.hoisted(() => ({ value: 'transaction-service' as string, sync: true }));
 
 vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
-  return { ...actual, getCommerceAdapterMode: () => mode.value };
+  return { ...actual, getCommerceAdapterMode: () => mode.value, getStoreSyncEnabled: () => mode.sync };
 });
 
 vi.mock('@/stores/auth/auth.store', () => ({
@@ -112,6 +112,7 @@ describe('useConnectorChanges', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mode.value = 'transaction-service';
+    mode.sync = true;
   });
 
   it('applies store text and a product the store stopped selling on open, and holds the price for review', async () => {
@@ -420,6 +421,14 @@ describe('useConnectorChanges', () => {
     const { result } = renderHook(() => useConnectorChanges(CONNECTION));
 
     await waitFor(() => expect(result.current.state.status).toBe('unavailable'));
+  });
+
+  it('does nothing while the store sync switch is off', () => {
+    mode.sync = false;
+
+    renderHook(() => useConnectorChanges(CONNECTION));
+
+    expect(ConnectorsController.fetchChanges).not.toHaveBeenCalled();
   });
 
   it('does nothing outside the live marketplace', () => {

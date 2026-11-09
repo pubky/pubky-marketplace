@@ -22,6 +22,7 @@ import {
   getSentryReplaysSessionSampleRate,
   getSentrySampleRate,
   getSentryTracesSampleRate,
+  getStoreSyncEnabled,
   getUsdtPaymentsEnabled,
   readClientConfig,
   readServerConfig,
@@ -284,6 +285,30 @@ describe('runtime-config resolver', () => {
       simulateDeployedEnv();
       setAllRuntimeEnv();
       expect(readServerConfig().usdtPaymentsEnabled).toBe(false);
+    });
+
+    it('keeps the Shopify product sync off by default and takes the PUBKY_RUNTIME_STORE_SYNC_ENABLED switch', () => {
+      expect(PUBKY_RUNTIME_ENV_NAMES.storeSyncEnabled).toBe('PUBKY_RUNTIME_STORE_SYNC_ENABLED');
+      expect(getStoreSyncEnabled()).toBe(false);
+
+      resetRuntimeConfigForTests();
+      process.env[PUBKY_RUNTIME_ENV_NAMES.storeSyncEnabled] = 'true';
+      expect(getStoreSyncEnabled()).toBe(true);
+
+      resetRuntimeConfigForTests();
+      process.env[PUBKY_RUNTIME_ENV_NAMES.storeSyncEnabled] = 'false';
+      expect(getStoreSyncEnabled()).toBe(false);
+    });
+
+    it('fails loudly on a malformed store sync switch', () => {
+      process.env[PUBKY_RUNTIME_ENV_NAMES.storeSyncEnabled] = 'maybe';
+      expect(() => readServerConfig()).toThrow();
+    });
+
+    it('strict deployed parse succeeds with the store sync switch unset and resolves it off', () => {
+      simulateDeployedEnv();
+      setAllRuntimeEnv();
+      expect(readServerConfig().storeSyncEnabled).toBe(false);
     });
 
     it('keeps the EU fence and the digital hold off by default, each on its own switch', () => {

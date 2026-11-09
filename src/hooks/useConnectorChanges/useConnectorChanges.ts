@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
+import { getCommerceAdapterMode, getStoreSyncEnabled, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import { runImportImageBatches } from '@/hooks/useImportImageUpload/runImportImageBatches';
@@ -179,7 +179,11 @@ async function mergePhotos(
 export function useConnectorChanges(connectionId: string | null) {
   const sellerPubky = useAuthStore((state) => state.currentUserPubky);
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
-  const enabled = isDurableCommerceMode(getCommerceAdapterMode()) && Boolean(sellerPubky) && connectionId !== null;
+  const enabled =
+    getStoreSyncEnabled() &&
+    isDurableCommerceMode(getCommerceAdapterMode()) &&
+    Boolean(sellerPubky) &&
+    connectionId !== null;
   const [state, setState] = useState<ConnectorChangesState>({ status: 'idle' });
   const [workingId, setWorkingId] = useState<string | null>(null);
   const running = useRef(new Set<string>());

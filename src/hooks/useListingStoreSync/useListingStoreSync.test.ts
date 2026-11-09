@@ -8,11 +8,11 @@ import { connectorRefusal } from '@/test-utils/connector-errors';
 import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { useListingStoreSync } from './useListingStoreSync';
 
-const mode = vi.hoisted(() => ({ value: 'transaction-service' as string }));
+const mode = vi.hoisted(() => ({ value: 'transaction-service' as string, sync: true }));
 
 vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
-  return { ...actual, getCommerceAdapterMode: () => mode.value };
+  return { ...actual, getCommerceAdapterMode: () => mode.value, getStoreSyncEnabled: () => mode.sync };
 });
 
 vi.mock('@/stores/auth/auth.store', () => ({
@@ -44,6 +44,7 @@ describe('useListingStoreSync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mode.value = 'transaction-service';
+    mode.sync = true;
     vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([woo, shopify]);
     vi.mocked(ConnectorsController.fetchMappings).mockImplementation(async (id) =>
       id === 'c1' ? [mapping('boots_01'), mapping('mug_01')] : [],
@@ -133,6 +134,14 @@ describe('useListingStoreSync', () => {
 
     await waitFor(() => expect(ConnectorsController.fetchConnections).toHaveBeenCalled());
     expect(result.current.sync).toBeNull();
+  });
+
+  it('does nothing while the store sync switch is off', () => {
+    mode.sync = false;
+
+    renderHook(() => useListingStoreSync('boots_01'));
+
+    expect(ConnectorsController.fetchConnections).not.toHaveBeenCalled();
   });
 
   it('does nothing outside the live marketplace', () => {
