@@ -697,11 +697,6 @@ const variantsValueSchema = z.object({
 
 const statusValueSchema = z.object({ available: z.boolean() });
 
-export type ConnectorContentValue = z.infer<typeof contentValueSchema>;
-export type ConnectorPriceValue = z.infer<typeof priceValueSchema>;
-export type ConnectorVariantsValue = z.infer<typeof variantsValueSchema>;
-export type ConnectorStatusValue = z.infer<typeof statusValueSchema>;
-
 const changeCommon = {
   id: z.string().min(1),
   providerProductId: z.string().min(1),

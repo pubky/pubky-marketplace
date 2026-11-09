@@ -20,7 +20,13 @@ vi.mock('@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl', async () => {
 });
 
 vi.mock('@/hooks/useListingStoreSync/useListingStoreSync', () => ({
-  useListingStoreSync: () => ({ sync: null, savingGroup: null, toggleOverride: async () => true }),
+  useListingStoreSync: () => ({
+    ready: true,
+    syncs: [],
+    follows: { content: false, price: false, variants: false },
+    saving: null,
+    toggleOverride: async () => null,
+  }),
 }));
 
 const fixtures = vi.hoisted(async () => {

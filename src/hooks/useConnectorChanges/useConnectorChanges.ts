@@ -200,10 +200,16 @@ export function useConnectorChanges(connectionId: string | null) {
     }
   };
 
+  /** Whether the service still holds this exact proposal: a replaced or withdrawn one must not be applied. */
+  const stillPending = async (change: ConnectorProductChange): Promise<boolean> => {
+    if (!connectionId) return false;
+    const current = (await ConnectorsController.fetchChanges(connectionId)).find(({ id }) => id === change.id);
+    return current !== undefined && current.proposedHash === change.proposedHash;
+  };
+
   const applyOne = async (change: ConnectorProductChange, takeStore: boolean): Promise<ApplyResult> => {
     if (!connectionId || !sellerPubky) return { ok: false, reason: 'failed', failure: 'failed' };
-    const current = (await ConnectorsController.fetchChanges(connectionId)).find(({ id }) => id === change.id);
-    if (!current || current.proposedHash !== change.proposedHash) return { ok: false, reason: 'stale' };
+    if (!(await stillPending(change))) return { ok: false, reason: 'stale' };
 
     let records: Map<string, CommerceListingRecord | null>;
     try {
@@ -231,12 +237,13 @@ export function useConnectorChanges(connectionId: string | null) {
           media: merged?.media,
         });
         if (!built.ok) return { ok: false, reason: 'failed', failure: 'invalid' };
+        if (!(await stillPending(change))) return { ok: false, reason: 'stale' };
         const { verified } = await CommerceController.commitUpsertListing(built.record);
         if (!verified) {
           const reread = await readListing(sellerPubky, listingId, true);
-          if (!reread || reread.revision < built.record.revision) {
-            return { ok: false, reason: 'failed', failure: 'unconfirmed' };
-          }
+          const isOurWrite =
+            reread !== null && reread.revision === built.record.revision && reread.updatedAt === built.record.updatedAt;
+          if (!isOurWrite) return { ok: false, reason: 'failed', failure: 'unconfirmed' };
         }
       }
       if (photosFailed) return { ok: false, reason: 'failed', failure: 'photos' };
@@ -256,18 +263,30 @@ export function useConnectorChanges(connectionId: string | null) {
       let items: ReviewItem[] = [];
       let appliedCount = 0;
       for (const change of changes) {
-        const verdicts = evaluateChangeListings(change, records);
-        const next = changeState(verdicts);
+        let seen = records;
+        let verdicts = evaluateChangeListings(change, seen);
+        let next = changeState(verdicts);
         if (next === 'nothing_to_do') {
-          if (options.auto && hasWork(verdicts, 'nothing_to_do')) await resolve(change, 'applied').catch(() => false);
-          continue;
+          if (!options.auto) continue;
+          // The cached read that found nothing to do may be a local write the homeserver never took, so
+          // the change is only settled from what the homeserver serves. One whose every listing is switched
+          // off or gone has nothing to apply and is dismissed, so it does not sit pending out of sight.
+          const fresh = await readListings(sellerPubky, [change], true).catch(() => null);
+          if (!fresh) continue;
+          seen = fresh;
+          verdicts = evaluateChangeListings(change, seen);
+          next = changeState(verdicts);
+          if (next === 'nothing_to_do') {
+            await resolve(change, hasWork(verdicts, 'nothing_to_do') ? 'applied' : 'dismissed').catch(() => false);
+            continue;
+          }
         }
         let item: ReviewItem = {
           change,
           verdicts,
           state: next,
-          titles: titlesOf(records),
-          variantLabels: variantLabelsOf(records),
+          titles: titlesOf(seen),
+          variantLabels: variantLabelsOf(seen),
           failure: null,
         };
         if (options.auto && next === 'applicable' && isAutoApplied(change)) {

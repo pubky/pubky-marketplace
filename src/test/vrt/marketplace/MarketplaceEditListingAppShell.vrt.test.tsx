@@ -53,7 +53,13 @@ const fixtures = vi.hoisted(async () => {
 const SELLER = vi.hoisted(() => 'y'.repeat(52));
 
 vi.mock('@/hooks/useListingStoreSync/useListingStoreSync', () => ({
-  useListingStoreSync: () => ({ sync: null, savingGroup: null, toggleOverride: async () => true }),
+  useListingStoreSync: () => ({
+    ready: true,
+    syncs: [],
+    follows: { content: false, price: false, variants: false },
+    saving: null,
+    toggleOverride: async () => null,
+  }),
 }));
 
 vi.mock('@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl', async () => {

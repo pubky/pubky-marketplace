@@ -19,9 +19,10 @@ export interface MarketplaceListingStoreFollowProps {
 }
 
 /**
- * A listing's own setting for one part of its store sync, in the editor: it follows the connection
- * (the fields are shown read-only, with a way to edit them in the store) or it is overridden for this
- * listing alone. A part the connection leaves alone and the listing does not override shows nothing.
+ * A listing's own setting for one part of its store sync, in the editor. On, the part follows the store:
+ * its fields are read-only, with a way to edit them in the store. Off, the part is not synced for this
+ * listing. The switch always shows what applies to the listing (`follows`); whether that is the connection's
+ * setting or the listing's own is said in the line under it.
  */
 export function MarketplaceListingStoreFollow({
   group,
@@ -31,9 +32,9 @@ export function MarketplaceListingStoreFollow({
   saving,
   onToggle,
 }: MarketplaceListingStoreFollowProps) {
-  if (!state.follows && !state.overridden) return null;
   const label = SYNC_GROUP_LABELS[group];
-  const switchId = `store-follow-${group}`;
+  const switchId = `store-follow-${group}-${domain}`;
+  const own = state.overridden ? 'Set for this listing only.' : 'Set for the whole connection.';
 
   return (
     <div
@@ -43,7 +44,7 @@ export function MarketplaceListingStoreFollow({
     >
       <div className="grid gap-1">
         <Typography as="label" htmlFor={switchId} className="text-sm font-semibold">
-          {state.follows ? `${label} follow ${domain}` : `${label} are set for this listing`}
+          {label}: {state.follows ? `follow ${domain}` : `not synced with ${domain}`}
         </Typography>
         <Typography as="p" className="text-xs text-muted-foreground">
           {state.follows ? (
@@ -60,19 +61,19 @@ export function MarketplaceListingStoreFollow({
                   <ExternalLink className="size-3" aria-hidden="true" />
                 </a>
               )}{' '}
-              Or turn this off to edit them here.
+              Or turn this off to edit them here. {own}
             </>
           ) : (
-            <>Changes made in your store are not applied to them. Turn this on to follow the connection again.</>
+            <>Changes made in your store are not applied to them. Turn this on to follow your store. {own}</>
           )}
         </Typography>
       </div>
       <Switch
         id={switchId}
-        checked={!state.overridden}
+        checked={state.follows}
         disabled={saving}
         onCheckedChange={onToggle}
-        aria-label={`${label} follow the connection`}
+        aria-label={`${label} follow ${domain}`}
       />
     </div>
   );

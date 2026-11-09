@@ -52,7 +52,10 @@ const PHOTO_2 = 'https://cdn.shopify.com/s/files/boots-2.jpg';
 
 /** The homeserver and the service as one in-memory pair, so the hook is driven through what it reads back. */
 class Rig {
+  /** What the homeserver serves. */
   listings = new Map<string, CommerceListingRecord>();
+  /** The Shop's local copy: it holds a write the homeserver has not taken, and a read from it can be stale. */
+  cache = new Map<string, CommerceListingRecord>();
   pending: ConnectorProductChange[] = [];
   log: string[] = [];
   writes: CommerceListingRecord[] = [];
@@ -68,10 +71,12 @@ class Rig {
       this.pending = this.pending.filter(({ id }) => id !== change.id);
     });
     vi.mocked(ConnectorsController.commitListingSync).mockResolvedValue({} as never);
-    const read = async (_owner: unknown, id: unknown) => this.listings.get(String(id)) ?? null;
+    const read = async (_owner: unknown, id: unknown) =>
+      this.cache.get(String(id)) ?? this.listings.get(String(id)) ?? null;
     vi.mocked(CommerceController.getOrFetchListingIfFound).mockImplementation(read as never);
     vi.mocked(CommerceController.refreshListing).mockImplementation((async (_owner: unknown, id: unknown) => {
       const found = this.listings.get(String(id));
+      this.cache.delete(String(id));
       if (!found) throw new Error('not found');
       return found;
     }) as never);
@@ -81,6 +86,7 @@ class Rig {
     vi.mocked(CommerceController.commitUpsertListing).mockImplementation((async (input: CommerceListingRecord) => {
       this.log.push(`write:${input.listingId}:r${input.revision}`);
       this.writes.push(input);
+      this.cache.set(input.listingId, input);
       if (this.verifyWrites) this.listings.set(input.listingId, input);
       return { registered: true, verified: this.verifyWrites };
     }) as never);
@@ -236,6 +242,94 @@ describe('useConnectorChanges', () => {
     expect(rig.pending).toHaveLength(1);
     const [now] = await ready(result);
     expect(now?.state).toBe('conflict');
+  });
+
+  it('does not resolve a change that only a local write satisfied, and applies it from the homeserver', async () => {
+    const rig = setup(recordedChange('content'));
+    rig.cache.set('boots_01', bootsFollowingTheStore({ title: 'Trail Boots II', description: 'Waterproof now.' }));
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    await ready(result);
+
+    expect(rig.writes).toHaveLength(1);
+    expect(rig.log[0]).toMatch(/^write:boots_01/);
+    expect(rig.listings.get('boots_01')?.title).toBe('Trail Boots II');
+    expect(rig.pending).toEqual([]);
+  });
+
+  it('dismisses a change whose every listing is switched off or gone, so it does not wait out of sight', async () => {
+    const rig = setup();
+    const change = recordedChange('content');
+    rig.pending = [
+      linked({
+        ...change,
+        listings: [
+          { ...change.listings[0]!, direction: 'off' },
+          { ...change.listings[0]!, listingId: 'gone_01' },
+        ],
+      } as ConnectorProductChange),
+    ];
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    await ready(result);
+
+    expect(rig.writes).toEqual([]);
+    expect(rig.log).toEqual([expect.stringMatching(/^resolve:.*:dismissed$/)]);
+  });
+
+  it('does not publish a proposal the service withdrew while its photos were uploading', async () => {
+    const rig = setup();
+    const content = recordedChange('content');
+    if (content.fieldGroup !== 'content') throw new Error('not content');
+    rig.pending = [
+      linked({
+        ...content,
+        proposed: { ...content.proposed, imageUrls: [content.proposed.imageUrls[0]!, PHOTO_2] },
+      } as ConnectorProductChange),
+    ];
+    const photo = createCommerceListingFixture().media[0]!;
+    vi.mocked(runImportImageBatches).mockImplementation(async (params) => {
+      const [target] = await params.loadTargets();
+      rig.pending = [];
+      await params.attach([
+        {
+          listingId: target!.listingId,
+          media: [
+            ...(target!.keptMedia ?? []),
+            { ...photo, id: 'image_02', importSourceHash: sourceUrlHash(PHOTO_2) },
+          ] as never,
+          results: [{ url: PHOTO_2, status: 'uploaded' }],
+        },
+      ]);
+      return { status: 'complete', remaining: 0, done: 1, total: 1 };
+    });
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    await ready(result);
+
+    expect(rig.writes).toEqual([]);
+    expect(rig.listings.get('boots_01')?.title).toBe('Trail Boots');
+  });
+
+  it('does not take a newer revision of another origin for confirmation of its own write', async () => {
+    const rig = setup(recordedChange('price'));
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const [item] = await ready(result);
+    rig.verifyWrites = false;
+    vi.mocked(CommerceController.commitUpsertListing).mockImplementationOnce((async (input: CommerceListingRecord) => {
+      rig.listings.set(input.listingId, {
+        ...input,
+        revision: input.revision + 1,
+        updatedAt: '2030-01-01T00:00:00.000Z',
+        title: 'Written elsewhere',
+      });
+      return { registered: true, verified: false };
+    }) as never);
+
+    await act(async () => result.current.apply(item!));
+
+    expect(rig.pending).toHaveLength(1);
+    expect(rig.log.some((entry) => entry.startsWith('resolve'))).toBe(false);
   });
 
   it('leaves the change pending when the write is not confirmed, and finishes it on a retry', async () => {

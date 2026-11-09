@@ -13,8 +13,32 @@ const deleteFlow = vi.hoisted(() => ({
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => router }));
+const editOptions = vi.hoisted(() => ({ value: undefined as unknown }));
+const storeSync = vi.hoisted(() => ({
+  value: {
+    ready: true,
+    syncs: [] as unknown[],
+    follows: { content: false, price: false, variants: false },
+    saving: null,
+    toggleOverride: vi.fn(),
+  },
+}));
+type StoreSyncProps = {
+  syncs: unknown[];
+  onToggle: (connectionId: string, group: string) => void;
+};
+const formProps = vi.hoisted(() => ({
+  value: {} as { publishGuardReady?: boolean; storeSync: StoreSyncProps },
+}));
+
 vi.mock('@/hooks/useEditMarketplaceListing/useEditMarketplaceListing', () => ({
-  useEditMarketplaceListing: () => editing.value,
+  useEditMarketplaceListing: (_seller: string, _listing: string, options: unknown) => {
+    editOptions.value = options;
+    return editing.value;
+  },
+}));
+vi.mock('@/hooks/useListingStoreSync/useListingStoreSync', () => ({
+  useListingStoreSync: () => storeSync.value,
 }));
 vi.mock('@/hooks/useDeleteMarketplaceListings/useDeleteMarketplaceListings', () => ({
   useDeleteMarketplaceListings: ({ onDeleted }: { onDeleted?: (keys: string[]) => void } = {}) => {
@@ -34,18 +58,26 @@ vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
   MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 vi.mock('@/organisms/Marketplace/MarketplaceListingForm', () => ({
-  MarketplaceListingForm: ({ onSubmit }: { onSubmit: () => Promise<boolean> }) => (
-    <button
-      type="button"
-      onClick={() => {
-        void onSubmit().then((saved) => {
-          formState.lastSaved = saved;
-        });
-      }}
-    >
-      Save changes
-    </button>
-  ),
+  MarketplaceListingForm: (props: {
+    onSubmit: () => Promise<boolean>;
+    publishGuardReady?: boolean;
+    storeSync: StoreSyncProps;
+  }) => {
+    formProps.value = props;
+    const { onSubmit } = props;
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          void onSubmit().then((saved) => {
+            formState.lastSaved = saved;
+          });
+        }}
+      >
+        Save changes
+      </button>
+    );
+  },
 }));
 vi.mock('@/molecules/Marketplace/ListingPublishGuardNotice', () => ({ ListingPublishGuardNotice: () => null }));
 
@@ -60,6 +92,13 @@ describe('MarketplaceEditListing delete', () => {
     formState.lastSaved = null;
     editing.value = {};
     router.push.mockClear();
+    storeSync.value = {
+      ready: true,
+      syncs: [],
+      follows: { content: false, price: false, variants: false },
+      saving: null,
+      toggleOverride: vi.fn(),
+    };
   });
 
   it('offers Delete under the edit form and requests the listing being edited', () => {
@@ -120,5 +159,65 @@ describe('MarketplaceEditListing delete', () => {
     render(<MarketplaceEditListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots" />);
 
     expect(screen.queryByRole('button', { name: 'Delete listing' })).not.toBeInTheDocument();
+  });
+});
+
+describe('MarketplaceEditListing store sync', () => {
+  const sync = {
+    connectionId: 'c1',
+    domain: 'demo.myshopify.com',
+    editInStoreUrl: null,
+    groups: {
+      content: { follows: true, overridden: false },
+      price: { follows: true, overridden: false },
+      variants: { follows: true, overridden: false },
+    },
+  };
+
+  beforeEach(() => {
+    editing.value = {
+      status: 'ready',
+      ownedListing: record,
+      publishBlocked: null,
+      publishGuardReady: true,
+      form: {},
+      media: {},
+      resetFollowedGroup: vi.fn(),
+    };
+  });
+
+  it('tells the edit hook which parts follow the store and hands the form each linked store', () => {
+    storeSync.value = { ...storeSync.value, syncs: [sync], follows: { content: true, price: false, variants: true } };
+
+    render(<MarketplaceEditListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots" />);
+
+    expect(editOptions.value).toEqual({ follows: { content: true, price: false, variants: true } });
+    expect(formProps.value.storeSync.syncs).toEqual([sync]);
+  });
+
+  it('holds the save until the linked stores have been asked, so no followed field is saved unknowingly', () => {
+    storeSync.value = { ...storeSync.value, ready: false };
+
+    render(<MarketplaceEditListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots" />);
+
+    expect(formProps.value.publishGuardReady).toBe(false);
+  });
+
+  it('puts the form back to the published values when a part follows the store again, and only then', async () => {
+    storeSync.value = { ...storeSync.value, syncs: [sync] };
+    vi.mocked(storeSync.value.toggleOverride)
+      .mockResolvedValueOnce({ follows: true, overridden: false })
+      .mockResolvedValueOnce({ follows: false, overridden: true })
+      .mockResolvedValueOnce(null);
+    render(<MarketplaceEditListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots" />);
+    const reset = (editing.value as { resetFollowedGroup: ReturnType<typeof vi.fn> }).resetFollowedGroup;
+
+    formProps.value.storeSync.onToggle('c1', 'content');
+    await vi.waitFor(() => expect(reset).toHaveBeenCalledWith('content'));
+    formProps.value.storeSync.onToggle('c1', 'price');
+    formProps.value.storeSync.onToggle('c1', 'variants');
+    await vi.waitFor(() => expect(storeSync.value.toggleOverride).toHaveBeenCalledTimes(3));
+
+    expect(reset).toHaveBeenCalledTimes(1);
   });
 });

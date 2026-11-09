@@ -142,26 +142,39 @@ changes either way; see "Product changes" in the marketplace service's
   that wait for the seller. `useConnectorChanges` loads them
   (`GET /v1/connectors/{id}/changes`) and the organism
   `MarketplaceConnectorChanges` lists them. Nothing is listed when there are none.
-- **Follows connection / Override** (listing editor, for a listing linked to a
-  Shopify store): a switch per group. Following, the group's fields are read-only
-  with "Edit in Shopify", so a store edit never collides with one made here;
-  stock stays editable. Overriding sets the listing's own direction, the opposite
-  of the connection's (`PUT /v1/connectors/{id}/sync/listings/{listing_id}`, `null`
-  returns to the connection's setting). `useListingStoreSync` finds the linked
-  store from the connection mappings.
+- **Follow switch** (listing editor, for a listing linked to a Shopify store): one
+  per group and per linked store. On, the group follows the store: its fields are
+  read-only, with "Edit in Shopify" (only for a real `*.myshopify.com` store), so a
+  store edit never collides with one made here. Off, the group is not synced for
+  this listing. The switch shows what applies to the listing; the line under it says
+  whether that is the connection's setting or the listing's own. Turning it
+  changes only this listing, to the opposite of the connection's setting
+  (`PUT /v1/connectors/{id}/sync/listings/{listing_id}`, `null` returns to the
+  connection's setting), so a listing can opt in for a group the connection leaves
+  alone. A group counts as followed when any store the listing is linked to says so.
+  `useListingStoreSync` finds the linked stores from the connection mappings.
+  Stock stays editable.
+- **What a followed field cannot do.** Read-only fields are also enforced on save:
+  the saved record takes a followed group's values from the published record,
+  whatever the form holds (`src/core/pipes/commerce/listing-followed-fields.ts`).
+  A listing whose variants follow the store keeps its own variants, ids and
+  disabled ones, and takes only stock from the form; photos are not uploaded and
+  dropping files does nothing. The save is held until the linked stores have been
+  asked. When a group follows the store again after being edited here, its fields go
+  back to the published values.
 
 ### What applies when
 
 The Shop applies a change because only the seller's Shop can sign a listing write.
 
-| Change                                           | When the page opens                | Needs a tap                |
-| ------------------------------------------------ | ---------------------------------- | -------------------------- |
-| Title, description, photos                       | applied                            | only a conflict            |
-| A product the store no longer sells              | listing paused, even with sync Off |                            |
-| Price                                            |                                    | Apply price                |
-| Option choices, SKU, a variant the store removed |                                    | Apply                      |
-| Making a paused listing active again             |                                    | Make active                |
-| A variant the listing has no link to             |                                    | Import it (catalog import) |
+| Change                                                                                                 | When the page opens                | Needs a tap                |
+| ------------------------------------------------------------------------------------------------------ | ---------------------------------- | -------------------------- |
+| Title, description, photos                                                                             | applied                            | only a conflict            |
+| A product the store no longer sells                                                                    | listing paused, even with sync Off |                            |
+| Price                                                                                                  |                                    | Apply price                |
+| Option choices, SKU, a variant the store removed (the listing price is rebuilt from the variants left) |                                    | Apply                      |
+| Making a paused listing active again                                                                   |                                    | Make active                |
+| A variant the listing has no link to                                                                   |                                    | Import it (catalog import) |
 
 ### The three-way rule
 
@@ -179,10 +192,13 @@ followed it) and the `proposed` value:
 
 A change with no base cannot tell, so it conflicts. Photos are a set, not a value:
 a photo the store added or removed is merged one by one, and a photo the seller
-removed stays removed while the store still has it, so photos never conflict.
-Photos go through the import's photo phase (`runImportImageBatches`): fetched
-through the server route, stripped of metadata and uploaded to the seller's
-homeserver, never referenced by the store's address.
+removed stays removed while the store still has it, so photos never conflict. A
+listing holds at most 12 photos: store photos with no room are named in the review,
+and when they are the only work the change is shown with the reason instead of
+being resolved as done. A change that would leave the listing without an image (a
+video does not count) is refused. Photos go through the import's photo phase
+(`runImportImageBatches`): fetched through the server route, stripped of metadata
+and uploaded to the seller's homeserver, never referenced by the store's address.
 
 Mapping details: the title and description follow the import's rules (plain text,
 the title limit, the title standing in for an empty description; a store
@@ -190,27 +206,41 @@ description of `null` leaves the listing's). A price changes the listing price a
 each linked variant's price, with the lowest as the listing price and the others
 as price overrides, as the import writes them; it is refused, with the reason, for
 an auction, a currency other than the listing's (nothing is converted), a price
-that does not fit the listing's decimals, or a price of zero. A removed store
-variant is turned off, and the listing is paused when no enabled variant with
-stock is left. Every result is checked against the listing record schema before
-it is written; a change the listing cannot hold is refused with that reason and
-can be dismissed.
+that does not fit the listing's decimals, or a price of zero. A link the listing
+cannot use (a blank store or listing variant id, or only links to variants the
+seller deleted) is refused as an incomplete link instead of being read as an empty
+change. A removed store variant is turned off, the listing price is rebuilt from
+the variants left, and the listing is paused when no enabled variant with stock is
+left. Every result is checked against the listing record schema before it is
+written; a change the listing cannot hold is refused with that reason and can be
+dismissed.
 
 ### Applying is safe to repeat
 
-For each change the Shop reads the changes again (a proposal replaced since the
-list was read is not applied), reads each listing again from the homeserver and
-evaluates it, writes the listing with `commitUpsertListing`, reads the write back,
+For each change the Shop reads the changes again (a proposal replaced or withdrawn
+since the list was read is not applied), reads each listing again from the
+homeserver and evaluates it, reads the changes once more immediately before each
+write (photo uploads can take a while, and the seller may have switched the group
+off meanwhile), writes the listing with `commitUpsertListing`, reads the write back,
 and only then resolves the change as `applied` with the proposal hash it acted on.
-A listing that already equals the proposal is only resolved, so a retry after a
-crash writes nothing twice. A write the homeserver has not served back yet leaves
-the change pending ("has not confirmed the update yet") until the revision shows.
-A resolve answered `change_stale` or `change_not_found` is not an error: the Shop
-reads the changes again. If some photos fail to load, the listing keeps the ones
-that loaded and the change stays pending with the reason; the next try loads only
-the missing ones, and photos already uploaded in the same visit are reused.
+A write counts as confirmed only when the homeserver serves back that exact
+revision and timestamp; a newer revision written elsewhere leaves the change
+pending. A change that looks already done is settled only from what the homeserver
+serves, never from the Shop's local copy, which may hold a write the homeserver
+never took. A listing that already equals the proposal is only resolved, so a retry
+after a crash writes nothing twice. A write the homeserver has not served back yet
+leaves the change pending ("has not confirmed the update yet") until the revision
+shows. A resolve answered `change_stale` or `change_not_found` is not an error: the
+Shop reads the changes again. A change whose every listing is switched off or gone
+has nothing to apply and is dismissed. If some photos fail to load, the listing
+keeps the ones that loaded and the change stays pending with the reason; the next
+try loads only the missing ones, and photos already uploaded in the same visit are
+reused.
 
-Residual: a photo whose upload finished but whose listing write did not, when the
+Residuals: the service has no conditional write, so a group switched off in the
+single request between the last check and the write can still see that one write;
+the change is then answered `change_not_found` and the seller sees the listing as
+written. A photo whose upload finished but whose listing write did not, when the
 page is closed in between, leaves a file nothing refers to; the retry uploads it
 again and the listing references one copy.
 

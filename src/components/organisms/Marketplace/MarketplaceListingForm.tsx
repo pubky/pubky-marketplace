@@ -175,9 +175,11 @@ export interface MarketplaceListingFormProps {
 }
 
 export type MarketplaceListingStoreSync = {
-  sync: ListingStoreSync;
-  savingGroup: ConnectorSyncGroup | null;
-  onToggle: (group: ConnectorSyncGroup) => void;
+  /** The connected stores the listing is linked to. */
+  syncs: readonly ListingStoreSync[];
+  /** `<connection id>:<group>` of the setting being saved. */
+  saving: string | null;
+  onToggle: (connectionId: string, group: ConnectorSyncGroup) => void;
 };
 
 export function MarketplaceListingForm({
@@ -211,7 +213,10 @@ export function MarketplaceListingForm({
     moveItem,
     setAltText,
   } = media;
-  const photoDrop = usePhotoFileDrop(addFiles, !isPublishing);
+  const followsContent = storeSync?.syncs.some((sync) => sync.groups.content.follows) === true;
+  const followsPrice = storeSync?.syncs.some((sync) => sync.groups.price.follows) === true;
+  const followsVariants = storeSync?.syncs.some((sync) => sync.groups.variants.follows) === true;
+  const photoDrop = usePhotoFileDrop(addFiles, !isPublishing && !followsContent);
   const fulfillment = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.FULFILLMENT });
   const saleFormat = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.SALE_FORMAT });
   const auctionDurations = getAuctionDurationsMinutes();
@@ -272,20 +277,18 @@ export function MarketplaceListingForm({
     }
   };
   const isEdit = mode === 'edit';
-  const followsContent = storeSync?.sync.groups.content.follows === true;
-  const followsPrice = storeSync?.sync.groups.price.follows === true;
-  const followsVariants = storeSync?.sync.groups.variants.follows === true;
   const storeFollow = (group: ConnectorSyncGroup) =>
-    storeSync && (
+    storeSync?.syncs.map((sync) => (
       <MarketplaceListingStoreFollow
+        key={sync.connectionId}
         group={group}
-        domain={storeSync.sync.domain}
-        state={storeSync.sync.groups[group]}
-        editInStoreUrl={storeSync.sync.editInStoreUrl}
-        saving={storeSync.savingGroup !== null}
-        onToggle={() => storeSync.onToggle(group)}
+        domain={sync.domain}
+        state={sync.groups[group]}
+        editInStoreUrl={sync.editInStoreUrl}
+        saving={storeSync.saving !== null}
+        onToggle={() => storeSync.onToggle(sync.connectionId, group)}
       />
-    );
+    ));
   const auctionDuration = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.AUCTION_DURATION });
   // The select shows the length that will publish: an empty or no-longer-offered
   // value (a fresh form, an older draft) moves to the deploy's first offered length.

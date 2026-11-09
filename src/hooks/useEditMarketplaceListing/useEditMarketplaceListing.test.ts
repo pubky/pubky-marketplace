@@ -169,6 +169,124 @@ describe('useEditMarketplaceListing', () => {
     });
   });
 
+  describe('a listing whose parts follow a connected store', () => {
+    const storeListing = () =>
+      structuredClone({
+        ...publishedRecord,
+        variants: [
+          { id: 'shopify-aaa', sku: 'A', options: { size: '42' }, quantity: 3, mediaIds: ['image_01'], enabled: true },
+          {
+            id: 'shopify-bbb',
+            sku: 'B',
+            options: { size: '43' },
+            quantity: 2,
+            mediaIds: ['image_01'],
+            enabled: false,
+            priceOverride: { amountMinor: 20_000, currency: 'USD', exponent: 2 },
+          },
+        ],
+      });
+
+    async function open(follows: { content: boolean; price: boolean; variants: boolean }) {
+      vi.mocked(CommerceController.getOrFetchListing).mockResolvedValue(storeListing());
+      const hook = renderHook(() => useEditMarketplaceListing(OWNER, LISTING_ID, { follows }));
+      await waitFor(() => expect(hook.result.current.status).toBe('ready'));
+      return hook.result;
+    }
+
+    const saved = () => vi.mocked(CommerceController.commitUpsertListing).mock.calls[0][0] as typeof publishedRecord;
+
+    it('saves the store’s title, description and photos whatever the form holds, and uploads nothing', async () => {
+      const result = await open({ content: true, price: false, variants: false });
+      act(() => {
+        result.current.form.setValue('title', 'Typed over the store');
+        result.current.form.setValue('description', 'Typed text');
+        result.current.form.setValue('price', '99.00');
+      });
+
+      await act(async () => {
+        await result.current.submit();
+      });
+
+      expect(saved()).toMatchObject({
+        title: 'Vintage leather boots',
+        description: 'Well cared for boots with light wear.',
+        media: [{ id: 'image_01' }],
+        sale: { unitPrice: { amountMinor: 9_900 } },
+      });
+      expect(CommerceController.commitCreateMedia).not.toHaveBeenCalled();
+    });
+
+    it('saves the store’s price and price overrides, and keeps the seller’s own stock', async () => {
+      const result = await open({ content: false, price: true, variants: false });
+      act(() => {
+        result.current.form.setValue('price', '1.00');
+        result.current.form.setValue('variants.1.priceOverride', '3.00');
+        result.current.form.setValue('variants.0.quantity', '7');
+      });
+
+      await act(async () => {
+        await result.current.submit();
+      });
+
+      expect(saved().sale.unitPrice.amountMinor).toBe(12_500);
+      expect(saved().variants[0]).toMatchObject({ quantity: 7 });
+      expect(saved().variants[1]).toMatchObject({ priceOverride: { amountMinor: 20_000 } });
+    });
+
+    it('keeps the listing’s own variants, ids and disabled ones, taking only stock from the form', async () => {
+      const result = await open({ content: false, price: false, variants: true });
+      act(() => {
+        result.current.form.setValue('variants.0.sku', 'TYPED');
+        result.current.form.setValue('variants.0.quantity', '9');
+      });
+
+      await act(async () => {
+        await result.current.submit();
+      });
+
+      expect(saved().variants.map(({ id, enabled }) => [id, enabled])).toEqual([
+        ['shopify-aaa', true],
+        ['shopify-bbb', false],
+      ]);
+      expect(saved().variants[0]).toMatchObject({ sku: 'A', quantity: 9, options: { size: '42' } });
+    });
+
+    it('rewrites the variants as the form has them when nothing follows the store', async () => {
+      const result = await open({ content: false, price: false, variants: false });
+
+      await act(async () => {
+        await result.current.submit();
+      });
+
+      expect(saved().variants.map(({ id }) => id)).toEqual(['variant_1', 'variant_2']);
+    });
+
+    it('puts a followed group’s fields back to the published values', async () => {
+      const result = await open({ content: false, price: false, variants: false });
+      act(() => {
+        result.current.form.setValue('title', 'Typed');
+        result.current.form.setValue('description', 'Typed text');
+        result.current.form.setValue('price', '1.00');
+        result.current.form.setValue('variants.0.sku', 'TYPED');
+        result.current.form.setValue('variants.1.priceOverride', '3.00');
+      });
+
+      act(() => result.current.resetFollowedGroup('content'));
+      expect(result.current.form.getValues('title')).toBe('Vintage leather boots');
+      expect(result.current.form.getValues('description')).toBe('Well cared for boots with light wear.');
+      expect(result.current.media.items).toEqual([expect.objectContaining({ kind: 'existing', key: 'image_01' })]);
+      expect(result.current.form.getValues('price')).toBe('1.00');
+
+      act(() => result.current.resetFollowedGroup('price'));
+      expect(result.current.form.getValues('price')).toBe('125.00');
+      expect(result.current.form.getValues('variants.1.priceOverride')).toBe('200.00');
+
+      act(() => result.current.resetFollowedGroup('variants'));
+      expect(result.current.form.getValues('variants.0.sku')).toBe('A');
+    });
+  });
+
   it('republishes a listing saved with UK as GB, and a typed uk as GB', async () => {
     vi.mocked(CommerceController.getOrFetchListing).mockResolvedValue(
       structuredClone({ ...publishedRecord, location: { countryCode: 'UK', region: 'London' } }),

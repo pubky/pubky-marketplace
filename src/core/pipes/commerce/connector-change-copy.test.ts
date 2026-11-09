@@ -22,8 +22,13 @@ describe('describeFieldChange', () => {
   });
 
   it('says what happens to photos, status and variants', () => {
-    expect(describeFieldChange({ kind: 'photos', added: 2, removed: 1 }, name)).toBe('Photos: 2 added, 1 removed');
-    expect(describeFieldChange({ kind: 'photos', added: 0, removed: 1 }, name)).toBe('Photos: 1 removed');
+    expect(describeFieldChange({ kind: 'photos', added: 2, removed: 1, notAdded: 0 }, name)).toBe(
+      'Photos: 2 added, 1 removed',
+    );
+    expect(describeFieldChange({ kind: 'photos', added: 0, removed: 1, notAdded: 0 }, name)).toBe('Photos: 1 removed');
+    expect(describeFieldChange({ kind: 'photos', added: 0, removed: 0, notAdded: 2 }, name)).toBe(
+      'Photos: 2 not added, the listing holds as many photos as it can',
+    );
     expect(describeFieldChange({ kind: 'status', from: 'active', to: 'paused' }, name)).toBe(
       'Pause this listing so it stops selling',
     );

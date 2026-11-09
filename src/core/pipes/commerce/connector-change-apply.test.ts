@@ -275,6 +275,63 @@ describe('content changes', () => {
   });
 });
 
+describe('photos that cannot be applied cleanly', () => {
+  const photoUrls = (count: number) =>
+    Array.from({ length: count }, (_, i) => `https://cdn.shopify.com/s/files/new-${i}.jpg`);
+  const handAdded = (count: number) =>
+    Array.from({ length: count }, (_, i) => ({ ...createCommerceListingFixture().media[0]!, id: `hand_${i}` }));
+  const withPhotos = (urls: string[], title = 'Trail Boots') => {
+    const change = recordedChange('content');
+    if (change.fieldGroup !== 'content') throw new Error('not content');
+    return {
+      ...change,
+      base: { ...change.base!, title },
+      proposed: { ...change.proposed, title, description: change.base!.description, imageUrls: urls },
+    } as ConnectorProductChange;
+  };
+
+  it('does not take a photo that found no room for a completed change', () => {
+    const full = bootsFollowingTheStore({ media: handAdded(12) });
+
+    const evaluation = evaluate(withPhotos([PHOTO_1, ...photoUrls(1)]), full);
+
+    expect(evaluation).toEqual({ kind: 'unsupported', reason: 'photos_full' });
+  });
+
+  it('says how many store photos were left out when other fields change too', () => {
+    const full = bootsFollowingTheStore({ media: handAdded(12) });
+    const change = withPhotos([PHOTO_1, ...photoUrls(2)], 'Trail Boots');
+    if (change.fieldGroup !== 'content') throw new Error('not content');
+    const retitled = { ...change, proposed: { ...change.proposed, title: 'Trail Boots II' } } as ConnectorProductChange;
+
+    const evaluation = evaluate(retitled, full);
+
+    expect(evaluation.kind === 'apply' && evaluation.changes).toContainEqual({
+      kind: 'photos',
+      added: 0,
+      removed: 0,
+      notAdded: 2,
+    });
+  });
+
+  it('refuses to drop the last image when only a video would remain', () => {
+    const video = {
+      ...createCommerceListingFixture().media[0]!,
+      id: 'video_01',
+      type: 'video' as const,
+      mimeType: 'video/mp4',
+      durationMs: 3000,
+    };
+    const photo = mediaWithSource('image_01', PHOTO_1);
+    const record = bootsFollowingTheStore({ media: [photo, video] });
+    const change = recordedChange('content');
+    if (change.fieldGroup !== 'content') throw new Error('not content');
+    const none = { ...change, proposed: { ...change.proposed, imageUrls: [] } } as ConnectorProductChange;
+
+    expect(evaluate(none, record)).toEqual({ kind: 'unsupported', reason: 'no_photos' });
+  });
+});
+
 describe('price changes', () => {
   it('applies the recorded price to the single-variant listing it follows', () => {
     const record = bootsFollowingTheStore();
@@ -496,6 +553,40 @@ describe('variant changes', () => {
     expect(next.state).toBe('active');
   });
 
+  it('reprices the listing when the variant that set its price is removed', () => {
+    const change = variantsChange(
+      variantList([
+        { id: V1, size: '42' },
+        { id: V2, size: '43' },
+      ]),
+      variantList([{ id: V2, size: '43' }]),
+    );
+    const record = twoVariantBoots({
+      sale: {
+        format: 'fixed_price',
+        unitPrice: { amountMinor: 10000, currency: 'USD', exponent: 2 },
+        acceptsOffers: true,
+      },
+    });
+    const dearer = {
+      ...record,
+      variants: [
+        record.variants[0]!,
+        { ...record.variants[1]!, priceOverride: { amountMinor: 20000, currency: 'USD', exponent: 2 } },
+      ],
+    };
+
+    const patch = applied(evaluate(change, dearer, { links: { [V1]: 'variant_01', [V2]: 'variant_02' } }));
+    const next = build(dearer, patch);
+
+    expect(next.variants.map(({ id, enabled }) => [id, enabled])).toEqual([
+      ['variant_01', false],
+      ['variant_02', true],
+    ]);
+    expect(next.sale).toMatchObject({ unitPrice: { amountMinor: 20000 } });
+    expect(next.variants[1]?.priceOverride).toBeUndefined();
+  });
+
   it('pauses the listing when the removed variant was the last one with stock', () => {
     const change = variantsChange(
       variantList([
@@ -608,6 +699,54 @@ describe('variant changes', () => {
     const patch = applied(evaluate(change, record, { links: { [V1]: 'variant_01', [V2]: 'variant_02' } }));
 
     expect(applyListingPatch(record, patch, { now: NOW })).toEqual({ ok: false, reason: 'record_invalid' });
+  });
+});
+
+describe('links the listing cannot use', () => {
+  it('refuses a link with no store variant id instead of turning the variant off', () => {
+    const change = variantsChange(
+      variantList([{ id: V1, size: '42' }]),
+      variantList([{ id: V1, size: '42', sku: 'X' }]),
+    );
+    const blank = {
+      ...change,
+      listings: [{ ...change.listings[0]!, variants: [{ variantId: 'variant_01', providerVariantId: '' }] }],
+    } as ConnectorProductChange;
+
+    expect(evaluate(blank, bootsFollowingTheStore(), { links: {} })).toEqual({
+      kind: 'unsupported',
+      reason: 'link_incomplete',
+    });
+  });
+
+  it('refuses a change whose only links name variants the seller deleted, and ignores a stale link beside a good one', () => {
+    const price = recordedChange('price');
+    const record = bootsFollowingTheStore();
+
+    expect(evaluate(price, record, { links: { [V1]: 'variant_gone' } })).toEqual({
+      kind: 'unsupported',
+      reason: 'link_incomplete',
+    });
+
+    const stale = {
+      ...price,
+      listings: [
+        {
+          ...price.listings[0]!,
+          variants: [
+            { variantId: 'variant_01', providerVariantId: V1 },
+            { variantId: 'variant_gone', providerVariantId: V2 },
+          ],
+        },
+      ],
+    } as ConnectorProductChange;
+    const evaluation = evaluateChange({
+      change: stale,
+      record,
+      links: stale.listings[0]!.variants,
+      linkedProviderVariantIds: new Set([V1, V2]),
+    });
+    expect(evaluation.kind).toBe('apply');
   });
 });
 

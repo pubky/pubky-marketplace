@@ -18,30 +18,43 @@ describe('MarketplaceListingStoreFollow', () => {
       <MarketplaceListingStoreFollow {...props} onToggle={onToggle} state={{ follows: true, overridden: false }} />,
     );
 
-    expect(screen.getByText('Price follow demo.myshopify.com')).toBeInTheDocument();
+    expect(screen.getByText('Price: follow demo.myshopify.com')).toBeInTheDocument();
+    expect(screen.getByText(/Set for the whole connection\./)).toBeInTheDocument();
     const link = screen.getByRole('link', { name: /Edit in Shopify/ });
     expect(link).toHaveAttribute('href', props.editInStoreUrl);
     expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
-    const toggle = screen.getByRole('switch', { name: 'Price follow the connection' });
+    const toggle = screen.getByRole('switch', { name: 'Price follow demo.myshopify.com' });
     expect(toggle).toBeChecked();
     await userEvent.click(toggle);
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
-  it('says an overridden part is the listing’s own, with the switch off', () => {
-    render(<MarketplaceListingStoreFollow {...props} state={{ follows: false, overridden: true }} />);
+  it('shows no store link when the store page is not known', () => {
+    render(
+      <MarketplaceListingStoreFollow {...props} editInStoreUrl={null} state={{ follows: true, overridden: false }} />,
+    );
 
-    expect(screen.getByText('Price are set for this listing')).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: 'Price follow the connection' })).not.toBeChecked();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 
-  it('shows nothing for a part the connection leaves alone', () => {
-    const { container } = render(
-      <MarketplaceListingStoreFollow {...props} state={{ follows: false, overridden: false }} />,
+  it('says a part the listing opted out of is not synced, with the switch off', () => {
+    render(<MarketplaceListingStoreFollow {...props} state={{ follows: false, overridden: true }} />);
+
+    expect(screen.getByText('Price: not synced with demo.myshopify.com')).toBeInTheDocument();
+    expect(screen.getByText(/Set for this listing only\./)).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Price follow demo.myshopify.com' })).not.toBeChecked();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('lets a listing opt in for a part the connection leaves alone', async () => {
+    const onToggle = vi.fn();
+    render(
+      <MarketplaceListingStoreFollow {...props} onToggle={onToggle} state={{ follows: false, overridden: false }} />,
     );
 
-    expect(container).toBeEmptyDOMElement();
+    expect(screen.getByText(/Set for the whole connection\./)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('switch', { name: 'Price follow demo.myshopify.com' }));
+    expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
   it('cannot be switched while a setting is being saved', () => {

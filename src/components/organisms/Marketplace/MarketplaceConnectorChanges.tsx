@@ -22,8 +22,7 @@ import {
 } from '@/pipes/commerce/connector-change-copy';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
-/** The anchor of a connection's store changes, so a link elsewhere can land on them. */
-export function connectorChangesAnchorId(connectionId: string): string {
+function connectorChangesAnchorId(connectionId: string): string {
   return `store-changes-${connectionId}`;
 }
 
@@ -35,8 +34,9 @@ export interface MarketplaceConnectorChangesProps {
 }
 
 function applyLabel(item: ReviewItem): string {
-  if (item.change.fieldGroup === 'price') return 'Apply price';
-  if (item.change.fieldGroup === 'status') return 'Make active';
+  const { change } = item;
+  if (change.fieldGroup === 'price') return 'Apply price';
+  if (change.fieldGroup === 'status') return change.proposed.available ? 'Make active' : 'Pause listing';
   return 'Apply';
 }
 

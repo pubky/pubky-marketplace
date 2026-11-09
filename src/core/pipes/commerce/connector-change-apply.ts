@@ -69,7 +69,13 @@ export type VariantPatch = {
 /** One line of what applying the change does, for the review to show. */
 export type FieldChange =
   | { readonly kind: 'text'; readonly field: 'title' | 'description'; readonly from: string; readonly to: string }
-  | { readonly kind: 'photos'; readonly added: number; readonly removed: number }
+  | {
+      readonly kind: 'photos';
+      readonly added: number;
+      readonly removed: number;
+      /** Store photos left out because the listing already holds as many as it can. */
+      readonly notAdded: number;
+    }
   | { readonly kind: 'price'; readonly variantId: string; readonly from: CommerceMoney; readonly to: CommerceMoney }
   | { readonly kind: 'status'; readonly from: CommerceListingRecord['state']; readonly to: 'active' | 'paused' }
   | { readonly kind: 'variant_off'; readonly variantId: string }
@@ -96,6 +102,7 @@ export type ChangeConflict =
 export type UnsupportedReason =
   | 'title_invalid'
   | 'no_photos'
+  | 'photos_full'
   | 'auction_price'
   | 'currency_differs'
   | 'price_scale'
@@ -198,6 +205,17 @@ function effectivePrice(record: CommerceListingRecord, variantId: string): Comme
   return variant?.priceOverride ?? record.sale.unitPrice;
 }
 
+/**
+ * The links that name a variant the listing still has. Links the listing cannot use (a blank store or listing
+ * variant id, or only links to variants the seller deleted) mean the change cannot be told apart from "nothing
+ * to do", so they are refused instead of read as an empty change.
+ */
+function resolvableLinks(record: CommerceListingRecord, links: readonly ChangeLink[]): readonly ChangeLink[] | null {
+  if (links.some(({ variantId, providerVariantId }) => variantId === '' || providerVariantId === '')) return null;
+  const usable = links.filter(({ variantId }) => record.variants.some(({ id }) => id === variantId));
+  return links.length > 0 && usable.length === 0 ? null : usable;
+}
+
 function hasStock(variants: CommerceListingRecord['variants']): boolean {
   return variants.some(({ enabled, quantity }) => enabled && quantity > 0);
 }
@@ -251,10 +269,19 @@ function evaluateContent(change: ContentChange, record: CommerceListingRecord, t
     wanted.map((url) => ({ url, alt: title })),
     COMMERCE_LISTING_MAX_IMAGES + videoCount,
   );
+  const keepsAnImage = plan.keptMedia.some((entry) => (entry as { type?: unknown }).type === 'image');
   if (plan.toUpload.length > 0 || plan.removed > 0) {
-    if (plan.keptMedia.length === 0 && plan.toUpload.length === 0) return unsupported('no_photos');
+    if (!keepsAnImage && plan.toUpload.length === 0) return unsupported('no_photos');
     patch = { ...patch, photos: plan };
-    changes.push({ kind: 'photos', added: plan.toUpload.length, removed: plan.removed });
+    changes.push({
+      kind: 'photos',
+      added: plan.toUpload.length,
+      removed: plan.removed,
+      notAdded: plan.overflow.length,
+    });
+  } else if (plan.overflow.length > 0) {
+    if (changes.length === 0 && conflicts.length === 0) return unsupported('photos_full');
+    changes.push({ kind: 'photos', added: 0, removed: 0, notAdded: plan.overflow.length });
   }
 
   if (conflicts.length > 0) return { kind: 'conflict', conflicts };
@@ -268,7 +295,8 @@ function evaluatePrice(
   takeStore: boolean,
 ): ChangeEvaluation {
   if (record.sale.format !== 'fixed_price') return unsupported('auction_price');
-  if (links.some(({ variantId }) => variantId === '')) return unsupported('link_incomplete');
+  const usable = resolvableLinks(record, links);
+  if (usable === null) return unsupported('link_incomplete');
   const { currency, exponent } = record.sale.unitPrice;
   const proposedByVariant = new Map(change.proposed.variants.map((entry) => [entry.providerVariantId, entry]));
   const baseByVariant = new Map((change.base?.variants ?? []).map((entry) => [entry.providerVariantId, entry]));
@@ -277,7 +305,7 @@ function evaluatePrice(
   const conflicts: ChangeConflict[] = [];
   const next = new Map<string, number>();
 
-  for (const link of links) {
+  for (const link of usable) {
     const proposed = proposedByVariant.get(link.providerVariantId);
     const current = effectivePrice(record, link.variantId);
     if (!proposed || !current) continue;
@@ -346,7 +374,8 @@ function evaluateVariants(
       variants: added.map(({ providerVariantId, title }) => ({ providerVariantId, title })),
     };
   }
-  if (links.some(({ variantId }) => variantId === '')) return unsupported('link_incomplete');
+  const usable = resolvableLinks(record, links);
+  if (usable === null) return unsupported('link_incomplete');
 
   const proposedByVariant = new Map(change.proposed.variants.map((entry) => [entry.providerVariantId, entry]));
   const baseByVariant = new Map((change.base?.variants ?? []).map((entry) => [entry.providerVariantId, entry]));
@@ -355,7 +384,7 @@ function evaluateVariants(
   const variants: Record<string, VariantPatch> = {};
   const remaining = new Set(record.variants.filter(({ enabled }) => enabled).map(({ id }) => id));
 
-  for (const link of links) {
+  for (const link of usable) {
     const variant = record.variants.find(({ id }) => id === link.variantId);
     if (!variant) continue;
     const proposed = proposedByVariant.get(link.providerVariantId);
@@ -454,9 +483,13 @@ export function applyListingPatch(
   });
 
   let sale = record.sale;
-  if (patch.prices && record.sale.format === 'fixed_price') {
+  const turnsAVariantOff = Object.values(patch.variants ?? {}).some((edit) => edit.enabled === false);
+  if ((patch.prices || turnsAVariantOff) && record.sale.format === 'fixed_price') {
     const { currency, exponent, amountMinor: listingMinor } = record.sale.unitPrice;
-    const wanted = (id: string) => patch.prices?.[id]?.amountMinor ?? listingMinor;
+    const wanted = (id: string) =>
+      patch.prices?.[id]?.amountMinor ??
+      record.variants.find((variant) => variant.id === id)?.priceOverride?.amountMinor ??
+      listingMinor;
     const live = variants.filter(({ enabled }) => enabled);
     const unit = Math.min(...(live.length > 0 ? live : variants).map(({ id }) => wanted(id)));
     sale = { ...record.sale, unitPrice: { amountMinor: unit, currency, exponent } };

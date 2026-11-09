@@ -1751,21 +1751,21 @@ describe('MarketplaceListingForm unlimited stock leaving digital-only', () => {
 });
 
 describe('MarketplaceListingForm store sync', () => {
-  const storeSync = (
-    follows: { content: boolean; price: boolean; variants: boolean },
-    onToggle = vi.fn(),
-  ): MarketplaceListingStoreSync => ({
-    sync: {
-      connectionId: 'c1',
-      domain: 'demo.myshopify.com',
-      editInStoreUrl: 'https://demo.myshopify.com/admin/products/9001',
-      groups: {
-        content: { follows: follows.content, overridden: !follows.content },
-        price: { follows: follows.price, overridden: !follows.price },
-        variants: { follows: follows.variants, overridden: !follows.variants },
-      },
-    },
-    savingGroup: null,
+  type Follows = { content: boolean; price: boolean; variants: boolean };
+  const group = (follows: boolean) => ({ follows, overridden: false });
+  const syncFor = (
+    follows: Follows,
+    domain = 'demo.myshopify.com',
+    connectionId = 'c1',
+  ): MarketplaceListingStoreSync['syncs'][number] => ({
+    connectionId,
+    domain,
+    editInStoreUrl: `https://${domain}/admin/products/9001`,
+    groups: { content: group(follows.content), price: group(follows.price), variants: group(follows.variants) },
+  });
+  const storeSync = (syncs: MarketplaceListingStoreSync['syncs'], onToggle = vi.fn()): MarketplaceListingStoreSync => ({
+    syncs,
+    saving: null,
     onToggle,
   });
   const record = () => createCommerceListingFixture();
@@ -1778,9 +1778,10 @@ describe('MarketplaceListingForm store sync', () => {
       storeSync={sync}
     />
   );
+  const ALL = { content: true, price: true, variants: true };
 
   it('shows the parts that follow the store read-only, with a way to edit them in the store', () => {
-    render(edit(storeSync({ content: true, price: true, variants: true })));
+    render(edit(storeSync([syncFor(ALL)])));
 
     expect(screen.getByRole('textbox', { name: /^Title/ })).toBeDisabled();
     expect(screen.getByRole('textbox', { name: /^Description/ })).toBeDisabled();
@@ -1797,13 +1798,61 @@ describe('MarketplaceListingForm store sync', () => {
     expect(screen.getByRole('textbox', { name: /^Quantity/ })).toBeEnabled();
   });
 
-  it('keeps stock editable and unlocks only the parts the listing overrides', () => {
-    render(edit(storeSync({ content: true, price: false, variants: true })));
+  it('refuses photos dropped on a listing whose photos follow the store', () => {
+    const media = buildMedia([photoItem('p1', 'Front')]);
+    const { rerender } = render(
+      <FormHarness
+        mode="edit"
+        listingId="boots_01"
+        media={media}
+        defaultValues={formDataFromRecord(record(), 'USD', 'metric', null)}
+        storeSync={storeSync([syncFor(ALL)])}
+      />,
+    );
+    const file = imageFile('dropped.jpg');
+
+    fireEvent.drop(photoDropZone(), fileDrag([file]));
+    expect(media.addFiles).not.toHaveBeenCalled();
+
+    rerender(
+      <FormHarness
+        mode="edit"
+        listingId="boots_01"
+        media={media}
+        defaultValues={formDataFromRecord(record(), 'USD', 'metric', null)}
+        storeSync={storeSync([syncFor({ content: false, price: true, variants: true })])}
+      />,
+    );
+    fireEvent.drop(photoDropZone(), fileDrag([file]));
+    expect(media.addFiles).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps stock editable and unlocks only the parts the listing opted out of', () => {
+    render(edit(storeSync([syncFor({ content: true, price: false, variants: true })])));
 
     expect(screen.getByRole('textbox', { name: /^Title/ })).toBeDisabled();
     expect(screen.getByRole('textbox', { name: /^Price \(/ })).toBeEnabled();
     expect(screen.getByRole('textbox', { name: /^Price override/ })).toBeEnabled();
     expect(screen.getByRole('textbox', { name: 'Seller SKU' })).toBeDisabled();
+  });
+
+  it('locks a part that any of two linked stores follows, with a switch for each store', () => {
+    render(
+      edit(
+        storeSync([
+          syncFor({ content: false, price: false, variants: false }, 'first.myshopify.com', 'c1'),
+          syncFor({ content: true, price: false, variants: false }, 'second.myshopify.com', 'c2'),
+        ]),
+      ),
+    );
+
+    expect(screen.getByRole('textbox', { name: /^Title/ })).toBeDisabled();
+    expect(
+      screen.getByRole('switch', { name: 'Title, description and photos follow first.myshopify.com' }),
+    ).not.toBeChecked();
+    expect(
+      screen.getByRole('switch', { name: 'Title, description and photos follow second.myshopify.com' }),
+    ).toBeChecked();
   });
 
   it('leaves every field editable for a listing no store is linked to', () => {
@@ -1814,12 +1863,12 @@ describe('MarketplaceListingForm store sync', () => {
     expect(screen.queryByTestId('store-follow-content')).not.toBeInTheDocument();
   });
 
-  it('turns a part into the listing’s own through its switch', async () => {
+  it('turns a part into the listing’s own through its switch, naming the store', async () => {
     const onToggle = vi.fn();
-    render(edit(storeSync({ content: true, price: true, variants: true }, onToggle)));
+    render(edit(storeSync([syncFor(ALL)], onToggle)));
 
-    await userEvent.click(screen.getByRole('switch', { name: 'Price follow the connection' }));
+    await userEvent.click(screen.getByRole('switch', { name: 'Price follow demo.myshopify.com' }));
 
-    expect(onToggle).toHaveBeenCalledWith('price');
+    expect(onToggle).toHaveBeenCalledWith('c1', 'price');
   });
 });

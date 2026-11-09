@@ -25,8 +25,8 @@ export interface MarketplaceEditListingProps {
 
 export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEditListingProps) {
   const router = useRouter();
-  const editing = useEditMarketplaceListing(sellerPubky, listingId);
   const storeSync = useListingStoreSync(listingId);
+  const editing = useEditMarketplaceListing(sellerPubky, listingId, { follows: storeSync.follows });
   const [isSaving, setIsSaving] = useState(false);
   const listingRoute = getMarketplaceListingRoute(sellerPubky, listingId);
   const deleting = useDeleteMarketplaceListings({ onDeleted: () => router.push(MARKETPLACE_ROUTES.DASHBOARD) });
@@ -156,16 +156,19 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
           mode="edit"
           saleTermsLocked={editing.saleTermsLocked}
           storeSync={
-            storeSync.sync
+            storeSync.syncs.length > 0
               ? {
-                  sync: storeSync.sync,
-                  savingGroup: storeSync.savingGroup,
-                  onToggle: (group) => void storeSync.toggleOverride(group),
+                  syncs: storeSync.syncs,
+                  saving: storeSync.saving,
+                  onToggle: (connectionId, group) =>
+                    void storeSync.toggleOverride(connectionId, group).then((next) => {
+                      if (next?.follows) editing.resetFollowedGroup(group);
+                    }),
                 }
               : null
           }
           publishBlocked={editing.publishBlocked}
-          publishGuardReady={editing.publishGuardReady}
+          publishGuardReady={editing.publishGuardReady && storeSync.ready}
           returnTo={getMarketplaceListingEditRoute(sellerPubky, listingId)}
         />
         <Button asChild variant="ghost" className="rounded-full">

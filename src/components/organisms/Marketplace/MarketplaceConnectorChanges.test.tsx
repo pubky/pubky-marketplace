@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ConnectorChangesState, ReviewItem } from '@/hooks/useConnectorChanges/useConnectorChanges';
 import type { ConnectorProductChange } from '@/libs/commerce/connectors';
 import { changeState, evaluateChangeListings } from '@/pipes/commerce/connector-change-apply';
+import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { bootsFollowingTheStore, recordedChange, withLinkedVariantIds } from '@/test-utils/connector-changes';
 import { MarketplaceConnectorChanges } from './MarketplaceConnectorChanges';
 
@@ -126,6 +127,26 @@ describe('MarketplaceConnectorChanges', () => {
     expect(screen.getByText(/different currency/)).toBeInTheDocument();
     expect(screen.getByTestId('store-change-failure')).toHaveTextContent('has not confirmed the update');
     expect(screen.queryByRole('button', { name: 'Apply price' })).not.toBeInTheDocument();
+  });
+
+  it('offers to pause again, not to make active, when an automatic pause did not go through', () => {
+    const change = recordedChange('status');
+    const mug = createCommerceListingFixture({ listingId: 'mug_01' });
+    const verdicts = evaluateChangeListings(change, new Map([['mug_01', mug]]));
+    const item: ReviewItem = {
+      change,
+      verdicts,
+      state: 'applicable',
+      titles: { mug_01: mug.title },
+      variantLabels: {},
+      failure: 'unconfirmed',
+    };
+    render(
+      <MarketplaceConnectorChanges connection={connection} changes={changesFor({ status: 'ready', items: [item] })} />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Pause listing' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Make active' })).not.toBeInTheDocument();
   });
 
   it('disables the buttons of the change being applied', () => {

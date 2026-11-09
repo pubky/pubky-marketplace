@@ -55,6 +55,7 @@ export function describeFieldChange(change: FieldChange, variantName: (variantId
       const parts = [
         change.added > 0 ? `${change.added} added` : null,
         change.removed > 0 ? `${change.removed} removed` : null,
+        change.notAdded > 0 ? `${change.notAdded} not added, the listing holds as many photos as it can` : null,
       ].filter((part): part is string => part !== null);
       return `Photos: ${parts.join(', ')}`;
     }
@@ -107,6 +108,8 @@ export function describeConflict(
 const UNSUPPORTED_COPY: Readonly<Record<UnsupportedReason, string>> = {
   title_invalid: 'The store title is too short for a listing. Dismiss this change.',
   no_photos: 'The store has no usable photo for this product, and a listing needs at least one. Dismiss this change.',
+  photos_full:
+    'The listing already holds as many photos as it can, so the new photos from your store were not added. Remove a photo in the editor, or dismiss this change.',
   auction_price: 'Auction prices are fixed once the auction is published, so the store price cannot be applied.',
   currency_differs:
     'The store prices this product in a different currency than the listing. Pubky does not convert prices, so change it by hand or dismiss this change.',
