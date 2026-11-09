@@ -827,6 +827,9 @@ describe('other public marketplace records', () => {
     };
 
     expect(commerceReviewRecordSchema.safeParse({ ...base, text: '' }).success).toBe(true);
+    expect(commerceReviewRecordSchema.safeParse({ ...base, text: '\u{1F600}'.repeat(2_501) }).success).toBe(true);
+    expect(commerceReviewRecordSchema.safeParse({ ...base, text: '\u{1F600}'.repeat(5_000) }).success).toBe(true);
+    expect(commerceReviewRecordSchema.safeParse({ ...base, text: '\u{1F600}'.repeat(5_001) }).success).toBe(false);
     expect(commerceReviewRecordSchema.safeParse({ ...base, text: '   ' }).success).toBe(true);
     expect(commerceReviewRecordSchema.safeParse({ ...base, text: 'a'.repeat(5_001) }).success).toBe(false);
   });

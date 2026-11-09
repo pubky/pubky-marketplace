@@ -1,0 +1,1 @@
+Order cancellation, return, shipping and refund text limits now count characters the way the service does, so a reason made of emoji is no longer refused early, and an order action the Shop refuses before sending now says nothing was sent instead of a generic failure.

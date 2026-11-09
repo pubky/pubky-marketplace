@@ -35,6 +35,41 @@ beforeEach(() => {
 });
 
 describe('useOrderTracking', () => {
+  it.each([
+    ['carrier', 100, { carrierChoice: 'other', carrier: 'c'.repeat(99) + '\u{1F600}', trackingNumber: 'T-1' }],
+    ['trackingNumber', 200, { carrierChoice: 'ups', carrier: '', trackingNumber: 't'.repeat(199) + '\u{1F600}' }],
+  ] as const)('keeps a %s of exactly %i code points editable when it holds an emoji', async (_field, _max, values) => {
+    const { result } = renderHook(() => withErrors(useOrderTracking(shippedWithoutNumber, vi.fn())));
+    await act(async () => {
+      result.current.form.setValue('carrierChoice', values.carrierChoice);
+      result.current.form.setValue('carrier', values.carrier);
+      result.current.form.setValue('trackingNumber', values.trackingNumber);
+    });
+
+    let succeeded = false;
+    await act(async () => {
+      succeeded = await result.current.submit();
+    });
+
+    expect(succeeded).toBe(true);
+    expect(commit).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a tracking number of 201 code points', async () => {
+    const { result } = renderHook(() => withErrors(useOrderTracking(shippedWithoutNumber, vi.fn())));
+    await act(async () => {
+      result.current.form.setValue('carrierChoice', 'ups');
+      result.current.form.setValue('trackingNumber', '\u{1F600}'.repeat(201));
+    });
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(commit).not.toHaveBeenCalled();
+    expect(result.current.form.getFieldState('trackingNumber').error?.message).toBe('Use 200 characters or fewer.');
+  });
+
   it('starts from the carrier and number the order shows', () => {
     const { result } = renderHook(() => useOrderTracking(shippedWithoutNumber, vi.fn()));
 
