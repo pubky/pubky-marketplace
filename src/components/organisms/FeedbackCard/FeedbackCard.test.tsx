@@ -76,12 +76,10 @@ vi.mock('@/organisms/DialogFeedback/DialogFeedback', () => {
 });
 
 // Mock Molecules
-const mockToast = vi.fn();
-vi.mock('@/molecules/Toaster/use-toast', () => {
+const mockToast = vi.hoisted(() => vi.fn());
+vi.mock('@/molecules/Toaster/toast', () => {
   return {
-    useToast: vi.fn(() => ({
-      toast: mockToast,
-    })),
+    toast: mockToast,
   };
 });
 

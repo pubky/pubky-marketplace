@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { setSocialHost } from '@/test-utils/social-host';
@@ -49,9 +49,8 @@ vi.mock('@/organisms/Marketplace/MarketplaceSectionNav', () => ({
   MarketplaceSectionNav: () => <nav aria-label="Market sections" />,
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
-  useToast: () => ({ toast: vi.fn() }),
 }));
 
 vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({

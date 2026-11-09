@@ -19,7 +19,7 @@ import type {
 } from '@/hooks/useListingMediaManager/useListingMediaManager';
 import { DIGITAL_DELIVERY_COPY } from '@/libs/commerce/digital';
 import { PICKUP_NOTHING_PUBLISHED_TOAST } from '@/libs/commerce/pickup';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { setHeavySuiteBudgets } from '@/test-utils/load-budget';
@@ -103,7 +103,7 @@ vi.mock('@/config/commerce', async () => ({
   getAuctionDurationsMinutes: vi.fn(() => [7 * 24 * 60]),
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 

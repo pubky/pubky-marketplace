@@ -4,7 +4,7 @@ import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import { isConnectorsUnavailableError } from '@/libs/commerce/connectors';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { linkableListingsFrom } from '@/pipes/commerce/connector-listing-links';
 import { useAuthStore } from '@/stores/auth/auth.store';
 

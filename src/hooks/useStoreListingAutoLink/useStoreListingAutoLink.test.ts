@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { bareHttpFailure } from '@/test-utils/connector-errors';
 import { connectionFixture } from '@/test-utils/connector-fixtures';
@@ -29,7 +29,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: { getListingsBySeller: vi.fn() },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 describe('useStoreListingAutoLink', () => {
   beforeEach(() => {

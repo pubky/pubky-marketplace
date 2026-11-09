@@ -45,7 +45,7 @@ import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/Con
 import { ArbiscanLookupLink } from '@/molecules/Marketplace/ArbiscanLookupLink';
 import { MarketplaceCarrierSelect } from '@/molecules/Marketplace/MarketplaceCarrierSelect';
 import { MarketplaceStarRatingInput } from '@/molecules/MarketplaceStarRatingInput/MarketplaceStarRatingInput';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { MarketplaceBitcoinAmountBreakdown } from '@/organisms/Marketplace/MarketplaceBitcoinAmountBreakdown';
 import { MarketplacePackingSlipDialog } from '@/organisms/Marketplace/MarketplacePackingSlipDialog';
 import { MarketplacePickupRevealDialog } from '@/organisms/Marketplace/MarketplacePickupRevealDialog';

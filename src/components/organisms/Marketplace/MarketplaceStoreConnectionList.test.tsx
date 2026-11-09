@@ -12,7 +12,7 @@ vi.mock('@/controllers/connectors/connectors', () => ({
   ConnectorsController: { commitReplaceCredentials: vi.fn() },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 function row(
   overrides: Record<string, unknown> = {},

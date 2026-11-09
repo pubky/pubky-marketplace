@@ -4,7 +4,7 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import { type ConnectorCatalogProduct, connectorCatalogProductSchema } from '@/libs/commerce/connectors';
 import { isShopBuiltImportFile } from '@/libs/commerce/shop-built-import-file';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { connectorRefusal } from '@/test-utils/connector-errors';
 import { useConnectorCatalogImport } from './useConnectorCatalogImport';
 
@@ -50,7 +50,7 @@ vi.mock('@/controllers/connectors/connectors', () => ({
   ConnectorsController: { fetchSelectedProducts: vi.fn(), commitMappings: vi.fn() },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 vi.mock('@/stores/auth/auth.store', () => ({
   useAuthStore: (selector: (state: { currentUserPubky: string }) => unknown) =>

@@ -26,8 +26,8 @@ vi.mock('@/controllers/profile/profile', () => ({
   ProfileController: { commitCreate: vi.fn(), commitUpdate: vi.fn(), readProfileSeed: vi.fn(async () => null) },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
-  useToast: () => ({ toast: mockToast }),
+vi.mock('@/molecules/Toaster/toast', () => ({
+  toast: mockToast,
 }));
 
 vi.mock('@/stores/localFiles/localFiles.store', () => ({

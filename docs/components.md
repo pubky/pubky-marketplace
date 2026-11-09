@@ -176,49 +176,47 @@ A settings form that is not auto-saved guards its edits with [`useUnsavedChanges
 
 ## Toasts
 
-Stack: atom [`Toast`](../src/components/atoms/Toast/Toast.tsx) + [`Toast.variants.ts`](../src/components/atoms/Toast/Toast.variants.ts) + [`Toast.icons.tsx`](../src/components/atoms/Toast/Toast.icons.tsx), molecule [`Toaster`](../src/components/molecules/Toaster/Toaster.tsx), API [`toast()`](../src/components/molecules/Toaster/use-toast.ts) / `useToast()`. `<Toaster />` is mounted in the app layout.
+Use [`toast()`](../src/components/molecules/Toaster/toast.ts) from `@/molecules/Toaster/toast` in components, hooks and providers. `<Toaster />` is mounted in the app layout. The store, subscription hook and Radix atoms are internal; callers do not subscribe to toast state.
 
 ### Variants (`ToastVariant`)
 
-Icons are **not** stock Lucide — they are bespoke filled shapes with knocked-out glyphs in `Toast.icons.tsx`, wired via `TOAST_ICONS` in `Toast.variants.ts` (same semantics as check / alert / info, different source and silhouette).
+| Variant   | Use for                                          |
+| --------- | ------------------------------------------------ |
+| `default` | Success, confirmation, neutral completion        |
+| `error`   | Failures, validation errors, caught exceptions   |
+| `warning` | Caution, rate limits, recoverable problems       |
+| `info`    | Informational feedback, including clipboard copy |
 
-| Variant   | Use for                                         | Icon (`TOAST_ICONS`) |
-| --------- | ----------------------------------------------- | -------------------- |
-| `default` | Success, confirmation, neutral completion       | `ToastSuccessIcon`   |
-| `error`   | Failures, validation errors, caught exceptions  | `ToastErrorIcon`     |
-| `warning` | Caution, rate limits, recoverable problems      | `ToastWarningIcon`   |
-| `info`    | Informational feedback (e.g. copy-to-clipboard) | `ToastInfoIcon`      |
-
-Colors and per-variant styling live in `Toast.variants.ts` (`toastVariants`, `toastIconVariants`, `toastActionVariants`). Update tokens there — do not ad-hoc style toasts with `className` unless intentionally overriding.
+Omit `title` on an error toast to display the fallback “Error”. Icons are custom filled shapes in `Toast.icons.tsx`, wired through `TOAST_ICONS` in `Toast.variants.ts`.
 
 ### Calling `toast()`
 
 ```tsx
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 
-// Success / default (brand styling)
-toast({ title: t('saved'), description: t('savedDesc') });
+toast({ title: 'Saved' });
+toast({ variant: 'error', description: 'Could not save your changes.' });
 
-// Error — omit title to use toast.genericErrorTitle (filled in by Toaster)
-toast({ variant: 'error', description: t('failed') });
-
-// Custom error title when domain copy is specific
-toast({ variant: 'error', title: t('uploadFailed'), description: t('uploadFailedDesc') });
-
-// Warning / info
-toast({ variant: 'warning', title: t('headsUp'), description: t('...') });
-toast({ variant: 'info', title: t('copied'), description: text, dismissButton: true });
+toast({
+  title: 'Item removed from cart',
+  durationMs: 5_000,
+  action: { label: 'Undo', altText: 'Restore the removed item', onClick: restoreItem },
+});
 ```
 
-- Import `toast` from `@/molecules/Toaster/use-toast` (module-level; works in hooks and providers). Use `useToast()` in components when you only need the hook-bound `toast`.
-- **`variant: 'error'`** for errors — not `title: tToast('error')`, not `className: 'destructive …'`, and **no** `showErrorToast` / `showSuccessToast` wrapper helpers.
-- **`dismissButton: true`** when the toast should show an OK action (styled via `toastActionVariants` for the toast variant).
-- **`action`** for a custom `<ToastAction>` (e.g. repost Undo). Pass `variant` on `ToastAction` when it is not rendered by `Toaster`.
-- **`toast()` return value** supports `dismiss()` / `update()` (e.g. Undo flow).
+- Supply at least one of `title` or `description`, both strings. JSX, `className` and Radix props are not part of the public API.
+- `action` is `{ label, altText, onClick }`. The renderer dismisses the current toast before invoking the callback, so a replacement toast stays open. All custom action buttons use the neutral App style.
+- `dismissButton: true` adds a separate OK button. It uses brand styling for the default variant and neutral styling for other variants.
+- The returned handle exposes only `dismiss()`. Callers cannot read or update internal toast state.
+- Ordinary toasts expire after **3 seconds**. Set `durationMs` for a finite extension: cart Undo uses **5 seconds**, and wallet setup/retry uses **60 seconds**. Durations must be finite, greater than zero and no greater than `2_147_483_647`; invalid runtime values fall back to 3 seconds.
+- Only one transient toast is kept at a time, including messages with custom durations. A newer transient message replaces the previous one.
+- `persistent: true` disables expiry and keeps that message outside the transient replacement limit until acted on or dismissed. Reserve it for state the user must resolve; do not use it to extend a wallet retry message. It cannot be combined with `durationMs`.
+- The store owns expiry timers and cancels them on dismissal or replacement. Radix's timer is disabled to avoid competing deadlines. Dismissed toasts leave internal state after 20 seconds.
+- Use `variant: 'error'` for errors; do not add `showErrorToast` / `showSuccessToast` wrappers or style overrides. Styling belongs in `Toast.variants.ts`.
 
 ### Tests
 
-Mock `@/molecules/Toaster/use-toast` in unit tests; assert `variant: 'error'` (or other variant) instead of `title: 'Error'`.
+Mock `@/molecules/Toaster/toast` in feature unit tests; assert the options and invoke action descriptors to exercise their callbacks. Toast integration tests render the real store and Radix renderer, including timing, action replacement and dismissal. Appearance belongs in `Toaster.vrt.test.tsx`.
 
 ## Design System Integration
 

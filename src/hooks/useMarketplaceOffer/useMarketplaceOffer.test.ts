@@ -10,7 +10,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 
@@ -93,7 +93,7 @@ describe('useMarketplaceOffer', () => {
 
     expect(succeeded).toBe(false);
     expect(onConflict).toHaveBeenCalledTimes(1);
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: expect.stringContaining('reloaded') }),
     );
@@ -101,7 +101,7 @@ describe('useMarketplaceOffer', () => {
 
   it('maps server and thrown sentinel failures to static copy', async () => {
     const sentinel = 'SENTINEL_SERVER_TEXT_offer';
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const { result } = renderHook(() => useMarketplaceOffer('listing:seller_item', 3, vi.fn(), USD_ASSET));
     act(() => {
       result.current.form.setValue('amount', '100.00');
@@ -130,7 +130,7 @@ describe('useMarketplaceOffer', () => {
   });
 
   it('names an ended listing from the LISTING_NOT_ACTIVE reason', async () => {
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const { result } = renderHook(() => useMarketplaceOffer('listing:seller_item', 3, vi.fn(), USD_ASSET));
     act(() => {
       result.current.form.setValue('amount', '100.00');
@@ -153,7 +153,7 @@ describe('useMarketplaceOffer', () => {
   });
 
   it('maps listing inventory refusals to listing copy, never drop sold-out copy', async () => {
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const { result } = renderHook(() => useMarketplaceOffer('listing:seller_item', 3, vi.fn(), USD_ASSET));
     act(() => {
       result.current.form.setValue('amount', '100.00');
@@ -172,7 +172,7 @@ describe('useMarketplaceOffer', () => {
   });
 
   it('tells the buyer a pickup-only listing does not take offers', async () => {
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const { result } = renderHook(() => useMarketplaceOffer('listing:seller_item', 11, vi.fn(), USD_ASSET));
     act(() => {
       result.current.form.setValue('amount', '1.00');

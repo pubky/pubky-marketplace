@@ -11,12 +11,11 @@ import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
 import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useClientRegionStore } from '@/stores/client-region/client-region.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { createOrderFixture } from '@/test/fixtures/commerce/orders';
 import { resetRegionState, setRegionModes, stubClientRegion } from '@/test-utils/region-modes';
-import { asOpaque } from '@/test-utils/type-assertions';
 import { useMarketplaceCheckout } from './useMarketplaceCheckout';
 
 const listing = createCommerceSandboxCatalog().listings.find(({ sale }) => sale.format === 'fixed_price')!;
@@ -89,7 +88,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 
@@ -427,7 +426,7 @@ describe('useMarketplaceCheckout', () => {
     expect(CommerceController.syncListingRegistration).toHaveBeenCalledTimes(1);
     expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
     expect(clear).not.toHaveBeenCalled();
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: expect.stringContaining("isn't available for checkout right now") }),
     );
@@ -465,7 +464,7 @@ describe('useMarketplaceCheckout', () => {
     expect(CommerceController.syncListingRegistration).toHaveBeenCalledTimes(1);
     expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
     expect(clear).not.toHaveBeenCalled();
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: 'This listing was removed. Nothing was reserved.' }),
     );
@@ -744,7 +743,7 @@ describe('useMarketplaceCheckout', () => {
 
     expect(succeeded).toBe(false);
     expect(clear).not.toHaveBeenCalled();
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: expect.stringContaining('try again') }),
     );
@@ -782,7 +781,7 @@ describe('useMarketplaceCheckout', () => {
 
     expect(succeeded).toBe(false);
     expect(clear).not.toHaveBeenCalled();
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(expect.objectContaining({ description: expected }));
   });
 
@@ -811,7 +810,7 @@ describe('useMarketplaceCheckout', () => {
     });
 
     expect(succeeded).toBe(false);
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: 'This listing has sold out.' }),
     );
@@ -984,7 +983,7 @@ describe('useMarketplaceCheckout', () => {
     });
 
     expect(result.current.needsSession).toBe(false);
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: 'You cannot purchase your own listing.' }),
     );
@@ -1014,7 +1013,7 @@ describe('useMarketplaceCheckout', () => {
       expect((await result.current.pay('bitcoin')).ok).toBe(false);
     });
 
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: 'Checkout could not be completed.' }),
     );
@@ -1035,7 +1034,7 @@ describe('useMarketplaceCheckout', () => {
       expect((await result.current.pay('bitcoin')).ok).toBe(true);
     });
 
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const descriptions = vi.mocked(toast).mock.calls.map(([call]) => call.description);
     expect(descriptions).toContain('Checkout completed, but your cart could not be cleared.');
   });
@@ -1063,7 +1062,7 @@ describe('useMarketplaceCheckout', () => {
       expect((await result.current.pay('bitcoin')).ok).toBe(true);
     });
 
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const descriptions = vi.mocked(toast).mock.calls.map(([call]) => call.description);
     expect(descriptions).toContain('Checkout completed, but the address could not be saved.');
   });
@@ -1427,7 +1426,7 @@ describe('useMarketplaceCheckout', () => {
     });
     expect(vi.mocked(CommerceController.bindPaymentMethod).mock.calls.length).toBe(bindsBefore + 1);
     expect(onRetry).not.toHaveBeenCalled();
-    asOpaque<{ props: { onClick: () => void } }>(setupToast?.action).props.onClick();
+    setupToast?.action?.onClick();
     expect(onRetry).toHaveBeenCalledTimes(1);
     expect(vi.mocked(CommerceController.bindPaymentMethod).mock.calls.length).toBe(bindsBefore + 1);
   });
@@ -2107,7 +2106,7 @@ describe('useMarketplaceCheckout local pickup (§A2)', () => {
 
   it('maps server and thrown sentinel failures to static copy', async () => {
     const sentinel = 'SENTINEL_SERVER_TEXT_checkout';
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const clear = vi.fn(async () => {});
     const { result } = renderHook(() => useMarketplaceCheckout([item], clear));
     act(() => {
@@ -2416,7 +2415,7 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
   });
 
   it('re-reads the kind at Pay and asks for the email when the seller switched to email', async () => {
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     kinds.pattern = 'file';
     const pattern = digitalCartItem('pattern', ['digital']);
     const { result } = renderHook(() =>
@@ -2441,7 +2440,7 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
   });
 
   it('names a digital refusal from its reason and re-reads the kinds', async () => {
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     kinds.guide = 'file';
     const guide = digitalCartItem('guide', ['digital']);
     const { result } = renderHook(() =>

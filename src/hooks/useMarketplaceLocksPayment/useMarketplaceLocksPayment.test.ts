@@ -33,7 +33,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 vi.mock('@/libs/logger/logger', () => ({
   Logger: { error: vi.fn(), warn: vi.fn() },
@@ -144,7 +144,7 @@ describe('useMarketplaceLocksPayment', () => {
 
   it('maps server and thrown sentinel failures to static copy', async () => {
     const sentinel = 'SENTINEL_SERVER_TEXT_locks_payment';
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     vi.mocked(CommerceController.getMarketplaceOrder).mockResolvedValue({ ...order, payment } as never);
     const { result } = renderHook(() =>
       useMarketplaceLocksPayment({ order, payment, digitalLock, isBuyer: true, onPaymentChanged: vi.fn() }),

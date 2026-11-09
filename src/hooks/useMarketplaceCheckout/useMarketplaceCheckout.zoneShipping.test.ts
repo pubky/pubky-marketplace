@@ -6,7 +6,7 @@ import { SHIPPING_CHANGED_MESSAGE } from '@/libs/commerce/failure-messages';
 import { commerceListingShippingMinor } from '@/libs/commerce/marketplace-records';
 import { createCommerceSandboxCatalog } from '@/libs/commerce/sandbox-catalog';
 import type { ShippingProfileSnapshot } from '@/libs/commerce/shipping-profile';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { createOrderFixture } from '@/test/fixtures/commerce/orders';
 import { asOpaque } from '@/test-utils/type-assertions';
@@ -126,7 +126,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 vi.mock('@/libs/logger/logger', () => ({ Logger: { error: vi.fn(), warn: vi.fn() } }));
 
 const authMock = vi.hoisted(() => ({ currentUserPubky: null as string | null }));

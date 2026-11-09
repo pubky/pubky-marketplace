@@ -14,7 +14,7 @@ import { ErrorService } from '@/libs/error/error.types';
 import { getWrongEnvironmentHomeserverMessage, isWrongEnvironmentHomeserverError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
 import { shouldAttemptSessionRestore } from '@/libs/vibe-session/should-restore';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { ROUTE_ACCESS_MAP } from '@/providers/RouteGuardProvider/RouteGuardProvider.constants';
 import {
   consumeRouteGuardReturnTo,

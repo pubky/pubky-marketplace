@@ -88,6 +88,19 @@ const eslintConfig = [
           varsIgnorePattern: '^_',
         },
       ],
+      // Features publish through the public API; toast state and rendering stay internal.
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/Toaster/use-toast', '**/Toaster/useToastState', '**/Toaster/toast.store', '**/atoms/Toast/*'],
+              message:
+                "Toast internals are private to the Toaster module. Import { toast } from '@/molecules/Toaster/toast'.",
+            },
+          ],
+        },
+      ],
       // Deployer-facing public values are runtime-configurable (PUBKY_RUNTIME_*). Only
       // build-intrinsic NEXT_PUBLIC_* values may be read directly; everything else must go
       // through the getters in @/libs/runtime-config, and only the runtime-config resolver
@@ -133,6 +146,16 @@ const eslintConfig = [
     rules: {
       'no-restricted-syntax': 'off',
     },
+  },
+  {
+    // The renderer and atoms use their own internals. The search VRT renders
+    // a primitive toast fixture to verify overlay stacking, not feature behavior.
+    files: [
+      'src/components/atoms/Toast/**',
+      'src/components/molecules/Toaster/**',
+      'src/test/vrt/marketplace/MarketplaceSearchDropdown.vrt.test.tsx',
+    ],
+    rules: { 'no-restricted-imports': 'off' },
   },
   {
     files: ['**/*.test.{ts,tsx,js,jsx,mjs,cjs}'],

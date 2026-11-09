@@ -13,7 +13,7 @@ import {
 import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { useMarketplaceSellerPaymentConfig } from './useMarketplaceSellerPaymentConfig';
@@ -24,7 +24,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     putMyPaymentConfig: vi.fn(),
   },
 }));
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 vi.mock('@/libs/logger/logger', () => ({ Logger: { error: vi.fn(), warn: vi.fn() } }));
 
 const error = (operation: string) =>

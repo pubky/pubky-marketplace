@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { type SellerPaymentConfigOwnView, sellerPaymentConfigOwnViewSchema } from '@/libs/commerce/payment-methods';
 import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { MarketplaceGetPaidSettings } from '@/organisms/Marketplace/MarketplaceGetPaidSettings';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import type { GrantSigner } from '@/stores/auth/auth.types';
@@ -40,9 +40,8 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     hasFullHomeserverGrant: vi.fn(() => false),
   },
 }));
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
-  useToast: () => ({ toast: vi.fn() }),
 }));
 
 const mocked = vi.mocked(CommerceController);
