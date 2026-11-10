@@ -770,8 +770,7 @@ describe('useConnectorChanges', () => {
     expect(rig.pending).toEqual([]);
   });
 
-  it('stops reading pages when the load is no longer current', async () => {
-    mode.pageLimit = 2;
+  it('writes nothing for a load that is no longer current, even with its whole page already read', async () => {
     const rig = setup();
     const content = recordedChange('content');
     rig.pending = ['a', 'b', 'c'].map((id) => {
@@ -788,7 +787,8 @@ describe('useConnectorChanges', () => {
     hook.unmount();
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    expect(rig.writes.length).toBeLessThan(3);
+    expect(rig.writes).toEqual([]);
+    expect(rig.pending).toHaveLength(3);
   });
 
   it('keeps a change it could not confirm counted when an unrelated item is dismissed and the queue reloads', async () => {
