@@ -310,6 +310,41 @@ describe('useEditMarketplaceListing', () => {
       ]);
     });
 
+    it('refuses a save whose removed variant row became a followed price while the save was running', async () => {
+      vi.mocked(CommerceController.getOrFetchListing).mockResolvedValue(storeListing());
+      const hook = renderHook(({ follows }) => useEditMarketplaceListing(OWNER, LISTING_ID, { follows }), {
+        initialProps: { follows: { content: false, price: false, variants: false } },
+      });
+      await waitFor(() => expect(hook.result.current.status).toBe('ready'));
+      act(() => hook.result.current.form.setValue('variants', [hook.result.current.form.getValues('variants.1')]));
+      let release: (config: {
+        bitcoinAvailable: boolean;
+        bitcoinOfferAvailable: boolean;
+        paypalAvailable: boolean;
+      }) => void = () => {};
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            release = resolve as typeof release;
+          }),
+      );
+
+      let saving: Promise<string | null> = Promise.resolve(null);
+      act(() => {
+        saving = hook.result.current.submit();
+      });
+      hook.rerender({ follows: { content: false, price: true, variants: false } });
+      await act(async () => {
+        release({ bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: false });
+        await saving;
+      });
+
+      expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+      expect(toast).toHaveBeenCalledWith(
+        expect.objectContaining({ description: expect.stringContaining('cannot be added or removed') }),
+      );
+    });
+
     it('restores the published currency with the price when the price follows the store again', async () => {
       const result = await open({ content: false, price: false, variants: false });
       act(() => {

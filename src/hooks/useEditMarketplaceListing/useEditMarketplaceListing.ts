@@ -244,13 +244,15 @@ export function useEditMarketplaceListing(
     let savedListingId: string | null = null;
 
     await form.handleSubmit(async (data) => {
-      if ((follows.price || follows.variants) && data.variants.length !== record.variants.length) {
+      const refuseChangedRows = (groups: FollowedGroups): boolean => {
+        if (!(groups.price || groups.variants) || data.variants.length === record.variants.length) return false;
         toast({
           variant: 'error',
           description: 'Variants cannot be added or removed here while they, or their prices, follow your store.',
         });
-        return;
-      }
+        return true;
+      };
+      if (refuseChangedRows(follows)) return;
       const preparedMedia = follows.content
         ? { ok: true as const, media: record.media as typeof record.media, uploads: [] }
         : await media.prepare(currentUserPubky);
@@ -276,7 +278,11 @@ export function useEditMarketplaceListing(
           }
           return;
         }
-        const updated = buildUpdatedRecord(record, data, preparedMedia.media, shipping.fields, followsRef.current);
+        // The groups followed now, which may differ from the ones this save started with: the rows are checked
+        // against them again, and the record is built from the same snapshot.
+        const followedNow = followsRef.current;
+        if (refuseChangedRows(followedNow)) return;
+        const updated = buildUpdatedRecord(record, data, preparedMedia.media, shipping.fields, followedNow);
         const reservePrice =
           updated.sale.format === 'auction' && data.reservePrice !== ''
             ? amountInputToMoney(data.reservePrice, assetForListingCurrency(data.currency))

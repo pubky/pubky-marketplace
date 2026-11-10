@@ -246,6 +246,8 @@ function splitChoice(
   if (record.listingId !== connectorSplitListingId('shopify', change.providerProductId, link.providerVariantId))
     return null;
   const variant = record.variants.find(({ id }) => id === link.variantId) ?? record.variants[0];
+  // The import falls back to the variant's title when it has no option values. Shopify sends at least one, and
+  // the content change carries no variant title, so the choice is read from the listing's options only.
   return variant ? Object.values(variant.options).join(' / ') : '';
 }
 

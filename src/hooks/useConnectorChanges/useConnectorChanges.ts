@@ -294,6 +294,11 @@ export function useConnectorChanges(connectionId: string | null) {
       }
     }
     if (leftPhotosOut) return { ok: false, reason: 'partial' };
+    // A listing linked while the writes ran was never evaluated, so the change is resolved only if its links
+    // are still the ones it was applied to. The service has no precondition on the links at resolve time, so one
+    // request of that window remains.
+    const last = await pendingChange(change);
+    if (!last || mappingsKey(last) !== mappingsKey(change)) return { ok: false, reason: 'stale' };
     return (await resolve(change, 'applied')) ? { ok: true } : { ok: false, reason: 'stale' };
   };
 
@@ -307,20 +312,26 @@ export function useConnectorChanges(connectionId: string | null) {
       let unsettled = 0;
       let capped = false;
       const handled = new Set<string>();
+      const keyOf = (change: ConnectorProductChange) => `${change.id}|${change.proposedHash}|${mappingsKey(change)}`;
       // The service returns one page with no cursor. Resolving a page exposes the changes behind it, so the
       // queue is read again until a page brings nothing new. Changes that stay pending (waiting for a tap, a
       // conflict) keep occupying their place; when they fill the page, `capped` says more may be waiting.
       for (let page = 0; page < MAX_CHANGE_PAGES; page += 1) {
+        if (!isCurrent()) return;
         const pageChanges = await ConnectorsController.fetchChanges(connectionId);
-        const changes = pageChanges.filter(({ id }) => !handled.has(id));
+        const changes = pageChanges.filter((change) => !handled.has(keyOf(change)));
+        // A change that was replaced or relinked while it was handled shows up again under a new key, so
+        // the queue is read again after any such result even when the page was not full.
+        let replaced = false;
         const full = pageChanges.length >= CONNECTOR_CHANGES_PAGE_LIMIT;
         if (changes.length === 0) {
           capped = full;
           break;
         }
-        for (const { id } of changes) handled.add(id);
+        for (const change of changes) handled.add(keyOf(change));
         const records = await readListings(sellerPubky, changes, false);
         for (const change of changes) {
+          if (!isCurrent()) return;
           let seen = records;
           let verdicts = evaluateChangeListings(change, seen);
           let next = changeState(verdicts);
@@ -338,10 +349,19 @@ export function useConnectorChanges(connectionId: string | null) {
             verdicts = evaluateChangeListings(change, seen);
             next = changeState(verdicts);
             if (next === 'nothing_to_do') {
-              const settled = await resolve(change, hasWork(verdicts, 'nothing_to_do') ? 'applied' : 'dismissed').catch(
-                () => null,
-              );
-              if (settled === null) unsettled += 1;
+              // Resolved only against the links it was evaluated for; a listing linked since is read next round.
+              const latest = await pendingChange(change).catch(() => undefined);
+              if (latest === undefined) {
+                unsettled += 1;
+              } else if (latest === null || mappingsKey(latest) !== mappingsKey(change)) {
+                replaced = true;
+              } else {
+                const settled = await resolve(
+                  change,
+                  hasWork(verdicts, 'nothing_to_do') ? 'applied' : 'dismissed',
+                ).catch(() => null);
+                if (settled === null) unsettled += 1;
+              }
               continue;
             }
           }
@@ -361,7 +381,10 @@ export function useConnectorChanges(connectionId: string | null) {
               appliedCount += 1;
               continue;
             }
-            if (result.reason === 'stale') continue;
+            if (result.reason === 'stale') {
+              replaced = true;
+              continue;
+            }
             if (result.reason === 'failed') item = { ...item, failure: result.failure };
             if (result.reason === 'partial') {
               appliedCount += 1;
@@ -385,7 +408,7 @@ export function useConnectorChanges(connectionId: string | null) {
           }
           items = [...items, item];
         }
-        if (!full) break;
+        if (!full && !replaced) break;
         if (page === MAX_CHANGE_PAGES - 1) capped = true;
       }
       if (!isCurrent()) return;

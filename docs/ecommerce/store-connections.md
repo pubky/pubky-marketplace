@@ -148,11 +148,13 @@ changes either way; see "Product changes" in the marketplace service's
   read-only, with "Edit in Shopify" (only for a real `*.myshopify.com` store), so a
   store edit never collides with one made here. Off, the group is not synced for
   this listing. The switch shows what applies to the listing; the line under it says
-  whether that is the connection's setting or the listing's own. Turning it
-  changes only this listing, to the opposite of the connection's setting
-  (`PUT /v1/connectors/{id}/sync/listings/{listing_id}`, `null` returns to the
-  connection's setting), so a listing can opt in for a group the connection leaves
-  alone. A group counts as followed when any store the listing is linked to says so.
+  whether that is the connection's setting or the listing's own. A click asks
+  for the opposite of what applies to the listing now, for this listing only
+  (`PUT /v1/connectors/{id}/sync/listings/{listing_id}`): it clears the listing's own
+  setting (`null`) when the connection's setting already gives that state, and sets
+  it otherwise, so a listing can opt in for a group the connection leaves alone and
+  an override that equals the connection's setting still turns following off in one
+  click. A group counts as followed when any store the listing is linked to says so.
   `useListingStoreSync` finds the linked stores from the connection mappings.
   Stock stays editable.
 - **What a followed field cannot do.** Read-only fields are also enforced on save:
@@ -230,7 +232,9 @@ A split listing (one listing per store variant, with an id the import gives a st
 import's projection of the product, so the same projection is applied to the base and the proposal before
 they are compared: the title is the product title with the variant's choice ("Trail Boots, 42"), and a photo
 whose source is in neither the base's nor the proposal's photo list is the variant's own photo and is kept.
-Without it an untouched split listing would show a title conflict on every store update.
+Without it an untouched split listing would show a title conflict on every store update. The choice is read
+from the listing's variant options; a store variant with no option values (Shopify always sends at least
+one) would carry its title instead, which the content change does not include.
 
 ### Applying is safe to repeat
 
@@ -267,7 +271,10 @@ and shows them as the others are applied or dismissed.
 Residuals: the service has no conditional write, so a group switched off in the
 single request between the last check and the write can still see that one write;
 the change is then answered `change_not_found` and the seller sees the listing as
-written. A photo whose upload finished but whose listing write did not, when the
+written. The links are checked again right before the change is resolved, but the
+resolve call carries only the proposal hash, so a listing linked in that one
+request is resolved with the change; closing it needs a links fingerprint on the
+service's resolve route. A photo whose upload finished but whose listing write did not, when the
 page is closed in between, leaves a file nothing refers to; the retry uploads it
 again and the listing references one copy.
 

@@ -710,6 +710,87 @@ describe('useConnectorChanges', () => {
     expect(rig.listings.get('boots_01')?.sale).toMatchObject({ unitPrice: { amountMinor: 12500 } });
   });
 
+  it('reads the queue again after a proposal was replaced while it was being applied, even on a short page', async () => {
+    const rig = setup(recordedChange('content'));
+    const replacement = structuredClone(rig.pending[0]!);
+    replacement.proposedHash = 'e'.repeat(64);
+    if (replacement.fieldGroup !== 'content') throw new Error('not content');
+    replacement.proposed = { ...replacement.proposed, title: 'Trail Boots III' };
+    let calls = 0;
+    vi.mocked(ConnectorsController.fetchChanges).mockImplementation(async () => {
+      calls += 1;
+      if (calls === 2) rig.pending = [replacement];
+      return structuredClone(rig.pending);
+    });
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    await ready(result);
+
+    expect(rig.listings.get('boots_01')?.title).toBe('Trail Boots III');
+    expect(rig.pending).toEqual([]);
+  });
+
+  it('does not resolve a change whose listings grew while its writes were confirmed, and applies it to the new one', async () => {
+    const rig = setup(recordedChange('content'));
+    rig.listings.set('boots_two', bootsFollowingTheStore({ listingId: 'boots_two' }));
+    const grown = structuredClone(rig.pending[0]!);
+    grown.listings = [...grown.listings, { ...grown.listings[0]!, listingId: 'boots_two' }];
+    let calls = 0;
+    vi.mocked(ConnectorsController.fetchChanges).mockImplementation(async () => {
+      calls += 1;
+      if (calls === 4) rig.pending = [grown];
+      return structuredClone(rig.pending);
+    });
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    await ready(result);
+
+    expect(rig.listings.get('boots_01')?.title).toBe('Trail Boots II');
+    expect(rig.listings.get('boots_two')?.title).toBe('Trail Boots II');
+    expect(rig.pending).toEqual([]);
+  });
+
+  it('does not settle a change that already looks done when a listing was linked to it since it was read', async () => {
+    const rig = setup(recordedChange('content'));
+    rig.listings.set('boots_01', bootsFollowingTheStore({ title: 'Trail Boots II', description: 'Waterproof now.' }));
+    rig.listings.set('boots_two', bootsFollowingTheStore({ listingId: 'boots_two' }));
+    const grown = structuredClone(rig.pending[0]!);
+    grown.listings = [...grown.listings, { ...grown.listings[0]!, listingId: 'boots_two' }];
+    let calls = 0;
+    vi.mocked(ConnectorsController.fetchChanges).mockImplementation(async () => {
+      calls += 1;
+      if (calls === 2) rig.pending = [grown];
+      return structuredClone(rig.pending);
+    });
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    await ready(result);
+
+    expect(rig.listings.get('boots_two')?.title).toBe('Trail Boots II');
+    expect(rig.pending).toEqual([]);
+  });
+
+  it('stops reading pages when the load is no longer current', async () => {
+    mode.pageLimit = 2;
+    const rig = setup();
+    const content = recordedChange('content');
+    rig.pending = ['a', 'b', 'c'].map((id) => {
+      rig.listings.set(`boots_${id}`, bootsFollowingTheStore({ listingId: `boots_${id}` }));
+      return linked({
+        ...content,
+        id: `change-${id}`,
+        proposedHash: id.repeat(64),
+        listings: [{ ...content.listings[0]!, listingId: `boots_${id}` }],
+      } as ConnectorProductChange);
+    });
+
+    const hook = renderHook(() => useConnectorChanges(CONNECTION));
+    hook.unmount();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(rig.writes.length).toBeLessThan(3);
+  });
+
   it('keeps a change it could not confirm counted when an unrelated item is dismissed and the queue reloads', async () => {
     const rig = setup(recordedChange('content'), {
       ...recordedChange('status'),
