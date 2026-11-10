@@ -535,7 +535,8 @@ export function useConnectorChanges(connectionId: string | null) {
    * again unless the store changes them again. The queue is then read again, which applies the automatic ones.
    */
   const dismissAll = async (): Promise<void> => {
-    if (state.status !== 'ready' || state.waiting !== 'behind' || running.current.size > 0) return;
+    if (state.status !== 'ready' || state.waiting !== 'behind' || state.items.length === 0 || running.current.size > 0)
+      return;
     running.current.add(DISMISS_ALL_KEY);
     setWorkingId(DISMISS_ALL_KEY);
     let dismissed = 0;

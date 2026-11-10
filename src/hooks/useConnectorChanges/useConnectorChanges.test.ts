@@ -775,8 +775,55 @@ describe('useConnectorChanges', () => {
     await waitFor(() => expect(result.current.state.status).toBe('ready'));
 
     expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 2, waiting: 'behind' });
+    const reads = rig.fetches;
     await act(async () => result.current.dismissAll());
     expect(rig.log).toEqual([]);
+    expect(rig.fetches).toBe(reads);
+    expect(toast).not.toHaveBeenCalledWith(expect.objectContaining({ title: '0 changes dismissed' }));
+  });
+
+  it('on a page of manual and unconfirmed changes, dismisses only the manual ones, keeps the others and applies what is behind', async () => {
+    mode.pageLimit = 4;
+    const rig = setup();
+    const price = recordedChange('price');
+    const content = recordedChange('content');
+    const manual = [1, 2].map((n) =>
+      linked({ ...price, id: `manual-${n}`, proposedHash: String(n).repeat(64) } as ConnectorProductChange),
+    );
+    const unconfirmed = ['a', 'b'].map((id) => {
+      rig.cache.set(
+        `boots_${id}`,
+        bootsFollowingTheStore({ listingId: `boots_${id}`, title: 'Trail Boots II', description: 'Waterproof now.' }),
+      );
+      rig.listings.set(`boots_${id}`, bootsFollowingTheStore({ listingId: `boots_${id}` }));
+      return linked({
+        ...content,
+        id: `unconfirmed-${id}`,
+        proposedHash: id.repeat(64),
+        listings: [{ ...content.listings[0]!, listingId: `boots_${id}` }],
+      } as ConnectorProductChange);
+    });
+    const behind = linked({
+      ...recordedChange('status'),
+      id: 'behind',
+      proposedHash: 'f'.repeat(64),
+    } as ConnectorProductChange);
+    rig.pending = [...manual, ...unconfirmed, behind];
+    vi.mocked(CommerceController.refreshListing).mockImplementation((async (_owner: unknown, id: unknown) => {
+      if (String(id).startsWith('boots_')) throw new Error('offline');
+      return rig.listings.get(String(id));
+    }) as never);
+    vi.mocked(CommerceController.isListingConfirmedRemoved).mockResolvedValue(false);
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    await ready(result);
+    expect(result.current.state).toMatchObject({ unsettled: 2, waiting: 'behind' });
+
+    await act(async () => result.current.dismissAll());
+
+    await waitFor(() => expect(rig.listings.get('mug_01')?.state).toBe('paused'));
+    expect(rig.log.filter((entry) => entry.endsWith(':dismissed'))).toHaveLength(2);
+    expect(rig.pending.map(({ id }) => id).sort()).toEqual(['unconfirmed-a', 'unconfirmed-b']);
+    expect(result.current.state).toMatchObject({ items: [], unsettled: 2, waiting: 'none' });
   });
 
   it('counts only the changes it really dismissed, and keeps the ones the store replaced meanwhile', async () => {

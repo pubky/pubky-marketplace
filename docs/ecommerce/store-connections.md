@@ -264,8 +264,9 @@ reused.
 
 The service returns one page of at most 200 pending changes, oldest first, and has no
 cursor or filter. A load resolves a page and reads the queue again until a page brings
-nothing new, so 201 automatic changes are all applied, up to 25 reads of the queue in
-one visit. Two cases leave work out of reach, and the review says so with an action:
+nothing new, so 201 automatic changes are all applied, up to 25 processing reads of the
+queue in one visit (and one more look to tell a queue that ended there from one that
+continues). Two cases leave work out of reach, and the review says so with an action:
 
 - **Behind a full page.** Changes that wait for the seller (a price to approve, a
   conflict, a variant to import) keep their place in the page. When they fill it, the
@@ -279,7 +280,7 @@ one visit. Two cases leave work out of reach, and the review says so with an act
   because there is nothing to dismiss; Try again checks them. Row actions are disabled
   while the whole review is being dismissed. Reaching the changes behind a page with
   no action at all needs the service to filter or page the queue.
-- **Visit budget.** After 25 reads of the queue, if unseen changes are still waiting,
+- **Visit budget.** After 25 processing reads of the queue, if unseen changes are still waiting,
   the review says so and offers **Continue**, which goes on from where the visit
   stopped. Reopening the page does the same. A queue that ends exactly at the budget
   is not reported as waiting.
