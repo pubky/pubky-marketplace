@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as commerceConfig from '@/config/commerce';
+import { preparedLockResourceHash } from '@/libs/commerce/locks-payment';
+import { LOCKS_PREPARED_TERMS_DIFFER_COPY, locksSubmitRefusalMessage } from '@/libs/commerce/locks-submit-refusal';
 import type { CommerceDigitalLock } from '@/libs/commerce/marketplace-records';
 import type { MarketplaceCommandResponse } from '@/libs/commerce/transaction-commands';
 import type { CommerceLocksCorrelationModelSchema } from '@/models/commerce/commerce.schema';
 import { LocalCommerceService } from '@/services/local/commerce/commerce';
-import { LOCKS_PREPARED_TERMS_DIFFER_COPY, locksSubmitRefusalMessage } from '@/libs/commerce/locks-submit-refusal';
 import { LocksGatewayService, type LocksVerificationLifecycle } from '@/services/locks/locks';
 import { MarketplaceGatewayService } from '@/services/marketplace/marketplace';
 import { createOrderFixture, ORDER_FIXTURE_BUYER, ORDER_FIXTURE_SELLER } from '@/test/fixtures/commerce/orders';
 import { asOpaque } from '@/test-utils/type-assertions';
-import { preparedLockResourceHash } from '@/libs/commerce/locks-payment';
 import { CommerceApplication } from './commerce';
 
 /**
