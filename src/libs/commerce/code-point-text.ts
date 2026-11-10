@@ -27,3 +27,22 @@ export function trimmedText({ min = 0, max, message }: TrimmedTextBounds) {
       { message: message ?? `Expected between ${min} and ${max} characters` },
     );
 }
+
+const utf8Encoder = new TextEncoder();
+
+/** UTF-8 bytes in `value`: how the service counts a payment-review reason (`str::len()`). */
+export function utf8ByteLength(value: string): number {
+  return utf8Encoder.encode(value).length;
+}
+
+/**
+ * A trimmed string bounded in UTF-8 bytes. The service refuses a payment-review
+ * reason over 500 bytes, so the client enforces the same bound; counting
+ * UTF-16 units or code points would let 250 emoji (1,000 bytes) through.
+ */
+export function trimmedUtf8Text({ max, message }: { max: number; message?: string }) {
+  return z
+    .string()
+    .trim()
+    .refine((value) => utf8ByteLength(value) <= max, { message: message ?? `Expected at most ${max} bytes` });
+}

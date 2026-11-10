@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { trimmedUtf8Text } from './code-point-text';
 import { commercePubkySchema } from './transaction-contracts';
 import { USDT_REFUND_COPY } from './usdt-refund';
 
@@ -71,14 +72,18 @@ export const sellerPaymentResolutionSchema = z
 
 export const sellerPaymentResolutionOutcomeSchema = z.enum(['paid', 'refunded', 'abandoned']);
 
+/** The service refuses a payment-review reason over 500 bytes of UTF-8, so non-ASCII text fits fewer characters. */
+export const REASON_TOO_LONG_COPY =
+  'Use a shorter reason: 500 bytes at most, which is fewer characters for non-English text.';
+
 export const sellerPaymentConfirmationInputSchema = z.object({
-  reason: z.string().trim().max(500).optional(),
+  reason: trimmedUtf8Text({ max: 500, message: REASON_TOO_LONG_COPY }).optional(),
 });
 
 export const sellerPaymentResolutionInputSchema = z
   .object({
     outcome: sellerPaymentResolutionOutcomeSchema,
-    reason: z.string().trim().max(500).optional(),
+    reason: trimmedUtf8Text({ max: 500, message: REASON_TOO_LONG_COPY }).optional(),
     externalRefundReference: z
       .union([
         z.literal(''),

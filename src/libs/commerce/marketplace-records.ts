@@ -927,7 +927,7 @@ const commerceReviewResponseRecordSchemaInner = commercePublicRecordBaseSchema
         /^pubky:\/\/[a-z0-9]{52}\/pub\/pubky\.app\/marketplace\/v1\/reviews\/[0-9A-HJKMNP-TV-Z]+$/,
         'reviewUri must be a canonical marketplace review URI',
       ),
-    text: z.string().trim().min(1).max(COMMERCE_REVIEW_TEXT_MAX_CHARS),
+    text: trimmedText({ min: 1, max: COMMERCE_REVIEW_TEXT_MAX_CHARS }),
   })
   .passthrough()
   .superRefine(validateRecordDates);
