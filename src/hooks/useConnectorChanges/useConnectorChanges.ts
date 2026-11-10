@@ -54,8 +54,8 @@ export type ConnectorChangesState =
       /**
        * Whether changes may be waiting out of reach. The service returns one page of pending changes with no
        * cursor, so `behind` means every change of a full page is handled and waits for the seller: the ones
-       * after them are reachable only once some of these are resolved. `budget` means this visit reached the
-       * most changes it processes (`CONNECTOR_CHANGES_VISIT_BUDGET`) and more are waiting; a refresh goes on.
+       * after them are reachable only once some of these are resolved. `budget` means this visit made the most
+       * reads of the queue it makes (`MAX_CHANGE_PAGES`) and unseen changes are still waiting; a refresh goes on.
        */
       waiting: 'none' | 'behind' | 'budget';
     }
@@ -71,9 +71,6 @@ export const CHANGE_FAILURE_COPY: Readonly<Record<ChangeFailure, string>> = {
 
 /** Reads of the pending queue in one load, so a service that keeps returning new changes cannot hold it forever. */
 const MAX_CHANGE_PAGES = 25;
-
-/** The most changes one load handles: a full page, read again up to `MAX_CHANGE_PAGES` times. */
-export const CONNECTOR_CHANGES_VISIT_BUDGET = MAX_CHANGE_PAGES * CONNECTOR_CHANGES_PAGE_LIMIT;
 
 /** The `workingId` while the whole review is being dismissed. */
 export const DISMISS_ALL_KEY = 'all';
@@ -417,7 +414,13 @@ export function useConnectorChanges(connectionId: string | null) {
           items = [...items, item];
         }
         if (!full && !replaced) break;
-        if (page === MAX_CHANGE_PAGES - 1) waiting = 'budget';
+        if (page === MAX_CHANGE_PAGES - 1) {
+          // The last read the visit allows: look once more, so `budget` is only reported when something unseen
+          // is really waiting (a queue that ended exactly here is not "more waiting").
+          const rest = await ConnectorsController.fetchChanges(connectionId);
+          const unseen = rest.some((change) => !handled.has(keyOf(change)));
+          waiting = unseen ? 'budget' : rest.length >= CONNECTOR_CHANGES_PAGE_LIMIT ? 'behind' : 'none';
+        }
       }
       if (!isCurrent()) return;
       setState({ status: 'ready', items, unsettled, waiting });
@@ -454,7 +457,8 @@ export function useConnectorChanges(connectionId: string | null) {
 
   const guarded = async (item: ReviewItem, run: () => Promise<void>): Promise<void> => {
     const key = item.change.id;
-    if (running.current.has(key)) return;
+    // One row action at a time, and none while the whole review is being dismissed.
+    if (running.current.has(key) || running.current.has(DISMISS_ALL_KEY)) return;
     running.current.add(key);
     setWorkingId(key);
     try {
@@ -531,27 +535,30 @@ export function useConnectorChanges(connectionId: string | null) {
    * again unless the store changes them again. The queue is then read again, which applies the automatic ones.
    */
   const dismissAll = async (): Promise<void> => {
-    if (state.status !== 'ready' || state.waiting !== 'behind' || running.current.has(DISMISS_ALL_KEY)) return;
+    if (state.status !== 'ready' || state.waiting !== 'behind' || running.current.size > 0) return;
     running.current.add(DISMISS_ALL_KEY);
     setWorkingId(DISMISS_ALL_KEY);
     let dismissed = 0;
+    let changedMeanwhile = 0;
     let failed = 0;
     try {
       for (const item of state.items) {
         try {
-          await resolve(item.change, 'dismissed');
-          dismissed += 1;
+          if (await resolve(item.change, 'dismissed')) dismissed += 1;
+          else changedMeanwhile += 1;
         } catch {
           failed += 1;
         }
       }
+      const left = changedMeanwhile + failed;
       toast(
-        failed === 0
+        left === 0
           ? { title: `${dismissed} ${dismissed === 1 ? 'change' : 'changes'} dismissed` }
           : {
               variant: 'warning',
-              title: `${dismissed} dismissed, ${failed} could not be`,
-              description: 'Try again in a moment.',
+              title: `${dismissed} dismissed, ${left} left`,
+              description:
+                'Changes the store replaced meanwhile, or that could not be dismissed right now, stay in the review.',
             },
       );
       await load();

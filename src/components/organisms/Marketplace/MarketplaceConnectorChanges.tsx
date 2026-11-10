@@ -18,7 +18,6 @@ import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import {
   CHANGE_FAILURE_COPY,
-  CONNECTOR_CHANGES_VISIT_BUDGET,
   DISMISS_ALL_KEY,
   type ReviewItem,
   type useConnectorChanges,
@@ -82,6 +81,7 @@ function ChangeRow({
   sellerPubky: string | null;
 }) {
   const working = changes.workingId === item.change.id;
+  const busy = changes.workingId !== null;
   const variantName = (listingId: string) => (variantId: string) => item.variantLabels[listingId]?.[variantId] ?? '';
   const group = item.change.fieldGroup;
 
@@ -138,7 +138,7 @@ function ChangeRow({
                   variant="ghost"
                   size="sm"
                   className="w-fit rounded-full"
-                  disabled={working}
+                  disabled={busy}
                   onClick={() => void changes.detach(item, listingId)}
                 >
                   Stop following the store for this listing
@@ -176,7 +176,7 @@ function ChangeRow({
             type="button"
             size="sm"
             className="rounded-full"
-            disabled={working}
+            disabled={busy}
             onClick={() => void changes.apply(item)}
           >
             {working && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}
@@ -189,7 +189,7 @@ function ChangeRow({
               type="button"
               size="sm"
               className="rounded-full"
-              disabled={working}
+              disabled={busy}
               onClick={() => void changes.apply(item, { takeStore: true })}
             >
               {working && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}
@@ -200,7 +200,7 @@ function ChangeRow({
               variant="secondary"
               size="sm"
               className="rounded-full"
-              disabled={working}
+              disabled={busy}
               onClick={() => void changes.dismiss(item)}
             >
               Keep mine
@@ -221,7 +221,7 @@ function ChangeRow({
             variant="secondary"
             size="sm"
             className="rounded-full"
-            disabled={working}
+            disabled={busy}
             onClick={() => void changes.dismiss(item)}
           >
             Dismiss
@@ -316,20 +316,29 @@ export function MarketplaceConnectorChanges({ connection, changes }: Marketplace
             className="flex flex-col gap-2 rounded-md border border-border p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
             data-testid="store-changes-behind"
           >
-            <span>
-              More changes are waiting behind these, and the store gives them out a page at a time. Apply or dismiss
-              some, or dismiss all {state.items.length} to reach the rest.
-            </span>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="w-fit shrink-0 rounded-full"
-              disabled={changes.workingId !== null}
-              onClick={() => setConfirmingDismissAll(true)}
-            >
-              Dismiss these {state.items.length}
-            </Button>
+            {state.items.length > 0 ? (
+              <>
+                <span>
+                  More changes are waiting behind these, and the store gives them out a page at a time. Apply or dismiss
+                  some, or dismiss all {state.items.length} to reach the rest.
+                </span>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="w-fit shrink-0 rounded-full"
+                  disabled={changes.workingId !== null}
+                  onClick={() => setConfirmingDismissAll(true)}
+                >
+                  Dismiss these {state.items.length}
+                </Button>
+              </>
+            ) : (
+              <span>
+                More changes are waiting behind the ones that could not be checked yet. They appear once those are
+                checked.
+              </span>
+            )}
           </div>
         )}
         {state.waiting === 'budget' && (
@@ -338,10 +347,7 @@ export function MarketplaceConnectorChanges({ connection, changes }: Marketplace
             className="flex flex-col gap-2 rounded-md border border-border p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
             data-testid="store-changes-budget"
           >
-            <span>
-              {CONNECTOR_CHANGES_VISIT_BUDGET.toLocaleString('en-US')} changes were handled in this visit, and more are
-              waiting.
-            </span>
+            <span>This visit has handled as many changes as it can at once, and more are waiting.</span>
             <Button
               type="button"
               size="sm"

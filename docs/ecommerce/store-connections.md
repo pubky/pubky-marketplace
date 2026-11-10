@@ -264,8 +264,8 @@ reused.
 
 The service returns one page of at most 200 pending changes, oldest first, and has no
 cursor or filter. A load resolves a page and reads the queue again until a page brings
-nothing new, so 201 automatic changes are all applied, up to 5,000 changes in one
-visit. Two cases leave work out of reach, and the review says so with an action:
+nothing new, so 201 automatic changes are all applied, up to 25 reads of the queue in
+one visit. Two cases leave work out of reach, and the review says so with an action:
 
 - **Behind a full page.** Changes that wait for the seller (a price to approve, a
   conflict, a variant to import) keep their place in the page. When they fill it, the
@@ -275,10 +275,14 @@ visit. Two cases leave work out of reach, and the review says so with an action:
   changes are not offered again unless the store changes them again, and the queue is
   read again, which applies the automatic ones. Applying or dismissing one change by
   hand does the same, because every reload applies the automatic changes it reaches.
-  Reaching them with no action at all needs the service to filter or page the queue.
-- **Visit budget.** After 5,000 changes the review says more are waiting and offers
-  **Continue**, which goes on from where the visit stopped. Reopening the page does
-  the same.
+  A page that holds only changes that could not be checked yet offers no dismissal,
+  because there is nothing to dismiss; Try again checks them. Row actions are disabled
+  while the whole review is being dismissed. Reaching the changes behind a page with
+  no action at all needs the service to filter or page the queue.
+- **Visit budget.** After 25 reads of the queue, if unseen changes are still waiting,
+  the review says so and offers **Continue**, which goes on from where the visit
+  stopped. Reopening the page does the same. A queue that ends exactly at the budget
+  is not reported as waiting.
 
 Residuals: the service has no conditional write, so a group switched off in the
 single request between the last check and the write can still see that one write;

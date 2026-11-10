@@ -730,6 +730,133 @@ describe('useConnectorChanges', () => {
     expect(rig.pending).toEqual([]);
   });
 
+  it('does not report a budget when the queue ended exactly at the last allowed read', async () => {
+    mode.pageLimit = 1;
+    const rig = setup();
+    const content = recordedChange('content');
+    rig.pending = Array.from({ length: 25 }, (_, i) => {
+      rig.listings.set(`boots_${i}`, bootsFollowingTheStore({ listingId: `boots_${i}` }));
+      return linked({
+        ...content,
+        id: `change-${i}`,
+        proposedHash: i.toString(16).padStart(64, '0'),
+        listings: [{ ...content.listings[0]!, listingId: `boots_${i}` }],
+      } as ConnectorProductChange);
+    });
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    await waitFor(() => expect(result.current.state.status).toBe('ready'));
+
+    expect(rig.writes).toHaveLength(25);
+    expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 0, waiting: 'none' });
+  });
+
+  it('says changes wait behind a page that only holds changes it could not check, with nothing to dismiss', async () => {
+    mode.pageLimit = 2;
+    const rig = setup();
+    const content = recordedChange('content');
+    rig.pending = ['a', 'b', 'c'].map((id) => {
+      rig.cache.set(
+        `boots_${id}`,
+        bootsFollowingTheStore({ listingId: `boots_${id}`, title: 'Trail Boots II', description: 'Waterproof now.' }),
+      );
+      rig.listings.set(`boots_${id}`, bootsFollowingTheStore({ listingId: `boots_${id}` }));
+      return linked({
+        ...content,
+        id: `change-${id}`,
+        proposedHash: id.repeat(64),
+        listings: [{ ...content.listings[0]!, listingId: `boots_${id}` }],
+      } as ConnectorProductChange);
+    });
+    vi.mocked(CommerceController.refreshListing).mockRejectedValue(new Error('offline'));
+    vi.mocked(CommerceController.isListingConfirmedRemoved).mockResolvedValue(false);
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    await waitFor(() => expect(result.current.state.status).toBe('ready'));
+
+    expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 2, waiting: 'behind' });
+    await act(async () => result.current.dismissAll());
+    expect(rig.log).toEqual([]);
+  });
+
+  it('counts only the changes it really dismissed, and keeps the ones the store replaced meanwhile', async () => {
+    mode.pageLimit = 3;
+    const rig = setup();
+    const price = recordedChange('price');
+    rig.pending = [1, 2, 3].map((n) =>
+      linked({ ...price, id: `manual-${n}`, proposedHash: String(n).repeat(64) } as ConnectorProductChange),
+    );
+    rig.pending.push(
+      linked({ ...recordedChange('status'), id: 'behind', proposedHash: 'f'.repeat(64) } as ConnectorProductChange),
+    );
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    await ready(result);
+    rig.pending = rig.pending.map((change) =>
+      change.id === 'manual-2' ? ({ ...change, proposedHash: 'd'.repeat(64) } as ConnectorProductChange) : change,
+    );
+
+    await act(async () => result.current.dismissAll());
+
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: '2 dismissed, 1 left' }));
+    expect(rig.log.filter((entry) => entry.endsWith(':dismissed'))).toHaveLength(2);
+  });
+
+  it('does not let a row action run while the whole review is being dismissed, nor the reverse', async () => {
+    mode.pageLimit = 2;
+    const rig = setup();
+    const price = recordedChange('price');
+    rig.pending = [1, 2].map((n) =>
+      linked({ ...price, id: `manual-${n}`, proposedHash: String(n).repeat(64) } as ConnectorProductChange),
+    );
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const items = await ready(result);
+    let release: () => void = () => {};
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const resolveImpl = vi.mocked(ConnectorsController.commitResolveChange).getMockImplementation()!;
+    vi.mocked(ConnectorsController.commitResolveChange).mockImplementation(async (...args) => {
+      await hold;
+      return resolveImpl(...args);
+    });
+
+    let bulk: Promise<void> = Promise.resolve();
+    act(() => {
+      bulk = result.current.dismissAll();
+    });
+    await act(async () => result.current.apply(items[0]!));
+    expect(rig.writes).toEqual([]);
+
+    await act(async () => {
+      release();
+      await bulk;
+    });
+    expect(rig.pending).toEqual([]);
+
+    rig.pending = items.map((item) => item.change);
+    vi.mocked(ConnectorsController.commitResolveChange).mockImplementation(resolveImpl);
+    await act(async () => result.current.refresh());
+    const again = await ready(result);
+    let hold2: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      hold2 = resolve;
+    });
+    vi.mocked(ConnectorsController.commitResolveChange).mockImplementation(async (...args) => {
+      await gate;
+      return resolveImpl(...args);
+    });
+    let row: Promise<void> = Promise.resolve();
+    act(() => {
+      row = result.current.dismiss(again[0]!);
+    });
+    await act(async () => result.current.dismissAll());
+    expect(rig.log.filter((entry) => entry.endsWith(':dismissed'))).toHaveLength(2);
+    await act(async () => {
+      hold2();
+      await row;
+    });
+  });
+
   it('gives a continuation when a visit reaches its budget, and goes on from where it stopped', async () => {
     mode.pageLimit = 1;
     const rig = setup();

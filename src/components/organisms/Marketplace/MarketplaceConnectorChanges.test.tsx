@@ -184,11 +184,33 @@ describe('MarketplaceConnectorChanges', () => {
     expect(changes.dismissAll).toHaveBeenCalledTimes(1);
   });
 
+  it('offers nothing to dismiss when the page holds only changes that could not be checked', () => {
+    const changes = changesFor({ status: 'ready', items: [], unsettled: 2, waiting: 'behind' });
+    render(<MarketplaceConnectorChanges connection={connection} changes={changes} />);
+
+    expect(screen.getByTestId('store-changes-behind')).toHaveTextContent('could not be checked yet');
+    expect(screen.queryByRole('button', { name: /^Dismiss these/ })).not.toBeInTheDocument();
+  });
+
+  it('disables every row action while the whole review is being dismissed', () => {
+    const item = itemFor(recordedChange('price'));
+    render(
+      <MarketplaceConnectorChanges
+        connection={connection}
+        changes={changesFor({ status: 'ready', items: [item], unsettled: 0, waiting: 'behind' }, 'all')}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Apply price' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Dismiss these 1' })).toBeDisabled();
+  });
+
   it('offers Continue when a visit reached its budget, even with nothing left to review', async () => {
     const changes = changesFor({ status: 'ready', items: [], unsettled: 0, waiting: 'budget' });
     render(<MarketplaceConnectorChanges connection={connection} changes={changes} />);
 
-    expect(screen.getByTestId('store-changes-budget')).toHaveTextContent('5,000 changes were handled in this visit');
+    expect(screen.getByTestId('store-changes-budget')).toHaveTextContent('handled as many changes as it can at once');
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(changes.refresh).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('store-changes-behind')).not.toBeInTheDocument();
