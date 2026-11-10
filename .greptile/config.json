@@ -4,7 +4,7 @@
   "triggerOnUpdates": false,
   "ignorePatterns": "**/*.generated.*\ndist/**\nnode_modules/**\npublic/sw.js\npublic/sw.js.map",
   "excludeAuthors": ["dependabot[bot]"],
-  "instructions": "This is a local-first decentralized social app using Dexie (IndexedDB), Zustand, Next.js, Tailwind CSS, Shadcn UI. Architecture enforcement is critical: check layer boundary violations (controllers->application->services->models). Modules must be imported through the tsconfig path aliases (for example @/hooks/*, @/controllers/*, @/services/*, @/models/*, @/stores/*) and point at concrete source modules. Config: @/config/<module> only (no aggregate src/config/index.ts). Routes: @/app/routes for route tables and helpers. Review .greptile/rules.md for recurring patterns and docs/architecture.md for the full architecture reference.",
+  "instructions": "Pubky Market is a local-first marketplace built on the Pubky App architecture (Next.js, React with the React Compiler, Dexie/IndexedDB, Zustand, TanStack Query, Tailwind and Shadcn UI). AGENTS.md is the agent entry point; docs/ is canonical and relevant docs are attached through files.json. Enforce the documented layer boundaries, concrete imports, local-first reads/writes and code-quality rules in docs/development-workflow.md. Preserve the Marketplace service, embedding, grant-session and release contracts. Review the actual diff and verify each finding against source; do not infer App-only APIs or require unrelated refactors. Marketplace uses the App toast API with durationMs and retains its own Linux VRT and pre-push/PR checks. Review .greptile/rules.md as a summary of the canonical docs.",
   "rules": [
     {
       "id": "no-service-from-controller",
@@ -94,6 +94,84 @@
       "id": "no-unnecessary-memo",
       "rule": "This project uses the React Compiler which auto-memoizes renders and callbacks. Manual useCallback and useMemo are redundant in most cases and add visual noise. Flag them unless the author cites a specific reason the compiler can't handle it (e.g., ref-stable callback for a non-React subscriber, or profiler evidence of a hotspot).",
       "scope": ["src/components/**", "src/hooks/**", "src/providers/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "controller-naming",
+      "rule": "Controller method names encode IO: fetch* is network-only, get* local-only, getMany* a bulk local Map, getOrFetch* and getMany*OrFetch local-first with network fallback, subscribe* a long-lived stream, commitCreate*/commitUpdate*/commitDelete* a local-first write plus sync. Check new or changed methods against docs/local-first.md.",
+      "scope": ["src/core/controllers/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "local-first-reads",
+      "rule": "For ordinary local-first entity reads, use useLocalFirstQuery from @/hooks/useLocalFirstQuery/useLocalFirstQuery: queryFn is local-only and read-only; fetchFn performs the network fetch and persists to Dexie. No network, TanStack Query or retry logic inside useLiveQuery (ADR-0011). Flag new hand-rolled equivalents without a documented reason. Preserve loading/missing/tombstone handling and the separate TTL freshness policy. See docs/local-first.md.",
+      "scope": ["src/hooks/**", "src/components/**"],
+      "severity": "high"
+    },
+    {
+      "id": "ttl-on-local-writes",
+      "rule": "Writes to TTL-managed entities must update the affected *_ttl rows and persist dependencies before dependents. Do not impose social TTL tables on commerce records that have a different persistence contract. Check stream cursor and invalidation behavior against docs/data-patterns.md and docs/local-first.md.",
+      "scope": ["src/core/services/local/**", "src/core/application/**"],
+      "severity": "high"
+    },
+    {
+      "id": "dexie-schema-change",
+      "rule": "Call out changes to DB_VERSION, stores/index definitions or upgrade callbacks and verify their effect on existing local data. Marketplace has versioned upgrades as well as reset paths; inspect the current franky.ts migration/reset implementation rather than assuming every version change deletes the database. Require migration/reset verification and describe any local-data loss. See docs/data-patterns.md.",
+      "scope": ["src/core/database/**", "src/config/database.ts", "src/libs/env/env.ts", ".env.example"],
+      "severity": "high"
+    },
+    {
+      "id": "error-handling-conventions",
+      "rule": "Re-throw AppError unchanged and normalize unknowns with toAppError(). Use safeFetch and httpResponseToError or the documented service wrapper for HTTP. Prefer error.category/error.code over message matching; any SDK-boundary exception must be narrow, documented and contract-tested. Preserve the documented non-reporting expected-outcome exceptions. Do not add raw throw new Error() to core production code. See docs/error-handling.md and docs/sentry.md.",
+      "scope": ["src/core/**", "src/hooks/**", "src/libs/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "sentry-capture-rule",
+      "rule": "Route reportable application errors through Err.* and the existing captureAppError funnel. Do not add direct Sentry.captureException calls outside that funnel and the non-AppError cases in app/error.tsx and app/global-error.tsx. Preserve the expected-refusal and cancellation filtering described in docs/sentry.md. Do not attach raw private data or secrets; review context against the existing scrubber.",
+      "scope": ["src/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "forms-pattern",
+      "rule": "Use react-hook-form + zod behind an action/form hook, with schema, types and defaults in a sibling *.types.ts. Components call the hook rather than commit* controllers directly. Use Controller and the existing controlled-field molecules; validation messages are literal US-English strings and Zod v4 URL validation is z.url(). Preserve the documented success result contract, including entity IDs where callers need them. See docs/components.md.",
+      "scope": ["src/hooks/**", "src/components/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "design-tokens-only",
+      "rule": "Use semantic design tokens and the Tailwind scale; avoid hardcoded colors and fixed arbitrary values when a named utility exists. Use the documented z-index scale (-z-10, z-10, z-30, z-40, z-50, z-60). Allow viewport fractions without a named utility, necessary calc() expressions and library CSS variables. See docs/components.md and docs/z-index.md.",
+      "scope": ["src/components/**", "src/app/**/*.tsx"],
+      "severity": "medium"
+    },
+    {
+      "id": "no-i18n-return",
+      "rule": "User-facing copy uses inline US-English literals. Do not restore next-intl, useTranslations, messages/ catalogs, src/i18n or a replacement translation registry. See docs/migrations/2305-i18n-conflict-guide.md.",
+      "scope": ["src/**", "cypress/**"],
+      "severity": "high"
+    },
+    {
+      "id": "vrt-baseline-flag",
+      "rule": "For visual changes, identify affected VRT specs and state the baseline impact. Marketplace validates Linux Chromium/Firefox baselines using the pinned Docker runner and PR/merge-group workflows. Use the current commands in docs/visual-regression-testing.md; regenerate only intentional visual changes, inspect the diff and preserve unrelated baselines. Do not claim VRT ran when the job was skipped.",
+      "scope": ["src/components/**", "src/test/vrt/**", "src/test-utils/vrt*"],
+      "severity": "medium"
+    },
+    {
+      "id": "generated-artifacts",
+      "rule": "Do not hand-edit generated service-worker output or lockfile entries. Change the source/input and regenerate with the appropriate tool. Review the resulting diff and disclose generated-file changes; do not regenerate unrelated outputs. See docs/development-workflow.md.",
+      "scope": ["public/sw.js", "public/sw.js.map", "package-lock.json"],
+      "severity": "high"
+    },
+    {
+      "id": "homeserver-write-retry",
+      "rule": "Homeserver writes use the existing HomeserverService boundaries and retry policy (429/500/503 and the narrowly recognized publish-conflict 409, not arbitrary 409/412/423). For a write checked against a read of the same file, preserve the read-dependent retry contract: publish conflicts must re-run the read/check rather than replay stale data. Verify the actual Marketplace helper and session/locking behavior in source; do not import an App-only API. See docs/error-handling.md.",
+      "scope": ["src/core/**"],
+      "severity": "high"
+    },
+    {
+      "id": "component-test-contracts",
+      "rule": "Unit tests assert observable behavior and prop contracts; VRT checks appearance. Do not add classic snapshot tests, as any, or as unknown as T escapes outside documented typed test helpers. Avoid assertions that only prove an import exists or a render does not throw; test the relevant behavior. See docs/component-testing.md.",
+      "scope": ["**/*.test.ts", "**/*.test.tsx"],
       "severity": "medium"
     }
   ]
