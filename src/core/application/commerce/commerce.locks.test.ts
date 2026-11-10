@@ -306,10 +306,14 @@ describe('CommerceApplication Locks payment start (pubky/locks#72 no-resubmit ru
     });
 
     it('submits for the lock the payment was prepared against, spelled in lowercase by the listing', async () => {
+      const canonical = POLICY_URI.replace('0'.repeat(52), 'A'.repeat(52));
+      vi.mocked(MarketplaceGatewayService.execute).mockImplementationOnce(async (_actor, command) =>
+        serviceAnswer(command.kind, { lockResourceHash: preparedLockResourceHash(canonical)!, criterionId: 'paykit' }),
+      );
       const submit = vi.spyOn(LocksGatewayService, 'submitPaykitProof').mockResolvedValue(pendingLifecycle());
       const lowercase = asOpaque<CommerceDigitalLock>({
         ...digitalLock,
-        policyUri: POLICY_URI.replace('0'.repeat(52), '0'.repeat(52).toLowerCase()),
+        policyUri: POLICY_URI.replace('0'.repeat(52), 'a'.repeat(52)),
       });
 
       await expect(beginWith(lowercase)).resolves.toMatchObject({ ok: true });
