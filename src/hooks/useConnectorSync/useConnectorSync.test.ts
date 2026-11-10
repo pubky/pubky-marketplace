@@ -104,6 +104,17 @@ describe('useConnectorSync', () => {
     expect(ConnectorsController.fetchSync).not.toHaveBeenCalled();
   });
 
+  it('loads the settings again on reload after a failed load', async () => {
+    vi.mocked(ConnectorsController.fetchSync).mockRejectedValueOnce(bareHttpFailure(503));
+    const { result } = renderHook(() => useConnectorSync(RECORDED_CONNECTION_ID));
+    await waitFor(() => expect(result.current.state.status).toBe('failed'));
+
+    await act(async () => result.current.reload());
+
+    await waitFor(() => expect(result.current.state.status).toBe('ready'));
+    expect(ConnectorsController.fetchSync).toHaveBeenCalledTimes(2);
+  });
+
   it('does nothing outside the live marketplace', () => {
     mode.value = 'local';
 

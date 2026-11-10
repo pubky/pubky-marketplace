@@ -15,7 +15,7 @@ beforeAll(() => {
 const connection = { id: 'c1', domain: 'demo.myshopify.com' };
 
 function syncFor(state: ConnectorSyncState, savingGroup: 'content' | 'price' | 'variants' | null = null) {
-  return { state, savingGroup, setDirection: vi.fn(async () => true) };
+  return { state, savingGroup, setDirection: vi.fn(async () => true), reload: vi.fn(async () => {}) };
 }
 
 describe('MarketplaceConnectorSyncSettings', () => {
@@ -31,7 +31,7 @@ describe('MarketplaceConnectorSyncSettings', () => {
     for (const label of ['Title, description and photos', 'Price', 'Variants']) {
       expect(screen.getByRole('combobox', { name: label })).toHaveTextContent('From your store');
     }
-    expect(screen.getByText('Applied as soon as you open the Shop.')).toBeInTheDocument();
+    expect(screen.getByText('Applied when you open Store connections.')).toBeInTheDocument();
     expect(screen.getAllByText('Waits for your approval.')).toHaveLength(2);
     expect(screen.getByText(/Stock always follows your store/)).toBeInTheDocument();
   });
@@ -46,6 +46,18 @@ describe('MarketplaceConnectorSyncSettings', () => {
     expect(sync.setDirection).toHaveBeenCalledWith('price', 'off');
   });
 
+  it('shows a failed load with Try again instead of hiding the table, and retries', async () => {
+    const sync = syncFor({
+      status: 'failed',
+      message: 'The sync settings could not be loaded. Try again in a moment.',
+    });
+    render(<MarketplaceConnectorSyncSettings connection={connection} sync={sync} />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('could not be loaded');
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(sync.reload).toHaveBeenCalledTimes(1);
+  });
+
   it('locks the table while a setting is being saved', () => {
     render(
       <MarketplaceConnectorSyncSettings
@@ -57,7 +69,7 @@ describe('MarketplaceConnectorSyncSettings', () => {
     expect(screen.getByRole('combobox', { name: 'Variants' })).toBeDisabled();
   });
 
-  it.each([{ status: 'loading' }, { status: 'unavailable' }, { status: 'failed', message: 'x' }] as const)(
+  it.each([{ status: 'loading' }, { status: 'unavailable' }] as const)(
     'renders nothing while the settings are %s',
     (state) => {
       const { container } = render(<MarketplaceConnectorSyncSettings connection={connection} sync={syncFor(state)} />);

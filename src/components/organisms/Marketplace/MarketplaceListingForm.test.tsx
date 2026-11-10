@@ -1890,6 +1890,21 @@ describe('MarketplaceListingForm store sync', () => {
     expect(screen.queryByTestId('store-follow-content')).not.toBeInTheDocument();
   });
 
+  it('does not let a follow switch be used while the listing is being saved', () => {
+    render(
+      <FormHarness
+        mode="edit"
+        listingId="boots_01"
+        isPublishing
+        media={buildMedia([photoItem('p1', 'Front')])}
+        defaultValues={formDataFromRecord(record(), 'USD', 'metric', null)}
+        storeSync={storeSync([syncFor(ALL)])}
+      />,
+    );
+
+    expect(screen.getByRole('switch', { name: 'Price follow demo.myshopify.com' })).toBeDisabled();
+  });
+
   it('turns a part into the listing’s own through its switch, naming the store', async () => {
     const onToggle = vi.fn();
     render(edit(storeSync([syncFor(ALL)], onToggle)));

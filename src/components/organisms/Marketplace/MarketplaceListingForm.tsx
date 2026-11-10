@@ -285,7 +285,7 @@ export function MarketplaceListingForm({
         domain={sync.domain}
         state={sync.groups[group]}
         editInStoreUrl={sync.editInStoreUrl}
-        saving={storeSync.saving !== null}
+        saving={storeSync.saving !== null || isPublishing}
         onToggle={() => storeSync.onToggle(sync.connectionId, group)}
       />
     ));

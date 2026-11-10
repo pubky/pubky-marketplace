@@ -49,7 +49,7 @@ function changesFor(state: ConnectorChangesState, workingId: string | null = nul
 describe('MarketplaceConnectorChanges', () => {
   it('lists a price change with what it does and applies it on a tap', async () => {
     const item = itemFor(recordedChange('price'));
-    const changes = changesFor({ status: 'ready', items: [item], unsettled: 0 });
+    const changes = changesFor({ status: 'ready', items: [item], unsettled: 0, capped: false });
     render(<MarketplaceConnectorChanges connection={connection} changes={changes} />);
 
     expect(screen.getByRole('heading', { name: 'Shopify changes (1)' })).toBeInTheDocument();
@@ -62,7 +62,7 @@ describe('MarketplaceConnectorChanges', () => {
 
   it('shows both sides of a conflict and offers the store’s value, the listing’s, or detaching', async () => {
     const item = itemFor(recordedChange('content'), bootsFollowingTheStore({ title: 'My own title' }));
-    const changes = changesFor({ status: 'ready', items: [item], unsettled: 0 });
+    const changes = changesFor({ status: 'ready', items: [item], unsettled: 0, capped: false });
     render(<MarketplaceConnectorChanges connection={connection} changes={changes} />);
 
     const conflict = screen.getByTestId('store-change-conflict');
@@ -101,7 +101,7 @@ describe('MarketplaceConnectorChanges', () => {
     render(
       <MarketplaceConnectorChanges
         connection={connection}
-        changes={changesFor({ status: 'ready', items: [itemFor(change)], unsettled: 0 })}
+        changes={changesFor({ status: 'ready', items: [itemFor(change)], unsettled: 0, capped: false })}
       />,
     );
 
@@ -120,7 +120,12 @@ describe('MarketplaceConnectorChanges', () => {
     render(
       <MarketplaceConnectorChanges
         connection={connection}
-        changes={changesFor({ status: 'ready', items: [itemFor(euros, undefined, 'unconfirmed')], unsettled: 0 })}
+        changes={changesFor({
+          status: 'ready',
+          items: [itemFor(euros, undefined, 'unconfirmed')],
+          unsettled: 0,
+          capped: false,
+        })}
       />,
     );
 
@@ -144,7 +149,7 @@ describe('MarketplaceConnectorChanges', () => {
     render(
       <MarketplaceConnectorChanges
         connection={connection}
-        changes={changesFor({ status: 'ready', items: [item], unsettled: 0 })}
+        changes={changesFor({ status: 'ready', items: [item], unsettled: 0, capped: false })}
       />,
     );
 
@@ -153,7 +158,7 @@ describe('MarketplaceConnectorChanges', () => {
   });
 
   it('says how many changes could not be confirmed yet, even when none is left to review, and retries', async () => {
-    const changes = changesFor({ status: 'ready', items: [], unsettled: 2 });
+    const changes = changesFor({ status: 'ready', items: [], unsettled: 2, capped: false });
     render(<MarketplaceConnectorChanges connection={connection} changes={changes} />);
 
     expect(screen.getByRole('heading', { name: 'Shopify changes' })).toBeInTheDocument();
@@ -167,7 +172,7 @@ describe('MarketplaceConnectorChanges', () => {
     render(
       <MarketplaceConnectorChanges
         connection={connection}
-        changes={changesFor({ status: 'ready', items: [item], unsettled: 0 }, item.change.id)}
+        changes={changesFor({ status: 'ready', items: [item], unsettled: 0, capped: false }, item.change.id)}
       />,
     );
 
@@ -185,7 +190,7 @@ describe('MarketplaceConnectorChanges', () => {
   });
 
   it.each([
-    ['nothing to review', { status: 'ready', items: [], unsettled: 0 } as ConnectorChangesState],
+    ['nothing to review', { status: 'ready', items: [], unsettled: 0, capped: false } as ConnectorChangesState],
     ['loading', { status: 'loading' } as ConnectorChangesState],
     ['unavailable', { status: 'unavailable' } as ConnectorChangesState],
   ])('renders nothing when %s', (_name, state) => {

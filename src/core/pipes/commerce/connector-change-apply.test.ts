@@ -3,6 +3,7 @@ import type { ConnectorProductChange } from '@/libs/commerce/connectors';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { bootsFollowingTheStore, recordedChange, withLinkedVariantIds } from '@/test-utils/connector-changes';
+import { connectorSplitListingId } from './connector-catalog-rows';
 import {
   applyListingPatch,
   type ChangeEvaluation,
@@ -272,6 +273,90 @@ describe('content changes', () => {
     const patch = applied(evaluate(swapped, withHand));
 
     expect(patch.photos?.keptMedia.map((entry) => (entry as { id: string }).id)).toEqual(['image_hand']);
+  });
+});
+
+describe('a split listing, which holds the import’s projection of the product', () => {
+  const SPLIT_ID = connectorSplitListingId('shopify', 'gid://shopify/Product/9001', V1);
+  const VARIANT_PHOTO = 'https://cdn.shopify.com/s/files/boots-variant-42.jpg';
+  const split = (overrides: Partial<CommerceListingRecord> = {}) =>
+    bootsFollowingTheStore({
+      listingId: SPLIT_ID,
+      title: 'Trail Boots, 42',
+      variants: [{ id: 'variant_01', options: { size: '42' }, quantity: 1, mediaIds: [], enabled: true }],
+      ...overrides,
+    });
+  const content = (proposed: Record<string, unknown>) => {
+    const change = recordedChange('content');
+    if (change.fieldGroup !== 'content') throw new Error('not content');
+    return {
+      ...change,
+      proposed: { ...change.proposed, ...proposed },
+    } as ConnectorProductChange;
+  };
+  const sameTitle = { title: 'Trail Boots', description: 'Waterproof leather boots.' };
+
+  it('does not call an untouched split title a conflict when only the description changed', () => {
+    const change = content({ ...sameTitle, description: 'Now waterproof.' });
+    const patch = applied(evaluate(change, split()));
+
+    expect(patch).toMatchObject({ description: 'Now waterproof.' });
+    expect(patch.title).toBeUndefined();
+  });
+
+  it('keeps the variant suffix when the product is retitled', () => {
+    const patch = applied(evaluate(content({ title: 'Trail Boots II' }), split()));
+
+    expect(patch.title).toBe('Trail Boots II, 42');
+  });
+
+  it('still conflicts when the seller changed the split title', () => {
+    const evaluation = evaluate(content({ title: 'Trail Boots II' }), split({ title: 'My own boots, 42' }));
+
+    expect(evaluation.kind === 'conflict' && evaluation.conflicts[0]).toMatchObject({
+      field: 'title',
+      yours: 'My own boots, 42',
+      store: 'Trail Boots II, 42',
+    });
+  });
+
+  it('keeps the variant’s own photo, which the product’s photo list does not name', () => {
+    const record = split({
+      media: [mediaWithSource('image_01', PHOTO_1), mediaWithSource('image_variant', VARIANT_PHOTO)],
+    });
+    const swapped = content({ imageUrls: [PHOTO_2] });
+
+    const patch = applied(evaluate(swapped, record));
+
+    expect(patch.photos?.removed).toBe(1);
+    expect(patch.photos?.keptMedia.map((entry) => (entry as { id: string }).id)).toEqual(['image_variant']);
+    expect(patch.photos?.keptMedia[0]).toMatchObject({ importSourceHash: sourceUrlHash(VARIANT_PHOTO) });
+    const next = build(record, patch, [...patch.photos!.keptMedia, mediaWithSource('image_02', PHOTO_2)]);
+    expect(next.media.map(({ id }) => id)).toEqual(['image_variant', 'image_02']);
+  });
+
+  it('would drop that photo from a listing that is not a split listing', () => {
+    const record = bootsFollowingTheStore({
+      media: [mediaWithSource('image_01', PHOTO_1), mediaWithSource('image_variant', VARIANT_PHOTO)],
+    });
+
+    const patch = applied(evaluate(content({ imageUrls: [PHOTO_2] }), record));
+
+    expect(patch.photos?.removed).toBe(2);
+  });
+
+  it('shortens a long product title to leave room for the variant suffix, as the import does', () => {
+    const long = 'B'.repeat(120);
+    const patch = applied(evaluate(content({ title: long }), split()));
+
+    expect(patch.title).toHaveLength(80);
+    expect(patch.title?.endsWith(', 42')).toBe(true);
+  });
+
+  it('leaves a listing whose id is not a split id as the product-level title', () => {
+    const patch = applied(evaluate(content({ title: 'Trail Boots II' }), bootsFollowingTheStore()));
+
+    expect(patch.title).toBe('Trail Boots II');
   });
 });
 

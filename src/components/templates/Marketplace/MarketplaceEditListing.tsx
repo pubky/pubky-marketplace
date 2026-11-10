@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, PencilLine, Store, Trash2 } from 'lucide-react';
 import { getMarketplaceListingEditRoute, getMarketplaceListingRoute, MARKETPLACE_ROUTES } from '@/app/routes';
@@ -12,6 +12,7 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { useDeleteMarketplaceListings } from '@/hooks/useDeleteMarketplaceListings/useDeleteMarketplaceListings';
 import { useEditMarketplaceListing } from '@/hooks/useEditMarketplaceListing/useEditMarketplaceListing';
 import { useListingStoreSync } from '@/hooks/useListingStoreSync/useListingStoreSync';
+import type { ConnectorSyncGroup } from '@/libs/commerce/connectors';
 import { ListingPublishGuardNotice } from '@/molecules/Marketplace/ListingPublishGuardNotice';
 import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceListingDeleteDialog } from '@/organisms/Marketplace/MarketplaceListingDeleteDialog';
@@ -31,7 +32,30 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
     storeSyncReady: storeSync.ready,
   });
   const [isSaving, setIsSaving] = useState(false);
+  const savingRef = useRef(false);
+  const reconciled = useRef<Record<ConnectorSyncGroup, boolean>>({ content: false, price: false, variants: false });
   const listingRoute = getMarketplaceListingRoute(sellerPubky, listingId);
+  const followsContent = storeSync.follows.content;
+  const followsPrice = storeSync.follows.price;
+  const followsVariants = storeSync.follows.variants;
+  const editingReady = editing.status === 'ready';
+  const resetFollowedGroup = editing.resetFollowedGroup;
+  useEffect(() => {
+    if (!editingReady) return;
+    const follows = { content: followsContent, price: followsPrice, variants: followsVariants };
+    for (const group of ['content', 'price', 'variants'] as const) {
+      if (!follows[group]) {
+        reconciled.current[group] = false;
+      } else if (!reconciled.current[group]) {
+        reconciled.current[group] = true;
+        resetFollowedGroup(group);
+      }
+    }
+    // A group that has just become followed, by the first lookup finishing or by the switch, has its fields put
+    // back to the published values. `resetFollowedGroup` is a render-local closure over the form and the
+    // record, so only the follow flags and whether the editor has loaded decide when this runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingReady, followsContent, followsPrice, followsVariants]);
   const deleting = useDeleteMarketplaceListings({ onDeleted: () => router.push(MARKETPLACE_ROUTES.DASHBOARD) });
   const deleteSection = editing.ownedListing && (
     <section
@@ -68,11 +92,15 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
 
   const persistListing = async (options?: { silent?: boolean }) => {
     if (deleting.open) return false;
+    // A save and a follow switch never overlap: the switch changes which fields a save may write.
+    if (savingRef.current || storeSync.isToggling()) return false;
+    savingRef.current = true;
     setIsSaving(true);
     try {
       const savedId = await editing.submit(options);
       return Boolean(savedId);
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   };
@@ -184,10 +212,10 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
               ? {
                   syncs: storeSync.syncs,
                   saving: storeSync.saving,
-                  onToggle: (connectionId, group) =>
-                    void storeSync.toggleOverride(connectionId, group).then((next) => {
-                      if (next?.follows) editing.resetFollowedGroup(group);
-                    }),
+                  onToggle: (connectionId, group) => {
+                    if (savingRef.current) return;
+                    void storeSync.toggleOverride(connectionId, group);
+                  },
                 }
               : null
           }

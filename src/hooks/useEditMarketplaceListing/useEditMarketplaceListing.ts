@@ -115,6 +115,14 @@ export function useEditMarketplaceListing(
 ): UseEditMarketplaceListingResult {
   const follows = options.follows ?? NO_FOLLOWED_GROUPS;
   const storeSyncReady = options.storeSyncReady !== false;
+  // A save that is already running reads these when it commits, not the values it started with: a group that
+  // began following a store while the save awaited media or shipping must still be saved as published.
+  const followsRef = useRef(follows);
+  const storeSyncReadyRef = useRef(storeSyncReady);
+  useEffect(() => {
+    followsRef.current = follows;
+    storeSyncReadyRef.current = storeSyncReady;
+  });
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
   const measurementSystem = useMeasurementSystem();
@@ -259,7 +267,16 @@ export function useEditMarketplaceListing(
 
       try {
         await uploadListingMedia(preparedMedia.uploads);
-        const updated = buildUpdatedRecord(record, data, preparedMedia.media, shipping.fields, follows);
+        if (!storeSyncReadyRef.current) {
+          if (!options?.silent) {
+            toast({
+              variant: 'error',
+              description: 'Your store connection changed while saving. Try again in a moment.',
+            });
+          }
+          return;
+        }
+        const updated = buildUpdatedRecord(record, data, preparedMedia.media, shipping.fields, followsRef.current);
         const reservePrice =
           updated.sale.format === 'auction' && data.reservePrice !== ''
             ? amountInputToMoney(data.reservePrice, assetForListingCurrency(data.currency))
@@ -292,9 +309,10 @@ export function useEditMarketplaceListing(
 
   const resetFollowedGroup = (group: ConnectorSyncGroup) => {
     if (!record) return;
+    const primaryPrice = record.sale.format === 'fixed_price' ? record.sale.unitPrice : record.sale.startingPrice;
     const published = formDataFromRecord(
       record,
-      form.getValues('currency'),
+      listingCurrencyChoiceForAsset(primaryPrice) ?? form.getValues('currency'),
       form.getValues('measurementSystem'),
       hydratedReservePriceRef.current ?? null,
     );
@@ -305,9 +323,13 @@ export function useEditMarketplaceListing(
       media.seed(record.media);
     } else if (form.getValues('variants').length !== published.variants.length) {
       // A row was removed or added here, so rows no longer line up with the published variants: take them all back.
-      if (group === 'price') form.setValue('price', published.price, touch);
+      if (group === 'price') {
+        form.setValue('currency', published.currency, touch);
+        form.setValue('price', published.price, touch);
+      }
       form.setValue('variants', published.variants, touch);
     } else if (group === 'price') {
+      form.setValue('currency', published.currency, touch);
       form.setValue('price', published.price, touch);
       published.variants.forEach((variant, index) => {
         form.setValue(`variants.${index}.priceOverride`, variant.priceOverride, touch);

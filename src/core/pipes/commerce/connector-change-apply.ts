@@ -8,7 +8,12 @@ import {
 import type { ConnectorProductChange } from '@/libs/commerce/connectors';
 import { type CommerceListingRecord, commerceListingRecordSchema } from '@/libs/commerce/marketplace-records';
 import type { CommerceMoney } from '@/libs/commerce/transaction-contracts';
-import { secureImageUrls, storeVariantOptions } from './connector-catalog-rows';
+import {
+  connectorSplitListingId,
+  secureImageUrls,
+  splitListingTitle,
+  storeVariantOptions,
+} from './connector-catalog-rows';
 import { htmlToPlainText } from './import-html-text';
 import {
   type ImageSyncPlan,
@@ -225,15 +230,41 @@ type PriceChange = Extract<ConnectorProductChange, { fieldGroup: 'price' }>;
 type VariantsChange = Extract<ConnectorProductChange, { fieldGroup: 'variants' }>;
 type StatusChange = Extract<ConnectorProductChange, { fieldGroup: 'status' }>;
 
-function evaluateContent(change: ContentChange, record: CommerceListingRecord, takeStore: boolean): ChangeEvaluation {
+/**
+ * The choice a split listing carries in its title ("Trail Boots, 42"), or `null` when the listing is not a split
+ * listing. The service sends product-level content, so what a split listing holds is the import's projection of
+ * it: the product title with the listing's one variant's choice, and the variant's own photo besides the
+ * product's. A listing is split when its id is the one the import gives a store variant in that mode.
+ */
+function splitChoice(
+  change: ContentChange,
+  record: CommerceListingRecord,
+  links: readonly ChangeLink[],
+): string | null {
+  const [link] = links;
+  if (links.length !== 1 || !link || link.providerVariantId === '') return null;
+  if (record.listingId !== connectorSplitListingId('shopify', change.providerProductId, link.providerVariantId))
+    return null;
+  const variant = record.variants.find(({ id }) => id === link.variantId) ?? record.variants[0];
+  return variant ? Object.values(variant.options).join(' / ') : '';
+}
+
+function evaluateContent(
+  change: ContentChange,
+  record: CommerceListingRecord,
+  links: readonly ChangeLink[],
+  takeStore: boolean,
+): ChangeEvaluation {
   const { base, proposed } = change;
   const changes: FieldChange[] = [];
   const conflicts: ChangeConflict[] = [];
   let patch: ListingPatch = {};
 
-  const title = storeTitle(proposed.title);
+  const split = splitChoice(change, record, links);
+  const projectTitle = (raw: string) => storeTitle(split === null ? raw : splitListingTitle(raw, split));
+  const title = projectTitle(proposed.title);
   if (title.length < COMMERCE_LISTING_TITLE_MIN_CHARS) return unsupported('title_invalid');
-  const baseTitle = base ? storeTitle(base.title) : null;
+  const baseTitle = base ? projectTitle(base.title) : null;
   const titleVerdict = decide(record.title, baseTitle, title, takeStore, sameValue);
   if (titleVerdict === 'apply') {
     patch = { ...patch, title };
@@ -264,11 +295,27 @@ function evaluateContent(change: ContentChange, record: CommerceListingRecord, t
         return !(baseHashes?.has(hash) && !currentHashes.has(hash));
       });
   const videoCount = record.media.filter(({ type }) => type === 'video').length;
-  const plan = planImageSync(
-    record.media,
+  // A split listing also holds its variant's own photo, which the product's photo list does not name; a photo
+  // whose source is in neither list is that photo, so it is kept like one added by hand.
+  const proposedHashes = new Set(proposedUrls.map(sourceUrlHash));
+  const isVariantPhoto = (media: unknown) => {
+    const hash = mediaSourceHash(media);
+    return split !== null && hash !== undefined && !proposedHashes.has(hash) && !baseHashes?.has(hash);
+  };
+  const planned = planImageSync(
+    record.media.map((media) => {
+      if (!isVariantPhoto(media)) return media;
+      const { importSourceHash: _source, ...unmarked } = media as Record<string, unknown>;
+      return unmarked;
+    }),
     wanted.map((url) => ({ url, alt: title })),
     COMMERCE_LISTING_MAX_IMAGES + videoCount,
   );
+  const original = new Map(record.media.map((media) => [media.id, media]));
+  const plan = {
+    ...planned,
+    keptMedia: planned.keptMedia.map((media) => (original.get((media as { id: string }).id) ?? media) as PresetJson),
+  };
   const keepsAnImage = plan.keptMedia.some((entry) => (entry as { type?: unknown }).type === 'image');
   if (plan.toUpload.length > 0 || plan.removed > 0) {
     if (!keepsAnImage && plan.toUpload.length === 0) return unsupported('no_photos');
@@ -439,7 +486,7 @@ export function evaluateChange(input: EvaluateInput): ChangeEvaluation {
   const takeStore = input.takeStore === true;
   switch (change.fieldGroup) {
     case 'content':
-      return evaluateContent(change, record, takeStore);
+      return evaluateContent(change, record, links, takeStore);
     case 'price':
       return evaluatePrice(change, record, links, takeStore);
     case 'status':

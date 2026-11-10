@@ -256,7 +256,7 @@ export function MarketplaceConnectorChanges({ connection, changes }: Marketplace
       </div>
     );
   }
-  if (state.status !== 'ready' || (state.items.length === 0 && state.unsettled === 0)) return null;
+  if (state.status !== 'ready' || (state.items.length === 0 && state.unsettled === 0 && !state.capped)) return null;
 
   return (
     <Card
@@ -296,6 +296,11 @@ export function MarketplaceConnectorChanges({ connection, changes }: Marketplace
               Try again
             </Button>
           </div>
+        )}
+        {state.capped && (
+          <Typography as="p" role="status" className="text-sm text-muted-foreground" data-testid="store-changes-capped">
+            More changes are waiting behind these. Apply or dismiss some, and the next ones appear here.
+          </Typography>
         )}
         <ul className="grid list-none gap-3 p-0">
           {state.items.map((item) => (

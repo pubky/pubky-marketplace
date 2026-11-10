@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { getCommerceAdapterMode, getMarketplaceUrl, isDurableCommerceMode } from '@/config/commerce';
 import {
+  CONNECTOR_CHANGES_PAGE_LIMIT,
   type ConnectorAlert,
   connectorAlertsSchema,
   type ConnectorCatalogPage,
@@ -180,7 +181,11 @@ export class MarketplaceConnectorsService {
   }
 
   /** `GET /v1/connectors/{id}/changes`: the store changes waiting for the seller, oldest first. */
-  static async changes(actor: string, connectionId: string, limit = 200): Promise<ConnectorProductChange[]> {
+  static async changes(
+    actor: string,
+    connectionId: string,
+    limit = CONNECTOR_CHANGES_PAGE_LIMIT,
+  ): Promise<ConnectorProductChange[]> {
     const raw = await this.request('getConnectorChanges', actor, `${this.path(connectionId)}/changes?limit=${limit}`);
     return this.parse('getConnectorChanges', connectorProductChangesSchema, raw).changes;
   }

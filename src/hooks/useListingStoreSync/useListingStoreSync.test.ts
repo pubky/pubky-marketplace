@@ -174,6 +174,64 @@ describe('useListingStoreSync', () => {
     expect(next).toEqual({ follows: true, overridden: false });
   });
 
+  it('turns following off in one click when an override already equals the connection’s setting', async () => {
+    const same: ConnectorSync = {
+      ...recordedSync(),
+      overrides: [{ listingId: 'boots_01', fieldGroup: 'content', direction: 'from_store' }],
+    };
+    vi.mocked(ConnectorsController.fetchSync).mockResolvedValue(same);
+    vi.mocked(ConnectorsController.commitListingSync).mockResolvedValue({
+      ...same,
+      overrides: [{ listingId: 'boots_01', fieldGroup: 'content', direction: 'off' }],
+    });
+    const { result } = renderHook(() => useListingStoreSync('boots_01'));
+    await waitFor(() => expect(result.current.syncs).toHaveLength(1));
+    expect(result.current.syncs[0]?.groups.content).toEqual({ follows: true, overridden: true });
+
+    let next: Awaited<ReturnType<typeof result.current.toggleOverride>> = null;
+    await act(async () => {
+      next = await result.current.toggleOverride('c1', 'content');
+    });
+
+    expect(ConnectorsController.commitListingSync).toHaveBeenLastCalledWith('c1', 'boots_01', { content: 'off' });
+    expect(next).toEqual({ follows: false, overridden: true });
+  });
+
+  it('is not ready and refuses a second switch from the moment a switch is clicked until the service answers', async () => {
+    let answer: (sync: ConnectorSync) => void = () => {};
+    vi.mocked(ConnectorsController.commitListingSync).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useListingStoreSync('boots_01'));
+    await waitFor(() => expect(result.current.syncs).toHaveLength(1));
+    expect(result.current.isToggling()).toBe(false);
+
+    let first: Promise<unknown> = Promise.resolve();
+    act(() => {
+      first = result.current.toggleOverride('c1', 'content');
+    });
+
+    expect(result.current.isToggling()).toBe(true);
+    await waitFor(() => expect(result.current.ready).toBe(false));
+    let second: Awaited<ReturnType<typeof result.current.toggleOverride>> | undefined;
+    await act(async () => {
+      second = await result.current.toggleOverride('c1', 'price');
+    });
+    expect(second).toBeNull();
+    expect(ConnectorsController.commitListingSync).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      answer(recordedSync());
+      await first;
+    });
+
+    expect(result.current.isToggling()).toBe(false);
+    await waitFor(() => expect(result.current.ready).toBe(true));
+  });
+
   it('opts a listing in for a group the connection leaves alone', async () => {
     const off: ConnectorSync = {
       ...recordedSync(),

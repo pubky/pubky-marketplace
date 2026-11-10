@@ -17,11 +17,21 @@ import {
 import { connectorRefusal } from '@/test-utils/connector-errors';
 import { useConnectorChanges } from './useConnectorChanges';
 
-const mode = vi.hoisted(() => ({ value: 'transaction-service' as string, sync: true }));
+const mode = vi.hoisted(() => ({ value: 'transaction-service' as string, sync: true, pageLimit: 200 }));
 
 vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
   return { ...actual, getCommerceAdapterMode: () => mode.value, getStoreSyncEnabled: () => mode.sync };
+});
+
+vi.mock('@/libs/commerce/connectors', async () => {
+  const actual = await vi.importActual<typeof import('@/libs/commerce/connectors')>('@/libs/commerce/connectors');
+  return {
+    ...actual,
+    get CONNECTOR_CHANGES_PAGE_LIMIT() {
+      return mode.pageLimit;
+    },
+  };
 });
 
 vi.mock('@/stores/auth/auth.store', () => ({
@@ -58,11 +68,15 @@ class Rig {
   cache = new Map<string, CommerceListingRecord>();
   pending: ConnectorProductChange[] = [];
   log: string[] = [];
+  fetches = 0;
   writes: CommerceListingRecord[] = [];
   verifyWrites = true;
 
   constructor() {
-    vi.mocked(ConnectorsController.fetchChanges).mockImplementation(async () => structuredClone(this.pending));
+    vi.mocked(ConnectorsController.fetchChanges).mockImplementation(async () => {
+      this.fetches += 1;
+      return structuredClone(this.pending.slice(0, mode.pageLimit));
+    });
     vi.mocked(ConnectorsController.commitResolveChange).mockImplementation(async (_id, change, resolution) => {
       const found = this.pending.find(({ id }) => id === change.id);
       if (!found) throw connectorRefusal('change_not_found', 404);
@@ -119,6 +133,7 @@ describe('useConnectorChanges', () => {
     vi.clearAllMocks();
     mode.value = 'transaction-service';
     mode.sync = true;
+    mode.pageLimit = 200;
   });
 
   it('applies store text and a product the store stopped selling on open, and holds the price for review', async () => {
@@ -153,7 +168,9 @@ describe('useConnectorChanges', () => {
 
     expect(rig.listings.get('boots_01')?.sale).toMatchObject({ unitPrice: { amountMinor: 13000 } });
     expect(rig.log.map((entry) => entry.split(':')[0])).toEqual(['write', 'resolve']);
-    await waitFor(() => expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 0 }));
+    await waitFor(() =>
+      expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 0, capped: false }),
+    );
   });
 
   it('only resolves a change whose listing already equals the proposal', async () => {
@@ -194,7 +211,9 @@ describe('useConnectorChanges', () => {
 
     expect(rig.writes).toEqual([]);
     expect(rig.log).toEqual([expect.stringMatching(/^resolve:.*:dismissed$/)]);
-    await waitFor(() => expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 0 }));
+    await waitFor(() =>
+      expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 0, capped: false }),
+    );
   });
 
   it("detaches a listing's field from the store, then reads the changes again", async () => {
@@ -591,10 +610,130 @@ describe('useConnectorChanges', () => {
     vi.mocked(CommerceController.isListingConfirmedRemoved).mockResolvedValueOnce(false);
 
     const { result } = renderHook(() => useConnectorChanges(CONNECTION));
-    await waitFor(() => expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 1 }));
+    await waitFor(() =>
+      expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 1, capped: false }),
+    );
 
     expect(rig.pending).toHaveLength(1);
     expect(rig.log).toEqual([]);
+  });
+
+  it('reads the queue again after a full page is resolved, so changes behind it are applied too', async () => {
+    mode.pageLimit = 3;
+    const rig = setup();
+    const content = recordedChange('content');
+    const ids = ['a', 'b', 'c', 'd', 'e'];
+    for (const id of ids) {
+      rig.listings.set(`boots_${id}`, bootsFollowingTheStore({ listingId: `boots_${id}` }));
+    }
+    rig.pending = ids.map((id) =>
+      linked({
+        ...content,
+        id: `change-${id}`,
+        proposedHash: id.repeat(64),
+        listings: [{ ...content.listings[0]!, listingId: `boots_${id}` }],
+      } as ConnectorProductChange),
+    );
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    await waitFor(() => expect(result.current.state.status).toBe('ready'));
+
+    expect(rig.pending).toEqual([]);
+    expect(rig.writes).toHaveLength(5);
+    expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 0, capped: false });
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: '5 changes from your store applied' }));
+  });
+
+  it('says more changes may be waiting when changes that need a tap fill the page', async () => {
+    mode.pageLimit = 3;
+    const rig = setup();
+    const price = recordedChange('price');
+    const manual = [1, 2, 3].map((n) =>
+      linked({ ...price, id: `manual-${n}`, proposedHash: String(n).repeat(64) } as ConnectorProductChange),
+    );
+    const behind = linked({
+      ...recordedChange('status'),
+      id: 'behind',
+      proposedHash: 'f'.repeat(64),
+    } as ConnectorProductChange);
+    rig.pending = [...manual, behind];
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const items = await ready(result);
+
+    expect(items).toHaveLength(3);
+    expect(result.current.state).toMatchObject({ capped: true });
+    expect(rig.pending.map(({ id }) => id)).toContain('behind');
+
+    rig.pending = rig.pending.filter(({ id }) => id !== 'manual-1');
+    await act(async () => result.current.refresh());
+    await waitFor(() => expect(rig.listings.get('mug_01')?.state).toBe('paused'));
+  });
+
+  it('applies a change to the listings it is linked to now, not the ones it listed when the page loaded', async () => {
+    const rig = setup();
+    const price = recordedChange('price');
+    rig.listings.set('boots_two', bootsFollowingTheStore({ listingId: 'boots_two' }));
+    const two = linked({
+      ...price,
+      listings: [price.listings[0]!, { ...price.listings[0]!, listingId: 'boots_two' }],
+    } as ConnectorProductChange);
+    rig.pending = [two];
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const [item] = await ready(result);
+    expect(item?.verdicts.map(({ listingId }) => listingId)).toEqual(['boots_01', 'boots_two']);
+    rig.pending = [{ ...two, listings: [two.listings[1]!] } as ConnectorProductChange];
+
+    await act(async () => result.current.apply(item!));
+
+    expect(rig.writes.map(({ listingId }) => listingId)).toEqual(['boots_two']);
+    expect(rig.listings.get('boots_01')?.sale).toMatchObject({ unitPrice: { amountMinor: 12500 } });
+  });
+
+  it('does not write when the listing’s links change between the last check and the write', async () => {
+    const rig = setup(recordedChange('price'));
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const [item] = await ready(result);
+    const relinked = structuredClone(rig.pending);
+    relinked[0]!.listings[0]!.variants = [
+      { variantId: 'variant_01', providerVariantId: 'gid://shopify/ProductVariant/99999' },
+    ];
+    let calls = 0;
+    vi.mocked(ConnectorsController.fetchChanges).mockImplementation(async () => {
+      calls += 1;
+      return structuredClone(calls >= 2 ? relinked : rig.pending);
+    });
+
+    await act(async () => result.current.apply(item!));
+
+    expect(rig.writes).toEqual([]);
+    expect(rig.listings.get('boots_01')?.sale).toMatchObject({ unitPrice: { amountMinor: 12500 } });
+  });
+
+  it('keeps a change it could not confirm counted when an unrelated item is dismissed and the queue reloads', async () => {
+    const rig = setup(recordedChange('content'), {
+      ...recordedChange('status'),
+      base: { available: false },
+      proposed: { available: true },
+    } as ConnectorProductChange);
+    rig.cache.set('boots_01', bootsFollowingTheStore({ title: 'Trail Boots II', description: 'Waterproof now.' }));
+    rig.listings.set('mug_01', createCommerceListingFixture({ listingId: 'mug_01', state: 'paused' }));
+    vi.mocked(CommerceController.refreshListing).mockImplementation((async (_owner: unknown, id: unknown) => {
+      if (id === 'boots_01') throw new Error('offline');
+      return rig.listings.get(String(id));
+    }) as never);
+    vi.mocked(CommerceController.isListingConfirmedRemoved).mockResolvedValue(false);
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const [item] = await ready(result);
+    expect(result.current.state).toMatchObject({ unsettled: 1 });
+
+    await act(async () => result.current.dismiss(item!));
+
+    await waitFor(() =>
+      expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 1, capped: false }),
+    );
+    expect(rig.pending.map(({ fieldGroup }) => fieldGroup)).toEqual(['content']);
   });
 
   it('says nothing when the server has no store connections', async () => {

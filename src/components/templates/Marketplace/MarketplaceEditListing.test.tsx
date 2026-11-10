@@ -23,6 +23,7 @@ const storeSync = vi.hoisted(() => ({
     follows: { content: false, price: false, variants: false },
     saving: null,
     toggleOverride: vi.fn(),
+    isToggling: vi.fn(() => false),
   },
 }));
 type StoreSyncProps = {
@@ -102,6 +103,7 @@ describe('MarketplaceEditListing delete', () => {
       follows: { content: false, price: false, variants: false },
       saving: null,
       toggleOverride: vi.fn(),
+      isToggling: vi.fn(() => false),
     };
   });
 
@@ -223,21 +225,69 @@ describe('MarketplaceEditListing store sync', () => {
     expect(retry).toHaveBeenCalledTimes(1);
   });
 
-  it('puts the form back to the published values when a part follows the store again, and only then', async () => {
+  it('puts a group’s form fields back to the published values when it becomes followed, once the editor has loaded', () => {
+    const reset = vi.fn();
+    editing.value = { ...editing.value, status: 'loading', resetFollowedGroup: reset };
+    storeSync.value = { ...storeSync.value, syncs: [sync], follows: { content: true, price: false, variants: false } };
+    const { rerender } = render(<MarketplaceEditListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots" />);
+    expect(reset).not.toHaveBeenCalled();
+
+    editing.value = { ...editing.value, status: 'ready' };
+    rerender(<MarketplaceEditListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots" />);
+    expect(reset).toHaveBeenCalledTimes(1);
+    expect(reset).toHaveBeenCalledWith('content');
+
+    rerender(<MarketplaceEditListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots" />);
+    expect(reset).toHaveBeenCalledTimes(1);
+
+    storeSync.value = { ...storeSync.value, follows: { content: true, price: true, variants: false } };
+    rerender(<MarketplaceEditListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots" />);
+    expect(reset).toHaveBeenLastCalledWith('price');
+    expect(reset).toHaveBeenCalledTimes(2);
+
+    storeSync.value = { ...storeSync.value, follows: { content: false, price: true, variants: false } };
+    rerender(<MarketplaceEditListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots" />);
+    storeSync.value = { ...storeSync.value, follows: { content: true, price: true, variants: false } };
+    rerender(<MarketplaceEditListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots" />);
+    expect(reset).toHaveBeenCalledTimes(3);
+    expect(reset).toHaveBeenLastCalledWith('content');
+  });
+
+  it('hands a switch to the store sync, and ignores it while a save is running', async () => {
+    let finish: (id: string | null) => void = () => {};
+    const submit = vi.fn(
+      () =>
+        new Promise<string | null>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    editing.value = { ...editing.value, submit };
     storeSync.value = { ...storeSync.value, syncs: [sync] };
-    vi.mocked(storeSync.value.toggleOverride)
-      .mockResolvedValueOnce({ follows: true, overridden: false })
-      .mockResolvedValueOnce({ follows: false, overridden: true })
-      .mockResolvedValueOnce(null);
     render(<MarketplaceEditListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots" />);
-    const reset = (editing.value as { resetFollowedGroup: ReturnType<typeof vi.fn> }).resetFollowedGroup;
 
     formProps.value.storeSync.onToggle('c1', 'content');
-    await vi.waitFor(() => expect(reset).toHaveBeenCalledWith('content'));
-    formProps.value.storeSync.onToggle('c1', 'price');
-    formProps.value.storeSync.onToggle('c1', 'variants');
-    await vi.waitFor(() => expect(storeSync.value.toggleOverride).toHaveBeenCalledTimes(3));
+    expect(storeSync.value.toggleOverride).toHaveBeenCalledTimes(1);
 
-    expect(reset).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes', hidden: true }));
+    await vi.waitFor(() => expect(submit).toHaveBeenCalled());
+    formProps.value.storeSync.onToggle('c1', 'price');
+    expect(storeSync.value.toggleOverride).toHaveBeenCalledTimes(1);
+
+    finish('boots');
+    await vi.waitFor(() => expect(formState.lastSaved).toBe(true));
+    formProps.value.storeSync.onToggle('c1', 'price');
+    expect(storeSync.value.toggleOverride).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not save while a follow switch is waiting for the service', async () => {
+    const submit = vi.fn(async () => 'boots');
+    editing.value = { ...editing.value, submit };
+    storeSync.value = { ...storeSync.value, isToggling: vi.fn(() => true) };
+    render(<MarketplaceEditListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes', hidden: true }));
+    await vi.waitFor(() => expect(formState.lastSaved).toBe(false));
+
+    expect(submit).not.toHaveBeenCalled();
   });
 });

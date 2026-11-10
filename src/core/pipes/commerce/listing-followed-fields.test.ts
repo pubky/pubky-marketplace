@@ -80,6 +80,8 @@ describe('keepFollowedFields', () => {
     expect(result.variants[0]?.priceOverride).toBeUndefined();
     expect(result.variants[1]?.priceOverride).toEqual(usd(20000));
     expect(result.title).toBe('Edited here');
+    expect(result.variants.map(({ id }) => id)).toEqual(['shopify-aaa', 'shopify-bbb']);
+    expect(result.variants.map(({ sku }) => sku)).toEqual(['X', 'Y']);
   });
 
   it('keeps the listing’s own variants when variants follow, taking only stock from the form', () => {

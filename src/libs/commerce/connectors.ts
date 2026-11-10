@@ -637,6 +637,9 @@ export function parseConnectionReturn(params: URLSearchParams): ConnectionReturn
 
 // === Product sync =============================================================
 
+/** How many pending changes one `GET /v1/connectors/{id}/changes` returns at most (the service has no cursor). */
+export const CONNECTOR_CHANGES_PAGE_LIMIT = 200;
+
 /** The parts of a linked listing that can follow the store. */
 export const CONNECTOR_SYNC_GROUPS = ['content', 'price', 'variants'] as const;
 export type ConnectorSyncGroup = (typeof CONNECTOR_SYNC_GROUPS)[number];

@@ -6,6 +6,7 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import { runImportImageBatches } from '@/hooks/useImportImageUpload/runImportImageBatches';
 import {
+  CONNECTOR_CHANGES_PAGE_LIMIT,
   connectorErrorMessage,
   type ConnectorProductChange,
   connectorRefusalReason,
@@ -50,6 +51,11 @@ export type ConnectorChangesState =
       items: readonly ReviewItem[];
       /** Changes that look done but could not be confirmed against the homeserver yet; Try again settles them. */
       unsettled: number;
+      /**
+       * The service returns one page of pending changes with no cursor. When the changes it returned are all
+       * handled and the page was still full, more changes may wait behind them until some are resolved.
+       */
+      capped: boolean;
     }
   | { status: 'failed'; message: string };
 
@@ -60,6 +66,9 @@ export const CHANGE_FAILURE_COPY: Readonly<Record<ChangeFailure, string>> = {
   unreadable: 'The listing could not be read. Try again in a moment.',
   failed: 'The change was not applied. Try again in a moment.',
 };
+
+/** Reads of the pending queue in one load, so a service that keeps returning new changes cannot hold it forever. */
+const MAX_CHANGE_PAGES = 25;
 
 const LOAD_FAILED = 'Your store changes could not be loaded. Try again in a moment.';
 
@@ -131,6 +140,19 @@ function variantLabelsOf(
           ]
         : [],
     ),
+  );
+}
+
+/** The listings a change may write and the store variants each is linked to, as a comparable string. */
+function mappingsKey(change: ConnectorProductChange): string {
+  return JSON.stringify(
+    change.listings
+      .map(({ listingId, direction, variants }) => ({
+        listingId,
+        direction,
+        variants: variants.map(({ variantId, providerVariantId }) => `${variantId}|${providerVariantId}`).sort(),
+      }))
+      .sort((a, b) => a.listingId.localeCompare(b.listingId)),
   );
 }
 
@@ -212,16 +234,21 @@ export function useConnectorChanges(connectionId: string | null) {
     }
   };
 
-  /** Whether the service still holds this exact proposal: a replaced or withdrawn one must not be applied. */
-  const stillPending = async (change: ConnectorProductChange): Promise<boolean> => {
-    if (!connectionId) return false;
+  /**
+   * The service's current copy of this exact proposal, with the listing mappings it holds now, or `null` when
+   * the proposal was replaced or withdrawn. A change is applied from this copy, never from the one the review
+   * loaded: a variant relinked since then changes which listings it may write.
+   */
+  const pendingChange = async (change: ConnectorProductChange): Promise<ConnectorProductChange | null> => {
+    if (!connectionId) return null;
     const current = (await ConnectorsController.fetchChanges(connectionId)).find(({ id }) => id === change.id);
-    return current !== undefined && current.proposedHash === change.proposedHash;
+    return current !== undefined && current.proposedHash === change.proposedHash ? current : null;
   };
 
-  const applyOne = async (change: ConnectorProductChange, takeStore: boolean): Promise<ApplyResult> => {
+  const applyOne = async (listed: ConnectorProductChange, takeStore: boolean): Promise<ApplyResult> => {
     if (!connectionId || !sellerPubky) return { ok: false, reason: 'failed', failure: 'failed' };
-    if (!(await stillPending(change))) return { ok: false, reason: 'stale' };
+    const change = await pendingChange(listed);
+    if (!change) return { ok: false, reason: 'stale' };
 
     let records: Map<string, CommerceListingRecord | null>;
     try {
@@ -251,7 +278,8 @@ export function useConnectorChanges(connectionId: string | null) {
           media: merged?.media,
         });
         if (!built.ok) return { ok: false, reason: 'failed', failure: 'invalid' };
-        if (!(await stillPending(change))) return { ok: false, reason: 'stale' };
+        const latest = await pendingChange(change);
+        if (!latest || mappingsKey(latest) !== mappingsKey(change)) return { ok: false, reason: 'stale' };
         const { verified } = await CommerceController.commitUpsertListing(built.record);
         if (!verified) {
           const reread = await readListing(sellerPubky, listingId, true);
@@ -273,79 +301,95 @@ export function useConnectorChanges(connectionId: string | null) {
     if (!enabled || !connectionId || !sellerPubky) return;
     setState((previous) => (previous.status === 'ready' ? previous : { status: 'loading' }));
     try {
-      const changes = await ConnectorsController.fetchChanges(connectionId);
-      const records = await readListings(sellerPubky, changes, false);
       let items: ReviewItem[] = [];
       let appliedCount = 0;
       let leftPhotosOut = false;
       let unsettled = 0;
-      for (const change of changes) {
-        let seen = records;
-        let verdicts = evaluateChangeListings(change, seen);
-        let next = changeState(verdicts);
-        if (next === 'nothing_to_do') {
-          if (!options.auto) continue;
-          // The cached read that found nothing to do may be a local write the homeserver never took, so
-          // the change is only settled from what the homeserver serves. One whose every listing is switched
-          // off or gone has nothing to apply and is dismissed, so it does not sit pending out of sight.
-          const fresh = await readListings(sellerPubky, [change], true).catch(() => null);
-          if (!fresh) {
-            unsettled += 1;
-            continue;
-          }
-          seen = fresh;
-          verdicts = evaluateChangeListings(change, seen);
-          next = changeState(verdicts);
-          if (next === 'nothing_to_do') {
-            const settled = await resolve(change, hasWork(verdicts, 'nothing_to_do') ? 'applied' : 'dismissed').catch(
-              () => null,
-            );
-            if (settled === null) unsettled += 1;
-            continue;
-          }
+      let capped = false;
+      const handled = new Set<string>();
+      // The service returns one page with no cursor. Resolving a page exposes the changes behind it, so the
+      // queue is read again until a page brings nothing new. Changes that stay pending (waiting for a tap, a
+      // conflict) keep occupying their place; when they fill the page, `capped` says more may be waiting.
+      for (let page = 0; page < MAX_CHANGE_PAGES; page += 1) {
+        const pageChanges = await ConnectorsController.fetchChanges(connectionId);
+        const changes = pageChanges.filter(({ id }) => !handled.has(id));
+        const full = pageChanges.length >= CONNECTOR_CHANGES_PAGE_LIMIT;
+        if (changes.length === 0) {
+          capped = full;
+          break;
         }
-        let item: ReviewItem = {
-          change,
-          verdicts,
-          state: next,
-          titles: titlesOf(seen),
-          variantLabels: variantLabelsOf(seen),
-          failure: null,
-        };
-        if (options.auto && next === 'applicable' && isAutoApplied(change)) {
-          const result = await applyOne(change, false).catch(
-            (): ApplyResult => ({ ok: false, reason: 'failed', failure: 'failed' }),
-          );
-          if (result.ok) {
-            appliedCount += 1;
-            continue;
-          }
-          if (result.reason === 'stale') continue;
-          if (result.reason === 'failed') item = { ...item, failure: result.failure };
-          if (result.reason === 'partial') {
-            appliedCount += 1;
-            leftPhotosOut = true;
-            const after = await readListings(sellerPubky, [change], true).catch(() => null);
-            if (!after) {
+        for (const { id } of changes) handled.add(id);
+        const records = await readListings(sellerPubky, changes, false);
+        for (const change of changes) {
+          let seen = records;
+          let verdicts = evaluateChangeListings(change, seen);
+          let next = changeState(verdicts);
+          if (next === 'nothing_to_do') {
+            // The cached read that found nothing to do may be a local write the homeserver never took, so the
+            // change is only settled from what the homeserver serves, on every load. One whose every listing
+            // is switched off or gone has nothing to apply and is dismissed, so it does not sit pending out
+            // of sight. One that cannot be confirmed is counted, never dropped from the view.
+            const fresh = await readListings(sellerPubky, [change], true).catch(() => null);
+            if (!fresh) {
               unsettled += 1;
               continue;
             }
-            const afterVerdicts = evaluateChangeListings(change, after);
-            const afterState = changeState(afterVerdicts);
-            if (afterState === 'nothing_to_do') continue;
-            item = {
-              ...item,
-              verdicts: afterVerdicts,
-              state: afterState,
-              titles: titlesOf(after),
-              variantLabels: variantLabelsOf(after),
-            };
+            seen = fresh;
+            verdicts = evaluateChangeListings(change, seen);
+            next = changeState(verdicts);
+            if (next === 'nothing_to_do') {
+              const settled = await resolve(change, hasWork(verdicts, 'nothing_to_do') ? 'applied' : 'dismissed').catch(
+                () => null,
+              );
+              if (settled === null) unsettled += 1;
+              continue;
+            }
           }
+          let item: ReviewItem = {
+            change,
+            verdicts,
+            state: next,
+            titles: titlesOf(seen),
+            variantLabels: variantLabelsOf(seen),
+            failure: null,
+          };
+          if (options.auto && next === 'applicable' && isAutoApplied(change)) {
+            const result = await applyOne(change, false).catch(
+              (): ApplyResult => ({ ok: false, reason: 'failed', failure: 'failed' }),
+            );
+            if (result.ok) {
+              appliedCount += 1;
+              continue;
+            }
+            if (result.reason === 'stale') continue;
+            if (result.reason === 'failed') item = { ...item, failure: result.failure };
+            if (result.reason === 'partial') {
+              appliedCount += 1;
+              leftPhotosOut = true;
+              const after = await readListings(sellerPubky, [change], true).catch(() => null);
+              if (!after) {
+                unsettled += 1;
+                continue;
+              }
+              const afterVerdicts = evaluateChangeListings(change, after);
+              const afterState = changeState(afterVerdicts);
+              if (afterState === 'nothing_to_do') continue;
+              item = {
+                ...item,
+                verdicts: afterVerdicts,
+                state: afterState,
+                titles: titlesOf(after),
+                variantLabels: variantLabelsOf(after),
+              };
+            }
+          }
+          items = [...items, item];
         }
-        items = [...items, item];
+        if (!full) break;
+        if (page === MAX_CHANGE_PAGES - 1) capped = true;
       }
       if (!isCurrent()) return;
-      setState({ status: 'ready', items, unsettled });
+      setState({ status: 'ready', items, unsettled, capped });
       if (appliedCount > 0) {
         toast({
           title: `${appliedCount} ${appliedCount === 1 ? 'change' : 'changes'} from your store applied`,
@@ -371,6 +415,9 @@ export function useConnectorChanges(connectionId: string | null) {
     return () => {
       current = false;
     };
+    // The load runs again when the inputs it reads change: whether sync is on, which connection, which seller and
+    // which marketplace session. `load` is a render-local closure over those same values and over state setters,
+    // so listing it would rerun the load on every render and loop; the review's own actions call it directly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, connectionId, sellerPubky, marketplaceSession]);
 

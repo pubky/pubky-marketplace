@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getCommerceAdapterMode, getStoreSyncEnabled, isDurableCommerceMode } from '@/config/commerce';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import {
@@ -80,6 +80,7 @@ export function useListingStoreSync(listingId: string) {
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [saving, setSaving] = useState<string | null>(null);
+  const togglingRef = useRef(false);
 
   useEffect(() => {
     if (!enabled) return;
@@ -138,19 +139,23 @@ export function useListingStoreSync(listingId: string) {
   const toggleOverride = async (connectionId: string, group: ConnectorSyncGroup): Promise<ListingGroupSync | null> => {
     const entry = linked.find(({ connection }) => connection.id === connectionId);
     if (!entry) return null;
-    const overridden = groupsOf(entry.sync, listingId)[group].overridden;
-    const opposite: ConnectorSyncDirection =
-      connectionDirection(entry.sync, group) === 'from_store' ? 'off' : 'from_store';
+    if (togglingRef.current) return null;
+    // The switch shows whether the listing follows the store, so a click asks for the opposite of that. An
+    // override that equals the connection's setting still exists (the service keeps it), so the override is
+    // cleared only when inheriting the connection's setting gives the opposite state; otherwise it is set.
+    const wanted: ConnectorSyncDirection = groupsOf(entry.sync, listingId)[group].follows ? 'off' : 'from_store';
+    const inherits = connectionDirection(entry.sync, group) === wanted;
+    togglingRef.current = true;
     setSaving(`${connectionId}:${group}`);
     try {
       const next = await ConnectorsController.commitListingSync(connectionId, listingId, {
-        [group]: overridden ? null : opposite,
+        [group]: inherits ? null : wanted,
       });
       setLinked((previous) =>
         previous.map((item) => (item.connection.id === connectionId ? { ...item, sync: next } : item)),
       );
       toast({
-        title: `${SYNC_GROUP_LABELS[group]}: ${overridden ? 'follows the connection' : 'set for this listing only'}`,
+        title: `${SYNC_GROUP_LABELS[group]}: ${inherits ? 'follows the connection' : 'set for this listing only'}`,
       });
       return groupsOf(next, listingId)[group];
     } catch (error) {
@@ -161,17 +166,20 @@ export function useListingStoreSync(listingId: string) {
       });
       return null;
     } finally {
+      togglingRef.current = false;
       setSaving(null);
     }
   };
 
   return {
-    ready: !enabled || (asked && !failed),
+    ready: !enabled || (asked && !failed && saving === null),
     failed,
     retry: () => setAttempt((count) => count + 1),
     syncs,
     follows,
     saving,
     toggleOverride,
+    /** True from the moment a follow switch is clicked until the service answers, before any render shows it. */
+    isToggling: () => togglingRef.current,
   };
 }

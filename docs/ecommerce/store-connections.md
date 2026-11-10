@@ -137,7 +137,8 @@ changes either way; see "Product changes" in the marketplace service's
   the store. Saving a row drops that group's pending changes in the service, so
   the review reads them again; a change reviewed under the old setting can never
   apply under the new one. `useConnectorSync` reads and saves it
-  (`GET`/`PUT /v1/connectors/{id}/sync`).
+  (`GET`/`PUT /v1/connectors/{id}/sync`). A load that failed shows the message with Try again; a server
+  with no store connections shows nothing.
 - **Shopify changes (N)** (Store connections, above the Sync table): the changes
   that wait for the seller. `useConnectorChanges` loads them
   (`GET /v1/connectors/{id}/changes`) and the organism
@@ -165,8 +166,13 @@ changes either way; see "Product changes" in the marketplace service's
   published variant. The save is held until the linked stores have been asked: a
   server with no store connections or a missing marketplace session ends the lookup
   with nothing followed, any other failure keeps the save held with "Try again".
-  When a group follows the store again after being edited here, its fields go back
-  to the published values (all variant rows, if a row was removed).
+  A listing whose price follows the store keeps the ids of its variants. Whenever a
+  group becomes followed, including when the first lookup finishes after the editor
+  has loaded, its fields go back to the published values (all variant rows if a row
+  was removed, and for the price group the published currency too). A follow switch
+  and a save never overlap: the switch is disabled while a save runs, and a save is
+  refused while a switch waits for the service; a save that was already running
+  commits with the groups followed at that moment.
 
 ### What applies when
 
@@ -220,12 +226,20 @@ left. Every result is checked against the listing record schema before it is
 written; a change the listing cannot hold is refused with that reason and can be
 dismissed.
 
+A split listing (one listing per store variant, with an id the import gives a store variant) holds the
+import's projection of the product, so the same projection is applied to the base and the proposal before
+they are compared: the title is the product title with the variant's choice ("Trail Boots, 42"), and a photo
+whose source is in neither the base's nor the proposal's photo list is the variant's own photo and is kept.
+Without it an untouched split listing would show a title conflict on every store update.
+
 ### Applying is safe to repeat
 
 For each change the Shop reads the changes again (a proposal replaced or withdrawn
-since the list was read is not applied), reads each listing again from the
+since the list was read is not applied, and the listings it writes are the ones
+the service links it to now, so a variant relinked since then is not written
+through the old link), reads each listing again from the
 homeserver and evaluates it, reads the changes once more immediately before each
-write (photo uploads can take a while, and the seller may have switched the group
+write (a change in its links at that moment stops the write) (photo uploads can take a while, and the seller may have switched the group
 off meanwhile), writes the listing with `commitUpsertListing`, reads the write back,
 and only then resolves the change as `applied` with the proposal hash it acted on.
 A write counts as confirmed only when the homeserver serves back that exact
@@ -243,6 +257,12 @@ confirmed against the homeserver yet stays pending and is counted in the review
 keeps the ones that loaded and the change stays pending with the reason; the next
 try loads only the missing ones, and photos already uploaded in the same visit are
 reused.
+
+The service returns one page of at most 200 pending changes and has no cursor. A load
+resolves a page and reads the queue again until a page brings nothing new, so 201
+automatic changes are all applied. Changes that wait for a tap keep their place in
+the page; when they fill it, the review says more changes may be waiting behind them
+and shows them as the others are applied or dismissed.
 
 Residuals: the service has no conditional write, so a group switched off in the
 single request between the last check and the write can still see that one write;

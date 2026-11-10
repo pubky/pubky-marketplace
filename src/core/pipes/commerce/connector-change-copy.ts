@@ -14,7 +14,7 @@ export const SYNC_GROUP_LABELS: Readonly<Record<ConnectorSyncGroup, string>> = {
 };
 
 export const SYNC_GROUP_HELP: Readonly<Record<ConnectorSyncGroup, string>> = {
-  content: 'Applied as soon as you open the Shop.',
+  content: 'Applied when you open Store connections.',
   price: 'Waits for your approval.',
   variants: 'Waits for your approval.',
 };

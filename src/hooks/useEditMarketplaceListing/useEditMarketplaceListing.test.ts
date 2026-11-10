@@ -230,6 +230,7 @@ describe('useEditMarketplaceListing', () => {
       });
 
       expect(saved().sale.unitPrice.amountMinor).toBe(12_500);
+      expect(saved().variants.map(({ id }) => id)).toEqual(['shopify-aaa', 'shopify-bbb']);
       expect(saved().variants[0]).toMatchObject({ quantity: 7 });
       expect(saved().variants[1]).toMatchObject({ priceOverride: { amountMinor: 20_000 } });
     });
@@ -307,6 +308,53 @@ describe('useEditMarketplaceListing', () => {
         ['A', '3'],
         ['B', '2'],
       ]);
+    });
+
+    it('restores the published currency with the price when the price follows the store again', async () => {
+      const result = await open({ content: false, price: false, variants: false });
+      act(() => {
+        result.current.form.setValue('currency', 'EUR');
+        result.current.form.setValue('price', '999.00');
+        result.current.form.setValue('variants.1.priceOverride', '3.00');
+      });
+
+      act(() => result.current.resetFollowedGroup('price'));
+
+      expect(result.current.form.getValues('currency')).toBe('USD');
+      expect(result.current.form.getValues('price')).toBe('125.00');
+      expect(result.current.form.getValues('variants.1.priceOverride')).toBe('200.00');
+    });
+
+    it('saves a followed group as published when it began following while the save was running', async () => {
+      vi.mocked(CommerceController.getOrFetchListing).mockResolvedValue(storeListing());
+      const hook = renderHook(({ follows }) => useEditMarketplaceListing(OWNER, LISTING_ID, { follows }), {
+        initialProps: { follows: { content: false, price: false, variants: false } },
+      });
+      await waitFor(() => expect(hook.result.current.status).toBe('ready'));
+      act(() => hook.result.current.form.setValue('title', 'Typed while not following'));
+      let release: (config: {
+        bitcoinAvailable: boolean;
+        bitcoinOfferAvailable: boolean;
+        paypalAvailable: boolean;
+      }) => void = () => {};
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            release = resolve as typeof release;
+          }),
+      );
+
+      let saving: Promise<string | null> = Promise.resolve(null);
+      act(() => {
+        saving = hook.result.current.submit();
+      });
+      hook.rerender({ follows: { content: true, price: false, variants: false } });
+      await act(async () => {
+        release({ bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: false });
+        await saving;
+      });
+
+      expect(saved().title).toBe('Vintage leather boots');
     });
 
     it('puts a followed group’s fields back to the published values', async () => {

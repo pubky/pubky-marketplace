@@ -26,7 +26,8 @@ function mediaIdsOf(media: readonly unknown[]): Set<unknown> {
  * its variants by position with new ids and every variant enabled; a listing whose variants follow the
  * store keeps its own variants (ids, options, SKU, which are enabled) and takes from the form only what
  * stays editable: stock, and the price override while price does not follow. A listing whose price follows
- * keeps its own price and price overrides.
+ * keeps its own price and price overrides, and the ids of its variants: a price is the store's price for one
+ * store variant, which the connector links to a variant id, so the ids cannot be replaced while it follows.
  */
 export function keepFollowedFields(
   record: CommerceListingRecord,
@@ -53,6 +54,7 @@ export function keepFollowedFields(
       const next: Record<string, unknown> = { ...form };
       const own = record.variants[index];
       if (follows.price) {
+        if (own) next.id = own.id;
         if (own?.priceOverride) next.priceOverride = own.priceOverride;
         else delete next.priceOverride;
       }

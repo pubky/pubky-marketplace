@@ -60,6 +60,9 @@ export function useConnectorSync(connectionId: string | null, options: { onSaved
     return () => {
       current = false;
     };
+    // The settings load again when the inputs `load` reads change: whether sync is on, which connection, which
+    // seller and which marketplace session. `load` is a render-local closure over those same values and over a
+    // state setter, so listing it would reload on every render; `reload` below calls it for the Try again button.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, connectionId, sellerPubky, marketplaceSession]);
 
@@ -87,5 +90,5 @@ export function useConnectorSync(connectionId: string | null, options: { onSaved
     }
   };
 
-  return { state, savingGroup, setDirection };
+  return { state, savingGroup, setDirection, reload: () => load() };
 }

@@ -1,5 +1,7 @@
 'use client';
 
+import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
@@ -25,9 +27,34 @@ export interface MarketplaceConnectorSyncSettingsProps {
 /**
  * The Sync table of a connected store: for each part of a product, whether the listing follows the store
  * or is left alone. Stock is not here: it always follows the store. A listing can override a row from
- * its own edit page. Renders nothing until the settings load, and on a server with no store connections.
+ * its own edit page. A load that failed says so with Try again; the table renders nothing while loading and on
+ * a server with no store connections.
  */
 export function MarketplaceConnectorSyncSettings({ connection, sync }: MarketplaceConnectorSyncSettingsProps) {
+  if (sync.state.status === 'failed') {
+    return (
+      <div
+        role="alert"
+        className="flex flex-col gap-3 rounded-md border border-destructive/40 p-4 text-sm sm:flex-row sm:items-center sm:justify-between"
+        data-testid="store-sync-failed"
+      >
+        <div className="flex items-start gap-2">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
+          {sync.state.message}
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="shrink-0 rounded-full"
+          onClick={() => void sync.reload()}
+        >
+          <RefreshCw className="size-4" aria-hidden="true" />
+          Try again
+        </Button>
+      </div>
+    );
+  }
   if (sync.state.status !== 'ready') return null;
   const { groups } = sync.state.sync;
 
