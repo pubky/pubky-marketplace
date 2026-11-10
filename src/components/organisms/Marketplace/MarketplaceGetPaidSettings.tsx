@@ -32,7 +32,7 @@ import { deriveUsdtSellerReadiness } from '@/libs/commerce/usdt-seller-setup';
 import { truncateMiddle } from '@/libs/utils/utils';
 import { BitkitDownloads } from '@/molecules/BitkitDownloads/BitkitDownloads';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
 import { MarketplaceUsdtSellerSetup } from '@/organisms/Marketplace/MarketplaceUsdtSellerSetup';
 import { useAuthStore } from '@/stores/auth/auth.store';

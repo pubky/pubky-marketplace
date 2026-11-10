@@ -39,7 +39,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 
@@ -1124,7 +1124,7 @@ describe('MarketplaceOrderActions local pickup (Wave 7, §A6)', () => {
         expect.objectContaining({ kind: 'order.cancel_request' }),
       );
     });
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(toast).toHaveBeenCalledWith({ title: 'Order cancelled' });
   });
 
@@ -1137,7 +1137,7 @@ describe('MarketplaceOrderActions local pickup (Wave 7, §A6)', () => {
   });
 
   it('confirms a cancelled pickup order with the completed-cancellation toast', async () => {
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const user = userEvent.setup();
     renderPickupActions({ state: 'paid', isBuyer: true });
 
@@ -1153,7 +1153,7 @@ describe('MarketplaceOrderActions local pickup (Wave 7, §A6)', () => {
       ok: true,
       result: { kind: 'order', order: { state: 'cancel_requested' } },
     };
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const user = userEvent.setup();
     renderPickupActions({ state: 'paid', isBuyer: true, overrides: { firstRevealedAt: '2026-08-19T21:00:00.000Z' } });
 
@@ -1188,7 +1188,7 @@ describe('MarketplaceOrderActions local pickup (Wave 7, §A6)', () => {
     await waitFor(() =>
       expect(actOnOrder).toHaveBeenCalledWith(order, 'order.cancel_request', { reason: 'No longer needed' }),
     );
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     // An unpaid checkout is cancelled at once (#348).
     expect(toast).toHaveBeenCalledWith({ title: 'Checkout cancelled' });
   });
@@ -1451,7 +1451,7 @@ describe('MarketplaceOrderActions digital refunds and cancels (digital delivery 
   it.each(['delivered', 'completed'] as const)(
     'lets the seller record a refund on a %s digital order, and says what it changes (E9)',
     async (state) => {
-      const { toast } = await import('@/molecules/Toaster/use-toast');
+      const { toast } = await import('@/molecules/Toaster/toast');
       const order = createOrderFixture(state, { fulfillment: 'digital', paymentMethod: 'bitcoin' });
       const actOnOrder = vi.fn(async () => true);
       render(<MarketplaceOrderActions order={order} isBuyer={false} canEditReview={false} actOnOrder={actOnOrder} />);
@@ -1696,7 +1696,7 @@ describe('MarketplaceOrderActions Paykit cancel', () => {
 
   it('says an unpaid pickup checkout is cancelled, like a shipping one (#348)', async () => {
     const user = userEvent.setup();
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     vi.mocked(toast).mockClear();
     mockedController.executeMarketplaceCommand.mockResolvedValueOnce({
       ok: true,
@@ -1721,7 +1721,7 @@ describe('MarketplaceOrderActions Paykit cancel', () => {
 
   it('says an unpaid checkout is cancelled, not that cancellation was requested (#348)', async () => {
     const user = userEvent.setup();
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     vi.mocked(toast).mockClear();
     render(
       <MarketplaceOrderActions

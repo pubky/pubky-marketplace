@@ -4,7 +4,7 @@ import type { ComponentType } from 'react';
 import { ToastErrorIcon, ToastInfoIcon, ToastSuccessIcon, ToastWarningIcon } from './Toast.icons';
 
 export type ToastVariant = 'default' | 'error' | 'warning' | 'info';
-export type ToastIconComponent = ComponentType<LucideProps>;
+type ToastIconComponent = ComponentType<LucideProps>;
 
 export const toastVariants = cva(
   [

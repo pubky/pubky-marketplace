@@ -27,7 +27,7 @@ import {
   SignerAuthOption,
   SignerAuthorizeButton,
 } from '@/molecules/SignerAuthOption/SignerAuthOption';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
 import { useSignInStore } from '@/stores/signIn/signIn.store';
 import type { SignInState } from '@/stores/signIn/signIn.types';

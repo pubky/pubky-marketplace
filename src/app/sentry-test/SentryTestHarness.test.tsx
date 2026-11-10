@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { setBasePath } from '@/test-utils/base-path';
 import { SentryTestHarness } from './SentryTestHarness';
 
@@ -15,7 +15,7 @@ vi.mock('@/libs/observability/sentry-test-harness', () => ({
     sampleRate: 0.1,
   }),
 }));
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 describe('SentryTestHarness server capture', () => {
   const fetchMock = vi.fn<typeof fetch>();

@@ -73,7 +73,7 @@ vi.mock('@/hooks/useCustomFeed/useCustomFeed', () => ({
 }));
 
 // Mock toast
-const mockToast = vi.fn();
+const mockToast = vi.hoisted(() => vi.fn());
 vi.mock('@/molecules/PostTag/PostTag', () => {
   return {
     PostTag: ({ label, showClose, onClose }: { label: string; showClose?: boolean; onClose?: () => void }) => (
@@ -138,9 +138,9 @@ vi.mock('@/molecules/TagInput/TagInput', () => {
   };
 });
 
-vi.mock('@/molecules/Toaster/use-toast', () => {
+vi.mock('@/molecules/Toaster/toast', () => {
   return {
-    useToast: () => ({ toast: mockToast }),
+    toast: mockToast,
   };
 });
 

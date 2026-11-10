@@ -15,7 +15,7 @@ import { asOpaque } from '@/test-utils/type-assertions';
 import { PostInput } from './PostInput';
 import { POST_INPUT_VARIANT } from './PostInput.constants';
 
-const mockToast = vi.fn();
+const mockToast = vi.hoisted(() => vi.fn());
 const mockEnterSubmitHandler = vi.fn();
 const mockHandleMentionKeyDown = vi.fn(() => false);
 const mockHandleFilesAdded = vi.fn();
@@ -399,9 +399,9 @@ vi.mock('@/molecules/TagInput/TagInput', () => {
   };
 });
 
-vi.mock('@/molecules/Toaster/use-toast', () => {
+vi.mock('@/molecules/Toaster/toast', () => {
   return {
-    useToast: vi.fn(() => ({ toast: mockToast })),
+    toast: mockToast,
   };
 });
 

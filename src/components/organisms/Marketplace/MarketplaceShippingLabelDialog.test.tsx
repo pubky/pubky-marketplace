@@ -8,7 +8,7 @@ import { SHIPPO_FAILURE_REASONS } from '@/libs/commerce/shipping';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { createOrderFixture } from '@/test/fixtures/commerce/orders';
 import { createUsdtOrderFixture } from '@/test/fixtures/commerce/usdt-orders';
 import { MarketplaceShippingLabelDialog } from './MarketplaceShippingLabelDialog';
@@ -21,7 +21,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 const mockedController = vi.mocked(CommerceController);
 

@@ -4,7 +4,7 @@ import { AUCTION_HAS_BIDS_MESSAGE, AUCTION_HAS_BIDS_REFUSAL } from '@/libs/comme
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { COMMERCE_FIXTURE_SELLER, createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { createAuctionProjectionFixture } from '@/test/fixtures/commerce/projections';
@@ -18,7 +18,7 @@ const controller = vi.hoisted(() => ({
 }));
 
 vi.mock('@/controllers/commerce/commerce', () => ({ CommerceController: controller }));
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 vi.mock('@/config/commerce', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/config/commerce')>()),
   getCommerceAdapterMode: () => mode.value,

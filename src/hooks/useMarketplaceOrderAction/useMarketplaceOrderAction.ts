@@ -8,7 +8,7 @@ import { resolveTrackingCarrierName } from '@/libs/commerce/order-tracking';
 import { orderCommandPayloadIssues } from '@/libs/commerce/transaction-commands';
 import { isUsdtRefundOrder, normalizeArbitrumTxHash } from '@/libs/commerce/usdt-refund';
 import { Logger } from '@/libs/logger/logger';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import {
   formatOrderMajor,

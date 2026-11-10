@@ -33,7 +33,7 @@ import {
   UNLIMITED_STOCK_LABEL,
 } from '@/libs/commerce/unlimited-stock';
 import { isListingRegistrationPending } from '@/models/commerce/commerce.schema';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 

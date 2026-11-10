@@ -10,22 +10,26 @@ alwaysApply: false
 
 ## Variants
 
-Use `variant` on `toast()` — never  `className: 'destructive …'`, or `showErrorToast` / `showSuccessToast` helpers.
+Use `variant` on `toast()` — never `className: 'destructive …'`, or `showErrorToast` / `showSuccessToast` helpers.
 
 | Variant | When |
 |---------|------|
 | `default` | Success, confirmation (omit `variant`) |
-| `error` | Failures; omit `title` for `toast.genericErrorTitle` |
+| `error` | Failures; omit `title` for the “Error” fallback |
 | `warning` | Caution, rate limits |
 | `info` | Neutral info (e.g. clipboard copy) |
 
 ## API
 
 ```tsx
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 
 toast({ variant: 'error', description: '...' });
 toast({ title: 'Saved', description: '...' }); // default
 ```
 
-Styling: [`Toast.variants.ts`](src/components/atoms/Toast/Toast.variants.ts) only. `ToastAction` needs `variant` when not rendered by `Toaster`.
+Provide a string `title` and/or `description`. Custom actions use `{ label, altText, onClick }`; the renderer dismisses before calling the action. The returned handle exposes only `dismiss()`.
+
+Toasts expire after 3 seconds unless `durationMs` is supplied (cart Undo: 5 seconds; wallet setup/retry: 60 seconds). Use `persistent: true` only for state the user must resolve; never combine it with `durationMs`.
+
+Styling: [`Toast.variants.ts`](src/components/atoms/Toast/Toast.variants.ts) only. Custom actions use the neutral App style. Do not import the internal store, state hook or Radix toast atoms in feature code.

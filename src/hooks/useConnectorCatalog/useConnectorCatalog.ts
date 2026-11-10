@@ -8,7 +8,7 @@ import {
   connectorErrorMessage,
 } from '@/libs/commerce/connectors';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { productMatchesSearch } from '@/pipes/commerce/connector-catalog-search';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 

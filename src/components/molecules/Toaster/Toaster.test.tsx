@@ -1,23 +1,34 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { toast, type ToastOptions } from './toast';
+import { dispatch, getSnapshot, TOAST_DURATION, TOAST_REMOVE_DELAY } from './toast.store';
 import { Toaster } from './Toaster';
 
-// Mock the useToast hook
-const mockUseToast = vi.fn();
-vi.mock('./use-toast', () => ({
-  useToast: () => mockUseToast(),
-}));
+// Auto-dismiss plus removal delay — advancing past this empties the store.
+const FULL_TOAST_LIFETIME = TOAST_DURATION + TOAST_REMOVE_DELAY;
+
+const renderWithToast = (options: ToastOptions) => {
+  const view = render(<Toaster />);
+  act(() => {
+    toast(options);
+  });
+  return view;
+};
 
 describe('Toaster', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    act(() => {
+      vi.runAllTimers();
+      for (const { id } of getSnapshot().toasts) dispatch({ type: 'REMOVE_TOAST', toastId: id });
+    });
+    vi.useRealTimers();
   });
 
   it('should render empty when no toasts', () => {
-    mockUseToast.mockReturnValue({
-      toasts: [],
-    });
-
     const { container } = render(<Toaster />);
 
     // Should render ToastProvider structure even with no toasts
@@ -25,17 +36,7 @@ describe('Toaster', () => {
   });
 
   it('should render toast without title when only description is provided', () => {
-    const mockToast = {
-      id: '1',
-      description: 'Just a description',
-      open: true,
-    };
-
-    mockUseToast.mockReturnValue({
-      toasts: [mockToast],
-    });
-
-    render(<Toaster />);
+    renderWithToast({ description: 'Just a description' });
 
     expect(screen.getByText('Just a description')).toBeInTheDocument();
   });
@@ -44,18 +45,7 @@ describe('Toaster', () => {
     const longDescription =
       'The file you are trying to upload exceeds the maximum allowed size of 100MB. Please reduce the file size and try again.';
 
-    mockUseToast.mockReturnValue({
-      toasts: [
-        {
-          id: 'long-desc',
-          title: 'Upload Error',
-          description: longDescription,
-          open: true,
-        },
-      ],
-    });
-
-    render(<Toaster />);
+    renderWithToast({ title: 'Upload Error', description: longDescription });
 
     const descriptionElement = screen.getByText(longDescription);
     expect(descriptionElement).toHaveClass('wrap-anywhere');
@@ -65,111 +55,42 @@ describe('Toaster', () => {
   it('should wrap long URL description when dismiss button is shown', () => {
     const longUrl = `https://pubky-ring-signer.example.com/auth?redirect=${'a'.repeat(120)}`;
 
-    mockUseToast.mockReturnValue({
-      toasts: [
-        {
-          id: 'copy-link',
-          title: 'Link copied to clipboard',
-          description: longUrl,
-          dismissButton: true,
-          open: true,
-        },
-      ],
-      dismiss: vi.fn(),
-    });
-
-    render(<Toaster />);
+    renderWithToast({ title: 'Link copied to clipboard', description: longUrl, dismissButton: true });
 
     expect(screen.getByText(longUrl)).toHaveClass('wrap-anywhere');
     expect(screen.getByRole('button', { name: 'OK' })).toBeInTheDocument();
   });
 
-  it('should render dismiss button when dismissButton is true', () => {
-    const mockDismiss = vi.fn();
-    mockUseToast.mockReturnValue({
-      toasts: [
-        {
-          id: 'dismiss-toast',
-          title: 'Success',
-          description: 'Operation completed',
-          dismissButton: true,
-          open: true,
-        },
-      ],
-      dismiss: mockDismiss,
-    });
-
-    render(<Toaster />);
+  it('should render dismiss button that dismisses the toast when dismissButton is true', () => {
+    renderWithToast({ title: 'Success', description: 'Operation completed', dismissButton: true });
 
     const okButton = screen.getByRole('button', { name: 'OK' });
     expect(okButton).toBeInTheDocument();
     expect(okButton).toHaveClass('border-brand');
 
     fireEvent.click(okButton);
-    expect(mockDismiss).toHaveBeenCalledWith('dismiss-toast');
+    // No timer advance: the dismissal must come from the click itself,
+    // not from the auto-dismiss timer.
+    expect(screen.queryByText('Success')).not.toBeInTheDocument();
   });
 
   it('should not render dismiss button when dismissButton is not set', () => {
-    mockUseToast.mockReturnValue({
-      toasts: [
-        {
-          id: 'no-dismiss',
-          title: 'Simple toast',
-          open: true,
-        },
-      ],
-      dismiss: vi.fn(),
-    });
-
-    render(<Toaster />);
+    renderWithToast({ title: 'Simple toast' });
 
     expect(screen.queryByRole('button', { name: 'OK' })).not.toBeInTheDocument();
   });
 
   it('should apply error variant styles to dismiss ToastAction', () => {
-    const mockDismiss = vi.fn();
-    mockUseToast.mockReturnValue({
-      toasts: [
-        {
-          id: 'error-dismiss-toast',
-          title: 'Failed',
-          description: 'Something went wrong',
-          dismissButton: true,
-          variant: 'error',
-          open: true,
-        },
-      ],
-      dismiss: mockDismiss,
-    });
-
-    render(<Toaster />);
+    renderWithToast({ variant: 'error', title: 'Failed', description: 'Something went wrong', dismissButton: true });
 
     const okButton = screen.getByRole('button', { name: 'OK' });
     expect(okButton).toHaveClass('bg-toast-action-muted', 'text-foreground');
   });
 
-  it('should apply actionVariant to dismiss ToastAction when it differs from toast variant', () => {
-    const mockDismiss = vi.fn();
-    mockUseToast.mockReturnValue({
-      toasts: [
-        {
-          id: 'action-variant-override-toast',
-          title: 'Failed',
-          description: 'Something went wrong',
-          dismissButton: true,
-          variant: 'error',
-          actionVariant: 'default',
-          open: true,
-        },
-      ],
-      dismiss: mockDismiss,
-    });
+  it('should render the generic Error title for error toasts without a title', () => {
+    renderWithToast({ variant: 'error', description: 'Something went wrong' });
 
-    render(<Toaster />);
-
-    const okButton = screen.getByRole('button', { name: 'OK' });
-    expect(okButton).toHaveClass('border-brand', 'bg-brand/16', 'text-brand');
-    expect(okButton).not.toHaveClass('bg-toast-action-muted');
+    expect(screen.getByText('Error')).toBeInTheDocument();
   });
 
   it.each([
@@ -178,60 +99,126 @@ describe('Toaster', () => {
     ['warning', 'warning'],
     ['info', 'info'],
   ] as const)('should render %s variant with icon and data-variant attribute', (variant, expectedVariant) => {
-    mockUseToast.mockReturnValue({
-      toasts: [
-        {
-          id: `${variant}-toast`,
-          title: `${variant} toast`,
-          open: true,
-          variant,
-        },
-      ],
-    });
-
-    const { container } = render(<Toaster />);
+    const { container } = renderWithToast({ variant, title: `${variant} toast` });
 
     const toastElement = screen.getByText(`${variant} toast`).closest('[data-cy="toast"]');
     expect(toastElement).toHaveAttribute('data-variant', expectedVariant);
     expect(container.querySelector('svg[aria-hidden="true"]')).toBeInTheDocument();
   });
 
-  it('should handle complex toast with action button click', () => {
+  it('should render an action descriptor and dismiss the toast when the action is clicked', () => {
     const handleActionClick = vi.fn();
-    const mockAction = (
-      <button data-testid="toast-action" onClick={handleActionClick}>
-        Retry
-      </button>
-    );
 
-    const mockToast = {
-      id: 'complex-toast',
-      title: 'Upload Failed',
-      description: 'There was an error uploading your file. Please try again.',
-      action: mockAction,
-      className: 'bg-red-500 border-red-600',
-      'data-testid': 'error-toast',
-      open: true,
-    };
-
-    mockUseToast.mockReturnValue({
-      toasts: [mockToast],
+    renderWithToast({
+      title: 'Reposted',
+      action: { label: 'Undo', altText: 'Undo', onClick: handleActionClick },
     });
 
-    render(<Toaster />);
+    const actionButton = screen.getByRole('button', { name: 'Undo' });
+    // Custom actions render muted on default-variant toasts (see Toaster.tsx)
+    expect(actionButton).toHaveClass('bg-toast-action-muted');
 
-    // Check all elements are rendered
-    expect(screen.getByText('Upload Failed')).toBeInTheDocument();
-    expect(screen.getByText('There was an error uploading your file. Please try again.')).toBeInTheDocument();
-    expect(screen.getByTestId('toast-action')).toBeInTheDocument();
-    expect(screen.getByText('Retry')).toBeInTheDocument();
-
-    // Check custom props are applied
-    const toastElement = screen.getByTestId('error-toast');
-    expect(toastElement).toBeInTheDocument();
-
-    // Test action button functionality
-    fireEvent.click(screen.getByTestId('toast-action'));
+    fireEvent.click(actionButton);
     expect(handleActionClick).toHaveBeenCalledTimes(1);
+    // No timer advance: the dismissal must come from the click itself,
+    // not from the auto-dismiss timer.
+    expect(screen.queryByText('Reposted')).not.toBeInTheDocument();
+  });
+
+  it('should auto-dismiss and remove the toast after its full lifetime', () => {
+    renderWithToast({ title: 'Ephemeral' });
+
+    expect(screen.getByText('Ephemeral')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(FULL_TOAST_LIFETIME);
+    });
+    expect(screen.queryByText('Ephemeral')).not.toBeInTheDocument();
+  });
+  it('preserves an explicitly empty error title', () => {
+    renderWithToast({ variant: 'error', title: '', description: 'Details only' });
+    expect(screen.queryByText('Error')).not.toBeInTheDocument();
+    expect(screen.getByText('Details only')).toBeInTheDocument();
+  });
+
+  it('dismisses the old toast before invoking an action that creates a replacement', () => {
+    const onClick = vi.fn(() => {
+      expect(getSnapshot().toasts[0].open).toBe(false);
+      toast({ title: 'Item restored' });
+    });
+    renderWithToast({
+      title: 'Item removed',
+      durationMs: 5_000,
+      action: { label: 'Undo', altText: 'Restore item to cart', onClick },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Item removed')).not.toBeInTheDocument();
+    expect(screen.getByText('Item restored')).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(TOAST_DURATION - 1);
+    });
+    expect(screen.getByText('Item restored')).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.queryByText('Item restored')).not.toBeInTheDocument();
+  });
+
+  it('keeps the wallet retry toast open beyond Radix default timing and closes it at 60 seconds', () => {
+    renderWithToast({
+      variant: 'error',
+      title: 'Finish wallet setup',
+      description: 'Finish setup on your phone, then try again.',
+      durationMs: 60_000,
+      dismissButton: true,
+      action: { label: 'Try again', altText: 'Try again', onClick: vi.fn() },
+    });
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'OK' })).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(54_999);
+    });
+    expect(screen.getByText('Finish wallet setup')).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.queryByText('Finish wallet setup')).not.toBeInTheDocument();
+  });
+
+  it('dismisses a wallet setup toast with OK without retrying', () => {
+    const retry = vi.fn();
+    renderWithToast({
+      variant: 'error',
+      title: 'Finish wallet setup',
+      durationMs: 60_000,
+      dismissButton: true,
+      action: { label: 'Try again', altText: 'Try again', onClick: retry },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    expect(retry).not.toHaveBeenCalled();
+    expect(screen.queryByText('Finish wallet setup')).not.toBeInTheDocument();
+  });
+
+  it('renders custom actions consistently across toast variants', () => {
+    renderWithToast({
+      variant: 'error',
+      title: 'Try again later',
+      action: { label: 'Retry', altText: 'Retry request', onClick: vi.fn() },
+    });
+    expect(screen.getByRole('button', { name: 'Retry' })).toHaveClass('bg-toast-action-muted');
+  });
+
+  it('allows a persistent notification to be dismissed without waiting for a timer', () => {
+    renderWithToast({ title: 'Action required', persistent: true, dismissButton: true });
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(screen.getByText('Action required')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    expect(screen.queryByText('Action required')).not.toBeInTheDocument();
   });
 });

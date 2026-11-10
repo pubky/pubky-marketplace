@@ -16,13 +16,11 @@ vi.mock('@/controllers/post/post', () => ({
   },
 }));
 
-// Mock molecules (useToast)
-const mockToast = vi.fn();
-vi.mock('@/molecules/Toaster/use-toast', () => {
+// Mock toast
+const mockToast = vi.hoisted(() => vi.fn());
+vi.mock('@/molecules/Toaster/toast', () => {
   return {
-    useToast: () => ({
-      toast: mockToast,
-    }),
+    toast: mockToast,
   };
 });
 

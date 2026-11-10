@@ -5,7 +5,7 @@ import { ROOT_ROUTES } from '@/app/routes';
 import { Install } from './Install';
 
 const mockSearchParamsGet = vi.fn<(key: string) => string | null>(() => null);
-const mockToast = vi.fn();
+const mockToast = vi.hoisted(() => vi.fn());
 const mockSetInviteCode = vi.fn();
 const mockReplace = vi.fn();
 const mockVerifySignupToken = vi.fn<(inviteCode: string) => Promise<'valid' | 'used' | 'invalid'>>();
@@ -48,11 +48,9 @@ vi.mock('@/molecules/OnboardingLayout/OnboardingLayout', () => {
   };
 });
 
-vi.mock('@/molecules/Toaster/use-toast', () => {
+vi.mock('@/molecules/Toaster/toast', () => {
   return {
-    useToast: () => ({
-      toast: mockToast,
-    }),
+    toast: mockToast,
   };
 });
 

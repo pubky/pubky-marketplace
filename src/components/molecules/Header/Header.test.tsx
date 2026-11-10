@@ -182,6 +182,7 @@ describe('Header Components', () => {
     refresh: vi.fn(),
     replace: vi.fn(),
     prefetch: vi.fn(),
+    bfcacheId: '',
   };
 
   beforeEach(() => {

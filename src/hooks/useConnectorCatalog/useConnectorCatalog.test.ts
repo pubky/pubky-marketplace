@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import { type ConnectorCatalogProduct, connectorCatalogProductSchema } from '@/libs/commerce/connectors';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { connectorRefusal } from '@/test-utils/connector-errors';
 import { useConnectorCatalog } from './useConnectorCatalog';
 
@@ -15,7 +15,7 @@ vi.mock('@/controllers/connectors/connectors', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 function product(id: string, title: string, sku?: string): ConnectorCatalogProduct {
   return connectorCatalogProductSchema.parse({

@@ -4,7 +4,7 @@ import { MARKETPLACE_ROUTES } from '@/app/routes';
 import * as commerceConfig from '@/config/commerce';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { AUCTION_UNLIST_BLOCKED_NOTE } from '@/libs/commerce/auction-removal';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { COMMERCE_FIXTURE_SELLER, createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { toCommerceListingModel } from '@/test/fixtures/commerce/listing-models';
 import { MarketplaceDashboard } from './MarketplaceDashboard';
@@ -64,7 +64,7 @@ vi.mock('@/hooks/useSellingAvailability/useSellingAvailability', async () => {
   return { useSellingAvailability: () => INERT_COMMERCE_AVAILABILITY };
 });
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 vi.mock('@/hooks/useIsMobile/useIsMobile', () => ({
   useIsMobile: () => viewport.isMobile,

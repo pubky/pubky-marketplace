@@ -61,7 +61,7 @@ import {
 } from '@/libs/commerce/units';
 import { isUnlimitedStockSentinel, stockFormFields } from '@/libs/commerce/unlimited-stock';
 import { Logger } from '@/libs/logger/logger';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import {

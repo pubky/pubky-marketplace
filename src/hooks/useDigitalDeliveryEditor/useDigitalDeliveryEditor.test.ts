@@ -5,7 +5,7 @@ import { DIGITAL_DELIVERY_SETUP_COPY } from '@/libs/commerce/digital';
 import { ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useDigitalDeliveryEditor } from './useDigitalDeliveryEditor';
 
 vi.mock('@/controllers/commerce/commerce', () => ({
@@ -16,7 +16,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 const LISTING_ID = 'guide_01';
 

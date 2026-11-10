@@ -22,7 +22,7 @@ import { VARIANT_REFUSAL_COPY, variantRefusalMessage } from '@/libs/commerce/var
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import { getRegionPolicy } from '@/libs/runtime-config/runtime-config';
 import type { CommerceDeliveryAddressModelSchema } from '@/models/commerce/commerce.schema';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 

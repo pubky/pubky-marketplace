@@ -17,7 +17,7 @@ import {
 import { USDT_REFUND_COPY } from '@/libs/commerce/usdt-refund';
 import { isAppError } from '@/libs/error/error';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 
 type ResolutionOutcome = 'paid' | 'refunded' | 'abandoned';
 

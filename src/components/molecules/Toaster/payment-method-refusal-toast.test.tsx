@@ -1,11 +1,12 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { READER_WALLET_SETUP_TOAST_MS, showPaymentMethodRefusalToast } from './payment-method-refusal-toast';
+import { toast } from './toast';
+import { dispatch, getSnapshot } from './toast.store';
 import { Toaster } from './Toaster';
-import { useToast } from './use-toast';
 
 const refusal = (reason: string) =>
   new AppError({
@@ -17,27 +18,20 @@ const refusal = (reason: string) =>
     context: { statusCode: 409, reason, serviceCode: 'INVALID_STATE' },
   });
 
-function Harness() {
-  const { dismiss } = useToast();
-  return (
-    <>
-      <button type="button" onClick={() => dismiss()}>
-        reset
-      </button>
-      <Toaster />
-    </>
-  );
-}
-
 describe('showPaymentMethodRefusalToast', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
   afterEach(() => {
+    cleanup();
+    for (const item of getSnapshot().toasts) dispatch({ type: 'REMOVE_TOAST', toastId: item.id });
     vi.useRealTimers();
   });
 
-  it('shows Reader wallet setup needed with a Try again action that runs only on click', () => {
-    vi.useFakeTimers();
+  it('keeps wallet setup retry available after 59 seconds and runs it only on click', () => {
     const onRetry = vi.fn();
-    render(<Harness />);
+    render(<Toaster />);
 
     act(() => {
       showPaymentMethodRefusalToast({ error: refusal('buyer_paykit_wallet_setup_needed'), fallback: 'x', onRetry });
@@ -53,18 +47,62 @@ describe('showPaymentMethodRefusalToast', () => {
     expect(onRetry).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetry).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', { name: 'reset' }));
+    expect(screen.queryByText('Reader wallet setup needed')).not.toBeInTheDocument();
   });
 
-  it('keeps other refusals as a plain mapped toast with no action', () => {
-    render(<Harness />);
+  it('expires wallet setup at 60 seconds without retrying automatically', () => {
+    const onRetry = vi.fn();
+    render(<Toaster />);
+    act(() => {
+      showPaymentMethodRefusalToast({ error: refusal('buyer_paykit_wallet_setup_needed'), fallback: 'x', onRetry });
+      vi.advanceTimersByTime(READER_WALLET_SETUP_TOAST_MS - 1);
+    });
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.queryByText('Reader wallet setup needed')).not.toBeInTheDocument();
+    expect(onRetry).not.toHaveBeenCalled();
+  });
+
+  it('keeps the separate OK action when no retry callback is available', () => {
+    render(<Toaster />);
+    act(() => {
+      showPaymentMethodRefusalToast({ error: refusal('buyer_paykit_wallet_setup_needed'), fallback: 'x' });
+      vi.advanceTimersByTime(3_000);
+    });
+    expect(screen.getByText('Reader wallet setup needed')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    expect(screen.queryByText('Reader wallet setup needed')).not.toBeInTheDocument();
+  });
+
+  it('leaves a new toast from the retry callback open', () => {
+    render(<Toaster />);
+    act(() => {
+      showPaymentMethodRefusalToast({
+        error: refusal('buyer_paykit_wallet_setup_needed'),
+        fallback: 'x',
+        onRetry: () => {
+          toast({ title: 'Payment request sent' });
+        },
+      });
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(screen.getByText('Payment request sent')).toBeInTheDocument();
+    expect(screen.queryByText('Reader wallet setup needed')).not.toBeInTheDocument();
+  });
+
+  it('keeps other refusals as a plain mapped toast with the normal three-second lifetime', () => {
+    const onRetry = vi.fn();
+    render(<Toaster />);
 
     act(() => {
       showPaymentMethodRefusalToast({
         error: refusal('buyer_paykit_wallet_required'),
         fallback: 'x',
         title: 'Payment action failed',
-        onRetry: vi.fn(),
+        onRetry,
       });
     });
 
@@ -75,6 +113,14 @@ describe('showPaymentMethodRefusalToast', () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'reset' }));
+    act(() => {
+      vi.advanceTimersByTime(2_999);
+    });
+    expect(screen.getByText('Payment action failed')).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.queryByText('Payment action failed')).not.toBeInTheDocument();
+    expect(onRetry).not.toHaveBeenCalled();
   });
 });

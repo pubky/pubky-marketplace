@@ -29,7 +29,7 @@ import {
   type CommerceListingRegistrationStatus,
   isListingRegistrationPending,
 } from '@/models/commerce/commerce.schema';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { MarketplaceListingDeleteDialog } from '@/organisms/Marketplace/MarketplaceListingDeleteDialog';
 import type { MarketplaceListingProjection } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';

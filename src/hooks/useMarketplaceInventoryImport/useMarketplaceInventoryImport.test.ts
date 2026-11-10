@@ -59,7 +59,7 @@ vi.mock('@/hooks/useImportImageUpload/useImportImageUpload', () => ({
   uploadImportImages: (...args: unknown[]) => mocks.upload(...args),
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: (...args: unknown[]) => mocks.toast(...args),
 }));
 
