@@ -33,6 +33,13 @@ export const LOCKS_SUBMIT_REFUSAL_CODES = Object.keys(LOCKS_SUBMIT_REFUSAL_COPY)
 /** The Lock Server answers 451 to a proof bundle from a region where paid unlocks are not available. */
 export const LOCKS_REGION_REFUSAL_STATUS = 451;
 
+/**
+ * The seller changed the listing's lock after checkout, so this order was
+ * prepared against a lock the listing no longer shows. Nothing was submitted.
+ */
+export const LOCKS_PREPARED_TERMS_DIFFER_COPY =
+  'The seller changed what this listing unlocks after you checked out, so this order can’t be paid. Cancel it and check out again. Nothing was charged.';
+
 export const LOCKS_SUBMIT_RATE_LIMITED_COPY = 'Too many payment requests. Wait a minute, then try again.';
 
 /**
@@ -41,6 +48,7 @@ export const LOCKS_SUBMIT_RATE_LIMITED_COPY = 'Too many payment requests. Wait a
  */
 export function locksSubmitRefusalMessage(error: unknown, fallback: string): string {
   if (!isAppError(error)) return fallback;
+  if (error.context?.preparedTermsDiffer === true) return LOCKS_PREPARED_TERMS_DIFFER_COPY;
   if (error.context?.statusCode === LOCKS_REGION_REFUSAL_STATUS) return PAID_UNLOCKS_BLOCKED_MESSAGE;
   const code = error.context?.locksCode;
   const known = LOCKS_SUBMIT_REFUSAL_CODES.find((candidate) => candidate === code);

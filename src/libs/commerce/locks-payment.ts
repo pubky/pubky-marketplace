@@ -1,3 +1,5 @@
+import { blake3 } from '@noble/hashes/blake3.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
 import type { CommerceAdapterMode, PaykitServerApi } from '@/libs/runtime-config/runtime-config.schema';
 import type { MarketplacePayment } from '@/services/marketplace/marketplace-projections';
 
@@ -34,6 +36,37 @@ export function toBareLockResource(policyUri: string): string | null {
   const match = POLICY_URI_PATTERN.exec(policyUri);
   if (!match) return null;
   return `${match[1]}/${match[2]}`;
+}
+
+/**
+ * The BLAKE3 hex the transaction service keeps for a Locks resource it prepared
+ * a payment against (`lock_resource_hash` in the `payment.prepare_locks`
+ * result): the hash of the canonical bare resource, with the lock id in
+ * uppercase Crockford. Null when the policy URI is not a Locks policy URI.
+ */
+export function preparedLockResourceHash(policyUri: string): string | null {
+  const bare = toBareLockResource(policyUri);
+  const parts = bare ? /^(.+\/pub\/(?:locks\.app|app\.locks)\/)([^/]+)(\.json)$/.exec(bare) : null;
+  if (!parts) return null;
+  return bytesToHex(blake3(new TextEncoder().encode(`${parts[1]}${parts[2].toUpperCase()}${parts[3]}`)));
+}
+
+/** What `payment.prepare_locks` says the payment was prepared against. */
+export type PreparedLockTerms = { lockResourceHash: string; criterionId: string };
+
+/**
+ * Whether the listing's current lock is the one the payment was prepared
+ * against. The service prepares the checkout-time snapshot, which a seller's
+ * later edit of the listing does not move, so a buyer holding the edited
+ * listing must not be asked to pay for a lock the order was not prepared for.
+ */
+export function lockMatchesPreparedTerms(
+  prepared: PreparedLockTerms,
+  lock: { policyUri: string; criterionId: string },
+): boolean {
+  return (
+    preparedLockResourceHash(lock.policyUri) === prepared.lockResourceHash && lock.criterionId === prepared.criterionId
+  );
 }
 
 /** Extracts the creator pubky (bare z-base-32) from a public Locks policy URI, or null. */

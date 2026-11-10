@@ -74,7 +74,12 @@ import {
 import { listingPublishNeedsMarketplaceSession } from '@/libs/commerce/listing-publish-guards';
 import { buildRegisterVariants, type RegisterListingVariant } from '@/libs/commerce/listing-variants';
 import { locksAdmissionView } from '@/libs/commerce/locks-lifecycle';
-import { lockPolicyCreator, toBareLockResource } from '@/libs/commerce/locks-payment';
+import {
+  lockMatchesPreparedTerms,
+  lockPolicyCreator,
+  type PreparedLockTerms,
+  toBareLockResource,
+} from '@/libs/commerce/locks-payment';
 import {
   assertReserveFreePublicRecord,
   type CommerceDigitalLock,
@@ -545,6 +550,28 @@ function readPreparedClientReference(result: unknown): string {
     );
   }
   return clientReference;
+}
+
+/**
+ * The terms `payment.prepare_locks` prepared the payment against: the hash of
+ * the checkout-time lock resource and its criterion id. Without them the
+ * listing's lock cannot be matched to the payment, so nothing is submitted.
+ */
+function readPreparedLockTerms(result: unknown): PreparedLockTerms {
+  const { lockResourceHash, criterionId } = (result ?? {}) as { lockResourceHash?: unknown; criterionId?: unknown };
+  if (
+    typeof lockResourceHash !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(lockResourceHash) ||
+    typeof criterionId !== 'string' ||
+    criterionId === ''
+  ) {
+    throw Err.server(
+      ServerErrorCode.INVALID_RESPONSE,
+      'The payment preparation did not return the lock terms it was prepared against.',
+      { service: ErrorService.Locks, operation: 'beginMarketplaceLocksPayment' },
+    );
+  }
+  return { lockResourceHash, criterionId };
 }
 
 function ownReviewRemovalUrl(payload: unknown): string | null {
@@ -2234,6 +2261,15 @@ export class CommerceApplication {
       if (!prepared.ok) return prepared;
       expectedRevision = prepared.revision;
       const clientReference = readPreparedClientReference(prepared.result);
+      // The service prepared the checkout-time lock; the listing the buyer is
+      // looking at may have moved on since. Submit nothing unless they match.
+      if (!lockMatchesPreparedTerms(readPreparedLockTerms(prepared.result), digitalLock)) {
+        throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'The listing\u2019s lock changed after checkout.', {
+          service: ErrorService.Locks,
+          operation: 'beginMarketplaceLocksPayment',
+          context: { preparedTermsDiffer: true },
+        });
+      }
       const submit = async (id: string) => {
         await LocksGatewayService.submitPaykitProof({
           creatorPubky: creator,

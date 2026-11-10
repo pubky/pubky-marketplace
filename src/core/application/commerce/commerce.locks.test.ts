@@ -4,10 +4,12 @@ import type { CommerceDigitalLock } from '@/libs/commerce/marketplace-records';
 import type { MarketplaceCommandResponse } from '@/libs/commerce/transaction-commands';
 import type { CommerceLocksCorrelationModelSchema } from '@/models/commerce/commerce.schema';
 import { LocalCommerceService } from '@/services/local/commerce/commerce';
+import { LOCKS_PREPARED_TERMS_DIFFER_COPY, locksSubmitRefusalMessage } from '@/libs/commerce/locks-submit-refusal';
 import { LocksGatewayService, type LocksVerificationLifecycle } from '@/services/locks/locks';
 import { MarketplaceGatewayService } from '@/services/marketplace/marketplace';
 import { createOrderFixture, ORDER_FIXTURE_BUYER, ORDER_FIXTURE_SELLER } from '@/test/fixtures/commerce/orders';
 import { asOpaque } from '@/test-utils/type-assertions';
+import { preparedLockResourceHash } from '@/libs/commerce/locks-payment';
 import { CommerceApplication } from './commerce';
 
 /**
@@ -55,13 +57,16 @@ function pendingLifecycle(
   };
 }
 
-/** The service's answers: a preparation returns the buyer's reference, a registration the open window. */
-function serviceAnswer(kind: string): MarketplaceCommandResponse {
+/** The lock the checkout snapshotted (A); `digitalLock` above is what the listing shows when it matches. */
+const PREPARED_TERMS = { lockResourceHash: preparedLockResourceHash(POLICY_URI)!, criterionId: 'paykit' };
+
+/** The service's answers: a preparation returns the buyer's reference and terms, a registration the open window. */
+function serviceAnswer(kind: string, terms = PREPARED_TERMS): MarketplaceCommandResponse {
   return kind === 'payment.prepare_locks'
     ? asOpaque<MarketplaceCommandResponse>({
         ok: true,
         revision: 4,
-        result: { kind: 'payment', clientReference: CLIENT_REFERENCE },
+        result: { kind: 'payment', clientReference: CLIENT_REFERENCE, ...terms },
       })
     : asOpaque<MarketplaceCommandResponse>({
         ok: true,
@@ -245,6 +250,88 @@ describe('CommerceApplication Locks payment start (pubky/locks#72 no-resubmit ru
         .mocked(MarketplaceGatewayService.execute)
         .mock.calls.filter(([, command]) => command.kind === 'payment.register_locks'),
     ).toHaveLength(0);
+  });
+
+  describe('checkout snapshot A and a listing the seller moved to lock B', () => {
+    const lockB = asOpaque<CommerceDigitalLock>({
+      ...digitalLock,
+      policyUri: `pubky://${ORDER_FIXTURE_SELLER}/pub/locks.app/${'0'.repeat(51)}1.json`,
+    });
+    const beginWith = (lock: CommerceDigitalLock) =>
+      CommerceApplication.beginMarketplaceLocksPayment({
+        buyerPubky: ORDER_FIXTURE_BUYER,
+        order,
+        payment,
+        digitalLock: lock,
+      });
+    const kinds = () => vi.mocked(MarketplaceGatewayService.execute).mock.calls.map(([, command]) => command.kind);
+
+    it('refuses before any payable task exists when the listing now shows lock B', async () => {
+      const submit = vi.spyOn(LocksGatewayService, 'submitPaykitProof');
+      const find = vi.spyOn(LocksGatewayService, 'findVerification');
+
+      const error = await beginWith(lockB).catch((caught: unknown) => caught);
+
+      expect(error).toMatchObject({ name: 'AppError', context: { preparedTermsDiffer: true } });
+      expect(locksSubmitRefusalMessage(error, 'fallback')).toBe(LOCKS_PREPARED_TERMS_DIFFER_COPY);
+      expect(submit).not.toHaveBeenCalled();
+      expect(find).not.toHaveBeenCalled();
+      expect(LocksGatewayService.generateBundleId).not.toHaveBeenCalled();
+      expect(store.size).toBe(0);
+      expect(kinds()).toEqual(['payment.prepare_locks']);
+    });
+
+    it('refuses a listing whose criterion moved even when the lock resource did not', async () => {
+      const submit = vi.spyOn(LocksGatewayService, 'submitPaykitProof');
+
+      await expect(
+        beginWith(asOpaque<CommerceDigitalLock>({ ...digitalLock, criterionId: 'other' })),
+      ).rejects.toMatchObject({ context: { preparedTermsDiffer: true } });
+
+      expect(submit).not.toHaveBeenCalled();
+      expect(kinds()).toEqual(['payment.prepare_locks']);
+    });
+
+    it('refuses the retry of an unregistered order after the seller moved to lock B, and registers nothing', async () => {
+      vi.spyOn(LocksGatewayService, 'submitPaykitProof').mockRejectedValueOnce(new TypeError('Failed to fetch'));
+      const find = vi.spyOn(LocksGatewayService, 'findVerification').mockResolvedValue(pendingLifecycle());
+      await expect(beginWith(digitalLock)).rejects.toThrow('Failed to fetch');
+      expect(store.get('payment-1')).toMatchObject({ registered: false });
+
+      await expect(beginWith(lockB)).rejects.toMatchObject({ context: { preparedTermsDiffer: true } });
+
+      expect(find).not.toHaveBeenCalled();
+      expect(LocksGatewayService.submitPaykitProof).toHaveBeenCalledTimes(1);
+      expect(kinds()).not.toContain('payment.register_locks');
+    });
+
+    it('submits for the lock the payment was prepared against, spelled in lowercase by the listing', async () => {
+      const submit = vi.spyOn(LocksGatewayService, 'submitPaykitProof').mockResolvedValue(pendingLifecycle());
+      const lowercase = asOpaque<CommerceDigitalLock>({
+        ...digitalLock,
+        policyUri: POLICY_URI.replace('0'.repeat(52), '0'.repeat(52).toLowerCase()),
+      });
+
+      await expect(beginWith(lowercase)).resolves.toMatchObject({ ok: true });
+
+      expect(submit).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['no terms', {}],
+      ['a hash that is not BLAKE3 hex', { lockResourceHash: 'abc', criterionId: 'paykit' }],
+      ['an empty criterion', { lockResourceHash: PREPARED_TERMS.lockResourceHash, criterionId: '' }],
+    ])('submits nothing when the preparation returns %s', async (_label, terms) => {
+      vi.mocked(MarketplaceGatewayService.execute).mockResolvedValueOnce(
+        asOpaque({ ok: true, revision: 4, result: { kind: 'payment', clientReference: CLIENT_REFERENCE, ...terms } }),
+      );
+      const submit = vi.spyOn(LocksGatewayService, 'submitPaykitProof');
+
+      await expect(beginWith(digitalLock)).rejects.toMatchObject({ name: 'AppError', code: 'INVALID_RESPONSE' });
+
+      expect(submit).not.toHaveBeenCalled();
+      expect(store.size).toBe(0);
+    });
   });
 
   it('registers a bundle submitted before any preparation by preparing first, without a new submit', async () => {

@@ -573,8 +573,10 @@ export const locksBareLockResourceSchema = z
  * takes the payment hold and pins the payment to the `locks` adapter. It must
  * succeed before `payment.register_locks`. A repeat for a live preparation
  * replays it. The result carries the payment's opaque `client_reference`, which
- * the Shop submits in the Locks proof bundle; the service confirms only a task
- * that carries it.
+ * the Shop submits in the Locks proof bundle (the service confirms only a task
+ * that carries it), and the terms the payment was prepared against: the BLAKE3
+ * hex of the checkout-time lock resource (`lock_resource_hash`) and its
+ * `criterion_id`. The Shop submits only when the listing's lock matches them.
  */
 export const prepareLocksPaymentCommandSchema = createCommerceCommandSchema(
   'payment.prepare_locks',
