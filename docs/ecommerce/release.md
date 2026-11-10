@@ -59,23 +59,15 @@ Follow [Shop embedding](../launch/shop-embedding.md) for the fixed `/shop-embed`
 
 ## Day-to-day merges
 
-1. Branch from the current train branch (or from the release branch if no train is open) and open the pull request
-   against the train.
-2. Before every push run `bash scripts/prepush.sh`. Fast mode (the default) runs `prettier --check` and `eslint` on
-   files changed since the merge base, `npm run typecheck`, and `npx vitest related --run` on those files. The last
-   line on success is `PREPUSH OK <sha> <seconds> fast`. A tree that already passed is not re-run.
-3. Auto-merge is off in this repository, and maintainers do the merges. After pushing, wait for CI with
-   `gh pr checks <N> --watch` and ask a maintainer to merge. The maintainer merges with `gh pr merge <N> --squash`
-   (train-to-release pull requests keep a merge commit: `--merge`), only when every check passed or skipped, and never
-   with `--admin`. Automated agents open pull requests and comment; they never merge and never push `master`.
-4. Required checks on `master`: Check Code Quality, Check NextJS Build, Run Shard Tests (1) to (5), Run Tests, Merge
-   Coverage Reports, `vrt-marketplace`, `vrt-core`, `launch-e2e`. A pull request is required; no approving review is
-   configured, so the team sets its own review rule. Force pushes and branch deletion are blocked. `launch-e2e` runs on
-   pull requests into `master` and `release/shop-*` in explicit synthetic mode: real SDK grants and browser
-   persistence, with isolated PKARR, homeserver, BFF and marketplace fixtures. It needs no seller secret and also
-   runs on forks. Optional live mode requires `LAUNCH_E2E_SELLER_SECRET_HEX` and a grant-enabled backend; synthetic
-   success does not replace staging approval/payment QA. Pull requests that change only `docs/`, `payments-env/` or `*.md` files skip the build, the unit suite
-   and VRT; their checks still report.
+1. Branch from the current train branch (or from `master` if no train is open). Target the agreed train or `master`; use the actual PR base for review, never an assumed `dev` branch.
+2. Before every push run `bash scripts/prepush.sh`. Fast mode (the default) runs `prettier --check` and `eslint` on files changed since the merge base, `npm run typecheck`, and `npx vitest related --run` on those files. The last line on success is `PREPUSH OK <sha> <seconds> fast`. A valid stamp can reuse a previous result for an unchanged tree; full release mode remains `PREPUSH_FULL=1 bash scripts/prepush.sh`.
+3. After pushing, wait for CI with `gh pr checks <N> --watch`. Maintainers normally perform merges. Feature-to-train PRs use squash; train-to-release PRs keep a merge commit and use the protected branch's merge queue. Do not use `--admin` or bypass a failing required check. Automated agents open PRs and report evidence; merging or pushing `master` requires an explicit instruction.
+4. The [master ruleset](https://github.com/pubky/pubky-marketplace/rules/26693412) is authoritative for current requirements. It requires approval, dismisses stale approvals after a push, requires resolved review threads and an up-to-date checked base, and uses a merge queue. Force pushes and branch deletion are blocked. Do not assume a train branch has the same rules.
+5. Preserve the Market-specific checks in addition to Code Quality, NextJS Build and unit tests: Linux `vrt-marketplace` and `vrt-core`, synthetic `launch-e2e`, and the separate local-stack `chat-e2e` workflow job. The current required-check list includes the VRT and launch jobs; `chat-e2e` runs but is not listed as required in that ruleset. Check the live rules before reporting a job as merge-blocking.
+
+`launch-e2e` runs for relevant PRs into `master` and `release/shop-*`, and for merge groups, in explicit synthetic mode: real SDK grants and browser persistence with isolated PKARR, homeserver, BFF and marketplace fixtures. It needs no seller secret and also runs on forks. Optional live mode requires `LAUNCH_E2E_SELLER_SECRET_HEX` and a grant-enabled backend; synthetic success does not replace staging approval/payment QA. The separate `chat-e2e` uses a local stack.
+
+Path filters can skip the build, unit suite and VRT on documentation-only PRs while still reporting check statuses; Code Quality still runs. The filters differ by workflow and fail closed if their path-filter job fails. Merge groups run the full configured gates regardless of the PR's documentation-only classification. See `.github/workflows/test.yml`, `build.yml`, `format.yml` and `vrt-marketplace.yml` for exact triggers.
 
 **Flake outside the diff.** If the only failures are test files the diff does not touch, rerun those files alone
 twice. If both reruns pass and the rest of the gate passed, the push may skip the hook (`--no-verify`) with the gate
@@ -111,13 +103,13 @@ At most one or two Shop releases a day. An extra cut runs only for a production 
 1. **Find the live release.** `gh release list -R pubky/pubky-marketplace --limit 1` gives the last `shop-vX.Y.Z`
    (`-R BitcoinErrorLog/pubky-app` for `shop-v0.6.46` and earlier).
 2. **Close the train.** Open one pull request from `train/shop-<date>-<am|pm>` into `master`. A pull
-   request that missed the cut waits for the next train. Nothing merges to the release branch outside a train.
+   request that missed the cut waits for the next train. Normal releases go through a train; a direct-to-master exception must be explicitly agreed by the maintainer or requested for the task, and still follows the protected branch rules.
 3. **Baselines once.** If any merged change moved a scene, regenerate Linux baselines once on the train head (rules
    above), then run the full marketplace VRT suite once.
 4. **Proof on the release head.** On the merged release branch commit, in a clean checkout:
 
    ```bash
-   PREPUSH_FULL=1 bash scripts/prepush.sh               # last line must end in "full"
+   PREPUSH_FULL=1 bash scripts/prepush.sh               # require full mode; a reused:full result is valid
    npm run typecheck && npm run lint
    npm run test                                          # the whole unit suite; keep the summary lines
    bash scripts/vrt-linux.sh src/test/vrt/marketplace/   # the whole marketplace VRT suite

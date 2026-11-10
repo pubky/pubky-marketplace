@@ -1,0 +1,9 @@
+---
+description: Linux visual regression tests, deterministic fixtures and baseline review
+globs: src/test/vrt/**/*,src/test-utils/vrt*,src/**/*.vrt.test.*,vitest.config.*,scripts/*vrt*,.github/workflows/*vrt*.yml
+alwaysApply: false
+---
+
+# Visual Regression Testing Rules
+
+@docs/visual-regression-testing.md

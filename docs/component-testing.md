@@ -3,8 +3,8 @@
 Rules and patterns for unit tests for UI components.
 
 Behaviour and prop contracts belong in unit tests; appearance belongs in VRT
-(`docs/visual-regression-testing.md`). Snapshot tests (`toMatchSnapshot`) were
-removed — do not add new ones.
+(`docs/visual-regression-testing.md`). Classic snapshot tests (`toMatchSnapshot`, `toMatchInlineSnapshot`, and `.snap` files)
+were removed in favour of VRT and must not return.
 
 ## File Naming
 
@@ -73,8 +73,12 @@ it.each(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const)('renders as <%s> when as=
 
 ### Viewport-Dependent Components
 
-When a component branches on `useIsMobile` (directly or via a child), assert
-the branch by mocking the hook — desktop and mobile each get a targeted test:
+When a component branches on `useIsMobile` (directly or via a child), give desktop
+and mobile their own behaviour tests. Prefer the real hook where practical: set
+`window.innerWidth` before rendering and restore it after the test; a resize
+after mounting must also account for the hook's debounce. If the test already
+mocks `useIsMobile`, set its return value explicitly — changing the viewport
+alone cannot change a mocked hook:
 
 ```typescript
 it('renders a bottom sheet on mobile', () => {
@@ -85,14 +89,18 @@ it('renders a bottom sheet on mobile', () => {
 ```
 
 Do not stub the viewport-aware child with a passthrough mock — that hides the
-branch. Mobile appearance (390×844) is covered by VRT, not by jsdom window
-resizing.
+branch. CSS-only responsive layout has the same markup at both widths; verify
+its appearance with VRT, not jsdom window resizing. The shared mobile VRT
+viewport is 390×844 (`src/test-utils/vrt.viewports.ts`).
 
 ## Test Optimization
 
 - Unit tests should focus on functional behavior, prop contracts, and logic
 - Appearance (layout, styling, responsive behaviour) is owned by VRT — do not
   duplicate it with structural assertions beyond the prop contract
+- A test must be able to catch a broken contract. Avoid `toBeDefined()` on an
+  import, `not.toThrow()` around a render, or a catch-all selector that would
+  pass for any output
 
 ## Mocking Rules
 
@@ -209,15 +217,17 @@ describe('PostTimestamp', () => {
 ## Running Tests
 
 ```bash
-npm test                             # All tests
+npm test                             # All unit tests
 npm test -- ComponentName.test.tsx   # Specific component
+npm run test:vrt                     # Linux visual regression (Docker)
 ```
 
 ## Testing Workflow
 
 1. Run tests after creating new test files
 2. For atoms and primitives, assert the prop mapping directly — see [Prop Mapping](#prop-mapping-atoms-and-primitives)
-3. Verify all tests pass before committing
+3. Add or update VRT coverage when a visual surface changes. Use the Linux baseline process in `docs/visual-regression-testing.md`; preserve Market's PR and pre-push checks
+4. Run the checks appropriate to the change and report their actual results; see `docs/development-workflow.md`
 
 ## Complete Example
 
@@ -233,13 +243,13 @@ describe('Button', () => {
     const button = screen.getByRole('button');
     expect(button).toBeInTheDocument();
     expect(button).toHaveAttribute('data-slot', 'button');
-    expect(button).toHaveAttribute('data-variant', 'default');
+    expect(button).toHaveClass('bg-brand/16');
   });
 
   it.each([
     ['default', ['h-10', 'px-4']],
     ['sm', ['h-8', 'px-3']],
-    ['lg', ['h-12', 'px-6']],
+    ['lg', ['h-auto', 'px-8', 'py-5']],
   ] as const)('applies size="%s" classes', (size, classes) => {
     render(<Button size={size}>Button</Button>);
     expect(screen.getByRole('button')).toHaveClass(...classes);

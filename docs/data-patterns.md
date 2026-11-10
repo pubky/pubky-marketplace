@@ -217,7 +217,18 @@ return SettingsNormalizer.from(settingsJson);
 
 ## Data Model Reference
 
-All tables defined in `src/core/database/franky/franky.ts`.
+All tables are defined in `src/core/database/franky/franky.ts`. The lists below summarize the shared social cache tables; consult that schema for commerce, inventory, import and chat tables.
+
+### Schema changes
+
+`DB_VERSION` comes from `Env.NEXT_PUBLIC_DB_VERSION` through `src/config/database.ts`.
+The current schema and initialization behavior live in `src/core/database/franky/franky.ts`:
+
+- The production schema uses an explicit Dexie version chain starting at version 4. Versions 6 and 7 add import and webhook tables; version 9 adds the chat tables and drops the retired messaging tables. An upgrade from a stored version of at least 4 to a higher declared version opens through that chain without deleting the whole database.
+- A mismatch from a stored version below 4, a downgrade, or an unreadable non-transient version recreates the database. Device-local-only data can be lost. Transient IndexedDB failures enter the existing retry path instead of being treated as a reason to wipe data.
+- Stored native versions are normalized with a floor, retaining compatibility with Dexie's additive table creation at the same declared version. The version-3 decisions in [ADR 0023](adr/0023-marketplace-db-version-reset.md) describe the earlier reset/additive policy; they do not describe the entire current version-4-and-later upgrade chain.
+
+Changing the version, table definitions, indexes or row shape is a deliberate reviewed change, never an incidental feature edit. The PR must explain the upgrade path, any data removed, retained device-local state and downgrade behavior. Extend and test the existing schema chain where needed; do not replace it with App's recreate-on-every-mismatch model or assume a version bump is harmless. Keep deployment defaults consistent with the declared schema (`docs/environment.md`). Existing database coverage includes `franky.test.ts`, `franky.inventory-studio.test.ts`, `franky.import.test.ts`, `franky.webhooks.test.ts` and the namespace-isolation/migration tests beside the implementation.
 
 ### User Tables
 
@@ -269,3 +280,4 @@ When working with data:
 - [ ] TTL updated on every write?
 - [ ] External data normalized through pipes?
 - [ ] Pipes are pure (no IO)?
+- [ ] Schema changes explicitly call out upgrade/reset behavior and preservation of device-local data?

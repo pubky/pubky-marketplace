@@ -94,15 +94,15 @@ export function MarketplaceConnectShopify({ shopify, statusCheck, onCheck }: Mar
             number={1}
             title={
               <>
-                <strong>Enter your store address.</strong> For example <code>your-store.myshopify.com</code>. We&apos;ll
-                prepare the links you need below.
+                <strong>Enter your store address.</strong> For example <code>your-store.myshopify.com</code>, or the
+                domain your store uses. We&apos;ll prepare the links you need below.
               </>
             }
           >
             {ready ? (
               <div className="flex flex-wrap items-center gap-3">
-                <Typography as="p" className="text-sm font-semibold text-foreground">
-                  {domain}
+                <Typography as="p" className="text-sm font-semibold text-foreground" data-testid="shopify-store-domain">
+                  {shopify.resolvedFrom ? `${shopify.resolvedFrom} → ${domain}` : domain}
                 </Typography>
                 <Button
                   type="button"
@@ -126,7 +126,7 @@ export function MarketplaceConnectShopify({ shopify, statusCheck, onCheck }: Mar
                   name="domain"
                   control={domainForm.control}
                   label="Store address"
-                  placeholder="your-store.myshopify.com"
+                  placeholder="your-store.myshopify.com or your-domain.com"
                   autoComplete="off"
                 />
                 <Button type="submit" className="w-fit rounded-full" disabled={isWorking}>
@@ -196,18 +196,19 @@ export function MarketplaceConnectShopify({ shopify, statusCheck, onCheck }: Mar
                   copiedMessage="Redirection URL copied."
                 />
                 <Typography as="p">
-                  <strong className="text-foreground">Webhooks API version:</strong> <code>{SHOPIFY_API_VERSION}</code>
+                  <strong className="text-foreground">Use legacy install flow:</strong> leave the default
                 </Typography>
                 <CopyField label="Scopes" value={scopes} copyLabel="Copy all" copiedMessage="Scopes copied." />
-                <CopyField
-                  label="Webhooks URL for privacy requests"
-                  value={draft.urls.webhooks}
-                  copiedMessage="Webhooks URL copied."
-                />
+                <Typography as="p">
+                  <strong className="text-foreground">Webhooks API version:</strong> <code>{SHOPIFY_API_VERSION}</code>
+                </Typography>
                 <Typography as="p" data-testid="shopify-compliance-note">
-                  Pubky sets up its other store updates itself after the install. Shopify&apos;s three privacy webhooks
-                  (<code>customers/data_request</code>, <code>customers/redact</code>, <code>shop/redact</code>) can
-                  only be set in the app, so add them to this URL in the same version.
+                  Pubky sets up its store updates itself after the install. Shopify&apos;s three privacy webhooks (
+                  <code>customers/data_request</code>, <code>customers/redact</code>, <code>shop/redact</code>) are
+                  required only for apps listed in the Shopify App Store, so skip them. This form has no field for them:
+                  Shopify takes them only from an app configuration file deployed with Shopify CLI. Without them, Pubky
+                  is not told when Shopify asks apps to erase a customer&apos;s or a store&apos;s data; connecting,
+                  catalog sync, orders and uninstall updates are not affected.
                 </Typography>
                 <Typography as="p">
                   Then click <strong className="text-foreground">Release</strong>.
@@ -279,9 +280,10 @@ export function MarketplaceConnectShopify({ shopify, statusCheck, onCheck }: Mar
             locked={!credentialsSaved}
             title={
               <>
-                <strong>Install on your store.</strong> Click <strong>Install in Shopify</strong> and approve the
-                permissions. (If Shopify asks you to install from the Dev Dashboard, open the app&apos;s{' '}
-                <strong>Home</strong> → <strong>Install app</strong> instead.)
+                <strong>Install on your store.</strong> Click <strong>Install in Shopify</strong> to open the Dev
+                Dashboard, click <strong>Pubky Market</strong> under <strong>Apps</strong>, then click{' '}
+                <strong>Test app</strong> in the <strong>Installs</strong> card. Choose your store and approve the
+                permissions in the window that opens.
               </>
             }
           >
@@ -300,11 +302,13 @@ export function MarketplaceConnectShopify({ shopify, statusCheck, onCheck }: Mar
             )}
             {credentialsSaved && (
               <Typography as="p" data-testid="shopify-install-path">
-                Shopify starts the install from your app, so this opens the Dev Dashboard: open{' '}
-                <strong className="text-foreground">Pubky Market</strong>, go to{' '}
-                <strong className="text-foreground">Home</strong> →{' '}
-                <strong className="text-foreground">Install app</strong>, and approve the permissions. Then check the
-                connection below.
+                Shopify gives no link straight to the app&apos;s page, so this opens the Dev Dashboard. Click{' '}
+                <strong className="text-foreground">Pubky Market</strong> under{' '}
+                <strong className="text-foreground">Apps</strong> in the left menu (not the dashboard&apos;s Home). On
+                the app&apos;s page, click <strong className="text-foreground">Test app</strong> in the{' '}
+                <strong className="text-foreground">Installs</strong> card and choose your store. Shopify opens its
+                install screen in a new window: approve the permissions there. You come back here with the store shown
+                as Connected.
               </Typography>
             )}
           </GuideStep>

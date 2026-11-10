@@ -65,7 +65,7 @@ describe('MarketplaceConnectShopify', () => {
       'Until our Shopify app is approved, you connect through a private app that you create in your own Shopify account. It takes about 10 minutes, and you only do it once. Pubky never sees your Shopify password, and you can disconnect at any time.',
     );
     expect(screen.getByTestId('shopify-step-1')).toHaveTextContent(
-      "Enter your store address. For example your-store.myshopify.com. We'll prepare the links you need below.",
+      "Enter your store address. For example your-store.myshopify.com, or the domain your store uses. We'll prepare the links you need below.",
     );
     expect(screen.getByTestId('shopify-step-2')).toHaveTextContent(
       'Open the Dev Dashboard. In Shopify admin, go to Settings → Apps → Develop apps, then Build apps in Dev Dashboard.',
@@ -78,7 +78,7 @@ describe('MarketplaceConnectShopify', () => {
       "Copy your keys here. Open the app's Settings and copy the Client ID and Client secret into these fields. They're sent securely to Pubky and stored encrypted. Pubky never shows them again, and they are never stored with your public shop data.",
     );
     expect(screen.getByTestId('shopify-step-6')).toHaveTextContent(
-      "Install on your store. Click Install in Shopify and approve the permissions. (If Shopify asks you to install from the Dev Dashboard, open the app's Home → Install app instead.)",
+      'Install on your store. Click Install in Shopify to open the Dev Dashboard, click Pubky Market under Apps, then click Test app in the Installs card. Choose your store and approve the permissions in the window that opens.',
     );
     expect(screen.getByTestId('shopify-step-7')).toHaveTextContent(
       'Done. We check the connection and show your store name, the permissions granted and your products ready to import.',
@@ -119,12 +119,14 @@ describe('MarketplaceConnectShopify', () => {
     const values = within(step4)
       .getAllByTestId('copy-field-value')
       .map((node) => node.textContent);
-    expect(values).toEqual([URLS.launch, URLS.oauthCallback, SHOPIFY_REQUIRED_SCOPES.join(', '), URLS.webhooks]);
+    expect(values).toEqual([URLS.launch, URLS.oauthCallback, SHOPIFY_REQUIRED_SCOPES.join(', ')]);
     expect(within(step4).getByRole('button', { name: 'Copy App URL' })).toBeInTheDocument();
     expect(within(step4).getByRole('button', { name: 'Copy Allowed redirection URL' })).toBeInTheDocument();
     expect(within(step4).getByRole('button', { name: 'Copy all Scopes' })).toBeInTheDocument();
     expect(step4).toHaveTextContent('Embed app in Shopify admin: off');
+    expect(step4).toHaveTextContent('Use legacy install flow: leave the default');
     expect(step4).toHaveTextContent('Webhooks API version: 2026-10');
+    expect(within(step4).queryByText('Webhooks URL for privacy requests')).not.toBeInTheDocument();
     expect(step4).toHaveTextContent('Then click Release.');
     expect(screen.getByRole('link', { name: 'Open Shopify admin' })).toHaveAttribute(
       'href',
@@ -185,18 +187,43 @@ describe('MarketplaceConnectShopify', () => {
     const install = await screen.findByRole('link', { name: 'Install in Shopify' });
     expect(install).toHaveAttribute('href', 'https://dev.shopify.com/dashboard');
     expect(install).toHaveAttribute('rel', 'noopener noreferrer');
-    expect(screen.getByTestId('shopify-install-path')).toHaveTextContent('Home → Install app');
+    const path = screen.getByTestId('shopify-install-path');
+    expect(path).toHaveTextContent("Click Pubky Market under Apps in the left menu (not the dashboard's Home)");
+    expect(path).toHaveTextContent('click Test app in the Installs card and choose your store');
+    expect(path).toHaveTextContent('Shopify opens its install screen in a new window: approve the permissions there.');
+    expect(path).toHaveTextContent('You come back here with the store shown as Connected.');
+    expect(path).not.toHaveTextContent('Install app');
   });
 
-  it('shows the three URLs the service built, the privacy webhooks note and the exact scopes in step 4', () => {
+  it('lists the form fields in Shopify order: App URL, embed, redirect URL, legacy flow, scopes, webhooks version', () => {
+    render(<Guide resume={connection()} />);
+    const text = screen.getByTestId('shopify-step-4').textContent ?? '';
+    const order = [
+      'App URL',
+      'Embed app in Shopify admin',
+      'Allowed redirection URL',
+      'Use legacy install flow',
+      'Scopes',
+      'Webhooks API version',
+      'Release',
+    ].map((label) => text.indexOf(label));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it('shows the two URLs the service built, and says the privacy webhooks are optional and not in this form', () => {
     render(<Guide resume={connection()} />);
     const step = screen.getByTestId('shopify-step-4');
     expect(within(step).getByRole('button', { name: 'Copy App URL' })).toBeInTheDocument();
     expect(step).toHaveTextContent(`/v1/connectors/shopify/c/${ID}/launch`);
     expect(step).toHaveTextContent(`/v1/connectors/shopify/c/${ID}/oauth/callback`);
-    expect(step).toHaveTextContent(`/v1/connectors/shopify/c/${ID}/webhooks`);
-    expect(screen.getByTestId('shopify-compliance-note')).toHaveTextContent('customers/data_request');
-    expect(screen.getByTestId('shopify-compliance-note')).toHaveTextContent('shop/redact');
+    expect(step).not.toHaveTextContent(`/v1/connectors/shopify/c/${ID}/webhooks`);
+    const note = screen.getByTestId('shopify-compliance-note');
+    expect(note).toHaveTextContent('customers/data_request');
+    expect(note).toHaveTextContent('shop/redact');
+    expect(note).toHaveTextContent('required only for apps listed in the Shopify App Store');
+    expect(note).toHaveTextContent('Shopify CLI');
+    expect(note).toHaveTextContent('Without them');
   });
 
   it('runs the status check and shows the connected store', async () => {

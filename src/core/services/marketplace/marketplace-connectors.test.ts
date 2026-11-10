@@ -169,6 +169,72 @@ describe('MarketplaceConnectorsService', () => {
     ).rejects.toMatchObject({ message: 'The marketplace service returned an unexpected response.' });
   });
 
+  it('resolves a store domain with a bearer POST, the domain in the body only, and reads the shop back', async () => {
+    fetchMock.mockResolvedValue(
+      json({
+        schema_version: 1,
+        kind: 'connector_shop',
+        provider: 'shopify',
+        shop: 'your-store.myshopify.com',
+        domain: 'shop.example',
+      }),
+    );
+
+    const resolved = await MarketplaceConnectorsService.resolveShop(ACTOR, {
+      provider: 'shopify',
+      domain: 'shop.example/a b',
+    });
+
+    expect(resolved).toMatchObject({ shop: 'your-store.myshopify.com', domain: 'shop.example' });
+    const { url, init } = lastCall();
+    expect(url).toBe(`${BASE}/v1/connectors/resolve`);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ provider: 'shopify', domain: 'shop.example/a b' });
+  });
+
+  it.each([
+    ['not_a_shopify_store', 422],
+    ['not_primary_domain', 422],
+    ['invalid_domain', 422],
+    ['provider_unavailable', 502],
+  ])('carries the service refusal %s from a resolve call', async (code, status) => {
+    fetchMock.mockResolvedValue(json({ ok: false, error: { code, message: 'x' } }, status));
+    await expect(
+      MarketplaceConnectorsService.resolveShop(ACTOR, { provider: 'shopify', domain: 'shop.example' }),
+    ).rejects.toMatchObject({ context: { reason: code, statusCode: status } });
+  });
+
+  it('keeps the typed domain out of every error context', async () => {
+    const domain = 'secret-typed-store.example';
+    const contexts: string[] = [];
+    const attempt = async (reply: () => Promise<Response>) => {
+      fetchMock.mockImplementation(reply);
+      const error = await MarketplaceConnectorsService.resolveShop(ACTOR, { provider: 'shopify', domain }).catch(
+        (caught: unknown) => caught,
+      );
+      contexts.push(
+        JSON.stringify(
+          error instanceof AppError ? { ...error, message: error.message, context: error.context } : error,
+        ),
+      );
+    };
+    await attempt(async () => json({ ok: false, error: { code: 'not_a_shopify_store' } }, 422));
+    await attempt(async () => new Response(null, { status: 404 }));
+    await attempt(async () => new Response('not json', { status: 200 }));
+    await attempt(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    expect(contexts).toHaveLength(4);
+    for (const context of contexts) expect(context).not.toContain('secret-typed-store');
+  });
+
+  it('refuses a resolve answer that does not name a shop', async () => {
+    fetchMock.mockResolvedValue(json({ kind: 'connector_shop', provider: 'shopify', domain: null }));
+    await expect(
+      MarketplaceConnectorsService.resolveShop(ACTOR, { provider: 'shopify', domain: 'shop.example' }),
+    ).rejects.toMatchObject({ message: 'The marketplace service returned an unexpected response.' });
+  });
+
   it('connects a WooCommerce draft with a pasted key pair, snake_case, and reads the connected store back', async () => {
     fetchMock.mockResolvedValue(
       json({

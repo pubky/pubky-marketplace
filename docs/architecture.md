@@ -31,16 +31,18 @@ Modules are imported directly through the path aliases in `tsconfig.json`. Keep 
 **App configuration** lives under `src/config/`: import from `@/config/<module>` (for example `@/config/nexus`). Do not add `src/config/index.ts` that re-exports the entire config surface.
 
 **Route constants and helpers** live in `src/app/routes.ts`: import from `@/app/routes` (named imports; use `import type` when a colocated `*.types.ts` file only contributes types).
+
+| Layer        | Alias              |
 | ------------ | ------------------ |
-| Hooks | `@/hooks/*` |
-| Application | `@/application/*` |
-| Controllers | `@/controllers/*` |
+| Hooks        | `@/hooks/*`        |
+| Application  | `@/application/*`  |
+| Controllers  | `@/controllers/*`  |
 | Coordinators | `@/coordinators/*` |
-| Database | `@/database/*` |
-| Models | `@/models/*` |
-| Pipes | `@/pipes/*` |
-| Services | `@/services/*` |
-| Stores | `@/stores/*` |
+| Database     | `@/database/*`     |
+| Models       | `@/models/*`       |
+| Pipes        | `@/pipes/*`        |
+| Services     | `@/services/*`     |
+| Stores       | `@/stores/*`       |
 
 ## Layer Responsibilities
 
@@ -82,8 +84,13 @@ Modules are imported directly through the path aliases in `tsconfig.json`. Keep 
 - `homegate/` — Homegate API
 - `chatwoot/` — Chatwoot integration
 - `exchangerate/` — Exchange rate service
+- `nextjs/` — Server-only route helpers, metadata and store/image imports
 - **NEVER** call application or controllers
-- **NEVER** access stores
+- **NEVER** access stores, except the existing read-only auth boundary in `HomeserverService`.
+  It reads `useAuthStore.getState()` to obtain the current session, check grant capabilities and
+  encryption-key ownership, and reject writes after logout starts or the session changes.
+  This does not permit service-side store mutations or general UI-state access. Controllers remain
+  responsible for changing stores; do not broaden the exception to unrelated services.
 
 ### Pipes (`src/core/pipes/`)
 
@@ -107,8 +114,9 @@ Modules are imported directly through the path aliases in `tsconfig.json`. Keep 
 
 ### Database (`src/core/database/`)
 
-- Dexie schema versioning and safe initialization/recovery
-- Migration logic
+- Dexie schema versions, safe initialization/recovery and the existing in-place upgrade chain
+- Upgrades from version 4 onward preserve retained tables through that chain; older-version mismatches,
+  downgrades and unreadable versions can recreate the database. See `docs/data-patterns.md` — _Schema changes_.
 
 ## Allowed Dependencies
 
@@ -116,7 +124,7 @@ Modules are imported directly through the path aliases in `tsconfig.json`. Keep 
 UI → Controllers (user-initiated actions)
 Coordinators → Controllers (system-initiated actions)
 Controllers → Pipes, Application, Stores
-Application → Pipes, Services (local, homeserver, nexus)
+Application → Pipes, Services (local, homeserver, nexus, homegate, chatwoot, exchangerate, nextjs)
 Application → Application (cross-domain, acyclic, max depth 1 by default; see ADR-0009 for the depth-2 attachment-persistence exception)
 Services:
   local → Models
@@ -280,13 +288,27 @@ src/core/
 │   ├── nexus/[domain]/    # Network reads
 │   ├── homegate/          # Homegate API
 │   ├── chatwoot/          # Chatwoot integration
-│   └── exchangerate/      # Exchange rate service
+│   ├── exchangerate/      # Exchange rate service
+│   └── nextjs/            # Server-only route helpers
 ├── pipes/[domain]/        # Data transformation
 ├── models/[domain]/       # Dexie tables
 ├── stores/[domain]/       # UI state (Zustand)
 ├── database/              # Dexie schema and migrations
 └── utils/                 # Utility functions
 ```
+
+## High-Risk Areas
+
+Trace the existing flow and its callers before changing these areas. Keep unrelated refactors out of the change.
+
+- `src/core/database/franky/**` + `src/config/database.ts` — schema upgrades, legacy table removal and database recovery. A version or index change needs an explicit PR callout covering retained data, upgrade/downgrade behavior and validation. Preserve device-local inventory, drafts and import state; see `docs/data-patterns.md` — _Schema changes_.
+- `src/core/services/homeserver/**`, `src/core/pipes/**` and `vendor/pubky-app-specs/**` — session authority and wire formats. Preserve grant ownership, capability checks and payload shapes; do not change a format incidentally while adding a feature.
+- `src/core/services/local/**` — Dexie and TTL consistency. Persist dependencies before dependents and refresh affected TTL rows on writes. Check pending local writes before changing refresh or reconciliation behavior.
+- `src/core/application/**` cross-domain calls — check the ADR-0009 allow-list before wiring Applications together.
+- `services/marketplace/**` and commerce transaction integrations — transaction authority, inventory, payment and fulfillment state. Follow the commerce ADRs and runbooks; do not treat service-owned truth as a UI cache or remove active workflows as cleanup.
+- `src/libs/env/env.ts` + `src/libs/runtime-config/**` — public configuration boundaries. Browser runtime configuration is public; never put secrets there. Preserve the separate build-time mount paths and runtime settings documented in `docs/environment.md` and `docs/launch/shop-embedding.md`.
+- `src/core/services/nextjs/**` + `src/libs/network/network.ts` — server-side fetching of user-provided URLs. Preserve the existing URL, DNS and redirect safeguards and their tests when changing metadata or import flows.
+- `src/sw.ts`, `next.config.ts`, `src/instrumentation*.ts`, `src/sentry.*.config.ts`, `.github/workflows/**` and validation scripts — build, telemetry, deployment and verification behavior. Change them only when the task includes them; `public/sw.js` is generated and must not be edited by hand.
 
 ## Architecture Decision Records
 
@@ -335,3 +357,4 @@ When adding/modifying code in `src/core/`:
 - [ ] Is IO only in Services?
 - [ ] Are Pipes pure (no IO)?
 - [ ] Does cross-domain call follow ADR-0009 rules?
+- [ ] Are schema, auth, wire-format and other high-risk changes identified and validated at their boundary?

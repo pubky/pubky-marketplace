@@ -1,4 +1,5 @@
 import {
+  classifyShopifyAddress,
   type ConnectionHealth,
   connectionHealth,
   type ConnectorAlert,
@@ -190,6 +191,28 @@ export class ConnectorsApplication {
       await MarketplaceConnectorsService.disconnect(actor, started.connection.id).catch(() => undefined);
       throw error;
     }
+  }
+
+  /**
+   * The `*.myshopify.com` shop for what the seller typed. A `*.myshopify.com`
+   * address (or handle, or admin URL) is taken as it is; a store's own domain
+   * is looked up by the service, so `domain` names the address that was
+   * resolved and is `null` when no lookup was needed.
+   */
+  static async resolveShopifyAddress(actor: string, input: string): Promise<{ shop: string; domain: string | null }> {
+    const address = classifyShopifyAddress(input);
+    if (!address) {
+      invalidInput(
+        'resolveShopifyAddress',
+        'Enter your store address, for example your-store.myshopify.com or the domain your store uses.',
+      );
+    }
+    if (address.kind === 'myshopify') return { shop: address.domain, domain: null };
+    const resolved = await MarketplaceConnectorsService.resolveShop(actor, {
+      provider: 'shopify',
+      domain: address.host,
+    });
+    return { shop: resolved.shop, domain: resolved.domain ?? address.host };
   }
 
   /** The draft connection for a store; its `urls` are the ones the merchant pastes into their app. */

@@ -218,6 +218,28 @@ toast({
 
 Mock `@/molecules/Toaster/toast` in feature unit tests; assert the options and invoke action descriptors to exercise their callbacks. Toast integration tests render the real store and Radix renderer, including timing, action replacement and dismissal. Appearance belongs in `Toaster.vrt.test.tsx`.
 
+## Forms
+
+Build forms with `react-hook-form` and `zod` through `@hookform/resolvers/zod`. Use
+`src/hooks/useCreateCollection/useCreateCollection.ts` and its sibling `useCreateCollection.types.ts`
+as a reference for the hook/schema layout.
+
+- The hook owns validation and the mutation. Components call a `use{Action}Form` or `use{Verb}{Entity}` hook that exposes
+  `{ form, submit, reset, ... }`, instead of calling `commit*` controllers directly.
+- `submit()` returns `Promise<boolean>` when the caller only needs success/failure, or a created entity ID as
+  `Promise<string | null>` when navigation needs it, as in `useCreateCollection`. Preserve the caller's existing contract
+  and keep closing or navigation in the caller.
+- Put the Zod schema, `*_FORM_FIELDS` map, inferred type and default values in a sibling `*.types.ts` file.
+- Use React Hook Form's `Controller` through `ControlledInputField` and `ControlledTextareaField` where applicable.
+  Preserve field errors, loading/disabled states and required labels.
+- Compose dedicated hooks for non-text inputs such as cover images and file pickers; their resource lifecycle does not
+  belong in a text-field controller.
+- Keep user-facing validation messages as literal US-English strings. Use Zod v4 `z.url()` for URL validation.
+- Choose validation timing for the interaction being built. For example, `useCreateCollection` uses `onChange` so a blur
+  error does not move the dialog close button during a click. Do not copy a different validation mode incidentally.
+- Follow the existing error-handling and notification contracts; avoid logging an error again when its `Err.*` factory
+  already logged it. See `error-handling.md` and the existing Toasts section above.
+
 ## Design System Integration
 
 ### Colors

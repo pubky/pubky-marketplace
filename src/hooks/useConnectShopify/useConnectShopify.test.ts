@@ -1,7 +1,8 @@
-import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import { toast } from '@/molecules/Toaster/toast';
+import { useAuthStore } from '@/stores/auth/auth.store';
 import { connectorRefusal } from '@/test-utils/connector-errors';
 import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { useConnectShopify } from './useConnectShopify';
@@ -9,6 +10,7 @@ import { shopifyKeysFormDefaults } from './useConnectShopify.types';
 
 vi.mock('@/controllers/connectors/connectors', () => ({
   ConnectorsController: {
+    fetchResolveShopifyAddress: vi.fn(),
     commitCreateShopifyDraft: vi.fn(),
     commitShopifyCredentials: vi.fn(),
   },
@@ -17,6 +19,8 @@ vi.mock('@/controllers/connectors/connectors', () => ({
 vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 const ID = '11111111-1111-4111-8111-111111111111';
+const SELLER_A = 'a'.repeat(52);
+const SELLER_B = 'b'.repeat(52);
 
 function draftConnection(overrides: Record<string, unknown> = {}) {
   return connectionFixture({
@@ -84,12 +88,161 @@ describe('useConnectShopify', () => {
 
   it('refuses an address that is not a Shopify store', async () => {
     const { result } = renderShopify();
-    act(() => result.current.domainForm.setValue('domain', 'example.com'));
+    act(() => result.current.domainForm.setValue('domain', 'not a store address'));
     await act(async () => {
       expect(await result.current.createDraft()).toBe(false);
     });
     expect(result.current.domainForm.formState.errors.domain?.message).toContain('your-store.myshopify.com');
+    expect(ConnectorsController.fetchResolveShopifyAddress).not.toHaveBeenCalled();
     expect(ConnectorsController.commitCreateShopifyDraft).not.toHaveBeenCalled();
+  });
+
+  it('resolves the store domain the seller typed, then creates the draft for the shop it names', async () => {
+    vi.mocked(ConnectorsController.fetchResolveShopifyAddress).mockResolvedValue({
+      shop: 'your-store.myshopify.com',
+      domain: 'shop.example',
+    });
+    vi.mocked(ConnectorsController.commitCreateShopifyDraft).mockResolvedValue(draftConnection());
+    const { result } = renderShopify();
+    act(() => result.current.domainForm.setValue('domain', 'https://Shop.Example/'));
+    await act(async () => {
+      expect(await result.current.createDraft()).toBe(true);
+    });
+
+    expect(ConnectorsController.fetchResolveShopifyAddress).toHaveBeenCalledWith('https://Shop.Example/');
+    expect(ConnectorsController.commitCreateShopifyDraft).toHaveBeenCalledWith('your-store.myshopify.com');
+    expect(result.current.draft?.domain).toBe('your-store.myshopify.com');
+    expect(result.current.resolvedFrom).toBe('shop.example');
+
+    act(() => result.current.startOver());
+    expect(result.current.resolvedFrom).toBeNull();
+  });
+
+  it('does not look anything up for a myshopify.com address', async () => {
+    const { result } = renderShopify();
+    await createDraft(result);
+    expect(ConnectorsController.fetchResolveShopifyAddress).not.toHaveBeenCalled();
+    expect(result.current.resolvedFrom).toBeNull();
+  });
+
+  describe('when the lookup answers after the seller has moved on', () => {
+    function pendingLookup() {
+      let answer: (value: { shop: string; domain: string | null }) => void = () => undefined;
+      vi.mocked(ConnectorsController.fetchResolveShopifyAddress).mockReturnValue(
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+      );
+      vi.mocked(ConnectorsController.commitCreateShopifyDraft).mockResolvedValue(draftConnection());
+      return (value = { shop: 'your-store.myshopify.com', domain: 'shop.example' }) => answer(value);
+    }
+
+    beforeEach(() => {
+      useAuthStore.setState({ currentUserPubky: SELLER_A });
+    });
+
+    afterEach(() => {
+      useAuthStore.setState({ currentUserPubky: null });
+    });
+
+    it('creates nothing under the account that is signed in by then', async () => {
+      const answer = pendingLookup();
+      const { result } = renderShopify();
+      act(() => result.current.domainForm.setValue('domain', 'shop.example'));
+      let pending: Promise<boolean> = Promise.resolve(true);
+      act(() => {
+        pending = result.current.createDraft();
+      });
+      await waitFor(() => expect(ConnectorsController.fetchResolveShopifyAddress).toHaveBeenCalled());
+
+      act(() => useAuthStore.setState({ currentUserPubky: SELLER_B }));
+      await act(async () => {
+        answer();
+        expect(await pending).toBe(false);
+      });
+
+      expect(ConnectorsController.commitCreateShopifyDraft).not.toHaveBeenCalled();
+      expect(result.current.draft).toBeNull();
+      expect(toast).not.toHaveBeenCalled();
+    });
+
+    it('creates nothing once the guide has closed', async () => {
+      const answer = pendingLookup();
+      const { result, unmount } = renderShopify();
+      act(() => result.current.domainForm.setValue('domain', 'shop.example'));
+      let pending: Promise<boolean> = Promise.resolve(true);
+      act(() => {
+        pending = result.current.createDraft();
+      });
+      await waitFor(() => expect(ConnectorsController.fetchResolveShopifyAddress).toHaveBeenCalled());
+
+      unmount();
+      answer();
+      expect(await pending).toBe(false);
+      expect(ConnectorsController.commitCreateShopifyDraft).not.toHaveBeenCalled();
+    });
+
+    it('creates nothing after Start over, and is ready for the next address', async () => {
+      const answer = pendingLookup();
+      const { result } = renderShopify();
+      act(() => result.current.domainForm.setValue('domain', 'shop.example'));
+      let pending: Promise<boolean> = Promise.resolve(true);
+      act(() => {
+        pending = result.current.createDraft();
+      });
+      await waitFor(() => expect(result.current.isWorking).toBe(true));
+
+      act(() => result.current.startOver());
+      expect(result.current.isWorking).toBe(false);
+      await act(async () => {
+        answer();
+        expect(await pending).toBe(false);
+      });
+
+      expect(ConnectorsController.commitCreateShopifyDraft).not.toHaveBeenCalled();
+      expect(result.current.draft).toBeNull();
+    });
+
+    it('still creates the draft when the same seller is signed in throughout', async () => {
+      const answer = pendingLookup();
+      const { result } = renderShopify();
+      act(() => result.current.domainForm.setValue('domain', 'shop.example'));
+      let pending: Promise<boolean> = Promise.resolve(false);
+      act(() => {
+        pending = result.current.createDraft();
+      });
+      await waitFor(() => expect(ConnectorsController.fetchResolveShopifyAddress).toHaveBeenCalled());
+
+      await act(async () => {
+        answer();
+        expect(await pending).toBe(true);
+      });
+
+      expect(ConnectorsController.commitCreateShopifyDraft).toHaveBeenCalledWith('your-store.myshopify.com');
+      expect(result.current.draft?.id).toBe(ID);
+    });
+  });
+
+  it.each([
+    ['not_a_shopify_store', 422, /does not look like a Shopify store/],
+    ['not_primary_domain', 422, /not your store's main domain/],
+    ['provider_unavailable', 502, /Could not look up that address/],
+  ])('says so when the lookup is refused with %s, and creates nothing', async (reason, status, copy) => {
+    vi.mocked(ConnectorsController.fetchResolveShopifyAddress).mockRejectedValue(connectorRefusal(reason, status));
+    const { result } = renderShopify();
+    act(() => result.current.domainForm.setValue('domain', 'shop.example'));
+    await act(async () => {
+      expect(await result.current.createDraft()).toBe(false);
+    });
+    expect(ConnectorsController.commitCreateShopifyDraft).not.toHaveBeenCalled();
+    expect(result.current.draft).toBeNull();
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        variant: 'error',
+        title: 'Could not find your store',
+        description: expect.stringMatching(copy),
+      }),
+    );
   });
 
   it('explains a refusal when the draft cannot be created', async () => {

@@ -109,3 +109,17 @@ simple postId. This affects all post-related APIs and database schemas.
 - [ ] Description in imperative mood?
 - [ ] First line under 72 characters?
 - [ ] Clearly explains what changed?
+
+## Branches and Pull Requests
+
+- Start from the agreed target: the current `train/shop-<date>-<am|pm>` branch when a train is open, or `master` when working directly against the release line. Follow [`ecommerce/release.md`](ecommerce/release.md) for train cuts and exceptions. This repository does not use App's `dev` branch as the default target.
+- Prefer `<type>/<issue>-<kebab-description>` for branch names when an issue exists; do not create a placeholder issue just for a branch name. Use the branch naming required by the active task or tooling when specified.
+- Open a **draft** PR unless asked otherwise. Keep one coherent change per PR; an explicitly requested combined scope is fine. Leave unrelated refactors, dependency swaps and formatting for another change.
+- Use the actual PR base for diff review. A branch's tracking upstream may be its feature branch, not its merge target.
+- Describe the concrete problem and resulting behaviour. Link the issue when there is one. Report the commands that actually ran, their results, and any checks skipped with a reason; green CI is not proof that a live payment or sign-in journey was exercised.
+- Call out changed VRT baselines, ADRs, schema/index or database-version changes and their migration/reset implications, product-wide limits, dependencies, runtime configuration, and affected browser journeys. Keep Linux baseline regeneration in its own PNG-only commit and review the resulting images.
+- Changes to a convention update canonical `docs/` first, then the relevant AGENTS summary, tool adapters and Greptile rules. User-visible changes need a `changelog.d/next/` fragment; internal documentation-only changes do not need a product changelog entry.
+- Include desktop/mobile screenshots for visible UI changes and cover relevant loading, empty and error states.
+- Keep PRs open for review. Do not merge or push the protected release branch without an explicit instruction to do so; obey the current repository rules and never bypass them with `--admin`.
+
+Use [the PR template](../.github/PULL_REQUEST_TEMPLATE.md), [development workflow](development-workflow.md), and [release runbook](ecommerce/release.md) together. The template records review obligations; it does not require unrelated checks or runtime changes for a documentation-only PR.
