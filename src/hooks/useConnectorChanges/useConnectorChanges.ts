@@ -52,10 +52,12 @@ export type ConnectorChangesState =
       /** Changes that look done but could not be confirmed against the homeserver yet; Try again settles them. */
       unsettled: number;
       /**
-       * The service returns one page of pending changes with no cursor. When the changes it returned are all
-       * handled and the page was still full, more changes may wait behind them until some are resolved.
+       * Whether changes may be waiting out of reach. The service returns one page of pending changes with no
+       * cursor, so `behind` means every change of a full page is handled and waits for the seller: the ones
+       * after them are reachable only once some of these are resolved. `budget` means this visit reached the
+       * most changes it processes (`CONNECTOR_CHANGES_VISIT_BUDGET`) and more are waiting; a refresh goes on.
        */
-      capped: boolean;
+      waiting: 'none' | 'behind' | 'budget';
     }
   | { status: 'failed'; message: string };
 
@@ -69,6 +71,12 @@ export const CHANGE_FAILURE_COPY: Readonly<Record<ChangeFailure, string>> = {
 
 /** Reads of the pending queue in one load, so a service that keeps returning new changes cannot hold it forever. */
 const MAX_CHANGE_PAGES = 25;
+
+/** The most changes one load handles: a full page, read again up to `MAX_CHANGE_PAGES` times. */
+export const CONNECTOR_CHANGES_VISIT_BUDGET = MAX_CHANGE_PAGES * CONNECTOR_CHANGES_PAGE_LIMIT;
+
+/** The `workingId` while the whole review is being dismissed. */
+export const DISMISS_ALL_KEY = 'all';
 
 const LOAD_FAILED = 'Your store changes could not be loaded. Try again in a moment.';
 
@@ -302,7 +310,7 @@ export function useConnectorChanges(connectionId: string | null) {
     return (await resolve(change, 'applied')) ? { ok: true } : { ok: false, reason: 'stale' };
   };
 
-  const load = async (options: { auto: boolean }, isCurrent: () => boolean = () => true) => {
+  const load = async (isCurrent: () => boolean = () => true) => {
     if (!enabled || !connectionId || !sellerPubky) return;
     setState((previous) => (previous.status === 'ready' ? previous : { status: 'loading' }));
     try {
@@ -310,12 +318,12 @@ export function useConnectorChanges(connectionId: string | null) {
       let appliedCount = 0;
       let leftPhotosOut = false;
       let unsettled = 0;
-      let capped = false;
+      let waiting: 'none' | 'behind' | 'budget' = 'none';
       const handled = new Set<string>();
       const keyOf = (change: ConnectorProductChange) => `${change.id}|${change.proposedHash}|${mappingsKey(change)}`;
       // The service returns one page with no cursor. Resolving a page exposes the changes behind it, so the
       // queue is read again until a page brings nothing new. Changes that stay pending (waiting for a tap, a
-      // conflict) keep occupying their place; when they fill the page, `capped` says more may be waiting.
+      // conflict) keep occupying their place; when they fill the page, `waiting` says more may be waiting.
       for (let page = 0; page < MAX_CHANGE_PAGES; page += 1) {
         if (!isCurrent()) return;
         const pageChanges = await ConnectorsController.fetchChanges(connectionId);
@@ -325,7 +333,7 @@ export function useConnectorChanges(connectionId: string | null) {
         let replaced = false;
         const full = pageChanges.length >= CONNECTOR_CHANGES_PAGE_LIMIT;
         if (changes.length === 0) {
-          capped = full;
+          waiting = full ? 'behind' : 'none';
           break;
         }
         for (const change of changes) handled.add(keyOf(change));
@@ -373,7 +381,7 @@ export function useConnectorChanges(connectionId: string | null) {
             variantLabels: variantLabelsOf(seen),
             failure: null,
           };
-          if (options.auto && next === 'applicable' && isAutoApplied(change)) {
+          if (next === 'applicable' && isAutoApplied(change)) {
             const result = await applyOne(change, false).catch(
               (): ApplyResult => ({ ok: false, reason: 'failed', failure: 'failed' }),
             );
@@ -409,10 +417,10 @@ export function useConnectorChanges(connectionId: string | null) {
           items = [...items, item];
         }
         if (!full && !replaced) break;
-        if (page === MAX_CHANGE_PAGES - 1) capped = true;
+        if (page === MAX_CHANGE_PAGES - 1) waiting = 'budget';
       }
       if (!isCurrent()) return;
-      setState({ status: 'ready', items, unsettled, capped });
+      setState({ status: 'ready', items, unsettled, waiting });
       if (appliedCount > 0) {
         toast({
           title: `${appliedCount} ${appliedCount === 1 ? 'change' : 'changes'} from your store applied`,
@@ -434,7 +442,7 @@ export function useConnectorChanges(connectionId: string | null) {
   useEffect(() => {
     if (!enabled) return;
     let current = true;
-    void load({ auto: true }, () => current);
+    void load(() => current);
     return () => {
       current = false;
     };
@@ -483,7 +491,7 @@ export function useConnectorChanges(connectionId: string | null) {
       );
       return;
     }
-    await load({ auto: false });
+    await load();
   };
 
   /** Applies a change the seller approved; `takeStore` settles a conflict in the store's favor. */
@@ -513,8 +521,45 @@ export function useConnectorChanges(connectionId: string | null) {
         });
         return;
       }
-      await load({ auto: false });
+      await load();
     });
+
+  /**
+   * Dismisses every change in the review so the changes behind a full page can be reached: the service has no
+   * cursor, so a page of changes that wait for the seller hides whatever comes after it, including a product the
+   * store stopped selling. The listings are not touched; the store's values are not applied and are not offered
+   * again unless the store changes them again. The queue is then read again, which applies the automatic ones.
+   */
+  const dismissAll = async (): Promise<void> => {
+    if (state.status !== 'ready' || state.waiting !== 'behind' || running.current.has(DISMISS_ALL_KEY)) return;
+    running.current.add(DISMISS_ALL_KEY);
+    setWorkingId(DISMISS_ALL_KEY);
+    let dismissed = 0;
+    let failed = 0;
+    try {
+      for (const item of state.items) {
+        try {
+          await resolve(item.change, 'dismissed');
+          dismissed += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      toast(
+        failed === 0
+          ? { title: `${dismissed} ${dismissed === 1 ? 'change' : 'changes'} dismissed` }
+          : {
+              variant: 'warning',
+              title: `${dismissed} dismissed, ${failed} could not be`,
+              description: 'Try again in a moment.',
+            },
+      );
+      await load();
+    } finally {
+      running.current.delete(DISMISS_ALL_KEY);
+      setWorkingId(null);
+    }
+  };
 
   /** Stops one listing following the store for the change's group; the service drops its pending changes. */
   const detach = (item: ReviewItem, listingId: string) =>
@@ -532,13 +577,14 @@ export function useConnectorChanges(connectionId: string | null) {
         });
         return;
       }
-      await load({ auto: false });
+      await load();
     });
 
   return {
     state,
     workingId,
-    refresh: () => load({ auto: true }),
+    refresh: () => load(),
+    dismissAll,
     apply,
     dismiss,
     detach,

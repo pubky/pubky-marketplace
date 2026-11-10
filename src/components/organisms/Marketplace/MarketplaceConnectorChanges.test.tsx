@@ -40,6 +40,7 @@ function changesFor(state: ConnectorChangesState, workingId: string | null = nul
     state,
     workingId,
     refresh: vi.fn(async () => {}),
+    dismissAll: vi.fn(async () => {}),
     apply: vi.fn(async () => {}),
     dismiss: vi.fn(async () => {}),
     detach: vi.fn(async () => {}),
@@ -49,7 +50,7 @@ function changesFor(state: ConnectorChangesState, workingId: string | null = nul
 describe('MarketplaceConnectorChanges', () => {
   it('lists a price change with what it does and applies it on a tap', async () => {
     const item = itemFor(recordedChange('price'));
-    const changes = changesFor({ status: 'ready', items: [item], unsettled: 0, capped: false });
+    const changes = changesFor({ status: 'ready', items: [item], unsettled: 0, waiting: 'none' });
     render(<MarketplaceConnectorChanges connection={connection} changes={changes} />);
 
     expect(screen.getByRole('heading', { name: 'Shopify changes (1)' })).toBeInTheDocument();
@@ -62,7 +63,7 @@ describe('MarketplaceConnectorChanges', () => {
 
   it('shows both sides of a conflict and offers the store’s value, the listing’s, or detaching', async () => {
     const item = itemFor(recordedChange('content'), bootsFollowingTheStore({ title: 'My own title' }));
-    const changes = changesFor({ status: 'ready', items: [item], unsettled: 0, capped: false });
+    const changes = changesFor({ status: 'ready', items: [item], unsettled: 0, waiting: 'none' });
     render(<MarketplaceConnectorChanges connection={connection} changes={changes} />);
 
     const conflict = screen.getByTestId('store-change-conflict');
@@ -101,7 +102,7 @@ describe('MarketplaceConnectorChanges', () => {
     render(
       <MarketplaceConnectorChanges
         connection={connection}
-        changes={changesFor({ status: 'ready', items: [itemFor(change)], unsettled: 0, capped: false })}
+        changes={changesFor({ status: 'ready', items: [itemFor(change)], unsettled: 0, waiting: 'none' })}
       />,
     );
 
@@ -124,7 +125,7 @@ describe('MarketplaceConnectorChanges', () => {
           status: 'ready',
           items: [itemFor(euros, undefined, 'unconfirmed')],
           unsettled: 0,
-          capped: false,
+          waiting: 'none',
         })}
       />,
     );
@@ -149,7 +150,7 @@ describe('MarketplaceConnectorChanges', () => {
     render(
       <MarketplaceConnectorChanges
         connection={connection}
-        changes={changesFor({ status: 'ready', items: [item], unsettled: 0, capped: false })}
+        changes={changesFor({ status: 'ready', items: [item], unsettled: 0, waiting: 'none' })}
       />,
     );
 
@@ -158,7 +159,7 @@ describe('MarketplaceConnectorChanges', () => {
   });
 
   it('says how many changes could not be confirmed yet, even when none is left to review, and retries', async () => {
-    const changes = changesFor({ status: 'ready', items: [], unsettled: 2, capped: false });
+    const changes = changesFor({ status: 'ready', items: [], unsettled: 2, waiting: 'none' });
     render(<MarketplaceConnectorChanges connection={connection} changes={changes} />);
 
     expect(screen.getByRole('heading', { name: 'Shopify changes' })).toBeInTheDocument();
@@ -167,12 +168,38 @@ describe('MarketplaceConnectorChanges', () => {
     expect(changes.refresh).toHaveBeenCalled();
   });
 
+  it('offers to dismiss a full page of changes that wait for the seller, after confirming', async () => {
+    const item = itemFor(recordedChange('price'));
+    const changes = changesFor({ status: 'ready', items: [item], unsettled: 0, waiting: 'behind' });
+    render(<MarketplaceConnectorChanges connection={connection} changes={changes} />);
+
+    expect(screen.getByTestId('store-changes-behind')).toHaveTextContent('More changes are waiting behind these');
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss these 1' }));
+    expect(changes.dismissAll).not.toHaveBeenCalled();
+    await userEvent.click(await screen.findByRole('button', { name: 'Keep reviewing' }));
+    expect(changes.dismissAll).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss these 1' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Dismiss and continue' }));
+    expect(changes.dismissAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers Continue when a visit reached its budget, even with nothing left to review', async () => {
+    const changes = changesFor({ status: 'ready', items: [], unsettled: 0, waiting: 'budget' });
+    render(<MarketplaceConnectorChanges connection={connection} changes={changes} />);
+
+    expect(screen.getByTestId('store-changes-budget')).toHaveTextContent('5,000 changes were handled in this visit');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(changes.refresh).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('store-changes-behind')).not.toBeInTheDocument();
+  });
+
   it('disables the buttons of the change being applied', () => {
     const item = itemFor(recordedChange('price'));
     render(
       <MarketplaceConnectorChanges
         connection={connection}
-        changes={changesFor({ status: 'ready', items: [item], unsettled: 0, capped: false }, item.change.id)}
+        changes={changesFor({ status: 'ready', items: [item], unsettled: 0, waiting: 'none' }, item.change.id)}
       />,
     );
 
@@ -190,7 +217,7 @@ describe('MarketplaceConnectorChanges', () => {
   });
 
   it.each([
-    ['nothing to review', { status: 'ready', items: [], unsettled: 0, capped: false } as ConnectorChangesState],
+    ['nothing to review', { status: 'ready', items: [], unsettled: 0, waiting: 'none' } as ConnectorChangesState],
     ['loading', { status: 'loading' } as ConnectorChangesState],
     ['unavailable', { status: 'unavailable' } as ConnectorChangesState],
   ])('renders nothing when %s', (_name, state) => {

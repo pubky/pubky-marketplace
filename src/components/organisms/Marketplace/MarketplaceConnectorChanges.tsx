@@ -1,14 +1,25 @@
 'use client';
 
+import { useState } from 'react';
 import { AlertTriangle, LoaderCircle, PackageSearch, RefreshCw } from 'lucide-react';
 import { getMarketplaceListingRoute, getStoreConnectionCatalogRoute } from '@/app/routes';
 import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/atoms/Dialog/Dialog';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import {
   CHANGE_FAILURE_COPY,
+  CONNECTOR_CHANGES_VISIT_BUDGET,
+  DISMISS_ALL_KEY,
   type ReviewItem,
   type useConnectorChanges,
 } from '@/hooks/useConnectorChanges/useConnectorChanges';
@@ -229,6 +240,7 @@ function ChangeRow({
  */
 export function MarketplaceConnectorChanges({ connection, changes }: MarketplaceConnectorChangesProps) {
   const sellerPubky = useAuthStore((state) => state.currentUserPubky);
+  const [confirmingDismissAll, setConfirmingDismissAll] = useState(false);
   const { state } = changes;
 
   if (state.status === 'failed') {
@@ -256,7 +268,8 @@ export function MarketplaceConnectorChanges({ connection, changes }: Marketplace
       </div>
     );
   }
-  if (state.status !== 'ready' || (state.items.length === 0 && state.unsettled === 0 && !state.capped)) return null;
+  if (state.status !== 'ready' || (state.items.length === 0 && state.unsettled === 0 && state.waiting === 'none'))
+    return null;
 
   return (
     <Card
@@ -297,10 +310,49 @@ export function MarketplaceConnectorChanges({ connection, changes }: Marketplace
             </Button>
           </div>
         )}
-        {state.capped && (
-          <Typography as="p" role="status" className="text-sm text-muted-foreground" data-testid="store-changes-capped">
-            More changes are waiting behind these. Apply or dismiss some, and the next ones appear here.
-          </Typography>
+        {state.waiting === 'behind' && (
+          <div
+            role="status"
+            className="flex flex-col gap-2 rounded-md border border-border p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+            data-testid="store-changes-behind"
+          >
+            <span>
+              More changes are waiting behind these, and the store gives them out a page at a time. Apply or dismiss
+              some, or dismiss all {state.items.length} to reach the rest.
+            </span>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="w-fit shrink-0 rounded-full"
+              disabled={changes.workingId !== null}
+              onClick={() => setConfirmingDismissAll(true)}
+            >
+              Dismiss these {state.items.length}
+            </Button>
+          </div>
+        )}
+        {state.waiting === 'budget' && (
+          <div
+            role="status"
+            className="flex flex-col gap-2 rounded-md border border-border p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+            data-testid="store-changes-budget"
+          >
+            <span>
+              {CONNECTOR_CHANGES_VISIT_BUDGET.toLocaleString('en-US')} changes were handled in this visit, and more are
+              waiting.
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              className="w-fit shrink-0 rounded-full"
+              disabled={changes.workingId !== null}
+              onClick={() => void changes.refresh()}
+            >
+              <RefreshCw className="size-4" aria-hidden="true" />
+              Continue
+            </Button>
+          </div>
         )}
         <ul className="grid list-none gap-3 p-0">
           {state.items.map((item) => (
@@ -314,6 +366,42 @@ export function MarketplaceConnectorChanges({ connection, changes }: Marketplace
           ))}
         </ul>
       </CardContent>
+      <Dialog open={confirmingDismissAll} onOpenChange={setConfirmingDismissAll}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Dismiss these {state.items.length} changes?</DialogTitle>
+            <DialogDescription>
+              Your listings keep the values they have now. The store&apos;s values for these changes are not applied and
+              are not offered again unless the store changes them again. Then the changes waiting behind them are read,
+              and the ones that apply on their own are applied.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              className="rounded-full"
+              onClick={() => setConfirmingDismissAll(false)}
+            >
+              Keep reviewing
+            </Button>
+            <Button
+              type="button"
+              className="rounded-full"
+              disabled={changes.workingId === DISMISS_ALL_KEY}
+              onClick={() => {
+                setConfirmingDismissAll(false);
+                void changes.dismissAll();
+              }}
+            >
+              {changes.workingId === DISMISS_ALL_KEY && (
+                <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+              )}
+              Dismiss and continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

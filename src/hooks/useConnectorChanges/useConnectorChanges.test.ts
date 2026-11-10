@@ -169,7 +169,7 @@ describe('useConnectorChanges', () => {
     expect(rig.listings.get('boots_01')?.sale).toMatchObject({ unitPrice: { amountMinor: 13000 } });
     expect(rig.log.map((entry) => entry.split(':')[0])).toEqual(['write', 'resolve']);
     await waitFor(() =>
-      expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 0, capped: false }),
+      expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 0, waiting: 'none' }),
     );
   });
 
@@ -212,7 +212,7 @@ describe('useConnectorChanges', () => {
     expect(rig.writes).toEqual([]);
     expect(rig.log).toEqual([expect.stringMatching(/^resolve:.*:dismissed$/)]);
     await waitFor(() =>
-      expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 0, capped: false }),
+      expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 0, waiting: 'none' }),
     );
   });
 
@@ -611,7 +611,7 @@ describe('useConnectorChanges', () => {
 
     const { result } = renderHook(() => useConnectorChanges(CONNECTION));
     await waitFor(() =>
-      expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 1, capped: false }),
+      expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 1, waiting: 'none' }),
     );
 
     expect(rig.pending).toHaveLength(1);
@@ -640,11 +640,11 @@ describe('useConnectorChanges', () => {
 
     expect(rig.pending).toEqual([]);
     expect(rig.writes).toHaveLength(5);
-    expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 0, capped: false });
+    expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 0, waiting: 'none' });
     expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: '5 changes from your store applied' }));
   });
 
-  it('says more changes may be waiting when changes that need a tap fill the page', async () => {
+  it('says more changes are waiting behind a full page of changes that need a tap', async () => {
     mode.pageLimit = 3;
     const rig = setup();
     const price = recordedChange('price');
@@ -662,12 +662,103 @@ describe('useConnectorChanges', () => {
     const items = await ready(result);
 
     expect(items).toHaveLength(3);
-    expect(result.current.state).toMatchObject({ capped: true });
+    expect(result.current.state).toMatchObject({ waiting: 'behind' });
     expect(rig.pending.map(({ id }) => id)).toContain('behind');
+    expect(rig.listings.get('mug_01')?.state).toBe('active');
+  });
 
-    rig.pending = rig.pending.filter(({ id }) => id !== 'manual-1');
-    await act(async () => result.current.refresh());
+  it('reaches the automatic changes behind a full page of manual ones when the page is dismissed', async () => {
+    mode.pageLimit = 3;
+    const rig = setup();
+    const price = recordedChange('price');
+    const manual = [1, 2, 3].map((n) =>
+      linked({ ...price, id: `manual-${n}`, proposedHash: String(n).repeat(64) } as ConnectorProductChange),
+    );
+    const behind = linked({
+      ...recordedChange('status'),
+      id: 'behind',
+      proposedHash: 'f'.repeat(64),
+    } as ConnectorProductChange);
+    rig.pending = [...manual, behind];
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    await ready(result);
+
+    await act(async () => result.current.dismissAll());
+
+    await waitFor(() =>
+      expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 0, waiting: 'none' }),
+    );
+    expect(rig.log.filter((entry) => entry.endsWith(':dismissed'))).toHaveLength(3);
+    expect(rig.listings.get('mug_01')?.state).toBe('paused');
+    expect(rig.pending).toEqual([]);
+    expect(rig.writes.map(({ listingId }) => listingId)).toEqual(['mug_01']);
+  });
+
+  it('dismisses nothing in bulk unless changes are waiting behind a full page', async () => {
+    const rig = setup(recordedChange('price'));
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    await ready(result);
+
+    await act(async () => result.current.dismissAll());
+
+    expect(rig.log).toEqual([]);
+    expect(rig.pending).toHaveLength(1);
+  });
+
+  it('applies the automatic changes a single dismissal exposes without another tap', async () => {
+    mode.pageLimit = 1;
+    const rig = setup();
+    const manual = linked({
+      ...recordedChange('price'),
+      id: 'manual',
+      proposedHash: '1'.repeat(64),
+    } as ConnectorProductChange);
+    const behind = linked({
+      ...recordedChange('status'),
+      id: 'behind',
+      proposedHash: 'f'.repeat(64),
+    } as ConnectorProductChange);
+    rig.pending = [manual, behind];
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    const [item] = await ready(result);
+    expect(result.current.state).toMatchObject({ waiting: 'behind' });
+    expect(rig.listings.get('mug_01')?.state).toBe('active');
+
+    await act(async () => result.current.dismiss(item!));
+
     await waitFor(() => expect(rig.listings.get('mug_01')?.state).toBe('paused'));
+    expect(rig.pending).toEqual([]);
+  });
+
+  it('gives a continuation when a visit reaches its budget, and goes on from where it stopped', async () => {
+    mode.pageLimit = 1;
+    const rig = setup();
+    const content = recordedChange('content');
+    const ids = Array.from({ length: 26 }, (_, i) => `n${i}`);
+    rig.pending = ids.map((id, index) => {
+      rig.listings.set(`boots_${id}`, bootsFollowingTheStore({ listingId: `boots_${id}` }));
+      return linked({
+        ...content,
+        id: `change-${id}`,
+        proposedHash: index.toString(16).padStart(64, '0'),
+        listings: [{ ...content.listings[0]!, listingId: `boots_${id}` }],
+      } as ConnectorProductChange);
+    });
+
+    const { result } = renderHook(() => useConnectorChanges(CONNECTION));
+    await waitFor(() =>
+      expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 0, waiting: 'budget' }),
+    );
+    expect(rig.writes).toHaveLength(25);
+    expect(rig.pending).toHaveLength(1);
+
+    await act(async () => result.current.refresh());
+
+    await waitFor(() =>
+      expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 0, waiting: 'none' }),
+    );
+    expect(rig.writes).toHaveLength(26);
+    expect(rig.pending).toEqual([]);
   });
 
   it('applies a change to the listings it is linked to now, not the ones it listed when the page loaded', async () => {
@@ -812,7 +903,7 @@ describe('useConnectorChanges', () => {
     await act(async () => result.current.dismiss(item!));
 
     await waitFor(() =>
-      expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 1, capped: false }),
+      expect(result.current.state).toEqual({ status: 'ready', items: [], unsettled: 1, waiting: 'none' }),
     );
     expect(rig.pending.map(({ fieldGroup }) => fieldGroup)).toEqual(['content']);
   });

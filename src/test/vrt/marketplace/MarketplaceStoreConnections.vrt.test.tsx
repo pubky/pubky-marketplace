@@ -56,9 +56,10 @@ vi.mock('@/hooks/useConnectorListingLinks/useConnectorListingLinks', () => ({
 vi.mock('@/hooks/useConnectorChanges/useConnectorChanges', () => ({
   CHANGE_FAILURE_COPY: {},
   useConnectorChanges: () => ({
-    state: { status: 'ready', items: [], unsettled: 0, capped: false },
+    state: { status: 'ready', items: [], unsettled: 0, waiting: 'none' },
     workingId: null,
     refresh: async () => {},
+    dismissAll: async () => {},
     apply: async () => {},
     dismiss: async () => {},
     detach: async () => {},
