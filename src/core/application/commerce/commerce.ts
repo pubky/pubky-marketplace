@@ -2220,8 +2220,16 @@ export class CommerceApplication {
         operation: 'beginMarketplaceLocksPayment',
       });
     }
-    const creator = lockPolicyCreator(digitalLock.policyUri);
-    const bareLockResource = toBareLockResource(digitalLock.policyUri);
+    const existing = await LocalCommerceService.getLocksCorrelation(buyerPubky, payment.id);
+    // A saved correlation carries the lock this payment was started against,
+    // and its Lock Server task (if one exists) was created for that lock. Every
+    // later step of that payment uses it, whatever the listing shows now; only
+    // a payment with no saved correlation takes the listing's current lock.
+    const lock = existing
+      ? { policyUri: existing.policy_uri, criterionId: existing.criterion_id }
+      : { policyUri: digitalLock.policyUri, criterionId: digitalLock.criterionId };
+    const creator = lockPolicyCreator(lock.policyUri);
+    const bareLockResource = toBareLockResource(lock.policyUri);
     if (!creator || !bareLockResource) {
       throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'The listing carries an invalid Locks policy URI.', {
         service: ErrorService.Locks,
@@ -2237,7 +2245,6 @@ export class CommerceApplication {
       });
     }
 
-    const existing = await LocalCommerceService.getLocksCorrelation(buyerPubky, payment.id);
     // Prepare first: the service checks the seller's lock against the
     // checkout snapshot, takes the hold and pins the `locks` adapter, so a
     // refused payment never gets a Lock Server invoice. A repeat replays a
@@ -2261,9 +2268,10 @@ export class CommerceApplication {
       if (!prepared.ok) return prepared;
       expectedRevision = prepared.revision;
       const clientReference = readPreparedClientReference(prepared.result);
-      // The service prepared the checkout-time lock; the listing the buyer is
-      // looking at may have moved on since. Submit nothing unless they match.
-      if (!lockMatchesPreparedTerms(readPreparedLockTerms(prepared.result), digitalLock)) {
+      // The service prepared the checkout-time lock. A new submission must be
+      // for the lock the listing shows, so it has to match; a recovery uses the
+      // saved lock, which has to be the prepared one.
+      if (!lockMatchesPreparedTerms(readPreparedLockTerms(prepared.result), lock)) {
         throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'The listing\u2019s lock changed after checkout.', {
           service: ErrorService.Locks,
           operation: 'beginMarketplaceLocksPayment',
@@ -2275,8 +2283,8 @@ export class CommerceApplication {
           creatorPubky: creator,
           readerPubky: buyerPubky,
           bundleId: id,
-          lockResource: digitalLock.policyUri,
-          criterionId: digitalLock.criterionId,
+          lockResource: lock.policyUri,
+          criterionId: lock.criterionId,
           clientReference,
         });
       };

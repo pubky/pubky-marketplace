@@ -35,10 +35,11 @@ export const LOCKS_REGION_REFUSAL_STATUS = 451;
 
 /**
  * The seller changed the listing's lock after checkout, so this order was
- * prepared against a lock the listing no longer shows. Nothing was submitted.
+ * prepared against a lock the listing no longer shows. No new payment request
+ * is created for it.
  */
 export const LOCKS_PREPARED_TERMS_DIFFER_COPY =
-  'The seller changed what this listing unlocks after you checked out, so this order can’t be paid. Cancel it and check out again. Nothing was charged.';
+  'The seller changed what this listing unlocks after you checked out, so this order can’t be paid. Cancel it and check out again.';
 
 export const LOCKS_SUBMIT_RATE_LIMITED_COPY = 'Too many payment requests. Wait a minute, then try again.';
 

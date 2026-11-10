@@ -292,17 +292,77 @@ describe('CommerceApplication Locks payment start (pubky/locks#72 no-resubmit ru
       expect(kinds()).toEqual(['payment.prepare_locks']);
     });
 
-    it('refuses the retry of an unregistered order after the seller moved to lock B, and registers nothing', async () => {
-      vi.spyOn(LocksGatewayService, 'submitPaykitProof').mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    it('recovers the registration of an already-created lock A task after the seller moved the listing to lock B', async () => {
+      const submit = vi
+        .spyOn(LocksGatewayService, 'submitPaykitProof')
+        .mockRejectedValueOnce(new TypeError('Failed to fetch'));
       const find = vi.spyOn(LocksGatewayService, 'findVerification').mockResolvedValue(pendingLifecycle());
       await expect(beginWith(digitalLock)).rejects.toThrow('Failed to fetch');
-      expect(store.get('payment-1')).toMatchObject({ registered: false });
+      expect(store.get('payment-1')).toMatchObject({ registered: false, policy_uri: POLICY_URI });
 
-      await expect(beginWith(lockB)).rejects.toMatchObject({ context: { preparedTermsDiffer: true } });
+      await expect(beginWith(lockB)).resolves.toMatchObject({ ok: true });
+
+      expect(find).toHaveBeenCalledWith(ORDER_FIXTURE_SELLER, BUNDLE_ID);
+      expect(submit).toHaveBeenCalledTimes(1);
+      expect(kinds()).toEqual(['payment.prepare_locks', 'payment.prepare_locks', 'payment.register_locks']);
+      expect(MarketplaceGatewayService.execute).toHaveBeenLastCalledWith(
+        ORDER_FIXTURE_BUYER,
+        expect.objectContaining({ payload: expect.objectContaining({ bundleId: BUNDLE_ID }) }),
+      );
+      expect(store.get('payment-1')).toMatchObject({
+        registered: true,
+        policy_uri: POLICY_URI,
+        content_path: digitalLock.contentPath,
+        resource_hash: digitalLock.resourceHash,
+      });
+    });
+
+    it('submits lock A again, never lock B, when the retry finds that the first submit never reached the Lock Server', async () => {
+      const submit = vi
+        .spyOn(LocksGatewayService, 'submitPaykitProof')
+        .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+        .mockResolvedValueOnce(pendingLifecycle());
+      vi.spyOn(LocksGatewayService, 'findVerification').mockResolvedValue(null);
+      await expect(beginWith(digitalLock)).rejects.toThrow('Failed to fetch');
+
+      await expect(beginWith(lockB)).resolves.toMatchObject({ ok: true });
+
+      expect(submit).toHaveBeenCalledTimes(2);
+      for (const [params] of submit.mock.calls) {
+        expect(params).toMatchObject({
+          bundleId: BUNDLE_ID,
+          lockResource: POLICY_URI,
+          criterionId: 'paykit',
+          clientReference: CLIENT_REFERENCE,
+        });
+      }
+    });
+
+    it('refuses a saved correlation that is not for the lock the payment was prepared against', async () => {
+      store.set('payment-1', {
+        id: 'payment-1',
+        owner_id: ORDER_FIXTURE_BUYER,
+        payment_id: 'payment-1',
+        order_id: order.id,
+        seller_pubky: ORDER_FIXTURE_SELLER,
+        bundle_id: BUNDLE_ID,
+        policy_uri: lockB.policyUri,
+        criterion_id: 'paykit',
+        content_path: lockB.contentPath,
+        resource_hash: lockB.resourceHash,
+        window_expires_at: null,
+        registered: false,
+        created_at: 1,
+        updated_at: 1,
+      });
+      const submit = vi.spyOn(LocksGatewayService, 'submitPaykitProof');
+      const find = vi.spyOn(LocksGatewayService, 'findVerification');
+
+      await expect(beginWith(digitalLock)).rejects.toMatchObject({ context: { preparedTermsDiffer: true } });
 
       expect(find).not.toHaveBeenCalled();
-      expect(LocksGatewayService.submitPaykitProof).toHaveBeenCalledTimes(1);
-      expect(kinds()).not.toContain('payment.register_locks');
+      expect(submit).not.toHaveBeenCalled();
+      expect(kinds()).toEqual(['payment.prepare_locks']);
     });
 
     it('submits for the lock the payment was prepared against, spelled in lowercase by the listing', async () => {
