@@ -48,6 +48,16 @@ export const connectorUrlsSchema = z.object({
   webhooks: z.string().min(1),
 });
 
+/** `POST /v1/connectors/resolve`: the canonical shop for an address, and the custom domain that was looked up. */
+export const connectorShopSchema = z.object({
+  kind: z.literal('connector_shop'),
+  provider: z.enum(CONNECTOR_PROVIDERS),
+  shop: z.string().min(1),
+  domain: z.string().min(1).nullable(),
+});
+
+export type ConnectorShop = z.infer<typeof connectorShopSchema>;
+
 export const CONNECTOR_STATUSES = ['draft', 'connected', 'needs_attention', 'error'] as const;
 export const VARIANT_MODES = ['native', 'split'] as const;
 export type VariantMode = (typeof VARIANT_MODES)[number];
@@ -347,6 +357,8 @@ export const CONNECTION_STATE_LABELS: Readonly<Record<ConnectionState, string>> 
 };
 
 const HOST_LABEL = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+const ADMIN_STORE_PATH = /^admin\.shopify\.com\/store\/([^/?#]+)/;
+const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
 
 function stripToHost(raw: string): string {
   return raw
@@ -357,14 +369,49 @@ function stripToHost(raw: string): string {
     .replace(/:\d+$/, '');
 }
 
-/** `your-store`, `your-store.myshopify.com` or a pasted admin URL, as the canonical `*.myshopify.com` domain. */
+/** `your-store`, `your-store.myshopify.com` or a pasted admin URL (`admin.shopify.com/store/your-store`), as the canonical `*.myshopify.com` domain. */
 export function normalizeShopifyDomain(raw: string): string | null {
-  const host = stripToHost(raw);
+  const admin = ADMIN_STORE_PATH.exec(
+    raw
+      .trim()
+      .toLowerCase()
+      .replace(/^[a-z][a-z0-9+.-]*:\/\//, ''),
+  );
+  const host = admin ? `${admin[1] ?? ''}.myshopify.com` : stripToHost(raw);
   if (host === '') return null;
   const full = host.includes('.') ? host : `${host}.myshopify.com`;
   if (!full.endsWith('.myshopify.com')) return null;
   const handle = full.slice(0, -'.myshopify.com'.length);
   return HOST_LABEL.test(handle) && handle.length <= 60 ? full : null;
+}
+
+type ShopifyAddress = { kind: 'myshopify'; domain: string } | { kind: 'custom'; host: string };
+
+/**
+ * What the seller typed for a Shopify store: a `*.myshopify.com` address (or a
+ * bare handle, or the store's admin URL), which needs no lookup, or the domain
+ * the store uses (`shop.example`), which the service looks up. Anything that
+ * cannot be a public web address is `null`.
+ */
+export function classifyShopifyAddress(raw: string): ShopifyAddress | null {
+  const domain = normalizeShopifyDomain(raw);
+  if (domain) return { kind: 'myshopify', domain };
+  const [authority = ''] = raw
+    .trim()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
+    .split(/[/?#]/, 1);
+  if (/\s|@/.test(authority)) return null;
+  const host = stripToHost(raw);
+  const labels = host.split('.');
+  const publicName =
+    host.length <= 253 &&
+    labels.length >= 2 &&
+    labels.every((label) => label.length <= 63 && HOST_LABEL.test(label)) &&
+    /^[a-z]{2,}$|^xn--[a-z0-9-]+$/.test(labels[labels.length - 1] ?? '') &&
+    !IPV4.test(host) &&
+    !host.endsWith('.myshopify.com') &&
+    !host.endsWith('.shopify.com');
+  return publicName ? { kind: 'custom', host } : null;
 }
 
 export type WooStoreAddress = { ok: true; domain: string } | { ok: false; reason: 'invalid' | 'insecure' };
@@ -527,6 +574,10 @@ export const CONNECTORS_UNAVAILABLE_COPY = 'Store connections are not available 
 const CONNECT_REFUSAL_COPY: Readonly<Record<string, string>> = {
   connectors_disabled: CONNECTORS_UNAVAILABLE_COPY,
   invalid_domain: 'That store address was not accepted. Check it and try again.',
+  not_a_shopify_store:
+    "That address does not look like a Shopify store. Use your store's your-store.myshopify.com address instead.",
+  not_primary_domain:
+    "That is not your store's main domain. Use your main domain or your-store.myshopify.com address instead.",
   invalid_provider: 'That store type is not supported.',
   already_connected: 'That store is already connected.',
   connection_limit: `You can have up to ${CONNECTOR_MAX_CONNECTIONS} store connections. Disconnect one first.`,
