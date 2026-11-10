@@ -7,7 +7,7 @@ import { useCurrentUserProfile } from '@/hooks/useCurrentUserProfile/useCurrentU
 import { postJson } from '@/libs/api/client-request';
 import { Logger } from '@/libs/logger/logger';
 import { parseCompositeId } from '@/models/models.utils';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { REPORT_API_ENDPOINT, REPORT_POST_STEPS } from './useReportPost.constants';
 import type { ReportPostStep, ReportReasonType, ReportTarget, UseReportPostReturn } from './useReportPost.types';
 

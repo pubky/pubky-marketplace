@@ -4,10 +4,9 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
-import { ToastAction } from '@/atoms/Toast/Toast';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 export function useCommerceFavorite(listingCompositeId: string) {
@@ -31,11 +30,11 @@ export function useCommerceFavorite(listingCompositeId: string) {
         }
         toast({
           title: favorite ? 'Removed from your watchlist' : 'Added to your watchlist',
-          action: (
-            <ToastAction altText="Open watchlist" onClick={() => router.push(MARKETPLACE_ROUTES.WATCHLIST)}>
-              Watchlist
-            </ToastAction>
-          ),
+          action: {
+            label: 'Watchlist',
+            altText: 'Open watchlist',
+            onClick: () => router.push(MARKETPLACE_ROUTES.WATCHLIST),
+          },
         });
       } catch {
         toast({ variant: 'error', description: 'Could not update this favorite.' });

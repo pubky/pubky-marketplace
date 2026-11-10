@@ -4,9 +4,8 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { createOrderFixture } from '@/test/fixtures/commerce/orders';
-import { asOpaque } from '@/test-utils/type-assertions';
 import { useMarketplaceOrderPayment } from './useMarketplaceOrderPayment';
 
 vi.mock('@/controllers/commerce/commerce', () => ({
@@ -26,7 +25,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 vi.mock('@/libs/logger/logger', () => ({ Logger: { error: vi.fn(), warn: vi.fn() } }));
 
 const appError = (message: string, reason?: string) =>
@@ -140,7 +139,7 @@ describe('useMarketplaceOrderPayment', () => {
       variant: 'error',
       title: 'Reader wallet setup needed',
       description: 'Finish setting up Bitkit (or another Paykit wallet) for this pubky, then try again.',
-      duration: 60_000,
+      durationMs: 60_000,
     });
     expect(JSON.stringify(toastCall)).not.toContain('SENTINEL');
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -148,7 +147,7 @@ describe('useMarketplaceOrderPayment', () => {
     expect(onPaymentChanged).not.toHaveBeenCalled();
 
     await act(async () => {
-      asOpaque<{ props: { onClick: () => void } }>(toastCall?.action).props.onClick();
+      toastCall?.action?.onClick();
     });
     await waitFor(() => expect(CommerceController.bindPaymentMethod).toHaveBeenCalledTimes(2));
     expect(CommerceController.bindPaymentMethod).toHaveBeenLastCalledWith(order.id, 'paykit', undefined);

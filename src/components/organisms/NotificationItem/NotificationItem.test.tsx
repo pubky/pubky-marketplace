@@ -140,10 +140,9 @@ vi.mock('@/molecules/PostTag/PostTag', () => {
   };
 });
 
-vi.mock('@/molecules/Toaster/use-toast', () => {
+vi.mock('@/molecules/Toaster/toast', () => {
   return {
     toast: mockToast,
-    useToast: () => ({ toast: mockToast }),
   };
 });
 

@@ -72,7 +72,7 @@ Controller names describe IO: `fetch*` network only, `get*` local only, `getMany
 - Stock Lucide icons come from `lucide-react`; custom/brand SVGs from `@/icons`; URL-to-icon helpers from
   `@/libs/utils/urlToIcon`. Do not copy SVGs into individual features.
 - No `useCallback` / `useMemo` without profiler evidence; the React Compiler handles memoization.
-- **Toasts**: use `toast()` from `@/molecules/Toaster/use-toast` with `variant` (`default` | `error` | `warning` | `info`). No `showErrorToast` wrappers or `className` destructive hacks. See `docs/components.md` — _Toasts_.
+- **Toasts**: use `toast()` from `@/molecules/Toaster/toast` with `variant` (`default` | `error` | `warning` | `info`). Pass string content and structured actions (`label`, `altText`, `onClick`); use `durationMs` only when the default 3 seconds is too short. `persistent: true` cannot be combined with `durationMs`. Toast state and renderer atoms are private. No `showErrorToast` wrappers or `className` destructive hacks. See `docs/components.md` — _Toasts_.
 - Forms use react-hook-form + zod in a form hook; schema/types/defaults go in a sibling `*.types.ts`. Components call the
   hook, not mutation controllers directly. Preserve the existing submit result contract (`boolean` or a created id).
   Use Zod v4 `z.url()`, not deprecated `z.string().url()`.

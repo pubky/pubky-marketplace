@@ -15,7 +15,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 
@@ -264,7 +264,7 @@ describe('useMarketplaceBid', () => {
 
     expect(succeeded).toBe(false);
     expect(onConflict).toHaveBeenCalledTimes(1);
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: expect.stringContaining('changed') }),
     );
@@ -272,7 +272,7 @@ describe('useMarketplaceBid', () => {
 
   it('maps server and thrown sentinel failures to static copy', async () => {
     const sentinel = 'SENTINEL_SERVER_TEXT_bid';
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const { result } = renderHook(() => useMarketplaceBid('listing:seller_item', 3, vi.fn(), USD_ASSET));
     act(() => result.current.form.setValue('maximumAmount', '150.00'));
 
@@ -317,7 +317,7 @@ describe('useMarketplaceBid', () => {
       'removed by moderation',
     ],
   ] as const)('maps %s to typed static copy', async (code, message, expected) => {
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const { result } = renderHook(() => useMarketplaceBid('listing:seller_item', 3, vi.fn(), USD_ASSET));
     act(() => result.current.form.setValue('maximumAmount', '150.00'));
     vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
@@ -333,7 +333,7 @@ describe('useMarketplaceBid', () => {
   });
 
   it('names a paused auction from the LISTING_NOT_ACTIVE reason', async () => {
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const { result } = renderHook(() => useMarketplaceBid('listing:seller_item', 3, vi.fn(), USD_ASSET));
     act(() => result.current.form.setValue('maximumAmount', '150.00'));
     vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({

@@ -3,7 +3,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { CommerceDeliveryAddressModelSchema } from '@/models/commerce/commerce.schema';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import type { MarketplaceAddressFormData } from './useMarketplaceAddressBook.types';
 

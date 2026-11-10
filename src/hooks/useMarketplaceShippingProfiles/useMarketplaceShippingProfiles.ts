@@ -9,7 +9,7 @@ import {
   type ShippingProfileSnapshot,
 } from '@/libs/commerce/shipping-profile';
 import { newShippingId } from '@/libs/commerce/shipping-zones-form';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 export type MarketplaceShippingProfilesState =

@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import { type ConnectorConnection, connectorErrorMessage } from '@/libs/commerce/connectors';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import {
   type ShopifyDomainFormData,
   shopifyDomainFormDefaults,

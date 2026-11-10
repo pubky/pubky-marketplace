@@ -49,9 +49,9 @@ vi.mock('@/controllers/post/post', () => ({
   },
 }));
 
-const mockToast = vi.fn();
-vi.mock('@/molecules/Toaster/use-toast', () => ({
-  useToast: () => ({ toast: mockToast }),
+const mockToast = vi.hoisted(() => vi.fn());
+vi.mock('@/molecules/Toaster/toast', () => ({
+  toast: mockToast,
 }));
 
 vi.mock('@/stores/localFiles/localFiles.store', () => ({

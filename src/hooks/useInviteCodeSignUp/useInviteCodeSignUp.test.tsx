@@ -36,10 +36,10 @@ vi.mock('@/stores/auth/auth.store', () => ({
   useAuthStore: { getState: mockAuthGetState },
 }));
 
-const mockToast = vi.fn();
-vi.mock('@/molecules/Toaster/use-toast', () => {
+const mockToast = vi.hoisted(() => vi.fn());
+vi.mock('@/molecules/Toaster/toast', () => {
   return {
-    useToast: () => ({ toast: mockToast }),
+    toast: mockToast,
   };
 });
 vi.mock('@/libs/error/error.utils', async (importOriginal) => {

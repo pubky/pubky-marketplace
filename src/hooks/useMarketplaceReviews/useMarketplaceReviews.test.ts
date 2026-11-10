@@ -6,7 +6,7 @@ import { REVIEW_FILTER_COPY, REVIEW_SORT_COPY } from '@/config/commerce-copy';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { resetAttestorKeyWindows, setAttestorProfileKeyWindows } from '@/libs/commerce/attestor-key-windows';
 import type { CommerceIndexedReview, CommerceReviewMatch } from '@/models/commerce/commerce.schema';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { createCommerceCatalogEntryFixture } from '@/test/fixtures/commerce/commerce';
 import { TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
@@ -20,7 +20,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 const SELLER = 'y'.repeat(52);
 const REVIEWER = 'a'.repeat(52);

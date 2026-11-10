@@ -29,7 +29,7 @@ import {
   SignerAuthorizeButton,
 } from '@/molecules/SignerAuthOption/SignerAuthOption';
 import type { SignerAuth } from '@/molecules/SignerAuthOption/SignerAuthOption.types';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
 
 async function copyWithToast(copy: () => Promise<void>) {

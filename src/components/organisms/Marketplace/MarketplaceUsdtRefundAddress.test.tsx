@@ -11,7 +11,7 @@ import {
 } from '@/test/fixtures/commerce/usdt-refund.wire';
 import { MarketplaceUsdtRefundAddress } from './MarketplaceUsdtRefundAddress';
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 // The Paykit lookup reads homeservers; it finds nothing unless a test says otherwise.
 beforeEach(() => {

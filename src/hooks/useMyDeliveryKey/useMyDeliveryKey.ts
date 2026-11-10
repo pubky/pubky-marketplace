@@ -5,7 +5,7 @@ import type { SellerDeliveryKeyStatus } from '@/application/commerce/delivery-ke
 import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { Logger } from '@/libs/logger/logger';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 /**

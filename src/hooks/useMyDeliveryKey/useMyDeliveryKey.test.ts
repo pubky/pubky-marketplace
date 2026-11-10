@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SellerDeliveryKeyStatus } from '@/application/commerce/delivery-keys';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useMyDeliveryKey } from './useMyDeliveryKey';
 
 vi.mock('@/config/commerce', () => ({
@@ -20,7 +20,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     commitPublishMyDeliveryKey: vi.fn(),
   },
 }));
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 vi.mock('@/libs/logger/logger', () => ({ Logger: { error: vi.fn(), warn: vi.fn() } }));
 
 const none: SellerDeliveryKeyStatus = { local: null, publication: 'missing', publishedKeyId: null };

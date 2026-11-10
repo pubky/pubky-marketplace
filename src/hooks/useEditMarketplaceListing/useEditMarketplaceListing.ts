@@ -49,7 +49,7 @@ import { publishedCountryCode } from '@/libs/commerce/ships-to';
 import type { CommerceMoney } from '@/libs/commerce/transaction-contracts';
 import { dimensionInputFromMillimeters, type MeasurementSystem, weightInputFromGrams } from '@/libs/commerce/units';
 import { stockFormFields } from '@/libs/commerce/unlimited-stock';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 

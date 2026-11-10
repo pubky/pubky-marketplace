@@ -13,7 +13,7 @@ import {
   startPassportAttempt,
 } from '@/libs/passport/passport-popup';
 import { getPassportOrigin, getPassportSignInEnabled } from '@/libs/runtime-config/runtime-config';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { AUTH_FLOW_CANCELED_ERROR_NAME } from '@/services/homeserver/error.utils';
 
 /** What the user reads when a Passport attempt ends without a session; null ends it silently. */

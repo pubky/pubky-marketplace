@@ -4,7 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import type { ListingCurrencyCode } from '@/config/currencies';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { CommerceShippingPresetModelSchema } from '@/models/commerce/commerce.schema';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import {
   type MarketplaceShippingPresetFields,

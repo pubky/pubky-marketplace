@@ -30,7 +30,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 
@@ -591,7 +591,7 @@ describe('useMarketplaceShopSettings', () => {
   });
 
   it('maps thrown sentinel image-upload failures to static copy', async () => {
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const sentinel = 'SENTINEL_SERVER_TEXT_shop_settings';
     vi.mocked(CommerceController.commitCreateMedia).mockRejectedValue({
       name: 'AppError',

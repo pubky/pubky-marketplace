@@ -9,7 +9,7 @@ import { locksSubmitRefusalMessage } from '@/libs/commerce/locks-submit-refusal'
 import type { CommerceDigitalLock } from '@/libs/commerce/marketplace-records';
 import { isMarketplaceRevisionConflict } from '@/libs/commerce/transaction-commands';
 import type { CommerceLocksCorrelationModelSchema } from '@/models/commerce/commerce.schema';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
 
 /**

@@ -12,7 +12,7 @@ import {
 } from '@/libs/commerce/failure-messages';
 import { amountInputSchemaForAsset, amountInputToMoney, type CommerceAsset } from '@/libs/commerce/pricing';
 import { isMarketplaceRevisionConflict } from '@/libs/commerce/transaction-commands';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import {
   type MarketplaceBidData,
   marketplaceBidDefaults,
