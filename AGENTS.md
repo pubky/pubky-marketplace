@@ -136,7 +136,7 @@ personal matters to people. See `docs/development-workflow.md` for the full poli
 - `.cursor/rules/*.mdc` and `.claude/rules/*.md` point to relevant docs for matching files. Claude adapters use plain-text
   paths, not `@` imports. The existing Cursor toast rule retains its Market-specific instructions.
 - Shared skills live in `.agents/skills/`, with Claude symlinks in `.claude/skills/`: `pubky-code-review` and
-  `sentry-nextjs-sdk`. Cursor's `/review` entry points to the shared review skill; the Market installation-verification
+  `sentry-nextjs-sdk`. Cursor's `code-review` skill points to the shared review skill; the Market installation-verification
   procedure remains in `.cursor/skills/marketplace-install-verify/`.
 - Greptile configuration lives in `.greptile/config.json` and `.greptile/files.json`; keep referenced review guidance in
   sync. Configuration is not evidence that the external review service is enabled.

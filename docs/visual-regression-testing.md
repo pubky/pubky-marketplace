@@ -236,9 +236,16 @@ and manual dispatch; it is not the PR merge gate. The live
 [master ruleset](https://github.com/pubky/pubky-marketplace/rules/26693412)
 defines which job results are required to merge.
 
-For CI regeneration, open Actions → **VRT Update Baselines**, select the PR
-branch and supply explicit space-separated spec paths in the required `files`
-input. The workflow:
+CI regeneration currently commits baselines only under `src/test/vrt/`:
+`.github/workflows/vrt-update-baselines.yml` limits its staging step to that
+folder. For colocated specs elsewhere, such as
+`src/components/molecules/Toaster/Toaster.vrt.test.tsx`, use the pinned local
+Linux regeneration procedure above and commit the reviewed PNGs. Passing such a
+spec to the CI workflow can regenerate images without committing them.
+
+For specs under `src/test/vrt/`, open Actions → **VRT Update Baselines**, select
+the PR branch and supply explicit space-separated spec paths in the required
+`files` input. The workflow:
 
 - Runs Chromium and Firefox in the pinned Linux Playwright container.
 - Updates the named specs and cleans up PNGs outside that set.
