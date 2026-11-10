@@ -58,7 +58,7 @@ import {
   isPendingPaymentState,
   readCheckoutOrderId,
 } from '@/libs/commerce/checkout-phase';
-import { DELIVERY_EMAIL_MAX_CHARS, DIGITAL_CHECKOUT_COPY, digitalCheckoutLineLabel } from '@/libs/commerce/digital';
+import { DIGITAL_CHECKOUT_COPY, digitalCheckoutLineLabel } from '@/libs/commerce/digital';
 import { marketplaceOfferCheckoutFailureMessage } from '@/libs/commerce/failure-messages';
 import { trustedFiatCheckoutUrl } from '@/libs/commerce/fiat-checkout-url';
 import { formatCommerceMoney } from '@/libs/commerce/format';
@@ -1219,7 +1219,6 @@ function MarketplaceCartCheckout() {
                       control={checkout.form.control}
                       label="Email"
                       placeholder="you@example.com"
-                      maxLength={DELIVERY_EMAIL_MAX_CHARS}
                     />
                   </SettingsSectionContent>
                 </section>

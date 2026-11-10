@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { trimmedText } from '@/libs/commerce/code-point-text';
 
 export const marketplaceOfferSchema = z.object({
   amount: z
@@ -10,7 +11,7 @@ export const marketplaceOfferSchema = z.object({
     .string()
     .trim()
     .regex(/^[1-9]\d*$/, 'Quantity must be a positive whole number.'),
-  message: z.string().trim().max(500, 'Message must be 500 characters or fewer.'),
+  message: trimmedText({ max: 500, message: 'Message must be 500 characters or fewer.' }),
 });
 
 export type MarketplaceOfferData = z.infer<typeof marketplaceOfferSchema>;

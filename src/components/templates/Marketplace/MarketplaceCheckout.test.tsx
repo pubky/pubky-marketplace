@@ -1910,7 +1910,7 @@ describe('MarketplaceCheckout digital lines (digital delivery design §3 "Checko
         "The seller of this item sees this after your payment is confirmed, to send your order. It isn't used for anything else.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText('Email')).toHaveAttribute('maxLength', '254');
+    expect(screen.getByLabelText('Email')).not.toHaveAttribute('maxLength');
     expect(screen.queryByLabelText('Full name')).not.toBeInTheDocument();
   });
 

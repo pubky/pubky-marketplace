@@ -246,6 +246,33 @@ describe('MarketplaceOrderDigitalPanel (digital delivery design §3 "After payme
     expect(await screen.findByRole('status')).toHaveTextContent('Saved. The seller will use this address.');
   });
 
+  it('takes a delivery email of 254 code points that holds emoji, which a 254-unit input cap would cut', async () => {
+    const user = userEvent.setup();
+    vi.mocked(CommerceController.commitSetDeliveryEmail).mockResolvedValue({
+      ok: true,
+      version: 1,
+      commandId: '018f47d2-6a27-7c23-a62f-000000000932',
+      aggregateId: `order:${base.id}`,
+      revision: 2,
+      eventIds: [],
+      result: { kind: 'order' },
+    });
+    const order = digitalOrder('paid', ['email']);
+    render(<MarketplaceOrderDigitalPanel order={order} />);
+    const email = `${'a'.repeat(250)}\u{1F600}\u{1F600}@b`;
+    expect([...email]).toHaveLength(254);
+
+    await user.click(await screen.findByRole('button', { name: 'Change' }));
+    const input = screen.getByLabelText('Email for delivery');
+    await user.clear(input);
+    await user.click(input);
+    await user.paste(email);
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(input).not.toHaveAttribute('maxlength');
+    expect(CommerceController.commitSetDeliveryEmail).toHaveBeenCalledWith(order.id, order.revision, email);
+  });
+
   it('says when it was emailed, and offers no change after that (F12)', async () => {
     vi.mocked(CommerceController.fetchOrderDeliveryEmail).mockResolvedValue({
       orderId: base.id,
