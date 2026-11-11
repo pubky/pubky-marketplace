@@ -259,6 +259,9 @@ Shop retains the App's privacy defaults:
 
 - `sendDefaultPii: false`; the scrubber below also removes sensitive fields from captured payloads
 - Replay: `maskAllText: true`, `maskAllInputs: true`, `blockAllMedia: true`, `networkCaptureBodies: false`
+- Secret surfaces (the recovery phrase backup dialog) carry `sentry-block`: Replay records nothing inside it and
+  `beforeBreadcrumb` drops the SDK `ui.*` breadcrumbs raised there. Replay click events still carry the target's id and
+  classes, so ids and classes in those subtrees are position-only and never contain a secret.
 - `beforeSend` defensively redacts user identifiers and user-provided data from app-controlled payloads:
   `email`, `phone` / `phoneNumber`, `name`, `firstName`, `lastName`, `displayName`, `username`, `bio`, `file`,
   `user`, `cookie` / `cookies`, raw Pubky public keys, `pubky://...` URIs, compact Pubky URLs, and `_pubky.`
