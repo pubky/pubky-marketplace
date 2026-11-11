@@ -29,6 +29,7 @@ import {
   COMMERCE_ATTRIBUTE_VALUE_MAX_CHARS,
   COMMERCE_LISTING_MAX_ATTRIBUTES,
 } from '@/config/taxonomy/taxonomy';
+import { trimmedText } from './code-point-text';
 import type { MarketplaceFulfillmentMethod } from './pickup';
 import { canonicalCountryCode } from './postal-address';
 import {
@@ -892,7 +893,7 @@ const commerceReviewRecordSchemaInner = commercePublicRecordBaseSchema
       })
       .passthrough(),
     /** Optional since specs `.15`: an item review may carry stars only. */
-    text: z.string().trim().max(COMMERCE_REVIEW_TEXT_MAX_CHARS),
+    text: trimmedText({ max: COMMERCE_REVIEW_TEXT_MAX_CHARS }),
     eligibilityAttestation: z
       .string()
       .min(32)
@@ -926,7 +927,7 @@ const commerceReviewResponseRecordSchemaInner = commercePublicRecordBaseSchema
         /^pubky:\/\/[a-z0-9]{52}\/pub\/pubky\.app\/marketplace\/v1\/reviews\/[0-9A-HJKMNP-TV-Z]+$/,
         'reviewUri must be a canonical marketplace review URI',
       ),
-    text: z.string().trim().min(1).max(COMMERCE_REVIEW_TEXT_MAX_CHARS),
+    text: trimmedText({ min: 1, max: COMMERCE_REVIEW_TEXT_MAX_CHARS }),
   })
   .passthrough()
   .superRefine(validateRecordDates);

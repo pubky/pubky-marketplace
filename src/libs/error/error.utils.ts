@@ -1,6 +1,6 @@
 import { getDeployEnv } from '@/config/network';
 import { AppError, isAppError } from './error';
-import { AuthErrorCode, ClientErrorCode, DatabaseErrorCode, ServerErrorCode } from './error.codes';
+import { AuthErrorCode, ClientErrorCode, DatabaseErrorCode, ServerErrorCode, ValidationErrorCode } from './error.codes';
 import { Err } from './error.factories';
 import { ErrorCategory, ErrorService } from './error.types';
 
@@ -95,6 +95,19 @@ export const isMarketplaceSessionRequiredError = (error: unknown): error is AppE
     error.context?.statusCode === 401
   );
 };
+
+/**
+ * True when the Shop's own command normalizer refused a marketplace command
+ * before anything was sent (`CommerceRecordNormalizer.marketplaceCommand`). The
+ * remedy is not a retry, so callers say the command was never sent instead of
+ * a generic failure.
+ */
+export const isMarketplaceCommandValidationError = (error: unknown): error is AppError =>
+  isAppError(error) &&
+  error.category === ErrorCategory.Validation &&
+  error.code === ValidationErrorCode.INVALID_INPUT &&
+  error.service === ErrorService.Local &&
+  error.operation === 'normalizeCommercemarketplaceCommand';
 
 /**
  * True when the HOMESERVER refused a write because the browser's session

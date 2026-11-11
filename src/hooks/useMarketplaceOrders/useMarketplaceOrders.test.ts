@@ -1,15 +1,18 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { CommerceRecordNormalizer } from '@/core/pipes/commerce/commerce.normalizer';
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
 import { PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
 import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
+import { Logger } from '@/libs/logger/logger';
 import { toast } from '@/molecules/Toaster/toast';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { USDT_WIRE_PAYMENT_NOT_FINAL_REFUSAL } from '@/test/fixtures/commerce/usdt-orders';
+import { ORDER_COMMAND_UNSENDABLE_COPY } from '../useMarketplaceOrderAction/useMarketplaceOrderAction.types';
 import { useMarketplaceOrders } from './useMarketplaceOrders';
 
 const BUYER = 'b'.repeat(52);
@@ -167,6 +170,59 @@ describe('useMarketplaceOrders', () => {
       description: "We've seen a payment for this order, so it can't be cancelled now.",
     });
     expect(vi.mocked(CommerceController.getMarketplaceOrders).mock.calls.length).toBeGreaterThan(reads);
+  });
+
+  describe('when the Shop refuses the command it built', () => {
+    const refusedByNormalizer = () =>
+      vi.mocked(CommerceController.executeMarketplaceCommand).mockImplementationOnce(async (command) => {
+        // The controller normalizes the command before anything is sent; the real normalizer throws.
+        CommerceRecordNormalizer.marketplaceCommand(command);
+        throw new Error('The normalizer accepted a command the test meant it to refuse.');
+      });
+
+    it.each([
+      ['return.cancel', { surprise: true }],
+      ['refund.confirm_destination', { address: 'x'.repeat(101) }],
+      ['fulfillment.ship', { carrier: 'c'.repeat(101), trackingNumber: 'T-1' }],
+      ['order.cancel_request', { reason: 'r'.repeat(501) }],
+      ['fulfillment.confirm_delivery', { surprise: true }],
+      ['order.cancel_approve', { surprise: true }],
+      ['return.approve', { surprise: true }],
+      ['return.receive', { surprise: true }],
+    ])('%s says nothing was sent instead of the generic order failure', async (kind, payload) => {
+      const { toast } = await import('@/molecules/Toaster/toast');
+      const { result } = renderHook(() => useMarketplaceOrders());
+      await waitFor(() => expect(result.current.orders).toHaveLength(1));
+      const order = result.current.orders[0].order;
+      vi.mocked(toast).mockClear();
+      refusedByNormalizer();
+
+      let accepted: boolean | undefined;
+      await act(async () => {
+        accepted = await result.current.actOnOrder(order, kind, payload);
+      });
+
+      expect(accepted).toBe(false);
+      expect(toast).toHaveBeenCalledTimes(1);
+      expect(toast).toHaveBeenCalledWith({ variant: 'error', description: ORDER_COMMAND_UNSENDABLE_COPY });
+      expect(result.current.needsSession).toBe(false);
+      expect(Logger.error).not.toHaveBeenCalled();
+    });
+
+    it('still shows the generic failure for other thrown errors', async () => {
+      const { toast } = await import('@/molecules/Toaster/toast');
+      const { result } = renderHook(() => useMarketplaceOrders());
+      await waitFor(() => expect(result.current.orders).toHaveLength(1));
+      const order = result.current.orders[0].order;
+      vi.mocked(toast).mockClear();
+      vi.mocked(CommerceController.executeMarketplaceCommand).mockRejectedValueOnce(new Error('boom'));
+
+      await act(async () => {
+        await result.current.actOnOrder(order, 'return.cancel', {});
+      });
+
+      expect(toast).toHaveBeenCalledWith({ variant: 'error', description: MARKETPLACE_FAILURE_MESSAGES.order });
+    });
   });
 
   it('maps server and thrown sentinel failures to static copy', async () => {

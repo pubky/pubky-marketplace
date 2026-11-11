@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { COMMERCE_REVIEW_TEXT_MAX_CHARS } from '@/config/commerce';
 import { CARRIER_CHOICE_COPY, carrierChoiceFieldSchema, NO_CARRIER_CHOICE } from '@/libs/commerce/carrier-choice';
+import { codePointLength, trimmedText } from '@/libs/commerce/code-point-text';
 import {
   buyerSellerRatings,
   orderReviewListings,
@@ -18,7 +19,7 @@ const reviewItemDraftSchema = z.object({
   listingId: z.string(),
   title: z.string(),
   rating: z.string().trim(),
-  text: z.string().trim().max(COMMERCE_REVIEW_TEXT_MAX_CHARS),
+  text: trimmedText({ max: COMMERCE_REVIEW_TEXT_MAX_CHARS }),
 });
 
 export type ReviewItemDraft = z.infer<typeof reviewItemDraftSchema>;
@@ -26,16 +27,16 @@ export type ReviewItemDraft = z.infer<typeof reviewItemDraftSchema>;
 export const marketplaceOrderActionSchema = z
   .object({
     action: z.enum(['cancel', 'ship', 'return', 'refund', 'review', 'review_edit']),
-    reason: z.string().trim().max(2_000),
+    reason: trimmedText({ max: 2_000 }),
     /** Curated carrier id from the registry, or `other` with a free-text name below; required to ship, with no default. */
     carrierChoice: carrierChoiceFieldSchema,
-    carrier: z.string().trim().max(100),
-    trackingNumber: z.string().trim().max(200),
+    carrier: trimmedText({ max: 100 }),
+    trackingNumber: trimmedText({ max: 200 }),
     amount: z.string().trim(),
-    transactionId: z.string().trim().max(200),
+    transactionId: trimmedText({ max: 200 }),
     /** The v1 rating and text a seller gives the buyer (and any review while `reviewItems` is empty). */
     rating: z.string().trim(),
-    text: z.string().trim().max(COMMERCE_REVIEW_TEXT_MAX_CHARS),
+    text: trimmedText({ max: COMMERCE_REVIEW_TEXT_MAX_CHARS }),
     /** The buyer's per-listing reviews (per-item terms); empty for the v1 review. */
     reviewItems: z.array(reviewItemDraftSchema),
     /** The buyer's optional seller ratings; both or neither, empty meaning unrated. */
@@ -54,7 +55,7 @@ export const marketplaceOrderActionSchema = z
     }
     // The service's own limits: 500 characters for a cancellation, 1,000 for a return.
     const reasonMax = data.action === 'cancel' ? 500 : data.action === 'return' ? 1_000 : null;
-    if (reasonMax !== null && data.reason.length > reasonMax) {
+    if (reasonMax !== null && codePointLength(data.reason) > reasonMax) {
       context.addIssue({
         code: 'custom',
         path: ['reason'],
@@ -136,7 +137,7 @@ export function marketplaceOrderActionSchemaFor(
       if (!isArbitrumTxHash(data.transactionId)) {
         context.addIssue({ code: 'custom', path: ['transactionId'], message: USDT_REFUND_COPY.referenceRequired });
       }
-    } else if (data.transactionId.length < 8) {
+    } else if (codePointLength(data.transactionId) < 8) {
       context.addIssue({ code: 'custom', path: ['transactionId'], message: 'Transaction evidence is required.' });
     }
     if (!/^\d+(?:\.\d{1,6})?$/.test(data.amount)) return;

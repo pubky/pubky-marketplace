@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { formatUsdt } from '@/libs/commerce/payment-options';
-import { sellerPaymentResolutionOutcomeSchema } from './marketplace-payment-review';
+import { trimmedUtf8Text } from './code-point-text';
+import { REASON_TOO_LONG_COPY, sellerPaymentResolutionOutcomeSchema } from './marketplace-payment-review';
 import { observedPaymentRail } from './paykit-rail';
 import type { CommerceMoney } from './transaction-contracts';
 import {
@@ -85,7 +86,7 @@ export function paymentReviewRail(order: {
 export const usdtPaymentResolutionInputSchema = z
   .object({
     outcome: sellerPaymentResolutionOutcomeSchema,
-    reason: z.string().trim().max(USDT_RESOLUTION_REASON_MAX_LENGTH).optional(),
+    reason: trimmedUtf8Text({ max: USDT_RESOLUTION_REASON_MAX_LENGTH, message: REASON_TOO_LONG_COPY }).optional(),
     externalRefundReference: z
       .union([z.literal(''), z.string().trim().regex(ARBITRUM_TX_HASH_PATTERN)])
       .optional()
