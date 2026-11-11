@@ -477,6 +477,15 @@ signs in with the inbox session and polls blocked, the same as a deploy without 
 Carol's first message to Dave stays unknown on his inbox list and is found as soon as he opens the thread.
 Screenshots land in `.chat-e2e/` (`SCREENSHOT_DIR`).
 
+Each account signs in through the Shop's grant link, approved by a Node-side signer. The first load of a fresh
+browser profile creates the Shop's database and mounts the sign-in page twice, and the second mount cancels the
+first mount's flow. The relay holds an approval until the Shop polls that channel, so approving the cancelled
+link either hangs the signer until its request times out or loses the approval. The proof therefore loads the
+sign-in page until the database exists and is open, loads it again so it mounts once, and approves the link only
+while its own relay channel is being polled, was not aborted and has no newer flow behind it. A link that never
+reaches that state fails the run with the reason, and an approval that no poll takes fails after 30 seconds
+instead of waiting out the relay.
+
 In CI the same proof runs as the `chat-e2e` job of the Build workflow on every Shop pull request:
 `scripts/ci-chat-e2e.sh` clones [pubky-docker](https://github.com/pubky/pubky-docker), starts its testnet
 backend (homeserver, relays, Nexus, Homegate), adds a `pubky/inbox` container on the stack's network with its
