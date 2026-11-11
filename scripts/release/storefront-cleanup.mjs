@@ -44,12 +44,12 @@ export async function removeRunStorefront({ publicStorage, signer, pubky, existe
     const status = (await fetch(`${nexus}/v0/shop/${pubky}`)).status;
     return { ...out, nexus: status, ok: status === 404 };
   }
-  const session = await signer.signinCookie();
+  const session = await signer.signin('marketplace-storefront-cleanup');
   try {
     await session.storage.delete(SHOP_PATH);
     out.deleted = true;
   } finally {
-    session.free?.();
+    await session.signout();
   }
   out.homeserver = (await storefrontExists(publicStorage, pubky)) === false ? 404 : 'present';
   const gone = await poll(

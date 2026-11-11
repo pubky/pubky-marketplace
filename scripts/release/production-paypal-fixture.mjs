@@ -20,13 +20,14 @@
 // PAYPAL_TEST_EMAIL (required for setup and proof, and for a teardown that restores it; never logged or
 // written to disk), EXPECTED_DPL and/or EXPECTED_COMMIT (optional here, the release proof requires one;
 // checked before checkout), PROOF_ORIGIN (with the mount path when embedded), PROOF_SERVICE, PROOF_NEXUS (all three required: there is no default
-// target), PROOF_RELAY, PROOF_FIXTURE_PHOTO.
+// target), PROOF_FIXTURE_PHOTO.
 // Exit 0 only when every check passed; teardown and verify exit 1 while anything is left behind.
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { mintMarketplaceGrantSessionForSigner } from '../lib/marketplace-grant-session.mjs';
 import { servedDeployment } from './deployment-check.mjs';
 import { purchaseFailure } from './listing-purchase.mjs';
 import {
@@ -37,18 +38,15 @@ import {
   proofTarget,
   repoRequire,
   requireProofEnv,
-  shopCapabilities,
 } from './seats.mjs';
 import { removeRunStorefront, storefrontExists } from './storefront-cleanup.mjs';
 
 const { chromium } = repoRequire('playwright');
-const { AuthFlowKind, Pubky } = repoRequire('@synonymdev/pubky');
+const { Pubky } = repoRequire('@synonymdev/pubky');
 
 const { origin: ORIGIN, at } = proofTarget();
 const SERVICE = requireProofEnv('PROOF_SERVICE');
 const NEXUS = requireProofEnv('PROOF_NEXUS');
-const RELAY = process.env.PROOF_RELAY ?? 'https://httprelay.pubky.app/inbox';
-const CAPABILITIES = shopCapabilities();
 const PHOTO = process.env.PROOF_FIXTURE_PHOTO ?? join(dirname(fileURLToPath(import.meta.url)), 'fixture-photo.png');
 const TITLE_BASE = 'TEST, do not buy';
 
@@ -363,19 +361,12 @@ async function nexusListingsByTitle(title) {
 }
 
 async function mintBearer(seat) {
-  const client = new Pubky();
-  const flow = client.startCookieAuthFlow(CAPABILITIES, AuthFlowKind.signin(), RELAY);
-  const tokenPromise = flow.awaitToken();
-  await client.signer(seat).approveAuthRequest(flow.authorizationUrl);
-  const token = await tokenPromise;
-  const response = await fetch(`${SERVICE}/v1/auth/sessions`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/octet-stream' },
-    body: token.toBytes(),
+  return mintMarketplaceGrantSessionForSigner({
+    client: new Pubky(),
+    keypair: seat,
+    clientId: process.env.PROOF_CLIENT_ID ?? 'shop.pubky.app',
+    serviceUrl: SERVICE,
   });
-  const body = await response.json().catch(() => ({}));
-  if (response.status !== 201) throw new Error(`bearer mint HTTP ${response.status}`);
-  return { token: body.token, sessionId: body.session_id };
 }
 
 const revokeSession = async (bearer, id) =>

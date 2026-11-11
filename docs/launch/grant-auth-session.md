@@ -66,6 +66,14 @@ Ring approvals remain Ring approvals, and Bitkit and Passport keep their own lau
 
 Recovery-file-only commerce remains limited: after local key sign-in, the user must approve with the **same identity** already imported into a supported external signer. Shop does not retain the recovery root key for later purchases, offer a new re-upload approval screen, or invent a backend key-proof endpoint. Inventory connects through the same marketplace grant path. Marketplace private-key release and seller Locks setup still depend on their existing service contracts.
 
+### Developer and release scripts
+
+The unused interactive AuthToken services and controller/application wrappers have been removed. Release fixtures, probes and live transport tests use grant sessions too. Service bearers come from `/v1/auth/grant-session-challenges` and `/v1/auth/grant-sessions`, with a single-use proof written to the signed-in account's homeserver and deleted afterward. This requires an existing account on the service's configured homeserver, an enabled grant-session endpoint, a matching service audience and an allowed client ID. The scripts fail when those prerequisites are absent; they do not request a cookie session.
+
+The Node helper owns and signs out grants it creates, while callers retain ownership of borrowed grants and revoke their service bearers separately. Limited-permission tests use public-only grants, which mint inventory-only service sessions and remain unable to obtain private-data keys. Historical wire fixtures and persisted-session compatibility stay in place. The raw account-registration token remains part of the signup protocol; it does not authenticate the Shop browser. Shop BFF session and flow cookies also retain their existing lifecycle.
+
+`scripts/probe-listing-registration.mjs` requires an existing test account in `MARKETPLACE_PROBE_SECRET_HEX`, along with `MARKETPLACE_SERVICE_URL` and an allowed `MARKETPLACE_GRANT_CLIENT_ID` (default `shop.pubky.app`). It no longer requests staging signup tokens: that staging key does not resolve the HTTPS signup endpoint required by SDK signup, and grant proofs cannot use an unregistered identity. Keep the secret outside the repository. The probe revokes its bearer after the projection read or sync attempt.
+
 ## Messaging cutover
 
 [Chat #209](https://github.com/pubky/pubky-marketplace/pull/209) is the separate replacement for Paykit Encrypted Links. Shop's external signer approvals and App's scoped signer approvals include `/pub/chat/v0/:rw` and `/priv/chat/v0/:rw`. App cleanup covers the planned Chat tables and Inbox credential. These entries prepare for that consumer; they do not establish a working Chat integration or permission-upgrade flow. Encryption-key action `e` remains outside this integration.

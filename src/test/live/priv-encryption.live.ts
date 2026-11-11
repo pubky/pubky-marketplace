@@ -6,6 +6,12 @@ import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { PRIV_KEYS_WIRE_NEEDS_REAUTH, PRIV_KEYS_WIRE_OK } from '@/test/fixtures/commerce/priv-keys.wire';
 import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';
+import {
+  createPublicOnlyGrantSession,
+  establishMarketplaceGrantSession,
+  mintInventoryOnlyGrantSession,
+  revokeOwnedHomeserverGrant,
+} from './marketplace-grant-session';
 
 /**
  * LIVE STAGING PROOF for encrypted `/priv` (priv-encryption-plan.md Phase 2
@@ -24,7 +30,7 @@ import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';
  *   1b. Homeserver refusal: a homeserver session whose grant cannot write
  *      `/priv/pubky.app/` reports `needs_reauth` without requesting a key,
  *      even beside a purchase session that would get one.
- *   2. Full grant: a session minted from the Shop-grant AuthToken gets the
+ *   2. Full grant: a session minted from a live Shop grant gets the
  *      key; without Web Locks the watchlist sync refuses to run; every plaintext record is sealed, read back, and only then
  *      deleted, in that order on the wire; a second paid order's receipt is
  *      written sealed from its attestation; the released keys match the
@@ -83,7 +89,6 @@ async function loadModules() {
     { useAuthStore },
     { useCommerceStore },
     { db },
-    { CAPABILITIES },
     envelopeLib,
     sdk,
     specs,
@@ -102,7 +107,6 @@ async function loadModules() {
     import('@/stores/auth/auth.store'),
     import('@/stores/commerce/commerce.store'),
     import('@/database/franky/franky'),
-    import('@/config/app'),
     import('@/libs/commerce/priv-envelope'),
     import('@synonymdev/pubky'),
     import('pubky-app-specs'),
@@ -122,7 +126,6 @@ async function loadModules() {
     useAuthStore,
     useCommerceStore,
     db,
-    CAPABILITIES,
     envelopeLib,
     sdk,
     specs,
@@ -197,14 +200,10 @@ function actAs(identity: Identity): void {
 type ServiceSession = NonNullable<ReturnType<typeof m.MarketplaceSessionService.getActiveSession>>;
 const mintedSessions: ServiceSession[] = [];
 
-/** The signer-approved AuthToken flow, as Ring runs it, with the given grant. */
-async function connect(identity: Identity, capabilities: string): Promise<ServiceSession> {
+/** Mint a service session using this identity's live homeserver grant. */
+async function connect(identity: Identity): Promise<ServiceSession> {
   m.CommerceController.clearMarketplaceSession();
-  type Grant = NonNullable<Parameters<typeof m.HomeserverService.generateAuthTokenFlow>[0]>;
-  const flow = m.HomeserverService.generateAuthTokenFlow(capabilities as Grant);
-  await new m.sdk.Pubky().signer(identity.keypair).approveAuthRequest(flow.authorizationUrl);
-  const token = await flow.awaitToken();
-  const info = await m.MarketplaceSessionService.establishWithAuthToken(token.toBytes(), token.publicKey.z32());
+  const info = await establishMarketplaceGrantSession({ session: identity.session, pubky: identity.pubky });
   expect(info.pubky).toBe(identity.pubky);
   const session = m.MarketplaceSessionService.getActiveSession();
   if (!session) throw new Error('no marketplace session after the auth flow');
@@ -582,7 +581,7 @@ describe('encrypted /priv — LIVE proof on the deployed staging stack', () => {
 
     // ── Seller lists one item; the buyer pays for two units (two orders) ───
     actAs(seller);
-    const sellerSession = await connect(seller, m.CAPABILITIES);
+    const sellerSession = await connect(seller);
     for (const note of await cleanUp(seller, buyer, sellerSession, listingIds)) {
       console.info(`[priv-live] pre-clean: ${note}`);
     }
@@ -604,7 +603,7 @@ describe('encrypted /priv — LIVE proof on the deployed staging stack', () => {
       }
     });
     actAs(buyer);
-    const buyerFullGrant = await connect(buyer, m.CAPABILITIES);
+    const buyerFullGrant = await connect(buyer);
     const firstOrder = await paidOrder(buyer, listingAggregateId);
     const secondOrder = await paidOrder(buyer, listingAggregateId);
     const firstReceiptId = firstOrder.receiptId as string;
@@ -640,8 +639,18 @@ describe('encrypted /priv — LIVE proof on the deployed staging stack', () => {
     const legacyUrls = [legacyWatchlistUrl, legacyReceiptUrl, legacyActivityUrl, legacyOrdersUrl];
     console.info('[priv-live] buyer: plaintext v1 watchlist, receipt and two badge checkpoints planted');
 
-    // ── 1. No key: the identity-only grant is refused; nothing is written ──
-    await connect(buyer, '');
+    // ── 1. No key: the inventory-only grant is refused; nothing is written ──
+    const publicOnlyGrant = await createPublicOnlyGrantSession(buyer.keypair);
+    try {
+      const minted = await mintInventoryOnlyGrantSession(publicOnlyGrant, buyer.pubky);
+      m.CommerceController.clearMarketplaceSession();
+      m.MarketplaceSessionService.establishClaimedGrantSession(minted, buyer.pubky);
+      const serviceSession = m.MarketplaceSessionService.getActiveSession();
+      if (!serviceSession) throw new Error('No inventory-only service session after the grant proof.');
+      mintedSessions.push(serviceSession);
+    } finally {
+      await revokeOwnedHomeserverGrant(publicOnlyGrant);
+    }
     const refused = await fetch(`${SERVICE_URL}/v1/me/priv-keys`, {
       headers: { authorization: `Bearer ${m.MarketplaceSessionService.getActiveSession()!.token}` },
     });
@@ -671,27 +680,32 @@ describe('encrypted /priv — LIVE proof on the deployed staging stack', () => {
     // decided before any key is requested, even beside a purchase session that would get one.
     activate(buyerFullGrant);
     m.CommercePrivKeyringApplication.clear();
-    const narrowFlow = new m.sdk.Pubky().startCookieAuthFlow('/pub/pubky.app/:rw', m.sdk.AuthFlowKind.signin());
-    await new m.sdk.Pubky().signer(buyer.keypair).approveAuthRequest(narrowFlow.authorizationUrl);
-    const narrowSession = await narrowFlow.awaitApproval();
-    expect(m.HomeserverService.isGrantSession(narrowSession)).toBe(false);
-    actAs({ ...buyer, session: narrowSession });
-    expect(m.HomeserverService.canCurrentSessionWrite('/priv/pubky.app/')).toBe(false);
+    const fullSession = buyer.session;
+    const narrowSession = await createPublicOnlyGrantSession(buyer.keypair);
     const keyReads = vi.spyOn(m.MarketplaceGatewayService, 'getPrivKeys');
-    mark = wire.length;
-    await m.CommerceController.syncWatchlist();
-    expect(m.useCommerceStore.getState().watchlistSyncStatus).toBe('needs_reauth');
-    expect(await m.CommerceApplication.publishOrderReceipts(buyer.pubky, [firstOrder, secondOrder])).toBe(
-      'needs_reauth',
-    );
-    expect(keyReads).not.toHaveBeenCalled();
-    keyReads.mockRestore();
-    expect(wire.slice(mark).filter((entry) => entry.includes('/priv/'))).toEqual([]);
-    // The narrow sign-in replaced the buyer's homeserver cookie; sign back in with the full session.
-    const restored = await m.HomeserverService.signIn({ keypair: buyer.keypair });
-    if (!restored) throw new Error('buyer: sign-in asked for a retry after republish; re-run.');
-    buyer.session = restored.session;
-    actAs(buyer);
+    try {
+      expect(m.HomeserverService.isGrantSession(narrowSession)).toBe(true);
+      expect(await narrowSession.grant?.grantId()).not.toBe(await fullSession.grant?.grantId());
+      actAs({ ...buyer, session: narrowSession });
+      expect(m.HomeserverService.canCurrentSessionWrite('/priv/pubky.app/')).toBe(false);
+      mark = wire.length;
+      await m.CommerceController.syncWatchlist();
+      expect(m.useCommerceStore.getState().watchlistSyncStatus).toBe('needs_reauth');
+      expect(await m.CommerceApplication.publishOrderReceipts(buyer.pubky, [firstOrder, secondOrder])).toBe(
+        'needs_reauth',
+      );
+      expect(keyReads).not.toHaveBeenCalled();
+      expect(wire.slice(mark).filter((entry) => entry.includes('/priv/'))).toEqual([]);
+    } finally {
+      keyReads.mockRestore();
+      try {
+        // This exact grant belongs to the harness; the full grant remains valid.
+        await revokeOwnedHomeserverGrant(narrowSession);
+      } finally {
+        actAs(buyer);
+      }
+    }
+    expect(m.useAuthStore.getState().selectSession()).toBe(fullSession);
     expect(m.HomeserverService.canCurrentSessionWrite('/priv/pubky.app/')).toBe(true);
     for (const url of legacyUrls) expect(await exists(url), url).toBe(true);
     console.info('[priv-live] 1b. homeserver grant without /priv: needs_reauth, no /priv request, plaintext untouched');
@@ -861,7 +875,7 @@ describe('encrypted /priv — LIVE proof on the deployed staging stack', () => {
     if (!signedBackIn) throw new Error('fresh device sign-in asked for a retry');
     buyer.session = signedBackIn.session;
     actAs(buyer);
-    await connect(buyer, m.CAPABILITIES);
+    await connect(buyer);
     const again = await m.MarketplaceGatewayService.getPrivKeys(buyer.pubky);
     expect(again.kind === 'keys' && again.keyring.currentKeyId).toBe(keyId);
     mark = wire.length;
@@ -964,11 +978,10 @@ describe('encrypted /priv — LIVE proof on the deployed staging stack', () => {
         method: 'DELETE',
         headers: { authorization: `Bearer ${session.token}` },
       });
+      expect(response.ok, `revoke owned service session ${session.sessionId}`).toBe(true);
       revocations.push(response.status);
     }
-    console.info(
-      `[priv-live] 5. session revocation statuses ${JSON.stringify(revocations)} (an identity-only session cannot revoke itself: the route needs the marketplace-service grant, so it expires with the session TTL)`,
-    );
+    console.info(`[priv-live] 5. session revocation statuses ${JSON.stringify(revocations)}`);
     console.info(
       `[priv-live] service-side leftovers by design: 2 paid staging orders and one sealed data key for ${prefix(buyer.pubky)}; the listing ${prefix(seller.pubky)}:${listingId}`,
     );

@@ -42,7 +42,6 @@ import { Logger } from '@/libs/logger/logger';
 import { isIosUserAgent } from '@/libs/navigation/bitkit-ios-url';
 import type { Pubky as TPubkyModel } from '@/models/models.types';
 import type {
-  TGenerateAuthTokenFlowResult,
   TGenerateAuthUrlResult,
   TGrantAuthUrlOptions,
   THomeserverRestoreSessionParams,
@@ -70,20 +69,17 @@ import type {
 } from './homeserver.types';
 import {
   assertOk,
-  AUTH_POLL_MAX_RESUMES,
   AUTH_RELAY_RETENTION_MS,
   capabilitiesGrantWrite,
   createCancelableAuthApproval,
   getOwnedResponse,
   getResponseOrNullWhenMissing,
   isHttpUrl,
-  isTransientPollError,
   parseResponseOrUndefined,
   PUBKY_PREFIX,
   readResponseBytes,
   resolveOwnedSessionPath,
   toSdkPath,
-  waitUntilVisible,
 } from './homeserver.utils';
 import {
   assertOwnedGrantStorageAvailable,
@@ -563,68 +559,6 @@ export class HomeserverService {
       });
     }
     return this.generateGrantAuthUrl();
-  }
-
-  /**
-   * Starts an authentication-only Pubky auth flow whose approval yields an `AuthToken` —
-   * a signed, time-bound proof of key ownership — instead of a homeserver session.
-   *
-   * Used to authenticate the user to external Pubky-verified services (e.g. the
-   * Marketplace Transaction Service, which verifies the token bytes with `pubky-common`).
-   * The capability set is empty on purpose: the token proves identity only and grants
-   * no homeserver access.
-   *
-   * @returns The authorization URL to show the signer, a lazy `awaitToken`, and a cancel
-   */
-  /**
-   * @param capabilities Optional capability string shown verbatim on the
-   * signer. Empty (the default) requests a plain sign-in token; a scoped
-   * string (e.g. the Paykit claim scope) yields a token carrying exactly
-   * those capabilities, which some verifiers require and check exactly.
-   */
-  static generateAuthTokenFlow(capabilities: Capabilities = ''): TGenerateAuthTokenFlowResult {
-    try {
-      const pubkySdk = this.getPubkySdk();
-      const flow = pubkySdk.startCookieAuthFlow(capabilities, AuthFlowKind.signin(), getDefaultHttpRelay());
-      const authorizationUrl = flow.authorizationUrl;
-      let live = flow;
-      let freed = false;
-      const waiting = new AbortController();
-      const startedAt = Date.now();
-      const free = () => {
-        if (freed) return;
-        freed = true;
-        waiting.abort();
-        try {
-          live.free();
-        } catch {
-          // Ignore double-free or already-finalized WASM objects.
-        }
-      };
-      const awaitToken = async () => {
-        try {
-          for (let resumes = 0; ; ) {
-            try {
-              return await live.awaitToken();
-            } catch (error) {
-              // The SDK gives up on a flow once the page's network drops in the background (the user is
-              // approving in Pubky Ring), and it never polls that flow again. Reconnect to the same relay
-              // channel when the page is visible again: an approval made meanwhile is still there.
-              if (freed || !isTransientPollError(error) || ++resumes > AUTH_POLL_MAX_RESUMES) throw error;
-              await waitUntilVisible(waiting.signal);
-              // Past the relay's retention the approval is gone: end the flow instead of waiting on an empty channel.
-              if (freed || Date.now() - startedAt > AUTH_RELAY_RETENTION_MS) throw error;
-              live = pubkySdk.resumeCookieAuthFlow(authorizationUrl);
-            }
-          }
-        } finally {
-          free();
-        }
-      };
-      return { authorizationUrl, awaitToken, cancelAuthFlow: free };
-    } catch (error) {
-      return handleError({ error, additionalContext: { relay: getDefaultHttpRelay() } });
-    }
   }
 
   /**

@@ -7,6 +7,7 @@ import path from 'node:path';
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { establishMarketplaceGrantSession } from './marketplace-grant-session';
 
 /**
  * LIVE end-to-end proof of the buyer purchase flow over the REAL composed
@@ -30,7 +31,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
  *   - the marketplace transaction service on MARKETPLACE_SERVICE_URL
  *     (default http://127.0.0.1:8080) started with LOCKS_SERVER_URL and both
  *     LOCKS_* keys, per docs/ecommerce/RUNNING.md
- *   - network access to the Pubky HTTP relay for the AuthToken session flows.
+ *   - grant bootstrap enabled on the service and network access to the accounts' homeservers.
  *
  * A Locks listing is digital-only: the seller publishes the listing record
  * with `digitalLock` and `fulfillmentMethods: ['digital']` to their homeserver
@@ -240,11 +241,9 @@ describe('locks-paykit live purchase (composed environment)', () => {
   });
 
   async function establishSessionFor(keypair: import('@synonymdev/pubky').Keypair): Promise<string> {
-    const { MarketplaceSessionService, sdk } = modules;
-    const flow = MarketplaceSessionService.beginSessionFlow();
-    const signerSdk = new sdk.Pubky();
-    await signerSdk.signer(keypair).approveAuthRequest(flow.authorizationUrl);
-    const session = await flow.awaitSession();
+    const signedIn = await modules.HomeserverService.signIn({ keypair });
+    const pubky = keypair.publicKey.z32();
+    const session = await establishMarketplaceGrantSession({ session: signedIn?.session, pubky });
     return session.pubky;
   }
 

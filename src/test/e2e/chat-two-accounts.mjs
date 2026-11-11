@@ -481,11 +481,15 @@ try {
   );
   console.log('[alice] conversations before device two', JSON.stringify(aliceConversations));
   try {
-    const nodeSession = await pubky.signer(alice.keypair).signinCookie();
-    const privList = await nodeSession.storage.list('/priv/chat/v0/conversations/', null, false, 100, false);
-    const privKey = await nodeSession.storage.get('/priv/chat/v0/key.json');
-    const privKeyJson = privKey.ok ? await privKey.json() : null;
-    console.log('[alice] homeserver /priv conversations', privList.length, 'key kid', privKeyJson?.kid);
+    const nodeSession = await pubky.signer(alice.keypair).signin('marketplace-chat-e2e');
+    try {
+      const privList = await nodeSession.storage.list('/priv/chat/v0/conversations/', null, false, 100, false);
+      const privKey = await nodeSession.storage.get('/priv/chat/v0/key.json');
+      const privKeyJson = privKey.ok ? await privKey.json() : null;
+      console.log('[alice] homeserver /priv conversations', privList.length, 'key kid', privKeyJson?.kid);
+    } finally {
+      await nodeSession.signout();
+    }
   } catch (error) {
     console.error('[alice] node /priv probe failed', String(error).slice(0, 200));
   }

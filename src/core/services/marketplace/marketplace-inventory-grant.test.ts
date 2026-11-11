@@ -3,15 +3,11 @@ import {
   clampInventoryPersistedCapabilities,
   INVENTORY_GRANT,
   inventoryCapabilityCovers,
-  studioInventoryCapabilities,
 } from './marketplace-inventory-grant';
 
 describe('studio inventory grant allow-list', () => {
   it('is exactly the marketplace-service inventory path with read+write', () => {
     expect(INVENTORY_GRANT).toBe('/pub/pubky.app/marketplace-service/v1/:rw');
-    expect(studioInventoryCapabilities()).toBe(INVENTORY_GRANT);
-    expect(studioInventoryCapabilities()).not.toBe('/:rw');
-    expect(studioInventoryCapabilities()).not.toBe('');
   });
 
   it('covers the inventory grant and root, and refuses empty or read-only', () => {

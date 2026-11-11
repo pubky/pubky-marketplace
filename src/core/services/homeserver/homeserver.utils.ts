@@ -150,7 +150,7 @@ export const parseResponseOrUndefined = async <T>({
  * Times a flow is resumed after the relay could not be reached before the flow counts as dead. Each resume waits
  * until the page is visible (a second when it already is).
  */
-export const AUTH_POLL_MAX_RESUMES = 60;
+const AUTH_POLL_MAX_RESUMES = 60;
 
 /**
  * How long the relay keeps an approval (per the SDK docs). A flow older than this when the page is visible again
@@ -162,7 +162,7 @@ export const AUTH_RELAY_RETENTION_MS = 5 * 60 * 1000;
  * A transport failure with no HTTP status: the relay never answered (aborted, refused or offline fetch).
  * The SDK reports it as a `RequestError` without `data.statusCode`; an HTTP error response carries one.
  */
-export const isTransientPollError = (error: unknown): boolean => {
+const isTransientPollError = (error: unknown): boolean => {
   if (extractStatusCode(error) !== undefined) return false;
   return error instanceof Error && error.name === 'RequestError';
 };
@@ -171,7 +171,7 @@ export const isTransientPollError = (error: unknown): boolean => {
  * Resolves at once when the page is visible (after a second), else on the next `visibilitychange` to visible.
  * Aborting the signal resolves it early and drops the listener.
  */
-export const waitUntilVisible = (signal?: AbortSignal): Promise<void> =>
+const waitUntilVisible = (signal?: AbortSignal): Promise<void> =>
   new Promise((resolve) => {
     if (signal?.aborted) {
       resolve();

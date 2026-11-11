@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { establishMarketplaceGrantSession } from './marketplace-grant-session';
 
 /**
  * LIVE STAGING PROOF for Inventory Studio W4 (does not revoke):
@@ -38,7 +39,6 @@ type AppModules = {
   CommerceInventoryImportApplication: typeof import('@/application/commerce/inventory-import').CommerceInventoryImportApplication;
   listingToCanonicalRows: typeof import('@/application/commerce/inventory-listing-map').listingToCanonicalRows;
   DexieManifestStore: typeof import('@/services/marketplace/marketplace-import-store').DexieManifestStore;
-  INVENTORY_GRANT: typeof import('@/services/marketplace/marketplace-inventory-grant').INVENTORY_GRANT;
   MARKETPLACE_SESSION_GRANT: typeof import('@/services/marketplace/marketplace-session-grant').MARKETPLACE_SESSION_GRANT;
   MarketplaceShopClientService: typeof import('@/services/marketplace/marketplace-shop-client').MarketplaceShopClientService;
   MarketplaceSessionService: typeof import('@/services/marketplace/marketplace-session').MarketplaceSessionService;
@@ -64,6 +64,7 @@ type ShopBrowserFile = {
 
 let modules: AppModules;
 let sellerPubky = '';
+let serviceCapabilities = '';
 
 class BytesFile implements ShopBrowserFile {
   constructor(
@@ -177,7 +178,6 @@ describe('inventory studio W4 staging proof', () => {
         .CommerceInventoryImportApplication,
       listingToCanonicalRows: (await import('@/application/commerce/inventory-listing-map')).listingToCanonicalRows,
       DexieManifestStore: (await import('@/services/marketplace/marketplace-import-store')).DexieManifestStore,
-      INVENTORY_GRANT: (await import('@/services/marketplace/marketplace-inventory-grant')).INVENTORY_GRANT,
       MARKETPLACE_SESSION_GRANT: (await import('@/services/marketplace/marketplace-session-grant'))
         .MARKETPLACE_SESSION_GRANT,
       MarketplaceShopClientService: (await import('@/services/marketplace/marketplace-shop-client'))
@@ -204,7 +204,6 @@ describe('inventory studio W4 staging proof', () => {
       HomeserverService,
       MarketplaceSessionService,
       MarketplaceInventorySessionService,
-      INVENTORY_GRANT,
       MARKETPLACE_SESSION_GRANT,
       useAuthStore,
       sdk,
@@ -217,36 +216,27 @@ describe('inventory studio W4 staging proof', () => {
     useAuthStore.setState({ session: signedIn.session, currentUserPubky: sellerPubky });
     expect(useAuthStore.getState().selectSession()?.info?.publicKey?.z32()).toBe(sellerPubky);
 
-    const identityFlow = MarketplaceSessionService.beginSessionFlow();
-    expect(new URL(identityFlow.authorizationUrl).searchParams.get('caps')).toBe(MARKETPLACE_SESSION_GRANT);
-    await new sdk.Pubky().signer(keypair).approveAuthRequest(identityFlow.authorizationUrl);
-    await identityFlow.awaitSession();
+    const purchaseInfo = await establishMarketplaceGrantSession({ session: signedIn?.session, pubky: sellerPubky });
+    serviceCapabilities = purchaseInfo.capabilities;
+    expect(purchaseInfo.capabilities).toBe(MARKETPLACE_SESSION_GRANT);
+    expect(purchaseInfo.capabilities).not.toBe('/:rw');
     expect(MarketplaceSessionService.getActiveSession()?.pubky).toBe(sellerPubky);
-
-    const inventoryFlow = MarketplaceInventorySessionService.beginInventorySessionFlow(sellerPubky);
-    expect(new URL(inventoryFlow.authorizationUrl).searchParams.get('caps')).toBe(INVENTORY_GRANT);
-    await new sdk.Pubky().signer(keypair).approveAuthRequest(inventoryFlow.authorizationUrl);
-    const inventoryInfo = await inventoryFlow.awaitSession();
-    expect(inventoryInfo.capabilities).toBe(INVENTORY_GRANT);
-    expect(inventoryInfo.capabilities).not.toBe('/:rw');
+    const inventoryBearer = MarketplaceInventorySessionService.getCoveringBearer(sellerPubky);
+    expect(inventoryBearer?.source).toBe('purchase');
+    expect(inventoryBearer?.token).toBe(MarketplaceSessionService.getActiveSession()?.token);
 
     mkdirSync(PROOF_DIR, { recursive: true });
   }, 180_000);
 
   it('matches GET projection, bumps +1 then −1, and refuses a stale revision', async () => {
-    const {
-      CommerceInventoryApplication,
-      MarketplaceInventorySessionService,
-      MarketplaceShopClientService,
-      INVENTORY_GRANT,
-    } = modules;
+    const { CommerceInventoryApplication, MarketplaceInventorySessionService, MarketplaceShopClientService } = modules;
 
     const board = await CommerceInventoryApplication.loadBoard(sellerPubky);
     expect(board.status === 'ready' || board.status === 'empty', `board status ${board.status}`).toBe(true);
     if (board.status === 'empty') {
       writeFileSync(
         `${PROOF_DIR}/board.txt`,
-        [`service=${SERVICE_URL}`, `pubky=${sellerPubky}`, `grant=${INVENTORY_GRANT}`, 'board=empty'].join('\n'),
+        [`service=${SERVICE_URL}`, `pubky=${sellerPubky}`, `grant=${serviceCapabilities}`, 'board=empty'].join('\n'),
       );
       expect(board.status).toBe('empty');
       return;
@@ -257,7 +247,7 @@ describe('inventory studio W4 staging proof', () => {
     expect(target, 'a seller listing is required for the stock edit').toBeTruthy();
     if (!target) return;
 
-    const inventory = MarketplaceInventorySessionService.getActiveSession();
+    const inventory = MarketplaceInventorySessionService.getCoveringBearer(sellerPubky);
     expect(inventory, 'inventory session is required for GET projection').toBeTruthy();
     if (!inventory) return;
     const client = MarketplaceShopClientService.createInventoryClient(inventory.token);
@@ -305,7 +295,7 @@ describe('inventory studio W4 staging proof', () => {
       [
         `service=${SERVICE_URL}`,
         `pubky=${sellerPubky}`,
-        `grant=${INVENTORY_GRANT}`,
+        `grant=${serviceCapabilities}`,
         `listing_id=${target.listingId}`,
         `available_start=${target.available}`,
         `revision_start=${target.serverRevision}`,
@@ -358,7 +348,7 @@ describe('inventory studio W4 staging proof', () => {
         [
           `service=${SERVICE_URL}`,
           `pubky=${sellerPubky}`,
-          `grant=${modules.INVENTORY_GRANT}`,
+          `grant=${serviceCapabilities}`,
           `stamp=${STAMP}`,
           `manifest_id=${planned.manifestId}`,
           `row_count=${planned.rowCount}`,

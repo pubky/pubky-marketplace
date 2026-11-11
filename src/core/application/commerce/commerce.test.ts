@@ -4417,12 +4417,12 @@ describe('CommerceApplication', () => {
       vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
       vi.spyOn(NexusMarketplaceService, 'fetchListingStream').mockResolvedValue([]);
       const generateAuthUrlSpy = vi.spyOn(HomeserverService, 'generateAuthUrl');
-      const beginSessionFlowSpy = vi.spyOn(MarketplaceSessionService, 'beginSessionFlow');
+      const mintSessionSpy = vi.spyOn(CommerceApplication, 'mintMarketplaceSessionFromGrant');
 
       await CommerceApplication.fetchCatalogListings();
 
       expect(generateAuthUrlSpy).not.toHaveBeenCalled();
-      expect(beginSessionFlowSpy).not.toHaveBeenCalled();
+      expect(mintSessionSpy).not.toHaveBeenCalled();
     });
 
     it('publishing a listing under the narrow bridged grant never requests a widened grant', async () => {
@@ -4444,7 +4444,7 @@ describe('CommerceApplication', () => {
       );
       vi.spyOn(Logger, 'warn').mockImplementation(() => {});
       const generateAuthUrlSpy = vi.spyOn(HomeserverService, 'generateAuthUrl');
-      const beginSessionFlowSpy = vi.spyOn(MarketplaceSessionService, 'beginSessionFlow');
+      const mintSessionSpy = vi.spyOn(CommerceApplication, 'mintMarketplaceSessionFromGrant');
 
       await expect(CommerceApplication.commitUpsertListing(record)).rejects.toMatchObject({
         code: AuthErrorCode.SESSION_EXPIRED,
@@ -4452,7 +4452,7 @@ describe('CommerceApplication', () => {
 
       expect(put).not.toHaveBeenCalled();
       expect(generateAuthUrlSpy).not.toHaveBeenCalled();
-      expect(beginSessionFlowSpy).not.toHaveBeenCalled();
+      expect(mintSessionSpy).not.toHaveBeenCalled();
     });
 
     it('the first checkout fails closed on a missing session instead of auto-requesting any approval', async () => {
@@ -4463,7 +4463,7 @@ describe('CommerceApplication', () => {
       });
       vi.spyOn(MarketplaceGatewayService, 'execute').mockRejectedValue(sessionRequired);
       const generateAuthUrlSpy = vi.spyOn(HomeserverService, 'generateAuthUrl');
-      const beginSessionFlowSpy = vi.spyOn(MarketplaceSessionService, 'beginSessionFlow');
+      const mintSessionSpy = vi.spyOn(CommerceApplication, 'mintMarketplaceSessionFromGrant');
 
       await expect(
         CommerceApplication.executeMarketplaceCommand(COMMERCE_FIXTURE_SELLER, {
@@ -4494,10 +4494,10 @@ describe('CommerceApplication', () => {
         } as never),
       ).rejects.toMatchObject({ code: AuthErrorCode.SESSION_EXPIRED, service: ErrorService.Marketplace });
 
-      // The empty-caps service token comes only from the explicit connect
-      // dialog; the wide homeserver grant only from the re-auth CTA.
+      // The command must surface the missing session; grant approval belongs
+      // to the explicit connect dialog.
       expect(generateAuthUrlSpy).not.toHaveBeenCalled();
-      expect(beginSessionFlowSpy).not.toHaveBeenCalled();
+      expect(mintSessionSpy).not.toHaveBeenCalled();
     });
   });
 });

@@ -69,9 +69,7 @@ export async function runNexusWriteProbe({ get, nexusUrl, out, runCommand, recor
     return record(id, 'SKIP', 'Nexus indexes a fresh write', 'set NEXUS_PROBE_SECRET_FILE, or NEXUS_PROBE_HOMESERVER plus NEXUS_PROBE_SIGNUP_TOKEN[_CMD]');
   }
   const author = keypair.publicKey.z32();
-  const session = await pubky.signer(keypair).signinCookie();
   const profilePath = '/pub/pubky.app/profile.json';
-  const profileExists = await pubky.publicStorage.exists(`pubky${author}${profilePath}`);
   const builder = new specs.PubkySpecsBuilder(author);
   const created = builder.createPost(
     `install-verify probe ${new Date().toISOString()} (deleted automatically)`,
@@ -81,6 +79,7 @@ export async function runNexusWriteProbe({ get, nexusUrl, out, runCommand, recor
   const postPath = created.meta.path;
   const nexusPost = `${nexusUrl}/v0/post/${author}/${postId}`;
   const residue = [];
+  const session = await pubky.signer(keypair).signin('marketplace-install-verify');
   const remove = async (path) => {
     try {
       await session.storage.delete(path);
@@ -92,6 +91,7 @@ export async function runNexusWriteProbe({ get, nexusUrl, out, runCommand, recor
   let wroteProfile = false;
   let wrotePost = false;
   try {
+    const profileExists = await pubky.publicStorage.exists(`pubky${author}${profilePath}`);
     if (!profileExists) {
       await session.storage.putJson(profilePath, {
         name: 'Install verify',
@@ -117,9 +117,12 @@ export async function runNexusWriteProbe({ get, nexusUrl, out, runCommand, recor
         record('write.nexus.delete', 'FAIL', 'Nexus indexes the delete', `post still served after ${Math.round(removed.ms / 1000)} s (HTTP ${removed.last})`, 'the watcher applies PUT but not DEL events: read the nexusd log for the DEL of this post');
     }
   } finally {
-    if (wrotePost) await remove(postPath);
-    if (wroteProfile) await remove(profilePath);
-    session.free?.();
+    try {
+      if (wrotePost) await remove(postPath);
+      if (wroteProfile) await remove(profilePath);
+    } finally {
+      await session.signout();
+    }
   }
   if (residue.length) {
     record('write.nexus.cleanup', 'FAIL', 'probe data removed from the homeserver', residue.join('; '), `remove it with the identity ${author.slice(0, 8)}…${secretFile ? ` (secret kept in ${secretFile})` : ''}`);
