@@ -1,24 +1,14 @@
-/** Discriminated union: inviteCode is required when type is 'signup' so TypeScript catches missing invite at compile time. */
-export type UseAuthUrlOptions =
-  | {
-      /** Whether to automatically fetch the auth URL on mount. @default true */
-      autoFetch?: boolean;
-      /** The type of auth URL to generate: the Shop sign-in grant (`pubkyauth://signin_grant`) for Pubky Ring and Bitkit. @default 'signin' */
-      type?: 'signin';
-      /**
-       * Whether the grant also asks for scoped encryption keys. Omitted: follows the deploy's
-       * `PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS` switch. `false` is the sign-in without keys.
-       */
-      withPrivKeys?: boolean;
-    }
-  | {
-      /** Whether to automatically fetch the auth URL on mount. @default true */
-      autoFetch?: boolean;
-      /** Signup flow requires invite code */
-      type: 'signup';
-      /** The invite code for signup. Required when type is 'signup'. */
-      inviteCode: string;
-    };
+export interface UseAuthUrlOptions {
+  /** Whether to automatically fetch the auth URL on mount. @default true */
+  autoFetch?: boolean;
+  /** The Shop sign-in grant (`pubkyauth://signin_grant`) for Pubky Ring and Bitkit. */
+  type?: 'signin';
+  /**
+   * Whether the grant also asks for scoped encryption keys. Omitted: follows the deploy's
+   * `PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS` switch. `false` is the sign-in without keys.
+   */
+  withPrivKeys?: boolean;
+}
 
 export interface UseAuthUrlReturn {
   /** The authorization URL for QR code or deeplink */

@@ -19,7 +19,9 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/app/routes', () => ({
-  PUBLIC_ROUTES: ['/landing'],
+  ACCOUNT_ROUTES: { BACKUP: '/backup', COMPLETE_PROFILE: '/complete-profile' },
+  APP_ROUTES: { MARKETPLACE: '/marketplace' },
+  PUBLIC_ROUTES: ['/landing', '/backup'],
   isDynamicPublicRoute: () => false,
   matchesAllowedRoute: (pathname: string, route: string) => pathname === route || pathname.startsWith(`${route}/`),
 }));

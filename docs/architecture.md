@@ -81,7 +81,6 @@ Modules are imported directly through the path aliases in `tsconfig.json`. Keep 
 - `local/` — Dexie persistence and cache integrity
 - `homeserver/` — Network writes (PUT/POST/DELETE)
 - `nexus/` — Network reads
-- `homegate/` — Homegate API
 - `chatwoot/` — Chatwoot integration
 - `exchangerate/` — Exchange rate service
 - `nextjs/` — Server-only route helpers, metadata and store/image imports
@@ -124,7 +123,7 @@ Modules are imported directly through the path aliases in `tsconfig.json`. Keep 
 UI → Controllers (user-initiated actions)
 Coordinators → Controllers (system-initiated actions)
 Controllers → Pipes, Application, Stores
-Application → Pipes, Services (local, homeserver, nexus, homegate, chatwoot, exchangerate, nextjs)
+Application → Pipes, Services (local, homeserver, nexus, chatwoot, exchangerate, nextjs)
 Application → Application (cross-domain, acyclic, max depth 1 by default; see ADR-0009 for the depth-2 attachment-persistence exception)
 Services:
   local → Models
@@ -271,7 +270,7 @@ class NotificationCoordinator {
 
 ### Outbound (to the outside world)
 
-- `services/homeserver`: Session/auth, HTTP writes, blob uploads, auth URL creation, signup tokens.
+- `services/homeserver`: Session/auth, HTTP writes, blob uploads and auth URL creation; registration remains available only to explicit test harnesses.
 - `services/nexus`: HTTP reads for bootstrap, streams, users, posts, tags, search, files. Pagination and stop semantics.
 - `services/local`: Exclusive interface to Dexie models. Multi-table consistency, stream cache integrity, local-first writes with eventual consistency.
 
@@ -286,7 +285,6 @@ src/core/
 │   ├── local/[domain]/    # Dexie operations
 │   ├── homeserver/        # Network writes
 │   ├── nexus/[domain]/    # Network reads
-│   ├── homegate/          # Homegate API
 │   ├── chatwoot/          # Chatwoot integration
 │   ├── exchangerate/      # Exchange rate service
 │   └── nextjs/            # Server-only route helpers

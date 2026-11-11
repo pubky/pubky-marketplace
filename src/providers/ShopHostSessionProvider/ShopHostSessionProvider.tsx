@@ -2,7 +2,7 @@
 
 import { createContext, type ReactNode, Suspense, useContext, useEffect } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { isDynamicPublicRoute, PUBLIC_ROUTES } from '@/app/routes';
+import { ACCOUNT_ROUTES, isDynamicPublicRoute, PUBLIC_ROUTES } from '@/app/routes';
 import { Button } from '@/atoms/Button/Button';
 import { Spinner } from '@/atoms/Spinner/Spinner';
 import { useShopHostSession } from '@/hooks/useShopHostSession/useShopHostSession';
@@ -29,15 +29,21 @@ export function ShopHostSessionProvider({ children }: { children: ReactNode }) {
   const { configured, hosted, status, hasHostIdentity, retry } = useShopHostSession();
   const pathname = usePathname();
   const publicRoute = PUBLIC_ROUTES.includes(pathname) || isDynamicPublicRoute(pathname);
+  const isLocalRecovery = pathname === ACCOUNT_ROUTES.BACKUP;
   const pending = !configured || (hosted && (status === 'connecting' || status === 'restoring'));
-  if (pending)
+  // Establish session ownership first; local recovery never waits for host restoration.
+  if (!configured || (pending && !isLocalRecovery))
     return (
       <div className="flex min-h-64 items-center justify-center">
         <Spinner />
         <span className="sr-only">Restoring your session</span>
       </div>
     );
-  if (hosted && (status === 'temporary-error' || status === 'reauth-required' || status === 'capabilities-required')) {
+  if (
+    !isLocalRecovery &&
+    hosted &&
+    (status === 'temporary-error' || status === 'reauth-required' || status === 'capabilities-required')
+  ) {
     return (
       <ShopHostContext.Provider value={true}>
         <Suspense fallback={null}>

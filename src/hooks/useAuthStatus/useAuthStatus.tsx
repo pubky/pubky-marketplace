@@ -1,11 +1,9 @@
 import { useMemo } from 'react';
 import { useAuthStore } from '@/stores/auth/auth.store';
-import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
 import { AuthStatus, type AuthStatusResult } from './useAuthStatus.types';
 
 export function useAuthStatus(): AuthStatusResult {
   // Get state from stores
-  const onboardingStore = useOnboardingStore();
   const authStore = useAuthStore();
 
   const authStatusResult = useMemo((): AuthStatusResult => {
@@ -17,8 +15,7 @@ export function useAuthStatus(): AuthStatusResult {
       authStore.session === null &&
       !authStore.sessionRestoreDeferred;
 
-    const isLoading =
-      !onboardingStore.hasHydrated || !authStore.hasHydrated || authStore.isRestoringSession || isSessionRestorePending;
+    const isLoading = !authStore.hasHydrated || authStore.isRestoringSession || isSessionRestorePending;
 
     // Check if user has keypair (session)
     const hasKeypair = authStore.session !== null;
@@ -29,7 +26,7 @@ export function useAuthStatus(): AuthStatusResult {
     // Determine the authentication status
     let status: AuthStatus;
 
-    // User has session but explicitly no profile - needs to complete onboarding submitting the profile.json
+    // User has session but explicitly no profile - needs to complete the existing account profile
     if (hasKeypair && hasProfile === false) {
       status = AuthStatus.NEEDS_PROFILE_CREATION;
     }
@@ -50,7 +47,6 @@ export function useAuthStatus(): AuthStatusResult {
       isFullyAuthenticated: status === AuthStatus.AUTHENTICATED,
     };
   }, [
-    onboardingStore.hasHydrated,
     authStore.hasHydrated,
     authStore.isRestoringSession,
     authStore.sessionExport,

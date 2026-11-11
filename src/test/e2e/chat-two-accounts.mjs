@@ -124,7 +124,7 @@ async function signIn(context, identity, name) {
   });
   try {
     await waitForSignedIn(page, identity, name);
-    // Chat is set up on the first non-onboarding route after sign-in.
+    // Chat is set up on the first non-maintenance route after sign-in.
     await page.goto(`${BASE}/messages`, { waitUntil: 'domcontentloaded' });
     await page.locator('[data-surface="chat-inbox"]').waitFor({ state: 'visible', timeout: 60_000 });
   } catch (error) {
@@ -150,7 +150,7 @@ async function waitForSignedIn(page, identity, name) {
     { timeout: 60_000 },
   );
   await page.waitForFunction(() => !location.pathname.startsWith('/sign-in'), null, { timeout: 60_000 });
-  if (page.url().includes('/onboarding/profile')) {
+  if (page.url().includes('/complete-profile')) {
     await page.getByPlaceholder('Enter your name').fill(name);
     await page.getByRole('button', { name: 'Finish' }).click();
     // The profile step records hasProfile; where it goes next depends on the stored return path.

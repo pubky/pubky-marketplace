@@ -1,17 +1,20 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { AuthController } from '@/controllers/auth/auth';
 import { ProfileController } from '@/controllers/profile/profile';
 import { AppError } from '@/libs/error/error';
 import { AuthErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import type { NexusUserDetails } from '@/services/nexus/nexus.types';
+import { useAuthStore } from '@/stores/auth/auth.store';
+import { mockSession } from '@/test-utils/pubky';
 import { useProfileForm } from './useProfileForm';
 import { WRITE_PATH_NOT_ALLOWED_MESSAGE } from './useProfileForm.types';
 
-const { mockToast } = vi.hoisted(() => ({ mockToast: vi.fn() }));
+const { mockToast, mockPush } = vi.hoisted(() => ({ mockToast: vi.fn(), mockPush: vi.fn() }));
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), back: vi.fn() }),
+  useRouter: () => ({ push: mockPush, back: vi.fn() }),
 }));
 
 vi.mock('@/controllers/auth/auth', () => ({
@@ -35,6 +38,10 @@ vi.mock('@/stores/localFiles/localFiles.store', () => ({
 }));
 
 const pubky = 'test-pubky';
+beforeEach(() => {
+  useAuthStore.setState({ session: mockSession(), currentUserPubky: pubky, isLoggingOut: false });
+});
+
 const unsafeLink = { label: 'Website', url: 'javascript:alert(1)' };
 
 describe('useProfileForm profile link safety', () => {
@@ -43,7 +50,7 @@ describe('useProfileForm profile link safety', () => {
   });
 
   it('blocks an unsafe link from the create-profile submission path', async () => {
-    const { result } = renderHook(() => useProfileForm({ mode: 'create', pubky, setShowWelcomeDialog: vi.fn() }));
+    const { result } = renderHook(() => useProfileForm({ mode: 'create', pubky }));
 
     act(() => {
       result.current.handlers.setName('Valid User');
@@ -94,7 +101,7 @@ describe('useProfileForm create mode prefill', () => {
     vi.mocked(ProfileController.readProfileSeed).mockResolvedValue(null);
   });
 
-  const renderCreate = () => renderHook(() => useProfileForm({ mode: 'create', pubky, setShowWelcomeDialog: vi.fn() }));
+  const renderCreate = () => renderHook(() => useProfileForm({ mode: 'create', pubky }));
 
   it('does not invent a name when the account has no profile', async () => {
     const { result } = renderCreate();
@@ -185,5 +192,93 @@ describe('useProfileForm create mode prefill', () => {
     });
 
     expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: 'Could not save profile' });
+  });
+});
+
+describe('existing-account profile completion authority', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(ProfileController.commitCreate).mockResolvedValue();
+    vi.mocked(AuthController.bootstrapWithDelay).mockResolvedValue();
+  });
+  const renderForm = () => {
+    const form = renderHook(() => useProfileForm({ mode: 'create', pubky }));
+    act(() => form.result.current.handlers.setName('Fictional Seller'));
+    return form;
+  };
+  it('never submits a profile without a live session', async () => {
+    useAuthStore.setState({ session: null });
+    const { result } = renderForm();
+    await act(async () => result.current.handlers.handleSubmit());
+    expect(ProfileController.commitCreate).not.toHaveBeenCalled();
+    expect(AuthController.bootstrapWithDelay).not.toHaveBeenCalled();
+  });
+  it('awaits guarded bootstrap and leaves all completion navigation to RouteGuard', async () => {
+    let finish!: () => void;
+    vi.mocked(AuthController.bootstrapWithDelay).mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const { result } = renderForm();
+    let submit!: Promise<void>;
+    act(() => {
+      submit = result.current.handlers.handleSubmit();
+    });
+    await waitFor(() => expect(AuthController.bootstrapWithDelay).toHaveBeenCalledTimes(1));
+    expect(result.current.state.isSaving).toBe(true);
+    expect(mockPush).not.toHaveBeenCalled();
+    await act(async () => {
+      finish();
+      await submit;
+    });
+    expect(result.current.state.isSaving).toBe(false);
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+  it.each(['logout', 'account switch'])(
+    'does not bootstrap a replacement identity after %s during the write',
+    async (change) => {
+      let finish!: () => void;
+      vi.mocked(ProfileController.commitCreate).mockReturnValue(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      );
+      const { result } = renderForm();
+      let submit!: Promise<void>;
+      act(() => {
+        submit = result.current.handlers.handleSubmit();
+      });
+      await waitFor(() => expect(ProfileController.commitCreate).toHaveBeenCalled());
+      useAuthStore.setState(
+        change === 'logout' ? { isLoggingOut: true } : { session: mockSession(), currentUserPubky: 'replacement' },
+      );
+      await act(async () => {
+        finish();
+        await submit;
+      });
+      expect(AuthController.bootstrapWithDelay).not.toHaveBeenCalled();
+      expect(mockPush).not.toHaveBeenCalled();
+    },
+  );
+  it('keeps edit-mode navigation to the own profile', async () => {
+    const { result } = renderHook(() =>
+      useProfileForm({
+        mode: 'edit',
+        pubky,
+        userDetails: {
+          id: pubky,
+          name: 'Fictional Seller',
+          bio: '',
+          links: [],
+          status: null,
+          image: null,
+          indexed_at: 1,
+        },
+      }),
+    );
+    await act(async () => result.current.handlers.handleSubmit());
+    expect(ProfileController.commitUpdate).toHaveBeenCalled();
+    expect(mockPush).toHaveBeenCalledExactlyOnceWith('/profile');
   });
 });

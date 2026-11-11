@@ -1,31 +1,34 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { ONBOARDING_ROUTES } from '@/app/routes';
+import Link from 'next/link';
+import { ACCOUNT_ROUTES, APP_ROUTES, AUTH_ROUTES } from '@/app/routes';
+import { Button } from '@/atoms/Button/Button';
+import { Container } from '@/atoms/Container/Container';
 import { PageHeader } from '@/atoms/PageHeader/PageHeader';
 import { PageSubtitle } from '@/atoms/PageSubtitle/PageSubtitle';
-import { ButtonsNavigation } from '@/molecules/ButtonsNavigation/ButtonsNavigation';
 import { PageTitle } from '@/molecules/Page/Page';
+import { useAuthStore } from '@/stores/auth/auth.store';
+import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
+import { DialogConfirmBackup } from '../DialogConfirmBackup/DialogConfirmBackup';
 
 export const BackupNavigation = () => {
-  const router = useRouter();
-  const [loading, setLoading] = useState(false);
-
-  const onHandleContinueButton = () => {
-    setLoading(true);
-    // Signup already happened at the pubky step; just navigate to profile
-    router.push(ONBOARDING_ROUTES.PROFILE);
-  };
+  const session = useAuthStore((state) => state.session);
+  const hasProfile = useAuthStore((state) => state.hasProfile);
+  const hasSavedKeys = useOnboardingStore((state) => state.selectHasSecretKey() || state.selectHasMnemonic());
+  const href = session
+    ? hasProfile === false
+      ? ACCOUNT_ROUTES.COMPLETE_PROFILE
+      : APP_ROUTES.MARKETPLACE
+    : AUTH_ROUTES.SIGN_IN;
+  const label = session ? (hasProfile === false ? 'Complete profile' : 'Browse the market') : 'Sign in';
 
   return (
-    <ButtonsNavigation
-      id="backup-navigation"
-      loadingContinueButton={loading}
-      onHandleContinueButton={onHandleContinueButton}
-      continueButtonClassName="w-full md:flex-0"
-      backButtonDisabled={true}
-    />
+    <Container className="flex-row flex-wrap justify-end gap-3" id="backup-navigation">
+      {hasSavedKeys && <DialogConfirmBackup />}
+      <Button asChild variant="secondary">
+        <Link href={href}>{label}</Link>
+      </Button>
+    </Container>
   );
 };
 
@@ -33,10 +36,14 @@ export const BackupPageHeader = () => {
   return (
     <PageHeader data-testid="backup-page-header">
       <PageTitle size="large">
-        {'Back up your '}
-        <span className="text-brand">{'pubky.'}</span>
+        {'Back up saved '}
+        <span className="text-brand">{'keys.'}</span>
       </PageTitle>
-      <PageSubtitle>{'You need a backup to restore access to your account later.'}</PageSubtitle>
+      <PageSubtitle>
+        {
+          'These legacy identity keys are saved in this browser. They may belong to a different account than the one signed in.'
+        }
+      </PageSubtitle>
     </PageHeader>
   );
 };

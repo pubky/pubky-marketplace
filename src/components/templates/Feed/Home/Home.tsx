@@ -3,7 +3,6 @@ import { TIMELINE_FEED_VARIANT } from '@/config/feed';
 import { useDefaultHomeReach } from '@/hooks/useDefaultHomeReach/useDefaultHomeReach';
 import { TaggedAsHeadline } from '@/molecules/TaggedAsHeadline/TaggedAsHeadline';
 import { AlertBackup } from '@/organisms/AlertBackup/AlertBackup';
-import { DialogWelcome } from '@/organisms/DialogWelcome/DialogWelcome';
 import { FeedNavigation } from '@/organisms/FeedNavigation/FeedNavigation';
 import { MarketplaceFollowedSellersShelf } from '@/organisms/Marketplace/MarketplaceFollowedSellersShelf';
 import { PostInput } from '@/organisms/PostInput/PostInput';
@@ -20,7 +19,6 @@ export function Home() {
 
   return (
     <>
-      <DialogWelcome />
       <AlertBackup />
       <FeedNavigation className="hidden lg:flex" />
       <TimelineFeed variant={TIMELINE_FEED_VARIANT.HOME} persistentHeader={<TaggedAsHeadline />}>

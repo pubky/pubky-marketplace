@@ -1,0 +1,1 @@
+Remove account creation and the onboarding wizard from Pubky Market. Existing accounts can still sign in and complete a missing profile. Legacy keys saved in the browser remain available for backup, including when sign-in cannot be restored. Old onboarding links redirect to the corresponding account page or sign-in.

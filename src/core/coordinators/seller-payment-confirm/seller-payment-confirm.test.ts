@@ -35,6 +35,15 @@ describe('SellerPaymentConfirmCoordinator', () => {
     vi.restoreAllMocks();
   });
 
+  it.each(['/complete-profile', '/backup'])('pauses payment confirmation on %s', async (route) => {
+    const pass = vi.spyOn(CommerceController, 'autoConfirmSellerPayments').mockResolvedValue([]);
+    useAuthStore.getState().init({ session: mockSession(), currentUserPubky: 's'.repeat(52), hasProfile: true });
+    const coordinator = SellerPaymentConfirmCoordinator.getInstance();
+    await coordinator.setRoute(route);
+    await coordinator.start();
+    await vi.advanceTimersByTimeAsync(SELLER_AUTO_CONFIRM_INTERVAL_MS * 2);
+    expect(pass).not.toHaveBeenCalled();
+  });
   it('runs a confirmation pass on start and on every interval while signed in', async () => {
     const pass = vi.spyOn(CommerceController, 'autoConfirmSellerPayments').mockResolvedValue([]);
     useAuthStore.getState().init({ session: mockSession(), currentUserPubky: 's'.repeat(52), hasProfile: true });

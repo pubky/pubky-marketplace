@@ -52,13 +52,13 @@ describe('useAuthStatus', () => {
     mockAuthStore.selectIsAuthenticated = vi.fn(() => false);
   });
 
-  it('should return loading state when onboarding store not hydrated', () => {
+  it('does not wait for legacy backup hydration to determine auth', () => {
     mockOnboardingStore.hasHydrated = false;
     mockAuthStore.hasHydrated = true;
 
     const { result } = renderHook(() => useAuthStatus());
 
-    expect(result.current.isLoading).toBe(true);
+    expect(result.current.isLoading).toBe(false);
     expect(result.current.status).toBe('UNAUTHENTICATED');
   });
 
@@ -234,7 +234,7 @@ describe('useAuthStatus', () => {
       expect(result.current.hasKeypair).toBe(false);
     });
 
-    it('would be stuck loading if hydration was not preserved (demonstrating the bug)', () => {
+    it('does not become stuck after legacy backup state resets', () => {
       // Simulate the old buggy behavior
       mockOnboardingStore.hasHydrated = true;
       mockAuthStore.session = mockSession;
@@ -254,8 +254,8 @@ describe('useAuthStatus', () => {
 
       rerender();
 
-      // With the bug: would be stuck loading forever
-      expect(result.current.isLoading).toBe(true);
+      // Legacy recovery state is independent of authentication.
+      expect(result.current.isLoading).toBe(false);
     });
   });
 });

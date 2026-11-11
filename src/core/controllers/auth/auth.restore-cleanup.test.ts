@@ -274,10 +274,10 @@ describe('AuthController legacy restore cleanup with the real database', () => {
     await seedEveryTable();
     const createElementSpy = vi.spyOn(document, 'createElement');
     // Non-Dexie account residue the no-identity path must also clear: the live
-    // marketplace bearer, onboarding secrets, a stored route-return path, and
+    // marketplace bearer, a stored route-return path, and
     // mute-sync stream cursors.
     window.localStorage.setItem(MARKETPLACE_SESSION_STORAGE_KEY, '{"token":"dead-bearer"}');
-    useOnboardingStore.getState().setSecrets({ secretKey: 'dead-secret-key', mnemonic: 'dead mnemonic' });
+    useOnboardingStore.setState({ secretKey: 'dead-secret-key', mnemonic: 'dead mnemonic' });
     window.sessionStorage.setItem(ROUTE_GUARD_RETURN_TO_STORAGE_KEY, '/settings');
     window.sessionStorage.setItem(`${MUTE_SYNC_CURSOR_STORAGE_PREFIX}homeserver`, '42');
     expect(window.localStorage.getItem(ONBOARDING_PERSIST_KEY)).not.toBeNull();
@@ -289,7 +289,11 @@ describe('AuthController legacy restore cleanup with the real database', () => {
     await expectTableCounts(EXPECTED_PUBLIC_CACHE_TABLES, 1);
     await expectTableCounts(EXPECTED_IDENTITY_SCOPED_DEVICE_TABLES, 1);
     expect(window.localStorage.getItem(MARKETPLACE_SESSION_STORAGE_KEY)).toBeNull();
-    expect(window.localStorage.getItem(ONBOARDING_PERSIST_KEY)).toBeNull();
+    expect(useOnboardingStore.getState()).toMatchObject({ secretKey: 'dead-secret-key', mnemonic: 'dead mnemonic' });
+    expect(JSON.parse(window.localStorage.getItem(ONBOARDING_PERSIST_KEY)!).state).toMatchObject({
+      secretKey: 'dead-secret-key',
+      mnemonic: 'dead mnemonic',
+    });
     expect(window.sessionStorage.getItem(ROUTE_GUARD_RETURN_TO_STORAGE_KEY)).toBeNull();
     expect(window.sessionStorage.getItem(`${MUTE_SYNC_CURSOR_STORAGE_PREFIX}homeserver`)).toBeNull();
   });

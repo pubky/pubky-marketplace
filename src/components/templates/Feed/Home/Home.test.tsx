@@ -9,12 +9,6 @@ vi.mock('@/organisms/AlertBackup/AlertBackup', () => {
   };
 });
 
-vi.mock('@/organisms/DialogWelcome/DialogWelcome', () => {
-  return {
-    DialogWelcome: () => <div data-testid="dialog-welcome">DialogWelcome</div>,
-  };
-});
-
 vi.mock('@/organisms/FeedNavigation/FeedNavigation', () => {
   return {
     FeedNavigation: ({ className }: { className?: string }) => (
@@ -86,11 +80,6 @@ describe('Home', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.sessionStorage.clear();
-  });
-
-  it('renders DialogWelcome', () => {
-    render(<Home />);
-    expect(screen.getByTestId('dialog-welcome')).toBeInTheDocument();
   });
 
   it('renders AlertBackup', () => {

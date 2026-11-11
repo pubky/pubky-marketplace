@@ -26,7 +26,7 @@ export interface NotificationCoordinatorConfig extends PollingServiceConfig {
 
   /**
    * Routes where polling should be disabled (regex patterns)
-   * @default [/^\/onboarding/, /^\/logout/, /^\/sign-in/]
+   * @default [/^\/complete-profile/, /^\/backup/, /^\/logout/, /^\/sign-in/]
    */
   disabledRoutes?: RegExp[];
 }

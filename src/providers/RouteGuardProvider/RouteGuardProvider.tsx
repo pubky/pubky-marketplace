@@ -2,7 +2,7 @@
 
 import { type ReactNode, useEffect, useMemo, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { APP_ROUTES, isDynamicPublicRoute, matchesAllowedRoute, PUBLIC_ROUTES } from '@/app/routes';
+import { ACCOUNT_ROUTES, APP_ROUTES, isDynamicPublicRoute, matchesAllowedRoute, PUBLIC_ROUTES } from '@/app/routes';
 import { Spinner } from '@/atoms/Spinner/Spinner';
 import { AuthController } from '@/controllers/auth/auth';
 import { MigrationController } from '@/controllers/migration/migration';
@@ -43,7 +43,7 @@ interface RouteGuardProviderProps {
  * - Allows dynamic public routes (/post/[x]/[y], /profile/[pubky]) without auth
  *
  * Route access is configured via ROUTE_ACCESS_MAP which maps:
- * - UNAUTHENTICATED users → onboarding/auth routes
+ * - UNAUTHENTICATED users → signin/explore routes
  * - AUTHENTICATED users → app routes (feed, profile, etc.)
  * - NEEDS_PROFILE_CREATION users → profile creation route
  */
@@ -78,7 +78,7 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
 
   // Attempt to restore an existing session snapshot on fresh loads.
   useEffect(() => {
-    if (hosted || !hasHydrated) return;
+    if (hosted || !hasHydrated || pathname === ACCOUNT_ROUTES.BACKUP) return;
     if (session) return;
     if (isSessionRestoreInFlightRef.current) return;
     // Shared with auth-store rehydrate so `isRestoringSession` is only set when
@@ -109,7 +109,7 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
       .finally(() => {
         isSessionRestoreInFlightRef.current = false;
       });
-  }, [hasHydrated, session, sessionExport, grantSessionRecordId, isRestoringSession, hosted]);
+  }, [hasHydrated, session, sessionExport, grantSessionRecordId, isRestoringSession, hosted, pathname]);
 
   // Post-migration re-sync: fetch critical homeserver data after DB recreation
   // TODO: Consider using BroadcastChannel to notify other browser tabs when DB was recreated / resync completed
@@ -244,11 +244,13 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
         storeRouteGuardReturnTo(pathname);
         useAuthStore.getState().setShowSignInDialog(true);
       } else if (
-        status === AuthStatus.UNAUTHENTICATED &&
+        (status === AuthStatus.UNAUTHENTICATED || status === AuthStatus.NEEDS_PROFILE_CREATION) &&
         isRouteGuardReturnToAllowed(pathname, authenticatedRouteAccess.allowedRoutes)
       ) {
         storeRouteGuardReturnTo(pathname);
-        toast({ variant: 'info', description: 'Sign in to open that page.' });
+        if (status === AuthStatus.UNAUTHENTICATED) {
+          toast({ variant: 'info', description: 'Sign in to open that page.' });
+        }
       }
       router.push(redirectTo);
     }
@@ -258,7 +260,7 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
   // 1. Authentication status is being determined (isLoading = true)
   // 2. Route access check has completed but user doesn't have access (will trigger redirect)
   // 3. Migration re-sync is in progress (wasDbReset = true)
-  if (!isRouteAccessible || wasDbReset) {
+  if (!isRouteAccessible || (wasDbReset && pathname !== ACCOUNT_ROUTES.BACKUP)) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">

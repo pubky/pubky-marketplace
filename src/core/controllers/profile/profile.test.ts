@@ -23,23 +23,11 @@ const mockUserNormalizer = {
 
 const mockOnboardingStore = {
   getState: vi.fn(() => ({
-    setSecrets: vi.fn(),
     selectSecretKey: vi.fn(() => 'test-secret-key'),
   })),
 };
 
-const mockAuthStore = {
-  getState: vi.fn(() => ({
-    setCurrentUserPubky: vi.fn(),
-  })),
-};
-
 const mockIdentity = {
-  generateSecrets: vi.fn(() => ({
-    secretKey: 'test-secret-key',
-    mnemonic: 'test mnemonic phrase',
-  })),
-  z32FromSecret: vi.fn(() => 'test-pubky'),
   keypairFromSecretKey: vi.fn(() => ({ keypair: 'test-keypair' })),
   createRecoveryFile: vi.fn(),
 };
@@ -52,9 +40,6 @@ vi.mock('@/pipes/user/user.normalizer', () => ({
 }));
 vi.mock('@/stores/onboarding/onboarding.store', () => ({
   useOnboardingStore: mockOnboardingStore,
-}));
-vi.mock('@/stores/auth/auth.store', () => ({
-  useAuthStore: mockAuthStore,
 }));
 
 vi.mock('@/libs/identity/identity', async () => {
@@ -79,16 +64,10 @@ describe('ProfileController', () => {
     mockProfileApplication.commitUpdateStatus.mockReset();
     mockProfileApplication.commitUpdate.mockReset();
     mockUserNormalizer.to.mockReset();
-    mockIdentity.generateSecrets.mockReset();
-    mockIdentity.z32FromSecret.mockReset();
     mockIdentity.keypairFromSecretKey.mockReset();
     mockIdentity.createRecoveryFile.mockReset();
     mockOnboardingStore.getState.mockReturnValue({
-      setSecrets: vi.fn(),
       selectSecretKey: vi.fn(() => 'test-secret-key'),
-    });
-    mockAuthStore.getState.mockReturnValue({
-      setCurrentUserPubky: vi.fn(),
     });
 
     ({ ProfileController } = await import('./profile'));
@@ -214,43 +193,12 @@ describe('ProfileController', () => {
     });
   });
 
-  describe('generateSecrets', () => {
-    it('generates secrets and sets them in stores', () => {
-      const mockSetSecrets = vi.fn();
-      const mockSetCurrentUserPubky = vi.fn();
-
-      mockOnboardingStore.getState.mockReturnValue({
-        setSecrets: mockSetSecrets,
-        selectSecretKey: vi.fn(() => 'test-secret-key'),
-      });
-      mockAuthStore.getState.mockReturnValue({
-        setCurrentUserPubky: mockSetCurrentUserPubky,
-      });
-      mockIdentity.generateSecrets.mockReturnValue({
-        secretKey: 'generated-secret-key',
-        mnemonic: 'generated mnemonic',
-      });
-      mockIdentity.z32FromSecret.mockReturnValue('generated-pubky' as Pubky);
-
-      ProfileController.generateSecrets();
-
-      expect(mockIdentity.generateSecrets).toHaveBeenCalledTimes(1);
-      expect(mockSetSecrets).toHaveBeenCalledWith({
-        secretKey: 'generated-secret-key',
-        mnemonic: 'generated mnemonic',
-      });
-      expect(mockIdentity.z32FromSecret).toHaveBeenCalledWith('generated-secret-key');
-      expect(mockSetCurrentUserPubky).toHaveBeenCalledWith('generated-pubky');
-    });
-  });
-
   describe('createRecoveryFile', () => {
     const passphrase = 'a'.repeat(PASSPHRASE_MIN_LENGTH);
 
     it('creates recovery file from secret key', () => {
       const mockSelectSecretKey = vi.fn(() => 'test-secret-key');
       mockOnboardingStore.getState.mockReturnValue({
-        setSecrets: vi.fn(),
         selectSecretKey: mockSelectSecretKey,
       });
       mockIdentity.keypairFromSecretKey.mockReturnValue({ keypair: 'test-keypair' });
@@ -270,7 +218,6 @@ describe('ProfileController', () => {
         throw new Error('Secret key is not available');
       });
       mockOnboardingStore.getState.mockReturnValue({
-        setSecrets: vi.fn(),
         selectSecretKey: mockSelectSecretKey,
       });
 
@@ -281,7 +228,6 @@ describe('ProfileController', () => {
     it('requires at least PASSPHRASE_MIN_LENGTH characters before creating an encrypted backup', () => {
       const mockSelectSecretKey = vi.fn(() => 'test-secret-key');
       mockOnboardingStore.getState.mockReturnValue({
-        setSecrets: vi.fn(),
         selectSecretKey: mockSelectSecretKey,
       });
 

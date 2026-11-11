@@ -11,7 +11,6 @@ import type {
   HostSessionSnapshot,
   TLoginWithEncryptedFileParams,
   TLoginWithMnemonicParams,
-  TSignUpParams,
 } from '@/controllers/auth/auth.types';
 import { broadcastSignedOut, bumpAuthEpoch, readAuthEpoch, subscribeSignedOut } from '@/controllers/auth/auth-epoch';
 import { withAuthFinalizationLock } from '@/controllers/auth/auth-finalization-lock';
@@ -475,6 +474,7 @@ export class AuthController {
           await this.finalizeSignedOutUnderLock({
             captured,
             preservePublicCache: false,
+            preserveLegacyBackup: true,
           });
           cleanedUp = true;
           flowGenerationAtStart = this.authFlowGeneration;
@@ -544,6 +544,7 @@ export class AuthController {
       await this.finalizeSignedOutUnderLock({
         captured,
         preservePublicCache: !captured.hadIdentity,
+        preserveLegacyBackup: true,
       });
       cleanedUp = true;
       flowGenerationAtStart = this.authFlowGeneration;
@@ -569,6 +570,7 @@ export class AuthController {
         await this.finalizeSignedOutUnderLock({
           captured,
           preservePublicCache: !captured.hadIdentity,
+          preserveLegacyBackup: true,
         });
         flowGenerationAtStart = this.authFlowGeneration;
       }
@@ -583,10 +585,8 @@ export class AuthController {
   }
 
   /**
-   * Gets a homeserver service instance using the secret key from the onboarding store.
-   * @param params - The authentication parameters
-   * @param params.keypair - The cryptographic keypair for the user
-   * @returns Configured homeserver service instance
+   * Signs in an existing account with the explicitly supplied recovery keypair.
+   * Returns whether the resulting session was accepted for the current auth lifetime.
    */
   private static async signIn({ keypair }: TKeypairParams): Promise<boolean> {
     this.assertStandaloneMode();
@@ -746,7 +746,7 @@ export class AuthController {
    * Session initialization shared by all sign-in flows; assumes the environment
    * guard already passed for this session.
    */
-  private static async completeAuthenticatedSession({ session }: THomeserverSessionResult, knownProfile?: boolean) {
+  private static async completeAuthenticatedSession({ session }: THomeserverSessionResult) {
     // Checked and claimed with no await in between: of two approvals that both
     // reach here, the first bumps the generation (cancelAllAuthFlows below)
     // and the second is discarded before it can touch any store.
@@ -858,7 +858,7 @@ export class AuthController {
       // the new grant. Its active reference is protected throughout retries.
       await this.settlePendingGrantKeyCleanup();
       if (!isCurrent()) throw createCanceledError();
-      const isSignedUp = knownProfile ?? (await AuthApplication.userIsSignedUp({ pubky }));
+      const isSignedUp = await AuthApplication.userIsSignedUp({ pubky });
       if (!isCurrent()) throw createCanceledError();
       signInStore.setProfileChecked(true); // Step 2 complete (40%)
 
@@ -879,28 +879,6 @@ export class AuthController {
       }
       throw error;
     }
-  }
-
-  /**
-   * Signs up a new user with the homeserver using the provided secret key and signup token.
-   * @param params - Object containing secret key and signup token for registration
-   * @param params.secretKey - The secret key for the user
-   * @param params.signupToken - Invitation code for user registration
-   */
-  static async signUp({ secretKey, signupToken }: TSignUpParams) {
-    this.assertStandaloneMode();
-    const generationAtStart = this.authFlowGeneration;
-    const epochAtStart = readAuthEpoch();
-    const captured = this.captureAuthIdentity();
-    if (!(await this.takeLocalStateForCapturedIdentity(captured))) throw createCanceledError();
-    const keypair = Identity.keypairFromSecretKey(secretKey);
-    const result = await AuthApplication.signUp({ keypair, signupToken });
-    this.sessionFlowGeneration.set(result.session, generationAtStart);
-    this.grantEpochAtStart.set(result.session, epochAtStart);
-    this.grantSignerBySession.set(result.session, 'local-key');
-    // A newly created account has no profile yet. Do not make retaining its
-    // recovery key depend on a second profile lookup or social bootstrap.
-    await this.completeAuthenticatedSession(result, false);
   }
 
   /**
@@ -951,11 +929,13 @@ export class AuthController {
     preservePublicCache,
     capturedRecordId,
     capturedRecordIds = capturedRecordId ? [capturedRecordId] : [],
+    preserveLegacyBackup = false,
   }: {
     captured: CapturedAuthIdentity;
     preservePublicCache: boolean;
     capturedRecordId?: string | null;
     capturedRecordIds?: string[];
+    preserveLegacyBackup?: boolean;
   }): Promise<void> {
     await withAuthFinalizationLock(async () => {
       const currentRecordIds = [useAuthStore.getState().grantSessionRecordId, readPersistedGrantSessionRecordId()];
@@ -970,7 +950,7 @@ export class AuthController {
         useAuthStore.getState().setIsLoggingOut(false);
         return;
       }
-      await this.cleanupLocalState({ preservePublicCache });
+      await this.cleanupLocalState({ preservePublicCache, preserveLegacyBackup });
     });
   }
 
@@ -1056,18 +1036,23 @@ export class AuthController {
    * public-cache Dexie tables other than the database step itself.
    */
   private static async cleanupLocalState({
+    preserveLegacyBackup = false,
     preservePublicCache = false,
     preserveServiceSessions = false,
     confirmMarketplaceBff = false,
     preservePrivateData = false,
     keepServicePubky = null,
   }: {
+    preserveLegacyBackup?: boolean;
     preservePublicCache?: boolean;
     preserveServiceSessions?: boolean;
     confirmMarketplaceBff?: boolean;
     preservePrivateData?: boolean;
     keepServicePubky?: Pubky | null;
   } = {}): Promise<void> {
+    // A failed restore is not consent to discard an unbacked-up legacy key.
+    // Explicit logout still clears it, even if an earlier restore already cleaned other state.
+    if (!preserveLegacyBackup) this.clearLegacyBackup();
     if (this.cleanupState.promise) {
       return await this.cleanupState.promise;
     }
@@ -1085,6 +1070,16 @@ export class AuthController {
     });
     await this.cleanupState.promise;
     this.cleanupState.completed = true;
+  }
+
+  /** Explicit Shop logout discards backup in memory as well as in shared browser storage. */
+  private static clearLegacyBackup(): void {
+    useOnboardingStore.getState().reset();
+    try {
+      globalThis.localStorage?.removeItem(ONBOARDING_PERSIST_KEY);
+    } catch {
+      // Storage is unavailable; the in-memory backup was still cleared.
+    }
   }
 
   private static async runCleanupLocalState({
@@ -1146,19 +1141,10 @@ export class AuthController {
 
       this.cancelAllAuthFlows();
 
-      // Cancel and clear all query clients (nexus, homegate, exchangerate, and any future ones)
+      // Cancel and clear all query clients (nexus, exchangerate, and any future ones)
       clearAllQueryClients();
 
       // Reset all Zustand stores.
-      useOnboardingStore.getState().reset();
-      // reset() rewrites the onboarding persist blob with nulled secrets; remove
-      // the key outright so no onboarding residue (secret key, mnemonic, invite
-      // code) survives at rest on a shared device.
-      try {
-        globalThis.localStorage?.removeItem(ONBOARDING_PERSIST_KEY);
-      } catch {
-        // Storage unavailable (private mode) — nothing could have persisted.
-      }
       useAuthStore.getState().reset();
       useSignInStore.getState().reset();
       useLocalFilesStore.getState().reset();
@@ -1404,15 +1390,6 @@ export class AuthController {
   }
 
   /**
-   * Generates a signup grant URL for Pubky Ring authorization.
-   * @param inviteCode - The invite code for signup
-   * @returns Promise resolving to the generated signup authentication URL
-   */
-  static async getSignupAuthUrl(inviteCode: string): Promise<TGenerateAuthUrlResult> {
-    return this.beginGrantCeremony(() => AuthApplication.generateSignupAuthUrl(inviteCode), 'ring');
-  }
-
-  /**
    * Logs out the current user from both the homeserver and local application state.
    */
   static async logout() {
@@ -1618,7 +1595,12 @@ export class AuthController {
     BootstrapApplication.cancelModerationFollow();
     const { session, grantSessionRecordId } = useAuthStore.getState();
     if (session && !AuthApplication.isGrantSession(session)) return;
-    if (!session && !grantSessionRecordId && !useAuthStore.getState().currentUserPubky) return;
+    if (!session && !grantSessionRecordId && !useAuthStore.getState().currentUserPubky) {
+      // A public backup tab can retain hydrated secrets after another tab removed
+      // the persisted key. Clear them synchronously before any later store write.
+      this.clearLegacyBackup();
+      return;
+    }
     const captured = this.captureAuthIdentity();
     const capturedRecordIds = this.captureLogoutRecords(captured.pubky, grantSessionRecordId);
     useAuthStore.getState().setSession(null);
@@ -1688,22 +1670,5 @@ export class AuthController {
       Logger.error('Failed to initialize settings during bootstrap', { error, pubky });
       return null;
     }
-  }
-
-  /**
-   * Generates a signup token for user registration. This is just for testing environments
-   * @returns Promise resolving to the generated signup token
-   */
-  static async generateSignupToken() {
-    return await AuthApplication.generateSignupToken();
-  }
-
-  /**
-   * Verifies an invite code (signup token) against the homeserver before applying it.
-   * @param inviteCode - The invite code to verify
-   * @returns `'valid'`, `'used'`, or `'invalid'` depending on the homeserver response
-   */
-  static async verifySignupToken(inviteCode: string) {
-    return await AuthApplication.verifySignupToken(inviteCode);
   }
 }

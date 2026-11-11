@@ -121,45 +121,24 @@ describe('grant-only authentication lifecycle', () => {
     expect(clearCommerce).not.toHaveBeenCalled();
   });
 
-  it.each(['mnemonic', 'encrypted-file', 'signup'] as const)(
+  it.each(['mnemonic', 'encrypted-file'] as const)(
     'records %s as local-key and saves before store initialization',
     async (mode) => {
       const session = grantSession();
       const keypair = mockKeypair({ publicKey: session.info.publicKey });
       vi.spyOn(Identity, 'keypairFromMnemonic').mockReturnValue(keypair);
       vi.spyOn(Identity, 'decryptRecoveryFile').mockResolvedValue(keypair);
-      vi.spyOn(Identity, 'keypairFromSecretKey').mockReturnValue(keypair);
       vi.spyOn(AuthApplication, 'signIn').mockResolvedValue({ session });
-      vi.spyOn(AuthApplication, 'signUp').mockResolvedValue({ session });
       if (mode === 'mnemonic') await AuthController.loginWithMnemonic({ mnemonic: 'test' });
-      else if (mode === 'encrypted-file')
-        await AuthController.loginWithEncryptedFile({ encryptedFile: new File([], 'test'), password: 'test' });
-      else await AuthController.signUp({ secretKey: 'test', signupToken: 'invite' });
+      else await AuthController.loginWithEncryptedFile({ encryptedFile: new File([], 'test'), password: 'test' });
       expect(AuthApplication.saveGrantSession).toHaveBeenCalledWith(session);
       expect(useAuthStore.getState()).toMatchObject({
         session,
         grantSigner: 'local-key',
         grantSessionRecordId: 'alice:grant-1',
       });
-      if (mode === 'signup') {
-        expect(AuthApplication.userIsSignedUp).not.toHaveBeenCalled();
-        expect(useAuthStore.getState().hasProfile).toBe(false);
-      }
     },
   );
-
-  it('saves Ring signup grants with Ring ownership', async () => {
-    const session = grantSession();
-    vi.spyOn(AuthApplication, 'generateSignupAuthUrl').mockResolvedValue({
-      authorizationUrl: 'pubkyauth://signup_grant',
-      awaitApproval: Promise.resolve(session),
-      cancelAuthFlow: vi.fn(),
-    });
-    const flow = await AuthController.getSignupAuthUrl('invite');
-    await AuthController.initializeAuthenticatedSession({ session: await flow.awaitApproval });
-    expect(useAuthStore.getState().grantSigner).toBe('ring');
-    expect(AuthApplication.saveGrantSession).toHaveBeenCalledWith(session);
-  });
 
   it('does not restore an old cookie or destroy legacy local history on migration', async () => {
     useAuthStore.setState({ currentUserPubky: 'alice', sessionExport: 'legacy-cookie', session: null });

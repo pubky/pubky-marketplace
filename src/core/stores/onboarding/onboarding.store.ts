@@ -5,7 +5,7 @@ import { createOnboardingActions } from './onboarding.actions';
 import { createOnboardingSelectors } from './onboarding.selectors';
 import { onboardingInitialState, type OnboardingStore } from './onboarding.types';
 
-// Store creation
+// Preserve the original store/key so previously generated secrets remain exportable.
 export const useOnboardingStore = create<OnboardingStore>()(
   devtools(
     persist(
@@ -17,14 +17,23 @@ export const useOnboardingStore = create<OnboardingStore>()(
       {
         name: ONBOARDING_PERSIST_KEY,
 
-        // Persist keys data
+        // Keep the existing secret fields without creating or migrating key material.
         partialize: (state) => ({
           secretKey: state.secretKey,
           mnemonic: state.mnemonic,
-          showWelcomeDialog: state.showWelcomeDialog,
-          inviteCode: state.inviteCode,
           hasHydrated: false, // Will be set by rehydration handler
         }),
+
+        // Retired progress/welcome fields never enter the live store. The stored secret
+        // strings are carried forward unchanged, including incomplete legacy records.
+        merge: (persisted, current) => {
+          if (!persisted || typeof persisted !== 'object') return current;
+          return {
+            ...current,
+            secretKey: 'secretKey' in persisted && typeof persisted.secretKey === 'string' ? persisted.secretKey : null,
+            mnemonic: 'mnemonic' in persisted && typeof persisted.mnemonic === 'string' ? persisted.mnemonic : null,
+          };
+        },
 
         // Set hasHydrated to true after rehydration
         onRehydrateStorage: () => (state) => {

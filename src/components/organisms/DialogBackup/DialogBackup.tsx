@@ -55,7 +55,9 @@ function BackupMethodCard({ title, imageSrc, imageAlt, dialog }: BackupMethodCar
 }
 
 export function DialogBackup({ open, onOpenChange }: DialogBackupProps = {}) {
-  const { mnemonic } = useOnboardingStore();
+  const mnemonic = useOnboardingStore((state) => state.mnemonic);
+  const hasMnemonic = useOnboardingStore((state) => state.selectHasMnemonic());
+  const hasSecretKey = useOnboardingStore((state) => state.selectHasSecretKey());
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {open === undefined && (
@@ -69,36 +71,43 @@ export function DialogBackup({ open, onOpenChange }: DialogBackupProps = {}) {
           </Button>
         </DialogTrigger>
       )}
-      <DialogContent className="max-w-sm p-6 md:max-w-xl md:p-8" hiddenTitle={'Back up your pubky'} centered>
+      <DialogContent className="max-w-sm p-6 md:max-w-xl md:p-8" hiddenTitle={'Back up saved keys'} centered>
         <DialogHeader>
           <DialogTitle id="backup-dialog-title" className="text-xl md:text-2xl">
-            {'Back up your pubky'}
+            {'Back up saved keys'}
           </DialogTitle>
           <DialogDescription id="backup-dialog-description">
             {
-              'Safely back up and store the secret seed for your pubky. Which backup method do you prefer? You can choose multiple backup methods if you wish.'
+              'Back up the legacy identity saved in this browser. These keys may belong to a different account than the one signed in.'
             }
           </DialogDescription>
         </DialogHeader>
         <Container className="flex-col gap-3 md:flex-row">
-          <BackupMethodCard
-            title={'Recovery phrase'}
-            imageSrc="/images/note.webp"
-            imageAlt={'Note'}
-            dialog={<DialogBackupPhrase />}
-          />
-          <BackupMethodCard
-            title={'Download encrypted file'}
-            imageSrc="/images/folder.webp"
-            imageAlt={'Folder'}
-            dialog={<DialogBackupEncrypted />}
-          />
-          <BackupMethodCard
-            title={'Export to Pubky Ring'}
-            imageSrc="/images/keyring.webp"
-            imageAlt={'Keys'}
-            dialog={<DialogBackupExport mnemonic={mnemonic} />}
-          />
+          {!hasMnemonic && !hasSecretKey && <Typography>No saved keys in this browser</Typography>}
+          {hasMnemonic && (
+            <BackupMethodCard
+              title={'Recovery phrase'}
+              imageSrc="/images/note.webp"
+              imageAlt={'Note'}
+              dialog={<DialogBackupPhrase />}
+            />
+          )}
+          {hasSecretKey && (
+            <BackupMethodCard
+              title={'Download encrypted file'}
+              imageSrc="/images/folder.webp"
+              imageAlt={'Folder'}
+              dialog={<DialogBackupEncrypted />}
+            />
+          )}
+          {hasMnemonic && (
+            <BackupMethodCard
+              title={'Export to Pubky Ring'}
+              imageSrc="/images/keyring.webp"
+              imageAlt={'Keys'}
+              dialog={<DialogBackupExport mnemonic={mnemonic} />}
+            />
+          )}
         </Container>
       </DialogContent>
     </Dialog>

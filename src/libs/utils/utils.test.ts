@@ -12,7 +12,6 @@ import {
   copyToClipboard,
   extractInitials,
   focusAdjacentGridItem,
-  formatInviteCode,
   formatPublicKey,
   formatUSDate,
   generateRandomColor,
@@ -72,48 +71,6 @@ describe('Utils', () => {
     it('should handle null and undefined values', () => {
       const result = cn('valid', null, undefined, 'another');
       expect(result).toBe('valid another');
-    });
-  });
-
-  describe('formatInviteCode', () => {
-    it('should format a 12-character code correctly', () => {
-      const result = formatInviteCode('ABCD1234EFGH');
-      expect(result).toBe('ABCD-1234-EFGH');
-    });
-
-    it('should convert lowercase to uppercase', () => {
-      const result = formatInviteCode('abcd1234efgh');
-      expect(result).toBe('ABCD-1234-EFGH');
-    });
-
-    it('should remove non-alphanumeric characters', () => {
-      const result = formatInviteCode('AB-CD_12@34#EF!GH');
-      expect(result).toBe('ABCD-1234-EFGH');
-    });
-
-    it('should handle codes shorter than 12 characters', () => {
-      const result = formatInviteCode('ABC123');
-      expect(result).toBe('ABC1-23');
-    });
-
-    it('should truncate codes longer than 12 characters', () => {
-      const result = formatInviteCode('ABCD1234EFGH5678');
-      expect(result).toBe('ABCD-1234-EFGH');
-    });
-
-    it('should handle empty string', () => {
-      const result = formatInviteCode('');
-      expect(result).toBe('');
-    });
-
-    it('should handle string with only special characters', () => {
-      const result = formatInviteCode('!@#$%^&*()');
-      expect(result).toBe('');
-    });
-
-    it('should handle mixed case with special characters', () => {
-      const result = formatInviteCode('aBc-123_DeF!456');
-      expect(result).toBe('ABC1-23DE-F456');
     });
   });
 

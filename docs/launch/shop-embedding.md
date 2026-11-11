@@ -190,7 +190,7 @@ These are prior embedding observations, not a completed live test of the new sha
 - The PayPal checkout hand-off, in the cart and accepted-offer paths.
 - Social-host profile links render `target="_top"` when embedded.
 
-The recovery-phrase "open in Ring" button (`DialogBackupExport`) still uses `window.open(url, '_blank')`: it belongs to onboarding, which the embedded Shop does not offer, and a new-tab open is a different mechanism from the frame navigation that fails.
+The recovery-phrase "open in Ring" button (`DialogBackupExport`) still uses `window.open(url, '_blank')`: it exports locally saved legacy keys from the backup surface, and a new-tab open is a different mechanism from the frame navigation that fails.
 
 The Paykit setup and Lock Server connect panels are nested iframes whose sandbox already grants top navigation to custom protocols. They write no `location`, so nothing changes there; see the next section for their storage limits.
 
@@ -271,7 +271,7 @@ A standalone Shop can run and migrate its own legacy storage independently. The 
 
 ## Mounted-path details
 
-Prefixed with the mount path: same-origin API calls (including marketplace grant/bootstrap clients and development signup-token requests), Passport popup callbacks, public images (through `BasePathImage`), `<video>` and CSS-referenced artwork, `history.replaceState` for the checkout URL, and the OG fallback redirect. Prefixed with the public path (the mount path unless `PUBKY_RUNTIME_SHOP_PUBLIC_PATH` is set): share links, canonical and Open Graph URLs (`metadataBase` stays the origin; root-relative values are prefixed) and structured data. Next.js handles the router, `next/link`, redirects and `/_next` assets itself. The web manifest link is omitted under a base path.
+Prefixed with the mount path: same-origin API calls (including marketplace grant/bootstrap clients), Passport popup callbacks, public images (through `BasePathImage`), `<video>` and CSS-referenced artwork, `history.replaceState` for the checkout URL, and the OG fallback redirect. Prefixed with the public path (the mount path unless `PUBKY_RUNTIME_SHOP_PUBLIC_PATH` is set): share links, canonical and Open Graph URLs (`metadataBase` stays the origin; root-relative values are prefixed) and structured data. Next.js handles the router, `next/link`, redirects and `/_next` assets itself. The web manifest link is omitted under a base path.
 
 ## Remaining deployment and release work
 
@@ -280,7 +280,7 @@ The outer/inner route scheme, App-owned sign-in, targeted SDK cleanup and mounte
 - Deploy both compatible frontends, the prefix-preserving proxy and updated App worker together. Require the mounted BFF readiness check to pass before sending users to the new deployment.
 - Verify desktop/mobile Shop navigation and direct `/shop` links load the embedded Shop without an enable flag. Simulate a BFF outage, restore it, and verify the unavailable state recovers automatically at the same Shop URL.
 - Enable/configure marketplace grant bootstrap, origin allow-lists, assertion issuer/key trust and service callback origins. Grant-only homeserver login does not remove Shop BFF cookies or replace marketplace/Locks service approval. An unavailable grant backend must remain an explicit unavailable state.
-- Exercise real Ring, Bitkit, Passport, recovery-file and signup journeys, migrated cookie users, narrow grants, rejected approvals, account switches, two tabs, revoked records and sign-out while approval is pending.
+- Exercise real Ring, Bitkit, Passport, recovery-file and existing-profile completion journeys, migrated cookie users, narrow grants, rejected approvals, account switches, two tabs, revoked records and sign-out while approval is pending.
 - Verify Safari/mobile IndexedDB persistence across restart, Web Locks, cross-tab lifecycle, synchronous signer/popup gestures, and nested Paykit/Locks frames with the deployed origin.
 - Verify deep links, refresh, Back/Forward, search/hash preservation, top-level signer/PayPal returns, and updated visual baselines.
 - Coordinate secondl1ght's separate Inbox/chat migration with the same account lifecycle and existing history. No `e` scope or new messaging protocol is introduced by this embedding work.

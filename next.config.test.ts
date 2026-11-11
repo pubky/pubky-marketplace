@@ -1,3 +1,4 @@
+import loadCustomRoutes from 'next/dist/lib/load-custom-routes';
 import { getPathMatch } from 'next/dist/shared/lib/router/utils/path-match';
 import { prepareDestination } from 'next/dist/shared/lib/router/utils/prepare-destination';
 import withSerwistInit from '@serwist/next';
@@ -8,8 +9,6 @@ import packageJson from './package.json';
 
 vi.mock('@serwist/next', () => ({ default: vi.fn(() => (config: NextConfig) => config) }));
 
-type ConfiguredRedirect = Awaited<ReturnType<typeof redirects>>[number];
-
 const SHOP_ORIGIN = 'https://shop.pubky.app';
 
 /**
@@ -18,7 +17,7 @@ const SHOP_ORIGIN = 'https://shop.pubky.app';
  * (first match wins). Returns the absolute redirect target, or null when no
  * redirect applies.
  */
-function resolveRedirect(configured: ConfiguredRedirect[], requestUrl: string): string | null {
+function resolveRedirect(configured: { source: string; destination: string }[], requestUrl: string): string | null {
   const url = new URL(requestUrl, SHOP_ORIGIN);
   for (const route of configured) {
     const params = getPathMatch(route.source, { strict: true, removeUnnamedParams: true })(url.pathname);
@@ -66,9 +65,9 @@ const SHOP_PATHS = [
   '/messages/o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo',
   '/sign-in',
   '/logout',
-  '/onboarding/profile',
+  '/complete-profile',
+  '/backup',
   '/copyright',
-  '/invite/ABCD-1234',
   '/offline',
   '/share',
   '/homepage',
@@ -96,7 +95,7 @@ describe('Next redirects', () => {
       vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', undefined);
       const configured = await redirects();
 
-      expect(configured).toHaveLength(2);
+      expect(configured).toHaveLength(10);
       for (const path of SOCIAL_PATHS) {
         expect(resolveRedirect(configured, path), path).toBeNull();
       }
@@ -106,7 +105,7 @@ describe('Next redirects', () => {
 
     it('treats an empty value as unset', async () => {
       vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', '');
-      expect(await redirects()).toHaveLength(2);
+      expect(await redirects()).toHaveLength(10);
     });
   });
 
@@ -153,7 +152,7 @@ describe('Next redirects', () => {
       expect(resolveRedirect(await redirects(), '/profile/abc/posts')).toBe('https://pubky.app/profile/abc/posts');
     });
 
-    it('leaves marketplace, messages, auth, onboarding and utility routes in the Shop', async () => {
+    it('leaves marketplace, messages, auth, account and utility routes in the Shop', async () => {
       vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', 'https://pubky.app');
       const configured = await redirects();
 
@@ -277,5 +276,33 @@ describe('Shop reconnect behavior', () => {
     await import('./next.config');
     // register:false alone still installs Serwist's online => location.reload listener.
     expect(withSerwistInit).toHaveBeenCalledWith(expect.objectContaining({ register: false, reloadOnOnline }));
+  });
+});
+
+describe('retired signup compatibility', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it.each(['', '/shop-embed'])('lets Next apply the %s mount once', async (basePath) => {
+    vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', undefined);
+    const configured = (await loadCustomRoutes({ basePath, redirects, skipTrailingSlashRedirect: true })).redirects;
+    for (const [source, destination] of [
+      ['/onboarding/profile', '/complete-profile'],
+      ['/onboarding/backup', '/backup'],
+      ['/onboarding/human', '/sign-in'],
+      ['/onboarding/install', '/sign-in'],
+      ['/onboarding/pubky', '/sign-in'],
+      ['/onboarding/scan', '/sign-in'],
+      ['/invite/fictional-invite', '/sign-in'],
+      ['/marketplace/shop', '/marketplace/storefront'],
+    ]) {
+      expect(resolveRedirect(configured, `${basePath}${source}`)).toBe(`${SHOP_ORIGIN}${basePath}${destination}`);
+    }
+    for (const path of [
+      '/marketplace/shop/fictional-seller',
+      '/auth/passport/return',
+      '/complete-profile',
+      '/backup',
+    ]) {
+      expect(resolveRedirect(configured, `${basePath}${path}`)).toBeNull();
+    }
   });
 });

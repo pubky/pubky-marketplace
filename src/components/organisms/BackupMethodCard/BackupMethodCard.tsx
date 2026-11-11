@@ -14,6 +14,19 @@ import { DialogBackupPhrase } from '../DialogBackupPhrase/DialogBackupPhrase';
 
 export const BackupMethodCard = () => {
   const mnemonic = useOnboardingStore((state) => state.mnemonic);
+  const hasSecretKey = useOnboardingStore((state) => state.selectHasSecretKey());
+  const hasMnemonic = useOnboardingStore((state) => state.selectHasMnemonic());
+
+  if (!hasSecretKey && !hasMnemonic) {
+    return (
+      <ContentCard className="rounded-md">
+        <Heading level={2} size="md">
+          No saved keys in this browser
+        </Heading>
+        <Typography>Sign in with your existing account to continue using Pubky Market.</Typography>
+      </ContentCard>
+    );
+  }
 
   return (
     <ContentCard
@@ -33,29 +46,33 @@ export const BackupMethodCard = () => {
       </Container>
       <Container className="mx-0 max-w-[576px]">
         <Typography size="sm" className="text-base font-medium text-secondary-foreground opacity-80">
-          {
-            'Safely back up and store the secret seed for your pubky. Which backup method do you prefer? You can also choose to do this later.'
-          }
+          {'Choose how to back up the legacy identity saved in this browser. Leaving this page keeps your saved keys.'}
         </Typography>
         <Container className="mt-6 flex-col gap-3 lg:flex-row lg:flex-wrap">
-          <DialogBackupPhrase>
-            <Button id="backup-recovery-phrase-btn" variant="secondary" className="w-full gap-2 font-bold lg:w-auto">
-              <FileText className="h-4 w-4" />
-              <span>{'Recovery phrase'}</span>
-            </Button>
-          </DialogBackupPhrase>
-          <DialogBackupEncrypted>
-            <Button id="backup-encrypted-file-btn" variant="secondary" className="w-full gap-2 font-bold lg:w-auto">
-              <FileDown className="h-4 w-4" />
-              <span>{'Encrypted file'}</span>
-            </Button>
-          </DialogBackupEncrypted>
-          <DialogBackupExport mnemonic={mnemonic}>
-            <Button id="backup-pubky-ring-btn" className="w-full gap-2 font-bold lg:w-auto">
-              <Scan className="h-4 w-4" />
-              <span>{'Export to Pubky Ring'}</span>
-            </Button>
-          </DialogBackupExport>
+          {hasMnemonic && (
+            <DialogBackupPhrase>
+              <Button id="backup-recovery-phrase-btn" variant="secondary" className="w-full gap-2 font-bold lg:w-auto">
+                <FileText className="h-4 w-4" />
+                <span>{'Recovery phrase'}</span>
+              </Button>
+            </DialogBackupPhrase>
+          )}
+          {hasSecretKey && (
+            <DialogBackupEncrypted>
+              <Button id="backup-encrypted-file-btn" variant="secondary" className="w-full gap-2 font-bold lg:w-auto">
+                <FileDown className="h-4 w-4" />
+                <span>{'Encrypted file'}</span>
+              </Button>
+            </DialogBackupEncrypted>
+          )}
+          {hasMnemonic && (
+            <DialogBackupExport mnemonic={mnemonic}>
+              <Button id="backup-pubky-ring-btn" className="w-full gap-2 font-bold lg:w-auto">
+                <Scan className="h-4 w-4" />
+                <span>{'Export to Pubky Ring'}</span>
+              </Button>
+            </DialogBackupExport>
+          )}
         </Container>
       </Container>
     </ContentCard>

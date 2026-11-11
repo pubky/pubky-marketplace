@@ -1,17 +1,27 @@
-import { ZustandGet } from '../stores.types';
-import { OnboardingStore } from './onboarding.types';
+import { validateMnemonic } from 'bip39';
+import { ValidationErrorCode } from '@/libs/error/error.codes';
+import { Err } from '@/libs/error/error.factories';
+import { ErrorService } from '@/libs/error/error.types';
+import type { ZustandGet } from '../stores.types';
+import type { OnboardingSelectors, OnboardingStore } from './onboarding.types';
 
-export const createOnboardingSelectors = (get: ZustandGet<OnboardingStore>) => ({
-  /**
-   * Gets the secret key (private key) from the keypair
-   * @returns The secret key as a hex string
-   * @throws Error if keypair is not available
-   */
+const isSecretKey = (secretKey: string | null): secretKey is string =>
+  typeof secretKey === 'string' && /^[0-9a-f]{64}$/i.test(secretKey);
+
+export const createOnboardingSelectors = (get: ZustandGet<OnboardingStore>): OnboardingSelectors => ({
+  selectHasSecretKey: () => isSecretKey(get().secretKey),
+  selectHasMnemonic: () => {
+    const mnemonic = get().mnemonic;
+    return typeof mnemonic === 'string' && validateMnemonic(mnemonic);
+  },
+  /** Return a saved legacy key only for the explicitly requested recovery export. */
   selectSecretKey: () => {
     const secretKey = get().secretKey;
-    if (!secretKey) {
-      // TODO: Specific error type
-      throw new Error('Secret key is not available. Please generate first.');
+    if (!isSecretKey(secretKey)) {
+      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'A saved recovery key is unavailable on this device.', {
+        service: ErrorService.Local,
+        operation: 'selectSecretKey',
+      });
     }
     return secretKey;
   },

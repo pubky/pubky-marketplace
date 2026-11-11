@@ -6,6 +6,7 @@ import { legacyStorageKey, shopStorageKey } from '@/libs/storage-namespace/stora
 
 // Namespaced so the Shop and pubky.app can share one origin (see `@/libs/storage-namespace`).
 export const AUTH_PERSIST_KEY = shopStorageKey('auth-store');
+// Legacy backup storage: retain this exact key for export and explicit Shop logout cleanup.
 export const ONBOARDING_PERSIST_KEY = shopStorageKey('onboarding-storage');
 export const NOTIFICATION_PERSIST_KEY = shopStorageKey('notification-store');
 export const SEARCH_PERSIST_KEY = shopStorageKey('search-store');

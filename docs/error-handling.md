@@ -53,29 +53,9 @@ Catch model exceptions only to append context (`service`, `action`).
 Re-throw the same `AppError` instance to avoid losing stack traces.
 For input validation issues, throw `Err.validation(ValidationErrorCode.*, ...)`.
 
-### Remote Services (`src/core/services/nexus/`, `homeserver/`, `homegate/`)
+### Remote Services (`src/core/services/nexus/`, `homeserver/`)
 
-```typescript
-// Real: src/core/services/homegate/homegate.ts
-class HomegateService {
-  static async verifySmsCode({ phoneNumber, code }: TVerifySmsCodeParams): Promise<TVerifySmsCodeResult> {
-    const url = homegateApi.validateSmsCode();
-
-    const response = await safeFetch(
-      url,
-      { method: HttpMethod.POST, body: JSON.stringify({ phoneNumber, code }), headers: JSON_HEADERS },
-      ErrorService.Homegate,
-      'verifySmsCode',
-    );
-
-    if (!response.ok) {
-      throw httpResponseToError(response, ErrorService.Homegate, 'verifySmsCode', url);
-    }
-
-    return await parseResponseOrThrow<TRawApiResponse>(response, ErrorService.Homegate, 'verifySmsCode', url);
-  }
-}
-```
+The Nexus boundary in `src/core/services/nexus/nexus.utils.ts` uses `safeFetch`, converts a failed HTTP response with `httpResponseToError`, and parses successful JSON with `parseResponseOrThrow`. Keep the service and operation metadata consistent through those helpers. Homegate's signup-only service has been removed; use the current Nexus implementation as the reference.
 
 Differentiate transient errors (`SERVICE_UNAVAILABLE`, `NETWORK_ERROR`) from fatal ones for smarter retries.
 

@@ -5,8 +5,7 @@ import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import type { Pubky } from '@/models/models.types';
 import type { THomeserverSessionResult } from '@/services/homeserver/homeserver.types';
-import type { TOnboardingSecrets } from '@/stores/onboarding/onboarding.types';
-import type { TCreateRecoveryFileParams, TDecryptRecoveryFileParams, TMnemonicWords } from './identity.types';
+import type { TCreateRecoveryFileParams, TDecryptRecoveryFileParams } from './identity.types';
 
 export class Identity {
   // Mention pattern: pk: or pubky followed by exactly 52 lowercase alphanumeric characters
@@ -113,68 +112,6 @@ export class Identity {
   }
 
   /**
-   * Generates a 12-word mnemonic recovery phrase
-   * @returns The mnemonic recovery phrase
-   */
-  private static generateMnemonic(): TMnemonicWords {
-    try {
-      // Generate 12-word mnemonic using BIP39 standard (128 bits entropy)
-      const mnemonic = bip39.generateMnemonic(128);
-
-      // Validate the generated mnemonic
-      if (!bip39.validateMnemonic(mnemonic)) {
-        throw new Error('Generated mnemonic failed validation');
-      }
-
-      const words = mnemonic.split(' ');
-
-      // Ensure we have exactly 12 words
-      if (words.length !== 12) {
-        throw new Error(`Expected 12 words, got ${words.length}`);
-      }
-
-      return words.join(' ');
-    } catch (error) {
-      throw Err.client(ClientErrorCode.UNPROCESSABLE, 'Failed to generate BIP39 seed words, invalid mnemonic', {
-        service: ErrorService.Local,
-        operation: 'generateMnemonic',
-        context: { originalError: error instanceof Error ? error.message : 'Unknown error' },
-        cause: error,
-      });
-    }
-  }
-
-  /**
-   * Generates a secret key from a mnemonic and returns it in hex format
-   * @param mnemonic - The mnemonic to generate the secret key from
-   * @returns The secret key as a hexadecimal string (64 characters representing 32 bytes)
-   */
-  private static generateSecretKeyFromMnemonic(mnemonic: string): string {
-    if (!bip39.validateMnemonic(mnemonic)) {
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Invalid mnemonic', {
-        service: ErrorService.Local,
-        operation: 'generateSecretKeyFromMnemonic',
-      });
-    }
-
-    try {
-      // Convert mnemonic to seed using BIP39 standard
-      const seedMnemonic = bip39.mnemonicToSeedSync(mnemonic);
-      // Use first 32 bytes as secret key
-      const secretKey = new Uint8Array(seedMnemonic.subarray(0, 32));
-      // Convert secret key to hex string format
-      return this.secretKeyToHex(secretKey);
-    } catch (error) {
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Failed to generate secret key from mnemonic', {
-        service: ErrorService.Local,
-        operation: 'generateSecretKeyFromMnemonic',
-        context: { originalError: error instanceof Error ? error.message : 'Unknown error' },
-        cause: error,
-      });
-    }
-  }
-
-  /**
    * Converts a secret key to a keypair
    * @param secretKey - The secret key to convert
    * @returns The keypair
@@ -190,18 +127,6 @@ export class Identity {
         cause: error,
       });
     }
-  }
-
-  /**
-   * Generates a new pair of secret key and mnemonic
-   * @returns The secret key and mnemonic
-   */
-  static generateSecrets(): TOnboardingSecrets {
-    // Generate mnemonic first, then create secret key from it
-    const mnemonic = this.generateMnemonic();
-    const secretKey = this.generateSecretKeyFromMnemonic(mnemonic);
-
-    return { secretKey, mnemonic };
   }
 
   /**

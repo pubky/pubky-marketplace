@@ -1,181 +1,43 @@
-import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { useAuthStore } from '@/stores/auth/auth.store';
+import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
+import { mockSession } from '@/test-utils/pubky';
 import { BackupNavigation, BackupPageHeader } from './Backup';
 
-// Mock Next.js router
-const mockPush = vi.fn();
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({
-    push: mockPush,
-  }),
-}));
-
-// Mock atoms
-vi.mock('@/atoms/Button/Button', () => {
-  return {
-    Button: ({
-      children,
-      className,
-      onClick,
-      disabled,
-      variant,
-      size,
-    }: {
-      children: React.ReactNode;
-      className?: string;
-      onClick?: () => void;
-      disabled?: boolean;
-      variant?: string;
-      size?: string;
-    }) => (
-      <button
-        data-testid="button"
-        className={className}
-        onClick={onClick}
-        disabled={disabled}
-        data-variant={variant}
-        data-size={size}
-      >
-        {children}
-      </button>
-    ),
-  };
-});
-
-vi.mock('@/atoms/Container/Container', () => {
-  return {
-    Container: ({ children, className }: { children: React.ReactNode; className?: string }) => (
-      <div data-testid="container" className={className}>
-        {children}
-      </div>
-    ),
-  };
-});
-
-vi.mock('@/atoms/PageHeader/PageHeader', () => {
-  return {
-    PageHeader: ({ children }: { children: React.ReactNode }) => <div data-testid="page-header">{children}</div>,
-  };
-});
-
-vi.mock('@/atoms/PageSubtitle/PageSubtitle', () => {
-  return {
-    PageSubtitle: ({ children }: { children: React.ReactNode }) => <div data-testid="page-subtitle">{children}</div>,
-  };
-});
-
-// Mock molecules
-vi.mock('@/molecules/ButtonsNavigation/ButtonsNavigation', () => {
-  return {
-    ButtonsNavigation: ({
-      className,
-      onHandleBackButton,
-      onHandleContinueButton,
-      loadingContinueButton,
-      hiddenBackButton,
-      backButtonDisabled,
-      backText,
-      continueText,
-    }: {
-      className?: string;
-      onHandleBackButton?: () => void;
-      onHandleContinueButton?: () => void;
-      loadingContinueButton?: boolean;
-      hiddenBackButton?: boolean;
-      backButtonDisabled?: boolean;
-      backText?: string;
-      continueText?: string;
-    }) => (
-      <div data-testid="buttons-navigation" className={className}>
-        {!hiddenBackButton && (
-          <button data-testid="back-button" onClick={onHandleBackButton} disabled={backButtonDisabled}>
-            {backText}
-          </button>
-        )}
-        <button
-          data-testid="continue-button"
-          onClick={onHandleContinueButton}
-          disabled={loadingContinueButton}
-          data-loading={loadingContinueButton}
-        >
-          {continueText}
-        </button>
-      </div>
-    ),
-  };
-});
-
-vi.mock('@/molecules/Page/Page', () => {
-  return {
-    PageTitle: ({ children, size }: { children: React.ReactNode; size?: string }) => (
-      <h1 data-testid="page-title" data-size={size}>
-        {children}
-      </h1>
-    ),
-  };
-});
-
-// Mock app
-vi.mock('@/app/routes', () => ({
-  ONBOARDING_ROUTES: {
-    HOMESERVER: '/homeserver',
-    PUBKY: '/pubky',
-    PROFILE: '/profile',
-  },
-}));
-
-describe('BackupNavigation', () => {
+describe('legacy backup navigation', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    useAuthStore.setState({ session: null, currentUserPubky: null, hasProfile: false });
+    useOnboardingStore.setState({ secretKey: 'ab'.repeat(32), mnemonic: null, hasHydrated: true });
   });
 
-  it('renders buttons navigation component with back button', () => {
+  it('lets a guest leave for signin without deleting saved keys', () => {
     render(<BackupNavigation />);
-
-    expect(screen.getByTestId('buttons-navigation')).toBeInTheDocument();
-    expect(screen.queryByTestId('back-button')).toBeInTheDocument();
-    expect(screen.getByTestId('continue-button')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/sign-in');
+    expect(useOnboardingStore.getState().secretKey).toBe('ab'.repeat(32));
   });
 
-  it('shows loading state when continue button is clicked', () => {
+  it.each([
+    [false, 'Complete profile', '/complete-profile'],
+    [true, 'Browse the market', '/marketplace'],
+  ])('offers the next existing-account destination with hasProfile=%s', (hasProfile, label, href) => {
+    useAuthStore.setState({ session: mockSession(), hasProfile });
     render(<BackupNavigation />);
-
-    const continueButton = screen.getByTestId('continue-button');
-    expect(continueButton).toHaveAttribute('data-loading', 'false');
-
-    fireEvent.click(continueButton);
-
-    expect(continueButton).toHaveAttribute('data-loading', 'true');
+    expect(screen.getByRole('link', { name: label })).toHaveAttribute('href', href);
   });
 
-  it('navigates to profile on continue button click', () => {
+  it('deletes local recovery material only after explicit confirmation', () => {
     render(<BackupNavigation />);
-
-    const continueButton = screen.getByTestId('continue-button');
-    fireEvent.click(continueButton);
-
-    expect(mockPush).toHaveBeenCalledWith('/profile');
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(useOnboardingStore.getState().secretKey).toBe('ab'.repeat(32));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm (delete seed)' }));
+    expect(useOnboardingStore.getState().secretKey).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Done' })).not.toBeInTheDocument();
   });
 
-  it('renders back button and disables it', () => {
-    render(<BackupNavigation />);
-
-    expect(screen.queryByTestId('back-button')).toBeInTheDocument();
-    expect(screen.queryByTestId('back-button')).toBeDisabled();
-  });
-});
-
-describe('BackupPageHeader', () => {
-  it('renders a large title with the highlighted pubky and the subtitle', () => {
+  it('describes device-local keys without asserting current-account ownership', () => {
     render(<BackupPageHeader />);
-
-    const title = screen.getByTestId('page-title');
-    expect(title).toHaveAttribute('data-size', 'large');
-    expect(title).toHaveTextContent('Back up your pubky.');
-    expect(screen.getByText('pubky.')).toHaveClass('text-brand');
-    expect(screen.getByTestId('page-subtitle')).toHaveTextContent(
-      'You need a backup to restore access to your account later.',
-    );
+    expect(screen.getByRole('heading', { name: 'Back up saved keys.' })).toBeInTheDocument();
+    expect(screen.getByText(/may belong to a different account/)).toBeInTheDocument();
   });
 });

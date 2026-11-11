@@ -1,5 +1,5 @@
 import { liveQuery, type Subscription } from 'dexie';
-import { AUTH_ROUTES } from '@/app/routes';
+import { ACCOUNT_ROUTES, AUTH_ROUTES } from '@/app/routes';
 import {
   CHAT_DISCOVERY_INTERVAL_MS,
   CHAT_EVENT_DEBOUNCE_MS,
@@ -48,7 +48,8 @@ export class ChatSyncCoordinator {
   private static instance: ChatSyncCoordinator | null = null;
 
   private readonly disabledRoutes = [
-    routeToRegex('/onboarding'),
+    routeToRegex(ACCOUNT_ROUTES.COMPLETE_PROFILE),
+    routeToRegex(ACCOUNT_ROUTES.BACKUP),
     routeToRegex(AUTH_ROUTES.LOGOUT),
     routeToRegex(AUTH_ROUTES.SIGN_IN),
   ];

@@ -12,19 +12,6 @@ export const BITKIT_IDENTITY_HINT =
   "New Bitkit users must create a Pubky identity in Bitkit's profile before scanning.";
 
 /**
- * Sign-up copy. The Pubky Ring create QR is the one sign-up QR: Pubky Ring and
- * Bitkit both turn it into a new pubky and its homeserver account. Someone
- * whose pubky already lives in Bitkit or Pubky Ring signs in instead (#49).
- */
-export const SIGN_UP_COPY = {
-  subtitleDesktop: 'Scan with Pubky Ring or Bitkit to create a new pubky.',
-  subtitleMobile: 'Tap the button to create a new pubky in Pubky Ring or Bitkit.',
-  hint: "In Pubky Ring, tap 'add pubky' and scan.",
-  existingPubky: 'Already have a pubky in Pubky Ring or Bitkit?',
-  signInLink: 'Sign in instead',
-} as const;
-
-/**
  * Sign-in copy per phone signer. The mobile Authorize buttons use it so each
  * one opens its own app; the QR is shared (see {@link SIGN_IN_SIGNER_COPY}).
  */
@@ -60,17 +47,6 @@ export const SIGN_IN_SIGNER_COPY = {
   reloadLabel: 'Reload sign-in QR code',
   openingLabel: 'Opening signer...',
   logo: 'both',
-} as const satisfies SignerAuthCopy;
-
-/** The one sign-up QR, which either phone signer can scan. */
-export const SIGN_UP_SIGNER_COPY = {
-  name: 'Pubky Ring or Bitkit',
-  hint: SIGN_UP_COPY.hint,
-  identityHint: null,
-  copyLabel: 'Copy sign-up link',
-  reloadLabel: 'Reload sign-up QR code',
-  openingLabel: 'Opening signer...',
-  logo: 'bitkit',
 } as const satisfies SignerAuthCopy;
 
 /** One signer's labelled QR in the side-by-side desktop layout. */

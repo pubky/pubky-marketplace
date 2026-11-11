@@ -1,22 +1,17 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { AUTH_ROUTES } from '@/app/routes';
+import { ACCOUNT_ROUTES, AUTH_ROUTES } from '@/app/routes';
 import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
 import { usePublicRoute } from '@/hooks/usePublicRoute/usePublicRoute';
 import { cn } from '@/libs/utils/utils';
 import { EnvironmentLabel } from '@/molecules/EnvironmentLabel/EnvironmentLabel';
-import {
-  HeaderContainer,
-  HeaderExploreNavigationButtons,
-  HeaderOnboarding,
-  HeaderTitle,
-} from '@/molecules/Header/Header';
+import { HeaderContainer, HeaderExploreNavigationButtons, HeaderTitle } from '@/molecules/Header/Header';
 import { HeaderHome } from '@/molecules/HeaderHome/HeaderHome';
 import { HeaderSignIn } from '@/molecules/HeaderSignIn/HeaderSignIn';
 import { Logo } from '@/molecules/Logo/Logo';
 import { useAuthStore } from '@/stores/auth/auth.store';
-import { pathToStepConfig } from './Header.constants';
+import { pathToTitle } from './Header.constants';
 
 export function Header() {
   const pathname = usePathname();
@@ -24,22 +19,18 @@ export function Header() {
   const { isCoreExploreRoute, isDynamicPublicRoute } = usePublicRoute();
   const isEmbedded = useIsEmbedded();
 
-  const isOnboarding = pathname?.startsWith('/onboarding') ?? false;
-  const isAuthFlowLayout = isOnboarding || pathname === AUTH_ROUTES.SIGN_IN || pathname === AUTH_ROUTES.LOGOUT;
+  const isAccountMaintenance = pathname === ACCOUNT_ROUTES.COMPLETE_PROFILE || pathname === ACCOUNT_ROUTES.BACKUP;
+  const isAuthFlowLayout = isAccountMaintenance || pathname === AUTH_ROUTES.SIGN_IN || pathname === AUTH_ROUTES.LOGOUT;
   const isCopyrightPage = pathname === '/copyright';
-  const stepConfig = pathname ? pathToStepConfig[pathname] : undefined;
-  const currentStep = stepConfig?.step ?? 1;
-  const currentTitle = stepConfig?.title;
+  const currentTitle = pathname ? pathToTitle[pathname] : undefined;
 
   // Hide header on mobile when:
   // - User is on a core explore route (/home, /hot, /search, /collections) — MobileHeader + MobileFooter
   // - Any user on a dynamic public route (/post/..., /profile/[pubky], /collections/[userId]/[postId]) — page shell owns mobile chrome
   // - Authenticated on standard app routes — MobileHeader + MobileFooter
   const shouldHideHeaderOnMobile =
-    isCoreExploreRoute || isDynamicPublicRoute || (isAuthenticated && !isOnboarding && !isDynamicPublicRoute);
-  // Show title only for onboarding/logout pages (when stepConfig exists) and user is not authenticated,
-  // or during profile setup (step 5)
-  const shouldShowTitle = currentTitle && (!isAuthenticated || currentStep === 5);
+    isCoreExploreRoute || isDynamicPublicRoute || (isAuthenticated && !isAccountMaintenance && !isDynamicPublicRoute);
+  const shouldShowTitle = currentTitle && (isAccountMaintenance || !isAuthenticated);
 
   // App-shell layout: authenticated app pages and Explore mode (unauthenticated on a
   // public route, e.g. feed/post/profile) both render the feed + sidebars, so the header
@@ -48,13 +39,13 @@ export function Header() {
   const isAppShellLayout = !isAuthFlowLayout && (isAuthenticated || isDynamicPublicRoute || isCoreExploreRoute);
   const classNameNav = cn(isAppShellLayout && 'xl:px-0', isAuthFlowLayout && 'max-w-screen-xl px-6 lg:px-10');
   // Determine which header content to show:
-  // - Onboarding: HeaderOnboarding
+  // - Account maintenance: simple title only
   // - Authenticated: HeaderSignIn (navigation + avatar)
   // - Unauthenticated on core explore or dynamic public routes (home/hot/search/collections/post/profile): explore navigation + join
   // - Unauthenticated on other routes: HeaderHome (social links + sign in)
   const renderHeaderContent = () => {
-    if (isOnboarding) {
-      return <HeaderOnboarding currentStep={currentStep} />;
+    if (isAccountMaintenance) {
+      return null;
     }
     if (isAuthenticated) {
       return <HeaderSignIn />;
@@ -81,7 +72,7 @@ export function Header() {
 
   return (
     <HeaderContainer classNameNav={classNameNav} className={cn(shouldHideHeaderOnMobile && 'hidden lg:block')}>
-      <StagingLogo noLink={currentStep === 5} />
+      <StagingLogo noLink={pathname === ACCOUNT_ROUTES.COMPLETE_PROFILE} />
       {shouldShowTitle && <HeaderTitle currentTitle={currentTitle} />}
       {renderHeaderContent()}
     </HeaderContainer>

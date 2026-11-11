@@ -32,9 +32,18 @@ vi.mock('@/atoms/Dialog/Dialog', () => {
 
 // Mock dependencies
 vi.mock('@/stores/onboarding/onboarding.store', () => ({
-  useOnboardingStore: vi.fn(() => ({
-    mnemonic: 'test mnemonic phrase',
-  })),
+  useOnboardingStore: (
+    selector: (state: {
+      mnemonic: string;
+      selectHasMnemonic: () => boolean;
+      selectHasSecretKey: () => boolean;
+    }) => unknown,
+  ) =>
+    selector({
+      mnemonic: 'test mnemonic phrase',
+      selectHasMnemonic: () => true,
+      selectHasSecretKey: () => true,
+    }),
 }));
 
 // Mock Molecules

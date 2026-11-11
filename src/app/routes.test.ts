@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { setSocialHost } from '@/test-utils/social-host';
 import {
+  ACCOUNT_ROUTES,
   APP_ROUTES,
   AUTH_ROUTES,
   AUTHENTICATED_ROUTES,
@@ -26,7 +27,6 @@ import {
   matchMarketplaceShopRoute,
   matchPostRoute,
   matchSingleCollectionRoute,
-  ONBOARDING_ROUTES,
   PROFILE_ROUTES,
   PUBLIC_ROUTES,
   SETTINGS_ROUTES,
@@ -35,8 +35,8 @@ import {
 
 describe('isDynamicPublicRoute', () => {
   describe('invite routes', () => {
-    it('returns true for invite code route', () => {
-      expect(isDynamicPublicRoute('/invite/abcdefghijkl')).toBe(true);
+    it('keeps retired invite code routes out of dynamic public access', () => {
+      expect(isDynamicPublicRoute('/invite/abcdefghijkl')).toBe(false);
     });
 
     it('returns false for base invite route', () => {
@@ -285,11 +285,11 @@ describe('matchesAllowedRoute', () => {
 
   it('keeps prefix matching for non-explore allowed routes when explore prefix restriction is enabled', () => {
     expect(
-      matchesAllowedRoute('/onboarding/profile', ONBOARDING_ROUTES.PROFILE, { restrictExploreSubRoutes: true }),
+      matchesAllowedRoute('/complete-profile', ACCOUNT_ROUTES.COMPLETE_PROFILE, { restrictExploreSubRoutes: true }),
     ).toBe(true);
-    expect(matchesAllowedRoute('/onboarding', ONBOARDING_ROUTES.INSTALL, { restrictExploreSubRoutes: true })).toBe(
-      false,
-    );
+    expect(
+      matchesAllowedRoute('/onboarding', ACCOUNT_ROUTES.COMPLETE_PROFILE, { restrictExploreSubRoutes: true }),
+    ).toBe(false);
   });
 });
 
@@ -522,7 +522,7 @@ describe('isLogoLandingRoute', () => {
   });
 
   it('returns true for every onboarding route', () => {
-    for (const route of Object.values(ONBOARDING_ROUTES)) {
+    for (const route of Object.values(ACCOUNT_ROUTES)) {
       expect(isLogoLandingRoute(route)).toBe(true);
     }
   });

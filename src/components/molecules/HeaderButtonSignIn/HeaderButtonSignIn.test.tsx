@@ -40,9 +40,6 @@ vi.mock('@/app/routes', () => ({
   AUTH_ROUTES: {
     SIGN_IN: '/sign-in',
   },
-  ONBOARDING_ROUTES: {
-    HUMAN: '/onboarding/human',
-  },
 }));
 
 describe('HeaderButtonSignIn', () => {
@@ -70,20 +67,20 @@ describe('HeaderButtonSignIn', () => {
     expect(mockPush).toHaveBeenCalledWith('/sign-in');
   });
 
-  it('renders new here button on the sign-in page', () => {
+  it('renders sign in button on the sign-in page', () => {
     mockUsePathname.mockReturnValue('/sign-in');
     render(<HeaderButtonSignIn />);
 
-    expect(screen.getByRole('button', { name: /New here\?/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Sign in/i })).toBeInTheDocument();
   });
 
-  it('navigates to onboarding when clicked on the sign-in page', () => {
+  it('stays on sign-in when clicked on the sign-in page', () => {
     mockUsePathname.mockReturnValue('/sign-in');
     render(<HeaderButtonSignIn />);
 
-    screen.getByRole('button', { name: /New here\?/i }).click();
+    screen.getByRole('button', { name: /Sign in/i }).click();
 
-    expect(mockPush).toHaveBeenCalledWith('/onboarding/human');
+    expect(mockPush).toHaveBeenCalledWith('/sign-in');
   });
 
   it('renders sign in button on the onboarding page', () => {
