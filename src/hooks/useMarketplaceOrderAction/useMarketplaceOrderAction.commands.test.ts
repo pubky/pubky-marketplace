@@ -196,6 +196,44 @@ describe('useMarketplaceOrderAction refund through the Shop command contract', (
     );
   });
 
+  it.each([
+    ['cancel', createOrderFixture('paid'), 500, 'order.cancel_request'],
+    ['return', createOrderFixture('delivered'), 1_000, 'return.request'],
+  ] as const)('sends a %s reason of exactly the limit in emoji', async (action, order, max, kind) => {
+    const reason = '\u{1F600}'.repeat(max);
+    const { result } = renderRefund(order);
+
+    act(() => {
+      result.current.setAction(action, { reason });
+    });
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(result.current.form.getFieldState('reason').error).toBeUndefined();
+    expect(execute).toHaveBeenCalledWith(
+      ORDER_FIXTURE_SELLER,
+      expect.objectContaining({ kind, payload: expect.objectContaining({ reason }) }),
+    );
+  });
+
+  it.each([
+    ['cancel', createOrderFixture('paid'), 500, 'Keep the reason to 500 characters.'],
+    ['return', createOrderFixture('delivered'), 1_000, 'Keep the reason to 1,000 characters.'],
+  ] as const)('refuses a %s reason of one emoji over the limit in the field', async (action, order, max, message) => {
+    const { result } = renderRefund(order);
+
+    act(() => {
+      result.current.setAction(action, { reason: '\u{1F600}'.repeat(max + 1) });
+    });
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.current.form.getFieldState('reason').error?.message).toBe(message);
+  });
+
   it('says in the dialog when the Shop refuses the command it built, and sends nothing', async () => {
     // An order id the command contract cannot address: the form accepts the
     // refund, the contract refuses the payload `actOnOrder` would send.

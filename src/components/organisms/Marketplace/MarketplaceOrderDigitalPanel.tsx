@@ -16,7 +16,6 @@ import {
 } from '@/hooks/useOrderDigitalDelivery/useOrderDigitalDelivery';
 import {
   awaitsSellerRelease,
-  DELIVERY_EMAIL_MAX_CHARS,
   DIGITAL_ORDER_COPY,
   DIGITAL_READ_REFUSAL_COPY,
   digitalOrderEmailLine,
@@ -258,7 +257,6 @@ function OrderEmailLine({
             theme="dashed"
             id={`delivery-email-${order.id}`}
             value={value}
-            maxLength={DELIVERY_EMAIL_MAX_CHARS}
             placeholder="you@example.com"
             onChange={(event) => setValue(event.target.value)}
             data-sentry-mask
