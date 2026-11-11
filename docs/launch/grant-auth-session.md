@@ -58,13 +58,15 @@ New App Ring/Bitkit and Passport approvals include Shop/Chat storage scopes alon
 
 This is same-origin session reuse, not cross-origin SSO. An iframe on another origin cannot restore App's SDK IndexedDB record. Allowing another origin in `frame-ancestors` changes framing permission only. The trusted same-origin iframe is also not a security isolation boundary.
 
-## Commerce remains a separate approval
+## Commerce session and approval ownership
 
-Homeserver sign-in does not mint a marketplace service session. Commerce uses the active homeserver grant to write the bootstrap proof, then obtains the appropriate marketplace grant approval. Marketplace bearer sessions, Shop BFF cookies and Locks connections have separate approval and cleanup lifecycles. The BFF is Shop's existing Next.js server route layer; it owns the HttpOnly marketplace session and flow cookies.
+When grant-session minting is enabled, commerce can obtain a marketplace bearer from the active homeserver sign-in grant without another signer approval. The coordinator attempts this after sign-in or restore; the service verifies a single-use proof document through `/v1/auth/grant-session-challenges` and `/v1/auth/grant-sessions`. The controller installs the result only while the originating identity and session remain current, and revokes an unused result. A refused attempt is not repeated for that sign-in without an explicit retry.
+
+When no usable bearer can be restored or minted, the connect UI offers the separate marketplace approval flow. Bootstrap proves the current homeserver grant before requesting the signer approval; reconnect uses the paired Shop BFF session. Normal catalog, publishing and checkout calls do not launch either interactive approval. Marketplace bearer sessions, Shop BFF cookies and Locks connections keep separate lifecycles. The BFF is Shop's existing Next.js server route layer; it owns the HttpOnly marketplace session and flow cookies.
 
 Ring approvals remain Ring approvals, and Bitkit and Passport keep their own launch behavior. A hosted session exposes no signer identity, so Shop asks the user to choose Ring, Bitkit or enabled Passport explicitly. The approval must belong to the same pubky. Standalone Shop reports unavailable when grant-bootstrap support is disabled. Embedded Shop requires that configuration at startup. Normal commerce UI does not fall back to the old dual AuthToken/homeserver sign-in ceremony.
 
-Recovery-file-only commerce remains limited: after local key sign-in, the user must approve with the **same identity** already imported into a supported external signer. Shop does not retain the recovery root key for later purchases, offer a new re-upload approval screen, or invent a backend key-proof endpoint. Inventory connects through the same marketplace grant path. Marketplace private-key release and seller Locks setup still depend on their existing service contracts.
+Recovery-key sign-in establishes a homeserver grant and can use the same grant-backed bearer mint when enabled. If that route is unavailable or refused, the interactive fallback requires the **same identity** already imported into a supported external signer. Shop does not retain the recovery root key for later purchases, offer a new re-upload approval screen, or invent a backend key-proof endpoint. Inventory connects through the same marketplace grant path. Marketplace private-key release and seller Locks setup still depend on their existing service contracts.
 
 ### Developer and release scripts
 

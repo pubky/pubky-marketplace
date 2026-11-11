@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  capabilitiesCoverInventoryScope,
   clampInventoryPersistedCapabilities,
   INVENTORY_GRANT,
   inventoryCapabilityCovers,
@@ -30,4 +31,11 @@ describe('studio inventory grant allow-list', () => {
     expect(clampInventoryPersistedCapabilities('')).toBeNull();
     expect(clampInventoryPersistedCapabilities('/pub/pubky.app/marketplace-service/v1/:r')).toBeNull();
   });
+
+  it.each([INVENTORY_GRANT, '/pub/pubky.app/:rw', '/:rw', '/pub/pubky.app/marketplace-service/v1/:wr'])(
+    'recognizes directory coverage independently of the persisted-session allow-list: %s',
+    (capabilities) => {
+      expect(capabilitiesCoverInventoryScope(capabilities)).toBe(true);
+    },
+  );
 });

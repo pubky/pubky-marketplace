@@ -2,6 +2,7 @@
 // identity, then poll the deployed Nexus for it. Isolates whether the Nexus
 // watcher indexes marketplace listing PUTs at all. NEXUS_URL names the Nexus to poll (required).
 import { Keypair, Pubky, PublicKey } from '@synonymdev/pubky';
+import { withCleanup } from './lib/with-cleanup.mjs';
 
 const HOMESERVER_ADMIN = 'https://admin.homeserver.staging.pubky.app/generate_signup_token';
 const ADMIN_PASSWORD = process.env.STAGING_ADMIN_PASSWORD;
@@ -65,8 +66,13 @@ async function probe() {
   return 1;
 }
 
-try {
-  process.exitCode = await probe();
-} finally {
-  await session.signout();
-}
+await withCleanup(
+  async () => {
+    process.exitCode = await probe();
+  },
+  async () => {
+    await session.signout().catch(() => {
+      throw new Error('Could not end the Nexus listing probe grant session');
+    });
+  },
+);

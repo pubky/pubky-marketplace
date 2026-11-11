@@ -80,4 +80,17 @@ describe('listing registration probe', () => {
       expect.objectContaining({ method: 'DELETE' }),
     );
   });
+  it('preserves projection failure when bearer revocation also fails', async () => {
+    fixtures.fetch
+      .mockRejectedValueOnce(new Error('projection unavailable'))
+      .mockRejectedValueOnce(new Error('sensitive revocation detail'));
+    await expect(import('./probe-listing-registration.mjs')).rejects.toMatchObject({
+      message: 'projection unavailable',
+      errors: [
+        expect.objectContaining({ message: 'projection unavailable' }),
+        expect.objectContaining({ message: 'Probe service session revocation failed: HTTP unavailable' }),
+      ],
+    });
+    expect(fixtures.fetch).toHaveBeenCalledTimes(2);
+  });
 });

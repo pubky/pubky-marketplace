@@ -1,6 +1,7 @@
 // Node counterpart of MarketplaceGrantSessionService. A live homeserver grant proves
 // possession through the service's single-use document; no cookie session is minted.
 import { z } from 'zod';
+import { withCleanup } from './with-cleanup.mjs';
 
 const CHALLENGE_PURPOSE = 'marketplace-service/grant-session-challenge/v1';
 const PROOF_PURPOSE = 'marketplace-service/grant-session/v1';
@@ -75,56 +76,80 @@ export async function mintMarketplaceGrantSession({
   const challengeId = issued.data.challenge_id;
   const proofPath = `${PROOFS_PATH}${challengeId}`;
   let minted;
-  try {
-    await session.storage
-      .putJson(proofPath, {
-        aud: audience,
-        challenge_id: challengeId,
-        domain: PROOF_DOMAIN,
-        pubky: expectedPubky,
-      })
-      .catch(() => {
-        throw new Error('Could not write the marketplace grant proof');
-      });
-    const proof = await grant
-      .createCustomPop({ aud: audience, challenge_id: challengeId, purpose: PROOF_PURPOSE })
-      .catch(() => {
-        throw new Error('Could not sign the marketplace grant proof');
-      });
-    const response = await post('/v1/auth/grant-sessions', proof);
-    const parsed = sessionSchema.safeParse(response.body);
-    if (response.status !== 201 || !parsed.success) {
-      // The response may contain a real bearer even when another field is malformed.
-      const revocable = revocationSchema.safeParse(response.body);
-      if (revocable.success)
-        await revokeMinted(base, { token: revocable.data.token, sessionId: revocable.data.session_id });
-      throw new Error('Marketplace returned an invalid grant session');
-    }
-    minted = {
-      token: parsed.data.token,
-      sessionId: parsed.data.session_id,
-      pubky: parsed.data.pubky,
-      capabilities: parsed.data.capabilities,
-      expiresAt: parsed.data.expires_at,
-    };
-    if (
-      minted.pubky !== expectedPubky ||
-      !acceptedCapabilities.some((caps) => normalizedCapabilities(caps) === normalizedCapabilities(minted.capabilities))
-    ) {
-      await revokeMinted(base, minted);
-      minted = undefined;
-      throw new Error('Marketplace returned a grant session for an unexpected account or capability set');
-    }
-    return minted;
-  } finally {
-    try {
-      await session.storage.delete(proofPath);
-    } catch {
-      // Do not orphan a bearer that the caller will never receive after a cleanup failure.
-      if (minted) await revokeMinted(base, minted);
-      throw new Error('Could not delete the marketplace grant proof');
-    }
-  }
+  return withCleanup(
+    async () => {
+      await session.storage
+        .putJson(proofPath, {
+          aud: audience,
+          challenge_id: challengeId,
+          domain: PROOF_DOMAIN,
+          pubky: expectedPubky,
+        })
+        .catch(() => {
+          throw new Error('Could not write the marketplace grant proof');
+        });
+      const proof = await grant
+        .createCustomPop({ aud: audience, challenge_id: challengeId, purpose: PROOF_PURPOSE })
+        .catch(() => {
+          throw new Error('Could not sign the marketplace grant proof');
+        });
+      const response = await post('/v1/auth/grant-sessions', proof);
+      const parsed = sessionSchema.safeParse(response.body);
+      if (response.status !== 201 || !parsed.success) {
+        // The response may contain a real bearer even when another field is malformed.
+        const revocable = revocationSchema.safeParse(response.body);
+        return withCleanup(
+          () => {
+            throw new Error('Marketplace returned an invalid grant session');
+          },
+          async () => {
+            if (revocable.success)
+              await revokeMinted(base, { token: revocable.data.token, sessionId: revocable.data.session_id });
+          },
+        );
+      }
+      minted = {
+        token: parsed.data.token,
+        sessionId: parsed.data.session_id,
+        pubky: parsed.data.pubky,
+        capabilities: parsed.data.capabilities,
+        expiresAt: parsed.data.expires_at,
+      };
+      if (
+        minted.pubky !== expectedPubky ||
+        !acceptedCapabilities.some(
+          (caps) => normalizedCapabilities(caps) === normalizedCapabilities(minted.capabilities),
+        )
+      ) {
+        const rejected = minted;
+        return withCleanup(
+          () => {
+            throw new Error('Marketplace returned a grant session for an unexpected account or capability set');
+          },
+          async () => {
+            await revokeMinted(base, rejected);
+            minted = undefined;
+          },
+        );
+      }
+      return minted;
+    },
+    async () => {
+      try {
+        await session.storage.delete(proofPath);
+      } catch {
+        // Do not orphan a bearer that the caller will never receive after a cleanup failure.
+        await withCleanup(
+          () => {
+            throw new Error('Could not delete the marketplace grant proof');
+          },
+          async () => {
+            if (minted) await revokeMinted(base, minted);
+          },
+        );
+      }
+    },
+  );
 }
 
 /**
@@ -141,23 +166,32 @@ export async function mintMarketplaceGrantSessionForSigner({
   acceptedCapabilities,
 }) {
   // Blocking sign-in can fail on PKDNS publication after minting but before returning the grant.
-  // Take ownership as soon as the SDK can return it, so finally can always retire it.
+  // Take ownership as soon as the SDK can return it, so cleanup can always retire it.
   const session = await client.signer(keypair).signin(clientId);
   let minted;
-  try {
-    minted = await mintMarketplaceGrantSession({
-      session,
-      expectedPubky: keypair.publicKey.z32(),
-      serviceUrl,
-      acceptedCapabilities,
-    });
-    return minted;
-  } finally {
-    try {
-      await session.signout();
-    } catch {
-      if (minted) await revokeMinted(serviceUrl.replace(/\/+$/, ''), minted);
-      throw new Error('Could not end the temporary homeserver grant session');
-    }
-  }
+  return withCleanup(
+    async () => {
+      minted = await mintMarketplaceGrantSession({
+        session,
+        expectedPubky: keypair.publicKey.z32(),
+        serviceUrl,
+        acceptedCapabilities,
+      });
+      return minted;
+    },
+    async () => {
+      try {
+        await session.signout();
+      } catch {
+        await withCleanup(
+          () => {
+            throw new Error('Could not end the temporary homeserver grant session');
+          },
+          async () => {
+            if (minted) await revokeMinted(serviceUrl.replace(/\/+$/, ''), minted);
+          },
+        );
+      }
+    },
+  );
 }

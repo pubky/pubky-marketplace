@@ -187,7 +187,7 @@ Durable-mode screens that need a session offer a marketplace approval action. If
 3. Closing the dialog cancels the attempt. Identity/session changes invalidate pending work, and failures offer a fresh attempt.
 4. Successful approval yields the marketplace bearer and refreshes the waiting surfaces.
 
-The flow is bounded by the backend expiry; expired or rejected approvals are not reused. A valid persisted bearer can resume after reload until expiry or refusal. A 401 or expired bearer returns the surface to reconnect. These are separate service credentials: homeserver sign-in alone does not approve a purchase. See [the current grant contract](../launch/grant-auth-session.md#commerce-remains-a-separate-approval).
+The flow is bounded by the backend expiry; expired or rejected approvals are not reused. A valid persisted bearer can resume after reload until expiry or refusal. A 401 or expired bearer returns the surface to reconnect. These are separate service credentials: homeserver sign-in alone does not approve a purchase. See [the current grant contract](../launch/grant-auth-session.md#commerce-session-and-approval-ownership).
 
 To prove the transport against the running service (session establishment, snake_case commands, idempotent replay, revision conflicts, report reads):
 

@@ -40,6 +40,8 @@ import {
 import { LocalCommerceService } from '@/services/local/commerce/commerce';
 import { LocalMarketplaceTagService } from '@/services/local/tag/marketplace/tag.marketplace';
 import { MarketplaceGatewayService } from '@/services/marketplace/marketplace';
+import * as marketplaceBootstrapClient from '@/services/marketplace/marketplace-bootstrap-client';
+import * as marketplaceGrantClient from '@/services/marketplace/marketplace-grant-client';
 import { MarketplaceSessionService } from '@/services/marketplace/marketplace-session';
 import { NexusMarketplaceService } from '@/services/nexus/marketplace/marketplace';
 import type { NexusListingDetails } from '@/services/nexus/marketplace/marketplace.types';
@@ -4413,16 +4415,27 @@ describe('CommerceApplication', () => {
    * its CTA — src/hooks/useStepUpReauth/useStepUpReauth.test.ts.)
    */
   describe('step-up re-approval is never auto-triggered', () => {
+    const approvalFlow: marketplaceGrantClient.MarketplaceGrantFlow = {
+      authorizationUrl: 'pubkyauth://signin_grant/fixture',
+      awaitResult: async () => ({ status: 'cancelled' }),
+      cancel: async () => {},
+    };
     it('browsing the catalog never requests a widened grant or a service session', async () => {
       vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
       vi.spyOn(NexusMarketplaceService, 'fetchListingStream').mockResolvedValue([]);
       const generateAuthUrlSpy = vi.spyOn(HomeserverService, 'generateAuthUrl');
-      const mintSessionSpy = vi.spyOn(CommerceApplication, 'mintMarketplaceSessionFromGrant');
+      const grantApprovalSpy = vi
+        .spyOn(marketplaceGrantClient, 'beginMarketplaceGrantFlow')
+        .mockResolvedValue(approvalFlow);
+      const bootstrapApprovalSpy = vi
+        .spyOn(marketplaceBootstrapClient, 'beginMarketplaceBootstrapFlow')
+        .mockResolvedValue(approvalFlow);
 
       await CommerceApplication.fetchCatalogListings();
 
       expect(generateAuthUrlSpy).not.toHaveBeenCalled();
-      expect(mintSessionSpy).not.toHaveBeenCalled();
+      expect(grantApprovalSpy).not.toHaveBeenCalled();
+      expect(bootstrapApprovalSpy).not.toHaveBeenCalled();
     });
 
     it('publishing a listing under the narrow bridged grant never requests a widened grant', async () => {
@@ -4444,7 +4457,12 @@ describe('CommerceApplication', () => {
       );
       vi.spyOn(Logger, 'warn').mockImplementation(() => {});
       const generateAuthUrlSpy = vi.spyOn(HomeserverService, 'generateAuthUrl');
-      const mintSessionSpy = vi.spyOn(CommerceApplication, 'mintMarketplaceSessionFromGrant');
+      const grantApprovalSpy = vi
+        .spyOn(marketplaceGrantClient, 'beginMarketplaceGrantFlow')
+        .mockResolvedValue(approvalFlow);
+      const bootstrapApprovalSpy = vi
+        .spyOn(marketplaceBootstrapClient, 'beginMarketplaceBootstrapFlow')
+        .mockResolvedValue(approvalFlow);
 
       await expect(CommerceApplication.commitUpsertListing(record)).rejects.toMatchObject({
         code: AuthErrorCode.SESSION_EXPIRED,
@@ -4452,7 +4470,8 @@ describe('CommerceApplication', () => {
 
       expect(put).not.toHaveBeenCalled();
       expect(generateAuthUrlSpy).not.toHaveBeenCalled();
-      expect(mintSessionSpy).not.toHaveBeenCalled();
+      expect(grantApprovalSpy).not.toHaveBeenCalled();
+      expect(bootstrapApprovalSpy).not.toHaveBeenCalled();
     });
 
     it('the first checkout fails closed on a missing session instead of auto-requesting any approval', async () => {
@@ -4463,7 +4482,12 @@ describe('CommerceApplication', () => {
       });
       vi.spyOn(MarketplaceGatewayService, 'execute').mockRejectedValue(sessionRequired);
       const generateAuthUrlSpy = vi.spyOn(HomeserverService, 'generateAuthUrl');
-      const mintSessionSpy = vi.spyOn(CommerceApplication, 'mintMarketplaceSessionFromGrant');
+      const grantApprovalSpy = vi
+        .spyOn(marketplaceGrantClient, 'beginMarketplaceGrantFlow')
+        .mockResolvedValue(approvalFlow);
+      const bootstrapApprovalSpy = vi
+        .spyOn(marketplaceBootstrapClient, 'beginMarketplaceBootstrapFlow')
+        .mockResolvedValue(approvalFlow);
 
       await expect(
         CommerceApplication.executeMarketplaceCommand(COMMERCE_FIXTURE_SELLER, {
@@ -4497,7 +4521,8 @@ describe('CommerceApplication', () => {
       // The command must surface the missing session; grant approval belongs
       // to the explicit connect dialog.
       expect(generateAuthUrlSpy).not.toHaveBeenCalled();
-      expect(mintSessionSpy).not.toHaveBeenCalled();
+      expect(grantApprovalSpy).not.toHaveBeenCalled();
+      expect(bootstrapApprovalSpy).not.toHaveBeenCalled();
     });
   });
 });

@@ -90,7 +90,7 @@ describe('inventory studio staging proof', () => {
     expect(MarketplaceSessionService.getActiveSession()?.pubky).toBe(pubky);
     const inventoryBearer = MarketplaceInventorySessionService.getCoveringBearer(pubky);
     expect(inventoryBearer?.source).toBe('purchase');
-    expect(inventoryBearer?.token).toBe(MarketplaceSessionService.getActiveSession()?.token);
+    expect(inventoryBearer?.token === MarketplaceSessionService.getActiveSession()?.token).toBe(true);
 
     const board = await CommerceInventoryApplication.loadBoard(pubky);
     expect(board.status === 'ready' || board.status === 'empty', `board status ${board.status}`).toBe(true);

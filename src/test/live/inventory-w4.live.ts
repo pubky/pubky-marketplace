@@ -223,7 +223,7 @@ describe('inventory studio W4 staging proof', () => {
     expect(MarketplaceSessionService.getActiveSession()?.pubky).toBe(sellerPubky);
     const inventoryBearer = MarketplaceInventorySessionService.getCoveringBearer(sellerPubky);
     expect(inventoryBearer?.source).toBe('purchase');
-    expect(inventoryBearer?.token).toBe(MarketplaceSessionService.getActiveSession()?.token);
+    expect(inventoryBearer?.token === MarketplaceSessionService.getActiveSession()?.token).toBe(true);
 
     mkdirSync(PROOF_DIR, { recursive: true });
   }, 180_000);

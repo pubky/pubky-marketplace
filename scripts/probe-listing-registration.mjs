@@ -5,6 +5,7 @@
 //   node scripts/probe-listing-registration.mjs <sellerPubky> <listingId>
 import { Keypair, Pubky } from '@synonymdev/pubky';
 import { mintMarketplaceGrantSessionForSigner } from './lib/marketplace-grant-session.mjs';
+import { withCleanup } from './lib/with-cleanup.mjs';
 
 const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? '';
 if (!SERVICE_URL) throw new Error('set MARKETPLACE_SERVICE_URL to the service to probe');
@@ -72,12 +73,16 @@ async function probe() {
   return second.status === 200 ? 0 : 1;
 }
 
-try {
-  process.exitCode = await probe();
-} finally {
-  const revoked = await fetch(`${SERVICE_URL}/v1/auth/sessions/${encodeURIComponent(session.sessionId)}`, {
-    method: 'DELETE',
-    headers: { authorization: `Bearer ${session.token}` },
-  });
-  if (!revoked.ok) throw new Error(`probe service session revocation failed: HTTP ${revoked.status}`);
-}
+await withCleanup(
+  async () => {
+    process.exitCode = await probe();
+  },
+  async () => {
+    const revoked = await fetch(`${SERVICE_URL}/v1/auth/sessions/${encodeURIComponent(session.sessionId)}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${session.token}` },
+    }).catch(() => null);
+    if (!revoked?.ok)
+      throw new Error(`Probe service session revocation failed: HTTP ${revoked?.status ?? 'unavailable'}`);
+  },
+);

@@ -4,6 +4,7 @@
 // mode-600 file under --out until teardown is verified, then removed.
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { withCleanup } from '../../../../scripts/lib/with-cleanup.mjs';
 import { requireOptional } from './resolve-deps.mjs';
 
 const sleep = (ms) => new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
@@ -90,7 +91,7 @@ export async function runNexusWriteProbe({ get, nexusUrl, out, runCommand, recor
   };
   let wroteProfile = false;
   let wrotePost = false;
-  try {
+  await withCleanup(async () => {
     const profileExists = await pubky.publicStorage.exists(`pubky${author}${profilePath}`);
     if (!profileExists) {
       await session.storage.putJson(profilePath, {
@@ -116,14 +117,14 @@ export async function runNexusWriteProbe({ get, nexusUrl, out, runCommand, recor
       else
         record('write.nexus.delete', 'FAIL', 'Nexus indexes the delete', `post still served after ${Math.round(removed.ms / 1000)} s (HTTP ${removed.last})`, 'the watcher applies PUT but not DEL events: read the nexusd log for the DEL of this post');
     }
-  } finally {
-    try {
+  }, async () => {
+    await withCleanup(async () => {
       if (wrotePost) await remove(postPath);
       if (wroteProfile) await remove(profilePath);
-    } finally {
-      await session.signout();
-    }
-  }
+    }, async () => {
+      await session.signout().catch(() => { throw new Error('Could not end the Nexus write probe grant session'); });
+    });
+  });
   if (residue.length) {
     record('write.nexus.cleanup', 'FAIL', 'probe data removed from the homeserver', residue.join('; '), `remove it with the identity ${author.slice(0, 8)}…${secretFile ? ` (secret kept in ${secretFile})` : ''}`);
   } else {

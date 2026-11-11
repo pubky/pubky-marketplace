@@ -67,6 +67,7 @@ describe('MarketplaceInventorySessionService', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('restores the inventory grant without overwriting the purchase bearer or exposing a token', () => {
@@ -149,7 +150,6 @@ describe('MarketplaceInventorySessionService', () => {
 
     it.each([
       ['an empty grant', ''],
-      ['an unapproved root grant', '/:rw'],
       ['read only', '/pub/pubky.app/marketplace-service/v1/:r'],
       ['a narrower tree', '/pub/pubky.app/marketplace-service/v1/listings/:rw'],
       ['a sibling tree', '/pub/pubky.app/marketplace-service/v2/:rw'],
@@ -158,8 +158,23 @@ describe('MarketplaceInventorySessionService', () => {
       ['unknown actions', '/pub/pubky.app/marketplace-service/v1/:rwx'],
       ['repeated actions', '/pub/pubky.app/marketplace-service/v1/:rrw'],
     ])('needs a Studio grant when the purchase session carries %s', (_label, capabilities) => {
-      establishIdentity(capabilities);
+      establishIdentity();
+      const purchase = MarketplaceSessionService.getActiveSession();
+      expect(purchase).not.toBeNull();
+      // Restore has its own allow-list. Exercise the coverage boundary directly
+      // so rejecting this record during restore cannot make the assertion pass.
+      const active = vi.spyOn(MarketplaceSessionService, 'getActiveSession').mockReturnValue({
+        ...purchase!,
+        capabilities,
+      });
+      expect(MarketplaceInventorySessionService.getCoveringBearer(PUBKY)).toBeNull();
+      expect(active).toHaveBeenCalledOnce();
+    });
 
+    it('rejects an unapproved persisted root grant before bearer selection', () => {
+      establishIdentity('/:rw');
+      expect(MarketplaceSessionService.getActiveSession()).toBeNull();
+      expect(window.localStorage.getItem(MARKETPLACE_SESSION_STORAGE_KEY)).toBeNull();
       expect(MarketplaceInventorySessionService.getCoveringBearer(PUBKY)).toBeNull();
     });
 

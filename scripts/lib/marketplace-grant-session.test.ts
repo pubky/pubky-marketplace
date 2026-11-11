@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { inspect } from 'node:util';
 import type { Pubky } from '@synonymdev/pubky';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mockKeypair, mockSession } from '@/test-utils/pubky';
@@ -36,12 +37,18 @@ function homeserver() {
   return { session, createCustomPop, putJson, remove, signout };
 }
 
-function service({ challenge = ISSUED, challengeStatus = 201, minted = MINTED, mintStatus = 201 } = {}) {
+function service({
+  challenge = ISSUED,
+  challengeStatus = 201,
+  minted = MINTED,
+  mintStatus = 201,
+  revokeStatus = 204,
+} = {}) {
   fetchMock.mockImplementation(async (input, init) => {
     if (String(input) === `${SERVICE}/v1/auth/grant-session-challenges`) return json(challenge, challengeStatus);
     if (String(input) === `${SERVICE}/v1/auth/grant-sessions`) return json(minted, mintStatus);
     if (String(input) === `${SERVICE}/v1/auth/sessions/${minted.session_id}` && init?.method === 'DELETE') {
-      return new Response(null, { status: 204 });
+      return new Response(null, { status: revokeStatus });
     }
     throw new Error('Unexpected service request');
   });
@@ -242,6 +249,102 @@ describe('Node marketplace grant mint', () => {
     );
   });
 
+  it('preserves mint refusal when proof deletion also fails', async () => {
+    service({ mintStatus: 403 });
+    const { session, remove } = homeserver();
+    remove.mockRejectedValueOnce(new Error('sensitive delete detail'));
+    const error = await mintMarketplaceGrantSession({ session, expectedPubky: PUBKY, serviceUrl: SERVICE }).catch(
+      (error: unknown) => error,
+    );
+    expect(error).toMatchObject({
+      message: 'Marketplace grant request failed (HTTP 403)',
+      errors: [
+        expect.objectContaining({ message: 'Marketplace grant request failed (HTTP 403)' }),
+        expect.objectContaining({ message: 'Could not delete the marketplace grant proof' }),
+      ],
+    });
+    expect(remove).toHaveBeenCalledOnce();
+    expect(String(error)).not.toContain('sensitive');
+  });
+
+  it('preserves an invalid session response when both revocation and proof deletion fail', async () => {
+    service({ minted: { ...MINTED, expires_at: 'not-a-date' }, revokeStatus: 503 });
+    const { session, remove } = homeserver();
+    remove.mockRejectedValueOnce(new Error('sensitive proof cleanup detail'));
+    const error = await mintMarketplaceGrantSession({ session, expectedPubky: PUBKY, serviceUrl: SERVICE }).catch(
+      (error: unknown) => error,
+    );
+    expect(error).toMatchObject({
+      message: 'Marketplace returned an invalid grant session',
+      errors: [
+        expect.objectContaining({
+          errors: [
+            expect.objectContaining({ message: 'Marketplace returned an invalid grant session' }),
+            expect.objectContaining({
+              message: 'Marketplace grant cleanup failed; could not revoke the minted service session',
+            }),
+          ],
+        }),
+        expect.objectContaining({ message: 'Could not delete the marketplace grant proof' }),
+      ],
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(remove).toHaveBeenCalledOnce();
+    expect(inspect(error)).not.toContain('sensitive');
+  });
+
+  it('retains a rejected bearer for proof-cleanup revocation after its first revoke fails', async () => {
+    const events: string[] = [];
+    fetchMock
+      .mockResolvedValueOnce(json(ISSUED))
+      .mockResolvedValueOnce(json({ ...MINTED, capabilities: '/:rw' }))
+      .mockImplementationOnce(async () => {
+        events.push('first revoke');
+        return new Response(null, { status: 503 });
+      })
+      .mockImplementationOnce(async () => {
+        events.push('cleanup revoke');
+        return new Response(null, { status: 204 });
+      });
+    const { session, remove } = homeserver();
+    remove.mockImplementationOnce(async () => {
+      events.push('delete proof');
+      throw new Error('sensitive proof cleanup detail');
+    });
+    const error = await mintMarketplaceGrantSession({ session, expectedPubky: PUBKY, serviceUrl: SERVICE }).catch(
+      (error: unknown) => error,
+    );
+    expect(events).toEqual(['first revoke', 'delete proof', 'cleanup revoke']);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(error).toMatchObject({
+      message: 'Marketplace returned a grant session for an unexpected account or capability set',
+      cause: expect.objectContaining({
+        message: 'Marketplace returned a grant session for an unexpected account or capability set',
+      }),
+    });
+    expect(inspect(error)).not.toContain('sensitive');
+  });
+
+  it('keeps proof deletion as the failure when revoking the undelivered bearer also fails', async () => {
+    service({ revokeStatus: 503 });
+    const { session, remove } = homeserver();
+    remove.mockRejectedValueOnce(new Error('sensitive proof cleanup detail'));
+    const error = await mintMarketplaceGrantSession({ session, expectedPubky: PUBKY, serviceUrl: SERVICE }).catch(
+      (error: unknown) => error,
+    );
+    expect(error).toMatchObject({
+      message: 'Could not delete the marketplace grant proof',
+      errors: [
+        expect.objectContaining({ message: 'Could not delete the marketplace grant proof' }),
+        expect.objectContaining({
+          message: 'Marketplace grant cleanup failed; could not revoke the minted service session',
+        }),
+      ],
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(inspect(error)).not.toContain('sensitive');
+  });
+
   it('revokes a successfully minted bearer if proof cleanup prevents returning it', async () => {
     const { session, remove } = homeserver();
     remove.mockRejectedValueOnce(new Error('sensitive storage error'));
@@ -277,6 +380,41 @@ describe('owned script grant', () => {
     fetchMock.mockRejectedValueOnce(new Error('sensitive connection error'));
     await expect(mintMarketplaceGrantSessionForSigner(options)).rejects.toThrow('HTTP unavailable');
     expect(signout).toHaveBeenCalledOnce();
+  });
+
+  it('preserves the challenge failure when signout also fails', async () => {
+    const { options, signout } = owned();
+    fetchMock.mockRejectedValueOnce(new Error('sensitive connection detail'));
+    signout.mockRejectedValueOnce(new Error('sensitive signout detail'));
+    const error = await mintMarketplaceGrantSessionForSigner(options).catch((error: unknown) => error);
+    expect(error).toMatchObject({
+      message: 'Marketplace grant request failed (HTTP unavailable)',
+      errors: [
+        expect.objectContaining({ message: 'Marketplace grant request failed (HTTP unavailable)' }),
+        expect.objectContaining({ message: 'Could not end the temporary homeserver grant session' }),
+      ],
+    });
+    expect(signout).toHaveBeenCalledOnce();
+    expect(String(error)).not.toContain('sensitive');
+  });
+
+  it('keeps signout as the failure when revoking the undelivered bearer also fails', async () => {
+    service({ revokeStatus: 503 });
+    const { options, signout } = owned();
+    signout.mockRejectedValueOnce(new Error('sensitive signout detail'));
+    const error = await mintMarketplaceGrantSessionForSigner(options).catch((error: unknown) => error);
+    expect(error).toMatchObject({
+      message: 'Could not end the temporary homeserver grant session',
+      errors: [
+        expect.objectContaining({ message: 'Could not end the temporary homeserver grant session' }),
+        expect.objectContaining({
+          message: 'Marketplace grant cleanup failed; could not revoke the minted service session',
+        }),
+      ],
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(signout).toHaveBeenCalledOnce();
+    expect(inspect(error)).not.toContain('sensitive');
   });
 
   it('revokes the minted service bearer if ending the owned grant fails', async () => {

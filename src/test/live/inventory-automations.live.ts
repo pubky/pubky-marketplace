@@ -120,7 +120,7 @@ describe('inventory automations staging proof', () => {
       const inventoryInfo = await restoreInventoryGrantSession(minted);
       expect(inventoryInfo?.capabilities).toBe(INVENTORY_GRANT);
       expect(MarketplaceInventorySessionService.getCoveringBearer(sellerPubky)?.source).toBe('inventory');
-      expect(minted.token).not.toBe(MarketplaceSessionService.getActiveSession()?.token);
+      expect(minted.token !== MarketplaceSessionService.getActiveSession()?.token).toBe(true);
     } finally {
       await revokeOwnedHomeserverGrant(inventoryGrant);
     }
@@ -179,7 +179,7 @@ describe('inventory automations staging proof', () => {
     if (!inventory) return;
     const inventoryToken = inventory.token;
     const identityToken = MarketplaceSessionService.getActiveSession()?.token;
-    expect(identityToken, 'identity session must remain for checkout').toBeTruthy();
+    expect(Boolean(identityToken), 'identity session must remain for checkout').toBe(true);
     const inventoryRow =
       listed.status === 'ready' ? listed.sessions.find((row) => row.kind === 'inventory') : undefined;
     const revokeId = inventory.sessionId ?? inventoryRow?.id;
@@ -189,7 +189,7 @@ describe('inventory automations staging proof', () => {
     const revoked = await CommerceInventoryAutomationsApplication.revoke(sellerPubky, revokeId, 'inventory');
     expect(revoked).toEqual({ status: 'revoked', id: revokeId });
     expect(MarketplaceInventorySessionService.getActiveSession()).toBeNull();
-    expect(MarketplaceSessionService.getActiveSession()?.token).toBe(identityToken);
+    expect(MarketplaceSessionService.getActiveSession()?.token === identityToken).toBe(true);
 
     const deadClient = MarketplaceShopClientService.createInventoryClient(inventoryToken);
     const deadList = await MarketplaceShopClientService.listSessions(deadClient);

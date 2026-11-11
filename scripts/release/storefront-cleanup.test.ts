@@ -116,6 +116,34 @@ describe('removeRunStorefront', () => {
     expect(signout).toHaveBeenCalledOnce();
   });
 
+  it('preserves deletion failure when ending the temporary grant also fails', async () => {
+    const { publicStorage, signer, signout } = homeserver(true);
+    signout.mockRejectedValueOnce(new Error('sensitive signout detail'));
+    signer.signin.mockResolvedValueOnce({
+      storage: {
+        delete: vi.fn(async () => {
+          throw new Error('delete failed');
+        }),
+      },
+      signout,
+    });
+    const error = await removeRunStorefront({
+      publicStorage,
+      signer,
+      pubky: PUBKY,
+      existedBefore: false,
+      nexus: NEXUS,
+    }).catch((error: unknown) => error);
+    expect(error).toMatchObject({
+      message: 'delete failed',
+      errors: [
+        expect.objectContaining({ message: 'delete failed' }),
+        expect.objectContaining({ message: 'Could not end the storefront cleanup grant session' }),
+      ],
+    });
+    expect(signout).toHaveBeenCalledOnce();
+  });
+
   it('fails when Nexus still serves the deleted storefront at the timeout', async () => {
     const { publicStorage, signer } = homeserver(true);
     nexusAnswers(200);
