@@ -74,7 +74,12 @@ import {
 import { listingPublishNeedsMarketplaceSession } from '@/libs/commerce/listing-publish-guards';
 import { buildRegisterVariants, type RegisterListingVariant } from '@/libs/commerce/listing-variants';
 import { locksAdmissionView } from '@/libs/commerce/locks-lifecycle';
-import { lockPolicyCreator, toBareLockResource } from '@/libs/commerce/locks-payment';
+import {
+  lockMatchesPreparedTerms,
+  lockPolicyCreator,
+  type PreparedLockTerms,
+  toBareLockResource,
+} from '@/libs/commerce/locks-payment';
 import {
   assertReserveFreePublicRecord,
   type CommerceDigitalLock,
@@ -229,7 +234,11 @@ import {
   LocalMarketplaceTagService,
   type MarketplaceTagKind,
 } from '@/services/local/tag/marketplace/tag.marketplace';
-import { LocksGatewayService } from '@/services/locks/locks';
+import {
+  isValidLocksClientReference,
+  LocksGatewayService,
+  locksTaskCarriesClientReference,
+} from '@/services/locks/locks';
 import { RetiredLocksSessionStorage } from '@/services/locks/retired-locks-session';
 import {
   MarketplaceGatewayService,
@@ -525,6 +534,45 @@ const ownReviewRemovalPayloadSchema = z.object({
   /** The reviewed listing the record rates; absent on a job staged before per-item reviews, which covers the order. */
   listingId: z.string().min(1).optional(),
 });
+
+/**
+ * The `client_reference` the service minted in `payment.prepare_locks` and
+ * returns only to the buyer. A preparation without a usable one is a broken
+ * service contract: the bundle cannot be bound, so nothing is submitted.
+ */
+function readPreparedClientReference(result: unknown): string {
+  const clientReference = (result as { clientReference?: unknown } | null)?.clientReference;
+  if (typeof clientReference !== 'string' || !isValidLocksClientReference(clientReference)) {
+    throw Err.server(
+      ServerErrorCode.INVALID_RESPONSE,
+      'The payment preparation did not return a usable Lock Server reference.',
+      { service: ErrorService.Locks, operation: 'beginMarketplaceLocksPayment' },
+    );
+  }
+  return clientReference;
+}
+
+/**
+ * The terms `payment.prepare_locks` prepared the payment against: the hash of
+ * the checkout-time lock resource and its criterion id. Without them the
+ * listing's lock cannot be matched to the payment, so nothing is submitted.
+ */
+function readPreparedLockTerms(result: unknown): PreparedLockTerms {
+  const { lockResourceHash, criterionId } = (result ?? {}) as { lockResourceHash?: unknown; criterionId?: unknown };
+  if (
+    typeof lockResourceHash !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(lockResourceHash) ||
+    typeof criterionId !== 'string' ||
+    criterionId === ''
+  ) {
+    throw Err.server(
+      ServerErrorCode.INVALID_RESPONSE,
+      'The payment preparation did not return the lock terms it was prepared against.',
+      { service: ErrorService.Locks, operation: 'beginMarketplaceLocksPayment' },
+    );
+  }
+  return { lockResourceHash, criterionId };
+}
 
 function ownReviewRemovalUrl(payload: unknown): string | null {
   const parsed = ownReviewRemovalPayloadSchema.safeParse(payload);
@@ -2115,16 +2163,6 @@ export class CommerceApplication {
     return await MarketplaceGatewayService.fetchAttachment(actorPubky, attachmentId);
   }
 
-  static async submitLocksPaykitProof(params: {
-    creatorPubky: string;
-    readerPubky: string;
-    bundleId: string;
-    lockResource: string;
-    criterionId: string;
-  }) {
-    return await LocksGatewayService.submitPaykitProof(params);
-  }
-
   /**
    * The buyer's side of a real Locks/Paykit payment (`locks-paykit` mode):
    *
@@ -2133,7 +2171,10 @@ export class CommerceApplication {
    * 1. Generate (or reuse a persisted, not-yet-registered) bundle id and
    *    submit the proof bundle to the Lock Server, which requests the real
    *    Paykit invoice and delivers the private Payment Request to the buyer's
-   *    wallet.
+   *    wallet. The bundle carries the `client_reference` the preparation
+   *    returned for this payment, and the Lock Server must echo it: the
+   *    service confirms only a completed task that carries it. A task that
+   *    does not carry it stops the flow here, before registration.
    * 2. Register the correlation with the transaction service via
    *    `payment.register_locks` with only the payment and bundle ids, at the
    *    revision the preparation left.
@@ -2163,8 +2204,16 @@ export class CommerceApplication {
         operation: 'beginMarketplaceLocksPayment',
       });
     }
-    const creator = lockPolicyCreator(digitalLock.policyUri);
-    const bareLockResource = toBareLockResource(digitalLock.policyUri);
+    const existing = await LocalCommerceService.getLocksCorrelation(buyerPubky, payment.id);
+    // A saved correlation carries the lock this payment was started against,
+    // and its Lock Server task (if one exists) was created for that lock. Every
+    // later step of that payment uses it, whatever the listing shows now; only
+    // a payment with no saved correlation takes the listing's current lock.
+    const lock = existing
+      ? { policyUri: existing.policy_uri, criterionId: existing.criterion_id }
+      : { policyUri: digitalLock.policyUri, criterionId: digitalLock.criterionId };
+    const creator = lockPolicyCreator(lock.policyUri);
+    const bareLockResource = toBareLockResource(lock.policyUri);
     if (!creator || !bareLockResource) {
       throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'The listing carries an invalid Locks policy URI.', {
         service: ErrorService.Locks,
@@ -2180,14 +2229,16 @@ export class CommerceApplication {
       });
     }
 
-    const existing = await LocalCommerceService.getLocksCorrelation(buyerPubky, payment.id);
     // Prepare first: the service checks the seller's lock against the
     // checkout snapshot, takes the hold and pins the `locks` adapter, so a
     // refused payment never gets a Lock Server invoice. A repeat replays a
     // live preparation, so a bundle submitted earlier (or before the service
-    // required this step) still registers after it. Locks takes no client
-    // reference yet (pubky/locks#52), so the minted one is not sent.
+    // required this step) still registers after it. The reference the service
+    // minted for this payment travels in the proof bundle (pubky/locks#52); a
+    // replayed preparation returns the same one, so every submit below,
+    // including a retry after a reload, sends the reference of this payment.
     let expectedRevision = payment.revision;
+    let bundleId = existing?.bundle_id;
     if (!existing?.registered) {
       const prepared = await MarketplaceGatewayService.execute(buyerPubky, {
         version: 1,
@@ -2200,46 +2251,68 @@ export class CommerceApplication {
       });
       if (!prepared.ok) return prepared;
       expectedRevision = prepared.revision;
-    }
-    let bundleId = existing?.bundle_id;
-    const submit = async (id: string) => {
-      await LocksGatewayService.submitPaykitProof({
-        creatorPubky: creator,
-        readerPubky: buyerPubky,
-        bundleId: id,
-        lockResource: digitalLock.policyUri,
-        criterionId: digitalLock.criterionId,
-      });
-    };
-    if (!existing) {
-      bundleId = await LocksGatewayService.generateBundleId();
-      // Persist BEFORE the submit: the bundle id is the buyer's only handle on
-      // the upstream lifecycle. A Lock Server with durable invoice admission
-      // (pubky/locks#72) keeps the task even when its response is lost, so a
-      // retry must find that task again rather than mint a second one.
-      await LocalCommerceService.upsertLocksCorrelation({
-        owner_id: buyerPubky,
-        payment_id: payment.id,
-        order_id: order.id,
-        seller_pubky: creator,
-        bundle_id: bundleId,
-        policy_uri: digitalLock.policyUri,
-        criterion_id: digitalLock.criterionId,
-        content_path: digitalLock.contentPath,
-        resource_hash: digitalLock.resourceHash,
-        window_expires_at: null,
-        registered: false,
-        created_at: Date.now(),
-        updated_at: Date.now(),
-      });
-      await submit(bundleId);
-    } else if (!existing.registered) {
-      // An unregistered correlation may predate a submit that never reached the
-      // Lock Server. Look the task up: if it exists the buyer keeps polling it,
-      // and only a missing task is submitted, with the same bundle id. A
-      // submitted bundle is never submitted again.
-      const task = await LocksGatewayService.findVerification(creator, existing.bundle_id);
-      if (!task) await submit(existing.bundle_id);
+      const clientReference = readPreparedClientReference(prepared.result);
+      // The service prepared the checkout-time lock. A new submission must be
+      // for the lock the listing shows, so it has to match; a recovery uses the
+      // saved lock, which has to be the prepared one.
+      if (!lockMatchesPreparedTerms(readPreparedLockTerms(prepared.result), lock)) {
+        throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'The listing\u2019s lock changed after checkout.', {
+          service: ErrorService.Locks,
+          operation: 'beginMarketplaceLocksPayment',
+          context: { preparedTermsDiffer: true },
+        });
+      }
+      const submit = async (id: string) => {
+        await LocksGatewayService.submitPaykitProof({
+          creatorPubky: creator,
+          readerPubky: buyerPubky,
+          bundleId: id,
+          lockResource: lock.policyUri,
+          criterionId: lock.criterionId,
+          clientReference,
+        });
+      };
+      if (!existing) {
+        bundleId = await LocksGatewayService.generateBundleId();
+        // Persist BEFORE the submit: the bundle id is the buyer's only handle on
+        // the upstream lifecycle. A Lock Server with durable invoice admission
+        // (pubky/locks#72) keeps the task even when its response is lost, so a
+        // retry must find that task again rather than mint a second one.
+        await LocalCommerceService.upsertLocksCorrelation({
+          owner_id: buyerPubky,
+          payment_id: payment.id,
+          order_id: order.id,
+          seller_pubky: creator,
+          bundle_id: bundleId,
+          policy_uri: digitalLock.policyUri,
+          criterion_id: digitalLock.criterionId,
+          content_path: digitalLock.contentPath,
+          resource_hash: digitalLock.resourceHash,
+          window_expires_at: null,
+          registered: false,
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        });
+        await submit(bundleId);
+      } else {
+        // An unregistered correlation may predate a submit that never reached the
+        // Lock Server. Look the task up: if it exists the buyer keeps polling it,
+        // and only a missing task is submitted, with the same bundle id. A
+        // submitted bundle is never submitted again.
+        const task = await LocksGatewayService.findVerification(creator, existing.bundle_id);
+        if (!task) {
+          await submit(existing.bundle_id);
+        } else if (!locksTaskCarriesClientReference(task, clientReference)) {
+          // A task stored without this payment's reference (submitted before the
+          // reference existed, or by a Lock Server that does not echo it) can
+          // never be confirmed, and its stored bundle cannot be changed.
+          throw Err.server(
+            ServerErrorCode.INVALID_RESPONSE,
+            'The stored Lock Server task does not carry the payment reference.',
+            { service: ErrorService.Locks, operation: 'beginMarketplaceLocksPayment' },
+          );
+        }
+      }
     }
 
     const response = await MarketplaceGatewayService.execute(buyerPubky, {
