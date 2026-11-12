@@ -3,6 +3,7 @@
 import 'fake-indexeddb/auto';
 import { existsSync, readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { establishMarketplaceGrantSession } from './marketplace-grant-session';
 
 /**
  * LIVE one-off: issue a convergent `listing.sync` for a deployed listing so
@@ -37,7 +38,6 @@ const LISTING_ID = process.env.SYNC_LISTING_ID ?? '';
 const IDENTITIES_FILE = process.env.MARKETPLACE_STAGING_DROP_IDENTITIES_FILE ?? '';
 
 type AppModules = {
-  MarketplaceSessionService: typeof import('@/services/marketplace/marketplace-session').MarketplaceSessionService;
   MarketplaceGatewayService: typeof import('@/services/marketplace/marketplace').MarketplaceGatewayService;
   HomeserverService: typeof import('@/services/homeserver/homeserver').HomeserverService;
   sdk: typeof import('@synonymdev/pubky');
@@ -54,7 +54,6 @@ function hexToBytes(hex: string): Uint8Array {
 describe('listing.sync probe (deployed service)', () => {
   beforeAll(async () => {
     modules = {
-      MarketplaceSessionService: (await import('@/services/marketplace/marketplace-session')).MarketplaceSessionService,
       MarketplaceGatewayService: (await import('@/services/marketplace/marketplace')).MarketplaceGatewayService,
       HomeserverService: (await import('@/services/homeserver/homeserver')).HomeserverService,
       sdk: await import('@synonymdev/pubky'),
@@ -70,16 +69,14 @@ describe('listing.sync probe (deployed service)', () => {
     const secretHex = saved.buyerA ?? Object.values(saved)[0];
     expect(secretHex, 'a saved identity secret is required').toBeTruthy();
 
-    const { HomeserverService, MarketplaceSessionService, MarketplaceGatewayService, sdk } = modules;
+    const { HomeserverService, MarketplaceGatewayService, sdk } = modules;
     const keypair = sdk.Keypair.fromSecret(hexToBytes(secretHex));
     const pubky = keypair.publicKey.z32();
     const signedIn = await HomeserverService.signIn({ keypair });
     expect(signedIn, 'homeserver sign-in must succeed').not.toBeNull();
     console.info(`[sync-probe] signed in as ${pubky}`);
 
-    const flow = MarketplaceSessionService.beginSessionFlow();
-    await new sdk.Pubky().signer(keypair).approveAuthRequest(flow.authorizationUrl);
-    await flow.awaitSession();
+    await establishMarketplaceGrantSession({ session: signedIn?.session, pubky });
     console.info(`[sync-probe] service session established`);
 
     const aggregateId = `listing:${SELLER_PUBKY}_${LISTING_ID}`;

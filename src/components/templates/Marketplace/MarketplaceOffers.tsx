@@ -52,8 +52,8 @@ export function MarketplaceOffers() {
   const [convertedOrderStates, setConvertedOrderStates] = useState<Record<string, MarketplaceOrder['state']>>({});
   const [countering, setCountering] = useState<MarketplaceOffer | null>(null);
   const { listings, isHydrating } = useOfferListings(offers.offers);
-  const linkedOfferId = useLinkedOffer(offers.isLoading);
-  const linkedOfferMissing = isLinkedOfferMissing(linkedOfferId, offers.offers, offers.isLoading, offers.error);
+  const linkedOffer = useLinkedOffer(offers.isLoading);
+  const linkedOfferMissing = isLinkedOfferMissing(linkedOffer.offerId, offers.offers, offers.isLoading, offers.error);
 
   useEffect(() => {
     let active = true;
@@ -115,7 +115,7 @@ export function MarketplaceOffers() {
           />
         )}
 
-        {offers.isLoading ? (
+        {offers.isLoading || !linkedOffer.ready ? (
           <Skeleton className="h-40 w-full" />
         ) : offers.needsSession && offers.error ? (
           <MarketplaceEmptyState
@@ -430,21 +430,35 @@ function useOfferListings(offers: readonly MarketplaceOffer[]) {
   return { listings, isHydrating };
 }
 
+/**
+ * The offer the page's link names. An old `#offer-<id>` fragment can only be read after mount, so the page is not
+ * `ready` until it has been: otherwise the list or "No offers yet" shows before the linked offer. Next reflects the
+ * replaced `?offer=` in its search params only on a later render, so the fragment's id stands in until it does.
+ */
 function useLinkedOffer(isLoading: boolean) {
-  const offerId = readLinkedOfferId(useSearchParams());
+  const queryId = readLinkedOfferId(useSearchParams());
+  const [fragment, setFragment] = useState<{ read: boolean; id: string | null }>({ read: false, id: null });
 
   useEffect(() => {
-    const fragment = takeDocumentFragment(window.location);
-    const legacyId = fragment ? readLegacyOfferFragment(fragment) : null;
+    const taken = takeDocumentFragment(window.location);
+    const legacyId = taken ? readLegacyOfferFragment(taken) : null;
     if (legacyId) window.history.replaceState(null, '', withBasePath(getMarketplaceOfferRoute(legacyId)));
+    // A repeated mount effect finds the fragment already taken; it must not drop the id the first run read.
+    setFragment((current) => (current.id ? { ...current, read: true } : { read: true, id: legacyId }));
   }, []);
+
+  useEffect(() => {
+    if (fragment.id && queryId === fragment.id) setFragment({ read: true, id: null });
+  }, [fragment.id, queryId]);
+
+  const offerId = queryId ?? fragment.id;
 
   useEffect(() => {
     if (isLoading || !offerId) return;
     document.getElementById(`offer-${offerId}`)?.scrollIntoView({ block: 'center' });
   }, [isLoading, offerId]);
 
-  return offerId;
+  return { offerId, ready: fragment.read };
 }
 
 export function isLinkedOfferMissing(

@@ -246,7 +246,6 @@ describe('#49 key-release refusal → marketplace approval → grant link (watch
       const signer = { approved: false, bffPaired };
       const requests = installNetwork(signer);
       const stepUp = vi.spyOn(HomeserverService, 'generateAuthUrl');
-      const ringConnect = vi.spyOn(HomeserverService, 'generateAuthTokenFlow');
       if (signIn === 'a Bitkit') signInWithBitkit();
       else signInWithRingGrant();
       if (flow === 'reconnect') {
@@ -287,7 +286,9 @@ describe('#49 key-release refusal → marketplace approval → grant link (watch
       expect(await within(dialog).findByRole('heading', { name: 'Enable device sync' })).toBeInTheDocument();
       expect(await within(dialog).findByRole('button', { name: openLabel })).toBeEnabled();
       expect(within(dialog).queryByText(/coming soon/i)).not.toBeInTheDocument();
-      expect(ringConnect).not.toHaveBeenCalled();
+      expect(
+        requests.some((request) => request.method === 'POST' && request.path === `${MARKETPLACE_URL}/v1/auth/sessions`),
+      ).toBe(false);
       expect(requests.some((request) => request.path === '/api/marketplace/bootstrap-challenges')).toBe(
         flow === 'bootstrap' || !bffPaired,
       );
@@ -307,7 +308,9 @@ describe('#49 key-release refusal → marketplace approval → grant link (watch
       expect(keyReads().at(-1)?.bearer).toBe(CLAIMED_TOKEN);
       expect(sealedWatchlist(homeserver)).toMatchObject({ items: [{ listingId: 'boots_01' }] });
       expect(stepUp).not.toHaveBeenCalled();
-      expect(ringConnect).not.toHaveBeenCalled();
+      expect(
+        requests.some((request) => request.method === 'POST' && request.path === `${MARKETPLACE_URL}/v1/auth/sessions`),
+      ).toBe(false);
     },
     15_000,
   );

@@ -9,6 +9,7 @@ import {
   USDT_RESOLVE_TX_HASH,
 } from '@/test/fixtures/commerce/usdt-payment-review.wire';
 import { MarketplaceSessionService } from './marketplace-session';
+import { MARKETPLACE_SESSION_GRANT } from './marketplace-session-grant';
 import { MarketplaceTransactionService } from './marketplace-transaction';
 
 const ACTOR = 's'.repeat(52);
@@ -26,17 +27,16 @@ function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-async function establishSession() {
-  vi.mocked(fetch).mockResolvedValueOnce(
-    jsonResponse(201, {
+function establishSession(): void {
+  MarketplaceSessionService.establishClaimedGrantSession(
+    {
       token: 'A'.repeat(43),
       pubky: ACTOR,
-      capabilities: '',
-      expires_at: new Date(Date.now() + 86_400_000).toISOString(),
-    }),
+      capabilities: MARKETPLACE_SESSION_GRANT,
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+    },
+    ACTOR,
   );
-  await MarketplaceSessionService.establishWithAuthToken(new Uint8Array([1]), ACTOR);
-  vi.mocked(fetch).mockClear();
 }
 
 describe('Marketplace seller payment review transport for a USDT order', () => {

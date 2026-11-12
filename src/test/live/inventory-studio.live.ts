@@ -2,12 +2,12 @@ import 'fake-indexeddb/auto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { establishMarketplaceGrantSession } from './marketplace-grant-session';
 
 /**
- * LIVE STAGING PROOF for Inventory Studio W1: identity session on the
- * marketplace session grant, then the seller step-up whose `caps` query
- * parameter is the inventory grant (percent-encoded in the URL string,
- * never `/:rw`), then one `inventory.adjust` through the Wave 3a client.
+ * LIVE STAGING PROOF for Inventory Studio W1: a live homeserver grant mints
+ * a scoped marketplace session; its inventory scope covers the seller's
+ * board and one `inventory.adjust` through the Wave 3a client.
  *
  * Env is assigned before any `@/` import so validation sees these defaults.
  *
@@ -34,7 +34,6 @@ const IDENTITIES_FILE = process.env.MARKETPLACE_STAGING_DROP_IDENTITIES_FILE ?? 
 const LISTING_ID = process.env.INVENTORY_LIVE_LISTING_ID ?? '';
 
 type AppModules = {
-  INVENTORY_GRANT: typeof import('@/services/marketplace/marketplace-inventory-grant').INVENTORY_GRANT;
   MARKETPLACE_SESSION_GRANT: typeof import('@/services/marketplace/marketplace-session-grant').MARKETPLACE_SESSION_GRANT;
   MarketplaceSessionService: typeof import('@/services/marketplace/marketplace-session').MarketplaceSessionService;
   MarketplaceInventorySessionService: typeof import('@/services/marketplace/marketplace-inventory-session').MarketplaceInventorySessionService;
@@ -54,7 +53,6 @@ function hexToBytes(hex: string): Uint8Array {
 describe('inventory studio staging proof', () => {
   beforeAll(async () => {
     modules = {
-      INVENTORY_GRANT: (await import('@/services/marketplace/marketplace-inventory-grant')).INVENTORY_GRANT,
       MARKETPLACE_SESSION_GRANT: (await import('@/services/marketplace/marketplace-session-grant'))
         .MARKETPLACE_SESSION_GRANT,
       MarketplaceSessionService: (await import('@/services/marketplace/marketplace-session')).MarketplaceSessionService,
@@ -66,7 +64,7 @@ describe('inventory studio staging proof', () => {
     };
   });
 
-  it('steps up the inventory grant and edits one listing', async () => {
+  it('uses the grant session inventory scope and edits one listing', async () => {
     expect(existsSync(IDENTITIES_FILE), 'MARKETPLACE_STAGING_DROP_IDENTITIES_FILE must exist').toBe(true);
 
     const saved = JSON.parse(readFileSync(IDENTITIES_FILE, 'utf8')) as Record<string, string>;
@@ -78,7 +76,6 @@ describe('inventory studio staging proof', () => {
       MarketplaceSessionService,
       MarketplaceInventorySessionService,
       CommerceInventoryApplication,
-      INVENTORY_GRANT,
       MARKETPLACE_SESSION_GRANT,
       sdk,
     } = modules;
@@ -87,18 +84,13 @@ describe('inventory studio staging proof', () => {
     const signedIn = await HomeserverService.signIn({ keypair });
     expect(signedIn, 'homeserver sign-in must succeed').not.toBeNull();
 
-    const identityFlow = MarketplaceSessionService.beginSessionFlow();
-    expect(new URL(identityFlow.authorizationUrl).searchParams.get('caps')).toBe(MARKETPLACE_SESSION_GRANT);
-    await new sdk.Pubky().signer(keypair).approveAuthRequest(identityFlow.authorizationUrl);
-    await identityFlow.awaitSession();
+    const purchaseInfo = await establishMarketplaceGrantSession({ session: signedIn?.session, pubky: pubky });
+    expect(purchaseInfo.capabilities).toBe(MARKETPLACE_SESSION_GRANT);
+    expect(purchaseInfo.capabilities).not.toBe('/:rw');
     expect(MarketplaceSessionService.getActiveSession()?.pubky).toBe(pubky);
-
-    const inventoryFlow = MarketplaceInventorySessionService.beginInventorySessionFlow(pubky);
-    expect(new URL(inventoryFlow.authorizationUrl).searchParams.get('caps')).toBe(INVENTORY_GRANT);
-    await new sdk.Pubky().signer(keypair).approveAuthRequest(inventoryFlow.authorizationUrl);
-    const inventoryInfo = await inventoryFlow.awaitSession();
-    expect(inventoryInfo.capabilities).toBe(INVENTORY_GRANT);
-    expect(inventoryInfo.capabilities).not.toBe('/:rw');
+    const inventoryBearer = MarketplaceInventorySessionService.getCoveringBearer(pubky);
+    expect(inventoryBearer?.source).toBe('purchase');
+    expect(inventoryBearer?.token === MarketplaceSessionService.getActiveSession()?.token).toBe(true);
 
     const board = await CommerceInventoryApplication.loadBoard(pubky);
     expect(board.status === 'ready' || board.status === 'empty', `board status ${board.status}`).toBe(true);
@@ -106,7 +98,9 @@ describe('inventory studio staging proof', () => {
       mkdirSync(dirname(PROOF_PATH), { recursive: true });
       writeFileSync(
         PROOF_PATH,
-        [`pubky=${pubky}`, `grant=${INVENTORY_GRANT}`, 'board=empty', 'stock_edit=skipped_no_listings'].join('\n'),
+        [`pubky=${pubky}`, `grant=${purchaseInfo.capabilities}`, 'board=empty', 'stock_edit=skipped_no_listings'].join(
+          '\n',
+        ),
       );
       expect(board.status).toBe('empty');
       return;
@@ -133,7 +127,7 @@ describe('inventory studio staging proof', () => {
       PROOF_PATH,
       [
         `pubky=${pubky}`,
-        `grant=${INVENTORY_GRANT}`,
+        `grant=${purchaseInfo.capabilities}`,
         `listing_id=${target.listingId}`,
         `revision_before=${target.serverRevision}`,
         `available_before=${target.available}`,

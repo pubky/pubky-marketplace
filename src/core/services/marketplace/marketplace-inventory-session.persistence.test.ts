@@ -28,21 +28,8 @@ function iso(ms: number): string {
   return new Date(ms).toISOString();
 }
 
-function mintResponse(ttlMs: number): Response {
-  return new Response(
-    JSON.stringify({
-      token: THIS_TAB.token,
-      session_id: THIS_TAB.sessionId,
-      pubky: PUBKY,
-      capabilities: INVENTORY_GRANT,
-      expires_at: iso(Date.now() + ttlMs),
-    }),
-    { status: 201, headers: { 'content-type': 'application/json' } },
-  );
-}
-
-/** This tab mints a Studio bearer expiring in `ttlMs` through the real writer. */
-async function thisTabHolds(ttlMs: number) {
+/** This tab restores an existing Studio approval expiring in `ttlMs`. */
+function thisTabHolds(ttlMs: number) {
   MarketplaceSessionService.establishClaimedGrantSession(
     {
       token: 'A'.repeat(43),
@@ -52,8 +39,16 @@ async function thisTabHolds(ttlMs: number) {
     },
     PUBKY,
   );
-  fetchSpy.mockResolvedValueOnce(mintResponse(ttlMs));
-  return await MarketplaceInventorySessionService.mintInventorySession(new Uint8Array([1]), PUBKY);
+  window.localStorage.setItem(
+    INVENTORY_SESSION_STORAGE_KEY,
+    JSON.stringify({
+      ...THIS_TAB,
+      pubky: PUBKY,
+      capabilities: INVENTORY_GRANT,
+      expiresAt: iso(Date.now() + ttlMs),
+    }),
+  );
+  return MarketplaceInventorySessionService.restorePersistedSession(PUBKY);
 }
 
 /** Another tab's writer leaves its Studio bearer in the shared slot. */
@@ -176,18 +171,28 @@ describe('inventory-session persistence: a tab only removes the record it owns',
     expect(stored()).toBe(newer);
   });
 
-  it('a mint that lands after another tab persisted a later-expiring bearer does not overwrite it', async () => {
-    const newer = otherTabPersists(24 * HOUR);
-    await thisTabHolds(HOUR);
-    expect(MarketplaceInventorySessionService.getActiveSession()?.token).toBe(THIS_TAB.token);
-    expect(stored()).toBe(newer);
-  });
-
-  it('a mint overwrites an older record', async () => {
-    otherTabPersists(HOUR);
-    await thisTabHolds(24 * HOUR);
-    expect(JSON.parse(stored()!)).toMatchObject({ token: THIS_TAB.token });
-  });
+  it.each([
+    ['newer', 24 * HOUR, OTHER_TAB.token],
+    ['older', HOUR, THIS_TAB.token],
+  ] as const)(
+    'account cleanup preserves the right record if a %s approval arrives during the write',
+    (_label, ttlMs, expectedToken) => {
+      thisTabHolds(2 * HOUR);
+      otherTabPersists(24 * HOUR, OTHER_ACCOUNT);
+      const remove = Storage.prototype.removeItem;
+      const removal = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(function (this: Storage, key) {
+        remove.call(this, key);
+        if (key === INVENTORY_SESSION_STORAGE_KEY) otherTabPersists(ttlMs);
+      });
+      try {
+        MarketplaceInventorySessionService.clearOtherAccounts(PUBKY);
+        expect(MarketplaceInventorySessionService.getActiveSession()?.token).toBe(THIS_TAB.token);
+        expect(JSON.parse(stored()!)).toMatchObject({ token: expectedToken });
+      } finally {
+        removal.mockRestore();
+      }
+    },
+  );
 
   it('restore leaves another account’s record in place', () => {
     const foreign = otherTabPersists(24 * HOUR, OTHER_ACCOUNT);
