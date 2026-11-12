@@ -1,3 +1,10 @@
+/**
+ * Replay's default block class. Its subtree is removed from the Replay DOM recording, and `beforeBreadcrumb` drops
+ * the SDK `ui.*` breadcrumbs it raises. Replay's own click events still carry the target's id and classes, so ids and
+ * classes inside a blocked subtree must stay free of secrets.
+ */
+export const SENTRY_BLOCK_SELECTOR = '.sentry-block';
+
 const Z32_ALPHABET = 'ybndrfg8ejkmcpqxot1uwisza345h769';
 
 export const PUBKY_REDACTED = '[redacted: pubky identifier]';

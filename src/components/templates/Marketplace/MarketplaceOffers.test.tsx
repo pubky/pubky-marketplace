@@ -226,6 +226,31 @@ describe('Marketplace offers UX', () => {
     });
   });
 
+  it('says an old #offer-<id> link is gone without first showing the empty list', async () => {
+    offerView.offers = [];
+    window.history.replaceState(null, '', '/marketplace/offers#offer-gone-before-read');
+    let emptyShown = false;
+    // The callback runs after the commit; an empty state shown and replaced by then is in a record's removed nodes.
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of [...record.addedNodes, ...record.removedNodes]) {
+          if (node.textContent?.includes('No offers yet')) emptyShown = true;
+        }
+      }
+      if (document.body.textContent?.includes('No offers yet')) emptyShown = true;
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    try {
+      render(<MarketplaceOffers />);
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('This offer is no longer available.'));
+      expect(window.location.search).toBe('?offer=gone-before-read');
+      expect(emptyShown).toBe(false);
+    } finally {
+      observer.disconnect();
+      window.history.replaceState(null, '', '/');
+    }
+  });
+
   it('shows the missing-offer fallback only for a loaded, unmatched anchor', () => {
     expect(isLinkedOfferMissing('missing', [offer], false, null)).toBe(true);
     expect(isLinkedOfferMissing(offer.id, [offer], false, null)).toBe(false);
