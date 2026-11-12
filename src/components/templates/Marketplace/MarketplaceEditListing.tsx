@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, PencilLine, Store, Trash2 } from 'lucide-react';
 import { getMarketplaceListingEditRoute, getMarketplaceListingRoute, MARKETPLACE_ROUTES } from '@/app/routes';
@@ -11,6 +11,8 @@ import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useDeleteMarketplaceListings } from '@/hooks/useDeleteMarketplaceListings/useDeleteMarketplaceListings';
 import { useEditMarketplaceListing } from '@/hooks/useEditMarketplaceListing/useEditMarketplaceListing';
+import { useListingStoreSync } from '@/hooks/useListingStoreSync/useListingStoreSync';
+import type { ConnectorSyncGroup } from '@/libs/commerce/connectors';
 import { ListingPublishGuardNotice } from '@/molecules/Marketplace/ListingPublishGuardNotice';
 import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceListingDeleteDialog } from '@/organisms/Marketplace/MarketplaceListingDeleteDialog';
@@ -24,9 +26,36 @@ export interface MarketplaceEditListingProps {
 
 export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEditListingProps) {
   const router = useRouter();
-  const editing = useEditMarketplaceListing(sellerPubky, listingId);
+  const storeSync = useListingStoreSync(listingId);
+  const editing = useEditMarketplaceListing(sellerPubky, listingId, {
+    follows: storeSync.follows,
+    storeSyncReady: storeSync.ready,
+  });
   const [isSaving, setIsSaving] = useState(false);
+  const savingRef = useRef(false);
+  const reconciled = useRef<Record<ConnectorSyncGroup, boolean>>({ content: false, price: false, variants: false });
   const listingRoute = getMarketplaceListingRoute(sellerPubky, listingId);
+  const followsContent = storeSync.follows.content;
+  const followsPrice = storeSync.follows.price;
+  const followsVariants = storeSync.follows.variants;
+  const editingReady = editing.status === 'ready';
+  const resetFollowedGroup = editing.resetFollowedGroup;
+  useEffect(() => {
+    if (!editingReady) return;
+    const follows = { content: followsContent, price: followsPrice, variants: followsVariants };
+    for (const group of ['content', 'price', 'variants'] as const) {
+      if (!follows[group]) {
+        reconciled.current[group] = false;
+      } else if (!reconciled.current[group]) {
+        reconciled.current[group] = true;
+        resetFollowedGroup(group);
+      }
+    }
+    // A group that has just become followed, by the first lookup finishing or by the switch, has its fields put
+    // back to the published values. `resetFollowedGroup` is a render-local closure over the form and the
+    // record, so only the follow flags and whether the editor has loaded decide when this runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingReady, followsContent, followsPrice, followsVariants]);
   const deleting = useDeleteMarketplaceListings({ onDeleted: () => router.push(MARKETPLACE_ROUTES.DASHBOARD) });
   const deleteSection = editing.ownedListing && (
     <section
@@ -63,11 +92,15 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
 
   const persistListing = async (options?: { silent?: boolean }) => {
     if (deleting.open) return false;
+    // A save and a follow switch never overlap: the switch changes which fields a save may write.
+    if (savingRef.current || storeSync.isToggling()) return false;
+    savingRef.current = true;
     setIsSaving(true);
     try {
       const savedId = await editing.submit(options);
       return Boolean(savedId);
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   };
@@ -135,6 +168,27 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
           </Typography>
         </div>
 
+        {storeSync.failed && (
+          <div
+            role="alert"
+            className="flex flex-col gap-3 rounded-md border border-destructive/40 p-4 text-sm sm:flex-row sm:items-center sm:justify-between"
+            data-testid="edit-listing-store-sync-failed"
+          >
+            <span>
+              Saving is paused: your store connection could not be checked, and this listing may follow your store.
+            </span>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="w-fit rounded-full"
+              onClick={storeSync.retry}
+            >
+              Try again
+            </Button>
+          </div>
+        )}
+
         {editing.publishBlocked && (
           <ListingPublishGuardNotice
             reason={editing.publishBlocked}
@@ -153,8 +207,20 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
           listingId={listingId}
           mode="edit"
           saleTermsLocked={editing.saleTermsLocked}
+          storeSync={
+            storeSync.syncs.length > 0
+              ? {
+                  syncs: storeSync.syncs,
+                  saving: storeSync.saving,
+                  onToggle: (connectionId, group) => {
+                    if (savingRef.current) return;
+                    void storeSync.toggleOverride(connectionId, group);
+                  },
+                }
+              : null
+          }
           publishBlocked={editing.publishBlocked}
-          publishGuardReady={editing.publishGuardReady}
+          publishGuardReady={editing.publishGuardReady && storeSync.ready}
           returnTo={getMarketplaceListingEditRoute(sellerPubky, listingId)}
         />
         <Button asChild variant="ghost" className="rounded-full">

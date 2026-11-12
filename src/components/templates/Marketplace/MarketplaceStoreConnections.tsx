@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { AlertTriangle, Plug } from 'lucide-react';
 import { Button } from '@/atoms/Button/Button';
@@ -24,6 +24,7 @@ import {
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
 import { MarketplaceConnectionStatusCheck } from '@/organisms/Marketplace/MarketplaceConnectionStatusCheck';
 import { MarketplaceConnectorListingLinks } from '@/organisms/Marketplace/MarketplaceConnectorListingLinks';
+import { MarketplaceConnectorProductSync } from '@/organisms/Marketplace/MarketplaceConnectorProductSync';
 import { MarketplaceConnectShopify } from '@/organisms/Marketplace/MarketplaceConnectShopify';
 import { MarketplaceConnectWooCommerce } from '@/organisms/Marketplace/MarketplaceConnectWooCommerce';
 import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
@@ -218,7 +219,12 @@ export function MarketplaceStoreConnections() {
                 {connections.rows
                   .filter((row) => row.health.state !== 'disconnected')
                   .map((row) => (
-                    <MarketplaceConnectorListingLinks key={row.connection.id} connection={row.connection} />
+                    <Fragment key={row.connection.id}>
+                      {row.connection.provider === 'shopify' && (
+                        <MarketplaceConnectorProductSync connection={row.connection} />
+                      )}
+                      <MarketplaceConnectorListingLinks connection={row.connection} />
+                    </Fragment>
                   ))}
               </>
             ) : (

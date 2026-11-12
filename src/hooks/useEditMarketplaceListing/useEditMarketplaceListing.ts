@@ -31,6 +31,7 @@ import {
 } from '@/hooks/useListingMediaManager/useListingMediaManager';
 import { useMeasurementSystem } from '@/hooks/useMeasurementSystem/useMeasurementSystem';
 import { usePaykitRecovery } from '@/hooks/usePaykitRecovery/usePaykitRecovery';
+import type { ConnectorSyncGroup } from '@/libs/commerce/connectors';
 import {
   evaluateDurableListingPublishGuards,
   type ListingPublishBlockReason,
@@ -50,6 +51,7 @@ import type { CommerceMoney } from '@/libs/commerce/transaction-contracts';
 import { dimensionInputFromMillimeters, type MeasurementSystem, weightInputFromGrams } from '@/libs/commerce/units';
 import { stockFormFields } from '@/libs/commerce/unlimited-stock';
 import { toast } from '@/molecules/Toaster/toast';
+import { type FollowedGroups, keepFollowedFields, NO_FOLLOWED_GROUPS } from '@/pipes/commerce/listing-followed-fields';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
@@ -69,6 +71,25 @@ export interface UseEditMarketplaceListingResult {
    * the edit page offers Delete for those too.
    */
   ownedListing: CommerceListingRecord | null;
+  /**
+   * Puts the form's fields of one group back to the published record's values: for a group that follows a
+   * connected store again after the seller edited it here, so a read-only field never shows a value the
+   * save will not write.
+   */
+  resetFollowedGroup: (group: ConnectorSyncGroup) => void;
+}
+
+export interface UseEditMarketplaceListingOptions {
+  /**
+   * The parts of the listing that follow a connected store. A followed part is saved as the published record
+   * has it, whatever the form holds, and its photos are not uploaded.
+   */
+  follows?: FollowedGroups;
+  /**
+   * False while the connected stores the listing is linked to are not known yet, or could not be asked. No
+   * save goes out then, whichever button asks for it: the form cannot tell what is read-only.
+   */
+  storeSyncReady?: boolean;
 }
 
 /**
@@ -87,7 +108,21 @@ export interface UseEditMarketplaceListingResult {
  * bidders may already have acted on. Item facts (title, description, photos,
  * inventory, delivery) stay editable for auctions.
  */
-export function useEditMarketplaceListing(sellerPubky: string, listingId: string): UseEditMarketplaceListingResult {
+export function useEditMarketplaceListing(
+  sellerPubky: string,
+  listingId: string,
+  options: UseEditMarketplaceListingOptions = {},
+): UseEditMarketplaceListingResult {
+  const follows = options.follows ?? NO_FOLLOWED_GROUPS;
+  const storeSyncReady = options.storeSyncReady !== false;
+  // A save that is already running reads these when it commits, not the values it started with: a group that
+  // began following a store while the save awaited media or shipping must still be saved as published.
+  const followsRef = useRef(follows);
+  const storeSyncReadyRef = useRef(storeSyncReady);
+  useEffect(() => {
+    followsRef.current = follows;
+    storeSyncReadyRef.current = storeSyncReady;
+  });
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
   const measurementSystem = useMeasurementSystem();
@@ -182,6 +217,15 @@ export function useEditMarketplaceListing(sellerPubky: string, listingId: string
 
   const submit = async (options?: { silent?: boolean }): Promise<string | null> => {
     if (!currentUserPubky || !record) return null;
+    if (!storeSyncReady) {
+      if (!options?.silent) {
+        toast({
+          variant: 'error',
+          description: 'Your store connection is still being checked. Try again in a moment.',
+        });
+      }
+      return null;
+    }
     setPublishBlocked(null);
     if (durablePublish) {
       const reason = await evaluateDurableListingPublishGuards({
@@ -200,7 +244,18 @@ export function useEditMarketplaceListing(sellerPubky: string, listingId: string
     let savedListingId: string | null = null;
 
     await form.handleSubmit(async (data) => {
-      const preparedMedia = await media.prepare(currentUserPubky);
+      const refuseChangedRows = (groups: FollowedGroups): boolean => {
+        if (!(groups.price || groups.variants) || data.variants.length === record.variants.length) return false;
+        toast({
+          variant: 'error',
+          description: 'Variants cannot be added or removed here while they, or their prices, follow your store.',
+        });
+        return true;
+      };
+      if (refuseChangedRows(follows)) return;
+      const preparedMedia = follows.content
+        ? { ok: true as const, media: record.media as typeof record.media, uploads: [] }
+        : await media.prepare(currentUserPubky);
       if (!preparedMedia.ok) {
         toast({ variant: 'error', description: describeMediaFailure(preparedMedia.reason) });
         return;
@@ -214,7 +269,20 @@ export function useEditMarketplaceListing(sellerPubky: string, listingId: string
 
       try {
         await uploadListingMedia(preparedMedia.uploads);
-        const updated = buildUpdatedRecord(record, data, preparedMedia.media, shipping.fields);
+        if (!storeSyncReadyRef.current) {
+          if (!options?.silent) {
+            toast({
+              variant: 'error',
+              description: 'Your store connection changed while saving. Try again in a moment.',
+            });
+          }
+          return;
+        }
+        // The groups followed now, which may differ from the ones this save started with: the rows are checked
+        // against them again, and the record is built from the same snapshot.
+        const followedNow = followsRef.current;
+        if (refuseChangedRows(followedNow)) return;
+        const updated = buildUpdatedRecord(record, data, preparedMedia.media, shipping.fields, followedNow);
         const reservePrice =
           updated.sale.format === 'auction' && data.reservePrice !== ''
             ? amountInputToMoney(data.reservePrice, assetForListingCurrency(data.currency))
@@ -245,6 +313,43 @@ export function useEditMarketplaceListing(sellerPubky: string, listingId: string
     return savedListingId;
   };
 
+  const resetFollowedGroup = (group: ConnectorSyncGroup) => {
+    if (!record) return;
+    const primaryPrice = record.sale.format === 'fixed_price' ? record.sale.unitPrice : record.sale.startingPrice;
+    const published = formDataFromRecord(
+      record,
+      listingCurrencyChoiceForAsset(primaryPrice) ?? form.getValues('currency'),
+      form.getValues('measurementSystem'),
+      hydratedReservePriceRef.current ?? null,
+    );
+    const touch = { shouldDirty: false, shouldValidate: true };
+    if (group === 'content') {
+      form.setValue('title', published.title, touch);
+      form.setValue('description', published.description, touch);
+      media.seed(record.media);
+    } else if (form.getValues('variants').length !== published.variants.length) {
+      // A row was removed or added here, so rows no longer line up with the published variants: take them all back.
+      if (group === 'price') {
+        form.setValue('currency', published.currency, touch);
+        form.setValue('price', published.price, touch);
+      }
+      form.setValue('variants', published.variants, touch);
+    } else if (group === 'price') {
+      form.setValue('currency', published.currency, touch);
+      form.setValue('price', published.price, touch);
+      published.variants.forEach((variant, index) => {
+        form.setValue(`variants.${index}.priceOverride`, variant.priceOverride, touch);
+      });
+    } else {
+      published.variants.forEach((variant, index) => {
+        form.setValue(`variants.${index}.sku`, variant.sku, touch);
+        form.setValue(`variants.${index}.size`, variant.size, touch);
+        form.setValue(`variants.${index}.color`, variant.color, touch);
+        form.setValue(`variants.${index}.style`, variant.style, touch);
+      });
+    }
+  };
+
   return {
     status,
     form,
@@ -254,6 +359,7 @@ export function useEditMarketplaceListing(sellerPubky: string, listingId: string
     publishGuardReady,
     submit,
     ownedListing,
+    resetFollowedGroup,
   };
 }
 
@@ -387,6 +493,7 @@ function buildUpdatedRecord(
   data: CreateMarketplaceListingData,
   media: CommerceListingRecord['media'],
   shipping: ListingShippingRecordFields,
+  follows: FollowedGroups,
 ): CommerceListingRecord {
   const now = new Date().toISOString();
   const asset = assetForListingCurrency(data.currency);
@@ -407,23 +514,29 @@ function buildUpdatedRecord(
     ...listingAttributesFromFormData(data),
   };
 
+  const fields = keepFollowedFields(
+    record,
+    { title: data.title, description: data.description, media, variants: buildListingVariants(data, media), sale },
+    follows,
+  );
+
   return commerceListingRecordSchema.parse({
     ...record,
     revision: record.revision + 1,
     updatedAt: now,
-    title: data.title,
-    description: data.description,
+    title: fields.title,
+    description: fields.description,
     categoryId: data.categoryId,
     attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
     condition: data.condition,
-    tags: deriveTags(data.title),
+    tags: deriveTags(fields.title),
     location: {
       countryCode: publishedCountryCode(data.countryCode),
       region: data.region || undefined,
     },
-    media,
-    variants: buildListingVariants(data, media),
-    sale,
+    media: fields.media,
+    variants: fields.variants,
+    sale: fields.sale,
     fulfillmentMethods: fulfillmentMethodsFromForm(data.fulfillment),
     package: requiresShipping ? buildPackageRecord(data) : undefined,
     shippingOptions: requiresShipping ? shipping.shippingOptions : [],

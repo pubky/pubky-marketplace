@@ -6,6 +6,9 @@ import { Err } from '@/libs/error/error.factories';
 import { Logger } from '@/libs/logger/logger';
 import { mapConnectorCatalog } from '@/pipes/commerce/connector-catalog-rows';
 import { DEFAULT_IMPORT_SETTINGS } from '@/pipes/commerce/import-settings';
+// Both bodies were captured from pubky-marketplace-service a142aa9 (its product sync test rig), not written by hand.
+import changesWire from '@/test/fixtures/commerce/connector-product-changes.wire.json';
+import syncWire from '@/test/fixtures/commerce/connector-sync.wire.json';
 import { MarketplaceConnectorsService } from './marketplace-connectors';
 import { MarketplaceSessionService } from './marketplace-session';
 
@@ -633,5 +636,88 @@ describe('MarketplaceConnectorsService', () => {
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
     await MarketplaceConnectorsService.resolveAlert(ACTOR, 'a1');
     expect(lastCall().url).toBe(`${BASE}/v1/connectors/alerts/a1/resolve`);
+  });
+
+  describe('product sync', () => {
+    it('reads the sync directions and the listing overrides', async () => {
+      fetchMock.mockResolvedValueOnce(json(syncWire));
+
+      const sync = await MarketplaceConnectorsService.sync(ACTOR, CONNECTION_ID);
+
+      expect(lastCall().url).toBe(`${BASE}/v1/connectors/${CONNECTION_ID}/sync`);
+      expect(sync.groups.map((group) => [group.fieldGroup, group.direction])).toEqual([
+        ['content', 'from_store'],
+        ['price', 'from_store'],
+        ['variants', 'from_store'],
+      ]);
+      expect(sync.overrides).toEqual([{ listingId: 'mug_01', fieldGroup: 'price', direction: 'off' }]);
+    });
+
+    it('saves the connection and listing directions as groups, null clearing a listing override', async () => {
+      fetchMock.mockResolvedValueOnce(json(syncWire)).mockResolvedValueOnce(json(syncWire));
+
+      await MarketplaceConnectorsService.putSync(ACTOR, CONNECTION_ID, { content: 'off' });
+      const connection = lastCall();
+      expect(connection.init.method).toBe('PUT');
+      expect(JSON.parse(String(connection.init.body))).toEqual({ groups: { content: 'off' } });
+
+      await MarketplaceConnectorsService.putListingSync(ACTOR, CONNECTION_ID, 'mug_01', { price: null });
+      const listing = lastCall();
+      expect(listing.url).toBe(`${BASE}/v1/connectors/${CONNECTION_ID}/sync/listings/mug_01`);
+      expect(JSON.parse(String(listing.init.body))).toEqual({ groups: { price: null } });
+    });
+
+    it('reads every kind of pending change the service sends', async () => {
+      fetchMock.mockResolvedValueOnce(json(changesWire));
+
+      const changes = await MarketplaceConnectorsService.changes(ACTOR, CONNECTION_ID);
+
+      expect(lastCall().url).toBe(`${BASE}/v1/connectors/${CONNECTION_ID}/changes?limit=200`);
+      expect(changes.map((change) => change.fieldGroup)).toEqual(['content', 'price', 'status']);
+      const [content, price, status] = changes;
+      expect(content?.fieldGroup === 'content' && content.proposed.title).toBe('Trail Boots II');
+      expect(content?.listings[0]).toEqual({
+        listingId: 'boots_01',
+        direction: 'from_store',
+        variants: [{ variantId: '', providerVariantId: 'gid://shopify/ProductVariant/50001' }],
+      });
+      expect(
+        price?.fieldGroup === 'price' &&
+          price.proposed.variants.find((variant) => variant.providerVariantId === 'gid://shopify/ProductVariant/50001')
+            ?.amountMinor,
+      ).toBe(13000);
+      expect(status?.fieldGroup === 'status' && status.proposed).toEqual({ available: false });
+      expect(status?.listings[0]?.direction).toBe('always');
+    });
+
+    it('refuses a change whose hash is not the 64-character hex the service sends', async () => {
+      const broken = structuredClone(changesWire);
+      broken.changes[0]!.proposed_hash = 'not-a-hash';
+      fetchMock.mockResolvedValueOnce(json(broken));
+
+      await expect(MarketplaceConnectorsService.changes(ACTOR, CONNECTION_ID)).rejects.toBeInstanceOf(AppError);
+    });
+
+    it('resolves a change with the hash it read, and names a stale one by the service code', async () => {
+      const [change] = changesWire.changes;
+      const read = { id: change!.id, proposedHash: change!.proposed_hash };
+      fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+      await MarketplaceConnectorsService.resolveChange(ACTOR, CONNECTION_ID, read, 'applied');
+
+      const { url, init } = lastCall();
+      expect(url).toBe(`${BASE}/v1/connectors/${CONNECTION_ID}/changes/${change!.id}/resolve`);
+      expect(init.method).toBe('POST');
+      expect(JSON.parse(String(init.body))).toEqual({ resolution: 'applied', proposed_hash: change!.proposed_hash });
+
+      fetchMock.mockResolvedValueOnce(
+        json({ schema_version: 1, ok: false, error: { code: 'change_stale', message: 'stale' } }, 409),
+      );
+      const failure = await MarketplaceConnectorsService.resolveChange(ACTOR, CONNECTION_ID, read, 'dismissed').catch(
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(AppError);
+      expect((failure as AppError).context).toMatchObject({ reason: 'change_stale', statusCode: 409 });
+    });
   });
 });
