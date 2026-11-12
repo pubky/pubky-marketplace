@@ -170,6 +170,32 @@ describe('live marketplace grant fixtures (offline)', () => {
     expect(flow.violations).toEqual([]);
   });
 
+  it('keeps the approval failure first when revoking the obtained grant also fails', async () => {
+    vi.useFakeTimers();
+    const signer = Promise.withResolvers<void>();
+    const signout = vi.fn().mockRejectedValue(new Error('unavailable'));
+    const dispose = vi.fn();
+    const flow = strictGrantFlow(async () => mockSession({ signout, free: dispose }));
+    const { keypair } = installGrantFlow(flow, signer.promise);
+    const pending = createPublicOnlyGrantSession(keypair);
+    const failed = expect(pending).rejects.toMatchObject({
+      message: 'Public-only grant approval timed out.',
+      errors: [
+        expect.objectContaining({ message: 'Public-only grant approval timed out.' }),
+        expect.objectContaining({ message: 'unavailable' }),
+      ],
+    });
+    await vi.dynamicImportSettled();
+    await vi.advanceTimersByTimeAsync(60_000);
+    await failed;
+    signer.resolve();
+    await vi.runAllTimersAsync();
+
+    expect(signout).toHaveBeenCalledOnce();
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(flow.violations).toEqual([]);
+  });
+
   it('cancels safely when the signer fails during a pending SDK poll', async () => {
     vi.useFakeTimers();
     const signer = Promise.withResolvers<void>();

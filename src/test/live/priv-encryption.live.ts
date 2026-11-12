@@ -6,6 +6,7 @@ import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { PRIV_KEYS_WIRE_NEEDS_REAUTH, PRIV_KEYS_WIRE_OK } from '@/test/fixtures/commerce/priv-keys.wire';
 import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';
+import { withCleanup } from '../../../scripts/lib/with-cleanup.mjs';
 import {
   createPublicOnlyGrantSession,
   establishMarketplaceGrantSession,
@@ -641,16 +642,17 @@ describe('encrypted /priv — LIVE proof on the deployed staging stack', () => {
 
     // ── 1. No key: the inventory-only grant is refused; nothing is written ──
     const publicOnlyGrant = await createPublicOnlyGrantSession(buyer.keypair);
-    try {
-      const minted = await mintInventoryOnlyGrantSession(publicOnlyGrant, buyer.pubky);
-      m.CommerceController.clearMarketplaceSession();
-      m.MarketplaceSessionService.establishClaimedGrantSession(minted, buyer.pubky);
-      const serviceSession = m.MarketplaceSessionService.getActiveSession();
-      if (!serviceSession) throw new Error('No inventory-only service session after the grant proof.');
-      mintedSessions.push(serviceSession);
-    } finally {
-      await revokeOwnedHomeserverGrant(publicOnlyGrant);
-    }
+    await withCleanup(
+      async () => {
+        const minted = await mintInventoryOnlyGrantSession(publicOnlyGrant, buyer.pubky);
+        m.CommerceController.clearMarketplaceSession();
+        m.MarketplaceSessionService.establishClaimedGrantSession(minted, buyer.pubky);
+        const serviceSession = m.MarketplaceSessionService.getActiveSession();
+        if (!serviceSession) throw new Error('No inventory-only service session after the grant proof.');
+        mintedSessions.push(serviceSession);
+      },
+      () => revokeOwnedHomeserverGrant(publicOnlyGrant),
+    );
     const refused = await fetch(`${SERVICE_URL}/v1/me/priv-keys`, {
       headers: { authorization: `Bearer ${m.MarketplaceSessionService.getActiveSession()!.token}` },
     });
@@ -683,28 +685,31 @@ describe('encrypted /priv — LIVE proof on the deployed staging stack', () => {
     const fullSession = buyer.session;
     const narrowSession = await createPublicOnlyGrantSession(buyer.keypair);
     const keyReads = vi.spyOn(m.MarketplaceGatewayService, 'getPrivKeys');
-    try {
-      expect(m.HomeserverService.isGrantSession(narrowSession)).toBe(true);
-      expect(await narrowSession.grant?.grantId()).not.toBe(await fullSession.grant?.grantId());
-      actAs({ ...buyer, session: narrowSession });
-      expect(m.HomeserverService.canCurrentSessionWrite('/priv/pubky.app/')).toBe(false);
-      mark = wire.length;
-      await m.CommerceController.syncWatchlist();
-      expect(m.useCommerceStore.getState().watchlistSyncStatus).toBe('needs_reauth');
-      expect(await m.CommerceApplication.publishOrderReceipts(buyer.pubky, [firstOrder, secondOrder])).toBe(
-        'needs_reauth',
-      );
-      expect(keyReads).not.toHaveBeenCalled();
-      expect(wire.slice(mark).filter((entry) => entry.includes('/priv/'))).toEqual([]);
-    } finally {
-      keyReads.mockRestore();
-      try {
-        // This exact grant belongs to the harness; the full grant remains valid.
-        await revokeOwnedHomeserverGrant(narrowSession);
-      } finally {
-        actAs(buyer);
-      }
-    }
+    await withCleanup(
+      async () => {
+        expect(m.HomeserverService.isGrantSession(narrowSession)).toBe(true);
+        expect(await narrowSession.grant?.grantId()).not.toBe(await fullSession.grant?.grantId());
+        actAs({ ...buyer, session: narrowSession });
+        expect(m.HomeserverService.canCurrentSessionWrite('/priv/pubky.app/')).toBe(false);
+        mark = wire.length;
+        await m.CommerceController.syncWatchlist();
+        expect(m.useCommerceStore.getState().watchlistSyncStatus).toBe('needs_reauth');
+        expect(await m.CommerceApplication.publishOrderReceipts(buyer.pubky, [firstOrder, secondOrder])).toBe(
+          'needs_reauth',
+        );
+        expect(keyReads).not.toHaveBeenCalled();
+        expect(wire.slice(mark).filter((entry) => entry.includes('/priv/'))).toEqual([]);
+      },
+      async () => {
+        keyReads.mockRestore();
+        try {
+          // This exact grant belongs to the harness; the full grant remains valid.
+          await revokeOwnedHomeserverGrant(narrowSession);
+        } finally {
+          actAs(buyer);
+        }
+      },
+    );
     expect(m.useAuthStore.getState().selectSession()).toBe(fullSession);
     expect(m.HomeserverService.canCurrentSessionWrite('/priv/pubky.app/')).toBe(true);
     for (const url of legacyUrls) expect(await exists(url), url).toBe(true);
@@ -972,16 +977,20 @@ describe('encrypted /priv — LIVE proof on the deployed staging stack', () => {
     ]) {
       expect(await exists(url), url).toBe(false);
     }
-    const revocations: number[] = [];
+    // Attempt every revocation before asserting, so one failure cannot strand the rest.
+    const revocations: { sessionId: string | undefined; status: number | null }[] = [];
     for (const session of mintedSessions) {
       const response = await fetch(`${SERVICE_URL}/v1/auth/sessions/${session.sessionId}`, {
         method: 'DELETE',
         headers: { authorization: `Bearer ${session.token}` },
-      });
-      expect(response.ok, `revoke owned service session ${session.sessionId}`).toBe(true);
-      revocations.push(response.status);
+      }).catch(() => null);
+      revocations.push({ sessionId: session.sessionId, status: response?.status ?? null });
     }
-    console.info(`[priv-live] 5. session revocation statuses ${JSON.stringify(revocations)}`);
+    console.info(
+      `[priv-live] 5. session revocation statuses ${JSON.stringify(revocations.map((entry) => entry.status))}`,
+    );
+    const unrevoked = revocations.filter(({ status }) => status === null || status < 200 || status > 299);
+    expect(unrevoked, 'every owned service session must be revoked').toEqual([]);
     console.info(
       `[priv-live] service-side leftovers by design: 2 paid staging orders and one sealed data key for ${prefix(buyer.pubky)}; the listing ${prefix(seller.pubky)}:${listingId}`,
     );

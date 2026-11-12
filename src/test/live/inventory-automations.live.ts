@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { withCleanup } from '../../../scripts/lib/with-cleanup.mjs';
 import {
   createPublicOnlyGrantSession,
   establishMarketplaceGrantSession,
@@ -115,15 +116,16 @@ describe('inventory automations staging proof', () => {
 
     // A distinct public-only grant preserves the inventory-revocation isolation proof.
     const inventoryGrant = await createPublicOnlyGrantSession(keypair);
-    try {
-      const minted = await mintInventoryOnlyGrantSession(inventoryGrant, sellerPubky);
-      const inventoryInfo = await restoreInventoryGrantSession(minted);
-      expect(inventoryInfo?.capabilities).toBe(INVENTORY_GRANT);
-      expect(MarketplaceInventorySessionService.getCoveringBearer(sellerPubky)?.source).toBe('inventory');
-      expect(minted.token !== MarketplaceSessionService.getActiveSession()?.token).toBe(true);
-    } finally {
-      await revokeOwnedHomeserverGrant(inventoryGrant);
-    }
+    await withCleanup(
+      async () => {
+        const minted = await mintInventoryOnlyGrantSession(inventoryGrant, sellerPubky);
+        const inventoryInfo = await restoreInventoryGrantSession(minted);
+        expect(inventoryInfo?.capabilities).toBe(INVENTORY_GRANT);
+        expect(MarketplaceInventorySessionService.getCoveringBearer(sellerPubky)?.source).toBe('inventory');
+        expect(minted.token !== MarketplaceSessionService.getActiveSession()?.token).toBe(true);
+      },
+      () => revokeOwnedHomeserverGrant(inventoryGrant),
+    );
 
     await db.initialize();
     mkdirSync(PROOF_DIR, { recursive: true });

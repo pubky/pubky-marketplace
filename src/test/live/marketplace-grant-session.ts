@@ -1,6 +1,7 @@
 import type { Keypair, Session } from '@synonymdev/pubky';
 import { expect } from 'vitest';
 import { mintMarketplaceGrantSession } from '../../../scripts/lib/marketplace-grant-session.mjs';
+import { withCleanup } from '../../../scripts/lib/with-cleanup.mjs';
 
 /** App imports stay lazy: live suites set runtime configuration before loading them. */
 export async function establishMarketplaceGrantSession({
@@ -30,7 +31,7 @@ export async function establishMarketplaceGrantSession({
   }
 }
 
-/** A fresh delegated grant with public storage only; the caller revokes this exact grant in finally. */
+/** A fresh delegated grant with public storage only; the caller revokes this exact grant when done. */
 export async function createPublicOnlyGrantSession(keypair: Keypair): Promise<Session> {
   const [{ HomeserverService }, { createCancelableAuthApproval }, { getShopGrantClientId }, network, sdk] =
     await Promise.all([
@@ -60,21 +61,25 @@ export async function createPublicOnlyGrantSession(keypair: Keypair): Promise<Se
   const deadline = new Promise<never>((_, reject) => {
     timeout = setTimeout(() => reject(new Error('Public-only grant approval timed out.')), 60_000);
   });
-  try {
-    const signerApproval = Promise.resolve().then(() => {
-      expect(new URL(authorizationUrl).searchParams.get('caps')).toBe('/pub/pubky.app/:rw');
-      return client.signer(keypair).approveAuthRequest(authorizationUrl);
-    });
-    const [, approved] = await Promise.race([Promise.all([signerApproval, pendingSession]), deadline]);
-    expect(HomeserverService.isGrantSession(approved)).toBe(true);
-    expect(approved.info.publicKey.z32()).toBe(keypair.publicKey.z32());
-    delivered = true;
-    return approved;
-  } finally {
-    clearTimeout(timeout);
-    approval.cancel();
-    if (session && !delivered) await revokeOwnedHomeserverGrant(session);
-  }
+  // A failed revocation must not replace the approval failure that caused it.
+  return withCleanup(
+    async () => {
+      const signerApproval = Promise.resolve().then(() => {
+        expect(new URL(authorizationUrl).searchParams.get('caps')).toBe('/pub/pubky.app/:rw');
+        return client.signer(keypair).approveAuthRequest(authorizationUrl);
+      });
+      const [, approved] = await Promise.race([Promise.all([signerApproval, pendingSession]), deadline]);
+      expect(HomeserverService.isGrantSession(approved)).toBe(true);
+      expect(approved.info.publicKey.z32()).toBe(keypair.publicKey.z32());
+      delivered = true;
+      return approved;
+    },
+    async () => {
+      clearTimeout(timeout);
+      approval.cancel();
+      if (session && !delivered) await revokeOwnedHomeserverGrant(session);
+    },
+  );
 }
 
 /** Only for grants this harness created; never sign out a borrowed App or Shop session. */

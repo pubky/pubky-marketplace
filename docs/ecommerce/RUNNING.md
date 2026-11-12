@@ -173,21 +173,23 @@ npm run dev
 
 The client selects a wholly different transport in this mode (`MarketplaceTransactionService`):
 
-- **Auth is real.** The active homeserver grant writes a bootstrap proof; the Shop BFF verifies it and starts a separate marketplace grant approval. The resulting service bearer authorizes commands through `Authorization: Bearer`; the forgeable `x-pubky-actor` header does not exist on this path. The client keeps the bearer in memory and a `localStorage` mirror, bounded by expiry and identity. The BFF separately holds an encrypted server-side pairing referenced by an HttpOnly cookie. Sign-out/account changes clear service credentials; a hosted cleanup boundary is not acknowledged until the BFF confirms cookie removal. [`service-auth.md`](service-auth.md) also documents older AuthToken compatibility paths, which the current UI does not use.
+- **Auth is real.** When grant-session minting is enabled, the active homeserver sign-in grant proves possession with a single-use proof document and the service mints the bearer after sign-in or restore, without another signer approval. When no usable bearer can be restored or minted, the connect UI falls back to the separate marketplace approval: the grant writes a bootstrap proof, then the Shop BFF verifies it and starts the approval. The resulting service bearer authorizes commands through `Authorization: Bearer`; the forgeable `x-pubky-actor` header does not exist on this path. The client keeps the bearer in memory and a `localStorage` mirror, bounded by expiry and identity. The BFF separately holds an encrypted server-side pairing referenced by an HttpOnly cookie. Sign-out/account changes clear service credentials; a hosted cleanup boundary is not acknowledged until the BFF confirms cookie removal. [`service-auth.md`](service-auth.md) also documents older AuthToken compatibility paths, which the current UI does not use.
 - **Wire casing is snake_case** per ADR 0019 §3; the client converts its camelCase contracts at the transport boundary in both directions.
 - **The ported command set is accepted** — listings, offers, bids, checkout, order cancellation, fulfillment, returns, external-refund evidence, and reviews. Kinds the durable service does not implement (`payment.sandbox_advance`, the sandbox's plaintext `message.send`, notification read state/preferences) are rejected client-side before any bytes are sent, and the UI withholds those affordances in this mode.
 - **Reads come from the service's role-scoped projections** (listings, offers, orders with embedded payment/shipment/return/refund/review sub-objects, payments, receipts, and notifications). The interactive shopping UI sources every `expected_revision` from a fresh projection read and treats `REVISION_CONFLICT` as refetch-and-retry.
 
 ### Connecting the session from the UI
 
-Durable-mode screens that need a session offer a marketplace approval action. If the homeserver grant is missing, the dialog first offers standalone sign-in or **Continue in Pubky App** for a hosted session. Once authority is available:
+When grant-session minting is enabled, Shop mints the marketplace bearer from the active homeserver sign-in grant after sign-in or restore, and durable-mode screens need no further approval. A refused mint is not repeated for that sign-in without an explicit retry.
+
+When no usable bearer can be restored or minted, durable-mode screens that need a session offer a marketplace approval action as the fallback. If the homeserver grant is missing, the dialog first offers standalone sign-in or **Continue in Pubky App** for a hosted session. Once authority is available:
 
 1. The active grant writes the single-use bootstrap proof and the BFF verifies it.
 2. Shop opens a separate `pubkyauth://signin_grant` approval for the same identity, using Ring, Bitkit or enabled Passport. Hosted and local-key sessions ask the user to choose an external signer; a recovery key is not retained for later purchases.
 3. Closing the dialog cancels the attempt. Identity/session changes invalidate pending work, and failures offer a fresh attempt.
 4. Successful approval yields the marketplace bearer and refreshes the waiting surfaces.
 
-The flow is bounded by the backend expiry; expired or rejected approvals are not reused. A valid persisted bearer can resume after reload until expiry or refusal. A 401 or expired bearer returns the surface to reconnect. These are separate service credentials: homeserver sign-in alone does not approve a purchase. See [the current grant contract](../launch/grant-auth-session.md#commerce-session-and-approval-ownership).
+The approval flow is bounded by the backend expiry; expired or rejected approvals are not reused. A valid persisted bearer can resume after reload until expiry or refusal. A 401 or expired bearer returns the surface to reconnect. The marketplace bearer remains a separate service credential with its own lifecycle; with grant-session minting disabled, homeserver sign-in alone does not yield one. See [the current grant contract](../launch/grant-auth-session.md#commerce-session-and-approval-ownership).
 
 To prove the transport against the running service (session establishment, snake_case commands, idempotent replay, revision conflicts, report reads):
 
