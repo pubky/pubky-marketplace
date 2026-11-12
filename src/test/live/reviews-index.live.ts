@@ -2,6 +2,7 @@
 // so the shim must load before any app module.
 import 'fake-indexeddb/auto';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { establishMarketplaceGrantSession } from './marketplace-grant-session';
 
 /**
  * LIVE end-to-end proof of the trust & reputation loop, with NOTHING mocked
@@ -118,7 +119,7 @@ async function mintSignupToken(): Promise<string> {
  * session, so the app's own record-write path works unchanged.
  */
 async function createIdentity(name: string): Promise<{ pubky: string; keypair: import('@synonymdev/pubky').Keypair }> {
-  const { HomeserverService, MarketplaceSessionService, useAuthStore, sdk } = modules;
+  const { HomeserverService, useAuthStore, sdk } = modules;
   const keypair = sdk.Keypair.random();
   const { session } = await HomeserverService.signUp({ keypair, signupToken: await mintSignupToken() });
   const pubky = keypair.publicKey.z32();
@@ -134,11 +135,8 @@ async function createIdentity(name: string): Promise<{ pubky: string; keypair: i
   const profile = new PubkySpecsBuilder(pubky).createUser(name, null, null, null, null);
   await CommerceHomeserverService.putJson(profile.meta.url, profile.user.toJson() as Record<string, unknown>);
 
-  // The service session: a genuine Pubky auth flow where this test acts as
-  // the signer (what Pubky Ring does interactively).
-  const flow = MarketplaceSessionService.beginSessionFlow();
-  await new sdk.Pubky().signer(keypair).approveAuthRequest(flow.authorizationUrl);
-  const serviceSession = await flow.awaitSession();
+  // Prove the live homeserver grant before installing the service bearer.
+  const serviceSession = await establishMarketplaceGrantSession({ session, pubky });
   expect(serviceSession.pubky).toBe(pubky);
 
   return { pubky, keypair };
@@ -146,14 +144,12 @@ async function createIdentity(name: string): Promise<{ pubky: string; keypair: i
 
 /** Re-establishes the app + service session for an identity (sessions are singletons). */
 async function resumeIdentity(keypair: import('@synonymdev/pubky').Keypair): Promise<string> {
-  const { HomeserverService, MarketplaceSessionService, useAuthStore, sdk } = modules;
+  const { HomeserverService, useAuthStore } = modules;
   const pubky = keypair.publicKey.z32();
   const signedIn = await HomeserverService.signIn({ keypair });
   if (signedIn === undefined) throw new Error(`Could not sign ${pubky} back in to the testnet homeserver.`);
   useAuthStore.setState({ session: signedIn.session, currentUserPubky: pubky });
-  const flow = MarketplaceSessionService.beginSessionFlow();
-  await new sdk.Pubky().signer(keypair).approveAuthRequest(flow.authorizationUrl);
-  await flow.awaitSession();
+  await establishMarketplaceGrantSession({ session: signedIn.session, pubky });
   return pubky;
 }
 

@@ -6,7 +6,8 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { establishMarketplaceGrantSession, revokeOwnedHomeserverGrant } from './marketplace-grant-session';
 
 /**
  * LIVE end-to-end proof of the buyer purchase flow over the REAL composed
@@ -30,7 +31,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
  *   - the marketplace transaction service on MARKETPLACE_SERVICE_URL
  *     (default http://127.0.0.1:8080) started with LOCKS_SERVER_URL and both
  *     LOCKS_* keys, per docs/ecommerce/RUNNING.md
- *   - network access to the Pubky HTTP relay for the AuthToken session flows.
+ *   - grant bootstrap enabled on the service and network access to the accounts' homeservers.
  *
  * A Locks listing is digital-only: the seller publishes the listing record
  * with `digitalLock` and `fulfillmentMethods: ['digital']` to their homeserver
@@ -176,6 +177,8 @@ type AppModules = {
 
 describe('locks-paykit live purchase (composed environment)', () => {
   let modules: AppModules;
+  const homeserverGrants: import('@synonymdev/pubky').Session[] = [];
+  const serviceSessions: NonNullable<ReturnType<AppModules['MarketplaceSessionService']['getActiveSession']>>[] = [];
 
   beforeAll(async () => {
     const [service, locks, paykit] = await Promise.all([
@@ -239,13 +242,35 @@ describe('locks-paykit live purchase (composed environment)', () => {
     };
   });
 
+  afterAll(async () => {
+    // Try every owned credential even when the purchase or an earlier cleanup fails.
+    const revoked = await Promise.allSettled(
+      serviceSessions.map(async (session) => {
+        const response = await fetch(`${SERVICE_URL}/v1/auth/sessions/${session.sessionId}`, {
+          method: 'DELETE',
+          headers: { authorization: `Bearer ${session.token}` },
+          signal: AbortSignal.timeout(15_000),
+        });
+        expect(response.ok, 'the owned live service session must be revoked').toBe(true);
+      }),
+    );
+    const signedOut = await Promise.allSettled(homeserverGrants.map(revokeOwnedHomeserverGrant));
+    for (const result of [...revoked, ...signedOut]) {
+      if (result.status === 'rejected') throw result.reason;
+    }
+  });
+
+  /** Records each grant and bearer as soon as it exists, so afterAll can retire it. */
   async function establishSessionFor(keypair: import('@synonymdev/pubky').Keypair): Promise<string> {
-    const { MarketplaceSessionService, sdk } = modules;
-    const flow = MarketplaceSessionService.beginSessionFlow();
-    const signerSdk = new sdk.Pubky();
-    await signerSdk.signer(keypair).approveAuthRequest(flow.authorizationUrl);
-    const session = await flow.awaitSession();
-    return session.pubky;
+    const signedIn = await modules.HomeserverService.signIn({ keypair });
+    if (signedIn?.session) homeserverGrants.push(signedIn.session);
+    const pubky = keypair.publicKey.z32();
+    const info = await establishMarketplaceGrantSession({ session: signedIn?.session, pubky });
+    // Each mint replaces the singleton's bearer, so keep this one before the next sign-in.
+    const session = modules.MarketplaceSessionService.getActiveSession();
+    if (!session) throw new Error('No live service session after the grant proof.');
+    serviceSessions.push(session);
+    return info.pubky;
   }
 
   it('drives a real purchase end to end: proof bundle, register_locks, on-chain payment, worker confirmation, receipt, guarded content', async () => {
@@ -503,6 +528,7 @@ describe('locks-paykit live purchase (composed environment)', () => {
     // included): its auth store holds the seller's homeserver session.
     const sellerHomeserver = await modules.HomeserverService.signIn({ keypair: sellerKeypair });
     if (sellerHomeserver === undefined) throw new Error(`Could not sign the seller ${seller} in to the homeserver.`);
+    homeserverGrants.push(sellerHomeserver.session);
     modules.useAuthStore.setState({ session: sellerHomeserver.session, currentUserPubky: seller });
     await modules.CommerceHomeserverService.putJson(
       `pubky://${seller}/pub/pubky.app/marketplace/v1/listings/${listingId}`,

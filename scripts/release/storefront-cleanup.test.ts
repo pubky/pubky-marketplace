@@ -15,19 +15,19 @@ function homeserver(initial: boolean | Error) {
       return present;
     }),
   };
-  const free = vi.fn();
+  const signout = vi.fn(async () => {});
   const signer = {
-    signinCookie: vi.fn(async () => ({
+    signin: vi.fn(async () => ({
       storage: {
         delete: vi.fn(async (path: string) => {
           deleted.push(path);
           present = false;
         }),
       },
-      free,
+      signout,
     })),
   };
-  return { publicStorage, signer, deleted, free };
+  return { publicStorage, signer, deleted, signout };
 }
 
 function nexusAnswers(...statuses: number[]) {
@@ -56,7 +56,7 @@ describe('removeRunStorefront', () => {
     const fetchMock = nexusAnswers(200);
     const out = await removeRunStorefront({ publicStorage, signer, pubky: PUBKY, existedBefore: true, nexus: NEXUS });
     expect(out).toMatchObject({ ok: true, reason: 'pre-existing, kept', deleted: false });
-    expect(signer.signinCookie).not.toHaveBeenCalled();
+    expect(signer.signin).not.toHaveBeenCalled();
     expect(deleted).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -73,7 +73,7 @@ describe('removeRunStorefront', () => {
     nexusAnswers(404);
     const out = await removeRunStorefront({ publicStorage, signer, pubky: PUBKY, existedBefore: false, nexus: NEXUS });
     expect(out).toMatchObject({ ok: true, deleted: false, nexus: 404 });
-    expect(signer.signinCookie).not.toHaveBeenCalled();
+    expect(signer.signin).not.toHaveBeenCalled();
   });
 
   it('fails when the homeserver has none but Nexus still indexes one', async () => {
@@ -84,7 +84,7 @@ describe('removeRunStorefront', () => {
   });
 
   it('deletes a storefront the run published and waits until Nexus drops it', async () => {
-    const { publicStorage, signer, deleted, free } = homeserver(true);
+    const { publicStorage, signer, deleted, signout } = homeserver(true);
     nexusAnswers(200, 404);
     vi.useFakeTimers();
     try {
@@ -96,7 +96,52 @@ describe('removeRunStorefront', () => {
       vi.useRealTimers();
     }
     expect(deleted).toEqual([SHOP_PATH]);
-    expect(free).toHaveBeenCalledOnce();
+    expect(signer.signin).toHaveBeenCalledWith('marketplace-storefront-cleanup');
+    expect(signout).toHaveBeenCalledOnce();
+  });
+
+  it('ends the temporary grant when storefront deletion fails', async () => {
+    const { publicStorage, signer, signout } = homeserver(true);
+    signer.signin.mockResolvedValueOnce({
+      storage: {
+        delete: vi.fn(async () => {
+          throw new Error('delete failed');
+        }),
+      },
+      signout,
+    });
+    await expect(
+      removeRunStorefront({ publicStorage, signer, pubky: PUBKY, existedBefore: false, nexus: NEXUS }),
+    ).rejects.toThrow('delete failed');
+    expect(signout).toHaveBeenCalledOnce();
+  });
+
+  it('preserves deletion failure when ending the temporary grant also fails', async () => {
+    const { publicStorage, signer, signout } = homeserver(true);
+    signout.mockRejectedValueOnce(new Error('sensitive signout detail'));
+    signer.signin.mockResolvedValueOnce({
+      storage: {
+        delete: vi.fn(async () => {
+          throw new Error('delete failed');
+        }),
+      },
+      signout,
+    });
+    const error = await removeRunStorefront({
+      publicStorage,
+      signer,
+      pubky: PUBKY,
+      existedBefore: false,
+      nexus: NEXUS,
+    }).catch((error: unknown) => error);
+    expect(error).toMatchObject({
+      message: 'delete failed',
+      errors: [
+        expect.objectContaining({ message: 'delete failed' }),
+        expect.objectContaining({ message: 'Could not end the storefront cleanup grant session' }),
+      ],
+    });
+    expect(signout).toHaveBeenCalledOnce();
   });
 
   it('fails when Nexus still serves the deleted storefront at the timeout', async () => {

@@ -1725,18 +1725,6 @@ export class CommerceApplication {
   }
 
   /**
-   * Starts the interactive Marketplace Transaction Service session flow:
-   * returns the `pubkyauth://` authorization URL to hand to the user's signer
-   * (QR or deeplink) plus a lazy `awaitSession` that resolves once the signer
-   * approves and the AuthToken is exchanged for a bearer session. AuthTokens
-   * are single-use, so every retry must come back through here for a fresh
-   * flow. Durable modes only; the service fails closed otherwise.
-   */
-  static beginMarketplaceSessionFlow() {
-    return MarketplaceSessionService.beginSessionFlow();
-  }
-
-  /**
    * Mints a marketplace session from the Shop's own sign-in grant, with no
    * signer approval. Nothing is installed: the caller installs it with
    * {@link installGrantMarketplaceSession} once it knows the identity is
@@ -1835,10 +1823,6 @@ export class CommerceApplication {
 
   static onInventorySessionEnded(listener: (event: MarketplaceSessionEndedEvent) => void): () => void {
     return CommerceInventoryApplication.onInventorySessionEnded(listener);
-  }
-
-  static beginInventorySessionFlow(expectedPubky: string) {
-    return CommerceInventoryApplication.beginInventorySessionFlow(expectedPubky);
   }
 
   /**

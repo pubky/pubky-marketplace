@@ -1,16 +1,20 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import 'fake-indexeddb/auto';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { establishMarketplaceGrantSession, revokeOwnedHomeserverGrant } from '../live/marketplace-grant-session';
 
 /**
  * End-to-end proof that the client transport speaks to the REAL Marketplace
  * Transaction Service (github.com/pubky/pubky-marketplace-service):
- * a genuine Pubky auth flow (the test acts as the signer with a throwaway
- * keypair via `Signer.approveAuthRequest`, exactly what Pubky Ring does),
- * `AuthToken` bytes exchanged for a bearer session, and snake_case commands
+ * a live homeserver grant signs a challenge and writes its single-use proof,
+ * the service mints a scoped bearer session, and snake_case commands
  * executed and parsed back through the client's own transport code.
  *
  * Requirements (see docs/ecommerce/RUNNING.md):
  *   - the service running at MARKETPLACE_SERVICE_URL (default http://127.0.0.1:8080)
- *   - network access to the Pubky HTTP relay (staging relay by default)
+ *   - grant bootstrap enabled on the service and access to each account's homeserver
+ *   - MARKETPLACE_INTEGRATION_SECRET_SELLER, MARKETPLACE_INTEGRATION_SECRET_BUYER,
+ *     and MARKETPLACE_INTEGRATION_SECRET_BYSTANDER:
+ *     64-character hex secrets for three distinct existing homeserver accounts (no signup here)
  *
  * Nothing here is mocked; this file is excluded from the unit gates and run
  * explicitly with `npm run test:marketplace:service`.
@@ -23,7 +27,7 @@ const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? 'http://127.0.0.1:808
 // parses at import time, so its required values are set here too.
 process.env.PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE = 'transaction-service';
 process.env.PUBKY_RUNTIME_MARKETPLACE_URL = SERVICE_URL;
-process.env.PUBKY_RUNTIME_TESTNET = 'false';
+process.env.PUBKY_RUNTIME_TESTNET ??= 'false';
 process.env.NEXT_PUBLIC_APP_VERSION ??= '0.0.0-integration';
 process.env.NEXT_PUBLIC_DB_VERSION ??= '1';
 process.env.NEXT_PUBLIC_DEBUG_MODE ??= 'false';
@@ -32,21 +36,37 @@ type AppModules = {
   MarketplaceSessionService: typeof import('@/services/marketplace/marketplace-session').MarketplaceSessionService;
   MarketplaceGatewayService: typeof import('@/services/marketplace/marketplace').MarketplaceGatewayService;
   sdk: typeof import('@synonymdev/pubky');
+  HomeserverService: typeof import('@/services/homeserver/homeserver').HomeserverService;
 };
 
 async function loadModules(): Promise<AppModules> {
-  const [{ MarketplaceSessionService }, { MarketplaceGatewayService }, sdk] = await Promise.all([
+  const [{ MarketplaceSessionService }, { MarketplaceGatewayService }, sdk, { HomeserverService }] = await Promise.all([
     import('@/services/marketplace/marketplace-session'),
     import('@/services/marketplace/marketplace'),
     import('@synonymdev/pubky'),
+    import('@/services/homeserver/homeserver'),
   ]);
-  return { MarketplaceSessionService, MarketplaceGatewayService, sdk };
+  return { MarketplaceSessionService, MarketplaceGatewayService, sdk, HomeserverService };
 }
 
 describe('marketplace transaction service integration', () => {
   let modules: AppModules;
+  const homeserverGrants: import('@synonymdev/pubky').Session[] = [];
+  const serviceSessions: NonNullable<ReturnType<AppModules['MarketplaceSessionService']['getActiveSession']>>[] = [];
+  const labels = ['SELLER', 'BUYER', 'BYSTANDER'] as const;
+  const secrets = new Map<string, string>();
 
   beforeAll(async () => {
+    for (const label of labels) {
+      const secret = process.env[`MARKETPLACE_INTEGRATION_SECRET_${label}`] ?? '';
+      if (!/^[0-9a-f]{64}$/i.test(secret)) {
+        throw new Error(`Set MARKETPLACE_INTEGRATION_SECRET_${label} to an existing homeserver account's secret hex.`);
+      }
+      secrets.set(label, secret.toLowerCase());
+    }
+    if (new Set(secrets.values()).size !== labels.length) {
+      throw new Error('Integration seller, buyer and bystander must be three distinct homeserver accounts.');
+    }
     const health = await fetch(`${SERVICE_URL}/health`).catch(() => null);
     if (!health?.ok) {
       throw new Error(
@@ -58,29 +78,47 @@ describe('marketplace transaction service integration', () => {
     modules = await loadModules();
   });
 
-  /**
-   * Runs the full app-side session flow for one throwaway identity: start the
-   * auth-token flow, approve it as the signer (what Pubky Ring does), and let
-   * `awaitSession` exchange the AuthToken bytes for a bearer session.
-   */
-  async function establishSessionFor(keypair: import('@synonymdev/pubky').Keypair): Promise<string> {
-    const { MarketplaceSessionService, sdk } = modules;
-    const flow = MarketplaceSessionService.beginSessionFlow();
-    expect(flow.authorizationUrl).toContain('pubkyauth');
-    const signerSdk = new sdk.Pubky();
-    await signerSdk.signer(keypair).approveAuthRequest(flow.authorizationUrl);
-    const session = await flow.awaitSession();
-    const actor = keypair.publicKey.z32();
-    expect(session.pubky).toBe(actor);
-    expect(session).not.toHaveProperty('token');
-    return actor;
+  afterAll(async () => {
+    // Try every owned credential even when an earlier assertion or cleanup fails.
+    const revoked = await Promise.allSettled(
+      serviceSessions.map(async (session) => {
+        const response = await fetch(`${SERVICE_URL}/v1/auth/sessions/${session.sessionId}`, {
+          method: 'DELETE',
+          headers: { authorization: `Bearer ${session.token}` },
+          signal: AbortSignal.timeout(15_000),
+        });
+        expect(response.ok, 'the owned integration service session must be revoked').toBe(true);
+      }),
+    );
+    const signedOut = await Promise.allSettled(homeserverGrants.map(revokeOwnedHomeserverGrant));
+    for (const result of [...revoked, ...signedOut]) {
+      if (result.status === 'rejected') throw result.reason;
+    }
+  });
+
+  /** Grant minting needs a live account to write its challenge proof. */
+  async function establishSessionFor(label: (typeof labels)[number]): Promise<string> {
+    const keypair = modules.sdk.Keypair.fromSecret(Uint8Array.from(Buffer.from(secrets.get(label)!, 'hex')));
+    try {
+      const actor = keypair.publicKey.z32();
+      const signedIn = await modules.HomeserverService.signIn({ keypair });
+      if (!signedIn?.session) throw new Error(`Homeserver sign-in for integration ${label} must succeed.`);
+      homeserverGrants.push(signedIn.session);
+      await establishMarketplaceGrantSession({ session: signedIn.session, pubky: actor });
+      const session = modules.MarketplaceSessionService.getActiveSession();
+      if (!session) throw new Error('No integration service session after grant proof.');
+      serviceSessions.push(session);
+      return actor;
+    } finally {
+      keypair.free();
+    }
   }
 
-  it('establishes signer-approved sessions and executes real commands', async () => {
+  it('establishes grant-proof sessions and executes real commands', async () => {
     const { MarketplaceSessionService, MarketplaceGatewayService, sdk } = modules;
 
     // --- Seller session: register a listing ---
-    const seller = await establishSessionFor(sdk.Keypair.random());
+    const seller = await establishSessionFor('SELLER');
 
     const listingId = `it_${Date.now().toString(36)}`;
     const registerCommand = {
@@ -120,8 +158,8 @@ describe('marketplace transaction service integration', () => {
       MarketplaceGatewayService.execute(sdk.Keypair.random().publicKey.z32(), registerCommand),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
 
-    // --- Buyer session (a second full auth flow replaces the seller's): reserve ---
-    const buyer = await establishSessionFor(sdk.Keypair.random());
+    // --- Buyer session (a second live grant proof replaces the seller's): reserve ---
+    const buyer = await establishSessionFor('BUYER');
 
     const reserved = await MarketplaceGatewayService.execute(buyer, {
       version: 1 as const,
@@ -176,7 +214,7 @@ describe('marketplace transaction service integration', () => {
    * read moments earlier, and the mutated state is read back afterwards.
    */
   it('reads projections, commands with the read revisions, and reads the results back', async () => {
-    const { MarketplaceSessionService, MarketplaceGatewayService, sdk } = modules;
+    const { MarketplaceSessionService, MarketplaceGatewayService } = modules;
 
     const envelope = (aggregateId: string, expectedRevision: number, kind: string, payload: unknown) =>
       ({
@@ -190,8 +228,7 @@ describe('marketplace transaction service integration', () => {
       }) as never;
 
     // --- Seller: register a listing, then read the projection back ---
-    const sellerKeypair = sdk.Keypair.random();
-    const seller = await establishSessionFor(sellerKeypair);
+    const seller = await establishSessionFor('SELLER');
     const listingId = `it_reads_${Date.now().toString(36)}`;
     const aggregateId = `listing:${seller}_${listingId}`;
     const registered = await MarketplaceGatewayService.execute(
@@ -227,7 +264,8 @@ describe('marketplace transaction service integration', () => {
     ).resolves.toBeNull();
 
     // --- Buyer: read the projection, reserve with the revision just read ---
-    const buyer = await establishSessionFor(sdk.Keypair.random());
+    const buyer = await establishSessionFor('BUYER');
+    expect(buyer).not.toBe(seller);
     const preReserve = await MarketplaceGatewayService.getListing(buyer, aggregateId);
     expect(preReserve?.serverRevision).toBe(1);
 
@@ -268,7 +306,9 @@ describe('marketplace transaction service integration', () => {
     });
     expect(checkedOut).toMatchObject({ ok: true, result: { kind: 'checkout' } });
 
-    const orders = await MarketplaceGatewayService.getOrders(buyer);
+    const orders = (await MarketplaceGatewayService.getOrders(buyer)).filter((entry) =>
+      entry.lines.some((line) => line.listingAggregateId === aggregateId),
+    );
     expect(orders).toHaveLength(1);
     const order = orders[0];
     expect(order).toMatchObject({
@@ -304,7 +344,9 @@ describe('marketplace transaction service integration', () => {
     );
     expect(offered).toMatchObject({ ok: true, result: { kind: 'offer' } });
 
-    const offers = await MarketplaceGatewayService.getOffers(buyer);
+    const offers = (await MarketplaceGatewayService.getOffers(buyer)).filter(
+      (entry) => entry.listingAggregateId === aggregateId,
+    );
     expect(offers).toHaveLength(1);
     expect(offers[0]).toMatchObject({
       listingAggregateId: aggregateId,
@@ -319,18 +361,26 @@ describe('marketplace transaction service integration', () => {
       envelope(offers[0].aggregateId, offers[0].revision, 'offer.withdraw', { offerId: offers[0].id }),
     );
     expect(withdrawn).toMatchObject({ ok: true, result: { kind: 'offer' } });
-    const offersAfter = await MarketplaceGatewayService.getOffers(buyer);
+    const offersAfter = (await MarketplaceGatewayService.getOffers(buyer)).filter(
+      (entry) => entry.listingAggregateId === aggregateId,
+    );
     expect(offersAfter[0]).toMatchObject({ state: 'withdrawn', revision: offers[0].revision + 1 });
 
     // --- Role scoping: a bystander sees none of this ---
-    const bystander = await establishSessionFor(sdk.Keypair.random());
-    await expect(MarketplaceGatewayService.getOrders(bystander)).resolves.toEqual([]);
-    await expect(MarketplaceGatewayService.getOffers(bystander)).resolves.toEqual([]);
+    const bystander = await establishSessionFor('BYSTANDER');
+    expect(bystander).not.toBe(seller);
+    expect(bystander).not.toBe(buyer);
+    const bystanderOrders = await MarketplaceGatewayService.getOrders(bystander);
+    expect(
+      bystanderOrders.filter((entry) => entry.lines.some((line) => line.listingAggregateId === aggregateId)),
+    ).toEqual([]);
+    const bystanderOffers = await MarketplaceGatewayService.getOffers(bystander);
+    expect(bystanderOffers.filter((entry) => entry.listingAggregateId === aggregateId)).toEqual([]);
     await expect(MarketplaceGatewayService.getPayment(bystander, order.paymentId)).resolves.toBeNull();
 
     // --- Seller again: the same events land as recipient-scoped notifications,
     // delivered at-least-once by the outbox worker (10s pass interval), so poll. ---
-    await establishSessionFor(sellerKeypair);
+    await establishSessionFor('SELLER');
     const sellerOrders = await MarketplaceGatewayService.getOrders(seller);
     expect(sellerOrders.map(({ id }) => id)).toContain(order.id);
 
@@ -338,7 +388,13 @@ describe('marketplace transaction service integration', () => {
     let notificationTypes: string[] = [];
     while (Date.now() < deadline) {
       const notifications = await MarketplaceGatewayService.getNotifications(seller);
-      notificationTypes = notifications.map(({ type }) => type);
+      notificationTypes = notifications
+        .filter(
+          (entry) =>
+            'aggregateId' in entry &&
+            (entry.aggregateId === `order:${order.id}` || entry.aggregateId === offers[0].aggregateId),
+        )
+        .map(({ type }) => type);
       if (notificationTypes.includes('order_created') && notificationTypes.includes('offer_received')) break;
       await new Promise((resolve) => setTimeout(resolve, 2_000));
     }

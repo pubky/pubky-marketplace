@@ -488,43 +488,24 @@ describe('CommerceController', () => {
     });
   });
 
-  describe('beginMarketplaceSessionConnect', () => {
+  describe('writeMarketplaceSessionStore', () => {
     const session = {
       pubky: COMMERCE_FIXTURE_SELLER,
-      capabilities: '/pub/pubky.app/:rw',
+      capabilities: '/pub/pubky.app/marketplace-service/v1/:rw,/priv/pubky.app/:rw',
       expiresAt: '2026-08-22T00:00:00.000Z',
+      issuedAt: '2026-08-21T00:00:00.000Z',
     };
 
-    it('exposes the authorization URL and mirrors the session into the store once the signer approves', async () => {
-      vi.spyOn(CommerceApplication, 'beginMarketplaceSessionFlow').mockReturnValue({
-        authorizationUrl: 'pubkyauth:///?caps=test',
-        awaitSession: vi.fn().mockResolvedValue(session),
-        cancel: vi.fn(),
-      });
-
-      const flow = CommerceController.beginMarketplaceSessionConnect();
-      expect(flow.authorizationUrl).toBe('pubkyauth:///?caps=test');
-      // Nothing is mirrored before approval: the URL alone proves nothing.
+    it('mirrors the verified session facts into the store', () => {
       expect(useCommerceStore.getState().marketplaceSession).toBeNull();
-
-      await expect(flow.awaitSession()).resolves.toEqual(session);
+      CommerceController.writeMarketplaceSessionStore(session);
       expect(useCommerceStore.getState().marketplaceSession).toEqual(session);
     });
 
-    it('leaves the store untouched when the flow fails, and cancel reaches the underlying flow', async () => {
-      const cancel = vi.fn();
-      vi.spyOn(CommerceApplication, 'beginMarketplaceSessionFlow').mockReturnValue({
-        authorizationUrl: 'pubkyauth:///?caps=test',
-        awaitSession: vi.fn().mockRejectedValue(new Error('Relay timed out')),
-        cancel,
-      });
-
-      const flow = CommerceController.beginMarketplaceSessionConnect();
-      await expect(flow.awaitSession()).rejects.toThrow('Relay timed out');
-      expect(useCommerceStore.getState().marketplaceSession).toBeNull();
-
-      flow.cancel();
-      expect(cancel).toHaveBeenCalledTimes(1);
+    it('does not replace a newer session with late facts from an earlier approval', () => {
+      CommerceController.writeMarketplaceSessionStore(session);
+      CommerceController.writeMarketplaceSessionStore({ ...session, issuedAt: '2026-08-20T00:00:00.000Z' });
+      expect(useCommerceStore.getState().marketplaceSession).toEqual(session);
     });
   });
 
@@ -549,7 +530,7 @@ describe('CommerceController', () => {
     });
   });
 
-  describe('beginInventorySessionConnect', () => {
+  describe('writeInventorySessionStore', () => {
     const session = {
       pubky: COMMERCE_FIXTURE_SELLER,
       capabilities: '/pub/pubky.app/marketplace-service/v1/:rw',
@@ -557,20 +538,16 @@ describe('CommerceController', () => {
       issuedAt: '2026-08-21T00:00:00.000Z',
     };
 
-    it('mirrors the inventory session without touching the purchase session', async () => {
-      vi.spyOn(CommerceApplication, 'beginInventorySessionFlow').mockReturnValue({
-        authorizationUrl: 'pubkyauth:///?caps=inventory',
-        awaitSession: vi.fn().mockResolvedValue(session),
-        cancel: vi.fn(),
-      });
-
-      const flow = CommerceController.beginInventorySessionConnect(COMMERCE_FIXTURE_SELLER);
-      expect(flow.authorizationUrl).toBe('pubkyauth:///?caps=inventory');
-      expect(useCommerceStore.getState().inventorySession).toBeNull();
-
-      await expect(flow.awaitSession()).resolves.toEqual(session);
+    it('mirrors a restored inventory session without touching the purchase session', () => {
+      CommerceController.writeInventorySessionStore(session);
       expect(useCommerceStore.getState().inventorySession).toEqual(session);
       expect(useCommerceStore.getState().marketplaceSession).toBeNull();
+    });
+
+    it('keeps a newer inventory session when an earlier restore finishes late', () => {
+      CommerceController.writeInventorySessionStore(session);
+      CommerceController.writeInventorySessionStore({ ...session, issuedAt: '2026-08-20T00:00:00.000Z' });
+      expect(useCommerceStore.getState().inventorySession).toEqual(session);
     });
   });
 

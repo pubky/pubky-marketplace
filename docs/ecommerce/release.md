@@ -179,6 +179,13 @@ the grant session, and checkout, Activity and the seller surfaces work for a sig
 order command is sent. Afterwards it revokes every marketplace session either seat gained and deletes any storefront
 (`shop.json`) the run caused, and verifies both.
 
+The Node audit and fixture helpers also mint through the grant-session challenge/proof API.
+The service must enable `MARKETPLACE_GRANT_SESSION_ENABLED`, allow `PROOF_CLIENT_ID` in
+`MARKETPLACE_GRANT_SESSION_CLIENT_IDS`, and configure `PUBLIC_SERVICE_ORIGIN` and
+`HOMESERVER_URL` for the target and test seats. This is required for audit/cleanup mints even
+when `PROOF_GS1` is unset. Helpers delete their proof documents and sign out their temporary
+grants; service bearers remain separately tracked and revoked. No cookie fallback is used.
+
 `scripts/release/production-paypal-fixture.mjs` can wrap it: it gives the seller seat a temporary PayPal rail and one
 `TEST, do not buy <run>` listing, runs the proof against that listing, then always tears everything down and verifies
 the teardown. Without the wrapper, step 4 looks for an existing listing whose seller takes PayPal (test titles first,
@@ -198,12 +205,11 @@ command line, or the evidence folder.
 | `PAYPAL_TEST_EMAIL`                                       | PayPal address for the temporary seller rail. Never logged or written                                                                                                                                                                                                                                                                                                                           |
 | `PROOF_EVIDENCE`                                          | Evidence folder for this release, outside the repository (the scripts refuse a path inside it)                                                                                                                                                                                                                                                                                                  |
 | `EXPECTED_COMMIT`, `EXPECTED_DPL`                         | One is required. `EXPECTED_COMMIT`: the commit `GET /api/build` must report (a full SHA or a prefix of at least 7 characters). `EXPECTED_DPL`: the Vercel `dpl_…` id now aliased to the origin. The proof fails if the origin serves anything else; with both set, both must match                                                                                                              |
-| `PROOF_CLIENT_ID`                                         | Optional. The grant client id the Shop's QRs must carry (`cid=`), the Shop's `PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID`. Default `shop.pubky.app`                                                                                                                                                                                                                                                     |
+| `PROOF_CLIENT_ID`                                         | Optional. The grant client id the Shop's QRs must carry (`cid=`), the Shop's `PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID`. Default `shop.pubky.app`; also used by Node audit/fixture grants and must be service-allowed                                                                                                                                                                                 |
 | `PROOF_GS1`                                               | `1` where grant sessions are on (`MARKETPLACE_GRANT_SESSION_ENABLED` on the service, `PUBKY_RUNTIME_MARKETPLACE_GRANT_SESSION_ENABLED` on the Shop): step 1 also checks that sign-in minted the marketplace session from the grant, one challenge and one mint, with no further approval                                                                                                        |
 | `PROOF_STEPS`                                             | Optional comma-separated subset, e.g. `1,2,9`. Step 0 and cleanup always run; `1` runs the Ring journey with steps 5 and 6. Step 11 runs only when named                                                                                                                                                                                                                                        |
 | `PROOF_PAYPAL_LISTING_URL`, `PROOF_BITCOIN_LISTING_URL`   | Optional listing paths (`/marketplace/listing/<seller>/<id>`) for steps 4 and 9. The PayPal fixture sets the first; without them the proof picks test listings from Nexus                                                                                                                                                                                                                       |
 | `PROOF_ORIGIN`, `PROOF_SERVICE`, `PROOF_NEXUS`            | Required: the target. There are no defaults, so a proof can never reach a host the operator did not name. When the Shop is served under a mount path, `PROOF_ORIGIN` carries it (`https://pubky.app/shop`, or `https://pubky.app/shop-embed` when the App owns `/shop` and frames the build, because the proof drives the build itself); every route the scripts open is joined under that path |
-| `PROOF_RELAY`                                             | Optional. Default `https://httprelay.pubky.app/inbox`                                                                                                                                                                                                                                                                                                                                           |
 
 The production seats belong to the product owner, who passes seat backups, the passphrase and the PayPal address out
 of band. The seller seat owns the long-lived "Cutover test — do not buy" listings and must not buy its own listing;
@@ -356,7 +362,7 @@ argument, and puts the kinds in `HOLD_SMOKE_DIGITAL_FIXTURE_KINDS` (comma separa
 
 The wrapper is yours to write and keep outside the repository, because it carries the environment: the fixture seller's
 seat (see `seats.mjs`), `PROOF_SELLER_PREFIX`, `EXPECTED_COMMIT` or `EXPECTED_DPL`, the day's `PROOF_DIGITAL_GO`, `PROOF_DIGITAL_KINDS`
-set from `HOLD_SMOKE_DIGITAL_FIXTURE_KINDS`, `PROOF_ORIGIN`, `PROOF_SERVICE`, `PROOF_NEXUS` and `PROOF_RELAY` pointing
+set from `HOLD_SMOKE_DIGITAL_FIXTURE_KINDS`, `PROOF_ORIGIN`, `PROOF_SERVICE`, `PROOF_NEXUS` and an allowed `PROOF_CLIENT_ID` pointing
 at the staging stack, and a `PROOF_EVIDENCE` folder that is emptied before each `publish`. It must exit non-zero when a
 step fails: hold-smoke then runs `teardown` and a sweep, and stops if the seller still has any listing.
 
