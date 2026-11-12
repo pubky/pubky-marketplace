@@ -60,13 +60,23 @@ New App Ring/Bitkit and Passport approvals include Shop/Chat storage scopes alon
 
 This is same-origin session reuse, not cross-origin SSO. An iframe on another origin cannot restore App's SDK IndexedDB record. Allowing another origin in `frame-ancestors` changes framing permission only. The trusted same-origin iframe is also not a security isolation boundary.
 
-## Commerce remains a separate approval
+## Commerce session and approval ownership
 
-Homeserver sign-in does not mint a marketplace service session. Commerce uses the active homeserver grant to write the bootstrap proof, then obtains the appropriate marketplace grant approval. Marketplace bearer sessions, Shop BFF cookies and Locks connections have separate approval and cleanup lifecycles. The BFF is Shop's existing Next.js server route layer; it owns the HttpOnly marketplace session and flow cookies.
+When grant-session minting is enabled, commerce can obtain a marketplace bearer from the active homeserver sign-in grant without another signer approval. The coordinator attempts this after sign-in or restore; the service verifies a single-use proof document through `/v1/auth/grant-session-challenges` and `/v1/auth/grant-sessions`. The controller installs the result only while the originating identity and session remain current, and revokes an unused result. A refused attempt is not repeated for that sign-in without an explicit retry.
+
+When no usable bearer can be restored or minted, the connect UI offers the separate marketplace approval flow. Bootstrap proves the current homeserver grant before requesting the signer approval; reconnect uses the paired Shop BFF session. Normal catalog, publishing and checkout calls do not launch either interactive approval. Marketplace bearer sessions, Shop BFF cookies and Locks connections keep separate lifecycles. The BFF is Shop's existing Next.js server route layer; it owns the HttpOnly marketplace session and flow cookies.
 
 Ring approvals remain Ring approvals, and Bitkit and Passport keep their own launch behavior. A hosted session exposes no signer identity, so Shop asks the user to choose Ring, Bitkit or enabled Passport explicitly. The approval must belong to the same pubky. Standalone Shop reports unavailable when grant-bootstrap support is disabled. Embedded Shop requires that configuration at startup. Normal commerce UI does not fall back to the old dual AuthToken/homeserver sign-in ceremony.
 
-Recovery-file-only commerce remains limited: after local key sign-in, the user must approve with the **same identity** already imported into a supported external signer. Shop does not retain the recovery root key for later purchases, offer a new re-upload approval screen, or invent a backend key-proof endpoint. Inventory connects through the same marketplace grant path. Marketplace private-key release and seller Locks setup still depend on their existing service contracts.
+Recovery-key sign-in establishes a homeserver grant and can use the same grant-backed bearer mint when enabled. If that route is unavailable or refused, the interactive fallback requires the **same identity** already imported into a supported external signer. Shop does not retain the recovery root key for later purchases, offer a new re-upload approval screen, or invent a backend key-proof endpoint. Inventory connects through the same marketplace grant path. Marketplace private-key release and seller Locks setup still depend on their existing service contracts.
+
+### Developer and release scripts
+
+The unused interactive AuthToken services and controller/application wrappers have been removed. Release fixtures, probes and live transport tests use grant sessions too. Service bearers come from `/v1/auth/grant-session-challenges` and `/v1/auth/grant-sessions`, with a single-use proof written to the signed-in account's homeserver and deleted afterward. This requires an existing account on the service's configured homeserver, an enabled grant-session endpoint, a matching service audience and an allowed client ID. The scripts fail when those prerequisites are absent; they do not request a cookie session.
+
+The Node helper owns and signs out grants it creates, while callers retain ownership of borrowed grants and revoke their service bearers separately. Limited-permission tests use public-only grants, which mint inventory-only service sessions and remain unable to obtain private-data keys. Historical wire fixtures and persisted-session compatibility stay in place. The raw account-registration token remains part of the signup protocol; it does not authenticate the Shop browser. Shop BFF session and flow cookies also retain their existing lifecycle.
+
+`scripts/probe-listing-registration.mjs` requires an existing test account in `MARKETPLACE_PROBE_SECRET_HEX`, along with `MARKETPLACE_SERVICE_URL` and an allowed `MARKETPLACE_GRANT_CLIENT_ID` (default `shop.pubky.app`). It no longer requests staging signup tokens: that staging key does not resolve the HTTPS signup endpoint required by SDK signup, and grant proofs cannot use an unregistered identity. Keep the secret outside the repository. The probe revokes its bearer after the projection read or sync attempt.
 
 ## Messaging cutover
 

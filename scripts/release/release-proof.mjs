@@ -24,7 +24,7 @@
 // and verified gone from the homeserver and Nexus. Nothing else is written: the cart is local (Dexie) and is emptied.
 // Env: PROOF_EVIDENCE, one of EXPECTED_DPL (a Vercel dpl_… id) or EXPECTED_COMMIT (the commit GET /api/build must report;
 // both are checked when both are set) (required), seats (see seats.mjs), PROOF_ORIGIN (with the mount path when
-// the Shop is embedded, e.g. https://pubky.app/shop-embed), PROOF_SERVICE (required), PROOF_RELAY, PROOF_CLIENT_ID (the
+// the Shop is embedded, e.g. https://pubky.app/shop-embed), PROOF_SERVICE (required), PROOF_CLIENT_ID (the
 // grant client id the Shop's QRs carry; default shop.pubky.app), PROOF_PAYPAL_LISTING_URL (optional listing path
 // for step 4), PROOF_BUYER_COUNTRY (answers the "Country you live in" prompt when the region flags are on), PROOF_BITCOIN_LISTING_URL (optional listing path for step 9), PROOF_NEXUS (required: listing discovery and
 // storefront cleanup), PROOF_GS1=1 (step 1
@@ -33,6 +33,7 @@
 // Output: 8-char pubky prefixes only; auth URLs, exports and bearers never print.
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { mintMarketplaceGrantSessionForSigner } from '../lib/marketplace-grant-session.mjs';
 import { servedDeployment } from './deployment-check.mjs';
 import { MISSING_EXPECTATION } from './digital-proof.mjs';
 import {
@@ -49,14 +50,13 @@ import {
 import { removeRunStorefront, storefrontExists } from './storefront-cleanup.mjs';
 
 const { chromium } = repoRequire('playwright');
-const { AuthFlowKind, Pubky, SigninGrantDeepLink } = repoRequire('@synonymdev/pubky');
+const { Pubky, SigninGrantDeepLink } = repoRequire('@synonymdev/pubky');
 
 const { origin: ORIGIN, basePath: BASE_PATH, at } = proofTarget();
 const signInPath = `${BASE_PATH}/sign-in`;
 const EVIDENCE = evidenceDir();
 if (!process.env.EXPECTED_DPL?.trim() && !process.env.EXPECTED_COMMIT?.trim()) throw new Error(MISSING_EXPECTATION);
 const SERVICE = requireProofEnv('PROOF_SERVICE');
-const RELAY = process.env.PROOF_RELAY ?? 'https://httprelay.pubky.app/inbox';
 const CAPABILITIES = shopCapabilities();
 const CLIENT_ID = process.env.PROOF_CLIENT_ID ?? 'shop.pubky.app';
 const FORBIDDEN_COPY = /hasn't set up a payment method|do not share a payment method/i;
@@ -686,18 +686,13 @@ async function ringSignIn(page, keypair) {
 }
 
 async function mintAuditBearer(client, keypair) {
-  const flow = client.startCookieAuthFlow(CAPABILITIES, AuthFlowKind.signin(), RELAY);
-  const tokenPromise = flow.awaitToken();
-  await client.signer(keypair).approveAuthRequest(flow.authorizationUrl);
-  const authToken = await tokenPromise;
-  const response = await fetch(`${SERVICE}/v1/auth/sessions`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/octet-stream' },
-    body: authToken.toBytes(),
+  const minted = await mintMarketplaceGrantSessionForSigner({
+    client,
+    keypair,
+    clientId: CLIENT_ID,
+    serviceUrl: SERVICE,
   });
-  const body = await response.json().catch(() => ({}));
-  if (response.status !== 201) throw new Error(`audit mint HTTP ${response.status}`);
-  return { bearer: body.token, sessionId: body.session_id };
+  return { bearer: minted.token, sessionId: minted.sessionId };
 }
 const listSessions = async (bearer) => {
   const response = await fetch(`${SERVICE}/v1/auth/sessions`, { headers: { authorization: `Bearer ${bearer}` } });

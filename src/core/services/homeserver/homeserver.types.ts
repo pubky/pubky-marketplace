@@ -1,4 +1,4 @@
-import type { AuthToken, PublicKey, Session } from '@synonymdev/pubky';
+import type { PublicKey, Session } from '@synonymdev/pubky';
 import type { TKeypairParams } from '@/application/auth/auth.types';
 import { HttpMethod } from '@/libs/http/http.types';
 
@@ -30,12 +30,6 @@ export type TGrantAuthUrlOptions = {
   withPrivKeys?: boolean;
   /** The Pubky Passport sign-in, whose scoped-key default has its own runtime switch. */
   signer?: 'passport';
-};
-
-export type TGenerateAuthTokenFlowResult = {
-  authorizationUrl: string;
-  awaitToken: () => Promise<AuthToken>;
-  cancelAuthFlow: () => void;
 };
 
 export type THomeserverRestoreSessionParams = {

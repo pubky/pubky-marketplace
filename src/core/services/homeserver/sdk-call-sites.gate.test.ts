@@ -10,13 +10,24 @@ function sourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
     const path = join(dir, entry);
     if (statSync(path).isDirectory()) return entry === 'node_modules' ? [] : sourceFiles(path);
-    if (!/\.(ts|tsx)$/.test(entry) || /\.(test|vrt\.test)\.(ts|tsx)$/.test(entry)) return [];
+    if (!/\.(ts|tsx|mjs|mts)$/.test(entry) || /\.test\.(ts|tsx|mjs|mts)$/.test(entry)) return [];
     return [path];
   });
 }
 
 describe('@synonymdev/pubky 0.16 call sites', () => {
-  const files = sourceFiles(SRC).map((path) => ({
+  const sourcePaths = sourceFiles(SRC);
+  const files = sourcePaths
+    .filter((path) => /\.(ts|tsx)$/.test(path))
+    .map((path) => ({
+      path: relative(ROOT, path),
+      text: readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, ''),
+    }));
+  const scriptFiles = [
+    ...sourcePaths.filter((path) => /\.(mjs|mts)$/.test(path)),
+    ...sourceFiles(join(ROOT, 'scripts')),
+    ...sourceFiles(join(ROOT, '.cursor/skills/marketplace-install-verify/scripts')),
+  ].map((path) => ({
     path: relative(ROOT, path),
     text: readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, ''),
   }));
@@ -28,10 +39,12 @@ describe('@synonymdev/pubky 0.16 call sites', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('no cookie sign-in or signup calls on the pubky SDK', () => {
-    const offenders = files
+  it('no cookie authentication or legacy auth-flow calls on the pubky SDK', () => {
+    const offenders = [...files, ...scriptFiles]
       .filter(({ text }) =>
-        /\b(pubkySdk|getPubkySdk\(\))\.startAuthFlow\(|\bsigner\.(signinCookie|signupCookie)\(/.test(text),
+        /\b(pubkySdk|getPubkySdk\(\))\.startAuthFlow\(|\.(?:startCookieAuthFlow|resumeCookieAuthFlow|signinCookie|signupCookie)\s*\(/.test(
+          text,
+        ),
       )
       .map(({ path }) => path);
     expect(offenders).toEqual([]);

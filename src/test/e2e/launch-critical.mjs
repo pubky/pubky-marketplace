@@ -329,11 +329,11 @@ async function exerciseCartCheckoutBesidePendingOrder(page, canonicalListing, sh
   assert('checkout:cart-after-resume', afterResume === 'cart', `${afterResume} at ${page.url()}`);
 }
 
-async function readOffersSurface(page) {
+async function readOffersSurface(page, expected) {
   const gone = page.getByText('This offer is no longer available.');
   const empty = page.getByRole('heading', { name: 'No offers yet' });
-  await gone
-    .or(empty)
+  const target = expected === 'linked-offer-gone' ? gone : empty;
+  await target
     .first()
     .waitFor({ state: 'visible', timeout: 30_000 })
     .catch(() => undefined);
@@ -345,7 +345,7 @@ async function readOffersSurface(page) {
 /** #292: an old `#offer-<id>` Activity link is honoured once, not on every later visit to Offers. */
 async function exerciseLegacyOfferLinkOnce(page) {
   await gotoAndSettle(page, '/marketplace/offers#offer-018f47d2-6a27-7c23-b51e-000000000292');
-  const linked = await readOffersSurface(page);
+  const linked = await readOffersSurface(page, 'linked-offer-gone');
   assert('offers:legacy-link-opened', linked === 'linked-offer-gone', `${linked} at ${page.url()}`);
   await page.waitForURL((url) => url.searchParams.has('offer') && url.hash === '', { timeout: 20_000 });
   await page.getByTestId('marketplace-section-nav').getByRole('link', { name: /^Cart/ }).click();
@@ -355,7 +355,7 @@ async function exerciseLegacyOfferLinkOnce(page) {
     .getByRole('link', { name: /^Offers/ })
     .click();
   await page.waitForURL((url) => TARGET.routeOf(url.pathname) === '/marketplace/offers', { timeout: 20_000 });
-  const later = await readOffersSurface(page);
+  const later = await readOffersSurface(page, 'offers');
   assert('offers:legacy-link-not-sticky', later === 'offers', `${later} at ${page.url()}`);
 }
 

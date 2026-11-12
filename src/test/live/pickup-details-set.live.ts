@@ -3,6 +3,7 @@
 import 'fake-indexeddb/auto';
 import { existsSync, readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { establishMarketplaceGrantSession } from './marketplace-grant-session';
 
 /**
  * LIVE staging capture of `pickup_details.set` against the service named by
@@ -31,7 +32,6 @@ process.env.NEXT_PUBLIC_DB_VERSION ??= '1';
 process.env.NEXT_PUBLIC_DEBUG_MODE ??= 'false';
 
 type AppModules = {
-  MarketplaceSessionService: typeof import('@/services/marketplace/marketplace-session').MarketplaceSessionService;
   MarketplaceGatewayService: typeof import('@/services/marketplace/marketplace').MarketplaceGatewayService;
   HomeserverService: typeof import('@/services/homeserver/homeserver').HomeserverService;
   sdk: typeof import('@synonymdev/pubky');
@@ -48,7 +48,6 @@ function hexToBytes(hex: string): Uint8Array {
 describe('pickup_details.set staging repro (issue 51)', () => {
   beforeAll(async () => {
     modules = {
-      MarketplaceSessionService: (await import('@/services/marketplace/marketplace-session')).MarketplaceSessionService,
       MarketplaceGatewayService: (await import('@/services/marketplace/marketplace')).MarketplaceGatewayService,
       HomeserverService: (await import('@/services/homeserver/homeserver')).HomeserverService,
       sdk: await import('@synonymdev/pubky'),
@@ -60,7 +59,7 @@ describe('pickup_details.set staging repro (issue 51)', () => {
     const saved = JSON.parse(readFileSync(IDENTITIES_FILE, 'utf8')) as { secretHex?: string };
     expect(saved.secretHex, 'a saved identity secret is required').toBeTruthy();
 
-    const { HomeserverService, MarketplaceSessionService, MarketplaceGatewayService, sdk } = modules;
+    const { HomeserverService, MarketplaceGatewayService, sdk } = modules;
     const keypair = sdk.Keypair.fromSecret(hexToBytes(saved.secretHex as string));
     const pubky = keypair.publicKey.z32();
     const signedIn = await HomeserverService.signIn({ keypair });
@@ -69,9 +68,7 @@ describe('pickup_details.set staging repro (issue 51)', () => {
     const health = await MarketplaceGatewayService.getPickupAvailability();
     expect(health).toBe(false);
 
-    const flow = MarketplaceSessionService.beginSessionFlow();
-    await new sdk.Pubky().signer(keypair).approveAuthRequest(flow.authorizationUrl);
-    await flow.awaitSession();
+    await establishMarketplaceGrantSession({ session: signedIn?.session, pubky });
 
     const listingId = 'issue51_pickup';
     const response = await MarketplaceGatewayService.execute(pubky, {

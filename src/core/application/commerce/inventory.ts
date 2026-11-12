@@ -314,10 +314,6 @@ export class CommerceInventoryApplication {
     return MarketplaceInventorySessionService.onSessionEnded(listener);
   }
 
-  static beginInventorySessionFlow(expectedPubky: string) {
-    return MarketplaceInventorySessionService.beginInventorySessionFlow(expectedPubky);
-  }
-
   static async loadBoard(sellerPubky: string): Promise<InventoryBoardLoad> {
     if (!isDurableCommerceMode(getCommerceAdapterMode())) {
       return { status: 'durable-unavailable' };

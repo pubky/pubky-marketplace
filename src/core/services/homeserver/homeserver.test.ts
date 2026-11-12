@@ -49,10 +49,7 @@ const mockState = vi.hoisted(() => ({
   grantStoreClearAll: vi.fn(),
   grantStoreList: vi.fn(),
   grantStoreIsAvailable: vi.fn(),
-  startAuthFlow: vi.fn(),
-  resumeAuthFlow: vi.fn(),
   authFlowKindSignin: vi.fn(),
-  authTokenFromBytes: vi.fn(),
   eventStreamForUser: vi.fn(),
   // Auth store session
   currentSession: null as Session | null,
@@ -98,8 +95,6 @@ vi.mock('@synonymdev/pubky', () => {
   const createMockPubkyInstance = () => ({
     getHomeserverOf: (...args: unknown[]) => mockState.getHomeserverOf(...args),
     restoreSession: (...args: unknown[]) => mockState.restoreSession(...args),
-    startCookieAuthFlow: (...args: unknown[]) => mockState.startAuthFlow(...args),
-    resumeCookieAuthFlow: (...args: unknown[]) => mockState.resumeAuthFlow(...args),
     startGrantAuthFlow: (...args: unknown[]) => mockState.grantStartDelegated(...args),
     eventStreamForUser: (...args: unknown[]) => mockState.eventStreamForUser(...args),
     client: {
@@ -151,9 +146,6 @@ vi.mock('@synonymdev/pubky', () => {
     },
     AuthFlowKind: {
       signin: () => mockState.authFlowKindSignin(),
-    },
-    AuthToken: {
-      fromBytes: (...args: unknown[]) => mockState.authTokenFromBytes(...args),
     },
     resolvePubky: vi.fn((url: string) => url.replace('pubky://', 'https://')),
   };
@@ -259,12 +251,6 @@ describe('HomeserverService', () => {
     mockState.sessionStoragePutBytes.mockResolvedValue(undefined);
     mockState.sessionStorageDelete.mockResolvedValue(undefined);
     mockState.sessionStorageList.mockResolvedValue([]);
-    mockState.startAuthFlow.mockReturnValue({
-      authorizationUrl: 'https://auth.example.com/authorize',
-      tryPollOnce: vi.fn().mockResolvedValue(createMockSession()),
-      free: vi.fn(),
-    });
-    mockState.authTokenFromBytes.mockReset();
     mockState.authFlowKindSignin.mockReturnValue('signin-kind');
     mockState.eventStreamForUser.mockReturnValue({
       path: vi.fn().mockReturnThis(),

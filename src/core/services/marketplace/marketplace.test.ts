@@ -10,9 +10,8 @@ const config = vi.hoisted(() => ({
   mode: 'sandbox' as string,
 }));
 
-vi.mock('@/services/homeserver/homeserver', () => ({
-  HomeserverService: { generateAuthTokenFlow: vi.fn() },
-}));
+// These transport tests do not exercise homeserver IO. Avoid the SDK's global fetch wrapper.
+vi.mock('@/services/homeserver/homeserver', () => ({ HomeserverService: {} }));
 
 vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');

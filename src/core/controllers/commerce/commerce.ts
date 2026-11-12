@@ -366,28 +366,6 @@ export class CommerceController {
   }
 
   /**
-   * Starts the interactive session-connect flow for the durable Marketplace
-   * Transaction Service. The returned `awaitSession` resolves once the user
-   * approves on their signer and the AuthToken is exchanged for a bearer
-   * session; on success the session's public facts (never the token) are
-   * mirrored into the commerce store so every durable-mode surface refetches.
-   * `cancel` frees the underlying auth flow. Flows are single-use — a retry
-   * after failure or cancellation must call this again for a fresh flow.
-   */
-  static beginMarketplaceSessionConnect() {
-    const flow = CommerceApplication.beginMarketplaceSessionFlow();
-    return {
-      authorizationUrl: flow.authorizationUrl,
-      awaitSession: async () => {
-        const session = await flow.awaitSession();
-        this.writeMarketplaceSessionStore(session);
-        return session;
-      },
-      cancel: flow.cancel,
-    };
-  }
-
-  /**
    * Gives a grant-backed sign-in its marketplace session without a signer
    * approval: adopts a persisted bearer when one is on the device, otherwise
    * mints one from the sign-in grant. Concurrent callers share one attempt.
@@ -512,19 +490,6 @@ export class CommerceController {
   static clearInventorySession(): void {
     CommerceApplication.clearInventorySession();
     this.clearInventorySessionStore();
-  }
-
-  static beginInventorySessionConnect(expectedPubky: string) {
-    const flow = CommerceApplication.beginInventorySessionFlow(expectedPubky);
-    return {
-      authorizationUrl: flow.authorizationUrl,
-      awaitSession: async () => {
-        const session = await flow.awaitSession();
-        this.writeInventorySessionStore(session);
-        return session;
-      },
-      cancel: flow.cancel,
-    };
   }
 
   static async loadInventoryBoard(sellerPubky: string) {
@@ -2398,7 +2363,7 @@ export class CommerceController {
   /**
    * Mirrors public session facts into the commerce store. Last write wins by
    * `issuedAt` so a restore or a late connect cannot overwrite a newer session.
-   * Auth restore and `beginMarketplaceSessionConnect` both go through here.
+   * Auth restore and verified marketplace grant approvals both go through here.
    */
   static writeMarketplaceSessionStore(session: MarketplaceSessionInfo): void {
     const current = useCommerceStore.getState().marketplaceSession;

@@ -73,7 +73,6 @@ vi.mock('@/controllers/commerce/commerce', () => ({
       ...view.ownConfig,
     })),
     putMyPaymentConfig: vi.fn(),
-    beginMarketplaceSessionConnect: vi.fn(),
   },
 }));
 

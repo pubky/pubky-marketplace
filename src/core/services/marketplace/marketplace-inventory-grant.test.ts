@@ -1,17 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  capabilitiesCoverInventoryScope,
   clampInventoryPersistedCapabilities,
   INVENTORY_GRANT,
   inventoryCapabilityCovers,
-  studioInventoryCapabilities,
 } from './marketplace-inventory-grant';
 
 describe('studio inventory grant allow-list', () => {
   it('is exactly the marketplace-service inventory path with read+write', () => {
     expect(INVENTORY_GRANT).toBe('/pub/pubky.app/marketplace-service/v1/:rw');
-    expect(studioInventoryCapabilities()).toBe(INVENTORY_GRANT);
-    expect(studioInventoryCapabilities()).not.toBe('/:rw');
-    expect(studioInventoryCapabilities()).not.toBe('');
   });
 
   it('covers the inventory grant and root, and refuses empty or read-only', () => {
@@ -34,4 +31,11 @@ describe('studio inventory grant allow-list', () => {
     expect(clampInventoryPersistedCapabilities('')).toBeNull();
     expect(clampInventoryPersistedCapabilities('/pub/pubky.app/marketplace-service/v1/:r')).toBeNull();
   });
+
+  it.each([INVENTORY_GRANT, '/pub/pubky.app/:rw', '/:rw', '/pub/pubky.app/marketplace-service/v1/:wr'])(
+    'recognizes directory coverage independently of the persisted-session allow-list: %s',
+    (capabilities) => {
+      expect(capabilitiesCoverInventoryScope(capabilities)).toBe(true);
+    },
+  );
 });

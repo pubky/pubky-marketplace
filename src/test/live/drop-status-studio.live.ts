@@ -2,9 +2,10 @@ import 'fake-indexeddb/auto';
 import { type ChildProcess, spawn } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { Keypair, Pubky } from '@synonymdev/pubky';
+import { Keypair } from '@synonymdev/pubky';
 import { type Browser, type BrowserContext, chromium, type Page } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { establishMarketplaceGrantSession } from './marketplace-grant-session';
 
 /**
  * Issue 42 C-2 live proof: Chromium against this-branch Shop pointed at
@@ -192,12 +193,13 @@ async function signInHomeserver(keypair: Keypair, pubky: string): Promise<void> 
   modules.useAuthStore.setState({ session: signedIn.session, currentUserPubky: pubky });
 }
 
-async function connectServiceSession(keypair: Keypair, pubky: string): Promise<ServiceSession> {
+async function connectServiceSession(pubky: string): Promise<ServiceSession> {
   return await withPatience(`marketplace session for ${pubky.slice(0, 8)}`, 90_000, 4_000, async () => {
     try {
-      const flow = modules.MarketplaceSessionService.beginSessionFlow();
-      await new Pubky().signer(keypair).approveAuthRequest(flow.authorizationUrl);
-      const info = await flow.awaitSession();
+      const info = await establishMarketplaceGrantSession({
+        session: modules.useAuthStore.getState().selectSession() ?? undefined,
+        pubky,
+      });
       if (info.pubky !== pubky) {
         return { done: false, value: null as never, detail: `session pubky ${info.pubky.slice(0, 8)}` };
       }
@@ -497,7 +499,7 @@ describe('Chromium Shop: seller drop-status studio', () => {
     expect(ownedDropCount, 'seller must own at least one homeserver drop').toBeGreaterThan(0);
 
     failingStep = 'seller_marketplace_session';
-    await connectServiceSession(sellerSeat.keypair, sellerSeat.pubky);
+    await connectServiceSession(sellerSeat.pubky);
     persistedSession = snapshotMarketplaceSession(sellerSeat.pubky);
 
     failingStep = 'protected_drop_read';
