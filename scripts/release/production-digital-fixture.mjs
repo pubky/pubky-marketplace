@@ -33,7 +33,7 @@
 // Env: PROOF_EVIDENCE (state and results; outside the repository), seats and both PROOF_*_PREFIX values (see
 // seats.mjs), EXPECTED_DPL and/or EXPECTED_COMMIT (one is required), PROOF_DIGITAL_GO, PROOF_DIGITAL_KINDS (default file), PROOF_DIGITAL_PRICE_USD (default
 // 2.00), PROOF_DIGITAL_PAY_TIMEOUT_MIN (default 25), PROOF_DIGITAL_BUYER_EMAIL (required for the email kind: a
-// mailbox the tester controls; redacted from the log and the evidence JSON, masked in screenshots), PROOF_ORIGIN, PROOF_SERVICE, PROOF_NEXUS, PROOF_RELAY,
+// mailbox the tester controls; redacted from the log and the evidence JSON, masked in screenshots), PROOF_ORIGIN, PROOF_SERVICE, PROOF_NEXUS, PROOF_CLIENT_ID,
 // PROOF_STAGING_ORIGINS, PROOF_STAGING_SERVICES, PROOF_STAGING_NEXUS (comma lists naming the staging stack),
 // PROOF_FIXTURE_PHOTO, PROOF_ALLOW_PRODUCTION (1 to run against anything but staging), PROOF_DIGITAL_EMAIL_SCREENSHOTS
 // (1 to save the email kind's screenshots; they are not saved by default, and any saved screenshot has the mailbox masked).
@@ -45,6 +45,7 @@ import { chmodSync, existsSync, readFileSync, unlinkSync, writeFileSync } from '
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
+import { mintMarketplaceGrantSessionForSigner } from '../lib/marketplace-grant-session.mjs';
 import { servedDeployment } from './deployment-check.mjs';
 import {
   DELIVERABLES_PREFIX,
@@ -76,15 +77,14 @@ import {
   sha256Hex,
   targetRefusal,
 } from './digital-proof.mjs';
-import { evidenceDir, loadBuyerSeat, loadSellerSeat, prefix, repoRequire, shopCapabilities } from './seats.mjs';
+import { evidenceDir, loadBuyerSeat, loadSellerSeat, prefix, repoRequire } from './seats.mjs';
 
 const { chromium } = repoRequire('playwright');
-const { AuthFlowKind, Pubky } = repoRequire('@synonymdev/pubky');
+const { Pubky } = repoRequire('@synonymdev/pubky');
 
 const ORIGIN = process.env.PROOF_ORIGIN ?? '';
 const SERVICE = process.env.PROOF_SERVICE ?? '';
 const NEXUS = process.env.PROOF_NEXUS ?? '';
-const RELAY = process.env.PROOF_RELAY ?? 'https://httprelay.pubky.app/inbox';
 const FX_FEED = process.env.PROOF_FX_FEED ?? 'https://api1.blocktank.to/api/fx/rates/btc';
 const PHOTO = process.env.PROOF_FIXTURE_PHOTO ?? join(dirname(fileURLToPath(import.meta.url)), 'fixture-photo.png');
 const CLIENT_ID = 'release-proof-digital';
@@ -149,7 +149,6 @@ if (spends && (kinds.includes('email') || kindArg === 'email') && !buyerEmail) {
 }
 if (spends && !existsSync(PHOTO)) throw new Error(`fixture photo missing: ${PHOTO}`);
 
-const CAPABILITIES = shopCapabilities();
 const OUT = evidenceDir();
 const STATE_PATH = join(OUT, 'digital-fixture-state.json');
 const FILE_PATH = join(OUT, 'digital-fixture-file.bin');
@@ -352,19 +351,12 @@ async function nexusListingsByTitle(title) {
 }
 
 async function mintBearer(seat) {
-  const client = new Pubky();
-  const flow = client.startCookieAuthFlow(CAPABILITIES, AuthFlowKind.signin(), RELAY);
-  const tokenPromise = flow.awaitToken();
-  await client.signer(seat).approveAuthRequest(flow.authorizationUrl);
-  const token = await tokenPromise;
-  const response = await fetch(`${SERVICE}/v1/auth/sessions`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/octet-stream' },
-    body: token.toBytes(),
+  return mintMarketplaceGrantSessionForSigner({
+    client: new Pubky(),
+    keypair: seat,
+    clientId: process.env.PROOF_CLIENT_ID ?? 'shop.pubky.app',
+    serviceUrl: SERVICE,
   });
-  const body = await response.json().catch(() => ({}));
-  if (response.status !== 201) throw new Error(`bearer mint HTTP ${response.status}`);
-  return { token: body.token, sessionId: body.session_id };
 }
 
 const revokeSession = async (bearer, id) =>

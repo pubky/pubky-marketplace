@@ -6,7 +6,7 @@ import { ClientErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import type { CommerceListingRegistrationStatus } from '@/models/commerce/commerce.schema';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { createAuctionProjectionFixture } from '@/test/fixtures/commerce/projections';
@@ -26,7 +26,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: controller,
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 const marketplaceSession = vi.hoisted(() => ({}));
 

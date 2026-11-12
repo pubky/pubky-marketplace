@@ -257,6 +257,58 @@ describe('orderCommandPayloadIssues', () => {
   it('refuses a kind the contract does not have', () => {
     expect(orderCommandPayloadIssues('refund.unknown', ORDER_ID, {})).toEqual(['kind']);
   });
+
+  describe('text limits count code points, like the service', () => {
+    const EMOJI = '\u{1F600}';
+
+    it.each([
+      ['order.cancel_request', 'reason', 500, {}],
+      ['return.request', 'reason', 1_000, { requestedAmountMinor: 1 }],
+    ])('%s takes %s of exactly %i emoji and refuses one more', (kind, field, max, rest) => {
+      expect(orderCommandPayloadIssues(kind, ORDER_ID, { ...rest, [field]: EMOJI.repeat(max) })).toBeNull();
+      expect(orderCommandPayloadIssues(kind, ORDER_ID, { ...rest, [field]: EMOJI.repeat(max + 1) })).toEqual([
+        `payload.${field}`,
+      ]);
+    });
+
+    it('trims before counting', () => {
+      expect(
+        orderCommandPayloadIssues('order.cancel_request', ORDER_ID, { reason: `  ${EMOJI.repeat(500)}  ` }),
+      ).toBeNull();
+    });
+
+    it('counts the shipping carrier and tracking number in code points', () => {
+      expect(
+        orderCommandPayloadIssues('fulfillment.ship', ORDER_ID, {
+          carrier: EMOJI.repeat(100),
+          trackingNumber: EMOJI.repeat(200),
+        }),
+      ).toBeNull();
+      expect(
+        orderCommandPayloadIssues('fulfillment.ship', ORDER_ID, {
+          carrier: EMOJI.repeat(101),
+          trackingNumber: EMOJI.repeat(201),
+        }),
+      ).toEqual(['payload.carrier', 'payload.trackingNumber']);
+    });
+
+    it('counts refund evidence by code points: eight emoji meet the minimum of eight', () => {
+      expect(
+        orderCommandPayloadIssues('refund.record_external', ORDER_ID, {
+          amountMinor: 100,
+          transactionId: EMOJI.repeat(8),
+          amountUnit: 'order',
+        }),
+      ).toBeNull();
+      expect(
+        orderCommandPayloadIssues('refund.record_external', ORDER_ID, {
+          amountMinor: 100,
+          transactionId: EMOJI.repeat(7),
+          amountUnit: 'order',
+        }),
+      ).toEqual(['payload.transactionId']);
+    });
+  });
 });
 
 describe('review.update revision conflict handling', () => {

@@ -1,15 +1,21 @@
 import {
+  classifyShopifyAddress,
   type ConnectionHealth,
   connectionHealth,
   type ConnectorAlert,
   type ConnectorCatalogPage,
   type ConnectorCatalogProduct,
+  type ConnectorChangeResolution,
   type ConnectorCheck,
   type ConnectorConnection,
   type ConnectorMapping,
+  type ConnectorProductChange,
   type ConnectorProvider,
   type ConnectorPush,
   connectorRefusalReason,
+  type ConnectorSync,
+  type ConnectorSyncDirection,
+  type ConnectorSyncGroup,
   type ConnectorUnmappedListing,
   isWooAuthorizeUrlFor,
   normalizeShopifyDomain,
@@ -185,6 +191,28 @@ export class ConnectorsApplication {
       await MarketplaceConnectorsService.disconnect(actor, started.connection.id).catch(() => undefined);
       throw error;
     }
+  }
+
+  /**
+   * The `*.myshopify.com` shop for what the seller typed. A `*.myshopify.com`
+   * address (or handle, or admin URL) is taken as it is; a store's own domain
+   * is looked up by the service, so `domain` names the address that was
+   * resolved and is `null` when no lookup was needed.
+   */
+  static async resolveShopifyAddress(actor: string, input: string): Promise<{ shop: string; domain: string | null }> {
+    const address = classifyShopifyAddress(input);
+    if (!address) {
+      invalidInput(
+        'resolveShopifyAddress',
+        'Enter your store address, for example your-store.myshopify.com or the domain your store uses.',
+      );
+    }
+    if (address.kind === 'myshopify') return { shop: address.domain, domain: null };
+    const resolved = await MarketplaceConnectorsService.resolveShop(actor, {
+      provider: 'shopify',
+      domain: address.host,
+    });
+    return { shop: resolved.shop, domain: resolved.domain ?? address.host };
   }
 
   /** The draft connection for a store; its `urls` are the ones the merchant pastes into their app. */
@@ -454,6 +482,40 @@ export class ConnectorsApplication {
 
   static async mappings(actor: string, connectionId: string): Promise<ConnectorMapping[]> {
     return await MarketplaceConnectorsService.mappings(actor, connectionId);
+  }
+
+  static async sync(actor: string, connectionId: string): Promise<ConnectorSync> {
+    return await MarketplaceConnectorsService.sync(actor, connectionId);
+  }
+
+  static async saveSync(
+    actor: string,
+    connectionId: string,
+    groups: Partial<Record<ConnectorSyncGroup, ConnectorSyncDirection>>,
+  ): Promise<ConnectorSync> {
+    return await MarketplaceConnectorsService.putSync(actor, connectionId, groups);
+  }
+
+  static async saveListingSync(
+    actor: string,
+    connectionId: string,
+    listingId: string,
+    groups: Partial<Record<ConnectorSyncGroup, ConnectorSyncDirection | null>>,
+  ): Promise<ConnectorSync> {
+    return await MarketplaceConnectorsService.putListingSync(actor, connectionId, listingId, groups);
+  }
+
+  static async changes(actor: string, connectionId: string): Promise<ConnectorProductChange[]> {
+    return await MarketplaceConnectorsService.changes(actor, connectionId);
+  }
+
+  static async resolveChange(
+    actor: string,
+    connectionId: string,
+    change: Pick<ConnectorProductChange, 'id' | 'proposedHash'>,
+    resolution: ConnectorChangeResolution,
+  ): Promise<void> {
+    await MarketplaceConnectorsService.resolveChange(actor, connectionId, change, resolution);
   }
 
   /**

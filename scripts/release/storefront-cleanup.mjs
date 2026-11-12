@@ -5,6 +5,8 @@
 // leaves a shop record behind. Callers read `storefrontExists` before the run and pass the answer to
 // `removeRunStorefront` after it; a storefront that existed before is never touched, and an unknown "before" state
 // fails closed.
+import { withCleanup } from '../lib/with-cleanup.mjs';
+
 export const SHOP_PATH = '/pub/pubky.app/marketplace/v1/shop.json';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -44,13 +46,18 @@ export async function removeRunStorefront({ publicStorage, signer, pubky, existe
     const status = (await fetch(`${nexus}/v0/shop/${pubky}`)).status;
     return { ...out, nexus: status, ok: status === 404 };
   }
-  const session = await signer.signinCookie();
-  try {
-    await session.storage.delete(SHOP_PATH);
-    out.deleted = true;
-  } finally {
-    session.free?.();
-  }
+  const session = await signer.signin('marketplace-storefront-cleanup');
+  await withCleanup(
+    async () => {
+      await session.storage.delete(SHOP_PATH);
+      out.deleted = true;
+    },
+    async () => {
+      await session.signout().catch(() => {
+        throw new Error('Could not end the storefront cleanup grant session');
+      });
+    },
+  );
   out.homeserver = (await storefrontExists(publicStorage, pubky)) === false ? 404 : 'present';
   const gone = await poll(
     async () => {

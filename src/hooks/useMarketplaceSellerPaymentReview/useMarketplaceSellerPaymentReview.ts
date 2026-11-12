@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from 'react';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
 import {
+  REASON_TOO_LONG_COPY,
   sellerPaymentConfirmationInputSchema,
   sellerPaymentResolutionInputSchema,
   sellerPaymentReviewReasonCopy,
@@ -17,7 +18,7 @@ import {
 import { USDT_REFUND_COPY } from '@/libs/commerce/usdt-refund';
 import { isAppError } from '@/libs/error/error';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 
 type ResolutionOutcome = 'paid' | 'refunded' | 'abandoned';
 
@@ -39,7 +40,7 @@ export function useMarketplaceSellerPaymentReview(
     if (isSubmitting) return false;
     const parsedInput = sellerPaymentConfirmationInputSchema.safeParse({ reason });
     if (!parsedInput.success) {
-      const message = 'The seller note must be 500 characters or fewer.';
+      const message = REASON_TOO_LONG_COPY;
       setError(message);
       toast({ variant: 'error', description: message });
       return false;
@@ -80,7 +81,7 @@ export function useMarketplaceSellerPaymentReview(
           ? rail === 'usdt'
             ? USDT_REFUND_COPY.referenceRequired
             : 'Enter a printable ASCII refund reference from 1 to 64 characters.'
-          : 'The payment review reason must be 500 characters or fewer.';
+          : REASON_TOO_LONG_COPY;
       setError(message);
       toast({ variant: 'error', description: message });
       return false;

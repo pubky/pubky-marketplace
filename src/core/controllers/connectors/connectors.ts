@@ -1,5 +1,13 @@
 import { ConnectorsApplication } from '@/application/connectors/connectors';
-import type { ConnectorConnection, ConnectorMapping, VariantMode } from '@/libs/commerce/connectors';
+import type {
+  ConnectorChangeResolution,
+  ConnectorConnection,
+  ConnectorMapping,
+  ConnectorProductChange,
+  ConnectorSyncDirection,
+  ConnectorSyncGroup,
+  VariantMode,
+} from '@/libs/commerce/connectors';
 import type { LinkableListing } from '@/pipes/commerce/connector-listing-links';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
@@ -25,6 +33,10 @@ export class ConnectorsController {
     consumerSecret: string;
   }) {
     return await ConnectorsApplication.connectWooCommerceWithKeys(this.actor(), input);
+  }
+
+  static async fetchResolveShopifyAddress(input: string) {
+    return await ConnectorsApplication.resolveShopifyAddress(this.actor(), input);
   }
 
   static async commitCreateShopifyDraft(domain: string) {
@@ -75,6 +87,34 @@ export class ConnectorsController {
 
   static async fetchMappings(connectionId: string) {
     return await ConnectorsApplication.mappings(this.actor(), connectionId);
+  }
+
+  static async fetchSync(connectionId: string) {
+    return await ConnectorsApplication.sync(this.actor(), connectionId);
+  }
+
+  static async commitSync(connectionId: string, groups: Partial<Record<ConnectorSyncGroup, ConnectorSyncDirection>>) {
+    return await ConnectorsApplication.saveSync(this.actor(), connectionId, groups);
+  }
+
+  static async commitListingSync(
+    connectionId: string,
+    listingId: string,
+    groups: Partial<Record<ConnectorSyncGroup, ConnectorSyncDirection | null>>,
+  ) {
+    return await ConnectorsApplication.saveListingSync(this.actor(), connectionId, listingId, groups);
+  }
+
+  static async fetchChanges(connectionId: string) {
+    return await ConnectorsApplication.changes(this.actor(), connectionId);
+  }
+
+  static async commitResolveChange(
+    connectionId: string,
+    change: Pick<ConnectorProductChange, 'id' | 'proposedHash'>,
+    resolution: ConnectorChangeResolution,
+  ) {
+    await ConnectorsApplication.resolveChange(this.actor(), connectionId, change, resolution);
   }
 
   static async commitMappings(connectionId: string, additions: readonly ConnectorMapping[]) {

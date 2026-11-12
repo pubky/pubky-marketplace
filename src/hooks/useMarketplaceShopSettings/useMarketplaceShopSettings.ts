@@ -20,7 +20,7 @@ import { isAssignedCountryCode, publishedCountryCode } from '@/libs/commerce/shi
 import { hasHttpStatus, HOMESERVER_WRITE_SCOPE_REMEDY, isHomeserverWriteScopeError } from '@/libs/error/error.utils';
 import { stripImageMetadata } from '@/libs/image/stripImageMetadata';
 import { getRegionPolicy } from '@/libs/runtime-config/runtime-config';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import {
   type MarketplaceShopSettingsData,

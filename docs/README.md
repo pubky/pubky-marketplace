@@ -1,6 +1,9 @@
 # Documentation
 
-Project documents for the Pubky Market come first; the Shop client's standards, conventions and architectural decisions follow under [Client standards and architecture](#client-standards-and-architecture).
+Canonical documentation for Pubky Market. `../AGENTS.md` is the shared entry point for coding agents; these pages own
+the detailed conventions. Start with [Development workflow](development-workflow.md), then the domain guide for the
+change. Current runbooks and implementation take precedence over explicitly historical proposals and ADR versions.
+Project documents come first below; shared coding standards follow under [Client standards and architecture](#client-standards-and-architecture).
 
 ## Shop launch
 
@@ -48,30 +51,40 @@ Single source of truth for all project standards, conventions, and architectural
 
 ### Quick Reference
 
-| Working on...           | Read these docs                                                                   |
-| ----------------------- | --------------------------------------------------------------------------------- |
-| `src/core/`             | `architecture.md`, `local-first.md`, `error-handling.md`, `data-patterns.md`      |
-| `src/components/`       | `components.md`, `skeleton-architecture.md`, `z-index.md`, `component-testing.md` |
-| `src/libs/env/`         | `environment.md`                                                                  |
-| Writing tests           | `component-testing.md`                                                            |
-| Making commits          | `commit-message.md`                                                               |
-| Architectural decisions | `adr-guidelines.md`, `adr/`                                                       |
+| Working on...                                         | Read these docs                                                                   |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Any change                                            | `../AGENTS.md`, `development-workflow.md`                                         |
+| `src/core/`                                           | `architecture.md`, `local-first.md`, `error-handling.md`, `data-patterns.md`      |
+| `src/hooks/`                                          | `local-first.md`, `data-patterns.md`, `components.md`                             |
+| Components or routes                                  | `components.md`, `skeleton-architecture.md`, `z-index.md`, `component-testing.md` |
+| Env, runtime config, base paths or storage namespaces | `environment.md`, `launch/shop-embedding.md`                                      |
+| Auth or embedded sessions                             | `launch/grant-auth-session.md`, `launch/shop-embedding.md`                        |
+| Commerce/backend integration                          | `ecommerce/RUNNING.md`, `ecommerce/status.md`, relevant domain guide and ADRs     |
+| Chat                                                  | `chat/README.md`                                                                  |
+| Observability                                         | `sentry.md`                                                                       |
+| Writing tests or changing visual baselines            | `component-testing.md`, `visual-regression-testing.md`                            |
+| Commits, branches, PRs                                | `commit-message.md`                                                               |
+| Release                                               | `ecommerce/onboarding.md`, `ecommerce/release.md`                                 |
+| Architectural decisions                               | `adr-guidelines.md`, `adr/`                                                       |
 
 ### Documentation Files
 
-| File                       | Description                                                                                           |
-| -------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `architecture.md`          | Core layered architecture, dependency rules, anti-patterns                                            |
-| `local-first.md`           | Local-first write patterns, controller naming, useLiveQuery rules                                     |
-| `data-patterns.md`         | Composite IDs, streams, TTL, pipes normalization                                                      |
-| `error-handling.md`        | Error conventions using AppError and Err.\* factories                                                 |
-| `components.md`            | Component patterns, Shadcn, atomic design, Figma, **icon imports** (`lucide-react`, `@/icons`, utils) |
-| `component-testing.md`     | Unit test rules                                                                                       |
-| `skeleton-architecture.md` | Skeleton loader placement, naming, and testing patterns                                               |
-| `z-index.md`               | Z-index layering conventions                                                                          |
-| `commit-message.md`        | Conventional commit format                                                                            |
-| `environment.md`           | Environment variable configuration                                                                    |
-| `adr-guidelines.md`        | When and how to write ADRs                                                                            |
+| File                           | Description                                                                       |
+| ------------------------------ | --------------------------------------------------------------------------------- |
+| `development-workflow.md`      | Scope, reuse, verification, code quality, definition of done                      |
+| `architecture.md`              | Layering, dependency boundaries, anti-patterns and ADR index                      |
+| `local-first.md`               | Local-first writes, controller naming, `useLocalFirstQuery` reads and limitations |
+| `data-patterns.md`             | Composite IDs, streams, TTL, normalization and schema changes                     |
+| `error-handling.md`            | AppError, Err factories and boundary exceptions                                   |
+| `components.md`                | Shadcn, atomic design, Figma, icons, forms and current Market toast conventions   |
+| `component-testing.md`         | Behavior and prop-contract unit tests                                             |
+| `visual-regression-testing.md` | Linux VRT, fixtures, CI and reviewed baseline updates                             |
+| `skeleton-architecture.md`     | Loader placement, naming and testing                                              |
+| `z-index.md`                   | Layering conventions                                                              |
+| `commit-message.md`            | Commit, branch and PR conventions                                                 |
+| `environment.md`               | Build-time and runtime configuration, paths, embedding and storage                |
+| `sentry.md`                    | Capture boundaries, privacy, filtering and source maps                            |
+| `adr-guidelines.md`            | When and how to record architectural decisions                                    |
 
 #### Shop (marketplace)
 
@@ -94,19 +107,38 @@ Stored in `adr/`. See `architecture.md` for the full index.
 
 ### AI and Editor Workflows
 
-This repository keeps documentation tool-agnostic, but some editor workflows are available for faster feedback loops.
+Claude Code, Codex and Cursor share the same canonical instructions:
 
-- Cursor local code review: `/review` (skill definition in `.cursor/skills/code-review/SKILL.md`)
-- Cross-tool AI entry point: see `../AGENTS.md`
-- Commit message format: see `commit-message.md`
+| Layer                      | Files                                                                          | Purpose                                                   |
+| -------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| Entry point                | `../AGENTS.md`, imported by `../CLAUDE.md`                                     | Commands, hard rules, doc routing and completion criteria |
+| Conventions                | This `docs/` folder                                                            | Canonical detailed rules                                  |
+| Path adapters              | `../.cursor/rules/*.mdc`, `../.claude/rules/*.md`                              | Select the relevant documentation for matching files      |
+| Shared skills              | `../.agents/skills/`, linked from `../.claude/skills/`                         | `pubky-code-review` and `sentry-nextjs-sdk`               |
+| Cursor review entry        | `../.cursor/skills/code-review/SKILL.md`                                       | Compatibility entry to the shared review procedure        |
+| Market installation checks | `../.cursor/skills/marketplace-install-verify/`                                | Existing deployment verification procedure                |
+| Greptile                   | `../.greptile/config.json`, `../.greptile/files.json`, `../.greptile/rules.md` | Repository review rules and path-specific context         |
+
+Claude adapters name documents in plain text rather than `@`-importing them, preserving path-scoped loading. Cursor
+adapters keep `@docs/…` pointers. The commit-message Cursor rule is agent-requested and has no Claude twin; `AGENTS.md`
+already directs every tool to commit/PR conventions. The existing Cursor toast rule retains its Market-specific policy.
+
+Keep tool adapters small. When a convention changes, update its canonical doc first (plus an ADR for architectural
+changes), then the short summary in `AGENTS.md`, then applicable Greptile rules and context mappings. Adding a new doc
+may also need matching globs. Repository configuration describes desired reviews; it does not prove that the external
+Greptile service is activated or that a review ran.
 
 ### Keeping Documentation Updated
 
-When making significant changes to:
-
-- **Core architecture**: Update `architecture.md` + create ADR
-- **Component patterns** (layout, Shadcn, **icon import conventions**): Update `components.md`
-- **Skeleton loaders**: Update `skeleton-architecture.md`
-- **Error handling**: Update `error-handling.md`
-- **Testing patterns**: Update `component-testing.md`
-- **Environment variables**: Update `environment.md`
+- **Agent workflow and completion:** `development-workflow.md`, with the short summary in `../AGENTS.md`.
+- **Core architecture:** `architecture.md` and an ADR when the decision changes.
+- **Local-first, TTL and schema:** `local-first.md`, `data-patterns.md` and relevant ADR amendments.
+- **Components, forms, icons and existing toast contracts:** `components.md`; do not substitute another repo's API.
+- **Skeleton loaders:** `skeleton-architecture.md`.
+- **Errors and observability:** `error-handling.md`, `sentry.md`.
+- **Testing and VRT:** `component-testing.md`, `visual-regression-testing.md`; preserve Market's checks and baseline workflow.
+- **Env, runtime and embedding:** `environment.md`, `launch/shop-embedding.md`.
+- **Auth/session lifecycle:** `launch/grant-auth-session.md`; mark historical protocols as historical.
+- **Commerce/chat behavior:** the relevant domain guide, `ecommerce/status.md` and `chat/README.md` as appropriate.
+- **Commits, branches and PRs:** `commit-message.md`.
+- **Release and deployed proof:** `ecommerce/onboarding.md`, `ecommerce/release.md`.

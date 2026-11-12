@@ -1,20 +1,15 @@
 import { capabilitiesCoverScope, MARKETPLACE_INVENTORY_SCOPE } from './marketplace-session-grant';
 
 /**
- * Studio inventory step-up grant. The only capability string Inventory Studio
- * may pass to `generateAuthTokenFlow`. Root `/:rw` covers the service ACL if
- * minted elsewhere; Studio must never request it.
+ * Scope of separately persisted Studio inventory approvals. Root `/:rw` may
+ * cover the service ACL elsewhere, but a Studio inventory record may contain
+ * only this scope.
  */
 export const INVENTORY_GRANT = '/pub/pubky.app/marketplace-service/v1/:rw' as const;
 
 export const INVENTORY_SESSION_STORAGE_KEY = 'pubky.marketplace.inventory-session.v1';
 
 const ROOT_GRANT = '/:rw';
-
-/** The allow-listed capability string for the Studio inventory mint. */
-export function studioInventoryCapabilities(): typeof INVENTORY_GRANT {
-  return INVENTORY_GRANT;
-}
 
 function capabilityParts(capabilities: string): string[] {
   return capabilities

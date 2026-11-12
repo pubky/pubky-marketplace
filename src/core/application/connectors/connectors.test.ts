@@ -198,6 +198,49 @@ describe('ConnectorsApplication', () => {
       );
     });
 
+    describe('resolving what the seller typed', () => {
+      it('takes a myshopify.com address, a handle or an admin URL as it is, without asking the service', async () => {
+        const resolve = vi.spyOn(MarketplaceConnectorsService, 'resolveShop');
+        for (const input of ['Your-Store', 'your-store.myshopify.com', 'https://admin.shopify.com/store/your-store']) {
+          await expect(ConnectorsApplication.resolveShopifyAddress(ACTOR, input)).resolves.toEqual({
+            shop: 'your-store.myshopify.com',
+            domain: null,
+          });
+        }
+        expect(resolve).not.toHaveBeenCalled();
+      });
+
+      it("asks the service about a store's own domain and returns the shop it names", async () => {
+        const resolve = vi.spyOn(MarketplaceConnectorsService, 'resolveShop').mockResolvedValue({
+          kind: 'connector_shop',
+          provider: 'shopify',
+          shop: 'your-store.myshopify.com',
+          domain: 'shop.example',
+        });
+        await expect(
+          ConnectorsApplication.resolveShopifyAddress(ACTOR, ' https://Shop.Example/collections/all?x=1 '),
+        ).resolves.toEqual({ shop: 'your-store.myshopify.com', domain: 'shop.example' });
+        expect(resolve).toHaveBeenCalledWith(ACTOR, { provider: 'shopify', domain: 'shop.example' });
+      });
+
+      it('refuses an address that cannot be a web address, without asking the service', async () => {
+        const resolve = vi.spyOn(MarketplaceConnectorsService, 'resolveShop');
+        await expect(ConnectorsApplication.resolveShopifyAddress(ACTOR, 'not a store')).rejects.toThrow(
+          /your-store.myshopify.com/,
+        );
+        expect(resolve).not.toHaveBeenCalled();
+      });
+
+      it('passes the service refusal on untouched', async () => {
+        vi.spyOn(MarketplaceConnectorsService, 'resolveShop').mockRejectedValue(
+          connectorRefusal('not_a_shopify_store', 422),
+        );
+        await expect(ConnectorsApplication.resolveShopifyAddress(ACTOR, 'blog.example')).rejects.toMatchObject({
+          context: { reason: 'not_a_shopify_store' },
+        });
+      });
+    });
+
     it('seals the keys and returns the connection with credentials saved', async () => {
       const saved = connection({ provider: 'shopify', status: 'draft', credentialsSaved: true });
       const put = vi.spyOn(MarketplaceConnectorsService, 'putCredentials').mockResolvedValue(saved);

@@ -4,6 +4,7 @@ import {
   COMMERCE_LISTING_MAX_VARIANTS,
   COMMERCE_REVIEW_TEXT_MAX_CHARS,
 } from '@/config/commerce';
+import { trimmedText } from './code-point-text';
 import { DELIVERY_ENVELOPE_BYTES, DELIVERY_KEY_ID_PATTERN } from './delivery-envelope-format';
 import {
   digitalDeliverySetSchema,
@@ -73,7 +74,7 @@ const registerListingPayloadSchema = z
   .object({
     sellerPubky: commercePubkySchema,
     listingId: commerceEntityIdSchema,
-    title: z.string().trim().min(1).max(80).default('Marketplace item'),
+    title: trimmedText({ min: 1, max: 80 }).default('Marketplace item'),
     listingRevision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     contentHash: z.string().regex(/^[a-f0-9]{64}$/),
     quantity: z.number().int().positive().max(1_000_000),
@@ -293,7 +294,7 @@ const offerTermsSchema = z
       .int()
       .min(300)
       .max(7 * 24 * 60 * 60),
-    message: z.string().trim().max(500),
+    message: trimmedText({ max: 500 }),
   })
   .strict();
 
@@ -394,8 +395,8 @@ export const updateMarketplaceNotificationPreferencesCommandSchema = createComme
  */
 const checkoutLineVariantOptionSchema = z
   .object({
-    name: z.string().trim().min(1).max(40),
-    value: z.string().trim().min(1).max(80),
+    name: trimmedText({ min: 1, max: 40 }),
+    value: trimmedText({ min: 1, max: 80 }),
   })
   .strict();
 
@@ -607,7 +608,7 @@ const orderIdPayload = z.object({ orderId: z.uuid() }).strict();
 
 export const requestOrderCancellationCommandSchema = createCommerceCommandSchema(
   'order.cancel_request',
-  orderIdPayload.extend({ reason: z.string().trim().min(1).max(500) }).strict(),
+  orderIdPayload.extend({ reason: trimmedText({ min: 1, max: 500 }) }).strict(),
 );
 
 export const approveOrderCancellationCommandSchema = createCommerceCommandSchema(
@@ -619,11 +620,11 @@ export const shipOrderCommandSchema = createCommerceCommandSchema(
   'fulfillment.ship',
   orderIdPayload
     .extend({
-      carrier: z.string().trim().min(1).max(100),
+      carrier: trimmedText({ min: 1, max: 100 }),
       // Optional: a seller may mark an order shipped before a number exists
       // (connected stores complete orders without one) and add it later with
       // `fulfillment.update_tracking`.
-      trackingNumber: z.string().trim().min(1).max(200).optional(),
+      trackingNumber: trimmedText({ min: 1, max: 200 }).optional(),
     })
     .strict(),
 );
@@ -632,8 +633,8 @@ export const updateOrderTrackingCommandSchema = createCommerceCommandSchema(
   'fulfillment.update_tracking',
   orderIdPayload
     .extend({
-      carrier: z.string().trim().min(1).max(100),
-      trackingNumber: z.string().trim().min(1).max(200),
+      carrier: trimmedText({ min: 1, max: 100 }),
+      trackingNumber: trimmedText({ min: 1, max: 200 }),
     })
     .strict(),
 );
@@ -768,7 +769,7 @@ export const requestReturnCommandSchema = createCommerceCommandSchema(
   'return.request',
   orderIdPayload
     .extend({
-      reason: z.string().trim().min(1).max(1_000),
+      reason: trimmedText({ min: 1, max: 1_000 }),
       requestedAmountMinor: z.number().int().positive(),
     })
     .strict(),
@@ -789,7 +790,7 @@ export const recordExternalRefundCommandSchema = createCommerceCommandSchema(
   orderIdPayload
     .extend({
       amountMinor: z.number().int().positive(),
-      transactionId: z.string().trim().min(8).max(200),
+      transactionId: trimmedText({ min: 8, max: 200 }),
       amountUnit: refundUnitSchema.optional(),
     })
     .strict(),
@@ -831,7 +832,7 @@ const reviewRatingSchema = z.number().int().min(1).max(5);
 const reviewV1TermsPayloadSchema = orderIdPayload
   .extend({
     rating: reviewRatingSchema,
-    text: z.string().trim().min(1).max(COMMERCE_REVIEW_TEXT_MAX_CHARS),
+    text: trimmedText({ min: 1, max: COMMERCE_REVIEW_TEXT_MAX_CHARS }),
     /**
      * Buyer-side amount-band opt-in (ratified D2, ADR 0024): the purchase
      * attestation carries a log-decade amount band only when this is true
@@ -849,7 +850,7 @@ const reviewItemTermsSchema = z
   .object({
     listingId: commerceEntityIdSchema,
     rating: reviewRatingSchema,
-    text: z.string().trim().max(COMMERCE_REVIEW_TEXT_MAX_CHARS).default(''),
+    text: trimmedText({ max: COMMERCE_REVIEW_TEXT_MAX_CHARS }).default(''),
   })
   .strict();
 

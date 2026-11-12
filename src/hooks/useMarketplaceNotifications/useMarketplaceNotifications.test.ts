@@ -31,7 +31,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 
@@ -183,7 +183,7 @@ describe('useMarketplaceNotifications', () => {
 
   it('maps server and thrown sentinel failures to static copy', async () => {
     const sentinel = 'SENTINEL_SERVER_TEXT_notifications';
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const { result } = renderHook(() => useMarketplaceNotifications());
     await waitFor(() => expect(result.current.preferences).not.toBeNull());
 

@@ -53,6 +53,29 @@ vi.mock('@/hooks/useConnectorListingLinks/useConnectorListingLinks', () => ({
   }),
 }));
 
+vi.mock('@/hooks/useConnectorChanges/useConnectorChanges', () => ({
+  CHANGE_FAILURE_COPY: {},
+  DISMISS_ALL_KEY: 'all',
+  useConnectorChanges: () => ({
+    state: { status: 'ready', items: [], unsettled: 0, waiting: 'none' },
+    workingId: null,
+    refresh: async () => {},
+    dismissAll: async () => {},
+    apply: async () => {},
+    dismiss: async () => {},
+    detach: async () => {},
+  }),
+}));
+
+vi.mock('@/hooks/useConnectorSync/useConnectorSync', () => ({
+  useConnectorSync: () => ({
+    state: { status: 'idle' },
+    savingGroup: null,
+    setDirection: async () => true,
+    reload: async () => {},
+  }),
+}));
+
 function row(overrides: Record<string, unknown>, options: { disconnectedLocally?: boolean } = {}) {
   const connection = connectionFixture({
     status: 'connected',

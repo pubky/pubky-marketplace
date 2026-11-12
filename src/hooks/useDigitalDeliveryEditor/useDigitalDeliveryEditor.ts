@@ -19,7 +19,7 @@ import {
 } from '@/libs/commerce/digital';
 import { isAppError } from '@/libs/error/error';
 import { ErrorService } from '@/libs/error/error.types';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import {
   type DigitalDeliveryFormData,
   digitalDeliveryFormDefaults,

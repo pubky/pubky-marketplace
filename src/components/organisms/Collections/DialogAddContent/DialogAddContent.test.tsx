@@ -71,8 +71,8 @@ vi.mock('@/hooks/useAvatarUrl/useAvatarUrl', () => ({
   useAvatarUrl: () => undefined,
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
-  useToast: () => ({ toast: mocks.toast }),
+vi.mock('@/molecules/Toaster/toast', () => ({
+  toast: mocks.toast,
 }));
 
 vi.mock('@/organisms/DialogNewPost/DialogNewPost', () => ({

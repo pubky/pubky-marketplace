@@ -4,7 +4,7 @@ import { ONBOARDING_ROUTES } from '@/app/routes';
 import { Human } from './Human';
 
 const mockPush = vi.fn();
-const mockToast = vi.fn();
+const mockToast = vi.hoisted(() => vi.fn());
 const mockResetOnboarding = vi.fn();
 const mockSetInviteCode = vi.fn();
 const mockVerifySignupToken = vi.fn<(inviteCode: string) => Promise<'valid' | 'used' | 'invalid'>>();
@@ -35,10 +35,8 @@ vi.mock('next/navigation', () => ({
   }),
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
-  useToast: () => ({
-    toast: mockToast,
-  }),
+vi.mock('@/molecules/Toaster/toast', () => ({
+  toast: mockToast,
 }));
 
 vi.mock('@/stores/onboarding/onboarding.store', () => ({

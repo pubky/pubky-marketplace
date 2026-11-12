@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
-import { type ConnectorConnection, connectorErrorMessage } from '@/libs/commerce/connectors';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { classifyShopifyAddress, type ConnectorConnection, connectorErrorMessage } from '@/libs/commerce/connectors';
+import { toast } from '@/molecules/Toaster/toast';
+import { useAuthStore } from '@/stores/auth/auth.store';
 import {
   type ShopifyDomainFormData,
   shopifyDomainFormDefaults,
@@ -25,6 +26,8 @@ export type UseConnectShopifyResult = {
   keysForm: UseFormReturn<ShopifyKeysFormData>;
   /** The draft connection; its `urls` are what the merchant pastes into their app. */
   draft: ConnectorConnection | null;
+  /** The domain the seller typed when it was resolved to the draft's `*.myshopify.com` store; `null` otherwise. */
+  resolvedFrom: string | null;
   credentialsSaved: boolean;
   isWorking: boolean;
   createDraft: () => Promise<boolean>;
@@ -33,6 +36,7 @@ export type UseConnectShopifyResult = {
 };
 
 const DRAFT_FAILED = 'Could not prepare your links. Check the address and try again.';
+const RESOLVE_FAILED = 'Could not look up that address. Check it, or use your-store.myshopify.com.';
 const KEYS_FAILED = 'The keys were not saved. Check them and try again.';
 
 /**
@@ -43,6 +47,7 @@ const KEYS_FAILED = 'The keys were not saved. Check them and try again.';
  */
 export function useConnectShopify({ resume = null }: UseConnectShopifyOptions = {}): UseConnectShopifyResult {
   const [created, setCreated] = useState<ConnectorConnection | null>(null);
+  const [resolvedFrom, setResolvedFrom] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
   const domainForm = useForm<ShopifyDomainFormData>({
     resolver: zodResolver(shopifyDomainFormSchema),
@@ -58,21 +63,49 @@ export function useConnectShopify({ resume = null }: UseConnectShopifyOptions = 
   const resumed = resume && resume.provider === 'shopify' && resume.status === 'draft' ? resume : null;
   const draft = created ?? resumed;
 
+  // A lookup outlives a sign-out, an account switch, Start over and unmount; its
+  // draft write must not land under whoever is signed in by the time it answers.
+  const runRef = useRef(0);
+  useEffect(
+    () => () => {
+      runRef.current += 1;
+    },
+    [],
+  );
+
   const createDraft = async (): Promise<boolean> => {
     let ok = false;
     await domainForm.handleSubmit(async (data) => {
+      const run = ++runRef.current;
+      const initiator = useAuthStore.getState().currentUserPubky;
+      const stillCurrent = () => runRef.current === run && useAuthStore.getState().currentUserPubky === initiator;
       setIsWorking(true);
+      let phase: 'lookup' | 'draft' = 'draft';
       try {
-        setCreated(await ConnectorsController.commitCreateShopifyDraft(data.domain));
+        let shop = data.domain;
+        let typed: string | null = null;
+        if (classifyShopifyAddress(data.domain)?.kind === 'custom') {
+          phase = 'lookup';
+          const resolved = await ConnectorsController.fetchResolveShopifyAddress(data.domain);
+          if (!stillCurrent()) return;
+          shop = resolved.shop;
+          typed = resolved.domain;
+          phase = 'draft';
+        }
+        const started = await ConnectorsController.commitCreateShopifyDraft(shop);
+        if (!stillCurrent()) return;
+        setCreated(started);
+        setResolvedFrom(typed);
         ok = true;
       } catch (error) {
+        if (!stillCurrent()) return;
         toast({
           variant: 'error',
-          title: 'Could not prepare the links',
-          description: connectorErrorMessage(error, DRAFT_FAILED),
+          title: phase === 'lookup' ? 'Could not find your store' : 'Could not prepare the links',
+          description: connectorErrorMessage(error, phase === 'lookup' ? RESOLVE_FAILED : DRAFT_FAILED),
         });
       } finally {
-        setIsWorking(false);
+        if (runRef.current === run) setIsWorking(false);
       }
     })();
     return ok;
@@ -107,7 +140,10 @@ export function useConnectShopify({ resume = null }: UseConnectShopifyOptions = 
   };
 
   const startOver = () => {
+    runRef.current += 1;
+    setIsWorking(false);
     setCreated(null);
+    setResolvedFrom(null);
     domainForm.reset(shopifyDomainFormDefaults);
     keysForm.reset(shopifyKeysFormDefaults);
   };
@@ -116,6 +152,7 @@ export function useConnectShopify({ resume = null }: UseConnectShopifyOptions = 
     domainForm,
     keysForm,
     draft,
+    resolvedFrom: created ? resolvedFrom : null,
     credentialsSaved: draft?.credentialsSaved === true,
     isWorking,
     createDraft,

@@ -36,7 +36,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     recordSavedSearchCheck: vi.fn(async () => {}),
   },
 }));
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 const controller = vi.mocked(CommerceController);
 const acceptingEntry = createCommerceCatalogEntryFixture({

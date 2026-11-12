@@ -19,7 +19,7 @@ import { GrantSessionRefusal } from '@/molecules/GrantSessionRefusal/GrantSessio
 import { MarketplaceApprovalDisclosure } from '@/molecules/MarketplaceApprovalDisclosure/MarketplaceApprovalDisclosure';
 import { QrCodeSlot } from '@/molecules/QrCodeSlot/QrCodeSlot';
 import { type SignerOption, SignerToggle } from '@/molecules/SignerToggle/SignerToggle';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useIsShopHosted } from '@/providers/ShopHostSessionProvider/ShopHostSessionProvider';
 import { marketplaceApprovalDisclosure } from '@/services/marketplace/marketplace-session-grant';
 import { useAuthStore } from '@/stores/auth/auth.store';

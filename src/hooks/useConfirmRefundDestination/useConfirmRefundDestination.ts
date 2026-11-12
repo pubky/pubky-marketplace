@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { CONFIRM_REFUND_DESTINATION_KIND } from '@/libs/commerce/usdt-refund';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import {
   type ConfirmRefundDestinationFormData,

@@ -11,7 +11,7 @@ import {
 import { bitcoinSetupClaim, type SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
 import { isAppError } from '@/libs/error/error';
 import { Logger } from '@/libs/logger/logger';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
 /**

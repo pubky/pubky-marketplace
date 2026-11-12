@@ -62,7 +62,7 @@ import {
 } from '@/libs/commerce/listing-table';
 import { SellingUnavailableNotice } from '@/molecules/Marketplace/SellingUnavailableNotice';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceListingDeleteDialog } from '@/organisms/Marketplace/MarketplaceListingDeleteDialog';
 import {

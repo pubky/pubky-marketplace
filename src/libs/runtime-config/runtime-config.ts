@@ -246,6 +246,7 @@ export const getMarketplaceGrantSessionEnabled = (): boolean => getRuntimeConfig
 export const getMarketplaceGrantPollMilliseconds = (): number => getRuntimeConfig().marketplaceGrantPollMilliseconds;
 export const getPassportSignInEnabled = (): boolean => getRuntimeConfig().passportSignIn;
 export const getUsdtPaymentsEnabled = (): boolean => getRuntimeConfig().usdtPaymentsEnabled;
+export const getStoreSyncEnabled = (): boolean => getRuntimeConfig().storeSyncEnabled;
 /** C3 and C4 are on for the regions that are nuanced (the EU fence flag, unless the region modes say otherwise). */
 export const getEuFenceEnabled = (): boolean => getRegionPolicy().fenceActive;
 export const getClientRegionHeader = (): string => getRuntimeConfig().clientRegionHeader;

@@ -19,11 +19,11 @@ import type {
 } from '@/hooks/useListingMediaManager/useListingMediaManager';
 import { DIGITAL_DELIVERY_COPY } from '@/libs/commerce/digital';
 import { PICKUP_NOTHING_PUBLISHED_TOAST } from '@/libs/commerce/pickup';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { setHeavySuiteBudgets } from '@/test-utils/load-budget';
-import { MarketplaceListingForm } from './MarketplaceListingForm';
+import { MarketplaceListingForm, type MarketplaceListingStoreSync } from './MarketplaceListingForm';
 
 setHeavySuiteBudgets();
 
@@ -103,7 +103,7 @@ vi.mock('@/config/commerce', async () => ({
   getAuctionDurationsMinutes: vi.fn(() => [7 * 24 * 60]),
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 
@@ -219,6 +219,7 @@ function FormHarness({
   submittedFulfillment,
   publishBlocked = null,
   publishGuardReady = true,
+  storeSync = null,
   formRef,
 }: {
   fulfillment?: CreateMarketplaceListingData['fulfillment'];
@@ -233,6 +234,7 @@ function FormHarness({
   listingId?: string;
   publishBlocked?: import('@/libs/commerce/listing-publish-guards').ListingPublishBlockReason | null;
   publishGuardReady?: boolean;
+  storeSync?: MarketplaceListingStoreSync | null;
   formRef?: { current: UseFormReturn<CreateMarketplaceListingData> | null };
 }) {
   const form = useForm<CreateMarketplaceListingData>({
@@ -256,6 +258,7 @@ function FormHarness({
       listingId={listingId}
       publishBlocked={publishBlocked}
       publishGuardReady={publishGuardReady}
+      storeSync={storeSync}
     />
   );
 }
@@ -1744,5 +1747,170 @@ describe('MarketplaceListingForm unlimited stock leaving digital-only', () => {
     await user.type(screen.getByRole('textbox', { name: 'Quantity' }), '3');
     expect(form().getValues('variants.0.quantity')).toBe('3');
     expect(inventoryBlocked(form().getValues())).toBe(false);
+  });
+});
+
+describe('MarketplaceListingForm store sync', () => {
+  type Follows = { content: boolean; price: boolean; variants: boolean };
+  const group = (follows: boolean) => ({ follows, overridden: false });
+  const syncFor = (
+    follows: Follows,
+    domain = 'demo.myshopify.com',
+    connectionId = 'c1',
+  ): MarketplaceListingStoreSync['syncs'][number] => ({
+    connectionId,
+    domain,
+    editInStoreUrl: `https://${domain}/admin/products/9001`,
+    groups: { content: group(follows.content), price: group(follows.price), variants: group(follows.variants) },
+  });
+  const storeSync = (syncs: MarketplaceListingStoreSync['syncs'], onToggle = vi.fn()): MarketplaceListingStoreSync => ({
+    syncs,
+    saving: null,
+    onToggle,
+  });
+  const record = () => createCommerceListingFixture();
+  const edit = (sync: MarketplaceListingStoreSync | null) => (
+    <FormHarness
+      mode="edit"
+      listingId="boots_01"
+      media={buildMedia([photoItem('p1', 'Front')])}
+      defaultValues={formDataFromRecord(record(), 'USD', 'metric', null)}
+      storeSync={sync}
+    />
+  );
+  const ALL = { content: true, price: true, variants: true };
+
+  it('shows the parts that follow the store read-only, with a way to edit them in the store', () => {
+    render(edit(storeSync([syncFor(ALL)])));
+
+    expect(screen.getByRole('textbox', { name: /^Title/ })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: /^Description/ })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: /^Price \(/ })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: 'Seller SKU' })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: /^Price override/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Add photos/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Remove photo 1' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add variant' })).toBeDisabled();
+    expect(screen.getAllByRole('link', { name: /Edit in Shopify/ })[0]).toHaveAttribute(
+      'href',
+      'https://demo.myshopify.com/admin/products/9001',
+    );
+    expect(screen.getByRole('textbox', { name: /^Quantity/ })).toBeEnabled();
+  });
+
+  it('does not let variants be added or removed while their prices follow the store', () => {
+    const two = createCommerceListingFixture({
+      variants: [
+        { id: 'variant_01', options: { size: '42' }, quantity: 2, mediaIds: [], enabled: true },
+        { id: 'variant_02', options: { size: '43' }, quantity: 3, mediaIds: [], enabled: true },
+      ],
+    });
+    const form = (sync: MarketplaceListingStoreSync) => (
+      <FormHarness
+        mode="edit"
+        listingId="boots_01"
+        media={buildMedia([photoItem('p1', 'Front')])}
+        defaultValues={formDataFromRecord(two, 'USD', 'metric', null)}
+        storeSync={sync}
+      />
+    );
+    const { rerender } = render(form(storeSync([syncFor({ content: false, price: true, variants: false })])));
+
+    expect(screen.getByRole('button', { name: 'Add variant' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Remove variant 1' })).toBeDisabled();
+    expect(screen.getAllByRole('textbox', { name: 'Seller SKU' })[0]).toBeEnabled();
+
+    rerender(form(storeSync([syncFor({ content: false, price: false, variants: false })])));
+    expect(screen.getByRole('button', { name: 'Add variant' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Remove variant 1' })).toBeEnabled();
+  });
+
+  it('refuses photos dropped on a listing whose photos follow the store', () => {
+    const media = buildMedia([photoItem('p1', 'Front')]);
+    const { rerender } = render(
+      <FormHarness
+        mode="edit"
+        listingId="boots_01"
+        media={media}
+        defaultValues={formDataFromRecord(record(), 'USD', 'metric', null)}
+        storeSync={storeSync([syncFor(ALL)])}
+      />,
+    );
+    const file = imageFile('dropped.jpg');
+
+    fireEvent.drop(photoDropZone(), fileDrag([file]));
+    expect(media.addFiles).not.toHaveBeenCalled();
+
+    rerender(
+      <FormHarness
+        mode="edit"
+        listingId="boots_01"
+        media={media}
+        defaultValues={formDataFromRecord(record(), 'USD', 'metric', null)}
+        storeSync={storeSync([syncFor({ content: false, price: true, variants: true })])}
+      />,
+    );
+    fireEvent.drop(photoDropZone(), fileDrag([file]));
+    expect(media.addFiles).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps stock editable and unlocks only the parts the listing opted out of', () => {
+    render(edit(storeSync([syncFor({ content: true, price: false, variants: true })])));
+
+    expect(screen.getByRole('textbox', { name: /^Title/ })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: /^Price \(/ })).toBeEnabled();
+    expect(screen.getByRole('textbox', { name: /^Price override/ })).toBeEnabled();
+    expect(screen.getByRole('textbox', { name: 'Seller SKU' })).toBeDisabled();
+  });
+
+  it('locks a part that any of two linked stores follows, with a switch for each store', () => {
+    render(
+      edit(
+        storeSync([
+          syncFor({ content: false, price: false, variants: false }, 'first.myshopify.com', 'c1'),
+          syncFor({ content: true, price: false, variants: false }, 'second.myshopify.com', 'c2'),
+        ]),
+      ),
+    );
+
+    expect(screen.getByRole('textbox', { name: /^Title/ })).toBeDisabled();
+    expect(
+      screen.getByRole('switch', { name: 'Title, description and photos follow first.myshopify.com' }),
+    ).not.toBeChecked();
+    expect(
+      screen.getByRole('switch', { name: 'Title, description and photos follow second.myshopify.com' }),
+    ).toBeChecked();
+  });
+
+  it('leaves every field editable for a listing no store is linked to', () => {
+    render(edit(null));
+
+    expect(screen.getByRole('textbox', { name: /^Title/ })).toBeEnabled();
+    expect(screen.getByRole('textbox', { name: /^Price \(/ })).toBeEnabled();
+    expect(screen.queryByTestId('store-follow-content')).not.toBeInTheDocument();
+  });
+
+  it('does not let a follow switch be used while the listing is being saved', () => {
+    render(
+      <FormHarness
+        mode="edit"
+        listingId="boots_01"
+        isPublishing
+        media={buildMedia([photoItem('p1', 'Front')])}
+        defaultValues={formDataFromRecord(record(), 'USD', 'metric', null)}
+        storeSync={storeSync([syncFor(ALL)])}
+      />,
+    );
+
+    expect(screen.getByRole('switch', { name: 'Price follow demo.myshopify.com' })).toBeDisabled();
+  });
+
+  it('turns a part into the listing’s own through its switch, naming the store', async () => {
+    const onToggle = vi.fn();
+    render(edit(storeSync([syncFor(ALL)], onToggle)));
+
+    await userEvent.click(screen.getByRole('switch', { name: 'Price follow demo.myshopify.com' }));
+
+    expect(onToggle).toHaveBeenCalledWith('c1', 'price');
   });
 });

@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { connectorRefusal } from '@/test-utils/connector-errors';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { useConnectWooCommerce } from './useConnectWooCommerce';
@@ -14,7 +14,7 @@ vi.mock('@/controllers/connectors/connectors', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 const AUTHORIZE = 'https://dezentralshop.ch/wc-auth/v1/authorize?scope=read_write';
 

@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { mockAuthStore } from '@/test-utils/stores';
 import { asOpaque } from '@/test-utils/type-assertions';
@@ -10,7 +10,7 @@ import { useMarketplaceShippingProfiles } from './useMarketplaceShippingProfiles
 const OWNER = 'o'.repeat(52);
 
 vi.mock('@/stores/auth/auth.store', () => ({ useAuthStore: vi.fn() }));
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     listShippingProfiles: vi.fn(),

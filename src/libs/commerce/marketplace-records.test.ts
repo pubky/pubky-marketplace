@@ -25,6 +25,7 @@ import {
   commerceOrderReceiptRecordSchema,
   commercePublicRecordSchema,
   commerceReviewRecordSchema,
+  commerceReviewResponseRecordSchema,
   commerceShopRecordSchema,
   locksPublicUriSchema,
   marketplacePublicUriSchema,
@@ -809,6 +810,31 @@ describe('other public marketplace records', () => {
     ).toBe(true);
   });
 
+  it('bounds a review response by code points, not UTF-16 units', () => {
+    const base = {
+      schemaVersion: COMMERCE_CONTRACT_VERSION,
+      recordType: 'review_response',
+      ownerPubky: SELLER_PUBKY,
+      revision: 1,
+      createdAt: CREATED_AT,
+      updatedAt: UPDATED_AT,
+      reviewId: 'review_01',
+      reviewUri: `pubky://${BUYER_PUBKY}/pub/pubky.app/marketplace/v1/reviews/01J0000000000000000000000A`,
+    };
+
+    expect(commerceReviewResponseRecordSchema.safeParse({ ...base, text: 'x' }).success).toBe(true);
+    expect(commerceReviewResponseRecordSchema.safeParse({ ...base, text: '   ' }).success).toBe(false);
+    expect(commerceReviewResponseRecordSchema.safeParse({ ...base, text: '\u{1F600}'.repeat(2_501) }).success).toBe(
+      true,
+    );
+    expect(commerceReviewResponseRecordSchema.safeParse({ ...base, text: '\u{1F600}'.repeat(5_000) }).success).toBe(
+      true,
+    );
+    expect(commerceReviewResponseRecordSchema.safeParse({ ...base, text: '\u{1F600}'.repeat(5_001) }).success).toBe(
+      false,
+    );
+  });
+
   it('accepts an item review without text', () => {
     const base = {
       schemaVersion: COMMERCE_CONTRACT_VERSION,
@@ -827,6 +853,9 @@ describe('other public marketplace records', () => {
     };
 
     expect(commerceReviewRecordSchema.safeParse({ ...base, text: '' }).success).toBe(true);
+    expect(commerceReviewRecordSchema.safeParse({ ...base, text: '\u{1F600}'.repeat(2_501) }).success).toBe(true);
+    expect(commerceReviewRecordSchema.safeParse({ ...base, text: '\u{1F600}'.repeat(5_000) }).success).toBe(true);
+    expect(commerceReviewRecordSchema.safeParse({ ...base, text: '\u{1F600}'.repeat(5_001) }).success).toBe(false);
     expect(commerceReviewRecordSchema.safeParse({ ...base, text: '   ' }).success).toBe(true);
     expect(commerceReviewRecordSchema.safeParse({ ...base, text: 'a'.repeat(5_001) }).success).toBe(false);
   });

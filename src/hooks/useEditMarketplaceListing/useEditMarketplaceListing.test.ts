@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { commerceListingRecordSchema } from '@/libs/commerce/marketplace-records';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useEditMarketplaceListing } from './useEditMarketplaceListing';
 
 const OWNER = 'y'.repeat(52);
@@ -97,7 +97,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 
@@ -166,6 +166,254 @@ describe('useEditMarketplaceListing', () => {
       title: 'Vintage leather boots — resoled',
       sale: { format: 'fixed_price', unitPrice: { amountMinor: 15_000 }, acceptsOffers: true },
       media: [{ id: 'image_01' }],
+    });
+  });
+
+  describe('a listing whose parts follow a connected store', () => {
+    const storeListing = () =>
+      structuredClone({
+        ...publishedRecord,
+        variants: [
+          { id: 'shopify-aaa', sku: 'A', options: { size: '42' }, quantity: 3, mediaIds: ['image_01'], enabled: true },
+          {
+            id: 'shopify-bbb',
+            sku: 'B',
+            options: { size: '43' },
+            quantity: 2,
+            mediaIds: ['image_01'],
+            enabled: false,
+            priceOverride: { amountMinor: 20_000, currency: 'USD', exponent: 2 },
+          },
+        ],
+      });
+
+    async function open(follows: { content: boolean; price: boolean; variants: boolean }) {
+      vi.mocked(CommerceController.getOrFetchListing).mockResolvedValue(storeListing());
+      const hook = renderHook(() => useEditMarketplaceListing(OWNER, LISTING_ID, { follows }));
+      await waitFor(() => expect(hook.result.current.status).toBe('ready'));
+      return hook.result;
+    }
+
+    const saved = () => vi.mocked(CommerceController.commitUpsertListing).mock.calls[0][0] as typeof publishedRecord;
+
+    it('saves the store’s title, description and photos whatever the form holds, and uploads nothing', async () => {
+      const result = await open({ content: true, price: false, variants: false });
+      act(() => {
+        result.current.form.setValue('title', 'Typed over the store');
+        result.current.form.setValue('description', 'Typed text');
+        result.current.form.setValue('price', '99.00');
+      });
+
+      await act(async () => {
+        await result.current.submit();
+      });
+
+      expect(saved()).toMatchObject({
+        title: 'Vintage leather boots',
+        description: 'Well cared for boots with light wear.',
+        media: [{ id: 'image_01' }],
+        sale: { unitPrice: { amountMinor: 9_900 } },
+      });
+      expect(CommerceController.commitCreateMedia).not.toHaveBeenCalled();
+    });
+
+    it('saves the store’s price and price overrides, and keeps the seller’s own stock', async () => {
+      const result = await open({ content: false, price: true, variants: false });
+      act(() => {
+        result.current.form.setValue('price', '1.00');
+        result.current.form.setValue('variants.1.priceOverride', '3.00');
+        result.current.form.setValue('variants.0.quantity', '7');
+      });
+
+      await act(async () => {
+        await result.current.submit();
+      });
+
+      expect(saved().sale.unitPrice.amountMinor).toBe(12_500);
+      expect(saved().variants.map(({ id }) => id)).toEqual(['shopify-aaa', 'shopify-bbb']);
+      expect(saved().variants[0]).toMatchObject({ quantity: 7 });
+      expect(saved().variants[1]).toMatchObject({ priceOverride: { amountMinor: 20_000 } });
+    });
+
+    it('keeps the listing’s own variants, ids and disabled ones, taking only stock from the form', async () => {
+      const result = await open({ content: false, price: false, variants: true });
+      act(() => {
+        result.current.form.setValue('variants.0.sku', 'TYPED');
+        result.current.form.setValue('variants.0.quantity', '9');
+      });
+
+      await act(async () => {
+        await result.current.submit();
+      });
+
+      expect(saved().variants.map(({ id, enabled }) => [id, enabled])).toEqual([
+        ['shopify-aaa', true],
+        ['shopify-bbb', false],
+      ]);
+      expect(saved().variants[0]).toMatchObject({ sku: 'A', quantity: 9, options: { size: '42' } });
+    });
+
+    it('rewrites the variants as the form has them when nothing follows the store', async () => {
+      const result = await open({ content: false, price: false, variants: false });
+
+      await act(async () => {
+        await result.current.submit();
+      });
+
+      expect(saved().variants.map(({ id }) => id)).toEqual(['variant_1', 'variant_2']);
+    });
+
+    it('writes nothing while the linked stores are not known, whichever button asks, and says why unless silent', async () => {
+      vi.mocked(CommerceController.getOrFetchListing).mockResolvedValue(storeListing());
+      const { result } = renderHook(() => useEditMarketplaceListing(OWNER, LISTING_ID, { storeSyncReady: false }));
+      await waitFor(() => expect(result.current.status).toBe('ready'));
+
+      await act(async () => {
+        await result.current.submit();
+      });
+      expect(toast).toHaveBeenCalledWith(
+        expect.objectContaining({ description: expect.stringContaining('store connection') }),
+      );
+      vi.mocked(toast).mockClear();
+      await act(async () => {
+        await result.current.submit({ silent: true });
+      });
+
+      expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+      expect(toast).not.toHaveBeenCalled();
+    });
+
+    it('refuses to save when a variant row was removed while their prices follow the store', async () => {
+      const result = await open({ content: false, price: true, variants: false });
+      act(() => result.current.form.setValue('variants', [result.current.form.getValues('variants.1')]));
+
+      await act(async () => {
+        await result.current.submit();
+      });
+
+      expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+      expect(toast).toHaveBeenCalledWith(
+        expect.objectContaining({ description: expect.stringContaining('cannot be added or removed') }),
+      );
+    });
+
+    it('takes every variant row back when a row was removed here and the group follows the store again', async () => {
+      const result = await open({ content: false, price: false, variants: false });
+      act(() => result.current.form.setValue('variants', [result.current.form.getValues('variants.1')]));
+      expect(result.current.form.getValues('variants')).toHaveLength(1);
+
+      act(() => result.current.resetFollowedGroup('variants'));
+
+      expect(result.current.form.getValues('variants').map(({ sku, quantity }) => [sku, quantity])).toEqual([
+        ['A', '3'],
+        ['B', '2'],
+      ]);
+    });
+
+    it('refuses a save whose removed variant row became a followed price while the save was running', async () => {
+      vi.mocked(CommerceController.getOrFetchListing).mockResolvedValue(storeListing());
+      const hook = renderHook(({ follows }) => useEditMarketplaceListing(OWNER, LISTING_ID, { follows }), {
+        initialProps: { follows: { content: false, price: false, variants: false } },
+      });
+      await waitFor(() => expect(hook.result.current.status).toBe('ready'));
+      act(() => hook.result.current.form.setValue('variants', [hook.result.current.form.getValues('variants.1')]));
+      let release: (config: {
+        bitcoinAvailable: boolean;
+        bitcoinOfferAvailable: boolean;
+        paypalAvailable: boolean;
+      }) => void = () => {};
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            release = resolve as typeof release;
+          }),
+      );
+
+      let saving: Promise<string | null> = Promise.resolve(null);
+      act(() => {
+        saving = hook.result.current.submit();
+      });
+      hook.rerender({ follows: { content: false, price: true, variants: false } });
+      await act(async () => {
+        release({ bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: false });
+        await saving;
+      });
+
+      expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+      expect(toast).toHaveBeenCalledWith(
+        expect.objectContaining({ description: expect.stringContaining('cannot be added or removed') }),
+      );
+    });
+
+    it('restores the published currency with the price when the price follows the store again', async () => {
+      const result = await open({ content: false, price: false, variants: false });
+      act(() => {
+        result.current.form.setValue('currency', 'EUR');
+        result.current.form.setValue('price', '999.00');
+        result.current.form.setValue('variants.1.priceOverride', '3.00');
+      });
+
+      act(() => result.current.resetFollowedGroup('price'));
+
+      expect(result.current.form.getValues('currency')).toBe('USD');
+      expect(result.current.form.getValues('price')).toBe('125.00');
+      expect(result.current.form.getValues('variants.1.priceOverride')).toBe('200.00');
+    });
+
+    it('saves a followed group as published when it began following while the save was running', async () => {
+      vi.mocked(CommerceController.getOrFetchListing).mockResolvedValue(storeListing());
+      const hook = renderHook(({ follows }) => useEditMarketplaceListing(OWNER, LISTING_ID, { follows }), {
+        initialProps: { follows: { content: false, price: false, variants: false } },
+      });
+      await waitFor(() => expect(hook.result.current.status).toBe('ready'));
+      act(() => hook.result.current.form.setValue('title', 'Typed while not following'));
+      let release: (config: {
+        bitcoinAvailable: boolean;
+        bitcoinOfferAvailable: boolean;
+        paypalAvailable: boolean;
+      }) => void = () => {};
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            release = resolve as typeof release;
+          }),
+      );
+
+      let saving: Promise<string | null> = Promise.resolve(null);
+      act(() => {
+        saving = hook.result.current.submit();
+      });
+      hook.rerender({ follows: { content: true, price: false, variants: false } });
+      await act(async () => {
+        release({ bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: false });
+        await saving;
+      });
+
+      expect(saved().title).toBe('Vintage leather boots');
+    });
+
+    it('puts a followed group’s fields back to the published values', async () => {
+      const result = await open({ content: false, price: false, variants: false });
+      act(() => {
+        result.current.form.setValue('title', 'Typed');
+        result.current.form.setValue('description', 'Typed text');
+        result.current.form.setValue('price', '1.00');
+        result.current.form.setValue('variants.0.sku', 'TYPED');
+        result.current.form.setValue('variants.1.priceOverride', '3.00');
+      });
+
+      act(() => result.current.resetFollowedGroup('content'));
+      expect(result.current.form.getValues('title')).toBe('Vintage leather boots');
+      expect(result.current.form.getValues('description')).toBe('Well cared for boots with light wear.');
+      expect(result.current.media.items).toEqual([expect.objectContaining({ kind: 'existing', key: 'image_01' })]);
+      expect(result.current.form.getValues('price')).toBe('1.00');
+
+      act(() => result.current.resetFollowedGroup('price'));
+      expect(result.current.form.getValues('price')).toBe('125.00');
+      expect(result.current.form.getValues('variants.1.priceOverride')).toBe('200.00');
+
+      act(() => result.current.resetFollowedGroup('variants'));
+      expect(result.current.form.getValues('variants.0.sku')).toBe('A');
     });
   });
 

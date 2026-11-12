@@ -23,6 +23,7 @@
  */
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { blake3 } from '@noble/hashes/blake3.js';
 import { chromium } from 'playwright';
 
 const BASE = process.env.SHOP_URL ?? 'http://localhost:3000';
@@ -74,9 +75,16 @@ async function registerIdentity(label) {
   return { label, keypair, id };
 }
 
+// The Shop's IndexedDB database, created on the first load of a browser profile.
+const SHOP_DATABASE = 'shop-franky';
+// A live link is approved in milliseconds. The relay holds an approval until the Shop polls that channel, so a
+// link nobody polls hangs the signer for minutes; say so early.
+const APPROVE_TIMEOUT_MS = 30_000;
+
 async function readAuthUrl(page) {
   await page.evaluate(() => {
-    window.__copied = null;
+    if (window.__copyHooked) return;
+    window.__copyHooked = true;
     const original = navigator.clipboard?.writeText?.bind(navigator.clipboard);
     navigator.clipboard.writeText = async (text) => {
       window.__copied = text;
@@ -84,6 +92,9 @@ async function readAuthUrl(page) {
         await original?.(text);
       } catch {}
     };
+  });
+  await page.evaluate(() => {
+    window.__copied = null;
   });
   const slot = page.locator('[data-testid="qr-auth-url"]').first();
   await slot.waitFor({ state: 'attached', timeout: 30_000 });
@@ -96,24 +107,132 @@ async function readAuthUrl(page) {
   return await handle.jsonValue();
 }
 
+function trackRequests(page) {
+  const events = [];
+  const note = (kind) => (request) => events.push({ kind, url: request.url(), at: Date.now() });
+  page.on('request', note('start'));
+  page.on('requestfinished', note('finished'));
+  page.on('requestfailed', note('failed'));
+  return events;
+}
+
+// The relay channel a grant link is polled on, as the SDK documents it for SigninGrantDeepLink: the unpadded
+// base64url of BLAKE3(secret) for a shared-secret link, of BLAKE3("pubky-grant-relay-channel-v1" || 0x00 || epk)
+// for an HPKE link (the Shop asks for scoped encryption keys, signedApprovalV1).
+function relayChannelOf(authUrl) {
+  const link = sdk.SigninGrantDeepLink.parse(authUrl);
+  try {
+    const relay = link.baseRelayUrl;
+    const secret = link.secret;
+    const epk = link.ephemeralPublicKey;
+    let input;
+    if (secret) input = secret;
+    else if (epk)
+      input = Buffer.concat([Buffer.from('pubky-grant-relay-channel-v1'), Buffer.from([0]), Buffer.from(epk)]);
+    else throw new Error(`sign-in link with neither secret nor epk: ${authUrl.slice(0, 40)}`);
+    return { relay, channel: Buffer.from(blake3(input)).toString('base64url') };
+  } finally {
+    link.free();
+  }
+}
+
+/**
+ * Loads the sign-in page of a fresh browser profile until the Shop's database exists and is open, then loads it
+ * again.
+ *
+ * The first load of a profile creates the database; the route guard then swaps the page for a spinner until the
+ * migration state clears, and the sign-in page mounts a second time. The second mount cancels the first mount's
+ * flow, whose QR was on screen for a few tens of milliseconds. The relay holds an approval for a channel until
+ * the Shop polls it, so approving the cancelled link either hangs the signer until its request times out or hands
+ * the approval to the poll being torn down: the sign-in never completes. A profile that already has the database
+ * mounts the page once, and its link belongs to the flow the page keeps.
+ */
+async function loadSignInPage(page) {
+  await page.goto(`${BASE}/sign-in`, { waitUntil: 'domcontentloaded' });
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    // The Shop's `Dexie.exists` probe opens the name once without a version, which lists a native version 1
+    // database for a moment before deleting it. The Shop's own database has the declared, higher version.
+    const listed = await page.evaluate(
+      async (name) => (await indexedDB.databases()).some((database) => database.name === name && database.version > 1),
+      SHOP_DATABASE,
+    );
+    // An open without a version waits for the creating upgrade; the schema check keeps a half-made database from
+    // passing.
+    const ready =
+      listed &&
+      (await page.evaluate(
+        (name) =>
+          new Promise((resolve, reject) => {
+            const request = indexedDB.open(name);
+            request.onsuccess = () => {
+              const hasSchema = request.result.objectStoreNames.contains('chat_messages');
+              request.result.close();
+              resolve(hasSchema);
+            };
+            request.onerror = () => reject(request.error);
+          }),
+        SHOP_DATABASE,
+      ));
+    if (ready) break;
+    if (Date.now() > deadline) throw new Error(`the Shop never finished creating its ${SHOP_DATABASE} database`);
+    await sleep(50);
+  }
+  await page.goto(`${BASE}/sign-in`, { waitUntil: 'domcontentloaded' });
+}
+
+/**
+ * Reads the sign-in link and checks that the page still owns it: the latest request on its relay channel is a
+ * poll in flight (not aborted, not finished), and no later flow has started on the same relay. A link that fails
+ * this is read again; nothing has been approved yet, so this waits for the page and does not retry an approval.
+ */
+async function readLiveAuthUrl(page, events, label) {
+  const deadline = Date.now() + 60_000;
+  let last = 'no link read';
+  while (Date.now() < deadline) {
+    const url = await readAuthUrl(page);
+    const { relay, channel } = relayChannelOf(url);
+    const onRelay = events.filter((event) => event.url.startsWith(relay));
+    const ownStart = onRelay.findIndex((event) => event.kind === 'start' && event.url.endsWith(`/${channel}`));
+    if (ownStart === -1) {
+      last = 'the page has not polled this link on its relay';
+    } else {
+      const after = onRelay.slice(ownStart);
+      const latestOwn = after.filter((event) => event.url.endsWith(`/${channel}`)).at(-1);
+      if (latestOwn.kind !== 'start') last = `the page's last poll of this link ${latestOwn.kind}`;
+      else if (after.some((event) => event.kind === 'start' && !event.url.endsWith(`/${channel}`)))
+        last = 'the page started a newer flow';
+      else return url;
+    }
+    await sleep(200);
+  }
+  throw new Error(`[${label}] no sign-in link stayed live: ${last}`);
+}
+
+async function approveSignIn(identity, url) {
+  let timer;
+  try {
+    await Promise.race([
+      pubky.signer(identity.keypair).approveAuthRequest(url),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error(
+            `approveAuthRequest returned nothing within ${APPROVE_TIMEOUT_MS / 1000} s: no poll on the link's relay channel took the approval`,
+          );
+          error.name = 'ApproveTimeout';
+          reject(error);
+        }, APPROVE_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function signIn(context, identity, name) {
   const page = await context.newPage();
+  const events = trackRequests(page);
   page.on('pageerror', (error) => console.error(`[${identity.label}] pageerror`, String(error)));
-  await page.goto(`${BASE}/sign-in`, { waitUntil: 'domcontentloaded' });
-  const url = await readAuthUrl(page);
-  if (!url.startsWith('pubkyauth://signin_grant')) {
-    throw new Error(`[${identity.label}] expected a grant sign-in link, got ${url.slice(0, 40)}`);
-  }
-  console.log(`[${identity.label}] approving ${url.slice(0, 60)}…`);
-  // The local relay occasionally drops the first POST right after a dev-server rebuild; one retry covers it.
-  try {
-    await pubky.signer(identity.keypair).approveAuthRequest(url);
-  } catch (error) {
-    console.warn(`[${identity.label}] approval failed once, retrying`, String(error).slice(0, 120));
-    await sleep(1_000);
-    await pubky.signer(identity.keypair).approveAuthRequest(url);
-  }
-  console.log(`[${identity.label}] approved`);
   page.on('console', (message) => {
     const text = message.text();
     if (message.type() === 'error' && !text.includes('Failed to load resource')) {
@@ -123,14 +242,35 @@ async function signIn(context, identity, name) {
       console.warn(`[${identity.label}] console.warn`, text.slice(0, 300));
   });
   try {
+    await loadSignInPage(page);
+    const url = await readLiveAuthUrl(page, events, identity.label);
+    if (!url.startsWith('pubkyauth://signin_grant')) {
+      throw new Error(`[${identity.label}] expected a grant sign-in link, got ${url.slice(0, 40)}`);
+    }
+    console.log(`[${identity.label}] approving ${url.slice(0, 60)}…`);
+    // The local relay occasionally drops the first POST right after a dev-server rebuild; one retry covers it.
+    // A timeout is not that: it means the link is not being polled.
+    try {
+      await approveSignIn(identity, url);
+    } catch (error) {
+      if (error.name === 'ApproveTimeout') throw error;
+      console.warn(`[${identity.label}] approval failed once, retrying`, String(error).slice(0, 120));
+      await sleep(1_000);
+      await approveSignIn(identity, url);
+    }
+    console.log(`[${identity.label}] approved`);
     await waitForSignedIn(page, identity, name);
     // Chat is set up on the first non-onboarding route after sign-in.
     await page.goto(`${BASE}/messages`, { waitUntil: 'domcontentloaded' });
     await page.locator('[data-surface="chat-inbox"]').waitFor({ state: 'visible', timeout: 60_000 });
   } catch (error) {
-    const state = await page.evaluate(() => localStorage.getItem('shop-auth-store'));
-    console.error(`[${identity.label}] sign-in wait failed at ${page.url()} store=${state}`);
-    await snap(page, `fail-signin-${identity.label}`);
+    const state = await page.evaluate(() => localStorage.getItem('shop-auth-store')).catch(() => null);
+    console.error(`[${identity.label}] sign-in failed at ${page.url()} store=${state}`);
+    const started = events[0]?.at ?? Date.now();
+    for (const event of events.filter((entry) => /\/link\/|\/inbox\//u.test(entry.url))) {
+      console.error(`[${identity.label}] relay ${event.kind} +${event.at - started} ms …${event.url.slice(-8)}`);
+    }
+    await snap(page, `fail-signin-${identity.label}`).catch(() => {});
     throw error;
   }
   return page;
@@ -480,14 +620,26 @@ try {
       }),
   );
   console.log('[alice] conversations before device two', JSON.stringify(aliceConversations));
+  let nodeSession;
   try {
-    const nodeSession = await pubky.signer(alice.keypair).signinCookie();
+    nodeSession = await pubky.signer(alice.keypair).signin('marketplace-chat-e2e');
     const privList = await nodeSession.storage.list('/priv/chat/v0/conversations/', null, false, 100, false);
     const privKey = await nodeSession.storage.get('/priv/chat/v0/key.json');
     const privKeyJson = privKey.ok ? await privKey.json() : null;
     console.log('[alice] homeserver /priv conversations', privList.length, 'key kid', privKeyJson?.kid);
   } catch (error) {
     console.error('[alice] node /priv probe failed', String(error).slice(0, 200));
+  }
+  if (nodeSession) {
+    // The reads above are diagnostic, but a root grant left live fails the run.
+    try {
+      await nodeSession.signout();
+      record('homeserver:node-probe-grant-ended', true);
+    } catch (error) {
+      record('homeserver:node-probe-grant-ended', false, String(error).slice(0, 200));
+    } finally {
+      nodeSession.free();
+    }
   }
   const deviceTwo = await makeContext();
   const alicePageTwo = await signIn(deviceTwo, alice, 'Alice Seller');

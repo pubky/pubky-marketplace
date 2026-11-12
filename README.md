@@ -113,7 +113,8 @@ All deployer-facing values are `PUBKY_RUNTIME_*` variables, validated by
 - Check architecture and coding conventions: [docs/README.md](./docs/README.md)
 - Contribute: [CONTRIBUTING.md](./CONTRIBUTING.md); run `bash scripts/prepush.sh` before every push
 - Release: [docs/ecommerce/release.md](./docs/ecommerce/release.md)
-- Run local code review workflow (Cursor): use `/review` (defined in `.cursor/skills/code-review/SKILL.md`)
+- Follow the development workflow: [docs/development-workflow.md](./docs/development-workflow.md)
+- Run a local code review: use the shared [pubky-code-review skill](./.agents/skills/pubky-code-review/SKILL.md); the Cursor `code-review` skill delegates to the same instructions
 - Follow commit message format: [docs/commit-message.md](./docs/commit-message.md)
 
 ## License

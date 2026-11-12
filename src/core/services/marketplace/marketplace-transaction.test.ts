@@ -56,6 +56,9 @@ const config = vi.hoisted(() => ({
   mode: 'transaction-service' as string,
 }));
 
+// These transport tests do not exercise homeserver IO. Avoid the SDK's global fetch wrapper.
+vi.mock('@/services/homeserver/homeserver', () => ({ HomeserverService: {} }));
+
 vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
   return {
@@ -64,10 +67,6 @@ vi.mock('@/config/commerce', async () => {
     getMarketplaceUrl: () => 'http://127.0.0.1:8080',
   };
 });
-
-vi.mock('@/services/homeserver/homeserver', () => ({
-  HomeserverService: { generateAuthTokenFlow: vi.fn() },
-}));
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -87,17 +86,16 @@ function bidCommand() {
   };
 }
 
-async function establishSession(): Promise<void> {
-  vi.mocked(fetch).mockResolvedValueOnce(
-    jsonResponse(201, {
+function establishSession(): void {
+  MarketplaceSessionService.establishClaimedGrantSession(
+    {
       token: 'A'.repeat(43),
       pubky: ACTOR,
-      capabilities: '',
-      expires_at: new Date(Date.now() + 86_400_000).toISOString(),
-    }),
+      capabilities: MARKETPLACE_SESSION_GRANT,
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+    },
+    ACTOR,
   );
-  await MarketplaceSessionService.establishWithAuthToken(new Uint8Array([1]), ACTOR);
-  vi.mocked(fetch).mockClear();
 }
 
 describe('MarketplaceTransactionService.execute', () => {

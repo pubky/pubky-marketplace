@@ -15,7 +15,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
 }));
 
 const toast = vi.hoisted(() => vi.fn());
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast }));
 
 const HASH_COPY = 'Enter the Arbitrum transaction hash (0x followed by 64 characters).';
 

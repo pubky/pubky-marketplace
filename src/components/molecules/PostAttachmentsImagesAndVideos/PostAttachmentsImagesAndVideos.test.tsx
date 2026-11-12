@@ -82,8 +82,8 @@ vi.mock('@/atoms/Dialog/Dialog', () => {
   };
 });
 
-// Mock useToast
-const mockToast = vi.fn();
+// Mock toast
+const mockToast = vi.hoisted(() => vi.fn());
 vi.mock('@/molecules/PostAttachmentsCarouselImage/PostAttachmentsCarouselImage', async (importOriginal) => {
   const actual =
     await importOriginal<typeof import('@/molecules/PostAttachmentsCarouselImage/PostAttachmentsCarouselImage')>();
@@ -105,9 +105,9 @@ vi.mock('@/molecules/PostAttachmentsCarouselImage/PostAttachmentsCarouselImage',
   };
 });
 
-vi.mock('@/molecules/Toaster/use-toast', () => {
+vi.mock('@/molecules/Toaster/toast', () => {
   return {
-    useToast: () => ({ toast: mockToast }),
+    toast: mockToast,
   };
 });
 

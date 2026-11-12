@@ -31,7 +31,7 @@ import type {
   CommerceReputationSnippet,
   CommerceReviewMatch,
 } from '@/models/commerce/commerce.schema';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 /**

@@ -31,7 +31,7 @@ import {
 } from '@/hooks/useOwnDrop/useOwnDrop';
 import type { DropState } from '@/libs/commerce/transaction-contracts';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import type { MarketplaceSellerDrop } from '@/services/marketplace/marketplace-projections';
 
