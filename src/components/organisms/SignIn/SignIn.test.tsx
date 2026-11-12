@@ -3,7 +3,6 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useGrantSignInAvailable } from '@/hooks/useGrantSignInAvailable/useGrantSignInAvailable';
 import { useMobileAuth } from '@/hooks/useMobileAuth/useMobileAuth';
-import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { SignInContent, SignInFooter } from './SignIn';
 
@@ -271,7 +270,6 @@ describe('SignInContent', () => {
   });
 
   beforeEach(() => {
-    useOnboardingStore.setState({ secretKey: null, mnemonic: null, hasHydrated: true });
     vi.clearAllMocks();
     window.location.href = '';
     clipboardMock.writeText.mockClear();
@@ -537,7 +535,6 @@ describe('SignInContent', () => {
 
 describe('SignInContent - one QR for Pubky Ring and Bitkit', () => {
   beforeEach(() => {
-    useOnboardingStore.setState({ secretKey: null, mnemonic: null, hasHydrated: true });
     vi.clearAllMocks();
     resetMockSignInState();
     resetMobileAuthMock();
@@ -643,7 +640,6 @@ describe('SignInContent - one QR for Pubky Ring and Bitkit', () => {
 
 describe('SignInContent - sign-in without scoped keys', () => {
   beforeEach(() => {
-    useOnboardingStore.setState({ secretKey: null, mnemonic: null, hasHydrated: true });
     vi.clearAllMocks();
     resetMockSignInState();
     resetMobileAuthMock();
@@ -703,7 +699,6 @@ describe('SignInContent - Progress View', () => {
   });
 
   beforeEach(() => {
-    useOnboardingStore.setState({ secretKey: null, mnemonic: null, hasHydrated: true });
     vi.clearAllMocks();
     resetMockSignInState();
     resetMobileAuthMock();
@@ -802,27 +797,7 @@ describe('SignInContent - Progress View', () => {
 
 describe('SignInFooter', () => {
   beforeEach(() => {
-    useOnboardingStore.setState({ secretKey: null, mnemonic: null, hasHydrated: true });
     resetMockSignInState();
-  });
-
-  it('offers saved-key backup and does not erase it when signin mounts', () => {
-    resetMobileAuthMock();
-    useOnboardingStore.setState({ secretKey: 'ab'.repeat(32), mnemonic: null, hasHydrated: true });
-    render(
-      <>
-        <SignInContent />
-        <SignInFooter />
-      </>,
-    );
-    expect(screen.getByRole('link', { name: 'Back up saved keys' })).toHaveAttribute('href', '/backup');
-    expect(useOnboardingStore.getState().secretKey).toBe('ab'.repeat(32));
-  });
-
-  it('does not offer backup when saved material is absent or invalid', () => {
-    useOnboardingStore.setState({ secretKey: 'malformed', mnemonic: 'malformed' });
-    render(<SignInFooter />);
-    expect(screen.queryByRole('link', { name: 'Back up saved keys' })).not.toBeInTheDocument();
   });
 
   it('renders footer with recovery message', () => {
@@ -846,7 +821,6 @@ describe('SignInFooter', () => {
 
 describe('SignInContent - Continue with Google (Pubky Passport)', () => {
   beforeEach(() => {
-    useOnboardingStore.setState({ secretKey: null, mnemonic: null, hasHydrated: true });
     vi.clearAllMocks();
     mockSignInState.authUrlResolved = false;
     resetMobileAuthMock();

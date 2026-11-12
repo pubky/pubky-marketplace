@@ -19,7 +19,7 @@ export function Header() {
   const { isCoreExploreRoute, isDynamicPublicRoute } = usePublicRoute();
   const isEmbedded = useIsEmbedded();
 
-  const isAccountMaintenance = pathname === ACCOUNT_ROUTES.COMPLETE_PROFILE || pathname === ACCOUNT_ROUTES.BACKUP;
+  const isAccountMaintenance = pathname === ACCOUNT_ROUTES.COMPLETE_PROFILE;
   const isAuthFlowLayout = isAccountMaintenance || pathname === AUTH_ROUTES.SIGN_IN || pathname === AUTH_ROUTES.LOGOUT;
   const isCopyrightPage = pathname === '/copyright';
   const currentTitle = pathname ? pathToTitle[pathname] : undefined;

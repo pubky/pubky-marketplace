@@ -507,13 +507,10 @@ describe('account maintenance chrome', () => {
     mockIsPublicRoute.mockReturnValue(false);
     mockIsCoreExploreRoute.mockReturnValue(false);
   });
-  it.each([
-    [ACCOUNT_ROUTES.COMPLETE_PROFILE, 'Complete profile'],
-    [ACCOUNT_ROUTES.BACKUP, 'Back up saved keys'],
-  ])('shows a simple header on %s', (path, title) => {
-    mockUsePathname.mockReturnValue(path);
+  it('shows a simple header on profile completion', () => {
+    mockUsePathname.mockReturnValue(ACCOUNT_ROUTES.COMPLETE_PROFILE);
     render(<Header />);
-    expect(screen.getByTestId('header-title')).toHaveTextContent(title);
+    expect(screen.getByTestId('header-title')).toHaveTextContent('Complete profile');
     expect(screen.getByTestId('header-container')).not.toHaveAttribute('data-class-name', 'hidden lg:block');
     expect(screen.getByTestId('header-container')).toHaveAttribute(
       'data-class-name-nav',

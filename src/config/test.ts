@@ -18,9 +18,6 @@ process.env.NEXT_PUBLIC_DB_VERSION = '1';
 process.env.NEXT_PUBLIC_DEBUG_MODE = 'false';
 process.env.PUBKY_RUNTIME_NEXUS_URL = 'https://nexus.staging.pubky.app';
 process.env.PUBKY_RUNTIME_CDN_URL = 'https://nexus.staging.pubky.app/static';
-// Server-side only admin credentials (not exposed to client)
-process.env.HOMESERVER_ADMIN_URL = 'http://localhost:6288/generate_signup_token';
-process.env.HOMESERVER_ADMIN_PASSWORD = 'admin';
 process.env.PUBKY_RUNTIME_TESTNET = 'true';
 process.env.PUBKY_RUNTIME_PKARR_RELAYS = '["http://localhost:8080"]';
 process.env.PUBKY_RUNTIME_HOMESERVER = 'test-homeserver-key';

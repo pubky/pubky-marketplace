@@ -32,7 +32,7 @@ throw 'Something went wrong';
 
 **Codes** (WHICH specific error): `WRITE_FAILED`, `NOT_FOUND`, `UNAUTHORIZED`, `SESSION_EXPIRED`, etc.
 
-**Services** (WHERE it originated): `Nexus`, `Homeserver`, `Homegate`, `Local`, etc.
+**Services** (WHERE it originated): `Nexus`, `Homeserver`, `Local`, etc.
 
 ## Current Reality
 

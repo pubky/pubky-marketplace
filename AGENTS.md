@@ -59,8 +59,8 @@ Controller names describe IO: `fetch*` network only, `get*` local only, `getMany
 
 - Errors: use `Err.*` factories; no raw `Error` or log-then-throw. Follow documented boundary exceptions in
   `docs/error-handling.md`.
-- Shop signs in existing accounts; signup is retired. Keep `/complete-profile` for missing profiles and public `/backup`
-  for saved legacy keys, including failed restore; preserve explicit logout/account cleanup. `docs/launch/grant-auth-session.md`.
+- Shop signs in existing accounts; signup is retired. Keep `/complete-profile` for missing profiles; Shop stores and
+  exports no account keys. Preserve explicit logout/account cleanup. `docs/launch/grant-auth-session.md`.
 - Local-first reads in hooks: use `useLocalFirstQuery` for the standard local-read/network-fallback pattern. Keep network,
   TanStack Query and retry logic outside `useLiveQuery`. Purely local reactive reads still use `useLiveQuery`.
   `docs/local-first.md` owns the detailed contract and limitations.

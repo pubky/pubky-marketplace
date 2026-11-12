@@ -5,7 +5,6 @@ export const ROOT_ROUTES = '/';
 
 export enum ACCOUNT_ROUTES {
   COMPLETE_PROFILE = '/complete-profile',
-  BACKUP = '/backup',
 }
 
 export enum AUTH_ROUTES {
@@ -155,8 +154,6 @@ export const EXPLORE_ROUTES: string[] = [
 // still finish before app shell routes render for logged-in users.
 export const PUBLIC_ROUTES: string[] = [
   AUTH_ROUTES.LOGOUT,
-  // Local legacy recovery is accessible without waiting for auth restoration.
-  ACCOUNT_ROUTES.BACKUP,
   // Profile is public to prevent RouteGuard redirect during logout.
   // The profile page components handle unauthenticated state gracefully.
   APP_ROUTES.PROFILE,

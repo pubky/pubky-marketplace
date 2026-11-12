@@ -66,7 +66,6 @@ const SHOP_PATHS = [
   '/sign-in',
   '/logout',
   '/complete-profile',
-  '/backup',
   '/copyright',
   '/offline',
   '/share',
@@ -286,7 +285,7 @@ describe('retired signup compatibility', () => {
     const configured = (await loadCustomRoutes({ basePath, redirects, skipTrailingSlashRedirect: true })).redirects;
     for (const [source, destination] of [
       ['/onboarding/profile', '/complete-profile'],
-      ['/onboarding/backup', '/backup'],
+      ['/onboarding/backup', '/sign-in'],
       ['/onboarding/human', '/sign-in'],
       ['/onboarding/install', '/sign-in'],
       ['/onboarding/pubky', '/sign-in'],
@@ -296,12 +295,7 @@ describe('retired signup compatibility', () => {
     ]) {
       expect(resolveRedirect(configured, `${basePath}${source}`)).toBe(`${SHOP_ORIGIN}${basePath}${destination}`);
     }
-    for (const path of [
-      '/marketplace/shop/fictional-seller',
-      '/auth/passport/return',
-      '/complete-profile',
-      '/backup',
-    ]) {
+    for (const path of ['/marketplace/shop/fictional-seller', '/auth/passport/return', '/complete-profile']) {
       expect(resolveRedirect(configured, `${basePath}${path}`)).toBeNull();
     }
   });

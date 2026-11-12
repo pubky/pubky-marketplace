@@ -29,7 +29,6 @@ export class NotificationCoordinator extends Coordinator<NotificationCoordinator
   private notificationConfig: Required<Pick<NotificationCoordinatorConfig, 'disabledRoutes'>> = {
     disabledRoutes: [
       routeToRegex(ACCOUNT_ROUTES.COMPLETE_PROFILE),
-      routeToRegex(ACCOUNT_ROUTES.BACKUP),
       routeToRegex(AUTH_ROUTES.LOGOUT),
       routeToRegex(AUTH_ROUTES.SIGN_IN),
     ],

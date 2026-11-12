@@ -38,7 +38,7 @@ export function resolveMountConfig(env: Record<string, string | undefined>) {
 export const redirects = async () => [
   // Retired signup URLs keep exact, temporary aliases; seller shops remain dynamic.
   { source: '/onboarding/profile', destination: '/complete-profile', permanent: false },
-  { source: '/onboarding/backup', destination: '/backup', permanent: false },
+  { source: '/onboarding/backup', destination: '/sign-in', permanent: false },
   { source: '/onboarding/human', destination: '/sign-in', permanent: false },
   { source: '/onboarding/install', destination: '/sign-in', permanent: false },
   { source: '/onboarding/pubky', destination: '/sign-in', permanent: false },

@@ -7,15 +7,12 @@ import { preloadImages, renderForVRT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { createZustandLikeHook } from '@/test-utils/stores';
 import { SignInContent } from '@/organisms/SignIn/SignIn';
-import { Header } from '@/organisms/Header/Header';
-import { SignInPage } from '@/templates/Auth/SignInPage/SignInPage';
 import { expectGraphicContrast, expectTextContrast } from '@/test-utils/color-contrast';
 
 const SIGN_IN_IMAGE_URLS = ['/images/keyring.webp', '/images/sign-in/cloud.webp'];
 
 const deploy = vi.hoisted(() => ({ requestsKeys: false }));
 const authState = vi.hoisted(() => ({ isLoading: false }));
-const backupState = vi.hoisted(() => ({ saved: false }));
 
 // The QR encodes the approval URL, which is minted from the network and changes every run.
 // Pin it so QRCodeSVG draws the same matrix on every run and OS.
@@ -59,32 +56,10 @@ vi.mock('@/stores/signIn/signIn.store', () => ({
   }),
 }));
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
-  usePathname: () => '/sign-in',
-  useSearchParams: () => new URLSearchParams(),
-  useParams: () => ({}),
-}));
-vi.mock('@/stores/auth/auth.store', () => ({
-  useAuthStore: createZustandLikeHook({ currentUserPubky: null, session: null, hasHydrated: true }),
-}));
-vi.mock('@/hooks/usePublicRoute/usePublicRoute', () => ({
-  usePublicRoute: () => ({ isCoreExploreRoute: false, isDynamicPublicRoute: false }),
-}));
-
-vi.mock('@/stores/onboarding/onboarding.store', () => ({
-  useOnboardingStore: createZustandLikeHook({
-    hasHydrated: true,
-    selectHasSecretKey: () => backupState.saved,
-    selectHasMnemonic: () => backupState.saved,
-  }),
-}));
-
 describe('SignIn (one QR for Pubky Ring and Bitkit) — visual regression', () => {
   beforeEach(() => {
     deploy.requestsKeys = false;
     authState.isLoading = false;
-    backupState.saved = false;
   });
 
   it('keeps the QR loading text and spinner visible in light mode', async () => {
@@ -123,21 +98,5 @@ describe('SignIn (one QR for Pubky Ring and Bitkit) — visual regression', () =
     await preloadImages(SIGN_IN_IMAGE_URLS);
     const screen = await renderForVRT(<SignInContent />, { viewport: VRT_VIEWPORT_MOBILE, disableHover: true });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('sign-in-one-qr-mobile');
-  });
-  it.each([
-    ['desktop', VRT_VIEWPORT_DESKTOP],
-    ['mobile', VRT_VIEWPORT_MOBILE],
-  ] as const)('offers saved-key backup on %s', async (name, viewport) => {
-    backupState.saved = true;
-    await preloadImages(SIGN_IN_IMAGE_URLS);
-    const screen = await renderForVRT(
-      <>
-        <Header />
-        <SignInPage />
-      </>,
-      { viewport, disableHover: true },
-    );
-    await expect(screen.getByRole('link', { name: 'Back up saved keys' })).toHaveAttribute('href', '/backup');
-    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(`sign-in-saved-backup-${name}`);
   });
 });

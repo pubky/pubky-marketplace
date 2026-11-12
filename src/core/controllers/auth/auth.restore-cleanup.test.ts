@@ -15,8 +15,7 @@ import { INVENTORY_SESSION_STORAGE_KEY } from '@/services/marketplace/marketplac
 import { MARKETPLACE_SESSION_STORAGE_KEY } from '@/services/marketplace/marketplace-session';
 import { readPersistedAuthIdentity, readPersistedAuthPubky } from '@/stores/auth/auth.persisted';
 import { createAuthStore, useAuthStore } from '@/stores/auth/auth.store';
-import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
-import { AUTH_PERSIST_KEY, ONBOARDING_PERSIST_KEY } from '@/stores/persistedKeys';
+import { AUTH_PERSIST_KEY } from '@/stores/persistedKeys';
 import { mockKeypair, mockSession } from '@/test-utils/pubky';
 import { grantSession } from './auth.grant-test-utils';
 
@@ -254,7 +253,6 @@ describe('AuthController legacy restore cleanup with the real database', () => {
   afterEach(async () => {
     vi.useRealTimers();
     useAuthStore.getState().reset();
-    useOnboardingStore.getState().reset();
     window.localStorage.clear();
     window.sessionStorage.clear();
     Reflect.deleteProperty(navigator, 'locks');
@@ -277,10 +275,8 @@ describe('AuthController legacy restore cleanup with the real database', () => {
     // marketplace bearer, a stored route-return path, and
     // mute-sync stream cursors.
     window.localStorage.setItem(MARKETPLACE_SESSION_STORAGE_KEY, '{"token":"dead-bearer"}');
-    useOnboardingStore.setState({ secretKey: 'dead-secret-key', mnemonic: 'dead mnemonic' });
     window.sessionStorage.setItem(ROUTE_GUARD_RETURN_TO_STORAGE_KEY, '/settings');
     window.sessionStorage.setItem(`${MUTE_SYNC_CURSOR_STORAGE_PREFIX}homeserver`, '42');
-    expect(window.localStorage.getItem(ONBOARDING_PERSIST_KEY)).not.toBeNull();
 
     await expect(runRealBridgeTimeoutRestore(null)).resolves.toEqual({ status: 'signed-out' });
 
@@ -289,11 +285,6 @@ describe('AuthController legacy restore cleanup with the real database', () => {
     await expectTableCounts(EXPECTED_PUBLIC_CACHE_TABLES, 1);
     await expectTableCounts(EXPECTED_IDENTITY_SCOPED_DEVICE_TABLES, 1);
     expect(window.localStorage.getItem(MARKETPLACE_SESSION_STORAGE_KEY)).toBeNull();
-    expect(useOnboardingStore.getState()).toMatchObject({ secretKey: 'dead-secret-key', mnemonic: 'dead mnemonic' });
-    expect(JSON.parse(window.localStorage.getItem(ONBOARDING_PERSIST_KEY)!).state).toMatchObject({
-      secretKey: 'dead-secret-key',
-      mnemonic: 'dead mnemonic',
-    });
     expect(window.sessionStorage.getItem(ROUTE_GUARD_RETURN_TO_STORAGE_KEY)).toBeNull();
     expect(window.sessionStorage.getItem(`${MUTE_SYNC_CURSOR_STORAGE_PREFIX}homeserver`)).toBeNull();
   });

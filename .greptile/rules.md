@@ -12,7 +12,7 @@ Entry points (UI, Coordinators) -> Controllers -> Application -> Services -> Mod
 
 ## Account maintenance
 
-Shop account creation is retired. Existing accounts retain sign-in and `/complete-profile`; public `/backup` keeps locally saved legacy keys accessible when auth restoration is unavailable. Preserve explicit logout/account-boundary cleanup and the existing storage namespace. See `docs/launch/grant-auth-session.md`; registration helpers still used by explicit test harnesses are not dead code.
+Shop account creation is retired. Existing accounts retain sign-in and `/complete-profile`. Shop no longer stores or exports account keys; preserve explicit logout/account-boundary cleanup and the existing storage namespace. See `docs/launch/grant-auth-session.md`; registration helpers still used by explicit test harnesses are not dead code.
 
 ## Controller Naming Conventions
 

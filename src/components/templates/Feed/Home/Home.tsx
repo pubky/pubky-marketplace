@@ -2,7 +2,6 @@
 import { TIMELINE_FEED_VARIANT } from '@/config/feed';
 import { useDefaultHomeReach } from '@/hooks/useDefaultHomeReach/useDefaultHomeReach';
 import { TaggedAsHeadline } from '@/molecules/TaggedAsHeadline/TaggedAsHeadline';
-import { AlertBackup } from '@/organisms/AlertBackup/AlertBackup';
 import { FeedNavigation } from '@/organisms/FeedNavigation/FeedNavigation';
 import { MarketplaceFollowedSellersShelf } from '@/organisms/Marketplace/MarketplaceFollowedSellersShelf';
 import { PostInput } from '@/organisms/PostInput/PostInput';
@@ -19,7 +18,6 @@ export function Home() {
 
   return (
     <>
-      <AlertBackup />
       <FeedNavigation className="hidden lg:flex" />
       <TimelineFeed variant={TIMELINE_FEED_VARIANT.HOME} persistentHeader={<TaggedAsHeadline />}>
         <PostInput dataCy="home-post-input" variant={POST_INPUT_VARIANT.POST} />

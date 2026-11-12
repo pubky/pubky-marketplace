@@ -75,8 +75,8 @@ function createAppError<C extends ErrorCategory>(
  * ```typescript
  * // Remote service error
  * throw Err.server('SERVICE_UNAVAILABLE', 'Service unavailable', {
- *   service: ErrorService.Homegate,
- *   operation: 'verifySmsCode',
+ *   service: ErrorService.Homeserver,
+ *   operation: 'request',
  *   context: { endpoint: url, statusCode: 503 },
  * });
  */

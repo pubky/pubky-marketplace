@@ -35,7 +35,6 @@ export class MuteListSyncCoordinator {
 
   private readonly disabledRoutes = [
     routeToRegex(ACCOUNT_ROUTES.COMPLETE_PROFILE),
-    routeToRegex(ACCOUNT_ROUTES.BACKUP),
     routeToRegex(AUTH_ROUTES.LOGOUT),
     routeToRegex(AUTH_ROUTES.SIGN_IN),
   ];

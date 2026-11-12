@@ -3,7 +3,7 @@ import { renderToString } from 'react-dom/server';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { requestShopHostAction } from '@/libs/shop-session/bridge';
-import { ShopHostSessionProvider, useIsShopHosted } from './ShopHostSessionProvider';
+import { ShopHostSessionProvider } from './ShopHostSessionProvider';
 
 const mocks = vi.hoisted(() => ({
   embedded: false,
@@ -195,52 +195,4 @@ it('lets a first-time guest retry a failed cleanup without requesting authentica
   await waitFor(() => expect(screen.queryByText('Try again')).not.toBeInTheDocument());
   expect(screen.getByText('Public catalog')).toBeInTheDocument();
   expect(requestShopHostAction).not.toHaveBeenCalledWith('request-login');
-});
-
-it.each(['connecting', 'restoring', 'temporary-error', 'reauth-required', 'capabilities-required'])(
-  'keeps exact local recovery available while host state is %s',
-  async (status) => {
-    mocks.embedded = true;
-    mocks.hosted = true;
-    mocks.path = '/backup';
-    if (status === 'restoring') mocks.apply.mockReturnValue(new Promise(() => {}));
-    else mocks.apply.mockResolvedValue(status);
-    function RecoveryContent() {
-      const hosted = useIsShopHosted();
-      useEffect(() => {
-        mocks.mounted(mocks.owned);
-      }, []);
-      return <main data-hosted={hosted}>Local recovery</main>;
-    }
-    render(
-      <ShopHostSessionProvider>
-        <RecoveryContent />
-      </ShopHostSessionProvider>,
-    );
-    if (status !== 'connecting') {
-      act(() =>
-        window.dispatchEvent(new MessageEvent('message', { data: { status: 'ready', generation: 'recovery' } })),
-      );
-      await waitFor(() => expect(mocks.apply).toHaveBeenCalled());
-    }
-    expect(screen.getByText('Local recovery')).toHaveAttribute('data-hosted', 'true');
-    expect(mocks.mounted).toHaveBeenCalledWith(true);
-    expect(screen.queryByText('Restoring your session')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Continue in Pubky App' })).not.toBeInTheDocument();
-    expect(requestShopHostAction).not.toHaveBeenCalledWith('request-login');
-    expect(requestShopHostAction).not.toHaveBeenCalledWith('request-capabilities');
-  },
-);
-
-it('keeps paths below backup gated during host restoration', () => {
-  mocks.embedded = true;
-  mocks.hosted = true;
-  mocks.path = '/backup/private';
-  render(
-    <ShopHostSessionProvider>
-      <main>Nested content</main>
-    </ShopHostSessionProvider>,
-  );
-  expect(screen.queryByText('Nested content')).not.toBeInTheDocument();
-  expect(screen.getByText('Restoring your session')).toBeInTheDocument();
 });

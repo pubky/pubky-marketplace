@@ -190,8 +190,6 @@ These are prior embedding observations, not a completed live test of the new sha
 - The PayPal checkout hand-off, in the cart and accepted-offer paths.
 - Social-host profile links render `target="_top"` when embedded.
 
-The recovery-phrase "open in Ring" button (`DialogBackupExport`) still uses `window.open(url, '_blank')`: it exports locally saved legacy keys from the backup surface, and a new-tab open is a different mechanism from the frame navigation that fails.
-
 The Paykit setup and Lock Server connect panels are nested iframes whose sandbox already grants top navigation to custom protocols. They write no `location`, so nothing changes there; see the next section for their storage limits.
 
 ## Nested cross-site frames (Paykit setup, Lock Server connect)
@@ -229,7 +227,7 @@ Names the App also defines now carry a `shop-` prefix:
 |---|---|
 | Dexie `franky` | `shop-franky` |
 | Messaging keyring `franky-messaging-keyring` (retired with the old messaging transport; the Shop deletes it, see below) | `shop-franky-messaging-keyring` |
-| `auth-store`, `onboarding-storage`, `notification-store`, `search-store`, `home-store`, `hot-store`, `settings-storage`, `marketplace-display-storage` | the same names with `shop-` |
+| `auth-store`, `notification-store`, `search-store`, `home-store`, `hot-store`, `settings-storage`, `marketplace-display-storage` | the same names with `shop-` |
 | `pubky-feature-discovery:*` | `shop-pubky-feature-discovery:*` |
 | session keys `pubky:force-feed-scroll-top`, `pubky-app:mute-sync-cursor:*` | `shop-` prefixed (not migrated; per-tab) |
 

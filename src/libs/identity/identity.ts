@@ -1,75 +1,15 @@
 import { Keypair } from '@synonymdev/pubky';
 import * as bip39 from 'bip39';
-import { ClientErrorCode, ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
+import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import type { Pubky } from '@/models/models.types';
 import type { THomeserverSessionResult } from '@/services/homeserver/homeserver.types';
-import type { TCreateRecoveryFileParams, TDecryptRecoveryFileParams } from './identity.types';
+import type { TDecryptRecoveryFileParams } from './identity.types';
 
 export class Identity {
   // Mention pattern: pk: or pubky followed by exactly 52 lowercase alphanumeric characters
   static readonly PUBKY_IDENTIFIER_WITH_PREFIX_SOURCE = '(?:pk:|pubky)[a-z0-9]{52}';
-
-  /**
-   * Creates and downloads a recovery file for the keypair
-   * @param keypair - The keypair to create the recovery file for
-   * @param passphrase - The passphrase to use to create the recovery file
-   * @returns void
-   */
-  static createRecoveryFile({ keypair, passphrase }: TCreateRecoveryFileParams) {
-    try {
-      const recoveryFile = keypair.createRecoveryFile(passphrase);
-      this.handleDownloadRecoveryFile({ recoveryFile, filename: 'recovery.pkarr' });
-    } catch (error) {
-      // Re-throw validation errors
-      if (error instanceof Error && error.message.includes('Invalid secret key')) {
-        throw error;
-      }
-
-      throw Err.client(ClientErrorCode.UNPROCESSABLE, 'Failed to create recovery file, invalid secret key', {
-        service: ErrorService.Local,
-        operation: 'createRecoveryFile',
-        context: { originalError: error instanceof Error ? error.message : 'Unknown error' },
-        cause: error,
-      });
-    }
-  }
-
-  /**
-   * Handles the download of the recovery file to the user's computer
-   * @param recoveryFile - The recovery file to download
-   * @param filename - The filename to use for the download
-   * @returns void
-   */
-  private static handleDownloadRecoveryFile({
-    recoveryFile,
-    filename,
-  }: {
-    recoveryFile: Uint8Array;
-    filename: string;
-  }) {
-    try {
-      const arrayBuffer = new ArrayBuffer(recoveryFile.byteLength);
-      new Uint8Array(arrayBuffer).set(recoveryFile);
-      const blob = new Blob([arrayBuffer], { type: 'application/octet-stream' });
-
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      URL.revokeObjectURL(link.href);
-    } catch (error) {
-      throw Err.server(ServerErrorCode.UNKNOWN_ERROR, 'Failed to download recovery file', {
-        service: ErrorService.Local,
-        operation: 'handleDownloadRecoveryFile',
-        cause: error,
-      });
-    }
-  }
 
   /**
    * Decrypts a recovery file and returns the keypair
@@ -92,75 +32,12 @@ export class Identity {
   }
 
   /**
-   * Converts a secret key to a z32 pubky string
-   * @param secretKey - The secret key to convert
-   * @returns The z-base32 encoding of this public key
-   */
-  static z32FromSecret(secretKey: string): Pubky {
-    const secretKeyUint8Array = this.secretKeyFromHex(secretKey);
-    const keypair = Keypair.fromSecret(secretKeyUint8Array);
-    return keypair.publicKey.z32();
-  }
-
-  /**
    * Converts a keypair to a human-readable pubky string
    * @param keypair - The keypair to convert
    * @returns The pubky string with prefix
    */
   static pubkyFromKeypair(keypair: Keypair): string {
     return keypair.publicKey.toString();
-  }
-
-  /**
-   * Converts a secret key to a keypair
-   * @param secretKey - The secret key to convert
-   * @returns The keypair
-   */
-  static keypairFromSecretKey(secretKey: string): Keypair {
-    try {
-      const secretKeyUint8Array = this.secretKeyFromHex(secretKey);
-      return Keypair.fromSecret(secretKeyUint8Array);
-    } catch (error) {
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Invalid secret key format', {
-        service: ErrorService.Local,
-        operation: 'keypairFromSecretKey',
-        cause: error,
-      });
-    }
-  }
-
-  /**
-   * Converts a hex string to a Uint8Array
-   * @param secretKey - The hex string
-   * @returns The secret key as a Uint8Array
-   */
-  private static secretKeyFromHex(secretKey: string) {
-    try {
-      return new Uint8Array(Buffer.from(secretKey, 'hex'));
-    } catch (error) {
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Invalid secret key format', {
-        service: ErrorService.Local,
-        operation: 'secretKeyFromHex',
-        cause: error,
-      });
-    }
-  }
-
-  /**
-   * Converts a Uint8Array to a hex string
-   * @param secretKey - The secret key as a Uint8Array
-   * @returns The secret key as a hex string
-   */
-  static secretKeyToHex(secretKey: Uint8Array) {
-    try {
-      return Buffer.from(secretKey).toString('hex');
-    } catch (error) {
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Invalid secret key format', {
-        service: ErrorService.Local,
-        operation: 'secretKeyToHex',
-        cause: error,
-      });
-    }
   }
 
   /**

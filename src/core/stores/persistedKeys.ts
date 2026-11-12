@@ -6,8 +6,6 @@ import { legacyStorageKey, shopStorageKey } from '@/libs/storage-namespace/stora
 
 // Namespaced so the Shop and pubky.app can share one origin (see `@/libs/storage-namespace`).
 export const AUTH_PERSIST_KEY = shopStorageKey('auth-store');
-// Legacy backup storage: retain this exact key for export and explicit Shop logout cleanup.
-export const ONBOARDING_PERSIST_KEY = shopStorageKey('onboarding-storage');
 export const NOTIFICATION_PERSIST_KEY = shopStorageKey('notification-store');
 export const SEARCH_PERSIST_KEY = shopStorageKey('search-store');
 export const HOME_PERSIST_KEY = shopStorageKey('home-store');
@@ -22,7 +20,6 @@ export const MIGRATION_STORE_KEY = 'migration-store';
 // EX: MIGRATION_STORE_KEY won't be included in this list because it's not a persisted store key.
 export const PERSISTED_STORE_KEYS = [
   AUTH_PERSIST_KEY,
-  ONBOARDING_PERSIST_KEY,
   NOTIFICATION_PERSIST_KEY,
   SEARCH_PERSIST_KEY,
   HOME_PERSIST_KEY,
@@ -62,3 +59,20 @@ function migrateLegacyBrowserLocalStorage(): void {
 }
 
 migrateLegacyBrowserLocalStorage();
+
+/**
+ * Shop signup is retired and nothing reads the key material its onboarding store
+ * persisted. Drop that record so no secret stays at rest without a way to use or
+ * clear it. Only the Shop-namespaced name is removed: the un-prefixed
+ * `onboarding-storage` can belong to pubky.app on a shared origin and is never touched.
+ */
+function removeRetiredOnboardingStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(shopStorageKey('onboarding-storage'));
+  } catch {
+    // Storage is unavailable, so nothing could have been persisted.
+  }
+}
+
+removeRetiredOnboardingStorage();

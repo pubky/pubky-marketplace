@@ -277,7 +277,7 @@ two-account proof checks this (`alice:new-device-rebuild`).
 ## Delivery triggers
 
 The coordinator (`ChatSyncCoordinator`) is started by `CoordinatorsManager` and disabled on `/complete-profile`,
-`/backup`, sign-in and logout routes.
+sign-in and logout routes.
 
 **Every tab** on sign-in: identity, rebuild, outbox flush. On `online`: flush and request a reconcile. On
 visibility change to visible: flush and request a reconcile.

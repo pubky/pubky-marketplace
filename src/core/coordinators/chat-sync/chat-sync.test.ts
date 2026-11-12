@@ -70,9 +70,9 @@ describe('ChatSyncCoordinator', () => {
     vi.restoreAllMocks();
   });
 
-  it.each(['/complete-profile', '/backup'])('pauses chat work on %s', async (route) => {
+  it('pauses chat work on /complete-profile', async () => {
     const coordinator = ChatSyncCoordinator.getInstance();
-    coordinator.setRoute(route);
+    coordinator.setRoute('/complete-profile');
     coordinator.start();
     signIn();
     await settle();

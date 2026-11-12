@@ -23,17 +23,33 @@ describe('persisted store keys', () => {
   it("moves an existing Shop user's keys into the namespace before any store can hydrate", async () => {
     window.localStorage.setItem('auth-store', AUTH);
     window.localStorage.setItem('settings-storage', '{"state":{}}');
-    window.localStorage.setItem('onboarding-storage', '{"state":{}}');
 
     await import('./persistedKeys');
 
     expect(window.localStorage.getItem('shop-auth-store')).toBe(AUTH);
     expect(window.localStorage.getItem('shop-settings-storage')).toBe('{"state":{}}');
-    expect(window.localStorage.getItem('shop-onboarding-storage')).toBe('{"state":{}}');
     expect(window.localStorage.getItem('auth-store')).toBeNull();
     expect(window.localStorage.getItem('settings-storage')).toBeNull();
-    expect(window.localStorage.getItem('onboarding-storage')).toBeNull();
     expect(window.localStorage.getItem(LOCAL_STORAGE_MIGRATION_MARKER_KEY)).not.toBeNull();
+  });
+
+  it('removes the key record that retired Shop signup left in the Shop namespace', async () => {
+    window.localStorage.setItem('shop-onboarding-storage', '{"state":{"secretKey":"aa","mnemonic":"words"}}');
+
+    await import('./persistedKeys');
+
+    expect(window.localStorage.getItem('shop-onboarding-storage')).toBeNull();
+  });
+
+  it("never moves or deletes the un-prefixed onboarding record, which may be the App's", async () => {
+    window.localStorage.setItem('auth-store', AUTH);
+    window.localStorage.setItem('onboarding-storage', 'app-onboarding');
+
+    await import('./persistedKeys');
+
+    expect(window.localStorage.getItem('shop-auth-store')).toBe(AUTH);
+    expect(window.localStorage.getItem('onboarding-storage')).toBe('app-onboarding');
+    expect(window.localStorage.getItem('shop-onboarding-storage')).toBeNull();
   });
 
   it('hydrates the auth store from the migrated key', async () => {

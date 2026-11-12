@@ -1,9 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
 import { CheckCircle, Circle, Key, Loader2, RefreshCw } from 'lucide-react';
-import { ACCOUNT_ROUTES } from '@/app/routes';
 import { BasePathImage as Image } from '@/atoms/BasePathImage/BasePathImage';
 import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
@@ -30,7 +28,6 @@ import {
   SignerAuthorizeButton,
 } from '@/molecules/SignerAuthOption/SignerAuthOption';
 import { toast } from '@/molecules/Toaster/toast';
-import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
 import { useSignInStore } from '@/stores/signIn/signIn.store';
 import type { SignInState } from '@/stores/signIn/signIn.types';
 
@@ -321,21 +318,11 @@ export const SignInContent = () => {
 };
 export const SignInFooter = () => {
   const authUrlResolved = useSignInStore((state) => state.authUrlResolved);
-  const hasSavedKeys = useOnboardingStore(
-    (state) => state.hasHydrated && (state.selectHasSecretKey() || state.selectHasMnemonic()),
-  );
   if (authUrlResolved) return null;
   return (
-    <>
-      {hasSavedKeys && (
-        <Button asChild variant="link">
-          <Link href={ACCOUNT_ROUTES.BACKUP}>Back up saved keys</Link>
-        </Button>
-      )}
-      <FooterLinks className="py-6">
-        {'Not able to sign in with a keychain? Use the recovery phrase or encrypted file to restore your account.'}
-      </FooterLinks>
-    </>
+    <FooterLinks className="py-6">
+      {'Not able to sign in with a keychain? Use the recovery phrase or encrypted file to restore your account.'}
+    </FooterLinks>
   );
 };
 export const SignInHeader = ({ signer = 'ring' }: { signer?: 'ring' | 'both' }) => {

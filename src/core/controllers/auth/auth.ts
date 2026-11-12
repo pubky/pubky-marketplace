@@ -70,8 +70,7 @@ import { useHotStore } from '@/stores/hot/hot.store';
 import { useLocalFilesStore } from '@/stores/localFiles/localFiles.store';
 import { useMigrationStore } from '@/stores/migration/migration.store';
 import { useNotificationStore } from '@/stores/notification/notification.store';
-import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
-import { AUTH_PERSIST_KEY, ONBOARDING_PERSIST_KEY } from '@/stores/persistedKeys';
+import { AUTH_PERSIST_KEY } from '@/stores/persistedKeys';
 import { useSearchStore } from '@/stores/search/search.store';
 import { useSettingsStore } from '@/stores/settings/settings.store';
 import type { SettingsState } from '@/stores/settings/settings.types';
@@ -474,7 +473,6 @@ export class AuthController {
           await this.finalizeSignedOutUnderLock({
             captured,
             preservePublicCache: false,
-            preserveLegacyBackup: true,
           });
           cleanedUp = true;
           flowGenerationAtStart = this.authFlowGeneration;
@@ -544,7 +542,6 @@ export class AuthController {
       await this.finalizeSignedOutUnderLock({
         captured,
         preservePublicCache: !captured.hadIdentity,
-        preserveLegacyBackup: true,
       });
       cleanedUp = true;
       flowGenerationAtStart = this.authFlowGeneration;
@@ -570,7 +567,6 @@ export class AuthController {
         await this.finalizeSignedOutUnderLock({
           captured,
           preservePublicCache: !captured.hadIdentity,
-          preserveLegacyBackup: true,
         });
         flowGenerationAtStart = this.authFlowGeneration;
       }
@@ -929,13 +925,11 @@ export class AuthController {
     preservePublicCache,
     capturedRecordId,
     capturedRecordIds = capturedRecordId ? [capturedRecordId] : [],
-    preserveLegacyBackup = false,
   }: {
     captured: CapturedAuthIdentity;
     preservePublicCache: boolean;
     capturedRecordId?: string | null;
     capturedRecordIds?: string[];
-    preserveLegacyBackup?: boolean;
   }): Promise<void> {
     await withAuthFinalizationLock(async () => {
       const currentRecordIds = [useAuthStore.getState().grantSessionRecordId, readPersistedGrantSessionRecordId()];
@@ -950,7 +944,7 @@ export class AuthController {
         useAuthStore.getState().setIsLoggingOut(false);
         return;
       }
-      await this.cleanupLocalState({ preservePublicCache, preserveLegacyBackup });
+      await this.cleanupLocalState({ preservePublicCache });
     });
   }
 
@@ -1036,23 +1030,18 @@ export class AuthController {
    * public-cache Dexie tables other than the database step itself.
    */
   private static async cleanupLocalState({
-    preserveLegacyBackup = false,
     preservePublicCache = false,
     preserveServiceSessions = false,
     confirmMarketplaceBff = false,
     preservePrivateData = false,
     keepServicePubky = null,
   }: {
-    preserveLegacyBackup?: boolean;
     preservePublicCache?: boolean;
     preserveServiceSessions?: boolean;
     confirmMarketplaceBff?: boolean;
     preservePrivateData?: boolean;
     keepServicePubky?: Pubky | null;
   } = {}): Promise<void> {
-    // A failed restore is not consent to discard an unbacked-up legacy key.
-    // Explicit logout still clears it, even if an earlier restore already cleaned other state.
-    if (!preserveLegacyBackup) this.clearLegacyBackup();
     if (this.cleanupState.promise) {
       return await this.cleanupState.promise;
     }
@@ -1070,16 +1059,6 @@ export class AuthController {
     });
     await this.cleanupState.promise;
     this.cleanupState.completed = true;
-  }
-
-  /** Explicit Shop logout discards backup in memory as well as in shared browser storage. */
-  private static clearLegacyBackup(): void {
-    useOnboardingStore.getState().reset();
-    try {
-      globalThis.localStorage?.removeItem(ONBOARDING_PERSIST_KEY);
-    } catch {
-      // Storage is unavailable; the in-memory backup was still cleared.
-    }
   }
 
   private static async runCleanupLocalState({
@@ -1595,12 +1574,7 @@ export class AuthController {
     BootstrapApplication.cancelModerationFollow();
     const { session, grantSessionRecordId } = useAuthStore.getState();
     if (session && !AuthApplication.isGrantSession(session)) return;
-    if (!session && !grantSessionRecordId && !useAuthStore.getState().currentUserPubky) {
-      // A public backup tab can retain hydrated secrets after another tab removed
-      // the persisted key. Clear them synchronously before any later store write.
-      this.clearLegacyBackup();
-      return;
-    }
+    if (!session && !grantSessionRecordId && !useAuthStore.getState().currentUserPubky) return;
     const captured = this.captureAuthIdentity();
     const capturedRecordIds = this.captureLogoutRecords(captured.pubky, grantSessionRecordId);
     useAuthStore.getState().setSession(null);

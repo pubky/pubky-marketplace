@@ -58,7 +58,7 @@ vi.mock('@/hooks/useAuthStatus/useAuthStatus', () => ({
 
 // Mock @/app
 vi.mock('@/app/routes', () => ({
-  ACCOUNT_ROUTES: { BACKUP: '/backup', COMPLETE_PROFILE: '/complete-profile' },
+  ACCOUNT_ROUTES: { COMPLETE_PROFILE: '/complete-profile' },
   APP_ROUTES: {
     MARKETPLACE: '/marketplace',
   },
@@ -67,7 +67,7 @@ vi.mock('@/app/routes', () => ({
     SELL: '/marketplace/sell',
     OFFERS: '/marketplace/offers',
   },
-  PUBLIC_ROUTES: ['/landing', '/backup'],
+  PUBLIC_ROUTES: ['/landing'],
   isDynamicPublicRoute: (path: string) => {
     const segments = path.split('/').filter(Boolean);
     return (
@@ -178,28 +178,6 @@ describe('RouteGuardProvider — migration resync', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
-
-  it.each([false, true])(
-    'renders backup during auth loading with hydration=%s without initiating restore',
-    (hasHydrated) => {
-      mocks.hasHydrated = hasHydrated;
-      mocks.session = null;
-      mocks.sessionExport = 'saved-session';
-      mocks.currentUserPubky = null;
-      mocks.status = 'UNAUTHENTICATED';
-      mocks.isLoading = true;
-      mocks.pathname = '/backup';
-      mocks.wasDbReset = true;
-      render(
-        <RouteGuardProvider>
-          <div>Saved key export</div>
-        </RouteGuardProvider>,
-      );
-      expect(screen.getByText('Saved key export')).toBeInTheDocument();
-      expect(mocks.restorePersistedSession).not.toHaveBeenCalled();
-      expect(mocks.mockRouterPush).not.toHaveBeenCalled();
-    },
-  );
 
   it('preserves an authenticated destination through profile completion and consumes it once', () => {
     mocks.status = 'NEEDS_PROFILE_CREATION';

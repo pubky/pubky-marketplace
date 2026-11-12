@@ -204,27 +204,24 @@ describe('MuteListSyncCoordinator', () => {
     coordinator.stop();
   });
 
-  it.each([ACCOUNT_ROUTES.COMPLETE_PROFILE, ACCOUNT_ROUTES.BACKUP])(
-    'does not open or refresh the mute stream when starting on %s',
-    async (route) => {
-      useAuthStore.getState().init({
-        session: mockSession(),
-        currentUserPubky: 'fictional-mute-owner',
-        hasProfile: true,
-      });
-      const coordinator = MuteListSyncCoordinator.getInstance();
-      coordinator.setRoute(route);
-      coordinator.start();
+  it('does not open or refresh the mute stream when starting on profile completion', async () => {
+    useAuthStore.getState().init({
+      session: mockSession(),
+      currentUserPubky: 'fictional-mute-owner',
+      hasProfile: true,
+    });
+    const coordinator = MuteListSyncCoordinator.getInstance();
+    coordinator.setRoute(ACCOUNT_ROUTES.COMPLETE_PROFILE);
+    coordinator.start();
 
-      await flushPromises();
-      await vi.advanceTimersByTimeAsync(MUTE_SYNC_DEBOUNCE_MS + MUTE_SYNC_RECONNECT_BACKOFF_MS);
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(MUTE_SYNC_DEBOUNCE_MS + MUTE_SYNC_RECONNECT_BACKOFF_MS);
 
-      expect(MuteController.subscribeMuteDirectoryEventStream).not.toHaveBeenCalled();
-      expect(MuteController.fetchMutedUsers).not.toHaveBeenCalled();
-    },
-  );
+    expect(MuteController.subscribeMuteDirectoryEventStream).not.toHaveBeenCalled();
+    expect(MuteController.fetchMutedUsers).not.toHaveBeenCalled();
+  });
 
-  it('cancels once on backup and reopens once when returning to an allowed route', async () => {
+  it('cancels once on profile completion and reopens once when returning to an allowed route', async () => {
     const cancelFirstStream = vi.fn();
     const cancelSecondStream = vi.fn();
     const subscribe = vi.mocked(MuteController.subscribeMuteDirectoryEventStream);
@@ -242,12 +239,12 @@ describe('MuteListSyncCoordinator', () => {
     await flushPromises();
     expect(subscribe).toHaveBeenCalledTimes(1);
 
-    coordinator.setRoute(ACCOUNT_ROUTES.BACKUP);
+    coordinator.setRoute(ACCOUNT_ROUTES.COMPLETE_PROFILE);
     await flushPromises();
     expect(cancelFirstStream).toHaveBeenCalledTimes(1);
-    coordinator.setRoute(ACCOUNT_ROUTES.BACKUP);
     coordinator.setRoute(ACCOUNT_ROUTES.COMPLETE_PROFILE);
-    coordinator.setRoute(ACCOUNT_ROUTES.BACKUP);
+    coordinator.setRoute(AUTH_ROUTES.SIGN_IN);
+    coordinator.setRoute(ACCOUNT_ROUTES.COMPLETE_PROFILE);
     await vi.advanceTimersByTimeAsync(MUTE_SYNC_RECONNECT_BACKOFF_MS + MUTE_SYNC_DEBOUNCE_MS);
     expect(cancelFirstStream).toHaveBeenCalledTimes(1);
     expect(subscribe).toHaveBeenCalledTimes(1);

@@ -3,12 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Home } from './Home';
 
 // Mock Organisms
-vi.mock('@/organisms/AlertBackup/AlertBackup', () => {
-  return {
-    AlertBackup: () => <div data-testid="alert-backup">AlertBackup</div>,
-  };
-});
-
 vi.mock('@/organisms/FeedNavigation/FeedNavigation', () => {
   return {
     FeedNavigation: ({ className }: { className?: string }) => (
@@ -80,11 +74,6 @@ describe('Home', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.sessionStorage.clear();
-  });
-
-  it('renders AlertBackup', () => {
-    render(<Home />);
-    expect(screen.getByTestId('alert-backup')).toBeInTheDocument();
   });
 
   it('renders FeedNavigation in main content with hidden lg:flex class', () => {
