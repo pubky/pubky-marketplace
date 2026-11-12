@@ -19,6 +19,8 @@ import { ROUTE_ACCESS_MAP } from '@/providers/RouteGuardProvider/RouteGuardProvi
 import {
   consumeRouteGuardReturnTo,
   isRouteGuardReturnToAllowed,
+  routeGuardReturnToPathname,
+  routeGuardReturnToWithSearch,
   storeRouteGuardReturnTo,
 } from '@/providers/RouteGuardProvider/RouteGuardProvider.returnPath';
 import { useIsShopHosted } from '@/providers/ShopHostSessionProvider/ShopHostSessionProvider';
@@ -27,6 +29,15 @@ import { useMigrationStore } from '@/stores/migration/migration.store';
 
 // Migration resync timeout in milliseconds
 const MIGRATION_RESYNC_TIMEOUT_MS = 10_000;
+
+/**
+ * The guarded path with the query it was opened with. `usePathname` omits the query, so
+ * it comes from the browser URL and is ignored when that URL is not the guarded path.
+ */
+function guardedLocation(pathname: string): string {
+  if (typeof window === 'undefined' || !window.location.pathname.endsWith(pathname)) return pathname;
+  return routeGuardReturnToWithSearch(pathname, window.location.search);
+}
 
 interface RouteGuardProviderProps {
   children: ReactNode;
@@ -168,7 +179,7 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
 
     const routeAccess = ROUTE_ACCESS_MAP[status];
     const returnTo = consumeRouteGuardReturnTo(routeAccess.allowedRoutes);
-    if (!returnTo || pathname === returnTo) return;
+    if (!returnTo || returnTo === pathname || returnTo === guardedLocation(pathname)) return;
 
     pendingReturnToNavigationRef.current = returnTo;
     router.push(returnTo);
@@ -200,7 +211,7 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
   useEffect(() => {
     if (
       pendingReturnToNavigationRef.current &&
-      (pathname === pendingReturnToNavigationRef.current || isRouteAccessible)
+      (pathname === routeGuardReturnToPathname(pendingReturnToNavigationRef.current) || isRouteAccessible)
     ) {
       pendingReturnToNavigationRef.current = null;
     }
@@ -241,13 +252,13 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
     // Only redirect if we have a target and we're not already there
     if (redirectTo && pathname !== redirectTo) {
       if (shouldOpenMarketplaceSignIn) {
-        storeRouteGuardReturnTo(pathname);
+        storeRouteGuardReturnTo(guardedLocation(pathname));
         useAuthStore.getState().setShowSignInDialog(true);
       } else if (
         (status === AuthStatus.UNAUTHENTICATED || status === AuthStatus.NEEDS_PROFILE_CREATION) &&
         isRouteGuardReturnToAllowed(pathname, authenticatedRouteAccess.allowedRoutes)
       ) {
-        storeRouteGuardReturnTo(pathname);
+        storeRouteGuardReturnTo(guardedLocation(pathname));
         if (status === AuthStatus.UNAUTHENTICATED) {
           toast({ variant: 'info', description: 'Sign in to open that page.' });
         }

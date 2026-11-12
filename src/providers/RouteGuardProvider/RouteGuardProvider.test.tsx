@@ -214,6 +214,51 @@ describe('RouteGuardProvider — migration resync', () => {
     expect(mocks.mockRouterPush).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the query of a guarded deep link through profile completion', () => {
+    mocks.status = 'NEEDS_PROFILE_CREATION';
+    mocks.pathname = '/marketplace/checkout';
+    window.history.replaceState(null, '', '/marketplace/checkout?offer=fictional-offer');
+    const { rerender } = render(
+      <RouteGuardProvider>
+        <div>Account content</div>
+      </RouteGuardProvider>,
+    );
+    expect(mocks.mockRouterPush).toHaveBeenCalledWith('/complete-profile');
+    expect(window.sessionStorage.getItem('pubky.routeGuard.returnTo')).toBe(
+      '/marketplace/checkout?offer=fictional-offer',
+    );
+    mocks.pathname = '/complete-profile';
+    window.history.replaceState(null, '', '/complete-profile');
+    mocks.mockRouterPush.mockClear();
+    mocks.status = 'AUTHENTICATED';
+    rerender(
+      <RouteGuardProvider>
+        <div>Account content</div>
+      </RouteGuardProvider>,
+    );
+    expect(mocks.mockRouterPush).toHaveBeenCalledExactlyOnceWith('/marketplace/checkout?offer=fictional-offer');
+    mocks.pathname = '/marketplace/checkout';
+    window.history.replaceState(null, '', '/marketplace/checkout?offer=fictional-offer');
+    rerender(
+      <RouteGuardProvider>
+        <div>Account content</div>
+      </RouteGuardProvider>,
+    );
+    expect(mocks.mockRouterPush).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not attach a query that belongs to another location', () => {
+    mocks.status = 'NEEDS_PROFILE_CREATION';
+    mocks.pathname = '/marketplace/checkout';
+    window.history.replaceState(null, '', '/marketplace?offer=fictional-offer');
+    render(
+      <RouteGuardProvider>
+        <div>Account content</div>
+      </RouteGuardProvider>,
+    );
+    expect(window.sessionStorage.getItem('pubky.routeGuard.returnTo')).toBe('/marketplace/checkout');
+  });
+
   it.each(['UNAUTHENTICATED', 'AUTHENTICATED'])('does not render completion for %s', (status) => {
     mocks.status = status;
     mocks.pathname = '/complete-profile';
