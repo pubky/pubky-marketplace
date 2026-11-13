@@ -438,7 +438,9 @@ export class ChatApplication {
    */
   static async flushOutbox(me: string, signal?: AbortSignal): Promise<void> {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    signal?.throwIfAborted();
     await withExclusiveLock(CHAT_LOCKS.outbox(me), async () => {
+      signal?.throwIfAborted();
       await this.sendDueMessages(me, signal);
       await this.flushPings(me, signal);
     });

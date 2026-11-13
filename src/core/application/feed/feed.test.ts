@@ -949,5 +949,18 @@ describe('FeedApplication', () => {
 
       await expect(FeedApplication.fetchFeeds(testUserId)).rejects.toThrow('network-fail');
     });
+
+    it('does not persist feeds once the signal aborts while they are being fetched', async () => {
+      const { listSpy, requestSpy, createOrUpdateManySpy } = setupFetchMocks();
+      const scope = new AbortController();
+      listSpy.mockResolvedValue([feedUri1]);
+      requestSpy.mockImplementation(async () => {
+        scope.abort();
+        return createRemoteFeedJson('Bitcoin News');
+      });
+
+      await expect(FeedApplication.fetchFeeds(testUserId, scope.signal)).rejects.toMatchObject({ name: 'AbortError' });
+      expect(createOrUpdateManySpy).not.toHaveBeenCalled();
+    });
   });
 });

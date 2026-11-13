@@ -92,6 +92,7 @@ export class InboxService {
     if (this.sessionRetry.status(SESSION_RETRY_KEY) === 'waiting') return 'unavailable';
 
     const credentials = await getCredentials({ type: 'pubky-inbox-session-v1', audience });
+    signal?.throwIfAborted();
     if (!credentials) {
       // Only a grant-backed session can sign the proof; nothing to do for this sign-in.
       Logger.debug('Inbox disabled: the session cannot sign an inbox proof');
@@ -100,6 +101,7 @@ export class InboxService {
 
     const url = `${baseUrl}/v1/auth/session`;
     const response = await this.fetchSession(url, credentials);
+    signal?.throwIfAborted();
     if (!response) return this.markUnavailable('no answer');
     if (NOT_UP_STATUSES.has(response.status)) return this.markUnavailable(`HTTP ${response.status}`);
     if (!response.ok) throw httpResponseToError(response, ErrorService.Inbox, 'ensureSession', url);

@@ -105,13 +105,10 @@ export class ChatController {
   static async commitSendMessage(params: ChatSendParams): Promise<string> {
     const me = this.me();
     const peer = this.normalizePeer(params.peerPubky);
-    const id = await ChatApplication.queueMessage(
-      me,
-      { peer, body: params.body, context: params.context },
-      captureAuthScope(),
-    );
-    void this.commitFlushOutbox();
-    if (params.context) void this.followSellerOnIntent(me, peer, params.context);
+    const signal = captureAuthScope();
+    const id = await ChatApplication.queueMessage(me, { peer, body: params.body, context: params.context }, signal);
+    void this.flushOutboxFor(me, signal);
+    if (params.context) void this.followSellerOnIntent(me, peer, params.context, signal);
     return id;
   }
 
@@ -122,11 +119,16 @@ export class ChatController {
    * a seller replying about an order does not follow the buyer. Best effort;
    * the message never waits on it.
    */
-  private static async followSellerOnIntent(me: string, peer: string, context: ChatContext): Promise<void> {
+  private static async followSellerOnIntent(
+    me: string,
+    peer: string,
+    context: ChatContext,
+    signal: AbortSignal,
+  ): Promise<void> {
     try {
       const seller = await this.sellerForContext(me, peer, context);
-      if (!seller) return;
-      await UserApplication.ensureSellerFollow({ follower: me as Pubky, seller: seller as Pubky });
+      if (!seller || signal.aborted) return;
+      await UserApplication.ensureSellerFollow({ follower: me as Pubky, seller: seller as Pubky, signal });
     } catch (error) {
       if (!isAppError(error)) Logger.warn('Could not follow the seller for this message', { error });
     }
@@ -148,17 +150,26 @@ export class ChatController {
   }
 
   static async commitRetryMessage(id: string): Promise<void> {
-    await ChatApplication.retryMessage(this.me(), id, captureAuthScope());
-    void this.commitFlushOutbox();
+    const me = this.me();
+    const signal = captureAuthScope();
+    await ChatApplication.retryMessage(me, id, signal);
+    void this.flushOutboxFor(me, signal);
   }
 
   static async commitFlushOutbox(): Promise<void> {
     const pubky = useAuthStore.getState().currentUserPubky;
     if (!pubky) return;
+    await this.flushOutboxFor(pubky, captureAuthScope());
+  }
+
+  /** Flushes under the caller's scope, so a flush that follows a send or retry ends with that identity. */
+  private static async flushOutboxFor(me: string, signal: AbortSignal): Promise<void> {
     try {
-      await ChatApplication.flushOutbox(pubky, captureAuthScope());
+      await ChatApplication.flushOutbox(me, signal);
     } catch (error) {
-      Logger.warn('Chat outbox flush failed; queued messages wait for the next attempt', { error });
+      if (!signal.aborted) {
+        Logger.warn('Chat outbox flush failed; queued messages wait for the next attempt', { error });
+      }
     }
   }
 

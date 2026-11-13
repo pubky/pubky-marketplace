@@ -3,6 +3,7 @@ import { AuthApplication } from '@/application/auth/auth';
 import { BootstrapApplication } from '@/application/bootstrap/bootstrap';
 import { ChatApplication } from '@/application/chat/chat';
 import { CommerceApplication } from '@/application/commerce/commerce';
+import { UserApplication } from '@/application/user/user';
 import type { CommerceAdapterMode } from '@/config/commerce';
 import { ChatController } from '@/controllers/chat/chat';
 import { CommerceController } from '@/controllers/commerce/commerce';
@@ -12,12 +13,15 @@ import { clearDatabase } from '@/database/franky/franky.helpers';
 import { chatMessageUrl } from '@/libs/chat/paths';
 import { HttpMethod } from '@/libs/http/http.types';
 import { Identity } from '@/libs/identity/identity';
+import { PubkySpecsSingleton } from '@/pipes/pipes.builder';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import { InboxService } from '@/services/inbox/inbox';
 import { LocalChatService } from '@/services/local/chat/chat';
+import { LocalFeedService } from '@/services/local/feed/feed';
 import { LocalNotificationService } from '@/services/local/notification/notification';
 import { LocalStreamUsersService } from '@/services/local/stream/users/users';
 import { MarketplaceGatewayService } from '@/services/marketplace/marketplace';
+import { NexusBootstrapService } from '@/services/nexus/bootstrap/bootstrap';
 import type { NexusNotification } from '@/services/nexus/nexus.types';
 import { NexusUserService } from '@/services/nexus/user/user';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -30,6 +34,7 @@ import { asOpaque } from '@/test-utils/type-assertions';
 import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';
 import { AuthController } from './auth';
 import { deferred, grantSession, resetGrantTest } from './auth.grant-test-utils';
+import { AUTH_FINALIZATION_LOCK_NAME } from './auth-finalization-lock';
 
 vi.mock('@/database/franky/franky.helpers', () => ({ clearDatabase: vi.fn(), clearPrivateData: vi.fn() }));
 vi.mock('@/libs/query-client/query-client.factory', async (original) => ({
@@ -66,8 +71,48 @@ function startSignOut() {
   };
 }
 
-/** Lets a pending sign-out run as far as it can on its own. */
-const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+/** Installs Web Locks and records the name of every lock requested, in order. */
+function recordLockRequests(): string[] {
+  installWebLocks();
+  const names: string[] = [];
+  const { request } = asOpaque<{ request: (name: string, ...rest: unknown[]) => Promise<unknown> }>(navigator.locks);
+  Object.defineProperty(navigator, 'locks', {
+    value: {
+      request: (name: string, ...rest: unknown[]) => {
+        names.push(name);
+        return request(name, ...rest);
+      },
+    },
+    configurable: true,
+  });
+  return names;
+}
+
+/** Lets `method` finish its own work, then holds its result until `release`, as a slow device would. */
+function holdAfter<K extends 'queueMessage' | 'retryMessage'>(method: K) {
+  const original = ChatApplication[method].bind(ChatApplication) as (...args: unknown[]) => Promise<unknown>;
+  const done = deferred<void>();
+  const release = deferred<void>();
+  vi.spyOn(ChatApplication, method).mockImplementation((async (...args: unknown[]) => {
+    const result = await original(...args);
+    done.resolve();
+    await release.promise;
+    return result;
+  }) as never);
+  return { done: done.promise, release: () => release.resolve() };
+}
+
+/** Records every outbox flush so a test can wait for one started in the background. */
+function trackFlushes() {
+  const original = ChatApplication.flushOutbox.bind(ChatApplication);
+  const flushes: Promise<unknown>[] = [];
+  vi.spyOn(ChatApplication, 'flushOutbox').mockImplementation((...args) => {
+    const flush = original(...args);
+    flushes.push(flush.catch((error: unknown) => error));
+    return flush;
+  });
+  return flushes;
+}
 
 beforeEach(() => {
   resetGrantTest();
@@ -81,36 +126,56 @@ afterEach(() => {
 });
 
 describe('work started for an account writes nothing for it once its sign-out starts', () => {
-  it('profile bootstrap: sign-out waits for a running bootstrap, which stops before its next write', async () => {
-    signIn(ALICE, false);
-    const events: string[] = [];
-    const nexus = deferred<void>();
-    let bootstrapSignal: AbortSignal | undefined;
-    vi.mocked(BootstrapApplication.initialize).mockImplementation(async (params) => {
-      bootstrapSignal = params.signal;
-      await nexus.promise;
-      events.push('bootstrap settled');
-      return { unread: 3, lastRead: 1, lastPolledTimestamp: 2 };
+  describe('profile bootstrap', () => {
+    afterEach(() => removeWebLocks());
+
+    it('sign-out waits for a running bootstrap, which saves nothing it fetched for the account', async () => {
+      const lockRequests = recordLockRequests();
+      signIn(ALICE, false);
+      vi.mocked(BootstrapApplication.initialize).mockRestore();
+      const events: string[] = [];
+      vi.spyOn(NexusBootstrapService, 'fetch').mockResolvedValue(asOpaque({ indexed: true }));
+      vi.spyOn(HomeserverService, 'getJsonIfFound').mockResolvedValue({ found: true, json: { timestamp: 1 } });
+      const feedsListing = deferred<string[]>();
+      vi.spyOn(HomeserverService, 'list').mockImplementation(async ({ baseDirectory }) =>
+        baseDirectory.endsWith('/feeds/') ? await feedsListing.promise : [],
+      );
+      vi.spyOn(HomeserverService, 'request').mockResolvedValue({ name: 'Bitcoin', feed: {}, created_at: 1 });
+      vi.spyOn(PubkySpecsSingleton, 'get').mockReturnValue(
+        asOpaque({
+          createFeed: () => ({
+            feed: { name: 'Bitcoin', feed: { tags: ['bitcoin'], reach: 'all', sort: 'recent', layout: 'columns' } },
+            meta: { id: 'feed-1' },
+          }),
+        }),
+      );
+      const saveFeeds = vi.spyOn(LocalFeedService, 'createOrUpdateMany').mockImplementation(async (feeds) => {
+        events.push('feeds saved');
+        return feeds;
+      });
+      vi.mocked(clearDatabase).mockImplementation(async () => {
+        events.push('local data cleared');
+      });
+
+      const bootstrap = AuthController.bootstrapWithDelay().then(() => events.push('bootstrap settled'));
+      await vi.waitFor(() =>
+        expect(HomeserverService.list).toHaveBeenCalledWith({ baseDirectory: `pubky://${ALICE}/pub/pubky.app/feeds/` }),
+      );
+      const requestsBeforeSignOut = lockRequests.length;
+      const signOut = AuthController.logout();
+      // The sign-out is queued behind the bootstrap, so it cannot clear anything yet.
+      await vi.waitFor(() => expect(lockRequests.slice(requestsBeforeSignOut)).toContain(AUTH_FINALIZATION_LOCK_NAME));
+      expect(clearDatabase).not.toHaveBeenCalled();
+
+      feedsListing.resolve([`pubky://${ALICE}/pub/pubky.app/feeds/feed-1`]);
+      await bootstrap;
+      await signOut;
+
+      expect(saveFeeds).not.toHaveBeenCalled();
+      expect(events).toEqual(['bootstrap settled', 'local data cleared']);
+      expect(useNotificationStore.getState().unread).toBe(0);
+      expect(useAuthStore.getState().hasProfile).not.toBe(true);
     });
-    vi.mocked(clearDatabase).mockImplementation(async () => {
-      events.push('local data cleared');
-    });
-
-    const bootstrap = AuthController.bootstrapWithDelay();
-    await vi.waitFor(() => expect(BootstrapApplication.initialize).toHaveBeenCalled());
-    const signOut = AuthController.logout();
-    await settle();
-
-    expect(clearDatabase).not.toHaveBeenCalled();
-    expect(bootstrapSignal?.aborted).toBe(true);
-
-    nexus.resolve();
-    await bootstrap;
-    await signOut;
-
-    expect(events).toEqual(['bootstrap settled', 'local data cleared']);
-    expect(useNotificationStore.getState().unread).toBe(0);
-    expect(useAuthStore.getState().hasProfile).not.toBe(true);
   });
 
   it('notification poll: an answer that arrives after sign-out starts is neither saved nor counted', async () => {
@@ -255,6 +320,82 @@ describe('work started for an account writes nothing for it once its sign-out st
       expect(await LocalChatService.listMessages(ALICE, BOB, { limit: 10 })).toEqual([]);
       expect(outcome).toMatchObject({ name: 'AbortError' });
       await finishSignOut();
+    });
+
+    async function openAliceToBob() {
+      const homeserver = installFakeHomeserver();
+      vi.spyOn(HomeserverService, 'canCurrentSessionWrite').mockReturnValue(true);
+      await ChatApplication.ensureIdentity(ALICE);
+      await ChatApplication.ensureIdentity(BOB);
+      await ChatApplication.openConversation(BOB, ALICE);
+      await ChatApplication.openConversation(ALICE, BOB);
+      const aliceFolder = (await LocalChatService.getConversation(ALICE, BOB))?.own_folder_id;
+      expect(aliceFolder).toBeTruthy();
+      const messagePuts = () =>
+        homeserver.log.filter((entry) =>
+          entry.startsWith(`${HttpMethod.PUT} ${chatMessageUrl(ALICE, aliceFolder!, '')}`),
+        );
+      signIn(ALICE);
+      return { homeserver, messagePuts };
+    }
+
+    it('a message queued as sign-out starts is not sent after it', async () => {
+      const { messagePuts } = await openAliceToBob();
+      const queueing = holdAfter('queueMessage');
+      const flushes = trackFlushes();
+
+      const send = ChatController.commitSendMessage({ peerPubky: BOB, body: 'Is this still available?' });
+      await queueing.done;
+      const finishSignOut = startSignOut();
+      queueing.release();
+      const id = await send;
+      await Promise.all(flushes);
+
+      expect(messagePuts()).toEqual([]);
+      expect((await LocalChatService.getMessage(id))?.status).toBe('queued');
+      await finishSignOut();
+    });
+
+    it('a message retried as sign-out starts is not sent after it', async () => {
+      const { messagePuts } = await openAliceToBob();
+      const id = await ChatApplication.queueMessage(ALICE, { peer: BOB, body: 'Is this still available?' });
+      await LocalChatService.updateMessage(id, { status: 'failed' });
+      const retrying = holdAfter('retryMessage');
+      const flushes = trackFlushes();
+
+      const retry = ChatController.commitRetryMessage(id);
+      await retrying.done;
+      const finishSignOut = startSignOut();
+      retrying.release();
+      await retry;
+      await Promise.all(flushes);
+
+      expect(messagePuts()).toEqual([]);
+      expect((await LocalChatService.getMessage(id))?.status).toBe('queued');
+      await finishSignOut();
+    });
+
+    it('a message about a listing does not follow its seller once sign-out starts', async () => {
+      const { homeserver } = await openAliceToBob();
+      vi.spyOn(ChatApplication, 'flushOutbox').mockResolvedValue(undefined);
+      const listing = deferred<Awaited<ReturnType<typeof CommerceApplication.getListing>>>();
+      vi.spyOn(CommerceApplication, 'getListing').mockReturnValue(listing.promise);
+      const exists = vi.spyOn(HomeserverService, 'exists').mockResolvedValue(false);
+      const follow = vi.spyOn(UserApplication, 'ensureSellerFollow');
+
+      await ChatController.commitSendMessage({
+        peerPubky: BOB,
+        body: 'Is this still available?',
+        context: { listingId: 'listing-1' },
+      });
+      await vi.waitFor(() => expect(CommerceApplication.getListing).toHaveBeenCalledWith(`${BOB}:listing-1`));
+      const finishSignOut = startSignOut();
+      listing.resolve(asOpaque({ id: `${BOB}:listing-1` }));
+      await finishSignOut();
+      await Promise.all(follow.mock.results.map((result) => result.value));
+
+      expect(homeserver.log.filter((entry) => entry.includes('/follows/'))).toEqual([]);
+      expect(exists).not.toHaveBeenCalled();
     });
   });
 });

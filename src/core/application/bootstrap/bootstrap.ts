@@ -75,7 +75,7 @@ export class BootstrapApplication {
         NexusBootstrapService.fetch(pubky),
         this.fetchOrPutLastRead(params),
         MuteApplication.fetchMutedUsers(pubky, signal), // fetches and persists MUTED stream internally
-        FeedApplication.fetchFeeds(pubky),
+        FeedApplication.fetchFeeds(pubky, signal),
       ]);
       // Keep account ownership until every started sync has finished writing.
       signal?.throwIfAborted();

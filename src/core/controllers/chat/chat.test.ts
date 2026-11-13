@@ -38,7 +38,11 @@ describe('ChatController.commitSendMessage follow-on-intent', () => {
       context: { orderId: 'order-1' },
     });
     await settle();
-    expect(UserApplication.ensureSellerFollow).toHaveBeenCalledWith({ follower: BUYER, seller: SELLER });
+    expect(UserApplication.ensureSellerFollow).toHaveBeenCalledWith({
+      follower: BUYER,
+      seller: SELLER,
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it('does not follow the buyer when the seller replies about the same order', async () => {
@@ -52,7 +56,11 @@ describe('ChatController.commitSendMessage follow-on-intent', () => {
     useAuthStore.setState({ currentUserPubky: BUYER });
     await ChatController.commitSendMessage({ peerPubky: SELLER, body: 'Size 43?', context: { listingId: 'boots-1' } });
     await settle();
-    expect(UserApplication.ensureSellerFollow).toHaveBeenCalledWith({ follower: BUYER, seller: SELLER });
+    expect(UserApplication.ensureSellerFollow).toHaveBeenCalledWith({
+      follower: BUYER,
+      seller: SELLER,
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it('ignores a listing context the peer does not own, and messages without context', async () => {

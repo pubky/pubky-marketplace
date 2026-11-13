@@ -246,7 +246,7 @@ const assertCommonCalls = (mocks: ServiceMocks, bootstrapData: NexusBootstrapRes
   expect(mocks.nexusFetch).toHaveBeenCalledWith(TEST_PUBKY);
   expect(mocks.homeserverRead).toHaveBeenCalledWith({ url: MOCK_LAST_READ_URL });
   expect(mocks.fetchMutedUsers).toHaveBeenCalledWith(TEST_PUBKY, undefined);
-  expect(mocks.fetchFeeds).toHaveBeenCalledWith(TEST_PUBKY);
+  expect(mocks.fetchFeeds).toHaveBeenCalledWith(TEST_PUBKY, undefined);
   expect(mocks.persistUsers).toHaveBeenCalledWith(bootstrapData.users);
   expect(mocks.persistPosts).toHaveBeenCalledWith({ posts: bootstrapData.posts });
   expect(mocks.upsertPostsStream).toHaveBeenCalledWith({

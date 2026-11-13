@@ -79,6 +79,36 @@ describe('InboxService', () => {
     expect(calls).toHaveLength(1);
   });
 
+  it('sends no session request once the signal aborts while the proof is being signed', async () => {
+    const calls = installFetch(() => json(201, { access_token: 'TOKEN', expires_at: future }));
+    const scope = new AbortController();
+    const signing = InboxService.ensureSession(
+      ME,
+      async () => {
+        scope.abort();
+        return credentials();
+      },
+      scope.signal,
+    );
+
+    await expect(signing).rejects.toMatchObject({ name: 'AbortError' });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('records no outage for an answer that arrives after the signal aborts', async () => {
+    const scope = new AbortController();
+    installFetch(() => {
+      scope.abort();
+      return json(503, {});
+    });
+    await expect(InboxService.ensureSession(ME, credentials, scope.signal)).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+
+    installFetch(() => json(201, { access_token: 'TOKEN', expires_at: future }));
+    expect(await InboxService.ensureSession(ME, credentials)).toBe('ready');
+  });
+
   it('sends, waits for and acknowledges pings with the bearer', async () => {
     const calls = installFetch(({ url }) => {
       if (url.endsWith('/v1/auth/session')) return json(201, { access_token: 'TOKEN', expires_at: future });
