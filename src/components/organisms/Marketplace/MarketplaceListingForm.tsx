@@ -62,12 +62,14 @@ import {
   isListingMediaPublishReady,
   LISTING_PHOTO_MIME_TYPES,
 } from '@/hooks/useListingMediaManager/useListingMediaManager';
+import type { ListingStoreSync } from '@/hooks/useListingStoreSync/useListingStoreSync';
 import { useMarketplaceShippingPresets } from '@/hooks/useMarketplaceShippingPresets/useMarketplaceShippingPresets';
 import {
   presetToShippingFields,
   shippingPresetMoney,
 } from '@/hooks/useMarketplaceShippingPresets/useMarketplaceShippingPresets.types';
 import { auctionDurationLabel, auctionDurationOptionLabel } from '@/libs/commerce/auction-duration';
+import type { ConnectorSyncGroup } from '@/libs/commerce/connectors';
 import { DIGITAL_DELIVERY_COPY } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { isListingDraftSectionId, type ListingDraftSectionId } from '@/libs/commerce/listing-drafts';
@@ -99,6 +101,7 @@ import { cn } from '@/libs/utils/utils';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
 import { ListingPublishGuardNotice } from '@/molecules/Marketplace/ListingPublishGuardNotice';
+import { MarketplaceListingStoreFollow } from '@/molecules/Marketplace/MarketplaceListingStoreFollow';
 import { RequiredToPublishSummary } from '@/molecules/Marketplace/RequiredToPublishSummary';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { toast } from '@/molecules/Toaster/toast';
@@ -147,6 +150,11 @@ export interface MarketplaceListingFormProps {
   mode?: 'create' | 'edit';
   /** True for auctions being edited: price and format were fixed at publish. */
   saleTermsLocked?: boolean;
+  /**
+   * Edit mode, for a listing linked to a connected store: which parts follow the store. A part that follows is
+   * read-only here, and a switch turns it into this listing's own.
+   */
+  storeSync?: MarketplaceListingStoreSync | null;
   /** Restored wizard section from a listing draft (create mode). */
   initialActiveSectionId?: ListingDraftSectionId;
   onActiveSectionChange?: (sectionId: ListingDraftSectionId) => void;
@@ -166,6 +174,14 @@ export interface MarketplaceListingFormProps {
   sidebarFooter?: ReactNode;
 }
 
+export type MarketplaceListingStoreSync = {
+  /** The connected stores the listing is linked to. */
+  syncs: readonly ListingStoreSync[];
+  /** `<connection id>:<group>` of the setting being saved. */
+  saving: string | null;
+  onToggle: (connectionId: string, group: ConnectorSyncGroup) => void;
+};
+
 export function MarketplaceListingForm({
   form,
   media,
@@ -175,6 +191,7 @@ export function MarketplaceListingForm({
   listingId,
   mode = 'create',
   saleTermsLocked = false,
+  storeSync = null,
   initialActiveSectionId,
   onActiveSectionChange,
   publishBlocked = null,
@@ -196,7 +213,10 @@ export function MarketplaceListingForm({
     moveItem,
     setAltText,
   } = media;
-  const photoDrop = usePhotoFileDrop(addFiles, !isPublishing);
+  const followsContent = storeSync?.syncs.some((sync) => sync.groups.content.follows) === true;
+  const followsPrice = storeSync?.syncs.some((sync) => sync.groups.price.follows) === true;
+  const followsVariants = storeSync?.syncs.some((sync) => sync.groups.variants.follows) === true;
+  const photoDrop = usePhotoFileDrop(addFiles, !isPublishing && !followsContent);
   const fulfillment = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.FULFILLMENT });
   const saleFormat = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.SALE_FORMAT });
   const auctionDurations = getAuctionDurationsMinutes();
@@ -257,6 +277,18 @@ export function MarketplaceListingForm({
     }
   };
   const isEdit = mode === 'edit';
+  const storeFollow = (group: ConnectorSyncGroup) =>
+    storeSync?.syncs.map((sync) => (
+      <MarketplaceListingStoreFollow
+        key={sync.connectionId}
+        group={group}
+        domain={sync.domain}
+        state={sync.groups[group]}
+        editInStoreUrl={sync.editInStoreUrl}
+        saving={storeSync.saving !== null || isPublishing}
+        onToggle={() => storeSync.onToggle(sync.connectionId, group)}
+      />
+    ));
   const auctionDuration = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.AUCTION_DURATION });
   // The select shows the length that will publish: an empty or no-longer-offered
   // value (a fresh form, an older draft) moves to the deploy's first offered length.
@@ -509,6 +541,7 @@ export function MarketplaceListingForm({
           complete={sectionStatuses['listing-section-photos']}
           dropZone={photoDrop}
         >
+          {storeFollow('content')}
           {mediaItems.length > 0 && (
             <ul className="flex flex-col gap-3" aria-label="Listing photos in display order">
               {mediaItems.map((item, index) => (
@@ -517,7 +550,7 @@ export function MarketplaceListingForm({
                   item={item}
                   index={index}
                   count={mediaItems.length}
-                  isPublishing={isPublishing}
+                  isPublishing={isPublishing || followsContent}
                   onMove={moveItem}
                   onRemove={removeItem}
                   onAltTextChange={setAltText}
@@ -530,7 +563,7 @@ export function MarketplaceListingForm({
             type="button"
             variant="secondary"
             className="w-fit rounded-full"
-            disabled={isPublishing || mediaItems.length >= maxPhotos}
+            disabled={isPublishing || followsContent || mediaItems.length >= maxPhotos}
             onClick={choose}
           >
             <ImagePlus className="size-4" />
@@ -563,7 +596,7 @@ export function MarketplaceListingForm({
             control={form.control}
             label="Title"
             placeholder="What are you selling?"
-            disabled={isPublishing}
+            disabled={isPublishing || followsContent}
           />
           <ControlledTextareaField
             name={CREATE_MARKETPLACE_LISTING_FIELDS.DESCRIPTION}
@@ -572,7 +605,7 @@ export function MarketplaceListingForm({
             label="Description"
             placeholder="Condition, provenance, measurements, and anything a buyer should know"
             rows={6}
-            disabled={isPublishing}
+            disabled={isPublishing || followsContent}
           />
           <Controller
             name={CREATE_MARKETPLACE_LISTING_FIELDS.CATEGORY}
@@ -627,6 +660,8 @@ export function MarketplaceListingForm({
           description="Choose the sale format, price, and inventory options."
           complete={sectionStatuses['listing-section-price']}
         >
+          {storeFollow('price')}
+          {storeFollow('variants')}
           <div className="grid gap-5 sm:grid-cols-3">
             <FormSelect
               form={form}
@@ -658,7 +693,7 @@ export function MarketplaceListingForm({
               form={form}
               name={CREATE_MARKETPLACE_LISTING_FIELDS.CURRENCY}
               label="Pricing currency"
-              disabled={isPublishing || saleTermsLocked}
+              disabled={isPublishing || saleTermsLocked || followsPrice}
               options={LISTING_CURRENCY_CODES.map((code) => ({
                 value: code,
                 label: LISTING_CURRENCY_REGISTRY[code].pickerLabel,
@@ -670,7 +705,7 @@ export function MarketplaceListingForm({
               control={form.control}
               label={saleFormat === 'auction' ? `Starting price (${priceUnit})` : `Price (${priceUnit})`}
               placeholder={pricePlaceholder}
-              disabled={isPublishing || saleTermsLocked}
+              disabled={isPublishing || saleTermsLocked || followsPrice}
             />
             {saleFormat === 'auction' && (
               <ControlledInputField
@@ -709,7 +744,13 @@ export function MarketplaceListingForm({
               size="sm"
               variant="secondary"
               className="shrink-0 rounded-full"
-              disabled={isPublishing || saleFormat === 'auction' || variants.fields.length >= 100}
+              disabled={
+                isPublishing ||
+                followsVariants ||
+                followsPrice ||
+                saleFormat === 'auction' ||
+                variants.fields.length >= 100
+              }
               onClick={() =>
                 variants.append({
                   sku: '',
@@ -735,28 +776,28 @@ export function MarketplaceListingForm({
                   control={form.control}
                   label="Seller SKU"
                   placeholder="BOOTS-42"
-                  disabled={isPublishing}
+                  disabled={isPublishing || followsVariants}
                 />
                 <ControlledInputField
                   name={`variants.${index}.size`}
                   control={form.control}
                   label="Size"
                   placeholder="42"
-                  disabled={isPublishing}
+                  disabled={isPublishing || followsVariants}
                 />
                 <ControlledInputField
                   name={`variants.${index}.color`}
                   control={form.control}
                   label="Color"
                   placeholder="Brown"
-                  disabled={isPublishing}
+                  disabled={isPublishing || followsVariants}
                 />
                 <ControlledInputField
                   name={`variants.${index}.style`}
                   control={form.control}
                   label="Style"
                   placeholder="Classic"
-                  disabled={isPublishing}
+                  disabled={isPublishing || followsVariants}
                 />
                 {fulfillment === 'digital' ? (
                   <div className="flex flex-col gap-3">
@@ -809,7 +850,7 @@ export function MarketplaceListingForm({
                   control={form.control}
                   label={`Price override (${priceUnit})`}
                   placeholder="Optional"
-                  disabled={isPublishing}
+                  disabled={isPublishing || followsPrice}
                 />
                 {variants.fields.length > 1 && (
                   <Button
@@ -818,7 +859,7 @@ export function MarketplaceListingForm({
                     variant="ghost"
                     className="absolute top-2 right-2 rounded-full"
                     aria-label={`Remove variant ${index + 1}`}
-                    disabled={isPublishing}
+                    disabled={isPublishing || followsVariants || followsPrice}
                     onClick={() => variants.remove(index)}
                   >
                     <Trash2 className="size-4" />

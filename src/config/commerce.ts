@@ -9,6 +9,7 @@ import {
   getPaykitServerApi,
   getPaykitSetupCreatorParam,
   getPaykitSetupUrl,
+  getStoreSyncEnabled,
   getUsdtPaymentsEnabled,
 } from '@/libs/runtime-config/runtime-config';
 import type {
@@ -27,6 +28,7 @@ export {
   getPaykitServerApi,
   getPaykitSetupCreatorParam,
   getPaykitSetupUrl,
+  getStoreSyncEnabled,
   getUsdtPaymentsEnabled,
   type PaykitServerApi,
 };
