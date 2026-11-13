@@ -4,6 +4,7 @@ import {
   type CommerceCatalogStreamFilters,
   type CommerceCheckoutFulfillmentInput,
   type CommerceReviewsPage,
+  type CommerceWatchlistSyncStatus,
 } from '@/application/commerce/commerce';
 import {
   type CheckoutDeliveryKeysResolution,
@@ -2079,15 +2080,24 @@ export class CommerceController {
    * Runs one cross-device watchlist sync round (pull, merge, push) and
    * mirrors the outcome into the commerce store for UI surfaces. Safe to call
    * opportunistically: signed-out/sandbox rounds are skipped and leave the
-   * status at `idle`, and overlapping calls share one round-trip.
+   * status at `idle`, and overlapping calls share one round-trip. A round
+   * whose auth scope ends (sign-out, account switch) stops writing and
+   * leaves the status alone.
    */
-  static async syncWatchlist(): Promise<void> {
+  static async syncWatchlist({ signal = captureAuthScope() }: { signal?: AbortSignal } = {}): Promise<void> {
     const currentUserPubky = useAuthStore.getState().currentUserPubky;
     if (!currentUserPubky) {
       useCommerceStore.getState().setWatchlistSyncStatus('idle');
       return;
     }
-    const status = await CommerceApplication.syncWatchlist(currentUserPubky);
+    let status: CommerceWatchlistSyncStatus;
+    try {
+      status = await CommerceApplication.syncWatchlist(currentUserPubky, signal);
+    } catch (error) {
+      if (signal.aborted) return;
+      throw error;
+    }
+    if (signal.aborted) return;
     useCommerceStore.getState().setWatchlistSyncStatus(status === 'skipped' ? 'idle' : status);
   }
 

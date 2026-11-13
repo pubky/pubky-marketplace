@@ -3,6 +3,7 @@ import { AuthApplication } from '@/application/auth/auth';
 import { BootstrapApplication } from '@/application/bootstrap/bootstrap';
 import { ChatApplication } from '@/application/chat/chat';
 import { CommerceApplication } from '@/application/commerce/commerce';
+import { CommercePrivKeyringApplication } from '@/application/commerce/priv-keyring';
 import { SettingsApplication } from '@/application/settings/settings';
 import { UserApplication } from '@/application/user/user';
 import type { CommerceAdapterMode } from '@/config/commerce';
@@ -12,13 +13,16 @@ import { MuteController } from '@/controllers/mute/mute';
 import { NotificationController } from '@/controllers/notification/notification';
 import { clearDatabase } from '@/database/franky/franky.helpers';
 import { chatMessageUrl } from '@/libs/chat/paths';
+import type { PrivKeyring } from '@/libs/commerce/priv-envelope';
 import { HttpMethod } from '@/libs/http/http.types';
 import { Identity } from '@/libs/identity/identity';
+import { Logger } from '@/libs/logger/logger';
 import { NotificationType } from '@/models/notification/notification.types';
 import { PubkySpecsSingleton } from '@/pipes/pipes.builder';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import { InboxService } from '@/services/inbox/inbox';
 import { LocalChatService } from '@/services/local/chat/chat';
+import { LocalCommerceService } from '@/services/local/commerce/commerce';
 import { LocalFeedService } from '@/services/local/feed/feed';
 import { LocalNotificationService } from '@/services/local/notification/notification';
 import { LocalStreamPostsService } from '@/services/local/stream/posts/posts';
@@ -30,6 +34,7 @@ import { NexusPostStreamService } from '@/services/nexus/stream/posts/postStream
 import { NexusUserStreamService } from '@/services/nexus/stream/users/userStream';
 import { NexusUserService } from '@/services/nexus/user/user';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { useNotificationStore } from '@/stores/notification/notification.store';
 import { createNotificationFixture } from '@/test/fixtures/commerce/notifications';
 import { createOrderFixture } from '@/test/fixtures/commerce/orders';
@@ -332,6 +337,63 @@ describe('work started for an account writes nothing for it once its sign-out st
 
     expect(save).not.toHaveBeenCalled();
     expect(outcome).toMatchObject({ name: 'AbortError' });
+  });
+
+  describe('watchlist sync', () => {
+    const KEYRING: PrivKeyring = {
+      ownerPubky: ALICE,
+      currentKeyId: 'a'.repeat(32),
+      keys: [{ keyId: 'a'.repeat(32), key: new Uint8Array(32).fill(3) }],
+    };
+
+    beforeEach(() => {
+      commerceConfig.mode = 'transaction-service';
+      installWebLocks();
+      vi.spyOn(HomeserverService, 'hasActiveSession').mockReturnValue(true);
+      vi.spyOn(HomeserverService, 'canCurrentSessionWrite').mockReturnValue(true);
+      vi.spyOn(HomeserverService, 'isCurrentSessionGrant').mockReturnValue(false);
+      vi.spyOn(LocalCommerceService, 'getFavorites').mockResolvedValue([]);
+      vi.spyOn(LocalCommerceService, 'getWatchTombstones').mockResolvedValue([]);
+      vi.spyOn(LocalCommerceService, 'getSyncJob').mockResolvedValue(asOpaque({ updated_at: 7 }));
+    });
+    afterEach(() => {
+      removeWebLocks();
+      CommerceApplication.resetWatchlistSyncInFlight();
+    });
+
+    it('a watchlist the sign-in sync reads as sign-out starts is neither applied locally nor written back', async () => {
+      signIn(ALICE);
+      const homeserver = installFakeHomeserver();
+      homeserver.files.set(`pubky://${ALICE}/priv/pubky.app/marketplace/v1/watchlist.json`, {
+        schemaVersion: 1,
+        recordType: 'watchlist',
+        ownerPubky: ALICE,
+        revision: 2,
+        createdAt: '2025-01-01T00:00:00.000Z',
+        updatedAt: '2025-01-02T00:00:00.000Z',
+        items: [{ listingOwnerPubky: BOB, listingId: 'boots_01', watchedAtMs: 100 }],
+        tombstones: [],
+      });
+      const keys = deferred<Awaited<ReturnType<typeof CommercePrivKeyringApplication.get>>>();
+      vi.spyOn(CommercePrivKeyringApplication, 'get').mockReturnValue(keys.promise);
+      const apply = vi.spyOn(LocalCommerceService, 'applyWatchlistState').mockResolvedValue(undefined);
+      const complete = vi.spyOn(LocalCommerceService, 'completeSyncJobIfUnchanged').mockResolvedValue(true);
+      const rounds = vi.spyOn(CommerceApplication, 'syncWatchlist');
+      const warn = vi.spyOn(Logger, 'warn');
+
+      await AuthController.bootstrapWithDelay();
+      await vi.waitFor(() => expect(CommercePrivKeyringApplication.get).toHaveBeenCalledWith(ALICE));
+      const finishSignOut = startSignOut();
+      keys.resolve({ kind: 'keys', keyring: KEYRING });
+      await Promise.allSettled(rounds.mock.results.map((result) => result.value));
+      await finishSignOut();
+
+      expect(apply).not.toHaveBeenCalled();
+      expect(complete).not.toHaveBeenCalled();
+      expect(homeserver.log.filter((entry) => !entry.startsWith('GET ') && !entry.startsWith('LIST '))).toEqual([]);
+      expect(useCommerceStore.getState().watchlistSyncStatus).toBe('idle');
+      expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('Watchlist sync'), expect.anything());
+    });
   });
 
   it('seller confirmation: a pass that started before sign-out confirms nothing after it starts', async () => {
