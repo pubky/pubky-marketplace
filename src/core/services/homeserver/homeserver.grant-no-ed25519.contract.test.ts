@@ -117,16 +117,6 @@ describe('Shop grant sign-in without WebCrypto Ed25519 (real SDK)', () => {
     expect(pendingOwnedGrants()).toEqual([]);
   });
 
-  it('signup qr is a signup_grant on the same fallback', async () => {
-    const flow = await HomeserverService.generateSignupAuthUrl({ inviteCode: 'test-invite' });
-    flow.awaitApproval.catch(() => {});
-    try {
-      expect(new URL(flow.authorizationUrl).host).toBe('signup_grant');
-    } finally {
-      flow.cancelAuthFlow();
-    }
-  });
-
   it('resumes a pending fallback flow on the same relay channel after the relay drops', async () => {
     const resume = vi.spyOn(Pubky.prototype, 'resumeGrantAuthFlow');
     const resumeDelegated = vi.spyOn(GrantAuthFlow, 'resumeDelegated');

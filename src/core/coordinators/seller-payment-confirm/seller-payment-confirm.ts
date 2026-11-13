@@ -1,4 +1,4 @@
-import { AUTH_ROUTES } from '@/app/routes';
+import { ACCOUNT_ROUTES, AUTH_ROUTES } from '@/app/routes';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { Coordinator } from '@/coordinators/base/coordinator';
 import { routeToRegex } from '@/coordinators/base/coordinators.utils';
@@ -25,7 +25,7 @@ export class SellerPaymentConfirmCoordinator extends Coordinator<
   private static instance: SellerPaymentConfirmCoordinator | null = null;
 
   private disabledRoutes: RegExp[] = [
-    routeToRegex('/onboarding'),
+    routeToRegex(ACCOUNT_ROUTES.COMPLETE_PROFILE),
     routeToRegex(AUTH_ROUTES.LOGOUT),
     routeToRegex(AUTH_ROUTES.SIGN_IN),
   ];

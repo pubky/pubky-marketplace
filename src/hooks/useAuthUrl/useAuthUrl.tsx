@@ -33,14 +33,12 @@ const isAuthFlowCanceled = (error: unknown): boolean =>
 
 /**
  * Manages the authentication URL lifecycle for Pubky Ring and Bitkit authorization.
- * @param options - Configuration for auth URL generation (autoFetch, type, inviteCode for signup)
+ * @param options - Configuration for auth URL generation (autoFetch and scoped encryption keys)
  * @returns URL state, loading/expired flags, and fetch/copy actions
  */
 export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
   const autoFetch = options.autoFetch ?? true;
-  const type = options.type ?? 'signin';
-  const inviteCode = options.type === 'signup' ? options.inviteCode : '';
-  const withPrivKeys = options.type === 'signup' ? undefined : options.withPrivKeys;
+  const withPrivKeys = options.withPrivKeys;
 
   const [url, setUrl] = useState('');
   const [isLoading, setIsLoading] = useState(autoFetch);
@@ -55,11 +53,9 @@ export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
     try {
       // Request auth URL from controller
       const { authorizationUrl, awaitApproval } =
-        type === 'signup'
-          ? await AuthController.getSignupAuthUrl(inviteCode)
-          : await (withPrivKeys === undefined
-              ? AuthController.getAuthUrl()
-              : AuthController.getAuthUrl({ withPrivKeys }));
+        withPrivKeys === undefined
+          ? await AuthController.getAuthUrl()
+          : await AuthController.getAuthUrl({ withPrivKeys });
 
       awaitApproval
         .then(async (session: Session) => {
@@ -122,7 +118,7 @@ export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
         setIsLoading(false);
       }
     }
-  }, [type, inviteCode, withPrivKeys]);
+  }, [withPrivKeys]);
 
   const copyAuthUrl = useCallback(async (): Promise<void> => {
     if (!url) return;

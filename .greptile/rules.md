@@ -10,6 +10,10 @@ Entry points (UI, Coordinators) -> Controllers -> Application -> Services -> Mod
 - Application is NOT an entry point — only Controllers call it
 - Services are IO boundaries — only Application calls them
 
+## Account maintenance
+
+Shop account creation is retired. Existing accounts retain sign-in and `/complete-profile`. Shop no longer stores or exports account keys; preserve explicit logout/account-boundary cleanup and the existing storage namespace. See `docs/launch/grant-auth-session.md`; registration helpers still used by explicit test harnesses are not dead code.
+
 ## Controller Naming Conventions
 
 - `fetch*` — network only, no cache

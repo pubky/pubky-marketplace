@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { CheckCircle, Circle, Key, Loader2, RefreshCw } from 'lucide-react';
 import { BasePathImage as Image } from '@/atoms/BasePathImage/BasePathImage';
 import { Button } from '@/atoms/Button/Button';
@@ -28,7 +28,6 @@ import {
   SignerAuthorizeButton,
 } from '@/molecules/SignerAuthOption/SignerAuthOption';
 import { toast } from '@/molecules/Toaster/toast';
-import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
 import { useSignInStore } from '@/stores/signIn/signIn.store';
 import type { SignInState } from '@/stores/signIn/signIn.types';
 
@@ -211,10 +210,6 @@ export const SignInContent = () => {
   const { url, isLoading, isExpired, fetchUrl, copyAuthUrl, isOpeningRing, onAuthorizeClick } = auth;
   const authUrlResolved = useSignInStore((state) => state.authUrlResolved);
   const isGrantSignInAvailable = useGrantSignInAvailable();
-  useEffect(() => {
-    // Clear onboarding storage when sign-in flow begins to prevent backup reminders from showing for existing users
-    useOnboardingStore.getState().reset();
-  }, []);
   const handleQRClick = async () => {
     if (!url) return;
     await copyWithToast(copyAuthUrl);

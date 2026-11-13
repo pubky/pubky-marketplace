@@ -93,7 +93,7 @@ Where a row says "team to assign", the owning team names the person.
 | `/post/:user/:id`, `/collections/*` | pubky.app, same path | Saved listings stay in the Shop watchlist |
 | `/profile`, `/profile/:pubky/*` | pubky.app, same path | `/profile/notifications` goes to `/marketplace/notifications` |
 | `/settings/*` | pubky.app, same path | Shop settings stay at `/marketplace/settings/*`, plus Shop sign-out |
-| `/onboarding/*` | Stays in the Shop | D4 |
+| `/onboarding/*` | Retired: `/onboarding/profile` goes to `/complete-profile`, the rest to `/sign-in` | D4 |
 | `/marketplace/*`, `/messages/*`, `/sign-in`, `/logout`, `/copyright`, `/invite/*`, `/offline`, `/share` | Stays | `/` already redirects to `/marketplace` |
 
 **Component fixes. A redirect list alone is not enough,** because several places send users to `/home` themselves. Without SSO, each of these would land a signed-in user on a signed-out pubky.app. All of them point to `/marketplace` instead:
@@ -483,7 +483,7 @@ Each has a recommendation unless noted:
    - *Recommended:* open the beta on day 10 with the stopgaps (one approval per site). Commit to **delegated grants through a Passport agent** as post-beta work ([pubky-sso-design.md](../sso/pubky-sso-design.md), [team proposal](../sso/sso-proposal-for-team.md)).
    - Send the proposal on day 1. Ask core for SSO-H5 and H6 first, because they unblock pubky.app's #2614 and our own move to grants.
    - *Alternatives:* hold the beta until SSO lands, which is all outside the two weeks; or the Ring bundle, rejected in §3 because it isn't SSO for new apps, new scopes or lost sessions.
-2. **D4 New-user sign-up.** *Recommended:* keep the Shop's own sign-up, which covers Ring, Bitkit and, with F4, Passport. *Alternative:* send new users to pubky.app onboarding.
+2. ~~**D4 New-user sign-up.** *Recommended:* keep the Shop's own sign-up, which covers Ring, Bitkit and, with F4, Passport. *Alternative:* send new users to pubky.app onboarding.~~ **Decided 13 Nov:** the Shop's own sign-up is retired ([#551](https://github.com/pubky/pubky-marketplace/pull/551)). New users create their account in pubky.app; the Shop signs in existing accounts and completes a missing profile. This supersedes #49 and the create-account QR decision under "Made 1 Oct".
 3. **D8 Infra (BitcoinErrorLog, on SpontaneousOverthrow's 6 Oct answer).** *Recommended:* S, cutover on day 8. *Alternative:* R, the current maintainers keep deploying every backend change on the interim development deployment through the beta.
 4. **D9 Paykit refusals and paykit-server#24 (BitcoinErrorLog).** *Recommended:* post-launch, unless the beta promotes Bitcoin checkout or includes Android sellers. The port changes the refusal states (reconnect required, `reader_not_payable`, parked peer), so design the copy against the port, not the fork.
 5. **D10 Paykit server port: owner and starting branch (Paykit team).** The Paykit team assigns the owner and makes the technical decision on which branch the port starts from: a fresh port from upstream paykit-server `v0.1.0-rc9` (`v0.1.0-rc8` when this was written) on a fresh database (the plan in §5), or the merge-forward in [paykit-server#28](https://github.com/BitcoinErrorLog/paykit-server/issues/28) into the fork's `marketplace-rails` branch.

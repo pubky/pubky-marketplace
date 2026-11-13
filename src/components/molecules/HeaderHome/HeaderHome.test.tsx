@@ -1,7 +1,7 @@
 import { usePathname } from 'next/navigation';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { APP_ROUTES, AUTH_ROUTES, ONBOARDING_ROUTES } from '@/app/routes';
+import { APP_ROUTES, AUTH_ROUTES } from '@/app/routes';
 import { setSocialHost } from '@/test-utils/social-host';
 import { HeaderHome } from './HeaderHome';
 
@@ -63,13 +63,13 @@ describe('HeaderHome', () => {
     expect(mockPush).toHaveBeenCalledWith(AUTH_ROUTES.SIGN_IN);
   });
 
-  it('keeps the onboarding action on the sign-in page', () => {
+  it('keeps the sign-in action on the sign-in page', () => {
     vi.mocked(usePathname).mockReturnValue(AUTH_ROUTES.SIGN_IN);
 
     render(<HeaderHome />);
-    fireEvent.click(screen.getByRole('button', { name: 'New here?' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
-    expect(mockPush).toHaveBeenCalledWith(ONBOARDING_ROUTES.HUMAN);
+    expect(mockPush).toHaveBeenCalledWith(AUTH_ROUTES.SIGN_IN);
   });
 
   it('applies correct container classes', () => {

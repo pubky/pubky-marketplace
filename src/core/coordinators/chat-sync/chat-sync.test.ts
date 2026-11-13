@@ -70,6 +70,15 @@ describe('ChatSyncCoordinator', () => {
     vi.restoreAllMocks();
   });
 
+  it('pauses chat work on /complete-profile', async () => {
+    const coordinator = ChatSyncCoordinator.getInstance();
+    coordinator.setRoute('/complete-profile');
+    coordinator.start();
+    signIn();
+    await settle();
+    expect(ChatController.getOrFetchIdentity).not.toHaveBeenCalled();
+    expect(pingsCalls).toBe(0);
+  });
   it('does nothing signed out and sets up, leads and polls once signed in', async () => {
     const coordinator = ChatSyncCoordinator.getInstance();
     coordinator.setRoute('/marketplace');

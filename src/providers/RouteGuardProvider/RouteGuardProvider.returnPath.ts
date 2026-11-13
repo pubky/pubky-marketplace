@@ -40,8 +40,26 @@ export function isValidRouteGuardReturnToPath(path: unknown): path is string {
   return true;
 }
 
+/** The path part of a stored return destination, without its query or hash. */
+export function routeGuardReturnToPathname(path: string): string {
+  return path.split(/[?#]/, 1)[0];
+}
+
+/**
+ * The guarded path with the query it was opened with, so a deep link such as
+ * `/marketplace/checkout?offer=…` survives sign-in or profile completion. A query that
+ * fails validation is dropped and the bare path is kept. The hash is never stored.
+ */
+export function routeGuardReturnToWithSearch(pathname: string, search: string): string {
+  if (search.length <= 1) return pathname;
+  const candidate = `${pathname}${search}`;
+  return isValidRouteGuardReturnToPath(candidate) ? candidate : pathname;
+}
+
+/** Route access is decided by the path alone; a query never widens or narrows it. */
 export function isRouteGuardReturnToAllowed(path: string, allowedRoutes: string[]): boolean {
-  return allowedRoutes.some((route) => matchesAllowedRoute(path, route));
+  const pathname = routeGuardReturnToPathname(path);
+  return allowedRoutes.some((route) => matchesAllowedRoute(pathname, route));
 }
 
 export function storeRouteGuardReturnTo(path: string): void {

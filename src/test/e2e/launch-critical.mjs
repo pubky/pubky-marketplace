@@ -108,7 +108,7 @@ async function expectVisible(page, locator, name, timeout = 20_000) {
   }
 }
 
-async function closeJoinDialog(page) {
+async function closeSignInDialog(page) {
   await page.keyboard.press('Escape').catch(() => undefined);
   const close = page.locator('[data-testid="dialog-close"]');
   if (await close.count()) {
@@ -128,9 +128,9 @@ async function gotoAndSettle(page, pathname) {
   return response;
 }
 
-async function waitForJoinPubky(page) {
-  const heading = page.getByRole('heading', { name: 'Join Pubky' });
-  return expectVisible(page, heading, 'join-pubky-dialog', 20_000);
+async function waitForSignIn(page) {
+  const heading = page.getByRole('heading', { name: 'Sign in to Pubky' });
+  return expectVisible(page, heading, 'sign-in-dialog', 20_000);
 }
 
 async function setStoredTheme(page, theme) {
@@ -247,9 +247,9 @@ async function exerciseListingCheckout(page) {
   const buy = page.getByRole('button', { name: 'Buy', exact: true });
   if (await buy.count()) {
     await buy.first().click();
-    await waitForJoinPubky(page);
-    record('checkout:payment-step', true, 'Buy → Join Pubky');
-    await closeJoinDialog(page);
+    await waitForSignIn(page);
+    record('checkout:payment-step', true, 'Buy → Sign in to Pubky');
+    await closeSignInDialog(page);
   } else {
     const unavailable = await page.getByRole('heading', { name: 'Listing unavailable' }).count();
     record(
@@ -458,7 +458,7 @@ async function waitForAuthStore(page, timeout = 90_000) {
  */
 async function signInSeller(page, secretHex) {
   try {
-    await closeJoinDialog(page);
+    await closeSignInDialog(page);
     await gotoAndSettle(page, '/sign-in');
     const authorizationUrl = await waitForStableAuthUrl(page);
     try {
@@ -745,7 +745,7 @@ async function collectBoardSignals(page, pageErrors, errorOffset) {
   const studio = page.locator('[data-testid="inventory-studio"]');
   await Promise.race([
     studio.waitFor({ state: 'attached', timeout: 15_000 }),
-    page.getByRole('heading', { name: 'Join Pubky' }).waitFor({ state: 'visible', timeout: 15_000 }),
+    page.getByRole('heading', { name: 'Sign in to Pubky' }).waitFor({ state: 'visible', timeout: 15_000 }),
     page.locator('nextjs-portal, [data-nextjs-dialog]').waitFor({ state: 'attached', timeout: 15_000 }),
   ]).catch(() => undefined);
 
@@ -775,7 +775,7 @@ async function collectBoardSignals(page, pageErrors, errorOffset) {
     redirectedHome: routeOf(page.url()) === '/marketplace',
     onInventory: routeOf(page.url()) === '/marketplace/dashboard/inventory',
     joinVisible: await page
-      .getByRole('heading', { name: 'Join Pubky' })
+      .getByRole('heading', { name: 'Sign in to Pubky' })
       .isVisible()
       .catch(() => false),
     boardMounted: (await studio.count()) > 0,
@@ -824,10 +824,10 @@ async function probeInventoryGuest(page, pageErrors) {
       'inventory:board-route',
       true,
       guestGate
-        ? 'guest Join Pubky gate (board is auth-only; no throw)'
+        ? 'guest Sign in to Pubky gate (board is auth-only; no throw)'
         : `guest board status=${signals.status || 'missing'} (no throw)`,
     );
-    await closeJoinDialog(page);
+    await closeSignInDialog(page);
     return;
   }
 
@@ -1090,8 +1090,8 @@ async function main() {
     const joinButton = page.getByTestId('header-explore-join-button');
     if (await expectVisible(page, joinButton, 'sign-in:header-join')) {
       await joinButton.click();
-      await waitForJoinPubky(page);
-      await closeJoinDialog(page);
+      await waitForSignIn(page);
+      await closeSignInDialog(page);
     }
 
     await expectVisible(page, page.getByText(fixture.listingTitle, { exact: false }), 'catalog:fixture-title');
@@ -1127,20 +1127,20 @@ async function main() {
       .waitForURL((url) => TARGET.routeOf(url.pathname) === '/marketplace', { timeout: 20_000 })
       .catch(() => undefined);
     assert('cart:guest-redirect', routeOf(page.url()) === '/marketplace', page.url());
-    await waitForJoinPubky(page);
+    await waitForSignIn(page);
     const placeOrder = await page.getByRole('button', { name: /Place .* order/i }).count();
     assert('cart:no-sandbox-checkout', placeOrder === 0, 'guest cannot place an order');
-    await closeJoinDialog(page);
+    await closeSignInDialog(page);
 
     await gotoAndSettle(page, fixture.pages[3].path);
     await page
       .waitForURL((url) => TARGET.routeOf(url.pathname) === '/marketplace', { timeout: 20_000 })
       .catch(() => undefined);
     assert('compose:guest-redirect', routeOf(page.url()) === '/marketplace', page.url());
-    await waitForJoinPubky(page);
+    await waitForSignIn(page);
     const studio = await page.locator('[data-surface="seller-studio"]').count();
-    assert('compose:no-seller-studio', studio === 0, 'composer stays behind Join Pubky');
-    await closeJoinDialog(page);
+    assert('compose:no-seller-studio', studio === 0, 'composer stays behind Sign in to Pubky');
+    await closeSignInDialog(page);
 
     if (REQUIRE_SELLER_BOARD) {
       const secretHex = syntheticFixture?.sellerSecretHex ?? (await loadSellerSecretHex());

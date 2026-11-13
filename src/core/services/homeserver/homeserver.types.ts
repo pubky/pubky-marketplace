@@ -1,4 +1,4 @@
-import type { Capabilities, PublicKey, Session } from '@synonymdev/pubky';
+import type { PublicKey, Session } from '@synonymdev/pubky';
 import type { TKeypairParams } from '@/application/auth/auth.types';
 import { HttpMethod } from '@/libs/http/http.types';
 
@@ -14,9 +14,6 @@ export type THomeserverSignUpParams = TKeypairParams & {
 export type THomeserverPublicKeyParams = {
   publicKey: PublicKey;
 };
-
-/** Homeserver signup token verification outcome from GET /signup_tokens/<token>. */
-export type TSignupTokenVerificationStatus = 'valid' | 'used' | 'invalid';
 
 export type THomeserverSessionResult = {
   session: Session;
@@ -67,11 +64,6 @@ export type PrivPath<T extends string = string> = `/priv/${T}`;
  * A path the current session owns outright: its own `/pub/` or `/priv/` tree.
  */
 export type OwnedPath<T extends string = string> = PubPath<T> | PrivPath<T>;
-
-export type TGenerateSignupAuthUrlParams = {
-  inviteCode: string;
-  caps?: Capabilities;
-};
 
 export type THomeserverFetchParams = {
   url: string;

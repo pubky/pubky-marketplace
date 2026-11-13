@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { z } from 'zod';
-import { getShopHomeRoute, PROFILE_ROUTES, SETTINGS_ROUTES } from '@/app/routes';
+import { PROFILE_ROUTES, SETTINGS_ROUTES } from '@/app/routes';
 import { USER_BIO_MAX_LENGTH, USER_NAME_MAX_LENGTH, USER_NAME_MIN_LENGTH } from '@/config/user';
 import { AuthController } from '@/controllers/auth/auth';
 import { FileController } from '@/controllers/file/file';
@@ -15,6 +15,7 @@ import { Logger } from '@/libs/logger/logger';
 import { safeExternalUrlSchema } from '@/libs/utils/safeExternalUrl';
 import { toast } from '@/molecules/Toaster/toast';
 import { UserValidator } from '@/pipes/user/user.validator';
+import { useAuthStore } from '@/stores/auth/auth.store';
 import { useLocalFilesStore } from '@/stores/localFiles/localFiles.store';
 import {
   PROFILE_SUBMIT_TEXT,
@@ -44,7 +45,6 @@ export function useProfileForm(props: UseProfileFormProps): UseProfileFormReturn
   const { mode, pubky } = props;
   // Extract userDetails for edit mode to avoid object reference issues in useEffect
   const userDetails = props.mode === 'edit' ? props.userDetails : undefined;
-  const setShowWelcomeDialog = props.mode === 'create' ? props.setShowWelcomeDialog : undefined;
 
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -293,6 +293,13 @@ export function useProfileForm(props: UseProfileFormProps): UseProfileFormReturn
   // Submit handler
   const handleSubmit = useCallback(async () => {
     if (!pubky) return;
+    const startingAuth = useAuthStore.getState();
+    const session = startingAuth.session;
+    const isCurrentIdentity = () => {
+      const auth = useAuthStore.getState();
+      return Boolean(session) && auth.session === session && auth.currentUserPubky === pubky && !auth.isLoggingOut;
+    };
+    if (mode === 'create' && !isCurrentIdentity()) return;
 
     setIsSaving(true);
     setSubmitText(PROFILE_SUBMIT_TEXT.saving);
@@ -335,10 +342,12 @@ export function useProfileForm(props: UseProfileFormProps): UseProfileFormReturn
         }
       }
 
+      if (mode === 'create' && !isCurrentIdentity()) return;
       setSubmitText(PROFILE_SUBMIT_TEXT.savingProfile);
 
       if (mode === 'create') {
-        await ProfileController.commitCreate({ profile: user, image, pubky });
+        await ProfileController.commitCreate({ profile: user, image, pubky, isCurrent: isCurrentIdentity });
+        if (!isCurrentIdentity()) return;
         // Store a NEW blob URL globally so all avatar components show the new avatar instantly
         // We create a separate blob URL so the form's cleanup can safely revoke its own
         if (avatarFile) {
@@ -346,8 +355,7 @@ export function useProfileForm(props: UseProfileFormProps): UseProfileFormReturn
           useLocalFilesStore.getState().setProfile(globalBlobUrl);
         }
         await AuthController.bootstrapWithDelay();
-        setShowWelcomeDialog?.(true);
-        router.push(getShopHomeRoute());
+        // RouteGuard owns navigation after guarded bootstrap marks this identity complete.
       } else {
         await ProfileController.commitUpdate({
           name: user.name,
@@ -426,17 +434,7 @@ export function useProfileForm(props: UseProfileFormProps): UseProfileFormReturn
     } finally {
       setIsSaving(false);
     }
-  }, [
-    pubky,
-    mode,
-    validateUser,
-    avatarFile,
-    avatarChanged,
-    originalAvatarUrl,
-    userDetails,
-    setShowWelcomeDialog,
-    router,
-  ]);
+  }, [pubky, mode, validateUser, avatarFile, avatarChanged, originalAvatarUrl, userDetails, router]);
 
   const handleCancel = useCallback(() => {
     // Check if there's navigation history to go back to

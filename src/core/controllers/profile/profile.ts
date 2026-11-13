@@ -5,15 +5,8 @@ import type {
   TDeleteAccountInput,
   TDownloadDataInput,
 } from '@/controllers/profile/profile.types';
-import { ValidationErrorCode } from '@/libs/error/error.codes';
-import { Err } from '@/libs/error/error.factories';
-import { ErrorService } from '@/libs/error/error.types';
-import { Identity } from '@/libs/identity/identity';
-import { PASSPHRASE_MIN_LENGTH } from '@/libs/password/password';
 import type { Pubky } from '@/models/models.types';
 import { UserNormalizer } from '@/pipes/user/user.normalizer';
-import { useAuthStore } from '@/stores/auth/auth.store';
-import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
 
 // Operations related with the profile.json file in the homeserver
 export class ProfileController {
@@ -25,7 +18,7 @@ export class ProfileController {
    * @param image - The image to create
    * @param pubky - The public key of the user
    */
-  static async commitCreate({ profile, image, pubky }: TCommitSetDetailsParams) {
+  static async commitCreate({ profile, image, pubky, isCurrent }: TCommitSetDetailsParams) {
     const { user, meta } = UserNormalizer.to(
       {
         name: profile.name,
@@ -37,7 +30,7 @@ export class ProfileController {
       pubky,
     );
 
-    await ProfileApplication.commitCreate({ profile: user, url: meta.url, pubky });
+    await ProfileApplication.commitCreate({ profile: user, url: meta.url, pubky, isCurrent });
   }
 
   /**
@@ -73,33 +66,6 @@ export class ProfileController {
       image,
       links: UserNormalizer.linksFromUi(links),
     });
-  }
-
-  /**
-   * Generates a new pair of secret key and mnemonic and sets them in the onboarding and auth stores.
-   */
-  static generateSecrets() {
-    const secrets = Identity.generateSecrets();
-    useOnboardingStore.getState().setSecrets(secrets);
-    useAuthStore.getState().setCurrentUserPubky(Identity.z32FromSecret(secrets.secretKey));
-  }
-
-  /**
-   * Creates a recovery file for the keypair
-   * @param passphrase - The passphrase to use to create the recovery file
-   * @throws AppError (Validation, INVALID_INPUT) when the passphrase is shorter than {@link PASSPHRASE_MIN_LENGTH} characters
-   */
-  static createRecoveryFile(passphrase: string) {
-    if (passphrase.length < PASSPHRASE_MIN_LENGTH) {
-      throw Err.validation(
-        ValidationErrorCode.INVALID_INPUT,
-        `The backup password must be at least ${PASSPHRASE_MIN_LENGTH} characters.`,
-        { service: ErrorService.Local, operation: 'createRecoveryFile' },
-      );
-    }
-    const secretKey = useOnboardingStore.getState().selectSecretKey();
-    const keypair = Identity.keypairFromSecretKey(secretKey);
-    Identity.createRecoveryFile({ keypair, passphrase });
   }
 
   /**
