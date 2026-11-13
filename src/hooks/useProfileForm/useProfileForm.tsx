@@ -346,7 +346,7 @@ export function useProfileForm(props: UseProfileFormProps): UseProfileFormReturn
       setSubmitText(PROFILE_SUBMIT_TEXT.savingProfile);
 
       if (mode === 'create') {
-        await ProfileController.commitCreate({ profile: user, image, pubky });
+        await ProfileController.commitCreate({ profile: user, image, pubky, isCurrent: isCurrentIdentity });
         if (!isCurrentIdentity()) return;
         // Store a NEW blob URL globally so all avatar components show the new avatar instantly
         // We create a separate blob URL so the form's cleanup can safely revoke its own

@@ -33,12 +33,28 @@ describe('persisted store keys', () => {
     expect(window.localStorage.getItem(LOCAL_STORAGE_MIGRATION_MARKER_KEY)).not.toBeNull();
   });
 
-  it('removes the key record that retired Shop signup left in the Shop namespace', async () => {
-    window.localStorage.setItem('shop-onboarding-storage', '{"state":{"secretKey":"aa","mnemonic":"words"}}');
+  it('removes the record retired Shop signup left behind once it holds no key', async () => {
+    window.localStorage.setItem(
+      'shop-onboarding-storage',
+      '{"state":{"secretKey":null,"mnemonic":null,"showWelcomeDialog":false,"inviteCode":""},"version":0}',
+    );
 
     await import('./persistedKeys');
 
     expect(window.localStorage.getItem('shop-onboarding-storage')).toBeNull();
+  });
+
+  it.each([
+    ['a secret key', '{"state":{"secretKey":"aa","mnemonic":null},"version":0}'],
+    ['a recovery phrase', '{"state":{"secretKey":null,"mnemonic":"words"},"version":0}'],
+    ['an unreadable value', 'not-json'],
+    ['an unknown shape', '{"version":0}'],
+  ])('keeps the retired signup record when it holds %s', async (_label, record) => {
+    window.localStorage.setItem('shop-onboarding-storage', record);
+
+    await import('./persistedKeys');
+
+    expect(window.localStorage.getItem('shop-onboarding-storage')).toBe(record);
   });
 
   it("never moves or deletes the un-prefixed onboarding record, which may be the App's", async () => {

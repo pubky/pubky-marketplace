@@ -18,7 +18,7 @@ export class ProfileController {
    * @param image - The image to create
    * @param pubky - The public key of the user
    */
-  static async commitCreate({ profile, image, pubky }: TCommitSetDetailsParams) {
+  static async commitCreate({ profile, image, pubky, isCurrent }: TCommitSetDetailsParams) {
     const { user, meta } = UserNormalizer.to(
       {
         name: profile.name,
@@ -30,7 +30,7 @@ export class ProfileController {
       pubky,
     );
 
-    await ProfileApplication.commitCreate({ profile: user, url: meta.url, pubky });
+    await ProfileApplication.commitCreate({ profile: user, url: meta.url, pubky, isCurrent });
   }
 
   /**

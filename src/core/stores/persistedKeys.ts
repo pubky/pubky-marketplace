@@ -61,15 +61,34 @@ function migrateLegacyBrowserLocalStorage(): void {
 migrateLegacyBrowserLocalStorage();
 
 /**
- * Shop signup is retired and nothing reads the key material its onboarding store
- * persisted. Drop that record so no secret stays at rest without a way to use or
- * clear it. Only the Shop-namespaced name is removed: the un-prefixed
- * `onboarding-storage` can belong to pubky.app on a shared origin and is never touched.
+ * Whether the record the retired onboarding store persisted still holds key material.
+ * A record that can't be read counts as holding a key, so it is never deleted on a guess.
+ */
+function retiredOnboardingRecordHoldsKey(raw: string): boolean {
+  try {
+    const record: unknown = JSON.parse(raw);
+    const state = (record as { state?: { secretKey?: unknown; mnemonic?: unknown } } | null)?.state;
+    if (!state || typeof state !== 'object') return true;
+    return Boolean(state.secretKey) || Boolean(state.mnemonic);
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Shop signup is retired and nothing reads the record its onboarding store persisted.
+ * Remove it once it holds no key. A record that still holds a `secretKey` or `mnemonic`
+ * may be the only browser copy of a key that was never backed up, so it stays.
+ * Only the Shop-namespaced name is considered: the un-prefixed `onboarding-storage`
+ * can belong to pubky.app on a shared origin and is never touched.
  */
 function removeRetiredOnboardingStorage(): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.removeItem(shopStorageKey('onboarding-storage'));
+    const key = shopStorageKey('onboarding-storage');
+    const raw = window.localStorage.getItem(key);
+    if (raw === null || retiredOnboardingRecordHoldsKey(raw)) return;
+    window.localStorage.removeItem(key);
   } catch {
     // Storage is unavailable, so nothing could have been persisted.
   }

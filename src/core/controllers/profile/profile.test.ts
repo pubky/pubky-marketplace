@@ -25,6 +25,7 @@ vi.mock('@/pipes/user/user.normalizer', () => ({
   UserNormalizer: mockUserNormalizer,
 }));
 const testPubky = 'o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy' as Pubky;
+const isCurrent = () => true;
 
 let ProfileController: typeof import('./profile').ProfileController;
 
@@ -62,6 +63,7 @@ describe('ProfileController', () => {
         profile: profile as { name: string; bio?: string; links?: { label: string; url: string }[] },
         image: 'image-url',
         pubky: testPubky,
+        isCurrent,
       });
 
       expect(mockUserNormalizer.to).toHaveBeenCalledTimes(1);
@@ -80,6 +82,7 @@ describe('ProfileController', () => {
         profile: userResult.user,
         url: userResult.meta.url,
         pubky: testPubky,
+        isCurrent,
       });
     });
 
@@ -99,6 +102,7 @@ describe('ProfileController', () => {
         profile: profile as { name: string; bio?: string; links?: { label: string; url: string }[] },
         image: null,
         pubky: testPubky,
+        isCurrent,
       });
 
       expect(mockUserNormalizer.to).toHaveBeenCalledWith(
@@ -116,6 +120,7 @@ describe('ProfileController', () => {
         profile: userResult.user,
         url: userResult.meta.url,
         pubky: testPubky,
+        isCurrent,
       });
     });
 
@@ -135,6 +140,7 @@ describe('ProfileController', () => {
           profile: profile as { name: string; bio?: string; links?: { label: string; url: string }[] },
           image: null,
           pubky: testPubky,
+          isCurrent,
         }),
       ).rejects.toThrow('validation failed');
       expect(mockProfileApplication.commitCreate).not.toHaveBeenCalled();
@@ -158,6 +164,7 @@ describe('ProfileController', () => {
           profile: profile as { name: string; bio?: string; links?: { label: string; url: string }[] },
           image: null,
           pubky: testPubky,
+          isCurrent,
         }),
       ).rejects.toThrow('create failed');
     });

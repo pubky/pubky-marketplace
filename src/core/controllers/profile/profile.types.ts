@@ -21,6 +21,8 @@ export type TCommitSetDetailsParams = {
   profile: z.infer<typeof UiUserSchema>;
   image: string | null;
   pubky: Pubky;
+  /** Whether the identity that submitted is still the signed-in one once the write returns. */
+  isCurrent: () => boolean;
 };
 
 export type TCommitUpdateDetailsParams = {

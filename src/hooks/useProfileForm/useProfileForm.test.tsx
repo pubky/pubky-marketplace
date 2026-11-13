@@ -250,9 +250,13 @@ describe('existing-account profile completion authority', () => {
         submit = result.current.handlers.handleSubmit();
       });
       await waitFor(() => expect(ProfileController.commitCreate).toHaveBeenCalled());
+      const { isCurrent } = vi.mocked(ProfileController.commitCreate).mock.calls[0][0];
+      expect(isCurrent()).toBe(true);
       useAuthStore.setState(
         change === 'logout' ? { isLoggingOut: true } : { session: mockSession(), currentUserPubky: 'replacement' },
       );
+      // The write gets the same check, so it can't mark the replacement identity complete.
+      expect(isCurrent()).toBe(false);
       await act(async () => {
         finish();
         await submit;

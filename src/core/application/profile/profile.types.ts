@@ -6,6 +6,8 @@ export type TCreateProfileInput = {
   profile: PubkyAppUser;
   url: string;
   pubky: Pubky;
+  /** Whether the identity that submitted is still the signed-in one once the write returns. */
+  isCurrent: () => boolean;
 };
 
 export type TDeleteAccountParams = {

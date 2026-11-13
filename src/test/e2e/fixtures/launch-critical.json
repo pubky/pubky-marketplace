@@ -5,7 +5,6 @@
   "serviceUrl": "https://marketplace-service.example.test",
   "catalogHeading": "Find something rare.",
   "forbiddenSandboxCopy": "Sandbox · no real funds",
-  "joinDialogHeading": "Join Pubky",
   "listingCardSelector": "a[href*='/marketplace/listing/'][aria-label^='View ']",
   "listingPath": "/marketplace/listing/nkcct8tzquo8n4z5ysz9t963ye9kq1w7gb55aad1z4tmsgjjhmto/2b81df4f390b40e5b0aedabb89e76fa0",
   "listingTitle": "Launch E2E fixture listing",
