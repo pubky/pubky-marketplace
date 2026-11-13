@@ -44,9 +44,12 @@ export class NotificationApplication {
     lastPolledTimestamp,
     lastRead,
     allowedTypes,
+    signal,
   }: TNotificationApplicationNotificationsParams): Promise<TFetchNotificationsResult> {
     const notifications = await NexusUserService.notifications({ user_id: userId, end: lastPolledTimestamp });
+    signal?.throwIfAborted();
     const flatNotifications = await this.fetchMissingEntities({ notifications, viewerId: userId });
+    signal?.throwIfAborted();
     return this.persistAndSummarize({ notifications, lastRead, allowedTypes, flatNotifications });
   }
   /**

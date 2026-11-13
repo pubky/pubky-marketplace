@@ -22,6 +22,7 @@ import {
   shouldAbortIdentityPersist,
   shouldSkipDestructiveCleanup,
 } from '@/controllers/auth/auth-identity-guard';
+import { captureAuthScope, endAuthScope } from '@/controllers/auth/auth-scope';
 import { isGrantKeyCleanupPending } from '@/controllers/auth/grant-key-cleanup';
 import { ChatController } from '@/controllers/chat/chat';
 import { CommerceController } from '@/controllers/commerce/commerce';
@@ -101,6 +102,7 @@ export class AuthController {
     this.hostVersion++;
     this.hostSnapshotKey = null;
     this.logoutGeneration++;
+    endAuthScope();
     this.cancelAllAuthFlows();
     BootstrapApplication.cancelModerationFollow();
     useAuthStore.getState().setSession(null);
@@ -128,6 +130,7 @@ export class AuthController {
     const signal = this.hostReadAbort.signal;
     const version = ++this.hostVersion;
     this.logoutGeneration++;
+    if (snapshot.status === 'signed-out' || snapshot.pubky !== useAuthStore.getState().currentUserPubky) endAuthScope();
     this.cancelAllAuthFlows();
     BootstrapApplication.cancelModerationFollow();
     // Fence homeserver requests immediately; private cleanup is serialized below.
@@ -623,9 +626,11 @@ export class AuthController {
   private static async hydrateMeImAlive({
     pubky,
     isCurrent = () => useAuthStore.getState().currentUserPubky === pubky && Boolean(useAuthStore.getState().session),
+    signal,
   }: {
     pubky: Pubky;
     isCurrent?: () => boolean;
+    signal?: AbortSignal;
   }) {
     const signInStore = useSignInStore.getState();
     const {
@@ -658,7 +663,10 @@ export class AuthController {
     const preferences = (remoteSettings ?? localSettings).notifications;
     const allowedTypes = NotificationNormalizer.toEnabledTypes(preferences);
 
-    const notification = await BootstrapApplication.initialize({ pubky, lastReadUrl: url, allowedTypes }, onProgress);
+    const notification = await BootstrapApplication.initialize(
+      { pubky, lastReadUrl: url, allowedTypes, signal },
+      onProgress,
+    );
     if (!isCurrent()) return;
     useNotificationStore.getState().setState(notification);
 
@@ -1007,6 +1015,7 @@ export class AuthController {
       }
       const prepare = async () => {
         if ([captured?.pubky, currentPubky, persistedPubky].some((pubky) => pubky && pubky !== newPubky)) {
+          endAuthScope();
           await clearDatabase();
           useMigrationStore.getState().reset();
           // Reset before bootstrap can upload local fallback preferences for
@@ -1100,6 +1109,8 @@ export class AuthController {
     preservePrivateData: boolean;
     keepServicePubky: Pubky | null;
   }) {
+    // Nothing started for the departing identity may write after this wipe.
+    endAuthScope();
     BootstrapApplication.cancelModerationFollow();
     // Capture pubky before resetting auth store; used to scope marker cleanup.
     const pubky = useAuthStore.getState().currentUserPubky;
@@ -1423,6 +1434,7 @@ export class AuthController {
     // Bump before any await so an in-flight restore (sharing the Application
     // singleton promise) can tell its restored-branch result is stale.
     this.logoutGeneration += 1;
+    endAuthScope();
     this.cancelAllAuthFlows();
     BootstrapApplication.cancelModerationFollow();
     // Captured before any await: a concurrent different-account sign-in must
@@ -1619,6 +1631,7 @@ export class AuthController {
     const { session, grantSessionRecordId } = useAuthStore.getState();
     if (session && !AuthApplication.isGrantSession(session)) return;
     if (!session && !grantSessionRecordId && !useAuthStore.getState().currentUserPubky) return;
+    endAuthScope();
     const captured = this.captureAuthIdentity();
     const capturedRecordIds = this.captureLogoutRecords(captured.pubky, grantSessionRecordId);
     useAuthStore.getState().setSession(null);
@@ -1665,13 +1678,26 @@ export class AuthController {
     const pubky = authStore.selectCurrentUserPubky();
     const session = authStore.session;
     const generation = this.logoutGeneration;
+    const scope = captureAuthScope();
     const isCurrent = () =>
-      generation === this.logoutGeneration && useAuthStore.getState().session === session && Boolean(session);
+      !scope.aborted &&
+      generation === this.logoutGeneration &&
+      useAuthStore.getState().session === session &&
+      Boolean(session);
     // Wait 5 seconds before bootstrap to let Nexus index the user
     Logger.info(`Waiting 5 seconds to index ${pubky} profile.json in Nexus before bootstrap...`);
     await sleep(5000);
     if (!isCurrent()) return;
-    await this.hydrateMeImAlive({ pubky, isCurrent });
+    try {
+      // Bootstrap writes private data. A sign-out takes this lock before its
+      // wipe, so anything written before the scope ended is cleared after it.
+      await withAuthFinalizationLock(async () => {
+        if (isCurrent()) await this.hydrateMeImAlive({ pubky, isCurrent, signal: scope });
+      });
+    } catch (error) {
+      if (scope.aborted) return;
+      throw error;
+    }
     if (!isCurrent()) return;
     authStore.setHasProfile(true);
   }

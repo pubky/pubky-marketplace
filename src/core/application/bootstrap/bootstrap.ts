@@ -70,14 +70,15 @@ export class BootstrapApplication {
     this.moderationFollowAbortController = moderationFollowController;
 
     try {
-      const pubky = params.pubky;
+      const { pubky, signal } = params;
       const [bootstrapResult, lastReadResult, ...syncResults] = await Promise.allSettled([
         NexusBootstrapService.fetch(pubky),
         this.fetchOrPutLastRead(params),
-        MuteApplication.fetchMutedUsers(pubky), // fetches and persists MUTED stream internally
+        MuteApplication.fetchMutedUsers(pubky, signal), // fetches and persists MUTED stream internally
         FeedApplication.fetchFeeds(pubky),
       ]);
       // Keep account ownership until every started sync has finished writing.
+      signal?.throwIfAborted();
       if (bootstrapResult.status === 'rejected') throw bootstrapResult.reason;
       if (lastReadResult.status === 'rejected') throw lastReadResult.reason;
       for (const result of syncResults) {
@@ -104,6 +105,7 @@ export class BootstrapApplication {
         TtlCoordinator.getInstance().subscribeUser({ pubky });
       }
 
+      signal?.throwIfAborted();
       const [notificationResult, ...persistenceResults] = await Promise.allSettled([
         NotificationApplication.persistAndSummarize({
           notifications: bootstrapData.notifications,
@@ -135,6 +137,7 @@ export class BootstrapApplication {
       }
       const { unread, nextPollCursor } = notificationResult.value;
       onProgress?.('dataPersisted'); // Step 4 complete (80%)
+      signal?.throwIfAborted();
       void this.ensureModerationFollow(pubky, moderationFollowController);
       // TODO: We will not have that step, but we will add HomeserverSignIn step before step 1 to catch errors
       onProgress?.('homeserverSynced'); // Step 5 complete (100%)
@@ -175,7 +178,7 @@ export class BootstrapApplication {
    * @param params.lastReadUrl, URL to fetch user's last read timestamp from homeserver
    * @returns Promise resolving to notification list and last read timestamp
    */
-  private static async fetchOrPutLastRead({ pubky, lastReadUrl }: TBootstrapParams): Promise<number> {
+  private static async fetchOrPutLastRead({ pubky, lastReadUrl, signal }: TBootstrapParams): Promise<number> {
     let stored: THomeserverJsonIfFound<{ timestamp: number }>;
     try {
       stored = await HomeserverService.getJsonIfFound<{ timestamp: number }>({ url: lastReadUrl });
@@ -190,6 +193,7 @@ export class BootstrapApplication {
     }
     Logger.info('Last read file not found, creating new one...', { pubky });
     const lastRead = LastReadNormalizer.to(pubky);
+    signal?.throwIfAborted();
     void HomeserverService.request({
       method: HttpMethod.PUT,
       url: lastRead.meta.url,

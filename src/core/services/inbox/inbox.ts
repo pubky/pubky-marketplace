@@ -78,8 +78,13 @@ export class InboxService {
    * unreachable) is an expected condition, not a bug: it returns `unavailable` without raising an error event,
    * logs the outage once, and is retried on a growing schedule until it answers. A service that answers and
    * refuses us (bad audience, rejected proof) still throws: that is a configuration fault to report.
+   * A session that arrives after `signal` aborted (`me` signed out) is not stored.
    */
-  static async ensureSession(me: string, getCredentials: InboxCredentialsProvider): Promise<InboxAvailability> {
+  static async ensureSession(
+    me: string,
+    getCredentials: InboxCredentialsProvider,
+    signal?: AbortSignal,
+  ): Promise<InboxAvailability> {
     const baseUrl = getInboxUrl();
     const audience = getInboxAudience();
     if (!baseUrl || !audience) return 'disabled';
@@ -106,6 +111,7 @@ export class InboxService {
         context: { url },
       });
     }
+    signal?.throwIfAborted();
     this.writeSession({ pubky: me, token: parsed.data.access_token, expiresAt: parsed.data.expires_at });
     if (this.sessionRetry.status(SESSION_RETRY_KEY) !== 'none') {
       this.sessionRetry.succeed(SESSION_RETRY_KEY);

@@ -8,6 +8,8 @@ export type TNotificationApplicationNotificationsParams = {
   lastPolledTimestamp: number | undefined;
   lastRead: number;
   allowedTypes: NotificationType[];
+  /** Aborted when `userId` signs out; nothing is persisted after that. */
+  signal?: AbortSignal;
 };
 
 /**
