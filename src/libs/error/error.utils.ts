@@ -208,3 +208,10 @@ export const getErrorMessage = (error: unknown): string => {
   }
   return 'Unexpected error occurred.';
 };
+
+/**
+ * The work was cancelled through its AbortSignal (for example, its account began signing out), so
+ * nothing failed that the user should hear about.
+ */
+export const isAbortError = (error: unknown): boolean =>
+  typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError';

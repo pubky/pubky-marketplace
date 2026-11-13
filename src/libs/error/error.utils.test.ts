@@ -4,7 +4,7 @@ import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.sc
 import { AppError } from './error';
 import { AuthErrorCode } from './error.codes';
 import { ErrorCategory, ErrorService } from './error.types';
-import { getWrongEnvironmentHomeserverMessage, isMarketplaceSessionRequiredError } from './error.utils';
+import { getWrongEnvironmentHomeserverMessage, isAbortError, isMarketplaceSessionRequiredError } from './error.utils';
 
 describe('getWrongEnvironmentHomeserverMessage', () => {
   afterEach(() => {
@@ -82,5 +82,22 @@ describe('isMarketplaceSessionRequiredError', () => {
     expect(isMarketplaceSessionRequiredError(homeserver)).toBe(false);
     expect(isMarketplaceSessionRequiredError(forbidden)).toBe(false);
     expect(isMarketplaceSessionRequiredError(new Error('network'))).toBe(false);
+  });
+});
+
+describe('isAbortError', () => {
+  it('recognises the rejection of work whose signal aborted', () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    expect(isAbortError(controller.signal.reason)).toBe(true);
+    expect(isAbortError(new DOMException('Cancelled', 'AbortError'))).toBe(true);
+  });
+
+  it('does not treat other failures, timeouts or non-errors as cancellations', () => {
+    expect(isAbortError(new Error('network'))).toBe(false);
+    expect(isAbortError(new DOMException('Too slow', 'TimeoutError'))).toBe(false);
+    expect(isAbortError('AbortError')).toBe(false);
+    expect(isAbortError(null)).toBe(false);
   });
 });
