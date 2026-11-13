@@ -10,6 +10,8 @@ export type TReadPostStreamChunkParams = {
   limit?: number;
   /** Order of results: 'ascending' (oldest first) or 'descending' (newest first, default) */
   order?: StreamOrder;
+  /** The caller's auth scope: once it ends, nothing fetched for the viewer is saved and the call rejects. */
+  signal?: AbortSignal;
 };
 
 export type TStreamIdParams = {

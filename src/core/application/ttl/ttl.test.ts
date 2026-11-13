@@ -8,6 +8,7 @@ import { LocalStreamPostsService } from '@/services/local/stream/posts/posts';
 import { LocalStreamUsersService } from '@/services/local/stream/users/users';
 import type { NexusPost, NexusUser } from '@/services/nexus/nexus.types';
 import { queryNexus } from '@/services/nexus/nexus.utils';
+import { NexusPostStreamService } from '@/services/nexus/stream/posts/postStream';
 import { postStreamApi } from '@/services/nexus/stream/posts/postStream.api';
 import { NexusUserStreamService } from '@/services/nexus/stream/users/userStream';
 import { userStreamApi } from '@/services/nexus/stream/users/userStream.api';
@@ -301,6 +302,111 @@ describe('TtlApplication', () => {
 
       await expect(TtlApplication.forceRefreshUsersByIds({ userIds })).rejects.toThrow('Network down');
       expect(persistUsersSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('when the viewer signs out while Nexus answers', () => {
+    const viewerId = 'viewer' as Pubky;
+    const post = asOpaque<NexusPost>({
+      details: { id: 'post-1', author: 'alice' as Pubky, uri: 'pubky://alice/pub/pubky.app/posts/post-1' },
+      relationships: { replied: null, reposted: 'pubky://bob/pub/pubky.app/posts/post-0', mentioned: [] },
+    });
+
+    function hold<T>() {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((settle) => {
+        resolve = settle;
+      });
+      return { promise, resolve };
+    }
+
+    function spyWrites() {
+      return {
+        persistPosts: vi
+          .spyOn(LocalStreamPostsService, 'persistPosts')
+          .mockResolvedValue(
+            asOpaque<Awaited<ReturnType<typeof LocalStreamPostsService.persistPosts>>>({ attachmentMetadata: [] }),
+          ),
+        persistFiles: vi.spyOn(FileApplication, 'persistFiles').mockResolvedValue(undefined),
+        persistUsers: vi.spyOn(LocalStreamUsersService, 'persistUsers').mockResolvedValue([]),
+        fetchOriginals: vi.spyOn(PostStreamApplication, 'fetchOriginalPostsByUris').mockResolvedValue(undefined),
+      };
+    }
+
+    it('saves none of the posts fetched for the viewer', async () => {
+      const writes = spyWrites();
+      const posts = hold<NexusPost[]>();
+      vi.spyOn(NexusPostStreamService, 'fetchByIds').mockReturnValue(posts.promise);
+      const scope = new AbortController();
+
+      const refresh = TtlApplication.forceRefreshPostsByIds({
+        postIds: ['alice:post-1'],
+        viewerId,
+        signal: scope.signal,
+      });
+      scope.abort();
+      posts.resolve([post]);
+
+      await expect(refresh).rejects.toMatchObject({ name: 'AbortError' });
+      expect(writes.persistPosts).not.toHaveBeenCalled();
+      expect(writes.persistFiles).not.toHaveBeenCalled();
+      expect(writes.persistUsers).not.toHaveBeenCalled();
+      expect(writes.fetchOriginals).not.toHaveBeenCalled();
+    });
+
+    it('saves none of the authors fetched for the viewer', async () => {
+      const writes = spyWrites();
+      vi.spyOn(NexusPostStreamService, 'fetchByIds').mockResolvedValue([post]);
+      vi.spyOn(LocalStreamUsersService, 'getNotPersistedUsersInCache').mockResolvedValue(['alice' as Pubky]);
+      const authors = hold<NexusUser[]>();
+      const fetchAuthors = vi.spyOn(NexusUserStreamService, 'fetchByIds').mockReturnValue(authors.promise);
+      const scope = new AbortController();
+
+      const refresh = TtlApplication.forceRefreshPostsByIds({
+        postIds: ['alice:post-1'],
+        viewerId,
+        signal: scope.signal,
+      });
+      await vi.waitFor(() => expect(fetchAuthors).toHaveBeenCalled());
+      scope.abort();
+      authors.resolve([]);
+
+      await expect(refresh).rejects.toMatchObject({ name: 'AbortError' });
+      expect(writes.persistUsers).not.toHaveBeenCalled();
+      expect(writes.fetchOriginals).not.toHaveBeenCalled();
+    });
+
+    it('passes the scope on to the reposted originals it fetches', async () => {
+      const writes = spyWrites();
+      vi.spyOn(NexusPostStreamService, 'fetchByIds').mockResolvedValue([post]);
+      vi.spyOn(LocalStreamUsersService, 'getNotPersistedUsersInCache').mockResolvedValue([]);
+      const scope = new AbortController();
+
+      await TtlApplication.forceRefreshPostsByIds({ postIds: ['alice:post-1'], viewerId, signal: scope.signal });
+
+      expect(writes.fetchOriginals).toHaveBeenCalledWith({
+        repostedUris: ['pubky://bob/pub/pubky.app/posts/post-0'],
+        viewerId,
+        signal: scope.signal,
+      });
+    });
+
+    it('saves none of the users fetched for the viewer', async () => {
+      const writes = spyWrites();
+      const users = hold<NexusUser[]>();
+      vi.spyOn(NexusUserStreamService, 'fetchByIds').mockReturnValue(users.promise);
+      const scope = new AbortController();
+
+      const refresh = TtlApplication.forceRefreshUsersByIds({
+        userIds: ['alice' as Pubky],
+        viewerId,
+        signal: scope.signal,
+      });
+      scope.abort();
+      users.resolve([]);
+
+      await expect(refresh).rejects.toMatchObject({ name: 'AbortError' });
+      expect(writes.persistUsers).not.toHaveBeenCalled();
     });
   });
 });

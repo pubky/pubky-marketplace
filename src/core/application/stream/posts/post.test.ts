@@ -492,6 +492,56 @@ describe('PostStreamApplication', () => {
       expect(cached?.stream).toEqual(result.nextPageIds);
     });
 
+    /** Holds the next Nexus stream read until the returned function releases it. */
+    const holdNexusStream = (keyStream: NexusPostsKeyStream) => {
+      let release!: () => void;
+      const held = new Promise<NexusPostsKeyStream>((resolve) => {
+        release = () => resolve(keyStream);
+      });
+      vi.spyOn(NexusPostStreamService, 'fetch').mockReturnValue(held);
+      return release;
+    };
+
+    it('saves no page fetched for a viewer whose sign-out started during the fetch', async () => {
+      await createStreamWithPosts([]);
+      const release = holdNexusStream(createMockNexusPostsKeyStream(5));
+      const scope = new AbortController();
+
+      const slice = PostStreamApplication.getOrFetchStreamSlice({
+        streamId,
+        limit: 10,
+        streamHead: 0,
+        streamTail: 0,
+        viewerId: 'user-viewer' as Pubky,
+        signal: scope.signal,
+      });
+      scope.abort();
+      release();
+
+      await expect(slice).rejects.toMatchObject({ name: 'AbortError' });
+      expect((await PostStreamModel.findById(streamId))?.stream).toEqual([]);
+    });
+
+    it('saves no new posts a head poll fetched for a viewer whose sign-out started during the fetch', async () => {
+      await createStreamWithPosts([]);
+      const release = holdNexusStream(createMockNexusPostsKeyStream(3, 1, DEFAULT_AUTHOR, BASE_TIMESTAMP + 10));
+      const scope = new AbortController();
+
+      const poll = PostStreamApplication.getOrFetchStreamSlice({
+        streamId,
+        limit: 10,
+        streamHead: BASE_TIMESTAMP,
+        streamTail: 0,
+        viewerId: 'user-viewer' as Pubky,
+        signal: scope.signal,
+      });
+      scope.abort();
+      release();
+
+      await expect(poll).rejects.toMatchObject({ name: 'AbortError' });
+      expect(await UnreadPostStreamModel.findById(streamId)).toBeFalsy();
+    });
+
     it('should paginate using cursor (post_id and timestamp)', async () => {
       const initialPostIds = Array.from({ length: 5 }, (_, i) => `${DEFAULT_AUTHOR}:post-${i + 1}`);
       await createStreamWithPosts(initialPostIds);
