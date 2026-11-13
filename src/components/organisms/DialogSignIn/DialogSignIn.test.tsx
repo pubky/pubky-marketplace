@@ -41,26 +41,17 @@ describe('DialogSignIn', () => {
 
       expect(screen.getByRole('dialog')).toBeInTheDocument();
       // Title appears in dialog header
-      expect(screen.getByRole('heading', { name: 'Join Pubky' })).toBeInTheDocument();
-      expect(screen.getByText('Like what you see? Join the freedom web now.')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Sign in to Pubky' })).toBeInTheDocument();
+      expect(screen.getByText('Use your existing account to continue.')).toBeInTheDocument();
     });
 
-    it('renders two cards for join and sign in options', () => {
+    it('offers existing-account signin without signup', () => {
       mockShowSignInDialog.value = true;
       render(<DialogSignIn />);
 
       // Check for the two card headings
-      expect(screen.getByText('New here?')).toBeInTheDocument();
+      expect(screen.queryByText('New here?')).not.toBeInTheDocument();
       expect(screen.getByText('Already have a pubky?')).toBeInTheDocument();
-    });
-
-    it('renders Join Pubky link pointing to human onboarding', () => {
-      mockShowSignInDialog.value = true;
-      render(<DialogSignIn />);
-
-      const joinLink = screen.getByTestId('link--onboarding-human');
-      expect(joinLink).toHaveAttribute('href', '/onboarding/human');
-      expect(joinLink).toHaveTextContent('Join Pubky');
     });
 
     it('renders Sign In link pointing to /sign-in', () => {
@@ -77,25 +68,14 @@ describe('DialogSignIn', () => {
       render(<DialogSignIn />);
 
       const dialog = screen.getByRole('dialog');
-      expect(dialog.querySelectorAll('.lucide-user-round-plus')).toHaveLength(1);
+      expect(dialog.querySelectorAll('.lucide-user-round-plus')).toHaveLength(0);
       expect(dialog.querySelectorAll('.lucide-arrow-right')).toHaveLength(1);
       // next/image optimizes raster assets; assert the underlying public path remains.
-      expect(screen.getByAltText('New here?').getAttribute('src')).toContain('new-here.webp');
       expect(screen.getByAltText('Already have a pubky?').getAttribute('src')).toContain('sign-in.webp');
     });
   });
 
   describe('interactions', () => {
-    it('calls setShowSignInDialog(false) when Join Pubky link is clicked', () => {
-      mockShowSignInDialog.value = true;
-      render(<DialogSignIn />);
-
-      const joinLink = screen.getByTestId('link--onboarding-human');
-      fireEvent.click(joinLink);
-
-      expect(mockSetShowSignInDialog).toHaveBeenCalledWith(false);
-    });
-
     it('calls setShowSignInDialog(false) when Sign In link is clicked', () => {
       mockShowSignInDialog.value = true;
       render(<DialogSignIn />);
@@ -113,7 +93,7 @@ describe('DialogSignIn', () => {
       render(<DialogSignIn />);
 
       // The DialogTitle provides accessibility for screen readers
-      expect(screen.getByRole('heading', { name: 'Join Pubky' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Sign in to Pubky' })).toBeInTheDocument();
     });
   });
 });

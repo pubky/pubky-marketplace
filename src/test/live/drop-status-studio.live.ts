@@ -335,7 +335,7 @@ async function capturePage(page: Page, name: string): Promise<void> {
 
 async function completeOnboardingIfNeeded(page: Page): Promise<void> {
   const form = page.getByTestId('create-profile-form');
-  const onOnboarding = page.url().includes('/onboarding/profile') || (await form.count()) > 0;
+  const onOnboarding = page.url().includes('/complete-profile') || (await form.count()) > 0;
   if (!onOnboarding) return;
   const nameInput = page.locator('#profile-name-input');
   await nameInput.waitFor({ state: 'visible', timeout: 30_000 });
@@ -343,13 +343,7 @@ async function completeOnboardingIfNeeded(page: Page): Promise<void> {
     await nameInput.fill('Drop status proof');
   }
   await page.getByRole('button', { name: 'Finish' }).click();
-  await page.waitForURL((url) => !url.pathname.includes('/onboarding/profile'), { timeout: 90_000 });
-  const explore = page.locator('#welcome-explore-pubky-btn');
-  const welcomeVisible = await explore
-    .waitFor({ state: 'visible', timeout: 8_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (welcomeVisible) await explore.click();
+  await page.waitForURL((url) => !url.pathname.includes('/complete-profile'), { timeout: 90_000 });
 }
 
 async function signInWithEncryptedFile(page: Page, seat: Seat): Promise<void> {

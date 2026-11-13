@@ -8,7 +8,6 @@ import { Err } from '@/libs/error/error.factories';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import type { Pubky } from '@/models/models.types';
 import { HomeserverService } from '@/services/homeserver/homeserver';
-import type { THomeserverSignUpParams } from '@/services/homeserver/homeserver.types';
 import { mockSession } from '@/test-utils/pubky';
 import { asOpaque } from '@/test-utils/type-assertions';
 
@@ -31,37 +30,6 @@ vi.mock('@/config/network', async (importOriginal) => {
 describe('AuthApplication', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  describe('signUp', () => {
-    const createParams = (): THomeserverSignUpParams => ({
-      keypair: asOpaque<Keypair>({
-        publicKey: vi.fn(() => ({ z32: () => 'test-pubky' })),
-        secret: vi.fn(() => new Uint8Array([1, 2, 3])),
-      }),
-      signupToken: 'test-signup-token',
-    });
-
-    it('should sign up successfully', async () => {
-      const params = createParams();
-      const session = asOpaque<Session>({ token: 'test-token' });
-      const expectedResult = { session };
-
-      const signUpSpy = vi.spyOn(HomeserverService, 'signUp').mockResolvedValue(expectedResult);
-
-      const result = await AuthApplication.signUp(params);
-
-      expect(signUpSpy).toHaveBeenCalledWith({ keypair: params.keypair, signupToken: params.signupToken });
-      expect(result).toEqual(expectedResult);
-    });
-
-    it('should propagate error when signup fails', async () => {
-      const params = createParams();
-      const signUpSpy = vi.spyOn(HomeserverService, 'signUp').mockRejectedValue(new Error('Signup failed'));
-
-      await expect(AuthApplication.signUp(params)).rejects.toThrow('Signup failed');
-      expect(signUpSpy).toHaveBeenCalledOnce();
-    });
   });
 
   describe('signIn', () => {
@@ -151,55 +119,6 @@ describe('AuthApplication', () => {
 
       await expect(AuthApplication.logout(params)).rejects.toThrow('Logout failed');
       expect(logoutSpy).toHaveBeenCalledOnce();
-    });
-  });
-
-  describe('generateSignupToken', () => {
-    it('should generate signup token successfully', async () => {
-      const generateSignupTokenSpy = vi.spyOn(HomeserverService, 'generateSignupToken').mockResolvedValue('test-token');
-
-      const result = await AuthApplication.generateSignupToken();
-
-      expect(generateSignupTokenSpy).toHaveBeenCalled();
-      expect(result).toBe('test-token');
-    });
-
-    it('should propagate error when signup token generation fails', async () => {
-      const generateSignupTokenSpy = vi
-        .spyOn(HomeserverService, 'generateSignupToken')
-        .mockRejectedValue(new Error('Failed to generate signup token'));
-
-      await expect(AuthApplication.generateSignupToken()).rejects.toThrow('Failed to generate signup token');
-      expect(generateSignupTokenSpy).toHaveBeenCalledOnce();
-    });
-  });
-
-  describe('verifySignupToken', () => {
-    it('should return valid when the homeserver reports the token is valid', async () => {
-      const verifySpy = vi.spyOn(HomeserverService, 'verifySignupToken').mockResolvedValue('valid');
-
-      const result = await AuthApplication.verifySignupToken('YVB2-YFRN-GDY0');
-
-      expect(verifySpy).toHaveBeenCalledWith('YVB2-YFRN-GDY0');
-      expect(result).toBe('valid');
-    });
-
-    it('should return used when the homeserver reports the token is used', async () => {
-      const verifySpy = vi.spyOn(HomeserverService, 'verifySignupToken').mockResolvedValue('used');
-
-      const result = await AuthApplication.verifySignupToken('YVB2-YFRN-GDY0');
-
-      expect(verifySpy).toHaveBeenCalledWith('YVB2-YFRN-GDY0');
-      expect(result).toBe('used');
-    });
-
-    it('should return invalid when the homeserver does not recognise the token', async () => {
-      const verifySpy = vi.spyOn(HomeserverService, 'verifySignupToken').mockResolvedValue('invalid');
-
-      const result = await AuthApplication.verifySignupToken('BADC-0DE0-0000');
-
-      expect(verifySpy).toHaveBeenCalledWith('BADC-0DE0-0000');
-      expect(result).toBe('invalid');
     });
   });
 

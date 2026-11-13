@@ -297,8 +297,6 @@ export const getShopGrantClientIdOverride = (): string | undefined => getRuntime
 /** Runtime additions to the review attestor trust list (see `marketplaceTrustedAttestors` in `@/config/commerce`). */
 export const getMarketplaceTrustedAttestors = (): readonly MarketplaceTrustedAttestor[] =>
   getRuntimeConfig().marketplaceTrustedAttestors;
-export const getPreludeSdkKey = (): string | undefined => getRuntimeConfig().preludeSdkKey;
-export const getPreludeSdkTimeoutMs = (): number => getRuntimeConfig().preludeSdkTimeoutMs;
 export const getPlausibleDomain = (): string | undefined => getRuntimeConfig().plausibleDomain;
 export const getPlausibleScriptUrl = (): string | undefined => getRuntimeConfig().plausibleScriptUrl;
 export const getPreviewImage = (): string => getRuntimeConfig().previewImage;

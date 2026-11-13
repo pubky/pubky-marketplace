@@ -58,13 +58,6 @@ const resetMockSignInState = () => {
 };
 
 // Mock dependencies
-vi.mock('@/stores/onboarding/onboarding.store', () => ({
-  useOnboardingStore: {
-    getState: vi.fn().mockReturnValue({
-      reset: vi.fn(),
-    }),
-  },
-}));
 vi.mock('@/stores/signIn/signIn.store', () => ({
   useSignInStore: vi.fn((selector) => {
     if (typeof selector === 'function') {

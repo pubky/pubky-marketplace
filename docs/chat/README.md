@@ -276,7 +276,7 @@ two-account proof checks this (`alice:new-device-rebuild`).
 
 ## Delivery triggers
 
-The coordinator (`ChatSyncCoordinator`) is started by `CoordinatorsManager` and disabled on the onboarding,
+The coordinator (`ChatSyncCoordinator`) is started by `CoordinatorsManager` and disabled on `/complete-profile`,
 sign-in and logout routes.
 
 **Every tab** on sign-in: identity, rebuild, outbox flush. On `online`: flush and request a reconcile. On
@@ -454,8 +454,8 @@ PUBKY_RUNTIME_INBOX_URL=http://localhost:8088 PUBKY_RUNTIME_INBOX_AUDIENCE=http:
 
 Notes:
 
-- The dev signup-token route needs `HOMESERVER_ADMIN_URL=http://localhost:6288/generate_signup_token` and
-  `HOMESERVER_ADMIN_PASSWORD=admin` (the local homeserver's admin password).
+- The Node test harness requests signup tokens directly from `HOMESERVER_ADMIN_URL=http://localhost:6288/generate_signup_token`
+  with `HOMESERVER_ADMIN_PASSWORD=admin` (the local homeserver's admin password).
 - `CHROMIUM_PATH` is needed where Playwright cannot install its own browser; point it at an existing
   `chrome-headless-shell`.
 - The ring simulator's `node_modules` can lag its lockfile; run `npm ci` there and clear `node_modules/.vite`

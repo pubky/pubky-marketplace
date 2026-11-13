@@ -55,7 +55,7 @@ const mockState = vi.hoisted(() => ({
   currentSession: null as Session | null,
 }));
 
-// Mock global fetch for generateSignupToken tests (calls /api/dev/signup-token)
+// Mock global fetch for direct homeserver IO
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
@@ -273,7 +273,6 @@ describe('HomeserverService', () => {
 
       const expectedMethods = [
         'signUp',
-        'verifySignupToken',
         'signIn',
         'logout',
         'generateAuthUrl',
@@ -285,7 +284,6 @@ describe('HomeserverService', () => {
         'delete',
         'get',
         'exists',
-        'generateSignupToken',
         'subscribeUserEventStreamForPath',
       ] as const;
 
@@ -443,71 +441,6 @@ describe('HomeserverService', () => {
           } finally {
             vi.useRealTimers();
           }
-        });
-      });
-    });
-
-    describe('verifySignupToken', () => {
-      it('should return valid when the homeserver responds with status valid', async () => {
-        mockState.clientFetch.mockResolvedValue(new Response(JSON.stringify({ status: 'valid' }), { status: 200 }));
-
-        const result = await HomeserverService.verifySignupToken('YVB2-YFRN-GDY0');
-
-        expect(result).toBe('valid');
-        expect(mockState.clientFetch).toHaveBeenCalledWith(expect.stringContaining('/signup_tokens/YVB2-YFRN-GDY0'), {
-          method: HttpMethod.GET,
-        });
-      });
-
-      it('should return used when the homeserver responds with status used', async () => {
-        mockState.clientFetch.mockResolvedValue(new Response(JSON.stringify({ status: 'used' }), { status: 200 }));
-
-        const result = await HomeserverService.verifySignupToken('YVB2-YFRN-GDY0');
-
-        expect(result).toBe('used');
-      });
-
-      it('should return invalid when the homeserver responds with 404', async () => {
-        mockState.clientFetch.mockResolvedValue(new Response(null, { status: 404 }));
-
-        const result = await HomeserverService.verifySignupToken('BADC-0DE0-0000');
-
-        expect(result).toBe('invalid');
-      });
-
-      it('should return invalid when the homeserver responds with an unexpected payload', async () => {
-        mockState.clientFetch.mockResolvedValue(new Response(JSON.stringify({ status: 'unknown' }), { status: 200 }));
-
-        const result = await HomeserverService.verifySignupToken('BADC-0DE0-0000');
-
-        expect(result).toBe('invalid');
-      });
-
-      it('logs only the status when the verification body is not JSON', async () => {
-        const windowed = '{"status":"valid"';
-        mockState.clientFetch.mockResolvedValue(new Response(windowed, { status: 200 }));
-        const { Logger } = await import('@/libs/logger/logger');
-
-        const result = await HomeserverService.verifySignupToken('YVB2-YFRN-GDY0');
-
-        expect(result).toBe('invalid');
-        expect(JSON.stringify(vi.mocked(Logger.warn).mock.calls)).not.toContain(windowed);
-        expect(JSON.stringify(vi.mocked(Logger.warn).mock.calls)).not.toContain('Unexpected token');
-      });
-
-      it('should rethrow when the homeserver cannot be reached', async () => {
-        mockState.clientFetch.mockRejectedValue(new Error('network error'));
-
-        await expect(HomeserverService.verifySignupToken('YVB2-YFRN-GDY0')).rejects.toThrow('network error');
-      });
-
-      it('should URL-encode the signup token', async () => {
-        mockState.clientFetch.mockResolvedValue(new Response(JSON.stringify({ status: 'valid' }), { status: 200 }));
-
-        await HomeserverService.verifySignupToken('AB CD/EF');
-
-        expect(mockState.clientFetch).toHaveBeenCalledWith(expect.stringContaining('/signup_tokens/AB%20CD%2FEF'), {
-          method: HttpMethod.GET,
         });
       });
     });
@@ -1902,65 +1835,6 @@ describe('HomeserverService', () => {
           expect((error as Error).name).toBe('AppError');
           expect((error as AppError).message).toBe(customMessage);
         }
-      });
-    });
-
-    describe('generateSignupToken (via API route)', () => {
-      it('should fetch token from server-side API route', async () => {
-        const expectedToken = 'generated-signup-token-123';
-        mockFetch.mockResolvedValue(
-          new Response(JSON.stringify({ token: expectedToken }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }),
-        );
-
-        const result = await HomeserverService.generateSignupToken();
-
-        expect(mockFetch).toHaveBeenCalledWith('/api/dev/signup-token', { method: 'GET' });
-        expect(result).toBe(expectedToken);
-      });
-
-      it('should throw FORBIDDEN error for 403 response', async () => {
-        mockFetch.mockResolvedValue(
-          new Response(JSON.stringify({ error: 'Forbidden' }), {
-            status: 403,
-            headers: { 'Content-Type': 'application/json' },
-          }),
-        );
-
-        await expect(HomeserverService.generateSignupToken()).rejects.toMatchObject({
-          category: ErrorCategory.Auth,
-          code: AuthErrorCode.FORBIDDEN,
-        });
-      });
-
-      it('should throw UNEXPECTED_ERROR when no token received', async () => {
-        mockFetch.mockResolvedValue(
-          new Response(JSON.stringify({}), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }),
-        );
-
-        await expect(HomeserverService.generateSignupToken()).rejects.toMatchObject({
-          category: ErrorCategory.Server,
-          code: ServerErrorCode.UNKNOWN_ERROR,
-        });
-      });
-
-      it('should return token from JSON response', async () => {
-        const expectedToken = 'token-from-json';
-        mockFetch.mockResolvedValue(
-          new Response(JSON.stringify({ token: expectedToken }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }),
-        );
-
-        const result = await HomeserverService.generateSignupToken();
-
-        expect(result).toBe(expectedToken);
       });
     });
 

@@ -16,7 +16,6 @@ import {
   HeaderContainer,
   HeaderExploreNavigationButtons,
   HeaderNavigationButtons,
-  HeaderOnboarding,
   HeaderSocialLinks,
   HeaderTitle,
 } from './Header';
@@ -129,16 +128,6 @@ vi.mock('@/organisms/AvatarWithFallback/AvatarWithFallback', () => {
 vi.mock('@/organisms/SearchInput/SearchInput', () => {
   return {
     SearchInput: () => <div data-testid="search-input">Search Input</div>,
-  };
-});
-
-vi.mock('@/molecules/ProgressSteps/ProgressSteps', () => {
-  return {
-    ProgressSteps: ({ currentStep, totalSteps }: { currentStep: number; totalSteps: number }) => (
-      <div data-testid="progress-steps" data-current={currentStep} data-total={totalSteps}>
-        Progress Steps
-      </div>
-    ),
   };
 });
 
@@ -306,16 +295,6 @@ describe('Header Components', () => {
     });
   });
 
-  describe('HeaderOnboarding', () => {
-    it('renders with progress steps', () => {
-      render(<HeaderOnboarding currentStep={3} />);
-
-      const progressSteps = screen.getByTestId('progress-steps');
-      expect(progressSteps).toHaveAttribute('data-current', '3');
-      expect(progressSteps).toHaveAttribute('data-total', '5');
-    });
-  });
-
   describe('HeaderSocialLinks', () => {
     it('renders social links', () => {
       render(<HeaderSocialLinks />);
@@ -366,20 +345,20 @@ describe('Header Components', () => {
       expect(mockPush).toHaveBeenCalledWith('/sign-in');
     });
 
-    it('renders new here button on the sign-in page', () => {
+    it('renders sign in button on the sign-in page', () => {
       vi.mocked(usePathname).mockReturnValue('/sign-in');
       render(<HeaderButtonSignIn />);
 
-      expect(screen.getByText('New here?')).toBeInTheDocument();
+      expect(screen.getByText('Sign in')).toBeInTheDocument();
     });
 
-    it('navigates to onboarding when clicked on the sign-in page', () => {
+    it('stays on sign-in when clicked on the sign-in page', () => {
       vi.mocked(usePathname).mockReturnValue('/sign-in');
       render(<HeaderButtonSignIn />);
 
-      fireEvent.click(screen.getByText('New here?'));
+      fireEvent.click(screen.getByText('Sign in'));
 
-      expect(mockPush).toHaveBeenCalledWith('/onboarding/human');
+      expect(mockPush).toHaveBeenCalledWith('/sign-in');
     });
 
     it('renders sign in button on the onboarding page', () => {

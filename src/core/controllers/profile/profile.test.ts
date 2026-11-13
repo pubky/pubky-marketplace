@@ -1,8 +1,5 @@
 import { UserResult } from 'pubky-app-specs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ValidationErrorCode } from '@/libs/error/error.codes';
-import { ErrorCategory } from '@/libs/error/error.types';
-import { PASSPHRASE_MIN_LENGTH } from '@/libs/password/password';
 import type { Pubky } from '@/models/models.types';
 import { asOpaque } from '@/test-utils/type-assertions';
 
@@ -21,50 +18,14 @@ const mockUserNormalizer = {
   ),
 };
 
-const mockOnboardingStore = {
-  getState: vi.fn(() => ({
-    setSecrets: vi.fn(),
-    selectSecretKey: vi.fn(() => 'test-secret-key'),
-  })),
-};
-
-const mockAuthStore = {
-  getState: vi.fn(() => ({
-    setCurrentUserPubky: vi.fn(),
-  })),
-};
-
-const mockIdentity = {
-  generateSecrets: vi.fn(() => ({
-    secretKey: 'test-secret-key',
-    mnemonic: 'test mnemonic phrase',
-  })),
-  z32FromSecret: vi.fn(() => 'test-pubky'),
-  keypairFromSecretKey: vi.fn(() => ({ keypair: 'test-keypair' })),
-  createRecoveryFile: vi.fn(),
-};
-
 vi.mock('@/application/profile/profile', () => ({
   ProfileApplication: mockProfileApplication,
 }));
 vi.mock('@/pipes/user/user.normalizer', () => ({
   UserNormalizer: mockUserNormalizer,
 }));
-vi.mock('@/stores/onboarding/onboarding.store', () => ({
-  useOnboardingStore: mockOnboardingStore,
-}));
-vi.mock('@/stores/auth/auth.store', () => ({
-  useAuthStore: mockAuthStore,
-}));
-
-vi.mock('@/libs/identity/identity', async () => {
-  const actual = await vi.importActual<typeof import('@/libs/identity/identity')>('@/libs/identity/identity');
-  return {
-    ...actual,
-    Identity: mockIdentity,
-  };
-});
 const testPubky = 'o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy' as Pubky;
+const isCurrent = () => true;
 
 let ProfileController: typeof import('./profile').ProfileController;
 
@@ -79,17 +40,6 @@ describe('ProfileController', () => {
     mockProfileApplication.commitUpdateStatus.mockReset();
     mockProfileApplication.commitUpdate.mockReset();
     mockUserNormalizer.to.mockReset();
-    mockIdentity.generateSecrets.mockReset();
-    mockIdentity.z32FromSecret.mockReset();
-    mockIdentity.keypairFromSecretKey.mockReset();
-    mockIdentity.createRecoveryFile.mockReset();
-    mockOnboardingStore.getState.mockReturnValue({
-      setSecrets: vi.fn(),
-      selectSecretKey: vi.fn(() => 'test-secret-key'),
-    });
-    mockAuthStore.getState.mockReturnValue({
-      setCurrentUserPubky: vi.fn(),
-    });
 
     ({ ProfileController } = await import('./profile'));
   });
@@ -113,6 +63,7 @@ describe('ProfileController', () => {
         profile: profile as { name: string; bio?: string; links?: { label: string; url: string }[] },
         image: 'image-url',
         pubky: testPubky,
+        isCurrent,
       });
 
       expect(mockUserNormalizer.to).toHaveBeenCalledTimes(1);
@@ -131,6 +82,7 @@ describe('ProfileController', () => {
         profile: userResult.user,
         url: userResult.meta.url,
         pubky: testPubky,
+        isCurrent,
       });
     });
 
@@ -150,6 +102,7 @@ describe('ProfileController', () => {
         profile: profile as { name: string; bio?: string; links?: { label: string; url: string }[] },
         image: null,
         pubky: testPubky,
+        isCurrent,
       });
 
       expect(mockUserNormalizer.to).toHaveBeenCalledWith(
@@ -167,6 +120,7 @@ describe('ProfileController', () => {
         profile: userResult.user,
         url: userResult.meta.url,
         pubky: testPubky,
+        isCurrent,
       });
     });
 
@@ -186,6 +140,7 @@ describe('ProfileController', () => {
           profile: profile as { name: string; bio?: string; links?: { label: string; url: string }[] },
           image: null,
           pubky: testPubky,
+          isCurrent,
         }),
       ).rejects.toThrow('validation failed');
       expect(mockProfileApplication.commitCreate).not.toHaveBeenCalled();
@@ -209,92 +164,9 @@ describe('ProfileController', () => {
           profile: profile as { name: string; bio?: string; links?: { label: string; url: string }[] },
           image: null,
           pubky: testPubky,
+          isCurrent,
         }),
       ).rejects.toThrow('create failed');
-    });
-  });
-
-  describe('generateSecrets', () => {
-    it('generates secrets and sets them in stores', () => {
-      const mockSetSecrets = vi.fn();
-      const mockSetCurrentUserPubky = vi.fn();
-
-      mockOnboardingStore.getState.mockReturnValue({
-        setSecrets: mockSetSecrets,
-        selectSecretKey: vi.fn(() => 'test-secret-key'),
-      });
-      mockAuthStore.getState.mockReturnValue({
-        setCurrentUserPubky: mockSetCurrentUserPubky,
-      });
-      mockIdentity.generateSecrets.mockReturnValue({
-        secretKey: 'generated-secret-key',
-        mnemonic: 'generated mnemonic',
-      });
-      mockIdentity.z32FromSecret.mockReturnValue('generated-pubky' as Pubky);
-
-      ProfileController.generateSecrets();
-
-      expect(mockIdentity.generateSecrets).toHaveBeenCalledTimes(1);
-      expect(mockSetSecrets).toHaveBeenCalledWith({
-        secretKey: 'generated-secret-key',
-        mnemonic: 'generated mnemonic',
-      });
-      expect(mockIdentity.z32FromSecret).toHaveBeenCalledWith('generated-secret-key');
-      expect(mockSetCurrentUserPubky).toHaveBeenCalledWith('generated-pubky');
-    });
-  });
-
-  describe('createRecoveryFile', () => {
-    const passphrase = 'a'.repeat(PASSPHRASE_MIN_LENGTH);
-
-    it('creates recovery file from secret key', () => {
-      const mockSelectSecretKey = vi.fn(() => 'test-secret-key');
-      mockOnboardingStore.getState.mockReturnValue({
-        setSecrets: vi.fn(),
-        selectSecretKey: mockSelectSecretKey,
-      });
-      mockIdentity.keypairFromSecretKey.mockReturnValue({ keypair: 'test-keypair' });
-
-      ProfileController.createRecoveryFile(passphrase);
-
-      expect(mockSelectSecretKey).toHaveBeenCalledTimes(1);
-      expect(mockIdentity.keypairFromSecretKey).toHaveBeenCalledWith('test-secret-key');
-      expect(mockIdentity.createRecoveryFile).toHaveBeenCalledWith({
-        keypair: { keypair: 'test-keypair' },
-        passphrase,
-      });
-    });
-
-    it('throws error when secret key is not available', () => {
-      const mockSelectSecretKey = vi.fn(() => {
-        throw new Error('Secret key is not available');
-      });
-      mockOnboardingStore.getState.mockReturnValue({
-        setSecrets: vi.fn(),
-        selectSecretKey: mockSelectSecretKey,
-      });
-
-      expect(() => ProfileController.createRecoveryFile(passphrase)).toThrow('Secret key is not available');
-      expect(mockIdentity.createRecoveryFile).not.toHaveBeenCalled();
-    });
-
-    it('requires at least PASSPHRASE_MIN_LENGTH characters before creating an encrypted backup', () => {
-      const mockSelectSecretKey = vi.fn(() => 'test-secret-key');
-      mockOnboardingStore.getState.mockReturnValue({
-        setSecrets: vi.fn(),
-        selectSecretKey: mockSelectSecretKey,
-      });
-
-      expect(() => ProfileController.createRecoveryFile('a'.repeat(PASSPHRASE_MIN_LENGTH - 1))).toThrow(
-        expect.objectContaining({
-          category: ErrorCategory.Validation,
-          code: ValidationErrorCode.INVALID_INPUT,
-          operation: 'createRecoveryFile',
-        }),
-      );
-      expect(mockSelectSecretKey).not.toHaveBeenCalled();
-      expect(mockIdentity.keypairFromSecretKey).not.toHaveBeenCalled();
-      expect(mockIdentity.createRecoveryFile).not.toHaveBeenCalled();
     });
   });
 

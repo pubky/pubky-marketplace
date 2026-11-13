@@ -3,13 +3,8 @@ import { isPubkyIdentifier } from '@/libs/utils/utils';
 
 export const ROOT_ROUTES = '/';
 
-export enum ONBOARDING_ROUTES {
-  BACKUP = '/onboarding/backup',
-  INSTALL = '/onboarding/install',
-  PROFILE = '/onboarding/profile',
-  PUBKY = '/onboarding/pubky',
-  SCAN = '/onboarding/scan',
-  HUMAN = '/onboarding/human',
+export enum ACCOUNT_ROUTES {
+  COMPLETE_PROFILE = '/complete-profile',
 }
 
 export enum AUTH_ROUTES {
@@ -174,7 +169,6 @@ export const PUBLIC_ROUTES: string[] = [
 ];
 
 export const ALLOWED_ROUTES = [
-  ONBOARDING_ROUTES.PROFILE,
   APP_ROUTES.HOME,
   APP_ROUTES.FEED,
   APP_ROUTES.SEARCH,
@@ -192,29 +186,18 @@ export const ALLOWED_ROUTES = [
 
 // Route guard configurations for different authentication states
 export const UNAUTHENTICATED_ROUTES = {
-  allowedRoutes: [
-    ROOT_ROUTES,
-    AUTH_ROUTES.SIGN_IN,
-    ONBOARDING_ROUTES.INSTALL,
-    ONBOARDING_ROUTES.SCAN,
-    ONBOARDING_ROUTES.PUBKY,
-    ONBOARDING_ROUTES.BACKUP,
-    ONBOARDING_ROUTES.HUMAN,
-    ...EXPLORE_ROUTES,
-    AUTH_ROUTES.LOGOUT,
-    COPYRIGHT_ROUTES.COPYRIGHT,
-  ],
+  allowedRoutes: [ROOT_ROUTES, AUTH_ROUTES.SIGN_IN, ...EXPLORE_ROUTES, AUTH_ROUTES.LOGOUT, COPYRIGHT_ROUTES.COPYRIGHT],
   redirectTo: ROOT_ROUTES,
 };
 
 export const NEEDS_PROFILE_CREATION_ROUTES = {
-  allowedRoutes: [ONBOARDING_ROUTES.PROFILE, ONBOARDING_ROUTES.BACKUP],
-  redirectTo: ONBOARDING_ROUTES.PROFILE,
+  allowedRoutes: [ACCOUNT_ROUTES.COMPLETE_PROFILE],
+  redirectTo: ACCOUNT_ROUTES.COMPLETE_PROFILE,
 };
 
 /**
  * Where the Shop sends a user when it navigates "home" on its own (route guard,
- * logo, post-onboarding, not-found fallbacks). With social link-out on, `/home`
+ * logo, post-completion, not-found fallbacks). With social link-out on, `/home`
  * belongs to the social host, where a Shop session does not carry over, so the
  * Shop stays on its catalog instead.
  */
@@ -250,7 +233,6 @@ export function isDynamicPublicRoute(pathname: string): boolean {
   const segments = pathname.split('/').filter(Boolean);
 
   switch (true) {
-    case segments[0] === 'invite' && segments.length === 2:
     case segments[0] === 'post' && segments.length === 3:
     case segments[0] === 'profile' && segments.length === 2 && isPubkyIdentifier(segments[1]):
     case matchSingleCollectionRoute(pathname) !== null:
@@ -280,7 +262,7 @@ type MatchesAllowedRouteOptions = {
 /**
  * Whether `pathname` is reachable via an allowed route entry.
  *
- * Non-explore routes keep prefix matching (e.g. onboarding sub-steps). Explore
+ * Non-explore routes keep prefix matching (e.g. settings sub-pages). Explore
  * routes optionally match exactly — see `restrictExploreSubRoutes`.
  */
 export function matchesAllowedRoute(
@@ -320,7 +302,7 @@ export const LOGO_LANDING_ROUTES: readonly string[] = [
   ROOT_ROUTES,
   ...Object.values(AUTH_ROUTES),
   COPYRIGHT_ROUTES.COPYRIGHT,
-  ...Object.values(ONBOARDING_ROUTES),
+  ...Object.values(ACCOUNT_ROUTES),
 ];
 
 export function isLogoLandingRoute(pathname: string | null): boolean {

@@ -76,18 +76,6 @@ describe('SDK 0.16 bare-grant and owned-key compatibility contract', () => {
       await vi.waitFor(() => expect(pendingOwnedGrants()).toEqual([]));
     }
   });
-  it('signup uses SDK signup_grant instead of rewriting a cookie URL', async () => {
-    const flow = await HomeserverService.generateSignupAuthUrl({ inviteCode: 'test-invite' });
-    flow.awaitApproval.catch(() => {});
-    const url = new URL(flow.authorizationUrl);
-    expect(url.host).toBe('signup_grant');
-    expect(url.searchParams.get('caps')).toBe(CAPABILITIES);
-    expect(url.searchParams.get('st')).toBe('test-invite');
-    expect(url.searchParams.get('cid')).toBe(SHOP_GRANT_CLIENT_ID);
-    expect(url.searchParams.has('af')).toBe(false);
-    flow.cancelAuthFlow();
-    await vi.waitFor(() => expect(pendingOwnedGrants()).toEqual([]));
-  });
   it('deletes only the owned pending key while a different app can still resume its flow', async () => {
     const ours = await GrantAuthFlow.startDelegated(CAPABILITIES, AuthFlowKind.signin(), {
       clientId: SHOP_GRANT_CLIENT_ID,

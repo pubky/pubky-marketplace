@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { APP_ROUTES, AUTH_ROUTES, ONBOARDING_ROUTES, PROFILE_ROUTES } from '@/app/routes';
+import { ACCOUNT_ROUTES, APP_ROUTES, AUTH_ROUTES, PROFILE_ROUTES } from '@/app/routes';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { NotificationController } from '@/controllers/notification/notification';
 import type { PollingServiceConfig } from '@/coordinators/base/coordinators.types';
@@ -944,23 +944,23 @@ describe('NotificationCoordinator', () => {
       expect(spy).not.toHaveBeenCalled();
     });
 
-    it('does not poll on /onboarding base route', async () => {
+    it('does not poll on profile completion route', async () => {
       const { spy, coordinator } = setupAuthenticatedTest();
       coordinator.configure({ pollOnStart: true, intervalMs: 1_000 } as Partial<CoordinatorConfigWithBase>);
-      coordinator.setRoute('/onboarding');
+      coordinator.setRoute('/complete-profile');
       coordinator.start();
 
       await flushPromises();
       expect(spy).not.toHaveBeenCalled();
     });
 
-    it('does not poll on nested onboarding routes', async () => {
+    it('does not poll on both account maintenance routes', async () => {
       const { spy, coordinator } = setupAuthenticatedTest();
       coordinator.configure({ pollOnStart: true, intervalMs: 1_000 } as Partial<CoordinatorConfigWithBase>);
 
-      const onboardingRoutes = Object.values(ONBOARDING_ROUTES);
+      const accountRoutes = Object.values(ACCOUNT_ROUTES);
 
-      for (const route of onboardingRoutes) {
+      for (const route of accountRoutes) {
         coordinator.setRoute(route);
         coordinator.start();
 
@@ -1018,7 +1018,7 @@ describe('NotificationCoordinator', () => {
       expect(spy).toHaveBeenCalledTimes(2);
 
       // Move to disabled route
-      coordinator.setRoute(ONBOARDING_ROUTES.PROFILE);
+      coordinator.setRoute(ACCOUNT_ROUTES.COMPLETE_PROFILE);
 
       // Should stop polling
       vi.advanceTimersByTime(5_000);

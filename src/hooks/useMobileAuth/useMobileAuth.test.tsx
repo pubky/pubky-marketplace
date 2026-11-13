@@ -107,9 +107,9 @@ describe('useMobileAuth', () => {
   });
 
   it('passes options through to useAuthUrl', () => {
-    renderHook(() => useMobileAuth({ type: 'signup', inviteCode: 'ABC-123' }));
+    renderHook(() => useMobileAuth({ withPrivKeys: false }));
 
-    expect(mockUseAuthUrl).toHaveBeenCalledWith({ type: 'signup', inviteCode: 'ABC-123' });
+    expect(mockUseAuthUrl).toHaveBeenCalledWith({ withPrivKeys: false });
   });
   describe('signer-specific sign-in links', () => {
     const GRANT_URL = 'pubkyauth://signin_grant?caps=x&relay=r&secret=s&cid=shop.pubky.app&cpk=k';

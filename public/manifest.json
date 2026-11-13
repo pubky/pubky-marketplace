@@ -99,12 +99,6 @@
       "form_factor": "narrow"
     }
   ],
-  "protocol_handlers": [
-    {
-      "protocol": "web+pubkyring",
-      "url": "/invite/%s"
-    }
-  ],
   "share_target": {
     "action": "/share",
     "method": "POST",

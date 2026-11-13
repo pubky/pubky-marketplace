@@ -5,7 +5,7 @@ screenshots it, and pixel-compares against a committed baseline. It catches
 layout, styling and responsive regressions — not functional bugs (use unit /
 interaction tests for those).
 
-- Test files: `*.vrt.test.tsx`. Feed/onboarding/messages use the `vrt` Vitest
+- Test files: `*.vrt.test.tsx`. Feed/account/messages use the `vrt` Vitest
   project; marketplace files use `vrt-marketplace` (same `vitest.config.ts`).
 - Compare: `npm run test:vrt` (Docker; both projects, Chromium and Firefox).
 - Baselines: `__screenshots__/<file>/<name>-<browser>-linux.png`. Linux is the
@@ -75,7 +75,7 @@ release train, while a real layout rewrite still exceeds 2%. Both are shared
 by comparison (`npm run test:vrt`) and regeneration (`--update`): `--update`
 only rewrites a baseline when a capture differs by more than the allowance.
 Prefer a per-scene `comparatorOptions` override over raising the
-non-marketplace values. Feed and onboarding desktop shells that include dense
+non-marketplace values. Feed and account desktop shells that include dense
 tab chrome use `VRT_DENSE_CHROME_SCREENSHOT` from `src/test-utils/vrt.tsx`
 (cap 1600 px / 0.3%) because Inter Tight AA and leftover `:hover` on those
 glyphs is hundreds of pixels on 1440×900 — still well below rewriting a
@@ -143,10 +143,10 @@ Pin every deterministic source below so real diffs stand out:
 
 ## Render like the real app
 
-A template alone misses chrome the root layout adds. Onboarding pages render
-under `<Header />` (the step bar), mounted by `src/app/layout.tsx`. Render that
-wrapper in the test and mock what it reads (`usePathname`, `useAuthStore`,
-`usePublicRoute`) so the snapshot matches what the user sees.
+A template alone misses chrome the root layout adds. Account-maintenance pages render
+under the simple `<Header />` mounted by `src/app/layout.tsx`. Render that wrapper
+in the test and mock what it reads (`usePathname`, `useAuthStore`, `usePublicRoute`)
+so the capture matches what the user sees. Signup and its stepper have been removed.
 
 ## Viewport crops and tall surfaces
 
@@ -166,9 +166,7 @@ product change.
 ## Artifact: sub-pixel seams on segmented elements
 
 A baseline may show thin tick lines that you don't see in your real browser.
-Example: the onboarding progress bar (`molecules/ProgressSteps`) is 5 adjacent
-`<div>` segments (`gap-0`), each with its own fill; the seams between them show
-as faint notches.
+For example, adjacent filled segments without a gap can show seams as faint notches.
 
 Adjacent pieces can show sub-pixel rasterization seams at the test's device-pixel
 ratio. Compare with the production surface and repeat the pinned Linux capture

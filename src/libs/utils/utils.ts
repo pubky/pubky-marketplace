@@ -228,30 +228,6 @@ export function extractInitials({ name, maxLength = 2 }: ExtractInitialsProps) {
     .slice(0, maxLength);
 }
 
-export function formatInviteCode(code: string) {
-  if (!code) return '';
-
-  // Remove all non-alphanumeric characters
-  const cleaned = code.replace(/[^a-zA-Z0-9]/g, '');
-
-  // Convert to uppercase
-  const uppercased = cleaned.toUpperCase();
-
-  // If no valid characters, return empty string
-  if (uppercased.length === 0) return '';
-
-  // Handle different lengths
-  if (uppercased.length <= 4) {
-    return uppercased;
-  } else if (uppercased.length <= 8) {
-    return `${uppercased.slice(0, 4)}-${uppercased.slice(4)}`;
-  } else {
-    // Take only first 12 characters for longer codes
-    const truncated = uppercased.slice(0, 12);
-    return `${truncated.slice(0, 4)}-${truncated.slice(4, 8)}-${truncated.slice(8, 12)}`;
-  }
-}
-
 /**
  * Pauses execution for the specified duration.
  * Useful for adding delays in async operations.

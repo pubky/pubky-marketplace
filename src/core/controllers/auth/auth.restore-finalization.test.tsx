@@ -10,7 +10,6 @@ import { AuthStatus } from '@/hooks/useAuthStatus/useAuthStatus.types';
 import { Identity } from '@/libs/identity/identity';
 import type { Pubky } from '@/models/models.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
-import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
 import { mockSession } from '@/test-utils/pubky';
 
 vi.mock('@/database/franky/franky.helpers', () => ({
@@ -42,8 +41,6 @@ describe('AuthController restore finalization — real useAuthStatus', () => {
     AuthController.resetCleanupLocalStateGuard();
     resetAuthFinalizationLockForTests();
     useAuthStore.getState().reset();
-    useOnboardingStore.getState().reset();
-    useOnboardingStore.getState().setHydrated(true);
     useAuthStore.setState({
       session: null,
       sessionExport: null,
@@ -59,7 +56,6 @@ describe('AuthController restore finalization — real useAuthStatus', () => {
   afterEach(() => {
     BootstrapApplication.cancelModerationFollow();
     useAuthStore.getState().reset();
-    useOnboardingStore.getState().reset();
     vi.restoreAllMocks();
   });
 

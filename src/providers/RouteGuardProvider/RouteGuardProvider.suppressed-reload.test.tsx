@@ -19,6 +19,8 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/app/routes', () => ({
+  ACCOUNT_ROUTES: { COMPLETE_PROFILE: '/complete-profile' },
+  APP_ROUTES: { MARKETPLACE: '/marketplace' },
   PUBLIC_ROUTES: ['/landing'],
   isDynamicPublicRoute: () => false,
   matchesAllowedRoute: (pathname: string, route: string) => pathname === route || pathname.startsWith(`${route}/`),
@@ -41,10 +43,6 @@ vi.mock('@/libs/logger/logger', () => ({
 }));
 
 vi.mock('@/molecules/Toaster/toast');
-
-vi.mock('@/stores/onboarding/onboarding.store', () => ({
-  useOnboardingStore: () => ({ hasHydrated: true }),
-}));
 
 vi.mock('@/stores/migration/migration.store', () => ({
   useMigrationStore: Object.assign(

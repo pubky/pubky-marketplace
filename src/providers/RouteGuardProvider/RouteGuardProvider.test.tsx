@@ -58,6 +58,7 @@ vi.mock('@/hooks/useAuthStatus/useAuthStatus', () => ({
 
 // Mock @/app
 vi.mock('@/app/routes', () => ({
+  ACCOUNT_ROUTES: { COMPLETE_PROFILE: '/complete-profile' },
   APP_ROUTES: {
     MARKETPLACE: '/marketplace',
   },
@@ -91,7 +92,7 @@ vi.mock('@/providers/RouteGuardProvider/RouteGuardProvider.constants', () => ({
       allowedRoutes: ['/login', '/landing', '/home', '/hot', '/search', '/collections', '/marketplace'],
       redirectTo: '/login',
     },
-    NEEDS_PROFILE_CREATION: { allowedRoutes: ['/create-profile'], redirectTo: '/create-profile' },
+    NEEDS_PROFILE_CREATION: { allowedRoutes: ['/complete-profile'], redirectTo: '/complete-profile' },
   },
 }));
 
@@ -176,6 +177,97 @@ describe('RouteGuardProvider — migration resync', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('preserves an authenticated destination through profile completion and consumes it once', () => {
+    mocks.status = 'NEEDS_PROFILE_CREATION';
+    mocks.pathname = '/marketplace/checkout';
+    const { rerender } = render(
+      <RouteGuardProvider>
+        <div>Account content</div>
+      </RouteGuardProvider>,
+    );
+    expect(mocks.mockRouterPush).toHaveBeenCalledWith('/complete-profile');
+    expect(window.sessionStorage.getItem('pubky.routeGuard.returnTo')).toBe('/marketplace/checkout');
+    mocks.pathname = '/complete-profile';
+    rerender(
+      <RouteGuardProvider>
+        <div>Account content</div>
+      </RouteGuardProvider>,
+    );
+    expect(window.sessionStorage.getItem('pubky.routeGuard.returnTo')).toBe('/marketplace/checkout');
+    mocks.mockRouterPush.mockClear();
+    mocks.status = 'AUTHENTICATED';
+    rerender(
+      <RouteGuardProvider>
+        <div>Account content</div>
+      </RouteGuardProvider>,
+    );
+    expect(mocks.mockRouterPush).toHaveBeenCalledExactlyOnceWith('/marketplace/checkout');
+    expect(window.sessionStorage.getItem('pubky.routeGuard.returnTo')).toBeNull();
+    mocks.pathname = '/marketplace/checkout';
+    rerender(
+      <RouteGuardProvider>
+        <div>Account content</div>
+      </RouteGuardProvider>,
+    );
+    expect(mocks.mockRouterPush).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the query of a guarded deep link through profile completion', () => {
+    mocks.status = 'NEEDS_PROFILE_CREATION';
+    mocks.pathname = '/marketplace/checkout';
+    window.history.replaceState(null, '', '/marketplace/checkout?offer=fictional-offer');
+    const { rerender } = render(
+      <RouteGuardProvider>
+        <div>Account content</div>
+      </RouteGuardProvider>,
+    );
+    expect(mocks.mockRouterPush).toHaveBeenCalledWith('/complete-profile');
+    expect(window.sessionStorage.getItem('pubky.routeGuard.returnTo')).toBe(
+      '/marketplace/checkout?offer=fictional-offer',
+    );
+    mocks.pathname = '/complete-profile';
+    window.history.replaceState(null, '', '/complete-profile');
+    mocks.mockRouterPush.mockClear();
+    mocks.status = 'AUTHENTICATED';
+    rerender(
+      <RouteGuardProvider>
+        <div>Account content</div>
+      </RouteGuardProvider>,
+    );
+    expect(mocks.mockRouterPush).toHaveBeenCalledExactlyOnceWith('/marketplace/checkout?offer=fictional-offer');
+    mocks.pathname = '/marketplace/checkout';
+    window.history.replaceState(null, '', '/marketplace/checkout?offer=fictional-offer');
+    rerender(
+      <RouteGuardProvider>
+        <div>Account content</div>
+      </RouteGuardProvider>,
+    );
+    expect(mocks.mockRouterPush).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not attach a query that belongs to another location', () => {
+    mocks.status = 'NEEDS_PROFILE_CREATION';
+    mocks.pathname = '/marketplace/checkout';
+    window.history.replaceState(null, '', '/marketplace?offer=fictional-offer');
+    render(
+      <RouteGuardProvider>
+        <div>Account content</div>
+      </RouteGuardProvider>,
+    );
+    expect(window.sessionStorage.getItem('pubky.routeGuard.returnTo')).toBe('/marketplace/checkout');
+  });
+
+  it.each(['UNAUTHENTICATED', 'AUTHENTICATED'])('does not render completion for %s', (status) => {
+    mocks.status = status;
+    mocks.pathname = '/complete-profile';
+    render(
+      <RouteGuardProvider>
+        <div>Profile form</div>
+      </RouteGuardProvider>,
+    );
+    expect(screen.queryByText('Profile form')).not.toBeInTheDocument();
   });
 
   it('retries a pending grant-key cleanup once the auth store has hydrated', async () => {
@@ -513,7 +605,7 @@ describe('RouteGuardProvider — migration resync', () => {
     expect(screen.queryByText('Bookmarks Content')).not.toBeInTheDocument();
   });
 
-  it('keeps profile-creation users on onboarding instead of core explore routes', () => {
+  it('keeps profileless users on completion instead of core explore routes', () => {
     mocks.status = 'NEEDS_PROFILE_CREATION';
     mocks.isLoading = false;
     mocks.pathname = '/home';
@@ -526,7 +618,7 @@ describe('RouteGuardProvider — migration resync', () => {
 
     expect(screen.getByText('Redirecting...')).toBeInTheDocument();
     expect(screen.queryByText('Explore Content')).not.toBeInTheDocument();
-    expect(mocks.mockRouterPush).toHaveBeenCalledWith('/create-profile');
+    expect(mocks.mockRouterPush).toHaveBeenCalledWith('/complete-profile');
   });
 });
 

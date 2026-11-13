@@ -25,7 +25,6 @@ import { cn } from '@/libs/utils/utils';
 import { AvatarWithFallback } from '@/organisms/AvatarWithFallback/AvatarWithFallback';
 import { SearchInput } from '@/organisms/SearchInput/SearchInput';
 import { useAuthStore } from '@/stores/auth/auth.store';
-import { ProgressSteps } from '../ProgressSteps/ProgressSteps';
 
 export interface HeaderContainerProps {
   children: React.ReactNode;
@@ -68,9 +67,6 @@ export const HeaderTitle = ({ currentTitle }: { currentTitle: string }) => {
       </Heading>
     </Container>
   );
-};
-export const HeaderOnboarding = ({ currentStep }: { currentStep: number }) => {
-  return <ProgressSteps currentStep={currentStep} totalSteps={5} />;
 };
 export function HeaderSocialLinks({ ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (

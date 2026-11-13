@@ -24,7 +24,6 @@ export enum ErrorCategory {
 export enum ErrorService {
   Nexus = 'nexus',
   Homeserver = 'homeserver',
-  Homegate = 'homegate',
   Exchangerate = 'exchangerate',
   Chatwoot = 'chatwoot',
   Marketplace = 'marketplace',

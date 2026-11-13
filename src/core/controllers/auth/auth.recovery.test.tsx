@@ -17,7 +17,6 @@ import { pendingOwnedGrants } from '@/services/homeserver/owned-grant-storage';
 import { clearPersistedAuthIdentity } from '@/stores/auth/auth.persisted';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
-import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
 import { AUTH_PERSIST_KEY } from '@/stores/persistedKeys';
 import { useSearchStore } from '@/stores/search/search.store';
 import { useSettingsStore } from '@/stores/settings/settings.store';
@@ -35,7 +34,6 @@ let remove: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   resetGrantTest();
-  useOnboardingStore.setState({ hasHydrated: true });
   // Real application/service cleanup and persistence bookkeeping, with an SDK record-store boundary double.
   for (const method of [
     'saveGrantSession',

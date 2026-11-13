@@ -56,12 +56,6 @@ vi.mock('@/stores/signIn/signIn.store', () => ({
   }),
 }));
 
-vi.mock('@/stores/onboarding/onboarding.store', () => ({
-  useOnboardingStore: Object.assign(createZustandLikeHook({ reset: vi.fn() }), {
-    getState: () => ({ reset: vi.fn() }),
-  }),
-}));
-
 describe('SignIn (one QR for Pubky Ring and Bitkit) — visual regression', () => {
   beforeEach(() => {
     deploy.requestsKeys = false;

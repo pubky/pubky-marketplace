@@ -13,7 +13,7 @@ import { parseRegionModes } from '../commerce/region-modes';
  *  - OPTIONAL observability values (sentry*): absent means the feature is disabled (DSN) or
  *    a documented default applies (sample rates).
  *  - OPTIONAL/DEFAULTED app/deployer values: public operational, moderation, metadata,
- *    analytics, Prelude, and external-link values that deployers may override without rebuilding.
+ *    analytics, and external-link values that deployers may override without rebuilding.
  *
  * This module is a leaf (zod only, no `Env`, no logger) so the runtime-config resolver never
  * pulls in the heavy `env -> libs/error -> logger -> env` import cycle.
@@ -550,7 +550,6 @@ export const APP_RUNTIME_DEFAULTS = {
   passportPrivEncryptionKeys: false,
   privEncryptionKeysHomeservers: [] as string[],
   marketplaceTrustedAttestors: [] as MarketplaceTrustedAttestor[],
-  preludeSdkTimeoutMs: 5_000,
   previewImage: '/preview.webp',
   siteName: 'Pubky Market',
   locale: 'en_US',
@@ -789,8 +788,6 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
   marketplaceTrustedAttestors: z
     .array(marketplaceTrustedAttestorValue)
     .default(() => [...APP_RUNTIME_DEFAULTS.marketplaceTrustedAttestors]),
-  preludeSdkKey: nonEmptyStringValue.optional(),
-  preludeSdkTimeoutMs: positiveIntValue.default(APP_RUNTIME_DEFAULTS.preludeSdkTimeoutMs),
   plausibleDomain: nonEmptyStringValue.optional(),
   plausibleScriptUrl: urlValue.optional(),
   previewImage: nonEmptyStringValue.default(APP_RUNTIME_DEFAULTS.previewImage),
@@ -893,8 +890,6 @@ export const runtimeEnvInputSchema = z
     privEncryptionKeysHomeservers: optionalHomeserverArrayFromString('PRIV_ENCRYPTION_KEYS_HOMESERVERS'),
     shopGrantClientId: optionalShopGrantClientIdFromString,
     marketplaceTrustedAttestors: optionalTrustedAttestorsFromString,
-    preludeSdkKey: optionalTrimmedString,
-    preludeSdkTimeoutMs: optionalPositiveIntFromString,
     plausibleDomain: optionalTrimmedString,
     plausibleScriptUrl: optionalUrlFromString,
     previewImage: optionalTrimmedString,
@@ -1007,8 +1002,6 @@ export const runtimeEnvInputSchemaWithDefaults = z
     privEncryptionKeysHomeservers: optionalHomeserverArrayFromString('PRIV_ENCRYPTION_KEYS_HOMESERVERS'),
     shopGrantClientId: optionalShopGrantClientIdFromString,
     marketplaceTrustedAttestors: optionalTrustedAttestorsFromString,
-    preludeSdkKey: optionalTrimmedString,
-    preludeSdkTimeoutMs: optionalPositiveIntFromString,
     plausibleDomain: optionalTrimmedString,
     plausibleScriptUrl: optionalUrlFromString,
     previewImage: optionalTrimmedString,
@@ -1112,8 +1105,6 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   privEncryptionKeysHomeservers: 'PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS_HOMESERVERS',
   shopGrantClientId: 'PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID',
   marketplaceTrustedAttestors: 'PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS',
-  preludeSdkKey: 'PUBKY_RUNTIME_PRELUDE_SDK_KEY',
-  preludeSdkTimeoutMs: 'PUBKY_RUNTIME_PRELUDE_SDK_TIMEOUT_MS',
   plausibleDomain: 'PUBKY_RUNTIME_PLAUSIBLE_DOMAIN',
   plausibleScriptUrl: 'PUBKY_RUNTIME_PLAUSIBLE_SCRIPT_URL',
   previewImage: 'PUBKY_RUNTIME_PREVIEW_IMAGE',

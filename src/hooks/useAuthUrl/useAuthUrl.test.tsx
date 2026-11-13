@@ -25,7 +25,6 @@ const mockToast = vi.fn();
 const mockLoggerError = vi.fn();
 const mockCopyToClipboard = vi.fn().mockResolvedValue(undefined);
 const mockGetAuthUrl = vi.fn();
-const mockGetSignupAuthUrl = vi.fn();
 const mockInitializeAuthenticatedSession = vi.fn();
 const mockCancelActiveAuthFlow = vi.fn();
 vi.mock('@/molecules/Toaster/toast', () => {
@@ -55,7 +54,6 @@ vi.mock('@/libs/utils/utils', async () => {
 vi.mock('@/controllers/auth/auth', () => ({
   AuthController: {
     getAuthUrl: (...args: unknown[]) => mockGetAuthUrl(...args),
-    getSignupAuthUrl: (...args: unknown[]) => mockGetSignupAuthUrl(...args),
     initializeAuthenticatedSession: (...args: unknown[]) => mockInitializeAuthenticatedSession(...args),
     cancelActiveAuthFlow: (...args: unknown[]) => mockCancelActiveAuthFlow(...args),
   },
@@ -423,27 +421,27 @@ describe('useAuthUrl', () => {
     expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: SIGN_IN_LINK_FAILED_MESSAGE });
   });
 
-  it.each([
-    ['sign-in', { type: 'signin' } as const, () => mockGetAuthUrl],
-    ['sign-up', { type: 'signup', inviteCode: 'INVITE' } as const, () => mockGetSignupAuthUrl],
-  ])('never shows a raw SDK message when the %s link cannot be made', async (_flow, options, mock) => {
-    // handleError keeps the SDK's own message on the AppError it throws.
-    mock().mockRejectedValue(
-      new AppError({
-        category: ErrorCategory.Validation,
-        code: ValidationErrorCode.INVALID_INPUT,
-        message: 'Invalid PublicKey encoding',
-        service: ErrorService.Homeserver,
-        operation: 'generateGrantAuthUrl',
-      }),
-    );
+  it.each([['sign-in', { type: 'signin' } as const, () => mockGetAuthUrl]])(
+    'never shows a raw SDK message when the %s link cannot be made',
+    async (_flow, options, mock) => {
+      // handleError keeps the SDK's own message on the AppError it throws.
+      mock().mockRejectedValue(
+        new AppError({
+          category: ErrorCategory.Validation,
+          code: ValidationErrorCode.INVALID_INPUT,
+          message: 'Invalid PublicKey encoding',
+          service: ErrorService.Homeserver,
+          operation: 'generateGrantAuthUrl',
+        }),
+      );
 
-    const { result } = renderHook(() => useAuthUrl(options));
+      const { result } = renderHook(() => useAuthUrl(options));
 
-    await waitFor(() => expect(result.current.isExpired).toBe(true));
-    expect(mockToast).toHaveBeenCalledTimes(1);
-    expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: SIGN_IN_LINK_FAILED_MESSAGE });
-  });
+      await waitFor(() => expect(result.current.isExpired).toBe(true));
+      expect(mockToast).toHaveBeenCalledTimes(1);
+      expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: SIGN_IN_LINK_FAILED_MESSAGE });
+    },
+  );
 
   it('offers a reload without an error toast when another sign-in canceled link creation', async () => {
     mockGetAuthUrl.mockRejectedValue(Object.assign(new Error('Auth flow canceled'), { name: 'AuthFlowCanceled' }));
@@ -588,26 +586,6 @@ describe('useAuthUrl', () => {
       });
     });
     expect(mockLoggerError).not.toHaveBeenCalled();
-  });
-
-  it('calls AuthController.getSignupAuthUrl when type is signup with inviteCode', async () => {
-    const mockAuthUrl = 'pubkyring://authorize?token=signup';
-
-    mockGetSignupAuthUrl.mockResolvedValue({
-      authorizationUrl: mockAuthUrl,
-      awaitApproval: new Promise<Session>(() => {}),
-      cancelAuthFlow: createCancelAuthFlow(),
-    });
-
-    const { result } = renderHook(() => useAuthUrl({ type: 'signup', inviteCode: 'A9KM-7MJP-ERM9' }));
-
-    await waitFor(() => {
-      expect(result.current.url).toBe(mockAuthUrl);
-      expect(result.current.isLoading).toBe(false);
-    });
-
-    expect(mockGetSignupAuthUrl).toHaveBeenCalledWith('A9KM-7MJP-ERM9');
-    expect(mockGetAuthUrl).not.toHaveBeenCalled();
   });
 
   it('copyAuthUrl copies url to clipboard', async () => {
