@@ -8,6 +8,8 @@ export type TNotificationApplicationNotificationsParams = {
   lastPolledTimestamp: number | undefined;
   lastRead: number;
   allowedTypes: NotificationType[];
+  /** Aborted when `userId` signs out; nothing is persisted after that. */
+  signal?: AbortSignal;
 };
 
 /**
@@ -67,6 +69,8 @@ export type TPersistAndSummarizeParams = {
 export type TFetchMissingEntitiesParams = {
   notifications: NexusNotification[];
   viewerId: Pubky;
+  /** Aborted when the viewer signs out; related posts and users are not persisted after that. */
+  signal?: AbortSignal;
 };
 
 export type TParseNotificationsResult = {

@@ -245,8 +245,8 @@ const setupMocks = (config: MockConfig = {}): ServiceMocks => {
 const assertCommonCalls = (mocks: ServiceMocks, bootstrapData: NexusBootstrapResponse) => {
   expect(mocks.nexusFetch).toHaveBeenCalledWith(TEST_PUBKY);
   expect(mocks.homeserverRead).toHaveBeenCalledWith({ url: MOCK_LAST_READ_URL });
-  expect(mocks.fetchMutedUsers).toHaveBeenCalledWith(TEST_PUBKY);
-  expect(mocks.fetchFeeds).toHaveBeenCalledWith(TEST_PUBKY);
+  expect(mocks.fetchMutedUsers).toHaveBeenCalledWith(TEST_PUBKY, undefined);
+  expect(mocks.fetchFeeds).toHaveBeenCalledWith(TEST_PUBKY, undefined);
   expect(mocks.persistUsers).toHaveBeenCalledWith(bootstrapData.users);
   expect(mocks.persistPosts).toHaveBeenCalledWith({ posts: bootstrapData.posts });
   expect(mocks.upsertPostsStream).toHaveBeenCalledWith({
@@ -611,7 +611,7 @@ describe('BootstrapApplication', () => {
 
       const result = await BootstrapApplication.initialize(getBootstrapParams(TEST_PUBKY));
 
-      expect(mocks.fetchMutedUsers).toHaveBeenCalledWith(TEST_PUBKY);
+      expect(mocks.fetchMutedUsers).toHaveBeenCalledWith(TEST_PUBKY, undefined);
       expect(result).toEqual({
         unread: 0,
         lastRead: MOCK_LAST_READ,
@@ -735,7 +735,7 @@ describe('BootstrapApplication', () => {
 
       const result = await BootstrapApplication.initialize(getBootstrapParams(TEST_PUBKY));
 
-      expect(mocks.fetchMutedUsers).toHaveBeenCalledWith(TEST_PUBKY);
+      expect(mocks.fetchMutedUsers).toHaveBeenCalledWith(TEST_PUBKY, undefined);
       expect(result).toEqual({
         unread: 0,
         lastRead: MOCK_LAST_READ,
@@ -752,7 +752,7 @@ describe('BootstrapApplication', () => {
 
       await expect(BootstrapApplication.initialize(getBootstrapParams(TEST_PUBKY))).rejects.toThrow('Mute fetch error');
 
-      expect(mocks.fetchMutedUsers).toHaveBeenCalledWith(TEST_PUBKY);
+      expect(mocks.fetchMutedUsers).toHaveBeenCalledWith(TEST_PUBKY, undefined);
       // fetchMutedUsers fails in the initial sync stage, so persistence is never reached
       expect(mocks.persistUsers).not.toHaveBeenCalled();
     });

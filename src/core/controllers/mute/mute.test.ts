@@ -143,7 +143,7 @@ describe('MuteController', () => {
       const result = await MuteController.fetchMutedUsers(pubky);
 
       expect(result).toEqual(mockMutedUsers);
-      expect(fetchSpy).toHaveBeenCalledWith(pubky);
+      expect(fetchSpy).toHaveBeenCalledWith(pubky, expect.any(AbortSignal));
     });
 
     it('should propagate errors from application layer', async () => {

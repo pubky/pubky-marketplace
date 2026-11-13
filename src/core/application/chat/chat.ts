@@ -88,6 +88,9 @@ type PairKeysCacheEntry = ChatPeerKeys & { myKid: string };
  * Expected failures (a peer without a key, an undecryptable file, an inbox
  * that is down) are return values and warnings, never `Err.*`: those log to
  * Sentry and mean a bug or a broken dependency.
+ *
+ * `signal` is the caller's auth scope: it aborts when `me` signs out, and
+ * every local, homeserver and inbox write checks it first.
  */
 export class ChatApplication {
   private constructor() {}
@@ -102,7 +105,7 @@ export class ChatApplication {
    * to `/pub/chat/v0/key.json`. Runs under the account's identity lock so two
    * tabs never mint two keys.
    */
-  static async ensureIdentity(me: string): Promise<ChatIdentityState> {
+  static async ensureIdentity(me: string, signal?: AbortSignal): Promise<ChatIdentityState> {
     return await withExclusiveLock(CHAT_LOCKS.identity(me), async () => {
       const cached = await LocalChatService.getIdentity(me);
       if (cached?.published) return 'ready';
@@ -137,6 +140,7 @@ export class ChatApplication {
         const keypair = generateChatKeypair();
         const createdAt = Date.now();
         const kid = chatKeyId(keypair.publicKey);
+        signal?.throwIfAborted();
         await ChatHomeserverService.writePrivateKey(me, {
           v: 0,
           alg: 'x25519',
@@ -158,6 +162,7 @@ export class ChatApplication {
 
       const published = await ChatHomeserverService.readPublicKey(me);
       if (published.state !== 'found' || published.record.kid !== identity.kid) {
+        signal?.throwIfAborted();
         await ChatHomeserverService.publishPublicKey(me, {
           v: 0,
           alg: 'x25519',
@@ -166,6 +171,7 @@ export class ChatApplication {
           created_at: identity.created_at,
         });
       }
+      signal?.throwIfAborted();
       await LocalChatService.saveIdentity({ ...identity, published: true });
       return 'ready';
     });
@@ -178,11 +184,18 @@ export class ChatApplication {
    * the conversation row unless forced or stale; a peer without a published
    * key is `no_key` and rechecked on a cadence.
    */
-  static async resolvePeerKey(me: string, peer: string, options: { force?: boolean } = {}): Promise<ChatPeerKeyResult> {
-    const identity = await this.requireIdentity(me);
+  static async resolvePeerKey(
+    me: string,
+    peer: string,
+    options: { force?: boolean; signal?: AbortSignal } = {},
+  ): Promise<ChatPeerKeyResult> {
+    const { signal } = options;
+    const identity = await this.requireIdentity(me, signal);
     const row = await LocalChatService.getConversation(me, peer);
     const state = await LocalChatService.getSyncState(me, peer);
     const stale = Date.now() - (state?.peer_key_checked_at ?? 0) > CHAT_PEER_KEY_RECHECK_MS;
+    // Deriving caches the pair's message key in memory, which a sign-out clears.
+    signal?.throwIfAborted();
 
     const known = this.knownPeerKeys(identity, row);
     // A ready peer's key is re-read on the same cadence as a missing one: a
@@ -192,6 +205,7 @@ export class ChatApplication {
     if (row && row.peer_state === 'no_key' && !stale && !options.force) return { state: 'no_key' };
 
     const lookup = await ChatHomeserverService.readPublicKey(peer);
+    signal?.throwIfAborted();
     await LocalChatService.updateSyncState(me, peer, { peer_key_checked_at: Date.now() });
     if (lookup.state === 'unreachable' && known) {
       // Their homeserver is down or unresolvable right now; the key we have is still the best information.
@@ -201,17 +215,20 @@ export class ChatApplication {
     const publicKey = record ? base64UrlToBytes(record.pk) : null;
     if (!record || !publicKey || publicKey.length !== 32 || chatKeyId(publicKey) !== record.kid) {
       if (row && row.peer_state !== 'no_key') {
+        signal?.throwIfAborted();
         await LocalChatService.updateConversation(me, peer, { peer_state: 'no_key' });
       }
       return { state: 'no_key' };
     }
     let keys: ChatPeerKeys;
+    signal?.throwIfAborted();
     try {
       keys = this.deriveFor(identity, peer, record.kid, publicKey);
     } catch (error) {
       // A low-order key, or a copy of my own key published under their account: nothing to encrypt to.
       Logger.warn('Chat peer key rejected; treating the peer as not enabled', { error });
       if (row && row.peer_state !== 'no_key') {
+        signal?.throwIfAborted();
         await LocalChatService.updateConversation(me, peer, { peer_state: 'no_key' });
       }
       return { state: 'no_key' };
@@ -223,6 +240,7 @@ export class ChatApplication {
       row.own_folder_id === keys.ownFolderId;
     if (row && !unchanged) {
       const rotated = row.peer_key_id !== null && row.peer_key_id !== record.kid;
+      signal?.throwIfAborted();
       await LocalChatService.updateConversation(me, peer, {
         peer_state: 'ready',
         peer_key_id: record.kid,
@@ -237,6 +255,7 @@ export class ChatApplication {
         // New epoch: the peer re-keyed (new device, reset). Older messages
         // stay; new ones live in the folder both sides now derive.
         Logger.info('Chat peer key changed; switching to the new conversation folder');
+        signal?.throwIfAborted();
         await LocalChatService.updateSyncState(me, peer, { list_cursor: null, own_list_cursor: null });
       }
     }
@@ -285,10 +304,10 @@ export class ChatApplication {
     return entry;
   }
 
-  private static async requireIdentity(me: string): Promise<ChatIdentityModelSchema> {
+  private static async requireIdentity(me: string, signal?: AbortSignal): Promise<ChatIdentityModelSchema> {
     const identity = await LocalChatService.getIdentity(me);
     if (identity) return identity;
-    const state = await this.ensureIdentity(me);
+    const state = await this.ensureIdentity(me, signal);
     const created = await LocalChatService.getIdentity(me);
     if (state !== 'ready' || !created) {
       // Reads of /priv/chat and writes under /pub/chat need the chat scopes in the session grant.
@@ -303,12 +322,17 @@ export class ChatApplication {
   // =========================================================== conversations
 
   /** Makes sure a conversation row exists and reports whether the peer can be messaged. */
-  static async openConversation(me: string, peer: string, context?: ChatContext): Promise<ChatOpenResult> {
+  static async openConversation(
+    me: string,
+    peer: string,
+    context?: ChatContext,
+    signal?: AbortSignal,
+  ): Promise<ChatOpenResult> {
     this.assertPeer(me, peer);
-    if ((await this.ensureIdentity(me)) !== 'ready') return { state: 'needs_reauth' };
-    const row = await this.ensureConversationRow(me, peer, 'local', context);
+    if ((await this.ensureIdentity(me, signal)) !== 'ready') return { state: 'needs_reauth' };
+    const row = await this.ensureConversationRow(me, peer, 'local', { context, signal });
     // Opening is a user action: a peer who had no key last time gets one more look.
-    const keys = await this.resolvePeerKey(me, peer, { force: row.peer_state === 'no_key' });
+    const keys = await this.resolvePeerKey(me, peer, { force: row.peer_state === 'no_key', signal });
     return keys.state === 'ready' ? { state: 'ready' } : { state: 'peer_not_enabled' };
   }
 
@@ -316,18 +340,22 @@ export class ChatApplication {
     me: string,
     peer: string,
     origin: ChatConversationOrigin,
-    context?: ChatContext,
-    extra: Partial<ChatConversationModelSchema> = {},
+    {
+      context,
+      extra = {},
+      signal,
+    }: { context?: ChatContext; extra?: Partial<ChatConversationModelSchema>; signal?: AbortSignal } = {},
   ): Promise<ChatConversationModelSchema> {
     const existing = await LocalChatService.getConversation(me, peer);
     if (existing) {
       if (context && !sameChatContext(existing.last_context, context)) {
+        signal?.throwIfAborted();
         await LocalChatService.updateConversation(me, peer, { last_context: context, priv_state_dirty: true });
         return { ...existing, last_context: context };
       }
       return existing;
     }
-    const identity = await this.requireIdentity(me);
+    const identity = await this.requireIdentity(me, signal);
     const now = Date.now();
     const row: ChatConversationModelSchema = {
       id: ChatConversationModel.conversationId(me, peer),
@@ -350,6 +378,7 @@ export class ChatApplication {
       updated_at: now,
       ...extra,
     };
+    signal?.throwIfAborted();
     await LocalChatService.upsertConversation(row);
     return row;
   }
@@ -360,7 +389,7 @@ export class ChatApplication {
    * Persists the message first (`queued`), so it survives a closed tab, then
    * returns its id. Delivery is {@link flushOutbox}'s job.
    */
-  static async queueMessage(me: string, params: ChatQueueParams): Promise<string> {
+  static async queueMessage(me: string, params: ChatQueueParams, signal?: AbortSignal): Promise<string> {
     const { peer, context } = params;
     this.assertPeer(me, peer);
     const body = params.body.trim();
@@ -370,7 +399,7 @@ export class ChatApplication {
         operation: 'queueMessage',
       });
     }
-    await this.ensureConversationRow(me, peer, 'local', context);
+    await this.ensureConversationRow(me, peer, 'local', { context, signal });
     const messageId = crypto.randomUUID();
     const sentAt = Date.now();
     const row: ChatMessageModelSchema = {
@@ -389,15 +418,18 @@ export class ChatApplication {
       last_error: null,
       clock_skewed: false,
     };
+    signal?.throwIfAborted();
     await LocalChatService.putMessage(row);
+    signal?.throwIfAborted();
     await LocalChatService.touchConversation(me, peer, { sentAt, body, direction: 'sent', context: context ?? null });
     return row.id;
   }
 
   /** Puts a failed message back in the queue for the next flush. */
-  static async retryMessage(me: string, id: string): Promise<void> {
+  static async retryMessage(me: string, id: string, signal?: AbortSignal): Promise<void> {
     const row = await LocalChatService.getMessage(id);
     if (!row || row.owner_id !== me || row.status !== 'failed') return;
+    signal?.throwIfAborted();
     await LocalChatService.updateMessage(id, { status: 'queued', next_attempt_at: null, last_error: null });
   }
 
@@ -407,18 +439,20 @@ export class ChatApplication {
    * Exclusive per account across tabs. Retryable failures back off; permanent
    * ones mark the message `failed`.
    */
-  static async flushOutbox(me: string): Promise<void> {
+  static async flushOutbox(me: string, signal?: AbortSignal): Promise<void> {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    signal?.throwIfAborted();
     await withExclusiveLock(CHAT_LOCKS.outbox(me), async () => {
-      await this.sendDueMessages(me);
-      await this.flushPings(me);
+      signal?.throwIfAborted();
+      await this.sendDueMessages(me, signal);
+      await this.flushPings(me, signal);
     });
   }
 
-  private static async sendDueMessages(me: string): Promise<void> {
+  private static async sendDueMessages(me: string, signal?: AbortSignal): Promise<void> {
     const due = await LocalChatService.listDueOutbox(me, Date.now());
     if (due.length === 0) return;
-    const identity = await this.requireIdentity(me);
+    const identity = await this.requireIdentity(me, signal);
     const keysByPeer = new Map<string, ChatPeerKeyResult>();
 
     for (const row of due) {
@@ -429,7 +463,7 @@ export class ChatApplication {
         const state = await LocalChatService.getSyncState(me, row.peer_pubky);
         const force = Date.now() - (state?.peer_key_checked_at ?? 0) > CHAT_PEER_KEY_WAITING_RECHECK_MS;
         try {
-          keys = await this.resolvePeerKey(me, row.peer_pubky, { force });
+          keys = await this.resolvePeerKey(me, row.peer_pubky, { force, signal });
         } catch (error) {
           // One peer's lookup failing must not hold back everyone else's messages.
           Logger.warn('Chat peer key lookup failed; the message stays queued', { error });
@@ -437,6 +471,7 @@ export class ChatApplication {
         }
         keysByPeer.set(row.peer_pubky, keys);
       }
+      signal?.throwIfAborted();
       if (keys.state !== 'ready') {
         await LocalChatService.updateMessage(row.id, {
           next_attempt_at: Date.now() + CHAT_PEER_KEY_WAITING_RECHECK_MS,
@@ -467,6 +502,7 @@ export class ChatApplication {
       } catch (error) {
         const attempts = row.attempts + 1;
         const permanent = !(isAppError(error) && isRetryable(error)) || attempts >= CHAT_SEND_MAX_ATTEMPTS;
+        signal?.throwIfAborted();
         await LocalChatService.updateMessage(row.id, {
           attempts,
           status: permanent ? 'failed' : 'queued',
@@ -478,6 +514,7 @@ export class ChatApplication {
         Logger.warn('Chat message send failed', { permanent, attempts });
         continue;
       }
+      signal?.throwIfAborted();
       await LocalChatService.updateMessage(row.id, {
         status: 'sent',
         attempts: row.attempts + 1,
@@ -486,13 +523,14 @@ export class ChatApplication {
       });
       // The newest sent file is the one to wake the peer with; the inbox replaces the
       // pending ping per slot, so one ping per conversation is enough.
+      signal?.throwIfAborted();
       await LocalChatService.updateSyncState(me, row.peer_pubky, {
         ping_file: row.file_name,
         ping_next_at: 0,
         ping_attempts: 0,
       });
     }
-    await this.flushPrivState(me);
+    await this.flushPrivState(me, signal);
   }
 
   /**
@@ -503,7 +541,7 @@ export class ChatApplication {
    * dropped or expired first-contact ping still ends in a wake-up. Once the
    * peer has replied they stream and reconcile the folder themselves.
    */
-  static async flushPings(me: string): Promise<void> {
+  static async flushPings(me: string, signal?: AbortSignal): Promise<void> {
     const now = Date.now();
     const due = (await LocalChatService.listSyncStates(me)).filter(
       (state) => state.ping_file !== null && (state.ping_next_at ?? 0) <= now,
@@ -511,7 +549,7 @@ export class ChatApplication {
     if (due.length === 0) return;
     let availability: InboxAvailability;
     try {
-      availability = await this.ensureInbox(me);
+      availability = await this.ensureInbox(me, signal);
     } catch (error) {
       Logger.warn('Chat inbox session failed; pings wait for the next flush', { error });
       return;
@@ -524,6 +562,7 @@ export class ChatApplication {
       const conversation = await LocalChatService.getConversation(me, peer);
       if (!conversation?.own_folder_id) continue;
       const replied = await LocalChatService.hasReceivedFrom(me, peer);
+      signal?.throwIfAborted();
       try {
         await InboxService.ping(me, {
           slot: chatPingSlot(conversation.own_folder_id),
@@ -532,6 +571,7 @@ export class ChatApplication {
           ttlSeconds: CHAT_PING_TTL_SECONDS,
         });
         const expired = now - fileSentAt(fileName) > CHAT_PING_REPEAT_MAX_AGE_MS;
+        signal?.throwIfAborted();
         await LocalChatService.updateSyncState(me, peer, {
           ping_file: replied || expired ? null : fileName,
           ping_next_at: replied || expired ? 0 : now + CHAT_PING_REPEAT_MS,
@@ -541,6 +581,7 @@ export class ChatApplication {
         const attempts = (state.ping_attempts ?? 0) + 1;
         const retryAfterMs = pingRetryAfterMs(error);
         const delay = retryAfterMs ?? backoffDelay(attempts, CHAT_PING_RETRY_BASE_MS, CHAT_PING_RETRY_MAX_MS);
+        signal?.throwIfAborted();
         await LocalChatService.updateSyncState(me, peer, { ping_next_at: now + delay, ping_attempts: attempts });
         Logger.warn('Chat inbox ping failed; retrying later', { attempts, delay, rateLimited: retryAfterMs !== null });
       }
@@ -557,7 +598,7 @@ export class ChatApplication {
   static async syncConversation(
     me: string,
     peer: string,
-    options: { reason: ChatSyncReason; hintFile?: string },
+    options: { reason: ChatSyncReason; hintFile?: string; signal?: AbortSignal },
   ): Promise<ChatSyncOutcome> {
     let outcome: ChatSyncOutcome = 'skipped';
     const ran = await runInOneTab(CHAT_LOCKS.sync(me, peer), async () => {
@@ -569,8 +610,9 @@ export class ChatApplication {
   private static async syncConversationLocked(
     me: string,
     peer: string,
-    options: { reason: ChatSyncReason; hintFile?: string },
+    options: { reason: ChatSyncReason; hintFile?: string; signal?: AbortSignal },
   ): Promise<ChatSyncOutcome> {
+    const { signal } = options;
     const row = await LocalChatService.getConversation(me, peer);
     if (!row) return 'skipped';
     // A user opening the thread, a key event or a ping re-probes a peer without a
@@ -578,18 +620,18 @@ export class ChatApplication {
     const force =
       options.reason === 'key_event' ||
       (row.peer_state === 'no_key' && (options.reason === 'open' || options.reason === 'ping'));
-    const keys = await this.resolvePeerKey(me, peer, { force });
+    const keys = await this.resolvePeerKey(me, peer, { force, signal });
     if (keys.state !== 'ready') return 'peer_not_enabled';
     if (row.peer_state === 'no_key') {
       // The peer just became reachable: anything queued for them can go now.
-      void this.flushOutbox(me).catch((error: unknown) => Logger.warn('Chat outbox flush failed', { error }));
+      void this.flushOutbox(me, signal).catch((error: unknown) => Logger.warn('Chat outbox flush failed', { error }));
     }
-    const identity = await this.requireIdentity(me);
+    const identity = await this.requireIdentity(me, signal);
     const state = await LocalChatService.getSyncState(me, peer);
 
     try {
       if (options.hintFile) {
-        await this.ingestFiles(me, peer, keys, identity, 'received', [options.hintFile]);
+        await this.ingestFiles(me, peer, keys, identity, 'received', [options.hintFile], signal);
       }
       let cursor = state?.list_cursor ?? null;
       for (let pages = 0; pages < CHAT_LIST_MAX_PAGES_PER_PASS; pages += 1) {
@@ -598,8 +640,9 @@ export class ChatApplication {
           limit: CHAT_LIST_PAGE,
         });
         if (names.length === 0) break;
-        await this.ingestFiles(me, peer, keys, identity, 'received', names);
+        await this.ingestFiles(me, peer, keys, identity, 'received', names, signal);
         cursor = chatMessageUrl(peer, keys.peerFolderId, names[names.length - 1]);
+        signal?.throwIfAborted();
         await LocalChatService.updateSyncState(me, peer, { list_cursor: cursor });
         if (names.length < CHAT_LIST_PAGE) break;
       }
@@ -610,10 +653,11 @@ export class ChatApplication {
         });
         const known = await LocalChatService.latestFileNames(me, peer, 'received', CHAT_TAIL_CHECK_LIMIT * 2);
         const missing = tail.filter((name) => !known.has(name));
-        if (missing.length > 0) await this.ingestFiles(me, peer, keys, identity, 'received', missing);
+        if (missing.length > 0) await this.ingestFiles(me, peer, keys, identity, 'received', missing, signal);
       }
       if (options.reason === 'rebuild')
-        await this.syncOwnFolder(me, peer, keys, identity, state?.own_list_cursor ?? null);
+        await this.syncOwnFolder(me, peer, keys, identity, state?.own_list_cursor ?? null, signal);
+      signal?.throwIfAborted();
       await LocalChatService.updateSyncState(me, peer, {
         last_synced_at: Date.now(),
         consecutive_failures: 0,
@@ -621,6 +665,7 @@ export class ChatApplication {
       });
       return 'synced';
     } catch (error) {
+      signal?.throwIfAborted();
       await LocalChatService.updateSyncState(me, peer, {
         consecutive_failures: (state?.consecutive_failures ?? 0) + 1,
         last_error: error instanceof Error ? error.message : String(error),
@@ -636,6 +681,7 @@ export class ChatApplication {
     keys: ChatPeerKeys,
     identity: ChatIdentityModelSchema,
     startCursor: string | null,
+    signal?: AbortSignal,
   ): Promise<void> {
     let cursor = startCursor;
     for (let pages = 0; pages < CHAT_LIST_MAX_PAGES_PER_PASS; pages += 1) {
@@ -644,8 +690,9 @@ export class ChatApplication {
         limit: CHAT_LIST_PAGE,
       });
       if (names.length === 0) break;
-      await this.ingestFiles(me, peer, keys, identity, 'sent', names);
+      await this.ingestFiles(me, peer, keys, identity, 'sent', names, signal);
       cursor = chatMessageUrl(me, keys.ownFolderId, names[names.length - 1]);
+      signal?.throwIfAborted();
       await LocalChatService.updateSyncState(me, peer, { own_list_cursor: cursor });
       if (names.length < CHAT_LIST_PAGE) break;
     }
@@ -658,6 +705,7 @@ export class ChatApplication {
     identity: ChatIdentityModelSchema,
     direction: ChatMessageDirection,
     names: string[],
+    signal?: AbortSignal,
   ): Promise<void> {
     const owner = direction === 'received' ? peer : me;
     const folderId = direction === 'received' ? keys.peerFolderId : keys.ownFolderId;
@@ -709,9 +757,11 @@ export class ChatApplication {
     if (skipped > 0)
       Logger.warn('Chat files skipped while syncing (undecryptable or mismatched)', { skipped, direction });
     if (rows.length === 0) return;
+    signal?.throwIfAborted();
     const added = new Set(await LocalChatService.addMessages(rows));
     const newest = rows.filter((row) => added.has(row.id)).sort((a, b) => b.sent_at - a.sent_at)[0];
     if (newest) {
+      signal?.throwIfAborted();
       await LocalChatService.touchConversation(me, peer, {
         sentAt: newest.sent_at,
         body: newest.body,
@@ -722,16 +772,17 @@ export class ChatApplication {
   }
 
   /** Every known conversation, most recent first, a few at a time. Errors are per conversation. */
-  static async syncAll(me: string, reason: ChatSyncReason): Promise<void> {
-    await this.flushPrivState(me);
+  static async syncAll(me: string, reason: ChatSyncReason, signal?: AbortSignal): Promise<void> {
+    await this.flushPrivState(me, signal);
     const conversations = await LocalChatService.listConversations(me);
     const queue = reason === 'reconcile' ? await this.dueForReconcile(me, conversations) : [...conversations];
     const workers = Array.from({ length: 3 }, async () => {
       for (;;) {
+        signal?.throwIfAborted();
         const next = queue.shift();
         if (!next) return;
         try {
-          await this.syncConversation(me, next.peer_pubky, { reason });
+          await this.syncConversation(me, next.peer_pubky, { reason, signal });
         } catch (error) {
           Logger.warn('Chat conversation sync failed', { error });
         }
@@ -763,24 +814,29 @@ export class ChatApplication {
    * Sign-in and new device: the conversation index from `/priv`, then every
    * folder on both sides. Runs in one tab.
    */
-  static async rebuildFromHomeserver(me: string): Promise<void> {
+  static async rebuildFromHomeserver(me: string, signal?: AbortSignal): Promise<void> {
     await runInOneTab(CHAT_LOCKS.rebuild(me), async () => {
-      if ((await this.ensureIdentity(me)) !== 'ready') return;
+      if ((await this.ensureIdentity(me, signal)) !== 'ready') return;
       const records = await ChatHomeserverService.listConversationStates(me);
       for (const record of records) {
         if (record.peer === me) continue;
         const existing = await LocalChatService.getConversation(me, record.peer);
         if (!existing) {
-          await this.ensureConversationRow(me, record.peer, 'remote', record.context ?? undefined, {
-            last_read_at: record.last_read_at,
-            priv_state_dirty: false,
-            created_at: record.created_at,
+          await this.ensureConversationRow(me, record.peer, 'remote', {
+            context: record.context ?? undefined,
+            extra: {
+              last_read_at: record.last_read_at,
+              priv_state_dirty: false,
+              created_at: record.created_at,
+            },
+            signal,
           });
         } else if (record.last_read_at > existing.last_read_at) {
+          signal?.throwIfAborted();
           await LocalChatService.updateConversation(me, record.peer, { last_read_at: record.last_read_at });
         }
       }
-      await this.syncAll(me, 'rebuild');
+      await this.syncAll(me, 'rebuild', signal);
     });
   }
 
@@ -788,14 +844,15 @@ export class ChatApplication {
    * Order/offer counterparties and other known contacts: a conversation row
    * is created only when the peer has already written to me.
    */
-  static async seedConversations(me: string, peers: string[]): Promise<void> {
-    if ((await this.ensureIdentity(me)) !== 'ready') return;
+  static async seedConversations(me: string, peers: string[], signal?: AbortSignal): Promise<void> {
+    if ((await this.ensureIdentity(me, signal)) !== 'ready') return;
     for (const peer of new Set(peers)) {
+      signal?.throwIfAborted();
       if (peer === me) continue;
       try {
         if (await LocalChatService.getConversation(me, peer)) continue;
         // No row yet, so this derives from the network without persisting anything.
-        const keys = await this.resolvePeerKey(me, peer);
+        const keys = await this.resolvePeerKey(me, peer, { signal });
         if (keys.state !== 'ready') continue;
         const newest = await ChatHomeserverService.listMessageFiles(peer, keys.peerFolderId, {
           reverse: true,
@@ -806,14 +863,17 @@ export class ChatApplication {
             ? []
             : await ChatHomeserverService.listMessageFiles(me, keys.ownFolderId, { reverse: true, limit: 1 });
         if (newest.length === 0 && mine.length === 0) continue;
-        await this.ensureConversationRow(me, peer, 'seeded', undefined, {
-          folder_id: keys.peerFolderId,
-          own_folder_id: keys.ownFolderId,
-          peer_key_id: keys.peerKid,
-          peer_public_key: bytesToBase64Url(keys.peerPublicKey),
-          peer_state: 'ready',
+        await this.ensureConversationRow(me, peer, 'seeded', {
+          extra: {
+            folder_id: keys.peerFolderId,
+            own_folder_id: keys.ownFolderId,
+            peer_key_id: keys.peerKid,
+            peer_public_key: bytesToBase64Url(keys.peerPublicKey),
+            peer_state: 'ready',
+          },
+          signal,
         });
-        await this.syncConversation(me, peer, { reason: 'rebuild' });
+        await this.syncConversation(me, peer, { reason: 'rebuild', signal });
       } catch (error) {
         Logger.warn('Chat discovery failed for a counterparty', { error });
       }
@@ -821,10 +881,10 @@ export class ChatApplication {
   }
 
   /** An inbox ping: the server-asserted sender identifies the peer; the payload is only a hint. */
-  static async handlePing(me: string, ping: InboxPing): Promise<void> {
+  static async handlePing(me: string, ping: InboxPing, signal?: AbortSignal): Promise<void> {
     const peer = ping.sender;
     if (!peer || peer === me) return;
-    if ((await this.ensureIdentity(me)) !== 'ready') return;
+    if ((await this.ensureIdentity(me, signal)) !== 'ready') return;
     let payload: ChatPingPayload | null = null;
     try {
       const parsed = chatPingPayloadSchema.safeParse(JSON.parse(ping.payload));
@@ -833,30 +893,35 @@ export class ChatApplication {
       payload = null;
     }
     const existing = await LocalChatService.getConversation(me, peer);
-    if (!existing) await this.ensureConversationRow(me, peer, 'ping');
+    if (!existing) await this.ensureConversationRow(me, peer, 'ping', { signal });
     // A ping is strong evidence the sender has a key now: re-probe a peer we last saw without one.
-    let keys = await this.resolvePeerKey(me, peer, { force: existing === null || existing.peer_state === 'no_key' });
+    let keys = await this.resolvePeerKey(me, peer, {
+      force: existing === null || existing.peer_state === 'no_key',
+      signal,
+    });
     if (keys.state === 'ready' && payload && payload.folder !== keys.peerFolderId) {
       // The sender writes to a folder we do not derive: their key may have changed since we cached it.
-      keys = await this.resolvePeerKey(me, peer, { force: true });
+      keys = await this.resolvePeerKey(me, peer, { force: true, signal });
     }
     if (keys.state !== 'ready') return;
     const hintFile = payload && payload.folder === keys.peerFolderId ? payload.file : undefined;
-    await this.syncConversation(me, peer, { reason: 'ping', hintFile });
+    await this.syncConversation(me, peer, { reason: 'ping', hintFile, signal });
   }
 
   // ============================================================== read state
 
-  static async markRead(me: string, peer: string, at: number): Promise<boolean> {
+  static async markRead(me: string, peer: string, at: number, signal?: AbortSignal): Promise<boolean> {
+    signal?.throwIfAborted();
     return await LocalChatService.markRead(me, peer, at);
   }
 
   /** Writes every dirty conversation record to `/priv`; failures stay dirty for the next pass. */
-  static async flushPrivState(me: string): Promise<void> {
+  static async flushPrivState(me: string, signal?: AbortSignal): Promise<void> {
     const dirty = await LocalChatService.listDirtyConversations(me);
     for (const row of dirty) {
       // A thread that was only opened is not a conversation yet; other devices need not know.
       if (!row.folder_id || !row.peer_key_id || row.last_message_at === null) continue;
+      signal?.throwIfAborted();
       try {
         await ChatHomeserverService.writeConversationState(me, {
           v: 0,
@@ -867,6 +932,7 @@ export class ChatApplication {
           last_read_at: row.last_read_at,
           context: row.last_context ? stripContext(row.last_context) : null,
         });
+        signal?.throwIfAborted();
         await LocalChatService.updateConversation(me, row.peer_pubky, { priv_state_dirty: false });
       } catch (error) {
         Logger.warn('Chat conversation state write failed; retrying on the next pass', { error });
@@ -876,9 +942,9 @@ export class ChatApplication {
 
   // =================================================================== inbox
 
-  static async ensureInbox(me: string): Promise<InboxAvailability> {
+  static async ensureInbox(me: string, signal?: AbortSignal): Promise<InboxAvailability> {
     if (!InboxService.isConfigured()) return 'disabled';
-    return await InboxService.ensureSession(me, (data) => HomeserverService.createInboxCredentials(data));
+    return await InboxService.ensureSession(me, (data) => HomeserverService.createInboxCredentials(data), signal);
   }
 
   static async waitForPings(me: string, signal?: AbortSignal): Promise<InboxPing[]> {
@@ -889,7 +955,8 @@ export class ChatApplication {
     });
   }
 
-  static async ackPings(me: string, pings: InboxPingRef[]): Promise<void> {
+  static async ackPings(me: string, pings: InboxPingRef[], signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
     await InboxService.ack(me, pings);
   }
 
@@ -939,12 +1006,13 @@ export class ChatApplication {
   }
 
   /** The peer's homeserver for live streams: a cached pkarr lookup, refreshed on a daily cadence. */
-  static async resolvePeerHomeserver(me: string, peer: string): Promise<string | null> {
+  static async resolvePeerHomeserver(me: string, peer: string, signal?: AbortSignal): Promise<string | null> {
     const state = await LocalChatService.getSyncState(me, peer);
     const fresh = Date.now() - (state?.peer_homeserver_checked_at ?? 0) < CHAT_PEER_HOMESERVER_RECHECK_MS;
     if (state?.peer_homeserver && fresh) return state.peer_homeserver;
     const homeserver = await HomeserverService.resolveHomeserverOf(peer);
     if (homeserver) {
+      signal?.throwIfAborted();
       await LocalChatService.updateSyncState(me, peer, {
         peer_homeserver: homeserver,
         peer_homeserver_checked_at: Date.now(),

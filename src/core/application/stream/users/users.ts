@@ -92,7 +92,7 @@ export class UserStreamApplication {
    * @param cacheMissUserIds - Array of user IDs that need to be fetched
    * @param viewerId - Optional viewer ID for relationship data
    */
-  static async fetchMissingUsersFromNexus({ cacheMissUserIds, viewerId }: TMissingUsersParams): Promise<void> {
+  static async fetchMissingUsersFromNexus({ cacheMissUserIds, viewerId, signal }: TMissingUsersParams): Promise<void> {
     if (cacheMissUserIds.length === 0) {
       return;
     }
@@ -102,8 +102,10 @@ export class UserStreamApplication {
         user_ids: cacheMissUserIds,
         viewer_id: viewerId,
       });
+      signal?.throwIfAborted();
       await LocalStreamUsersService.persistUsers(userBatch);
     } catch (error) {
+      if (signal?.aborted) throw error;
       Logger.warn('Failed to fetch missing users from Nexus:', { error });
     }
   }

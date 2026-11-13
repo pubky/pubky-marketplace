@@ -21,6 +21,7 @@ import {
   shouldAbortIdentityPersist,
   shouldSkipDestructiveCleanup,
 } from '@/controllers/auth/auth-identity-guard';
+import { captureAuthScope, endAuthScope } from '@/controllers/auth/auth-scope';
 import { isGrantKeyCleanupPending } from '@/controllers/auth/grant-key-cleanup';
 import { ChatController } from '@/controllers/chat/chat';
 import { CommerceController } from '@/controllers/commerce/commerce';
@@ -99,6 +100,7 @@ export class AuthController {
     this.hostVersion++;
     this.hostSnapshotKey = null;
     this.logoutGeneration++;
+    endAuthScope();
     this.cancelAllAuthFlows();
     BootstrapApplication.cancelModerationFollow();
     useAuthStore.getState().setSession(null);
@@ -126,6 +128,7 @@ export class AuthController {
     const signal = this.hostReadAbort.signal;
     const version = ++this.hostVersion;
     this.logoutGeneration++;
+    if (snapshot.status === 'signed-out' || snapshot.pubky !== useAuthStore.getState().currentUserPubky) endAuthScope();
     this.cancelAllAuthFlows();
     BootstrapApplication.cancelModerationFollow();
     // Fence homeserver requests immediately; private cleanup is serialized below.
@@ -526,9 +529,7 @@ export class AuthController {
           if (hasDiscoveredProfile) {
             // Bootstrap writes private data. A later account switch/logout
             // must clear those writes after it finishes, never before them.
-            await withAuthFinalizationLock(async () => {
-              if (isCurrent()) await this.hydrateMeImAlive({ pubky, isCurrent });
-            });
+            await this.hydrateInScope(pubky, isCurrent);
           }
           if (!isCurrent()) return { status: 'signed-out' };
           useAuthStore.getState().setHasProfile(hasDiscoveredProfile);
@@ -611,6 +612,23 @@ export class AuthController {
   }
 
   /**
+   * Hydrates under the auth finalization lock and the current auth scope. A
+   * sign-out or identity change that begins meanwhile stops it before its next
+   * write, without an error.
+   */
+  private static async hydrateInScope(pubky: Pubky, isCurrent: () => boolean): Promise<void> {
+    await withAuthFinalizationLock(async () => {
+      const scope = captureAuthScope();
+      const isHydrating = () => !scope.aborted && isCurrent();
+      try {
+        if (isHydrating()) await this.hydrateMeImAlive({ pubky, isCurrent: isHydrating, signal: scope });
+      } catch (error) {
+        if (!scope.aborted) throw error;
+      }
+    });
+  }
+
+  /**
    * Bootstrap data to initialize the application snapshot.
    * @param params - Object containing session and pubky data from authentication
    * @param params.session - The user session data
@@ -619,9 +637,11 @@ export class AuthController {
   private static async hydrateMeImAlive({
     pubky,
     isCurrent = () => useAuthStore.getState().currentUserPubky === pubky && Boolean(useAuthStore.getState().session),
+    signal,
   }: {
     pubky: Pubky;
     isCurrent?: () => boolean;
+    signal?: AbortSignal;
   }) {
     const signInStore = useSignInStore.getState();
     const {
@@ -647,14 +667,17 @@ export class AuthController {
     const localSettings = SettingsNormalizer.extractState(useSettingsStore.getState());
 
     // Sync settings from homeserver before bootstrap; errors are logged and fall back to local settings.
-    const remoteSettings = await this.syncSettings(pubky, localSettings);
+    const remoteSettings = await this.syncSettings(pubky, localSettings, signal);
 
     // Resolve final preferences: remote settings win if available, otherwise use local
     if (!isCurrent()) return;
     const preferences = (remoteSettings ?? localSettings).notifications;
     const allowedTypes = NotificationNormalizer.toEnabledTypes(preferences);
 
-    const notification = await BootstrapApplication.initialize({ pubky, lastReadUrl: url, allowedTypes }, onProgress);
+    const notification = await BootstrapApplication.initialize(
+      { pubky, lastReadUrl: url, allowedTypes, signal },
+      onProgress,
+    );
     if (!isCurrent()) return;
     useNotificationStore.getState().setState(notification);
 
@@ -859,9 +882,7 @@ export class AuthController {
       signInStore.setProfileChecked(true); // Step 2 complete (40%)
 
       if (isSignedUp) {
-        await withAuthFinalizationLock(async () => {
-          if (isCurrent()) await this.hydrateMeImAlive({ pubky, isCurrent });
-        });
+        await this.hydrateInScope(pubky, isCurrent);
       }
 
       // Update hasProfile after bootstrap completes - triggers redirect via useAuthStatus
@@ -981,6 +1002,7 @@ export class AuthController {
       }
       const prepare = async () => {
         if ([captured?.pubky, currentPubky, persistedPubky].some((pubky) => pubky && pubky !== newPubky)) {
+          endAuthScope();
           await clearDatabase();
           useMigrationStore.getState().reset();
           // Reset before bootstrap can upload local fallback preferences for
@@ -1074,6 +1096,8 @@ export class AuthController {
     preservePrivateData: boolean;
     keepServicePubky: Pubky | null;
   }) {
+    // Nothing started for the departing identity may write after this wipe.
+    endAuthScope();
     BootstrapApplication.cancelModerationFollow();
     // Capture pubky before resetting auth store; used to scope marker cleanup.
     const pubky = useAuthStore.getState().currentUserPubky;
@@ -1379,6 +1403,7 @@ export class AuthController {
     // Bump before any await so an in-flight restore (sharing the Application
     // singleton promise) can tell its restored-branch result is stale.
     this.logoutGeneration += 1;
+    endAuthScope();
     this.cancelAllAuthFlows();
     BootstrapApplication.cancelModerationFollow();
     // Captured before any await: a concurrent different-account sign-in must
@@ -1575,6 +1600,7 @@ export class AuthController {
     const { session, grantSessionRecordId } = useAuthStore.getState();
     if (session && !AuthApplication.isGrantSession(session)) return;
     if (!session && !grantSessionRecordId && !useAuthStore.getState().currentUserPubky) return;
+    endAuthScope();
     const captured = this.captureAuthIdentity();
     const capturedRecordIds = this.captureLogoutRecords(captured.pubky, grantSessionRecordId);
     useAuthStore.getState().setSession(null);
@@ -1621,13 +1647,26 @@ export class AuthController {
     const pubky = authStore.selectCurrentUserPubky();
     const session = authStore.session;
     const generation = this.logoutGeneration;
+    const scope = captureAuthScope();
     const isCurrent = () =>
-      generation === this.logoutGeneration && useAuthStore.getState().session === session && Boolean(session);
+      !scope.aborted &&
+      generation === this.logoutGeneration &&
+      useAuthStore.getState().session === session &&
+      Boolean(session);
     // Wait 5 seconds before bootstrap to let Nexus index the user
     Logger.info(`Waiting 5 seconds to index ${pubky} profile.json in Nexus before bootstrap...`);
     await sleep(5000);
     if (!isCurrent()) return;
-    await this.hydrateMeImAlive({ pubky, isCurrent });
+    try {
+      // Bootstrap writes private data. A sign-out takes this lock before its
+      // wipe, so anything written before the scope ended is cleared after it.
+      await withAuthFinalizationLock(async () => {
+        if (isCurrent()) await this.hydrateMeImAlive({ pubky, isCurrent, signal: scope });
+      });
+    } catch (error) {
+      if (scope.aborted) return;
+      throw error;
+    }
     if (!isCurrent()) return;
     authStore.setHasProfile(true);
   }
@@ -1637,9 +1676,13 @@ export class AuthController {
    * Returns remote settings if newer, null otherwise.
    * All failures are treated as non-blocking and fall back to local settings.
    */
-  private static async syncSettings(pubky: Pubky, localSettings: SettingsState): Promise<SettingsState | null> {
+  private static async syncSettings(
+    pubky: Pubky,
+    localSettings: SettingsState,
+    signal?: AbortSignal,
+  ): Promise<SettingsState | null> {
     try {
-      return await SettingsApplication.initializeSettings(pubky, localSettings);
+      return await SettingsApplication.initializeSettings(pubky, localSettings, signal);
     } catch (error) {
       Logger.error('Failed to initialize settings during bootstrap', { error, pubky });
       return null;

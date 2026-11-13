@@ -78,8 +78,13 @@ export class InboxService {
    * unreachable) is an expected condition, not a bug: it returns `unavailable` without raising an error event,
    * logs the outage once, and is retried on a growing schedule until it answers. A service that answers and
    * refuses us (bad audience, rejected proof) still throws: that is a configuration fault to report.
+   * A session that arrives after `signal` aborted (`me` signed out) is not stored.
    */
-  static async ensureSession(me: string, getCredentials: InboxCredentialsProvider): Promise<InboxAvailability> {
+  static async ensureSession(
+    me: string,
+    getCredentials: InboxCredentialsProvider,
+    signal?: AbortSignal,
+  ): Promise<InboxAvailability> {
     const baseUrl = getInboxUrl();
     const audience = getInboxAudience();
     if (!baseUrl || !audience) return 'disabled';
@@ -87,6 +92,7 @@ export class InboxService {
     if (this.sessionRetry.status(SESSION_RETRY_KEY) === 'waiting') return 'unavailable';
 
     const credentials = await getCredentials({ type: 'pubky-inbox-session-v1', audience });
+    signal?.throwIfAborted();
     if (!credentials) {
       // Only a grant-backed session can sign the proof; nothing to do for this sign-in.
       Logger.debug('Inbox disabled: the session cannot sign an inbox proof');
@@ -95,6 +101,7 @@ export class InboxService {
 
     const url = `${baseUrl}/v1/auth/session`;
     const response = await this.fetchSession(url, credentials);
+    signal?.throwIfAborted();
     if (!response) return this.markUnavailable('no answer');
     if (NOT_UP_STATUSES.has(response.status)) return this.markUnavailable(`HTTP ${response.status}`);
     if (!response.ok) throw httpResponseToError(response, ErrorService.Inbox, 'ensureSession', url);
@@ -106,6 +113,7 @@ export class InboxService {
         context: { url },
       });
     }
+    signal?.throwIfAborted();
     this.writeSession({ pubky: me, token: parsed.data.access_token, expiresAt: parsed.data.expires_at });
     if (this.sessionRetry.status(SESSION_RETRY_KEY) !== 'none') {
       this.sessionRetry.succeed(SESSION_RETRY_KEY);

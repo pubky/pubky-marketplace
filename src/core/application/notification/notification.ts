@@ -44,9 +44,12 @@ export class NotificationApplication {
     lastPolledTimestamp,
     lastRead,
     allowedTypes,
+    signal,
   }: TNotificationApplicationNotificationsParams): Promise<TFetchNotificationsResult> {
     const notifications = await NexusUserService.notifications({ user_id: userId, end: lastPolledTimestamp });
-    const flatNotifications = await this.fetchMissingEntities({ notifications, viewerId: userId });
+    signal?.throwIfAborted();
+    const flatNotifications = await this.fetchMissingEntities({ notifications, viewerId: userId, signal });
+    signal?.throwIfAborted();
     return this.persistAndSummarize({ notifications, lastRead, allowedTypes, flatNotifications });
   }
   /**
@@ -302,6 +305,7 @@ export class NotificationApplication {
   static async fetchMissingEntities({
     notifications,
     viewerId,
+    signal,
   }: TFetchMissingEntitiesParams): Promise<TFlatNotificationList> {
     const flatNotifications = this.toSupportedFlatNotifications(notifications);
 
@@ -322,11 +326,16 @@ export class NotificationApplication {
       await PostStreamApplication.fetchMissingPostsFromNexus({
         cacheMissPostIds: postIdsToFetch,
         viewerId,
+        signal,
       });
     }
 
     if (notPersistedUserIds.length > 0) {
-      await UserStreamApplication.fetchMissingUsersFromNexus({ cacheMissUserIds: notPersistedUserIds, viewerId });
+      await UserStreamApplication.fetchMissingUsersFromNexus({
+        cacheMissUserIds: notPersistedUserIds,
+        viewerId,
+        signal,
+      });
     }
     return flatNotifications;
   }
