@@ -29,8 +29,11 @@ import { NexusUserService } from '@/services/nexus/user/user';
 import type { TUserTagsParams } from '@/services/nexus/user/user.types';
 
 export class UserApplication {
-  /** Per account and seller, settled or in-flight auto-follows of this session; failures are dropped to allow a retry. */
-  private static sellerAutoFollowSession = new Map<string, Promise<void>>();
+  /**
+   * Per account and seller, settled or in-flight auto-follows of this session. Failed and cancelled
+   * attempts are dropped, so the next trigger tries again.
+   */
+  private static sellerAutoFollowSession = new Map<string, { attempt: Promise<void>; signal?: AbortSignal }>();
 
   private static sellerAutoFollowMarkerUrl(follower: Pubky, seller: Pubky): string {
     return `${baseUriBuilder(follower)}migrations/seller-auto-follow/v1/${seller}.json`;
@@ -293,17 +296,28 @@ export class UserApplication {
     if (follower === followee || signal?.aborted) return;
 
     const sessionKey = `${follower}:${followee}`;
-    const inSession = this.sellerAutoFollowSession.get(sessionKey);
-    if (inSession) return await inSession;
+    const forget = (entry: { attempt: Promise<void> }) => {
+      if (this.sellerAutoFollowSession.get(sessionKey) === entry) this.sellerAutoFollowSession.delete(sessionKey);
+    };
 
-    const attempt = this.runEnsureSellerFollow({ follower, seller: followee, signal });
-    this.sellerAutoFollowSession.set(sessionKey, attempt);
+    const inSession = this.sellerAutoFollowSession.get(sessionKey);
+    if (inSession) {
+      await inSession.attempt;
+      if (!inSession.signal?.aborted || signal?.aborted) return;
+      // The shared attempt stopped when its own scope ended, so it may have done nothing.
+      forget(inSession);
+      return await this.ensureSellerFollow({ follower, seller: followee, signal });
+    }
+
+    const entry = { attempt: this.runEnsureSellerFollow({ follower, seller: followee, signal }), signal };
+    this.sellerAutoFollowSession.set(sessionKey, entry);
     try {
-      await attempt;
+      await entry.attempt;
     } catch (error) {
-      this.sellerAutoFollowSession.delete(sessionKey);
+      forget(entry);
       throw error;
     }
+    if (signal?.aborted) forget(entry);
   }
 
   /** Writes the marker that stops the Shop from ever following this seller again for the buyer. */
