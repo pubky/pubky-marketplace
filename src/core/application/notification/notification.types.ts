@@ -69,6 +69,8 @@ export type TPersistAndSummarizeParams = {
 export type TFetchMissingEntitiesParams = {
   notifications: NexusNotification[];
   viewerId: Pubky;
+  /** Aborted when the viewer signs out; related posts and users are not persisted after that. */
+  signal?: AbortSignal;
 };
 
 export type TParseNotificationsResult = {

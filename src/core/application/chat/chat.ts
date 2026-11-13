@@ -194,6 +194,8 @@ export class ChatApplication {
     const row = await LocalChatService.getConversation(me, peer);
     const state = await LocalChatService.getSyncState(me, peer);
     const stale = Date.now() - (state?.peer_key_checked_at ?? 0) > CHAT_PEER_KEY_RECHECK_MS;
+    // Deriving caches the pair's message key in memory, which a sign-out clears.
+    signal?.throwIfAborted();
 
     const known = this.knownPeerKeys(identity, row);
     // A ready peer's key is re-read on the same cadence as a missing one: a
@@ -219,6 +221,7 @@ export class ChatApplication {
       return { state: 'no_key' };
     }
     let keys: ChatPeerKeys;
+    signal?.throwIfAborted();
     try {
       keys = this.deriveFor(identity, peer, record.kid, publicKey);
     } catch (error) {

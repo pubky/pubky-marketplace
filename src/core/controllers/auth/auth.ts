@@ -531,9 +531,7 @@ export class AuthController {
           if (hasDiscoveredProfile) {
             // Bootstrap writes private data. A later account switch/logout
             // must clear those writes after it finishes, never before them.
-            await withAuthFinalizationLock(async () => {
-              if (isCurrent()) await this.hydrateMeImAlive({ pubky, isCurrent });
-            });
+            await this.hydrateInScope(pubky, isCurrent);
           }
           if (!isCurrent()) return { status: 'signed-out' };
           useAuthStore.getState().setHasProfile(hasDiscoveredProfile);
@@ -618,6 +616,23 @@ export class AuthController {
   }
 
   /**
+   * Hydrates under the auth finalization lock and the current auth scope. A
+   * sign-out or identity change that begins meanwhile stops it before its next
+   * write, without an error.
+   */
+  private static async hydrateInScope(pubky: Pubky, isCurrent: () => boolean): Promise<void> {
+    await withAuthFinalizationLock(async () => {
+      const scope = captureAuthScope();
+      const isHydrating = () => !scope.aborted && isCurrent();
+      try {
+        if (isHydrating()) await this.hydrateMeImAlive({ pubky, isCurrent: isHydrating, signal: scope });
+      } catch (error) {
+        if (!scope.aborted) throw error;
+      }
+    });
+  }
+
+  /**
    * Bootstrap data to initialize the application snapshot.
    * @param params - Object containing session and pubky data from authentication
    * @param params.session - The user session data
@@ -656,7 +671,7 @@ export class AuthController {
     const localSettings = SettingsNormalizer.extractState(useSettingsStore.getState());
 
     // Sync settings from homeserver before bootstrap; errors are logged and fall back to local settings.
-    const remoteSettings = await this.syncSettings(pubky, localSettings);
+    const remoteSettings = await this.syncSettings(pubky, localSettings, signal);
 
     // Resolve final preferences: remote settings win if available, otherwise use local
     if (!isCurrent()) return;
@@ -871,9 +886,7 @@ export class AuthController {
       signInStore.setProfileChecked(true); // Step 2 complete (40%)
 
       if (isSignedUp) {
-        await withAuthFinalizationLock(async () => {
-          if (isCurrent()) await this.hydrateMeImAlive({ pubky, isCurrent });
-        });
+        await this.hydrateInScope(pubky, isCurrent);
       }
 
       // Update hasProfile after bootstrap completes - triggers redirect via useAuthStatus
@@ -1707,9 +1720,13 @@ export class AuthController {
    * Returns remote settings if newer, null otherwise.
    * All failures are treated as non-blocking and fall back to local settings.
    */
-  private static async syncSettings(pubky: Pubky, localSettings: SettingsState): Promise<SettingsState | null> {
+  private static async syncSettings(
+    pubky: Pubky,
+    localSettings: SettingsState,
+    signal?: AbortSignal,
+  ): Promise<SettingsState | null> {
     try {
-      return await SettingsApplication.initializeSettings(pubky, localSettings);
+      return await SettingsApplication.initializeSettings(pubky, localSettings, signal);
     } catch (error) {
       Logger.error('Failed to initialize settings during bootstrap', { error, pubky });
       return null;

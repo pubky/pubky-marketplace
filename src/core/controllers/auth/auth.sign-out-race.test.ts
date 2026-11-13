@@ -3,6 +3,7 @@ import { AuthApplication } from '@/application/auth/auth';
 import { BootstrapApplication } from '@/application/bootstrap/bootstrap';
 import { ChatApplication } from '@/application/chat/chat';
 import { CommerceApplication } from '@/application/commerce/commerce';
+import { SettingsApplication } from '@/application/settings/settings';
 import { UserApplication } from '@/application/user/user';
 import type { CommerceAdapterMode } from '@/config/commerce';
 import { ChatController } from '@/controllers/chat/chat';
@@ -13,16 +14,20 @@ import { clearDatabase } from '@/database/franky/franky.helpers';
 import { chatMessageUrl } from '@/libs/chat/paths';
 import { HttpMethod } from '@/libs/http/http.types';
 import { Identity } from '@/libs/identity/identity';
+import { NotificationType } from '@/models/notification/notification.types';
 import { PubkySpecsSingleton } from '@/pipes/pipes.builder';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import { InboxService } from '@/services/inbox/inbox';
 import { LocalChatService } from '@/services/local/chat/chat';
 import { LocalFeedService } from '@/services/local/feed/feed';
 import { LocalNotificationService } from '@/services/local/notification/notification';
+import { LocalStreamPostsService } from '@/services/local/stream/posts/posts';
 import { LocalStreamUsersService } from '@/services/local/stream/users/users';
 import { MarketplaceGatewayService } from '@/services/marketplace/marketplace';
 import { NexusBootstrapService } from '@/services/nexus/bootstrap/bootstrap';
 import type { NexusNotification } from '@/services/nexus/nexus.types';
+import { NexusPostStreamService } from '@/services/nexus/stream/posts/postStream';
+import { NexusUserStreamService } from '@/services/nexus/stream/users/userStream';
 import { NexusUserService } from '@/services/nexus/user/user';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useNotificationStore } from '@/stores/notification/notification.store';
@@ -35,6 +40,7 @@ import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';
 import { AuthController } from './auth';
 import { deferred, grantSession, resetGrantTest } from './auth.grant-test-utils';
 import { AUTH_FINALIZATION_LOCK_NAME } from './auth-finalization-lock';
+import { captureAuthScope } from './auth-scope';
 
 vi.mock('@/database/franky/franky.helpers', () => ({ clearDatabase: vi.fn(), clearPrivateData: vi.fn() }));
 vi.mock('@/libs/query-client/query-client.factory', async (original) => ({
@@ -195,6 +201,82 @@ describe('work started for an account writes nothing for it once its sign-out st
     expect(useNotificationStore.getState().unread).toBe(0);
     expect(outcome).toMatchObject({ name: 'AbortError' });
     await finishSignOut();
+  });
+
+  it('notification poll: a user it names, fetched as sign-out starts, is not saved after it', async () => {
+    signIn(ALICE);
+    vi.spyOn(NexusUserService, 'notifications').mockResolvedValue([
+      { timestamp: 1, body: { type: NotificationType.Follow, followed_by: BOB } },
+    ]);
+    const users = deferred<Awaited<ReturnType<typeof NexusUserStreamService.fetchByIds>>>();
+    vi.spyOn(NexusUserStreamService, 'fetchByIds').mockReturnValue(users.promise);
+    const saveUsers = vi.spyOn(LocalStreamUsersService, 'persistUsers').mockResolvedValue([]);
+    const save = vi.spyOn(LocalNotificationService, 'bulkSave').mockResolvedValue(undefined);
+
+    const poll = NotificationController.fetchNotifications({ userId: ALICE }).catch((error: unknown) => error);
+    await vi.waitFor(() => expect(NexusUserStreamService.fetchByIds).toHaveBeenCalled());
+    const finishSignOut = startSignOut();
+    users.resolve([]);
+    const outcome = await poll;
+
+    expect(saveUsers).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(outcome).toMatchObject({ name: 'AbortError' });
+    await finishSignOut();
+  });
+
+  it('notification poll: a post it names, fetched as sign-out starts, is not saved after it', async () => {
+    signIn(ALICE);
+    vi.spyOn(NexusUserService, 'notifications').mockResolvedValue([
+      {
+        timestamp: 1,
+        body: {
+          type: NotificationType.Reply,
+          replied_by: BOB,
+          parent_post_uri: `pubky://${ALICE}/pub/pubky.app/posts/0034A0X7NJ52G`,
+          reply_uri: `pubky://${BOB}/pub/pubky.app/posts/0034A0X7NJ52H`,
+        },
+      },
+    ]);
+    const posts = deferred<Awaited<ReturnType<typeof NexusPostStreamService.fetchByIds>>>();
+    vi.spyOn(NexusPostStreamService, 'fetchByIds').mockReturnValue(posts.promise);
+    vi.spyOn(NexusUserStreamService, 'fetchByIds').mockResolvedValue([]);
+    const savePosts = vi.spyOn(LocalStreamPostsService, 'persistPosts');
+
+    const poll = NotificationController.fetchNotifications({ userId: ALICE }).catch((error: unknown) => error);
+    await vi.waitFor(() => expect(NexusPostStreamService.fetchByIds).toHaveBeenCalled());
+    const finishSignOut = startSignOut();
+    posts.resolve([]);
+    const outcome = await poll;
+
+    expect(savePosts).not.toHaveBeenCalled();
+    expect(outcome).toMatchObject({ name: 'AbortError' });
+    await finishSignOut();
+  });
+
+  it('sign-in: settings read as sign-out starts are not pushed to the homeserver after it', async () => {
+    vi.mocked(SettingsApplication.initializeSettings).mockRestore();
+    vi.spyOn(Identity, 'keypairFromMnemonic').mockReturnValue(mockKeypair());
+    vi.spyOn(Identity, 'z32FromSession').mockReturnValue(ALICE);
+    vi.spyOn(AuthApplication, 'signIn').mockResolvedValue(
+      asOpaque<Awaited<ReturnType<typeof AuthApplication.signIn>>>({ session: grantSession(ALICE) }),
+    );
+    vi.mocked(AuthApplication.userIsSignedUp).mockResolvedValue(true);
+    const remote = deferred<Awaited<ReturnType<typeof SettingsApplication.fetchFromHomeserver>>>();
+    vi.spyOn(SettingsApplication, 'fetchFromHomeserver').mockReturnValue(remote.promise);
+    const push = vi.spyOn(SettingsApplication, 'commitUpdate').mockResolvedValue(undefined);
+
+    const signInFlow = AuthController.loginWithMnemonic({ mnemonic: 'test mnemonic phrase' }).catch(
+      (error: unknown) => error,
+    );
+    await vi.waitFor(() => expect(SettingsApplication.fetchFromHomeserver).toHaveBeenCalledWith(ALICE));
+    const signOut = AuthController.logout();
+    remote.resolve(null);
+    await signInFlow;
+    await signOut;
+
+    expect(push).not.toHaveBeenCalled();
+    expect(BootstrapApplication.initialize).not.toHaveBeenCalled();
   });
 
   it('marketplace badge: a notification list that arrives after sign-out starts does not set the badge', async () => {
@@ -373,6 +455,33 @@ describe('work started for an account writes nothing for it once its sign-out st
       expect(messagePuts()).toEqual([]);
       expect((await LocalChatService.getMessage(id))?.status).toBe('queued');
       await finishSignOut();
+    });
+
+    it('a peer key derived as sign-out starts is not kept in memory after it', async () => {
+      await openAliceToBob();
+      ChatApplication.clearSessionsOfOtherAccounts(ALICE);
+      const { pairKeys } = asOpaque<{ pairKeys: Map<string, unknown> }>(ChatApplication);
+      expect(pairKeys.size).toBe(0);
+      const readState = LocalChatService.getSyncState.bind(LocalChatService);
+      const reading = deferred<void>();
+      const release = deferred<void>();
+      vi.spyOn(LocalChatService, 'getSyncState').mockImplementationOnce(async (...args) => {
+        const state = await readState(...args);
+        reading.resolve();
+        await release.promise;
+        return state;
+      });
+
+      const resolving = ChatApplication.resolvePeerKey(ALICE, BOB, { signal: captureAuthScope() }).catch(
+        (error: unknown) => error,
+      );
+      await reading.promise;
+      await startSignOut()();
+      release.resolve();
+      const outcome = await resolving;
+
+      expect(pairKeys.size).toBe(0);
+      expect(outcome).toMatchObject({ name: 'AbortError' });
     });
 
     it('a message about a listing does not follow its seller once sign-out starts', async () => {
