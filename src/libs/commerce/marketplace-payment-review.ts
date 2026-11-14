@@ -47,7 +47,9 @@ export const sellerPaymentObservationSchema = z
 
 export const sellerPaymentConfirmationSchema = z
   .object({
-    confirmationBasis: z.literal('seller_attestation'),
+    // `seller_wallet_receipt`: the Receipt the seller's wallet issued for the request paid the order
+    // before the seller confirmed it; a later confirmation replays that record.
+    confirmationBasis: z.enum(['seller_attestation', 'seller_wallet_receipt']),
     confirmationSource: z.literal('seller'),
     confirmedAmountSats: z.number().int().nonnegative().nullable().optional(),
     confirmedAt: z.string(),
