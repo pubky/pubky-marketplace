@@ -539,6 +539,46 @@ describe('CommerceApplication.syncWatchlist when its auth scope ends mid-round',
     expect(LocalCommerceService.applyWatchlistState).toHaveBeenCalledOnce();
     expect(homeserver.files.has(WATCHLIST_URL)).toBe(false);
   });
+
+  it('does not hand a caller with a live scope the outcome of a joined round whose scope ended', async () => {
+    let keysLookup!: () => void;
+    vi.mocked(CommercePrivKeyringApplication.get).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          keysLookup = () => resolve({ kind: 'unavailable' });
+        }),
+    );
+    const ended = new AbortController();
+    const first = CommerceApplication.syncWatchlist(OWNER, ended.signal);
+    await vi.waitFor(() => expect(keysLookup).toBeDefined());
+    const joined = CommerceApplication.syncWatchlist(OWNER, new AbortController().signal);
+    ended.abort(new DOMException('Signed out', 'AbortError'));
+    keysLookup();
+
+    await first;
+    await expect(joined).resolves.toBe('synced');
+    expect(LocalCommerceService.applyWatchlistState).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a joiner whose own scope ended along with the round it joined', async () => {
+    let keysLookup!: () => void;
+    vi.mocked(CommercePrivKeyringApplication.get).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          keysLookup = () => resolve({ kind: 'unavailable' });
+        }),
+    );
+    const scope = new AbortController();
+    const first = CommerceApplication.syncWatchlist(OWNER, scope.signal);
+    await vi.waitFor(() => expect(keysLookup).toBeDefined());
+    const joined = CommerceApplication.syncWatchlist(OWNER, scope.signal).catch((error: unknown) => error);
+    scope.abort(new DOMException('Signed out', 'AbortError'));
+    keysLookup();
+
+    await first;
+    expect(await joined).toMatchObject({ name: 'AbortError' });
+    expect(CommercePrivKeyringApplication.get).toHaveBeenCalledOnce();
+  });
 });
 
 describe('CommerceApplication.syncWatchlist when the marketplace session is replaced mid-round', () => {

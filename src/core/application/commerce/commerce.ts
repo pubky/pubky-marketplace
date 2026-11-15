@@ -2629,6 +2629,12 @@ export class CommerceApplication {
         if (signal?.aborted || !inFlight.signal?.aborted) throw error;
         return await this.syncWatchlist(ownerPubky, signal);
       }
+      // A round whose scope ended may have stopped early with an outcome that
+      // describes nothing about the state this caller sees.
+      if (inFlight.signal?.aborted) {
+        signal?.throwIfAborted();
+        return await this.syncWatchlist(ownerPubky, signal);
+      }
       // A round that started before the purchase session changed asked the
       // marketplace for the key without it (or with the old one), and one that
       // ended without the document while keys became available meanwhile
