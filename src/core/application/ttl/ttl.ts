@@ -73,7 +73,7 @@ export class TtlApplication {
     });
 
     signal?.throwIfAborted();
-    const { attachmentMetadata } = await LocalStreamPostsService.persistPosts({ posts: postBatch });
+    const { attachmentMetadata } = await LocalStreamPostsService.persistPosts({ posts: postBatch, signal });
     signal?.throwIfAborted();
     await FileApplication.persistFiles(attachmentMetadata);
 

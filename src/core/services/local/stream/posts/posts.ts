@@ -220,7 +220,7 @@ export class LocalStreamPostsService {
    * @param posts - Array of posts from Nexus API to persist
    * @returns Object containing an array of all post attachment URIs collected from the posts
    */
-  static async persistPosts({ posts }: TPersistPostsParams): Promise<TPostStreamPersistResult> {
+  static async persistPosts({ posts, signal }: TPersistPostsParams): Promise<TPostStreamPersistResult> {
     // Defensive check: if posts is empty or undefined, return early
     if (!posts?.length) return { attachmentMetadata: [] };
 
@@ -315,6 +315,7 @@ export class LocalStreamPostsService {
         .map((existing, i) => (existing?.content === DELETED ? postDetails[i].id : null))
         .filter((id): id is string => id !== null),
     );
+    signal?.throwIfAborted();
     const liveDetails = postDetails.filter((d) => !tombstonedIds.has(d.id));
     const liveCounts = postCounts.filter(([id]) => !tombstonedIds.has(id));
     const liveRelationships = postRelationships.filter(([id]) => !tombstonedIds.has(id));
@@ -341,6 +342,7 @@ export class LocalStreamPostsService {
           await this.persistNewStreamChunk({
             streamId: parentCompositePostId as PostStreamId,
             stream: postIds,
+            signal,
           });
         }),
       );
@@ -361,8 +363,9 @@ export class LocalStreamPostsService {
    * @param stream - Incoming post IDs to merge into the stream cache
    * @param streamId - Stream identifier to create or update
    */
-  static async persistNewStreamChunk({ stream, streamId }: TPostStreamUpsertParams) {
+  static async persistNewStreamChunk({ stream, streamId, signal }: TPostStreamUpsertParams) {
     const postStream = await PostStreamModel.findById(streamId);
+    signal?.throwIfAborted();
 
     if (!postStream) {
       // If stream doesn't exist (e.g., database was deleted), create it with the new chunk
@@ -384,6 +387,7 @@ export class LocalStreamPostsService {
 
     // Sort by timestamp (indexed_at) in descending order (most recent first)
     const sortedStream = await sortPostIdsByTimestamp(combinedStream);
+    signal?.throwIfAborted();
 
     await PostStreamModel.upsert(streamId, sortedStream);
   }
@@ -398,8 +402,9 @@ export class LocalStreamPostsService {
    * @param streamId - The stream ID to persist the new chunk to
    * @returns The post IDs that were actually added (after deduplication)
    */
-  static async persistUnreadNewStreamChunk({ stream, streamId }: TPostStreamUpsertParams): Promise<string[]> {
+  static async persistUnreadNewStreamChunk({ stream, streamId, signal }: TPostStreamUpsertParams): Promise<string[]> {
     const unreadPostStream = await UnreadPostStreamModel.findById(streamId);
+    signal?.throwIfAborted();
     if (!unreadPostStream) {
       await UnreadPostStreamModel.upsert(streamId, stream);
       return stream;

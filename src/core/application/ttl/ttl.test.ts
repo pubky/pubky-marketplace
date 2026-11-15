@@ -384,6 +384,7 @@ describe('TtlApplication', () => {
 
       await TtlApplication.forceRefreshPostsByIds({ postIds: ['alice:post-1'], viewerId, signal: scope.signal });
 
+      expect(writes.persistPosts).toHaveBeenCalledWith({ posts: [post], signal: scope.signal });
       expect(writes.fetchOriginals).toHaveBeenCalledWith({
         repostedUris: ['pubky://bob/pub/pubky.app/posts/post-0'],
         viewerId,
