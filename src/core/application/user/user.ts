@@ -302,8 +302,14 @@ export class UserApplication {
 
     const inSession = this.sellerAutoFollowSession.get(sessionKey);
     if (inSession) {
-      await inSession.attempt;
-      if (!inSession.signal?.aborted || signal?.aborted) return;
+      const failure = await inSession.attempt.then(
+        () => null,
+        (error: unknown) => ({ error }),
+      );
+      if (!inSession.signal?.aborted || signal?.aborted) {
+        if (failure) throw failure.error;
+        return;
+      }
       // The shared attempt stopped when its own scope ended, so it may have done nothing.
       forget(inSession);
       return await this.ensureSellerFollow({ follower, seller: followee, signal });

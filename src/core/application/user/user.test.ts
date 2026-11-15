@@ -1118,4 +1118,33 @@ describe('UserApplication.ensureSellerFollow', () => {
       bodyJson: { seller, completedAt: expect.any(Number) },
     });
   });
+
+  it('follows for a caller with a live scope that joined an attempt that failed after a sign-out', async () => {
+    const seller = nextSeller();
+    const { exists, request } = spyHomeserver(new Set());
+    let fail!: () => void;
+    exists.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((_, reject) => {
+          fail = () => reject(new DOMException('Signed out', 'AbortError'));
+        }),
+    );
+    const signedOut = new AbortController();
+
+    const cancelled = UserApplication.ensureSellerFollow({ follower, seller, signal: signedOut.signal }).catch(
+      (error: unknown) => error,
+    );
+    await vi.waitFor(() => expect(exists).toHaveBeenCalledOnce());
+    const joined = UserApplication.ensureSellerFollow({ follower, seller, signal: new AbortController().signal });
+    signedOut.abort();
+    fail();
+
+    expect(await cancelled).toMatchObject({ name: 'AbortError' });
+    await joined;
+    expect(request).toHaveBeenLastCalledWith({
+      method: HttpMethod.PUT,
+      url: markerUrlOf(seller),
+      bodyJson: { seller, completedAt: expect.any(Number) },
+    });
+  });
 });
