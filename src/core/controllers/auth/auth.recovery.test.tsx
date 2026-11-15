@@ -404,7 +404,12 @@ it.each(['alice', 'bob'])('preserves settings only when replacing with the same 
   expect(useSearchStore.getState().recentTags.map((entry) => entry.tag)).toEqual(
     pubky === 'alice' ? ['alice-private-search'] : [],
   );
-  if (pubky === 'bob') expect(SettingsApplication.initializeSettings).toHaveBeenCalledWith('bob', settingsInitialState);
+  if (pubky === 'bob')
+    expect(SettingsApplication.initializeSettings).toHaveBeenCalledWith(
+      'bob',
+      settingsInitialState,
+      expect.any(AbortSignal),
+    );
   useSettingsStore.getState().reset();
   useSearchStore.getState().reset();
 });

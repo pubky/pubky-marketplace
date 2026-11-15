@@ -505,23 +505,26 @@ export class PostStreamApplication {
    * @param streamHead - Detects if the call is coming from the streamCoordinator.
    * @param streamId - ID of the stream. If not provided, it means that it is a single post operation.
    */
-  static async fetchMissingPostsFromNexus({ cacheMissPostIds, viewerId }: TMissingPostsParams) {
+  static async fetchMissingPostsFromNexus({ cacheMissPostIds, viewerId, signal }: TMissingPostsParams) {
     try {
       const postBatch = await NexusPostStreamService.fetchByIds({
         post_ids: cacheMissPostIds,
         // Only pass viewer_id if it's a valid string (not null/undefined)
         ...(viewerId ? { viewer_id: viewerId } : {}),
       });
+      signal?.throwIfAborted();
       const { attachmentMetadata } = await LocalStreamPostsService.persistPosts({ posts: postBatch });
+      signal?.throwIfAborted();
       await FileApplication.persistFiles(attachmentMetadata);
       // Persist the missing authors of the posts
-      await this.fetchMissingUsersFromNexus({ posts: postBatch, viewerId });
+      await this.fetchMissingUsersFromNexus({ posts: postBatch, viewerId, signal });
       // Fetch original posts for any reposts (to display embedded repost content)
       const repostedUris = postBatch
         .map((post) => post.relationships.reposted)
         .filter((uri): uri is string => uri !== null);
-      await this.fetchOriginalPostsByUris({ repostedUris, viewerId });
+      await this.fetchOriginalPostsByUris({ repostedUris, viewerId, signal });
     } catch (error) {
+      if (signal?.aborted) throw error;
       Logger.warn('Failed to fetch missing posts from Nexus', { cacheMissPostIds, viewerId, error });
     }
   }
@@ -536,10 +539,13 @@ export class PostStreamApplication {
   static async fetchOriginalPostsByUris({
     repostedUris,
     viewerId,
+    signal,
   }: {
     repostedUris: string[];
     /** Optional viewer ID for relationship data. Null/undefined for unauthenticated views. */
     viewerId?: Pubky | null;
+    /** Aborted when the viewer signs out; nothing is persisted after that. */
+    signal?: AbortSignal;
   }) {
     if (repostedUris.length === 0) return;
 
@@ -575,10 +581,13 @@ export class PostStreamApplication {
         post_ids: missingOriginalPostIds,
         viewer_id: viewerId ?? undefined,
       });
+      signal?.throwIfAborted();
       const { attachmentMetadata } = await LocalStreamPostsService.persistPosts({ posts: originalPosts });
+      signal?.throwIfAborted();
       await FileApplication.persistFiles(attachmentMetadata);
-      await this.fetchMissingUsersFromNexus({ posts: originalPosts, viewerId });
+      await this.fetchMissingUsersFromNexus({ posts: originalPosts, viewerId, signal });
     } catch (error) {
+      if (signal?.aborted) throw error;
       Logger.warn('Failed to fetch original posts for reposts', { missingOriginalPostIds, error });
     }
   }
@@ -627,13 +636,14 @@ export class PostStreamApplication {
     };
   }
 
-  private static async fetchMissingUsersFromNexus({ posts, viewerId }: TFetchMissingUsersParams) {
+  private static async fetchMissingUsersFromNexus({ posts, viewerId, signal }: TFetchMissingUsersParams) {
     const cacheMissUserIds = await this.getNotPersistedUsersInCache(posts.map((post) => post.details.author));
     if (cacheMissUserIds.length > 0) {
       const userBatch = await NexusUserStreamService.fetchByIds({
         user_ids: cacheMissUserIds,
         viewer_id: viewerId ?? undefined,
       });
+      signal?.throwIfAborted();
       await LocalStreamUsersService.persistUsers(userBatch);
     }
   }

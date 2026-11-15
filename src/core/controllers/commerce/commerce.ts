@@ -29,6 +29,7 @@ import {
   isTransactionalCommerceMode,
 } from '@/config/commerce';
 import { IMAGE_MAX_UPLOAD_SIZE } from '@/config/images';
+import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import type { SellerDeliveryKey } from '@/libs/commerce/delivery-envelope';
 import {
   type MarketplaceDigitalDeliveryCapability,
@@ -1328,7 +1329,9 @@ export class CommerceController {
       notificationStore.setMarketplaceUnread(0);
       return;
     }
+    const signal = captureAuthScope();
     const notifications = await CommerceApplication.getMarketplaceNotifications(this.getCurrentUserPubky());
+    signal.throwIfAborted();
     notificationStore.setMarketplaceUnread(
       notifications.filter((notification) => isRecognizedMarketplaceNotification(notification) && !notification.readAt)
         .length,
@@ -1480,17 +1483,22 @@ export class CommerceController {
   static async autoConfirmSellerPayments(): Promise<string[]> {
     if (!isDurableCommerceMode(getCommerceAdapterMode())) return [];
     const pubky = useAuthStore.getState().currentUserPubky;
+    const scope = captureAuthScope();
     const isEnabled = () =>
       pubky !== null &&
+      !scope.aborted &&
       useAuthStore.getState().currentUserPubky === pubky &&
       useSellerPaymentConfirmStore.getState().autoConfirmByPubky[pubky] !== false;
     if (!pubky || !isEnabled()) return [];
     const pass = new AbortController();
     const deadline = setTimeout(() => pass.abort(), SELLER_AUTO_CONFIRM_PASS_TIMEOUT_MS);
+    const endPass = () => pass.abort();
+    scope.addEventListener('abort', endPass, { once: true });
     try {
       return await CommerceApplication.autoConfirmSellerPayments(pubky, isEnabled, pass.signal);
     } finally {
       clearTimeout(deadline);
+      scope.removeEventListener('abort', endPass);
     }
   }
 

@@ -51,6 +51,8 @@ export type TUserStreamChunkResponse = {
 export type TMissingUsersParams = {
   cacheMissUserIds: Pubky[];
   viewerId?: Pubky;
+  /** Aborted when the viewer signs out; nothing is persisted after that. */
+  signal?: AbortSignal;
 };
 
 export type TFetchStreamFromNexusParams = TFetchUserStreamChunkParams & {

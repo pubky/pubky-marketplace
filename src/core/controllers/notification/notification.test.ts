@@ -73,6 +73,7 @@ describe('NotificationController', () => {
         lastPolledTimestamp: 500,
         lastRead: 1234,
         allowedTypes: expect.arrayContaining(Object.values(NotificationType)),
+        signal: expect.any(AbortSignal),
       });
       expect(store.setUnread).toHaveBeenCalledWith(5);
       expect(store.setLastPolledTimestamp).toHaveBeenCalledWith(3000);
@@ -149,6 +150,7 @@ describe('NotificationController', () => {
         lastPolledTimestamp: undefined,
         lastRead: 1000,
         allowedTypes: expect.arrayContaining(Object.values(NotificationType)),
+        signal: expect.any(AbortSignal),
       });
       expect(setUnread).toHaveBeenCalledWith(2);
       expect(setLastPolledTimestamp).toHaveBeenCalledWith(3000);
@@ -162,6 +164,7 @@ describe('NotificationController', () => {
         lastPolledTimestamp: 3000,
         lastRead: 1000,
         allowedTypes: expect.arrayContaining(Object.values(NotificationType)),
+        signal: expect.any(AbortSignal),
       });
       expect(setUnread).toHaveBeenCalledWith(4);
       expect(setLastPolledTimestamp).toHaveBeenCalledWith(5000);

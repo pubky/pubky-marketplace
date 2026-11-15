@@ -1,6 +1,7 @@
 import { NotificationApplication } from '@/application/notification/notification';
 import type { TGetOrFetchNotificationsResponse } from '@/application/notification/notification.types';
 import { NEXUS_NOTIFICATIONS_LIMIT } from '@/config/nexus';
+import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import type { TGetNotificationsParams } from '@/controllers/notification/notification.types';
 import type { TReadProfileParams } from '@/controllers/profile/profile.types';
 import { isAppError } from '@/libs/error/error.utils';
@@ -24,6 +25,7 @@ export class NotificationController {
    * @returns Promise resolving when notifications are updated
    */
   static async fetchNotifications({ userId }: TReadProfileParams) {
+    const signal = captureAuthScope();
     const notificationStore = useNotificationStore.getState();
     const lastPolledTimestamp = notificationStore.selectLastPolledTimestamp();
     const lastRead = notificationStore.selectLastRead();
@@ -35,8 +37,10 @@ export class NotificationController {
       lastPolledTimestamp,
       lastRead,
       allowedTypes,
+      signal,
     });
 
+    signal.throwIfAborted();
     notificationStore.setUnread(unread);
 
     const currentCursor = notificationStore.selectLastPolledTimestamp();
