@@ -1359,6 +1359,27 @@ describe('TtlCoordinator', () => {
       expect(forceRefreshPostsSpy).not.toHaveBeenCalled();
     });
 
+    it('keeps entities queued when a sign-out ends a refresh that then returns', async () => {
+      setupAuthenticatedUser();
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+      const postId = createCompositePostId('author1', 'post1');
+      findStalePostsSpy.mockResolvedValueOnce([postId]);
+      findStalePostsSpy.mockResolvedValueOnce([]);
+      coordinator.subscribePost({ compositePostId: postId });
+      coordinator.start();
+
+      forceRefreshPostsSpy.mockClear();
+      forceRefreshPostsSpy.mockImplementationOnce(async () => {
+        endAuthScope();
+      });
+      await waitForTick();
+      expect(forceRefreshPostsSpy).toHaveBeenCalledTimes(1);
+
+      await waitForTick();
+      expect(forceRefreshPostsSpy).toHaveBeenCalledTimes(2);
+    });
+
     it('failed refresh leaves entities in queue for retry', async () => {
       setupAuthenticatedUser();
 

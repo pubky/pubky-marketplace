@@ -605,6 +605,8 @@ export class TtlCoordinator {
 
       // Fetch and persist entities
       await ops.forceRefresh(ids, viewerId, signal);
+      // A refresh can return early once its scope ends, so it may have saved nothing.
+      signal.throwIfAborted();
 
       Logger.debug(`TtlCoordinator: Successfully refreshed ${ops.entityName}s`, { count: ids.length });
 
