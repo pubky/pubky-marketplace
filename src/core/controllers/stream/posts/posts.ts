@@ -58,6 +58,7 @@ export class StreamPostsController {
     lastPostId,
     limit = NEXUS_POSTS_PER_PAGE,
     order,
+    signal,
   }: TReadPostStreamChunkParams): Promise<TReadPostStreamChunkResponse> {
     // selectCurrentUserPubky() throws an error when user is not authenticated;
     // access currentUserPubky directly to get null instead (unauthenticated users can view profile posts)
@@ -71,6 +72,7 @@ export class StreamPostsController {
         lastPostId,
         viewerId,
         order,
+        signal,
       });
     let visibleIds = nextPageIds;
     // Query nexus to get the cacheMissPostIds
@@ -79,6 +81,7 @@ export class StreamPostsController {
       await PostStreamApplication.fetchMissingPostsFromNexus({
         cacheMissPostIds,
         viewerId,
+        signal,
       });
       // Second-pass: cache-miss details are now resolved,
       // re-filter to catch posts that were fail-open in the first pass.

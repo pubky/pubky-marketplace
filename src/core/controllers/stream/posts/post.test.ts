@@ -22,6 +22,28 @@ describe('StreamPostsController', () => {
   });
 
   describe('getOrFetchStreamSlice', () => {
+    it("passes the caller's auth scope to the page fetch and to the missing posts it fetches", async () => {
+      vi.spyOn(PostStreamApplication, 'getOrFetchStreamSlice').mockResolvedValue({
+        nextPageIds: ['user-1:post-1'],
+        cacheMissPostIds: ['user-1:post-1'],
+        nextCursor: 1000000,
+      });
+      const fetchMissingPostsSpy = vi.spyOn(PostStreamApplication, 'fetchMissingPostsFromNexus').mockResolvedValue();
+      vi.spyOn(PostStreamApplication, 'filterStreamPosts').mockResolvedValue(['user-1:post-1']);
+      const scope = new AbortController();
+
+      await StreamPostsController.getOrFetchStreamSlice({ streamId, streamHead: 1000000, signal: scope.signal });
+
+      expect(PostStreamApplication.getOrFetchStreamSlice).toHaveBeenCalledWith(
+        expect.objectContaining({ signal: scope.signal }),
+      );
+      expect(fetchMissingPostsSpy).toHaveBeenCalledWith({
+        cacheMissPostIds: ['user-1:post-1'],
+        viewerId,
+        signal: scope.signal,
+      });
+    });
+
     it('should return posts when no cache misses', async () => {
       const nextPageIds = ['user-1:post-1', 'user-1:post-2'];
       const nextCursor = 1000000;

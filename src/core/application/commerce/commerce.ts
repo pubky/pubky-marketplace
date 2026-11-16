@@ -2538,7 +2538,7 @@ export class CommerceApplication {
   /** In-flight sync per owner, so overlapping triggers share one round-trip. */
   private static watchlistSyncInFlight = new Map<
     string,
-    { run: Promise<CommerceWatchlistSyncStatus>; purchaseSession: string; keysEpoch: number }
+    { run: Promise<CommerceWatchlistSyncStatus>; purchaseSession: string; keysEpoch: number; signal?: AbortSignal }
   >();
 
   /** Which purchase session a round started under: the private data key is released to it, and only to it. */
@@ -2606,8 +2606,12 @@ export class CommerceApplication {
    * caller (controller) surfaces that state; nothing silently no-ops. A
    * browser without the Web Locks API gets `unsupported` and a refused lock
    * gets `error`; neither touches the homeserver.
+   *
+   * Once `signal` aborts, the round writes nothing more, locally or remotely,
+   * and rejects with the abort reason.
    */
-  static async syncWatchlist(ownerPubky: string): Promise<CommerceWatchlistSyncStatus> {
+  static async syncWatchlist(ownerPubky: string, signal?: AbortSignal): Promise<CommerceWatchlistSyncStatus> {
+    signal?.throwIfAborted();
     if (getCommerceAdapterMode() === 'sandbox') return 'skipped';
 
     const capability = this.getWatchlistSyncCapability();
@@ -2616,7 +2620,21 @@ export class CommerceApplication {
 
     const inFlight = this.watchlistSyncInFlight.get(ownerPubky);
     if (inFlight) {
-      const outcome = await inFlight.run;
+      let outcome: CommerceWatchlistSyncStatus;
+      try {
+        outcome = await inFlight.run;
+      } catch (error) {
+        // The shared round stopped because its own scope ended; a caller
+        // whose scope is still live needs a round of its own.
+        if (signal?.aborted || !inFlight.signal?.aborted) throw error;
+        return await this.syncWatchlist(ownerPubky, signal);
+      }
+      // A round whose scope ended may have stopped early with an outcome that
+      // describes nothing about the state this caller sees.
+      if (inFlight.signal?.aborted) {
+        signal?.throwIfAborted();
+        return await this.syncWatchlist(ownerPubky, signal);
+      }
       // A round that started before the purchase session changed asked the
       // marketplace for the key without it (or with the old one), and one that
       // ended without the document while keys became available meanwhile
@@ -2624,7 +2642,7 @@ export class CommerceApplication {
       // nothing about the new state, so read the document again.
       const sessionChanged = inFlight.purchaseSession !== this.watchlistPurchaseSessionId();
       const keysArrived = outcome !== 'synced' && inFlight.keysEpoch !== CommercePrivKeyringApplication.getReadyEpoch();
-      if (sessionChanged || keysArrived) return await this.syncWatchlist(ownerPubky);
+      if (sessionChanged || keysArrived) return await this.syncWatchlist(ownerPubky, signal);
       return outcome;
     }
 
@@ -2636,8 +2654,11 @@ export class CommerceApplication {
 
     const run = (async (): Promise<CommerceWatchlistSyncStatus> => {
       try {
-        return await locks.request(`pubky-priv|watchlist|${ownerPubky}`, () => this.runWatchlistSync(ownerPubky));
+        return await locks.request(`pubky-priv|watchlist|${ownerPubky}`, () =>
+          this.runWatchlistSync(ownerPubky, signal),
+        );
       } catch (error) {
+        if (signal?.aborted) throw error;
         Logger.warn('The watchlist sync lock was refused; the outbox job stays pending', privErrorSummary(error));
         return 'error';
       } finally {
@@ -2648,6 +2669,7 @@ export class CommerceApplication {
       run,
       purchaseSession: this.watchlistPurchaseSessionId(),
       keysEpoch: CommercePrivKeyringApplication.getReadyEpoch(),
+      signal,
     });
     return await run;
   }
@@ -2667,7 +2689,10 @@ export class CommerceApplication {
    * The outbox job is completed only if no change was staged after this
    * round read the local state; a later change keeps it pending.
    */
-  private static async runWatchlistSync(ownerPubky: string): Promise<CommerceWatchlistSyncStatus> {
+  private static async runWatchlistSync(
+    ownerPubky: string,
+    signal: AbortSignal | undefined,
+  ): Promise<CommerceWatchlistSyncStatus> {
     const legacyUrl = CommerceRecordNormalizer.watchlistUri(ownerPubky);
     const jobId = this.watchlistSyncJobId(ownerPubky);
     try {
@@ -2704,6 +2729,7 @@ export class CommerceApplication {
         : encryptedState;
       const merged = mergeWatchlistStates(localState, remoteState);
 
+      signal?.throwIfAborted();
       if (!watchlistStatesEqual(merged, localState)) {
         await LocalCommerceService.applyWatchlistState(ownerPubky, merged.items, merged.tombstones);
       }
@@ -2729,6 +2755,7 @@ export class CommerceApplication {
         const { PubkySpecsBuilder } = await import('pubky-app-specs');
         const built = new PubkySpecsBuilder(ownerPubky).createWatchlist(body);
         const record = CommerceRecordNormalizer.watchlistRecord(built.watchlist.toJson());
+        signal?.throwIfAborted();
         try {
           await CommercePrivStoreService.write(keyring, 'watchlist', WATCHLIST_PRIV_ENTRY_ID, { ...record });
         } catch (error) {
@@ -2738,13 +2765,16 @@ export class CommerceApplication {
       }
       // v2 now holds a state that includes every v1 entry and tombstone.
       if (legacy) {
+        signal?.throwIfAborted();
         assertPrivKeyringLive(keyring);
         await CommerceHomeserverService.delete(legacyUrl, PRIV_V1_LOG_PATH);
       }
 
+      signal?.throwIfAborted();
       await LocalCommerceService.completeSyncJobIfUnchanged(jobId, stagedAt);
       return 'synced';
     } catch (error) {
+      if (signal?.aborted) throw error;
       Logger.warn('Watchlist sync failed; the outbox job stays pending', privErrorSummary(error));
       return 'error';
     }

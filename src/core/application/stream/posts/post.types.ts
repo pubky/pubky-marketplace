@@ -13,6 +13,8 @@ export interface TFetchStreamParams {
   lastPostId?: string;
   tags?: string[];
   order?: StreamOrder;
+  /** Once aborted, nothing fetched is saved locally. */
+  signal?: AbortSignal;
 }
 
 export interface TPostStreamChunkResponse {
@@ -40,6 +42,7 @@ export interface TPartialCacheHitParams {
   streamId: PostStreamId;
   /** Optional viewer ID for relationship data. Null for unauthenticated views. */
   viewerId: Pubky | null;
+  signal?: AbortSignal;
 }
 
 export interface TMissingPostsParams {
@@ -67,6 +70,7 @@ export interface TFetchMissingUsersParams {
 export interface TPersistUnreadNewStreamChunkParams {
   streamId: PostStreamId;
   compositePostIds: string[];
+  signal?: AbortSignal;
 }
 
 /**

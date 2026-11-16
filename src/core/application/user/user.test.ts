@@ -1060,4 +1060,91 @@ describe('UserApplication.ensureSellerFollow', () => {
 
     expect(exists).not.toHaveBeenCalled();
   });
+
+  /** Holds the first marker check until `release`, as a slow homeserver would. */
+  const holdFirstMarkerCheck = (exists: ReturnType<typeof spyHomeserver>['exists']) => {
+    let release!: () => void;
+    const held = new Promise<boolean>((resolve) => {
+      release = () => resolve(false);
+    });
+    exists.mockImplementationOnce(() => held);
+    return release;
+  };
+
+  it('follows on the next sign-in in the same tab after an attempt cancelled by a sign-out', async () => {
+    const seller = nextSeller();
+    const { exists, request } = spyHomeserver(new Set());
+    const release = holdFirstMarkerCheck(exists);
+    const signedOut = new AbortController();
+
+    const cancelled = UserApplication.ensureSellerFollow({ follower, seller, signal: signedOut.signal });
+    await vi.waitFor(() => expect(exists).toHaveBeenCalledOnce());
+    signedOut.abort();
+    release();
+    await cancelled;
+    expect(request).not.toHaveBeenCalled();
+
+    await UserApplication.ensureSellerFollow({ follower, seller, signal: new AbortController().signal });
+
+    expect(request).toHaveBeenCalledWith({
+      method: HttpMethod.PUT,
+      url: followUrlOf(seller),
+      bodyJson: { created_at: expect.any(Number) },
+    });
+    expect(request).toHaveBeenCalledWith({
+      method: HttpMethod.PUT,
+      url: markerUrlOf(seller),
+      bodyJson: { seller, completedAt: expect.any(Number) },
+    });
+  });
+
+  it('follows for a caller with a live scope that joined an attempt cancelled by a sign-out', async () => {
+    const seller = nextSeller();
+    const { exists, request } = spyHomeserver(new Set());
+    const release = holdFirstMarkerCheck(exists);
+    const signedOut = new AbortController();
+
+    const cancelled = UserApplication.ensureSellerFollow({ follower, seller, signal: signedOut.signal });
+    await vi.waitFor(() => expect(exists).toHaveBeenCalledOnce());
+    const joined = UserApplication.ensureSellerFollow({ follower, seller, signal: new AbortController().signal });
+    signedOut.abort();
+    release();
+    await Promise.all([cancelled, joined]);
+
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenLastCalledWith({
+      method: HttpMethod.PUT,
+      url: markerUrlOf(seller),
+      bodyJson: { seller, completedAt: expect.any(Number) },
+    });
+  });
+
+  it('follows for a caller with a live scope that joined an attempt that failed after a sign-out', async () => {
+    const seller = nextSeller();
+    const { exists, request } = spyHomeserver(new Set());
+    let fail!: () => void;
+    exists.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((_, reject) => {
+          fail = () => reject(new DOMException('Signed out', 'AbortError'));
+        }),
+    );
+    const signedOut = new AbortController();
+
+    const cancelled = UserApplication.ensureSellerFollow({ follower, seller, signal: signedOut.signal }).catch(
+      (error: unknown) => error,
+    );
+    await vi.waitFor(() => expect(exists).toHaveBeenCalledOnce());
+    const joined = UserApplication.ensureSellerFollow({ follower, seller, signal: new AbortController().signal });
+    signedOut.abort();
+    fail();
+
+    expect(await cancelled).toMatchObject({ name: 'AbortError' });
+    await joined;
+    expect(request).toHaveBeenLastCalledWith({
+      method: HttpMethod.PUT,
+      url: markerUrlOf(seller),
+      bodyJson: { seller, completedAt: expect.any(Number) },
+    });
+  });
 });

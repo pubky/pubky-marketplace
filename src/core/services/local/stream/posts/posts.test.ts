@@ -577,6 +577,89 @@ describe('LocalStreamPostsService', () => {
     });
   });
 
+  describe('when the signal aborts during a read', () => {
+    /** Runs `read` through to the database, then aborts as a sign-out landing during the read would. */
+    const thenAbort =
+      <A extends unknown[], R>(read: (...args: A) => Promise<R>, controller: AbortController) =>
+      async (...args: A): Promise<R> => {
+        const result = await read(...args);
+        controller.abort();
+        return result;
+      };
+    const abortAfterDetailsRead = (controller: AbortController) =>
+      vi
+        .spyOn(PostDetailsModel, 'findByIdsPreserveOrder')
+        .mockImplementationOnce(thenAbort((ids) => PostDetailsModel.findByIdsPreserveOrder(ids), controller));
+
+    it('persistPosts saves nothing once the tombstone lookup returns', async () => {
+      const controller = new AbortController();
+      abortAfterDetailsRead(controller);
+      const compositeId = buildCompositeId({ pubky: 'author-1', id: 'late' });
+
+      await expect(
+        LocalStreamPostsService.persistPosts({
+          posts: [createMockNexusPost('late', 'author-1')],
+          signal: controller.signal,
+        }),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+
+      expect(await PostDetailsModel.findById(compositeId)).toBeFalsy();
+      expect(await PostCountsModel.findById(compositeId)).toBeFalsy();
+      expect(await PostTagsModel.findById(compositeId)).toBeFalsy();
+      expect(await PostTtlModel.findById(compositeId)).toBeFalsy();
+    });
+
+    it('persistNewStreamChunk leaves a new stream unwritten', async () => {
+      const controller = new AbortController();
+      vi.spyOn(PostStreamModel, 'findById').mockImplementationOnce(
+        thenAbort((id) => PostStreamModel.findById(id), controller),
+      );
+
+      await expect(
+        LocalStreamPostsService.persistNewStreamChunk({
+          streamId,
+          stream: [postId('post-1')],
+          signal: controller.signal,
+        }),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+
+      await verifyStreamDoesNotExist();
+    });
+
+    it('persistNewStreamChunk leaves an existing stream unchanged when the sort read returns', async () => {
+      await createStream([postId('post-1')]);
+      const controller = new AbortController();
+      abortAfterDetailsRead(controller);
+
+      await expect(
+        LocalStreamPostsService.persistNewStreamChunk({
+          streamId,
+          stream: [postId('post-2')],
+          signal: controller.signal,
+        }),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+
+      await verifyStream([postId('post-1')]);
+    });
+
+    it('persistUnreadNewStreamChunk leaves the unread stream unwritten', async () => {
+      const controller = new AbortController();
+      vi.spyOn(UnreadPostStreamModel, 'findById').mockImplementationOnce(
+        thenAbort((id) => UnreadPostStreamModel.findById(id), controller),
+      );
+
+      await expect(
+        LocalStreamPostsService.persistUnreadNewStreamChunk({
+          streamId,
+          stream: [postId('post-1')],
+          signal: controller.signal,
+        }),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+
+      expect(await UnreadPostStreamModel.findById(streamId as PostStreamId)).toBeFalsy();
+    });
+  });
+
   describe('persistNewStreamChunk', () => {
     it('should append new stream chunk to existing stream', async () => {
       const initialStream = [postId('post-1'), postId('post-2')];

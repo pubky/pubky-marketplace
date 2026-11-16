@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { captureAuthScope, endAuthScope } from '@/controllers/auth/auth-scope';
 import { TtlController } from '@/controllers/ttl/ttl';
 import { TtlCoordinator } from '@/coordinators/ttl/ttl';
+import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { mockSession } from '@/test-utils/pubky';
@@ -1285,6 +1287,51 @@ describe('TtlCoordinator', () => {
       );
     });
 
+    it('refreshes under the auth scope the tick started in, which a sign-out ends', async () => {
+      setupAuthenticatedUser();
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+      const postId = createCompositePostId('author1', 'post1');
+      const userId = 'user-1' as Pubky;
+      findStalePostsSpy.mockResolvedValue([postId]);
+      findStaleUsersSpy.mockResolvedValue([userId]);
+      coordinator.subscribePost({ compositePostId: postId });
+      coordinator.subscribeUser({ pubky: userId });
+
+      coordinator.start();
+      forceRefreshPostsSpy.mockClear();
+      forceRefreshUsersSpy.mockClear();
+      const tickScope = captureAuthScope();
+      await waitForTick();
+      const [[posts]] = forceRefreshPostsSpy.mock.calls as [[{ signal?: AbortSignal }]];
+      const [[users]] = forceRefreshUsersSpy.mock.calls as [[{ signal?: AbortSignal }]];
+
+      expect(posts.signal).toBe(tickScope);
+      expect(users.signal).toBe(tickScope);
+      endAuthScope();
+      expect(posts.signal?.aborted).toBe(true);
+    });
+
+    it('logs nothing when a refresh stops because the viewer signed out', async () => {
+      setupAuthenticatedUser();
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+      const postId = createCompositePostId('author1', 'post1');
+      findStalePostsSpy.mockResolvedValue([postId]);
+      forceRefreshPostsSpy.mockImplementation(async () => {
+        endAuthScope();
+        throw new DOMException('This operation was aborted', 'AbortError');
+      });
+      const warn = vi.spyOn(Logger, 'warn');
+      coordinator.subscribePost({ compositePostId: postId });
+
+      coordinator.start();
+      await waitForTick();
+
+      expect(forceRefreshPostsSpy).toHaveBeenCalled();
+      expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('Error refreshing'), expect.anything());
+    });
+
     it('successful refresh removes entities from queue', async () => {
       setupAuthenticatedUser();
 
@@ -1310,6 +1357,27 @@ describe('TtlCoordinator', () => {
       forceRefreshPostsSpy.mockClear();
       await waitForTick();
       expect(forceRefreshPostsSpy).not.toHaveBeenCalled();
+    });
+
+    it('keeps entities queued when a sign-out ends a refresh that then returns', async () => {
+      setupAuthenticatedUser();
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+      const postId = createCompositePostId('author1', 'post1');
+      findStalePostsSpy.mockResolvedValueOnce([postId]);
+      findStalePostsSpy.mockResolvedValueOnce([]);
+      coordinator.subscribePost({ compositePostId: postId });
+      coordinator.start();
+
+      forceRefreshPostsSpy.mockClear();
+      forceRefreshPostsSpy.mockImplementationOnce(async () => {
+        endAuthScope();
+      });
+      await waitForTick();
+      expect(forceRefreshPostsSpy).toHaveBeenCalledTimes(1);
+
+      await waitForTick();
+      expect(forceRefreshPostsSpy).toHaveBeenCalledTimes(2);
     });
 
     it('failed refresh leaves entities in queue for retry', async () => {

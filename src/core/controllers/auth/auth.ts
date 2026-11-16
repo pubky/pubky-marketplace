@@ -684,7 +684,7 @@ export class AuthController {
     // Pull the private cross-device watchlist and merge it into local state.
     // Fire-and-forget: sign-in must not block on it, and a failed round
     // leaves the outbox job pending to heal on the next marketplace visit.
-    void CommerceController.syncWatchlist().catch((error) => {
+    void CommerceController.syncWatchlist({ signal }).catch((error) => {
       Logger.warn('Watchlist sync after bootstrap failed; it will retry on the next marketplace visit', { error });
     });
 

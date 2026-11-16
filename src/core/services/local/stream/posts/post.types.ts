@@ -10,6 +10,8 @@ export interface TStreamResult {
 export interface TPostStreamUpsertParams {
   streamId: PostStreamId;
   stream: string[];
+  /** Once aborted, the stream is left as it is. */
+  signal?: AbortSignal;
 }
 
 export interface TPostStreamBulkParams {
@@ -39,6 +41,8 @@ export interface THandleNotCommonStreamParamsParams {
 
 export interface TPersistPostsParams {
   posts: NexusPostWithAttachmentMetadata[];
+  /** Once aborted, nothing more is saved. */
+  signal?: AbortSignal;
 }
 
 export interface TPostStreamPersistResult {

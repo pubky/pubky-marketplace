@@ -186,6 +186,26 @@ describe('PostCountsModel', () => {
         expect(result).toBeNull();
       });
 
+      it('leaves the counts unchanged when the signal aborts during the read', async () => {
+        const controller = new AbortController();
+        vi.spyOn(PostCountsModel, 'findById').mockImplementationOnce(async (id) => {
+          const row = await PostCountsModel.findById(id);
+          controller.abort();
+          return row;
+        });
+
+        await expect(
+          PostCountsModel.updateCounts({
+            postCompositeId: testPostId1,
+            countChanges: { replies: 5 },
+            signal: controller.signal,
+          }),
+        ).rejects.toMatchObject({ name: 'AbortError' });
+
+        vi.restoreAllMocks();
+        expect((await PostCountsModel.findById(testPostId1))?.replies).toBe(MOCK_NEXUS_POST_COUNTS.replies);
+      });
+
       it('should not update if countChanges is empty', async () => {
         const beforeUpdate = await PostCountsModel.findById(testPostId1);
         await PostCountsModel.updateCounts({

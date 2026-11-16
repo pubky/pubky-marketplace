@@ -1,12 +1,14 @@
 import { PubkyAppFeedLayout, PubkyAppFeedReach, PubkyAppFeedSort } from 'pubky-app-specs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { APP_ROUTES, POST_ROUTES } from '@/app/routes';
+import { captureAuthScope, endAuthScope } from '@/controllers/auth/auth-scope';
 import { FeedController } from '@/controllers/feed/feed';
 import { SKIP_FETCH_NEW_POSTS } from '@/controllers/stream/posts/post.constants';
 import { StreamPostsController } from '@/controllers/stream/posts/posts';
 import type { PollingServiceConfig } from '@/coordinators/base/coordinators.types';
 import { StreamCoordinator } from '@/coordinators/streams/stream';
 import type { StreamCoordinatorConfig } from '@/coordinators/streams/stream.types';
+import { Logger } from '@/libs/logger/logger';
 import type { FeedModelSchema } from '@/models/feed/feed.schema';
 import type { Pubky } from '@/models/models.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -1490,6 +1492,44 @@ describe('StreamCoordinator', () => {
 
       vi.advanceTimersByTime(5_000);
       expect(getOrFetchStreamSliceSpy.mock.calls.length).toBe(callCount);
+    });
+  });
+
+  describe('Sign-out', () => {
+    async function pollOnce(coordinator: StreamCoordinator) {
+      coordinator.configure({ pollOnStart: false, intervalMs: 1_000 } as Partial<CoordinatorConfigWithBase>);
+      coordinator.setRoute(APP_ROUTES.HOME);
+      coordinator.start();
+      await flushPromises();
+      vi.advanceTimersByTime(1_000);
+      await flushPromises();
+      await flushPromises();
+    }
+
+    it('polls under the auth scope the poll started in, which a sign-out ends', async () => {
+      const { coordinator, getOrFetchStreamSliceSpy } = setupIntegrationTest();
+      const pollScope = captureAuthScope();
+
+      await pollOnce(coordinator);
+      const [[params]] = getOrFetchStreamSliceSpy.mock.calls as [[{ signal?: AbortSignal }]];
+
+      expect(params.signal).toBe(pollScope);
+      endAuthScope();
+      expect(params.signal?.aborted).toBe(true);
+    });
+
+    it('logs no error when a poll stops because the viewer signed out', async () => {
+      const { coordinator, getOrFetchStreamSliceSpy } = setupIntegrationTest();
+      getOrFetchStreamSliceSpy.mockImplementation(async () => {
+        endAuthScope();
+        throw new DOMException('This operation was aborted', 'AbortError');
+      });
+      const logError = vi.spyOn(Logger, 'error');
+
+      await pollOnce(coordinator);
+
+      expect(getOrFetchStreamSliceSpy).toHaveBeenCalled();
+      expect(logError).not.toHaveBeenCalledWith('Error polling stream', expect.anything());
     });
   });
 

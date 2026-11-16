@@ -5,6 +5,7 @@ import { useForm, useWatch } from 'react-hook-form';
 import { CHAT_BODY_MAX_BYTES } from '@/config/chat';
 import { ChatController } from '@/controllers/chat/chat';
 import { utf8Bytes } from '@/libs/chat/encoding';
+import { isAbortError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
 import type { ChatContext } from '@/models/chat/chat.schema';
 import { toast } from '@/molecules/Toaster/toast';
@@ -29,6 +30,7 @@ export function useChatComposerForm(peerPubky: string, context?: ChatContext) {
         form.reset(chatComposerDefaults);
         sent = true;
       } catch (error) {
+        if (isAbortError(error)) return;
         Logger.warn('Chat message could not be queued', { error });
         toast({ variant: 'error', title: 'Could not send', description: 'Try again in a moment.' });
       }

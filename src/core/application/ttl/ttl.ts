@@ -54,7 +54,12 @@ export class TtlApplication {
   /**
    * Force refresh posts by fetching fresh data from Nexus.
    */
-  static async forceRefreshPostsByIds(params: { postIds: string[]; viewerId: Pubky }): Promise<void> {
+  static async forceRefreshPostsByIds(params: {
+    postIds: string[];
+    viewerId: Pubky;
+    signal?: AbortSignal;
+  }): Promise<void> {
+    const { signal } = params;
     const uniqueIds = Array.from(new Set(params.postIds));
     if (uniqueIds.length === 0) return;
 
@@ -67,23 +72,29 @@ export class TtlApplication {
       postCount: postBatch.length,
     });
 
-    const { attachmentMetadata } = await LocalStreamPostsService.persistPosts({ posts: postBatch });
+    signal?.throwIfAborted();
+    const { attachmentMetadata } = await LocalStreamPostsService.persistPosts({ posts: postBatch, signal });
+    signal?.throwIfAborted();
     await FileApplication.persistFiles(attachmentMetadata);
 
     // Opportunistic cache warm: fetch missing authors
-    await this.fetchAndPersistMissingAuthors({ posts: postBatch, viewerId: params.viewerId });
+    await this.fetchAndPersistMissingAuthors({ posts: postBatch, viewerId: params.viewerId, signal });
 
     // Fetch original posts for any reposts (to display embedded repost content)
     const repostedUris = postBatch
       .map((post) => post.relationships.reposted)
       .filter((uri): uri is string => uri !== null);
-    await PostStreamApplication.fetchOriginalPostsByUris({ repostedUris, viewerId: params.viewerId });
+    await PostStreamApplication.fetchOriginalPostsByUris({ repostedUris, viewerId: params.viewerId, signal });
   }
 
   /**
    * Force refresh users by fetching fresh data from Nexus.
    */
-  static async forceRefreshUsersByIds(params: { userIds: Pubky[]; viewerId?: Pubky }): Promise<void> {
+  static async forceRefreshUsersByIds(params: {
+    userIds: Pubky[];
+    viewerId?: Pubky;
+    signal?: AbortSignal;
+  }): Promise<void> {
     const uniqueIds = Array.from(new Set(params.userIds));
     if (uniqueIds.length === 0) return;
 
@@ -92,13 +103,18 @@ export class TtlApplication {
       viewer_id: params.viewerId,
     });
 
+    params.signal?.throwIfAborted();
     await LocalStreamUsersService.persistUsers(userBatch);
   }
 
   /**
    * Fetch and persist missing post authors for cache warming.
    */
-  private static async fetchAndPersistMissingAuthors(params: { posts: NexusPost[]; viewerId: Pubky }): Promise<void> {
+  private static async fetchAndPersistMissingAuthors(params: {
+    posts: NexusPost[];
+    viewerId: Pubky;
+    signal?: AbortSignal;
+  }): Promise<void> {
     const authors = Array.from(new Set(params.posts.map((post) => post.details.author)));
     if (authors.length === 0) return;
 
@@ -109,6 +125,7 @@ export class TtlApplication {
       user_ids: cacheMissUserIds,
       viewer_id: params.viewerId,
     });
+    params.signal?.throwIfAborted();
     await LocalStreamUsersService.persistUsers(userBatch);
   }
 }
