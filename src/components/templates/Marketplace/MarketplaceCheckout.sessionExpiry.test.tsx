@@ -145,6 +145,7 @@ vi.mock('@/hooks/useMarketplaceSellerDeliveryTerms/useMarketplaceSellerDeliveryT
 vi.mock('@/hooks/useMarketplaceSellerShipsTo/useMarketplaceSellerShipsTo', () => ({
   useMarketplaceSellerShipsTo: () => ({ status: 'ready', countries: null, restrictingSellers: 0 }),
   checkDestinationCountry: async () => null,
+  resolveShipsToDestinations: async () => ({ status: 'ready', countries: null, restrictingSellers: 0 }),
 }));
 
 vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({
@@ -155,8 +156,8 @@ vi.mock('@/hooks/useMarketplaceActivityUnread/useMarketplaceActivityUnread', () 
   useMarketplaceActivityUnread: () => 0,
 }));
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 
 vi.mock('@/organisms/Marketplace/MarketplaceSessionConnectDialog', () => ({
@@ -165,7 +166,7 @@ vi.mock('@/organisms/Marketplace/MarketplaceSessionConnectDialog', () => ({
   ),
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 
@@ -196,7 +197,7 @@ describe('MarketplaceCheckout session expiry (real checkout hook)', () => {
     useCommerceStore.getState().setMarketplaceSession(restored);
     CommerceController.bindMarketplaceSessionStore();
     vi.spyOn(CommerceApplication, 'getDeliveryAddresses').mockResolvedValue([]);
-    vi.spyOn(CommerceApplication, 'getOrFetchShop').mockRejectedValue(new Error('no shop in this test'));
+    vi.spyOn(CommerceApplication, 'refreshShopOrGetCached').mockRejectedValue(new Error('no shop in this test'));
     vi.spyOn(CommerceApplication, 'fetchPickupAvailable').mockResolvedValue(true);
     vi.spyOn(CommerceApplication, 'getSellerPaymentConfig').mockResolvedValue({
       bitcoinAvailable: true,

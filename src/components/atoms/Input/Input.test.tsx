@@ -56,56 +56,54 @@ describe('Input', () => {
   });
 });
 
-describe('Input - Snapshots', () => {
-  it('matches snapshot with default props', () => {
-    const { container } = render(<Input />);
-    expect(container.firstChild).toMatchSnapshot();
+describe('Input - Rendering', () => {
+  it('renders with type text and the base classes by default', () => {
+    render(<Input />);
+    const input = screen.getByTestId('input');
+    expect(input).toHaveAttribute('type', 'text');
+    expect(input).toHaveClass('flex', 'h-9', 'w-full', 'rounded-md', 'border', 'border-input', 'bg-background');
   });
 
-  it('matches snapshot with custom className', () => {
-    const { container } = render(<Input className="custom-input" />);
-    expect(container.firstChild).toMatchSnapshot();
+  it.each(['text', 'email', 'password', 'number', 'search'] as const)('renders with type="%s"', (type) => {
+    render(<Input type={type} />);
+    expect(screen.getByTestId('input')).toHaveAttribute('type', type);
   });
 
-  it('matches snapshot with placeholder', () => {
-    const { container } = render(<Input placeholder="Enter text" />);
-    expect(container.firstChild).toMatchSnapshot();
+  it('applies the outline theme classes', () => {
+    render(<Input theme="outline" />);
+    expect(screen.getByTestId('input')).toHaveClass('border-input');
   });
 
-  it('matches snapshot for text type', () => {
-    const { container } = render(<Input type="text" />);
-    expect(container.firstChild).toMatchSnapshot();
+  it('applies the dashed theme classes', () => {
+    render(<Input theme="dashed" />);
+    const input = screen.getByTestId('input');
+    expect(input).toHaveClass('rounded-md', 'border', 'border-dashed', 'border-border', 'font-medium');
+    expect(input).toHaveClass('h-12', 'px-5', 'shadow-none');
   });
 
-  it('matches snapshot for email type', () => {
-    const { container } = render(<Input type="email" />);
-    expect(container.firstChild).toMatchSnapshot();
+  it('merges a custom className with the base classes', () => {
+    render(<Input className="custom-input" />);
+    expect(screen.getByTestId('input')).toHaveClass('rounded-md', 'custom-input');
   });
 
-  it('matches snapshot for password type', () => {
-    const { container } = render(<Input type="password" />);
-    expect(container.firstChild).toMatchSnapshot();
+  it('passes through placeholder', () => {
+    render(<Input placeholder="Enter text" />);
+    expect(screen.getByPlaceholderText('Enter text')).toBeInTheDocument();
   });
 
-  it('matches snapshot for disabled state', () => {
-    const { container } = render(<Input disabled />);
-    expect(container.firstChild).toMatchSnapshot();
+  it('is required when required', () => {
+    render(<Input required />);
+    expect(screen.getByTestId('input')).toBeRequired();
   });
 
-  it('matches snapshot for required state', () => {
-    const { container } = render(<Input required />);
-    expect(container.firstChild).toMatchSnapshot();
+  it('is readOnly when readOnly', () => {
+    render(<Input readOnly />);
+    expect(screen.getByTestId('input')).toHaveAttribute('readonly');
   });
 
-  it('matches snapshot for readOnly state', () => {
-    const { container } = render(<Input readOnly />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshots for standard input attributes', () => {
-    const { container } = render(
+  it('passes through standard input attributes', () => {
+    render(
       <Input
-        data-testid="input"
         id="test-input"
         name="testName"
         required
@@ -115,6 +113,12 @@ describe('Input - Snapshots', () => {
         autoComplete="off"
       />,
     );
-    expect(container.firstChild).toMatchSnapshot();
+    const input = screen.getByTestId('input');
+    expect(input).toHaveAttribute('id', 'test-input');
+    expect(input).toHaveAttribute('name', 'testName');
+    expect(input).toHaveAttribute('maxlength', '100');
+    expect(input).toHaveAttribute('minlength', '5');
+    expect(input).toHaveAttribute('pattern', '[a-z]+');
+    expect(input).toHaveAttribute('autocomplete', 'off');
   });
 });

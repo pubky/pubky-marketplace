@@ -1,5 +1,6 @@
 'use client';
 
+import { type ReactNode, useId, useState } from 'react';
 import {
   ArrowDownWideNarrow,
   ArrowUpNarrowWide,
@@ -17,12 +18,11 @@ import {
   Package,
   RotateCcw,
   Rows4,
-  Sparkles,
+  SlidersHorizontal,
   Star,
   Timer,
   Wallet,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
 import { Button, buttonVariants } from '@/atoms/Button/Button';
 import { Card } from '@/atoms/Card/Card';
 import {
@@ -54,7 +54,6 @@ import { useDisplayCurrency } from '@/hooks/useDisplayCurrency/useDisplayCurrenc
 import type { MarketplaceCatalogItem } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { collectMarketplaceAttributeFacets } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { BTCIcon, PaypalIcon, Tether } from '@/icons';
-import { RANKING_LINE } from '@/libs/commerce/eu-region';
 import { SELLER_PAYMENT_BADGE_LABELS } from '@/libs/commerce/payment-badges';
 import type { PaymentMethodFilter } from '@/libs/commerce/payment-method-filter';
 import { cn } from '@/libs/utils/utils';
@@ -76,11 +75,11 @@ const FILTER_TRIGGER_CLASS = cn(
 const CATEGORY_MENU_CLASS =
   'w-64 max-h-[min(70vh,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto border-border bg-background p-3';
 const CATEGORY_ITEM_CLASS =
-  'gap-2 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-white/8 hover:text-white focus:bg-white/8 focus:text-white data-[highlighted]:bg-white/8 data-[highlighted]:text-white data-[state=open]:bg-white/8 data-[state=open]:text-white data-[state=checked]:bg-white/8 data-[state=checked]:text-white data-[selected=true]:bg-white/8 data-[selected=true]:text-white';
+  'gap-2 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground-strong/8 hover:text-foreground-strong focus:bg-foreground-strong/8 focus:text-foreground-strong data-[highlighted]:bg-foreground-strong/8 data-[highlighted]:text-foreground-strong data-[state=open]:bg-foreground-strong/8 data-[state=open]:text-foreground-strong data-[state=checked]:bg-foreground-strong/8 data-[state=checked]:text-foreground-strong data-[selected=true]:bg-foreground-strong/8 data-[selected=true]:text-foreground-strong';
 
 const FILTER_MENU_CLASS = cn(
   CATEGORY_MENU_CLASS,
-  'max-h-[min(70vh,var(--radix-select-content-available-height))] border shadow-xl ring-0 [&_[data-state=checked]_svg]:text-white',
+  'max-h-[min(70vh,var(--radix-select-content-available-height))] border shadow-xl ring-0 [&_[data-state=checked]_svg]:text-foreground-strong',
 );
 const FILTER_ITEM_CLASS = cn(CATEGORY_ITEM_CLASS, 'cursor-pointer rounded-sm pr-8 pl-2');
 
@@ -151,10 +150,21 @@ export function MarketplaceFilters({
       state.conditions.length ||
       state.minimumPriceMinor !== null ||
       state.maximumPriceMinor !== null ||
-      state.sort !== 'recommended' ||
+      state.sort !== 'newest' ||
       Object.keys(state.attributeFilters).length > 0,
     ),
   );
+  // What the phone's Filters toggle hides: the dropdown filters, not search, display currency or layout.
+  const collapsedFilterCount = useCommerceStore(
+    (state) =>
+      Number(Boolean(state.categoryId)) +
+      Number(state.saleFormat !== 'all') +
+      Number(Boolean(state.countryCode)) +
+      Number(Boolean(state.paymentMethod)) +
+      Number(state.sort !== 'newest'),
+  );
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersId = useId();
   const resetFilters = useCommerceStore((state) => state.resetFilters);
   const categoryId = useCommerceStore((state) => state.categoryId);
   const attributeFilters = useCommerceStore((state) => state.attributeFilters);
@@ -187,14 +197,37 @@ export function MarketplaceFilters({
       : paymentMethodOptions;
 
   return (
-    <section aria-label="Marketplace filters" className="flex flex-col gap-4">
+    <section aria-label="Market filters" className="flex flex-col gap-4">
       <Card className="flex-row flex-wrap items-center gap-2 rounded-md p-6">
         {searchControl ?? (
           <Typography className="min-w-48 flex-1 text-sm text-muted-foreground">
             {resultCount.toLocaleString('en-US')} {resultCount === 1 ? 'item' : 'items'}
           </Typography>
         )}
-        <div className="contents">
+        <Button
+          variant="secondary"
+          size="sm"
+          className={cn(FILTER_TRIGGER_CLASS, 'sm:hidden')}
+          aria-expanded={filtersOpen}
+          aria-controls={filtersId}
+          aria-label={collapsedFilterCount > 0 ? `Filters, ${collapsedFilterCount} active` : 'Filters'}
+          onClick={() => setFiltersOpen((open) => !open)}
+          data-testid="marketplace-filters-toggle"
+        >
+          <SlidersHorizontal aria-hidden="true" className="size-4" />
+          Filters
+          {collapsedFilterCount > 0 && (
+            <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-xs font-semibold text-bright-fill-foreground">
+              {collapsedFilterCount}
+            </span>
+          )}
+          <ChevronDown
+            aria-hidden="true"
+            className={cn('size-3.5 transition-transform', filtersOpen && 'rotate-180')}
+          />
+        </Button>
+        {/* Phones: behind the Filters toggle, so the listings start higher. Wider screens: always shown. */}
+        <div id={filtersId} className={cn(filtersOpen ? 'contents' : 'hidden', 'sm:contents')}>
           <Select value={saleFormat} onValueChange={(value) => setSaleFormat(value as CommerceSaleFormatFilter)}>
             <SelectTrigger aria-label="Sale format" className={FILTER_TRIGGER_CLASS}>
               <SelectValue />
@@ -268,14 +301,10 @@ export function MarketplaceFilters({
           )}
 
           <Select value={sort} onValueChange={(value) => setSort(value as CommerceSort)}>
-            <SelectTrigger aria-label="Sort marketplace" className={FILTER_TRIGGER_CLASS}>
+            <SelectTrigger aria-label="Sort market" className={FILTER_TRIGGER_CLASS}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent position="popper" align="start" className={FILTER_MENU_CLASS}>
-              <SelectItem className={FILTER_ITEM_CLASS} value="recommended">
-                <Sparkles aria-hidden="true" className="size-4" />
-                Recommended
-              </SelectItem>
               <SelectItem className={FILTER_ITEM_CLASS} value="newest">
                 <Clock aria-hidden="true" className="size-4" />
                 Newest
@@ -316,36 +345,34 @@ export function MarketplaceFilters({
               </SelectItem>
             </SelectContent>
           </Select>
-          <Select
-            value={displayCurrency}
-            onValueChange={(value) => {
-              if (isListingCurrencyCode(value)) setDisplayCurrency(value);
-            }}
-          >
-            <SelectTrigger
-              aria-label={`Display currency: ${LISTING_CURRENCY_REGISTRY[displayCurrency].name}`}
-              className={FILTER_TRIGGER_CLASS}
-            >
-              <DisplayCurrencyGlyph code={displayCurrency} />
-            </SelectTrigger>
-            <SelectContent position="popper" align="end" className={FILTER_MENU_CLASS}>
-              {LISTING_CURRENCY_CODES.map((code) => (
-                <SelectItem key={code} className={FILTER_ITEM_CLASS} value={code}>
-                  <DisplayCurrencyGlyph code={code} />
-                  {LISTING_CURRENCY_REGISTRY[code].name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
-        <Typography as="p" size="xs" className="text-muted-foreground" data-testid="marketplace-ranking-line">
-          {RANKING_LINE}
-        </Typography>
+        {/* Display currency is a preference, not a filter: it stays out on phones too. */}
+        <Select
+          value={displayCurrency}
+          onValueChange={(value) => {
+            if (isListingCurrencyCode(value)) setDisplayCurrency(value);
+          }}
+        >
+          <SelectTrigger
+            aria-label={`Display currency: ${LISTING_CURRENCY_REGISTRY[displayCurrency].name}`}
+            className={FILTER_TRIGGER_CLASS}
+          >
+            <DisplayCurrencyGlyph code={displayCurrency} />
+          </SelectTrigger>
+          <SelectContent position="popper" align="end" className={FILTER_MENU_CLASS}>
+            {LISTING_CURRENCY_CODES.map((code) => (
+              <SelectItem key={code} className={FILTER_ITEM_CLASS} value={code}>
+                <DisplayCurrencyGlyph code={code} />
+                {LISTING_CURRENCY_REGISTRY[code].name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {hasActiveFilters && (
           <Button
             variant="dark-outline"
             size="icon"
-            className="size-8 shrink-0 rounded-full border-border bg-white/5 text-foreground"
+            className="size-8 shrink-0 rounded-full border-border bg-glass text-foreground"
             aria-label="Reset search and filters"
             title="Reset search and filters"
             onClick={resetFilters}
@@ -392,7 +419,7 @@ function MarketplaceCategoryNavigation({
         >
           <Layers className="size-4" aria-hidden="true" />
           All Categories
-          {!categoryId && <Check className="ml-auto size-4 text-white" aria-hidden="true" />}
+          {!categoryId && <Check className="ml-auto size-4 text-foreground-strong" aria-hidden="true" />}
         </DropdownMenuItem>
         <CategoryMenuItems parentId={null} categoryId={categoryId} onSelect={onSelect} />
       </DropdownMenuContent>
@@ -416,7 +443,7 @@ function CategoryMenuItems({
       <>
         <Icon className="size-4" aria-hidden="true" />
         <span className="flex-1">{node.label}</span>
-        {selected && <Check className="size-4 text-white" aria-hidden="true" />}
+        {selected && <Check className="size-4 text-foreground-strong" aria-hidden="true" />}
       </>
     );
     if (!commerceCategoryChildren(node.id).length) {
@@ -445,7 +472,7 @@ function CategoryMenuItems({
             >
               <Icon className="size-4" aria-hidden="true" />
               All {node.label}
-              {selected && <Check className="ml-auto size-4 text-white" aria-hidden="true" />}
+              {selected && <Check className="ml-auto size-4 text-foreground-strong" aria-hidden="true" />}
             </DropdownMenuItem>
             <CategoryMenuItems parentId={node.id} categoryId={categoryId} onSelect={onSelect} />
           </DropdownMenuSubContent>

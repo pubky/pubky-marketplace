@@ -18,8 +18,8 @@ vi.mock('@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing', () =>
 vi.mock('@/hooks/useSellerPaymentMethodGate/useSellerPaymentMethodGate', () => ({
   useSellerPaymentMethodGate: () => ({ isDurable: false, ready: true, reason: null }),
 }));
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 vi.mock('@/organisms/Marketplace/MarketplaceSectionNav', () => ({ MarketplaceSectionNav: () => null }));
 vi.mock('@/organisms/Marketplace/MarketplaceListingForm', () => ({

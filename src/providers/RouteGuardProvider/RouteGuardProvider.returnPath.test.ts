@@ -1,9 +1,15 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  getMarketplaceCheckoutRoute,
+  getMarketplaceDropCheckoutRoute,
+  getMarketplaceOfferCheckoutRoute,
+} from '@/libs/commerce/checkout-phase';
+import {
   clearRouteGuardReturnTo,
   consumeRouteGuardReturnTo,
   isValidRouteGuardReturnToPath,
   ROUTE_GUARD_RETURN_TO_STORAGE_KEY,
+  routeGuardReturnToWithSearch,
   storeRouteGuardReturnTo,
 } from './RouteGuardProvider.returnPath';
 
@@ -44,6 +50,41 @@ describe('RouteGuardProvider return path', () => {
 
     expect(consumeRouteGuardReturnTo(['/feed'])).toBeNull();
     expect(window.sessionStorage.getItem(ROUTE_GUARD_RETURN_TO_STORAGE_KEY)).toBeNull();
+  });
+
+  it('keeps the query a guarded deep link was opened with, or drops it when it fails validation', () => {
+    expect(routeGuardReturnToWithSearch('/marketplace/checkout', '?offer=abc&seller=xyz')).toBe(
+      '/marketplace/checkout?offer=abc&seller=xyz',
+    );
+    expect(routeGuardReturnToWithSearch('/marketplace/checkout', '')).toBe('/marketplace/checkout');
+    expect(routeGuardReturnToWithSearch('/marketplace/checkout', '?')).toBe('/marketplace/checkout');
+    expect(routeGuardReturnToWithSearch('/marketplace/checkout', '?next=%5Cevil.test')).toBe('/marketplace/checkout');
+    expect(routeGuardReturnToWithSearch('/marketplace/checkout', `?q=${'a'.repeat(300)}`)).toBe(
+      '/marketplace/checkout',
+    );
+  });
+
+  it('keeps the longest checkout deep links the app builds', () => {
+    const uuid = '018f47d2-6a27-7c23-b51e-000000000002';
+    const drop = getMarketplaceDropCheckoutRoute({ sellerPubky: 'o'.repeat(52), dropId: uuid, listingId: uuid });
+    for (const route of [
+      getMarketplaceCheckoutRoute(uuid),
+      getMarketplaceOfferCheckoutRoute(`offer:${uuid}`),
+      `${drop}&variant=${uuid}`,
+    ]) {
+      const [pathname, query] = route.split('?');
+      expect(routeGuardReturnToWithSearch(pathname, `?${query}`)).toBe(route);
+      storeRouteGuardReturnTo(route);
+      expect(consumeRouteGuardReturnTo(['/marketplace'])).toBe(route);
+    }
+  });
+
+  it('checks the allow-list against the path and not its query', () => {
+    storeRouteGuardReturnTo('/settings?tab=account');
+    expect(consumeRouteGuardReturnTo(['/settings'])).toBe('/settings?tab=account');
+
+    storeRouteGuardReturnTo('/sign-in?next=/settings');
+    expect(consumeRouteGuardReturnTo(['/settings'])).toBeNull();
   });
 
   it('clears a stored return path without consuming it', () => {

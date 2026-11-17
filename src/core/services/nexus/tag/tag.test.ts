@@ -103,7 +103,7 @@ describe('Tag API', () => {
     });
   });
 
-  describe('TagApiEndpoint type', () => {
+  describe('tagApi endpoint contract', () => {
     it('should have exactly 3 endpoints', () => {
       const endpointKeys = Object.keys(tagApi);
       expect(endpointKeys).toHaveLength(3);

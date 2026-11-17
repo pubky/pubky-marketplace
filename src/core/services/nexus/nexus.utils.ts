@@ -1,7 +1,7 @@
 import { getCdnUrl, getNexusUrl } from '@/config/nexus';
 import { httpResponseToError, safeFetch } from '@/libs/error/error.http';
 import { ErrorService } from '@/libs/error/error.types';
-import { HttpMethod, JSON_HEADERS } from '@/libs/http/http.types';
+import { HttpMethod, HttpStatusCode, JSON_HEADERS } from '@/libs/http/http.types';
 import { withIoDeadline } from '@/libs/http/io-deadline';
 import { PARSE_JSON_WITH_BODY_EXCERPT, parseResponseOrThrow } from '@/libs/http/response.utils';
 import { nexusQueryClient } from './nexus.query-client';
@@ -84,6 +84,7 @@ export async function fetchNexus<T>({
   method = HttpMethod.GET,
   body = null,
   timeoutMs,
+  ioEndpoint,
 }: TFetchNexusParams): Promise<T> {
   const fetchAndRead = async (signal?: AbortSignal): Promise<T> => {
     const response = await safeFetch(
@@ -105,7 +106,53 @@ export async function fetchNexus<T>({
   };
   return timeoutMs === undefined
     ? fetchAndRead()
-    : withIoDeadline(fetchAndRead, { service: ErrorService.Nexus, operation: FETCH_NEXUS_OPERATION, timeoutMs });
+    : withIoDeadline(fetchAndRead, {
+        service: ErrorService.Nexus,
+        operation: FETCH_NEXUS_OPERATION,
+        timeoutMs,
+        ioEndpoint,
+      });
+}
+
+/**
+ * Like {@link fetchNexus} (one attempt, no retry) for a route whose absence is
+ * an ordinary answer: a 404 resolves to `null` instead of an error. No
+ * `AppError` is built for it, so nothing is logged or reported for a missing
+ * record or a route the index does not serve. Every other failure throws as
+ * `fetchNexus` does.
+ */
+export async function fetchNexusIfFound<T>({
+  url,
+  timeoutMs,
+  ioEndpoint,
+}: Pick<TFetchNexusParams, 'url' | 'timeoutMs' | 'ioEndpoint'>): Promise<T | null> {
+  const fetchAndRead = async (signal?: AbortSignal): Promise<T | null> => {
+    const response = await safeFetch(
+      url,
+      { ...createFetchOptions(), ...(signal ? { signal } : {}) },
+      ErrorService.Nexus,
+      FETCH_NEXUS_OPERATION,
+    );
+    if (response.status === HttpStatusCode.NOT_FOUND) return null;
+    if (!response.ok) {
+      throw httpResponseToError(response, ErrorService.Nexus, FETCH_NEXUS_OPERATION, url);
+    }
+    return parseResponseOrThrow<T>(
+      response,
+      ErrorService.Nexus,
+      FETCH_NEXUS_OPERATION,
+      url,
+      PARSE_JSON_WITH_BODY_EXCERPT,
+    );
+  };
+  return timeoutMs === undefined
+    ? fetchAndRead()
+    : withIoDeadline(fetchAndRead, {
+        service: ErrorService.Nexus,
+        operation: FETCH_NEXUS_OPERATION,
+        timeoutMs,
+        ioEndpoint,
+      });
 }
 
 /** Like fetchNexus but for endpoints that return no body (e.g. PUT v0/ingest); throws on non-ok. */
@@ -132,12 +179,13 @@ export async function queryNexus<T>({
   body = null,
   timeoutMs,
   totalTimeoutMs,
+  ioEndpoint,
 }: TQueryNexusParams): Promise<T> {
   const queryKey = ['nexus', url, method, body];
   const query = () =>
     nexusQueryClient.fetchQuery({
       queryKey,
-      queryFn: () => fetchNexus<T>({ url, method, body, timeoutMs }),
+      queryFn: () => fetchNexus<T>({ url, method, body, timeoutMs, ioEndpoint }),
     });
   if (totalTimeoutMs === undefined) return query();
   // TanStack pauses retries when offline or hidden. Bound that pure query too,
@@ -154,6 +202,6 @@ export async function queryNexus<T>({
         signal.removeEventListener('abort', cancel);
       }
     },
-    { service: ErrorService.Nexus, operation: 'queryNexus', timeoutMs: totalTimeoutMs },
+    { service: ErrorService.Nexus, operation: 'queryNexus', timeoutMs: totalTimeoutMs, ioEndpoint },
   );
 }

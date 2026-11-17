@@ -53,19 +53,6 @@ export class SettingsController {
   }
 
   /**
-   * Updates all notification preferences, recalculates the unread badge count,
-   * and syncs to homeserver.
-   */
-  static async setAllNotifications(preferences: NotificationPreferences): Promise<void> {
-    useSettingsStore.getState().setAllNotifications(preferences);
-    try {
-      await this.recalculateUnreadBadge();
-    } finally {
-      await this.commitUpdate();
-    }
-  }
-
-  /**
    * Recalculates the unread badge count based on current notification preferences.
    */
   private static async recalculateUnreadBadge(): Promise<void> {
@@ -117,26 +104,5 @@ export class SettingsController {
   static async setNeverShowPosts(neverShowPosts: boolean): Promise<void> {
     useSettingsStore.getState().setNeverShowPosts(neverShowPosts);
     await this.commitUpdate();
-  }
-
-  /**
-   * Muted users management (local-only, not synced to homeserver).
-   * These methods update the local store directly without triggering
-   * a homeserver sync since muted users are device-specific.
-   */
-  static addMutedUser(userId: string): void {
-    useSettingsStore.getState().addMutedUser(userId);
-  }
-
-  static removeMutedUser(userId: string): void {
-    useSettingsStore.getState().removeMutedUser(userId);
-  }
-
-  static setMutedUsers(userIds: string[]): void {
-    useSettingsStore.getState().setMutedUsers(userIds);
-  }
-
-  static clearMutedUsers(): void {
-    useSettingsStore.getState().clearMutedUsers();
   }
 }

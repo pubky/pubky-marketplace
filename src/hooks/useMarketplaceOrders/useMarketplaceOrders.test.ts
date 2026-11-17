@@ -1,14 +1,18 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { CommerceRecordNormalizer } from '@/core/pipes/commerce/commerce.normalizer';
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
 import { PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
 import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
+import { Logger } from '@/libs/logger/logger';
+import { toast } from '@/molecules/Toaster/toast';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { USDT_WIRE_PAYMENT_NOT_FINAL_REFUSAL } from '@/test/fixtures/commerce/usdt-orders';
+import { ORDER_COMMAND_UNSENDABLE_COPY } from '../useMarketplaceOrderAction/useMarketplaceOrderAction.types';
 import { useMarketplaceOrders } from './useMarketplaceOrders';
 
 const BUYER = 'b'.repeat(52);
@@ -37,14 +41,15 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     // Own-review publication (trust & reputation P1.6): the load path resumes
     // pending publications and review commands publish the record.
     resumeOwnReviewPublications: vi.fn(async () => 0),
+    resumeOwnReviewRemovals: vi.fn(async () => 0),
     sweepOwnAuctionReserves: vi.fn(async () => 0),
     publishOrderReceipts: vi.fn(async () => undefined),
     resumeOwnReviewResponsePublications: vi.fn(async () => 0),
-    publishOwnMarketplaceReview: vi.fn(async () => null),
+    publishOwnMarketplaceReviews: vi.fn(async () => []),
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 
@@ -141,9 +146,88 @@ describe('useMarketplaceOrders', () => {
     );
   });
 
+  it('says a payment was seen when the service refuses a checkout cancel, and re-reads the orders (#347)', async () => {
+    const { toast } = await import('@/molecules/Toaster/toast');
+    const { result } = renderHook(() => useMarketplaceOrders());
+    await waitFor(() => expect(result.current.orders).toHaveLength(1));
+    const order = result.current.orders[0].order;
+    expect(order.state).toBe('pending_payment');
+    vi.mocked(toast).mockClear();
+    const reads = vi.mocked(CommerceController.getMarketplaceOrders).mock.calls.length;
+
+    vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'INVALID_STATE', message: 'This order can no longer be cancelled.' },
+    });
+    let accepted: boolean | undefined;
+    await act(async () => {
+      accepted = await result.current.actOnOrder(order, 'order.cancel_request', { reason: 'Changed my mind' });
+    });
+
+    expect(accepted).toBe(false);
+    expect(toast).toHaveBeenCalledWith({
+      variant: 'error',
+      description: "We've seen a payment for this order, so it can't be cancelled now.",
+    });
+    expect(vi.mocked(CommerceController.getMarketplaceOrders).mock.calls.length).toBeGreaterThan(reads);
+  });
+
+  describe('when the Shop refuses the command it built', () => {
+    const refusedByNormalizer = () =>
+      vi.mocked(CommerceController.executeMarketplaceCommand).mockImplementationOnce(async (command) => {
+        // The controller normalizes the command before anything is sent; the real normalizer throws.
+        CommerceRecordNormalizer.marketplaceCommand(command);
+        throw new Error('The normalizer accepted a command the test meant it to refuse.');
+      });
+
+    it.each([
+      ['return.cancel', { surprise: true }],
+      ['refund.confirm_destination', { address: 'x'.repeat(101) }],
+      ['fulfillment.ship', { carrier: 'c'.repeat(101), trackingNumber: 'T-1' }],
+      ['order.cancel_request', { reason: 'r'.repeat(501) }],
+      ['fulfillment.confirm_delivery', { surprise: true }],
+      ['order.cancel_approve', { surprise: true }],
+      ['return.approve', { surprise: true }],
+      ['return.receive', { surprise: true }],
+    ])('%s says nothing was sent instead of the generic order failure', async (kind, payload) => {
+      const { toast } = await import('@/molecules/Toaster/toast');
+      const { result } = renderHook(() => useMarketplaceOrders());
+      await waitFor(() => expect(result.current.orders).toHaveLength(1));
+      const order = result.current.orders[0].order;
+      vi.mocked(toast).mockClear();
+      refusedByNormalizer();
+
+      let accepted: boolean | undefined;
+      await act(async () => {
+        accepted = await result.current.actOnOrder(order, kind, payload);
+      });
+
+      expect(accepted).toBe(false);
+      expect(toast).toHaveBeenCalledTimes(1);
+      expect(toast).toHaveBeenCalledWith({ variant: 'error', description: ORDER_COMMAND_UNSENDABLE_COPY });
+      expect(result.current.needsSession).toBe(false);
+      expect(Logger.error).not.toHaveBeenCalled();
+    });
+
+    it('still shows the generic failure for other thrown errors', async () => {
+      const { toast } = await import('@/molecules/Toaster/toast');
+      const { result } = renderHook(() => useMarketplaceOrders());
+      await waitFor(() => expect(result.current.orders).toHaveLength(1));
+      const order = result.current.orders[0].order;
+      vi.mocked(toast).mockClear();
+      vi.mocked(CommerceController.executeMarketplaceCommand).mockRejectedValueOnce(new Error('boom'));
+
+      await act(async () => {
+        await result.current.actOnOrder(order, 'return.cancel', {});
+      });
+
+      expect(toast).toHaveBeenCalledWith({ variant: 'error', description: MARKETPLACE_FAILURE_MESSAGES.order });
+    });
+  });
+
   it('maps server and thrown sentinel failures to static copy', async () => {
     const sentinel = 'SENTINEL_SERVER_TEXT_orders';
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const { result } = renderHook(() => useMarketplaceOrders());
     await waitFor(() => expect(result.current.orders).toHaveLength(1));
     const payment = result.current.orders[0].payment!;
@@ -264,7 +348,7 @@ describe('useMarketplaceOrders', () => {
     );
     // The conflict refetched the timeline so the retry starts from truth.
     expect(CommerceController.getMarketplaceOrders).toHaveBeenCalled();
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: expect.stringContaining('reloaded') }),
     );
@@ -298,7 +382,7 @@ describe('useMarketplaceOrders', () => {
         ...change,
       },
     ]);
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     vi.mocked(toast).mockClear();
 
     await act(async () => {
@@ -330,7 +414,7 @@ describe('useMarketplaceOrders', () => {
         },
       },
     ]);
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     vi.mocked(toast).mockClear();
 
     let succeeded = false;
@@ -350,6 +434,158 @@ describe('useMarketplaceOrders', () => {
     expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain('reloaded');
   });
 
+  describe('per-item review commands', () => {
+    const items = [
+      { listingId: 'boots', rating: 5, text: 'Great boots.' },
+      { listingId: 'belt', rating: 3, text: '' },
+    ];
+    const reviewWire = (listingId: string, rating: number, text: string) => ({
+      id: `00000000-0000-4000-8000-00000000${listingId === 'boots' ? '2001' : '2002'}`,
+      reviewerPubky: BUYER,
+      subjectPubky: SELLER,
+      listingAggregateId: `listing:${SELLER}_${listingId}`,
+      rating,
+      text,
+      createdAt: '2026-08-21T10:00:00.000Z',
+    });
+
+    it('publishes the records of the command result once the command is accepted', async () => {
+      const { result } = renderHook(() => useMarketplaceOrders());
+      await waitFor(() => expect(result.current.orders).toHaveLength(1));
+      const order = result.current.orders[0].order;
+      const commandResult = { kind: 'review' as const, reviews: [], attestations: [] };
+      vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
+        ok: true,
+        version: 1,
+        commandId: '00000000-0000-4000-8000-000000001111',
+        aggregateId: `order:${order.id}`,
+        revision: 2,
+        eventIds: [],
+        result: commandResult,
+      });
+      vi.mocked(CommerceController.publishOwnMarketplaceReviews).mockResolvedValueOnce([{} as never, {} as never]);
+
+      let succeeded = false;
+      await act(async () => {
+        succeeded = await result.current.actOnOrder(order, 'review.create', { items });
+      });
+
+      expect(succeeded).toBe(true);
+      expect(CommerceController.publishOwnMarketplaceReviews).toHaveBeenCalledWith(order, commandResult);
+      expect(vi.mocked(toast)).toHaveBeenCalledWith({
+        description: '2 reviews published to your homeserver with their purchase attestations.',
+      });
+    });
+
+    it.each(['INVARIANT_VIOLATION', 'INVALID_STATE'])(
+      'lets the second tab of a double submit finish without publishing a second record set on %s',
+      async (code) => {
+        const { result } = renderHook(() => useMarketplaceOrders());
+        await waitFor(() => expect(result.current.orders).toHaveLength(1));
+        const order = result.current.orders[0].order;
+        vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
+          ok: false,
+          error: { code, message: 'This participant already reviewed these listings.' },
+        });
+        vi.mocked(CommerceController.getMarketplaceOrders).mockResolvedValue([
+          {
+            ...order,
+            revision: 3,
+            state: 'completed',
+            reviews: items.map(({ listingId, rating, text }) => reviewWire(listingId, rating, text)),
+          },
+        ]);
+        vi.mocked(toast).mockClear();
+
+        let succeeded = false;
+        await act(async () => {
+          succeeded = await result.current.actOnOrder(order, 'review.create', { items });
+        });
+
+        expect(succeeded).toBe(true);
+        expect(CommerceController.publishOwnMarketplaceReviews).not.toHaveBeenCalled();
+        expect(vi.mocked(toast)).not.toHaveBeenCalled();
+      },
+    );
+
+    it('says when a withheld review publishes instead of claiming it was published', async () => {
+      const { result } = renderHook(() => useMarketplaceOrders());
+      await waitFor(() => expect(result.current.orders).toHaveLength(1));
+      const order = result.current.orders[0].order;
+      const commandResult = {
+        kind: 'review' as const,
+        attestationStatus: 'pending',
+        releaseAt: '2026-11-01T00:00:00.000Z',
+      };
+      vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
+        ok: true,
+        version: 1,
+        commandId: '00000000-0000-4000-8000-000000001112',
+        aggregateId: `order:${order.id}`,
+        revision: 2,
+        eventIds: [],
+        result: commandResult,
+      });
+      vi.mocked(CommerceController.publishOwnMarketplaceReviews).mockResolvedValueOnce([]);
+      vi.mocked(toast).mockClear();
+
+      let succeeded = false;
+      await act(async () => {
+        succeeded = await result.current.actOnOrder(order, 'review.create', { items });
+      });
+
+      expect(succeeded).toBe(true);
+      expect(CommerceController.publishOwnMarketplaceReviews).toHaveBeenCalledWith(order, commandResult);
+      expect(vi.mocked(toast)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(toast)).toHaveBeenCalledWith({
+        description: 'Your review is saved. Publishes when the seller reviews, or on Nov 1, 2026.',
+      });
+    });
+
+    it('shows the service message when a review is refused because the window has closed', async () => {
+      const { result } = renderHook(() => useMarketplaceOrders());
+      await waitFor(() => expect(result.current.orders).toHaveLength(1));
+      const order = result.current.orders[0].order;
+      vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
+        ok: false,
+        error: { code: 'INVALID_STATE', message: 'The review window has closed.' },
+      });
+      vi.mocked(toast).mockClear();
+
+      let succeeded = true;
+      await act(async () => {
+        succeeded = await result.current.actOnOrder(order, 'review.create', { items });
+      });
+
+      expect(succeeded).toBe(false);
+      expect(CommerceController.publishOwnMarketplaceReviews).not.toHaveBeenCalled();
+      expect(vi.mocked(toast)).toHaveBeenCalledWith({
+        variant: 'error',
+        description: 'The review window has closed.',
+      });
+    });
+
+    it('still reports a refused review whose listings the order does not show as reviewed', async () => {
+      const { result } = renderHook(() => useMarketplaceOrders());
+      await waitFor(() => expect(result.current.orders).toHaveLength(1));
+      const order = result.current.orders[0].order;
+      vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
+        ok: false,
+        error: { code: 'INVALID_STATE', message: 'The order is not eligible for review.' },
+      });
+      vi.mocked(toast).mockClear();
+
+      let succeeded = true;
+      await act(async () => {
+        succeeded = await result.current.actOnOrder(order, 'review.create', { items });
+      });
+
+      expect(succeeded).toBe(false);
+      expect(CommerceController.publishOwnMarketplaceReviews).not.toHaveBeenCalled();
+      expect(vi.mocked(toast)).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' }));
+    });
+  });
+
   it('toasts static pickup-refusal copy from actOnOrder and never an echoed meeting address', async () => {
     const { result } = renderHook(() => useMarketplaceOrders());
     await waitFor(() => expect(result.current.orders).toHaveLength(1));
@@ -366,7 +602,7 @@ describe('useMarketplaceOrders', () => {
     });
 
     expect(succeeded).toBe(false);
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith({
       variant: 'error',
       description: 'The pickup request was refused.',
@@ -380,7 +616,7 @@ describe('useMarketplaceOrders', () => {
       const { result } = renderHook(() => useMarketplaceOrders());
       await waitFor(() => expect(result.current.orders).toHaveLength(1));
       const order = result.current.orders[0].order;
-      const { toast } = await import('@/molecules/Toaster/use-toast');
+      const { toast } = await import('@/molecules/Toaster/toast');
       vi.mocked(toast).mockClear();
 
       vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce(
@@ -401,7 +637,7 @@ describe('useMarketplaceOrders', () => {
     const { result } = renderHook(() => useMarketplaceOrders());
     await waitFor(() => expect(result.current.orders).toHaveLength(1));
     const order = result.current.orders[0].order;
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
 
     vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
       ok: false,
@@ -474,7 +710,7 @@ describe('useMarketplaceOrders', () => {
     [
       'refund.record_external',
       'refund_amount_unrecordable',
-      'This USDT amount cannot be recorded as a refund because it is not a whole number of cents. Contact the marketplace operator.',
+      "This USDT amount cannot be recorded as a refund in this order's currency. Contact the marketplace operator.",
     ],
     [
       'refund.confirm_destination',
@@ -485,7 +721,7 @@ describe('useMarketplaceOrders', () => {
     const { result } = renderHook(() => useMarketplaceOrders());
     await waitFor(() => expect(result.current.orders).toHaveLength(1));
     const order = result.current.orders[0].order;
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     vi.mocked(toast).mockClear();
     vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
       ok: false,
@@ -508,7 +744,7 @@ describe('useMarketplaceOrders', () => {
       const { result } = renderHook(() => useMarketplaceOrders());
       await waitFor(() => expect(result.current.orders).toHaveLength(1));
       const order = result.current.orders[0].order;
-      const { toast } = await import('@/molecules/Toaster/use-toast');
+      const { toast } = await import('@/molecules/Toaster/toast');
       vi.mocked(toast).mockClear();
       vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
         ok: false,

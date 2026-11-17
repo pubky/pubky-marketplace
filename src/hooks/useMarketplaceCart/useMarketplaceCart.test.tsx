@@ -12,6 +12,7 @@ function cartItem({
   currency,
   exponent,
   shippingOptions = [],
+  shippingProfileId,
 }: {
   sellerPubky: string;
   title: string;
@@ -21,6 +22,7 @@ function cartItem({
   currency: string;
   exponent: number;
   shippingOptions?: unknown[];
+  shippingProfileId?: string;
 }): MarketplaceCartItem {
   return asOpaque<MarketplaceCartItem>({
     id: `${sellerPubky}:${title}:${variantId}`,
@@ -36,6 +38,7 @@ function cartItem({
         sale: { format: 'fixed_price', unitPrice: { amountMinor, currency, exponent }, acceptsOffers: false },
         media: [],
         shippingOptions,
+        ...(shippingProfileId === undefined ? {} : { shippingProfileId }),
       },
     },
   });
@@ -196,6 +199,75 @@ describe('groupMarketplaceCartItems', () => {
       totals: [{ amountMinor: 500, currency: 'USD', exponent: 2 }],
       hasCalculatedShipping: false,
     });
+  });
+
+  it('leaves a zone-priced line out: its legacy flat option is for old readers, not for the total', () => {
+    const sellerPubky = 's'.repeat(52);
+    const legacy = {
+      id: 'zone_pricing',
+      pricing: 'flat',
+      label: 'Worldwide',
+      price: { amountMinor: 900, currency: 'USD', exponent: 2 },
+      estimatedMinDays: 4,
+      estimatedMaxDays: 12,
+    };
+    const group = groupMarketplaceCartItems([
+      cartItem({
+        sellerPubky,
+        title: 'tee',
+        variantId: '1',
+        quantity: 2,
+        amountMinor: 2500,
+        currency: 'USD',
+        exponent: 2,
+        shippingOptions: [legacy],
+        shippingProfileId: 'worldwide',
+      }),
+    ]);
+
+    expect(marketplaceCartShippingTotals(group, () => 'shipping')).toEqual({
+      totals: [],
+      hasCalculatedShipping: false,
+    });
+  });
+
+  it('still charges the flat line beside a zone-priced one', () => {
+    const sellerPubky = 's'.repeat(52);
+    const flat = {
+      id: 'ground',
+      pricing: 'flat',
+      label: 'Ground',
+      price: { amountMinor: 500, currency: 'USD', exponent: 2 },
+      estimatedMinDays: 3,
+      estimatedMaxDays: 7,
+    };
+    const group = groupMarketplaceCartItems([
+      cartItem({
+        sellerPubky,
+        title: 'tee',
+        variantId: '1',
+        quantity: 1,
+        amountMinor: 2500,
+        currency: 'USD',
+        exponent: 2,
+        shippingOptions: [{ ...flat, id: 'zone_pricing', price: { ...flat.price, amountMinor: 900 } }],
+        shippingProfileId: 'worldwide',
+      }),
+      cartItem({
+        sellerPubky,
+        title: 'boots',
+        variantId: '2',
+        quantity: 1,
+        amountMinor: 1200,
+        currency: 'USD',
+        exponent: 2,
+        shippingOptions: [flat],
+      }),
+    ]);
+
+    expect(marketplaceCartShippingTotals(group, () => 'shipping').totals).toEqual([
+      { amountMinor: 500, currency: 'USD', exponent: 2 },
+    ]);
   });
 
   it('charges priceable lines while flagging calculated lines', () => {

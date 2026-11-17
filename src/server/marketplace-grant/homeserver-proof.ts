@@ -130,13 +130,3 @@ export async function fetchHomeserverProofDocument(
     throw new HomeserverFetchDenied();
   }
 }
-
-export async function fetchAndMatchHomeserverProof(
-  config: CliGrantConfig,
-  expected: ExpectedProof,
-  deps: HomeserverProofDeps = defaultDeps,
-): Promise<void> {
-  const parsed = await fetchHomeserverProofDocument(config, expected.pubky, expected.challenge_id, deps);
-  parseProofDocument(parsed);
-  assertProofMatches(parsed, expected);
-}

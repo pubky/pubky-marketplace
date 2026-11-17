@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OrderPushRow, StorePushOverview } from '@/application/connectors/connectors';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import { connectorAlertSchema, connectorPushSchema } from '@/libs/commerce/connectors';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { bareHttpFailure, connectorRefusal } from '@/test-utils/connector-errors';
 import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { resetConnectorsUnavailableMemoForTests, useConnectorPushStatus } from './useConnectorPushStatus';
@@ -24,7 +24,7 @@ vi.mock('@/controllers/connectors/connectors', () => ({
   ConnectorsController: { fetchPushOverview: vi.fn(), commitRetryPush: vi.fn(), commitResolveAlert: vi.fn() },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 const connection = connectionFixture({
   id: 'c1',

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { AlertTriangle, Plug } from 'lucide-react';
 import { Button } from '@/atoms/Button/Button';
@@ -22,11 +22,12 @@ import {
   shopifyReturnErrorCopy,
 } from '@/libs/commerce/connectors';
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceConnectionStatusCheck } from '@/organisms/Marketplace/MarketplaceConnectionStatusCheck';
 import { MarketplaceConnectorListingLinks } from '@/organisms/Marketplace/MarketplaceConnectorListingLinks';
+import { MarketplaceConnectorProductSync } from '@/organisms/Marketplace/MarketplaceConnectorProductSync';
 import { MarketplaceConnectShopify } from '@/organisms/Marketplace/MarketplaceConnectShopify';
 import { MarketplaceConnectWooCommerce } from '@/organisms/Marketplace/MarketplaceConnectWooCommerce';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSessionRequiredCard } from '@/organisms/Marketplace/MarketplaceSessionRequiredCard';
 import { MarketplaceStoreAccessNotes } from '@/organisms/Marketplace/MarketplaceStoreAccessNotes';
@@ -100,13 +101,7 @@ export function MarketplaceStoreConnections() {
   const onCheckWoo = () => void checkAndRefresh({ provider: 'woocommerce', attempts: 3, delayMs: 1_500 });
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      className="pb-28"
-    >
+    <MarketplaceContentLayout disableMainContentOverflow className="pb-28">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <MarketplaceSectionNav />
         <BackToMyShop />
@@ -224,7 +219,12 @@ export function MarketplaceStoreConnections() {
                 {connections.rows
                   .filter((row) => row.health.state !== 'disconnected')
                   .map((row) => (
-                    <MarketplaceConnectorListingLinks key={row.connection.id} connection={row.connection} />
+                    <Fragment key={row.connection.id}>
+                      {row.connection.provider === 'shopify' && (
+                        <MarketplaceConnectorProductSync connection={row.connection} />
+                      )}
+                      <MarketplaceConnectorListingLinks connection={row.connection} />
+                    </Fragment>
                   ))}
               </>
             ) : (
@@ -280,6 +280,6 @@ export function MarketplaceStoreConnections() {
           </>
         )}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }

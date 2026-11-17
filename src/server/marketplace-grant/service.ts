@@ -2,16 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { marketplaceSessionIdSchema } from '@/core/services/marketplace/marketplace-session-id';
 import type { MarketplaceGrantConfig } from './config';
-import {
-  canonicalJson,
-  signBootstrapAssertion,
-  signDeliveryAssertion,
-  signResultProof,
-  signServiceBody,
-} from './crypto';
+import { signBootstrapAssertion, signDeliveryAssertion, signResultProof, signServiceBody } from './crypto';
 
 const PUBKY = /^[ybndrfg8ejkmcpqxot1uwisza345h769]{52}$/;
 const BEARER = /^[A-Za-z0-9_-]{43}$/;
+const REVOKE_TIMEOUT_MS = 3_000;
 
 const sessionsSchema = z.object({
   schema_version: z.literal(1),
@@ -98,6 +93,27 @@ export async function verifyMarketplaceSession(
   const expiresAt = new Date(matched.expires_at);
   if (expiresAt.getTime() <= Date.now()) throw new GrantServiceError(401, 'invalid_session_pair');
   return expiresAt;
+}
+
+/**
+ * Revokes a marketplace session with its own bearer. Idempotent at the
+ * service; the caller treats a failure as non-fatal, because the session
+ * still expires on its own. The bound is shorter than the usual service
+ * timeout so a slow service cannot hold the browser's sign-out acknowledgement.
+ */
+export async function revokeMarketplaceSession(
+  config: MarketplaceGrantConfig,
+  bearer: string,
+  sessionId: string,
+): Promise<void> {
+  if (!BEARER.test(bearer) || !marketplaceSessionIdSchema.safeParse(sessionId).success) return;
+  const response = await fetch(`${config.serviceUrl}/v1/auth/sessions/${sessionId}`, {
+    method: 'DELETE',
+    headers: { authorization: `Bearer ${bearer}` },
+    cache: 'no-store',
+    signal: AbortSignal.timeout(Math.min(config.serviceTimeoutMs, REVOKE_TIMEOUT_MS)),
+  });
+  if (!response.ok) throw new GrantServiceError(response.status, 'revoke_failed');
 }
 
 export async function createReconnectFlow(
@@ -336,8 +352,4 @@ export async function cancelGrant(config: MarketplaceGrantConfig, flowId: string
     body: signed.bytes as BodyInit,
   });
   if (response.status !== 204) await jsonOrError(response);
-}
-
-export function canonicalBody(value: unknown): string {
-  return canonicalJson(value);
 }

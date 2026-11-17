@@ -51,22 +51,3 @@ export interface ProfilePageHeaderProps {
   /** Statistics for the profile, used by the mobile header summary */
   stats?: ProfileStats;
 }
-
-/**
- * Legacy flat props interface for backward compatibility
- * @deprecated Use ProfilePageHeaderProps with grouped props instead
- */
-export interface ProfilePageHeaderPropsFlat {
-  avatarUrl?: string;
-  emoji?: string;
-  name: string;
-  bio?: string;
-  publicKey: string;
-  link: string;
-  status: string;
-  onEdit?: () => void;
-  onCopyPublicKey?: () => void;
-  onCopyLink: () => void;
-  onSignOut?: () => void;
-  onStatusChange?: (status: string) => void;
-}

@@ -1,21 +1,47 @@
 import { z } from 'zod';
-import { SHIPPING_CARRIERS } from '@/libs/commerce/carriers';
+import { COMMERCE_REVIEW_TEXT_MAX_CHARS } from '@/config/commerce';
+import { CARRIER_CHOICE_COPY, carrierChoiceFieldSchema, NO_CARRIER_CHOICE } from '@/libs/commerce/carrier-choice';
+import { codePointLength, trimmedText } from '@/libs/commerce/code-point-text';
+import {
+  buyerSellerRatings,
+  orderReviewListings,
+  type OrderReviewSource,
+  reviewListingAggregateId,
+  reviewsOfReviewer,
+  unreviewedListings,
+} from '@/libs/commerce/order-reviews';
 import { isArbitrumTxHash, USDT_REFUND_COPY } from '@/libs/commerce/usdt-refund';
 
-const carrierIds = SHIPPING_CARRIERS.map(({ id }) => id) as [string, ...string[]];
+const REVIEW_STARS = /^[1-5]$/;
+
+/** One listing of the order in the buyer's review: stars are required, text is optional. */
+const reviewItemDraftSchema = z.object({
+  listingId: z.string(),
+  title: z.string(),
+  rating: z.string().trim(),
+  text: trimmedText({ max: COMMERCE_REVIEW_TEXT_MAX_CHARS }),
+});
+
+export type ReviewItemDraft = z.infer<typeof reviewItemDraftSchema>;
 
 export const marketplaceOrderActionSchema = z
   .object({
     action: z.enum(['cancel', 'ship', 'return', 'refund', 'review', 'review_edit']),
-    reason: z.string().trim().max(2_000),
-    /** Curated carrier id from the registry, or `other` with a free-text name below. */
-    carrierChoice: z.enum(carrierIds),
-    carrier: z.string().trim().max(100),
-    trackingNumber: z.string().trim().max(200),
+    reason: trimmedText({ max: 2_000 }),
+    /** Curated carrier id from the registry, or `other` with a free-text name below; required to ship, with no default. */
+    carrierChoice: carrierChoiceFieldSchema,
+    carrier: trimmedText({ max: 100 }),
+    trackingNumber: trimmedText({ max: 200 }),
     amount: z.string().trim(),
-    transactionId: z.string().trim().max(200),
+    transactionId: trimmedText({ max: 200 }),
+    /** The v1 rating and text a seller gives the buyer (and any review while `reviewItems` is empty). */
     rating: z.string().trim(),
-    text: z.string().trim().max(5_000),
+    text: trimmedText({ max: COMMERCE_REVIEW_TEXT_MAX_CHARS }),
+    /** The buyer's per-listing reviews (per-item terms); empty for the v1 review. */
+    reviewItems: z.array(reviewItemDraftSchema),
+    /** The buyer's optional seller ratings; both or neither, empty meaning unrated. */
+    sellerShipping: z.string().trim(),
+    sellerCommunication: z.string().trim(),
     /**
      * Buyer-side amount-band opt-in (ratified D2): rendered only when the
      * seller's standing consent allows bands at all; the attestation carries
@@ -27,20 +53,57 @@ export const marketplaceOrderActionSchema = z
     if (['cancel', 'return'].includes(data.action) && !data.reason) {
       context.addIssue({ code: 'custom', path: ['reason'], message: 'Reason is required.' });
     }
+    // The service's own limits: 500 characters for a cancellation, 1,000 for a return.
+    const reasonMax = data.action === 'cancel' ? 500 : data.action === 'return' ? 1_000 : null;
+    if (reasonMax !== null && codePointLength(data.reason) > reasonMax) {
+      context.addIssue({
+        code: 'custom',
+        path: ['reason'],
+        message: `Keep the reason to ${reasonMax.toLocaleString('en-US')} characters.`,
+      });
+    }
+    if (data.action === 'ship' && data.carrierChoice === NO_CARRIER_CHOICE) {
+      context.addIssue({ code: 'custom', path: ['carrierChoice'], message: CARRIER_CHOICE_COPY.required });
+    }
     if (data.action === 'refund') {
       // Up to six decimals here (USDT millionths); `marketplaceOrderActionSchemaFor` caps them at the order's units.
       if (!/^\d+(?:\.\d{1,6})?$/.test(data.amount)) {
         context.addIssue({ code: 'custom', path: ['amount'], message: 'Enter a valid refund amount.' });
       }
     }
-    if (['review', 'review_edit'].includes(data.action) && (!/^[1-5]$/.test(data.rating) || !data.text)) {
-      context.addIssue({ code: 'custom', path: ['rating'], message: 'Rating and review text are required.' });
+    if (!['review', 'review_edit'].includes(data.action)) return;
+    if (data.reviewItems.length === 0) {
+      if (!REVIEW_STARS.test(data.rating)) {
+        context.addIssue({ code: 'custom', path: ['rating'], message: 'Choose a rating.' });
+      }
+      if (!data.text) {
+        context.addIssue({ code: 'custom', path: ['text'], message: 'Review text is required.' });
+      }
+      return;
+    }
+    data.reviewItems.forEach((item, index) => {
+      if (!REVIEW_STARS.test(item.rating)) {
+        context.addIssue({ code: 'custom', path: ['reviewItems', index, 'rating'], message: 'Choose a rating.' });
+      }
+    });
+    const sellerRated = data.sellerShipping !== '' || data.sellerCommunication !== '';
+    if (sellerRated && (!REVIEW_STARS.test(data.sellerShipping) || !REVIEW_STARS.test(data.sellerCommunication))) {
+      context.addIssue({
+        code: 'custom',
+        path: ['sellerCommunication'],
+        message: 'Rate both shipping and communication, or leave both blank.',
+      });
     }
   });
 
 export type MarketplaceOrderActionData = z.infer<typeof marketplaceOrderActionSchema>;
 
-/** Order total the refund dialog is capped against. The service stores one partial refund when `1 <= amount_minor <= total`. */
+/**
+ * What the refund dialog is capped against, in the units the refund is
+ * recorded in: the sats received for a Bitcoin order, the USDT received for a
+ * USDT order, else the order total. The service stores one partial refund when
+ * `1 <= amount_minor <= cap`.
+ */
 export type MarketplaceRefundCap = {
   amountMinor: number;
   exponent: number;
@@ -59,12 +122,12 @@ export function formatOrderMajor(total: MarketplaceRefundCap): string {
  * The entered amount is what has not been recorded yet: the whole refund,
  * or what was refunded outside PayPal after PayPal refunds (`refundedMinor`).
  * The recorded total, `refundedMinor` plus the entry, must be positive and
- * at most the order total.
+ * at most the cap.
  */
 export function marketplaceOrderActionSchemaFor(
   total: MarketplaceRefundCap,
   refundedMinor = 0,
-  rail: 'paypal' | 'usdt' | 'other' = 'other',
+  rail: 'paypal' | 'usdt' | 'bitcoin' | 'other' = 'other',
 ) {
   return marketplaceOrderActionSchema.superRefine((data, context) => {
     if (data.action !== 'refund') return;
@@ -74,7 +137,7 @@ export function marketplaceOrderActionSchemaFor(
       if (!isArbitrumTxHash(data.transactionId)) {
         context.addIssue({ code: 'custom', path: ['transactionId'], message: USDT_REFUND_COPY.referenceRequired });
       }
-    } else if (data.transactionId.length < 8) {
+    } else if (codePointLength(data.transactionId) < 8) {
       context.addIssue({ code: 'custom', path: ['transactionId'], message: 'Transaction evidence is required.' });
     }
     if (!/^\d+(?:\.\d{1,6})?$/.test(data.amount)) return;
@@ -96,11 +159,15 @@ export function marketplaceOrderActionSchemaFor(
         code: 'custom',
         path: ['amount'],
         message:
-          refundedMinor === 0
-            ? 'Enter a refund up to the order total.'
-            : rail === 'paypal'
-              ? 'Enter a refund up to the amount PayPal has not refunded.'
-              : 'Enter a refund up to the amount not yet recorded.',
+          rail === 'usdt'
+            ? 'Enter a refund up to the USDT received.'
+            : refundedMinor === 0
+              ? rail === 'bitcoin'
+                ? 'Enter a refund up to the bitcoin received.'
+                : 'Enter a refund up to the order total.'
+              : rail === 'paypal'
+                ? 'Enter a refund up to the amount PayPal has not refunded.'
+                : 'Enter a refund up to the amount not yet recorded.',
       });
     }
   });
@@ -119,12 +186,58 @@ export function paypalRefundedMinor(order: { externalRefund?: { amountMinor: num
 export const marketplaceOrderActionDefaults: MarketplaceOrderActionData = {
   action: 'cancel',
   reason: '',
-  carrierChoice: 'usps',
+  carrierChoice: NO_CARRIER_CHOICE,
   carrier: '',
   trackingNumber: '',
   amount: '',
   transactionId: '',
   rating: '5',
   text: '',
+  reviewItems: [],
+  sellerShipping: '',
+  sellerCommunication: '',
   allowAmountBand: false,
 };
+
+/** The dialog's line when the Shop refuses the command it built, so nothing was sent. */
+export const ORDER_COMMAND_UNSENDABLE_COPY =
+  'This could not be sent: the Shop refused the request it built, so nothing was recorded. Reload the page and try again.';
+
+/** Stars a listing starts at in the review dialog. */
+export const REVIEW_DEFAULT_RATING = '5';
+
+/**
+ * The buyer's review dialog, as form overrides. A new review lists the
+ * listings not reviewed yet; an edit lists the reviewed ones with their
+ * stars and text, and the seller ratings already given. When the order
+ * already carries seller ratings, a review that only adds listings leaves
+ * them alone (the service copies them onto the new records), so the
+ * dialog does not ask again.
+ */
+export function buyerReviewFormValues(
+  order: OrderReviewSource,
+  mode: 'review' | 'review_edit',
+): Pick<MarketplaceOrderActionData, 'reviewItems' | 'sellerShipping' | 'sellerCommunication'> {
+  const rated = buyerSellerRatings(order);
+  if (mode === 'review') {
+    return {
+      reviewItems: unreviewedListings(order).map(({ listingId, title }) => ({
+        listingId,
+        title,
+        rating: REVIEW_DEFAULT_RATING,
+        text: '',
+      })),
+      sellerShipping: '',
+      sellerCommunication: '',
+    };
+  }
+  const own = reviewsOfReviewer(order, order.buyerPubky);
+  return {
+    reviewItems: orderReviewListings(order).flatMap(({ listingAggregateId, listingId, title }) => {
+      const review = own.find((candidate) => reviewListingAggregateId(order, candidate) === listingAggregateId);
+      return review === undefined ? [] : [{ listingId, title, rating: String(review.rating), text: review.text }];
+    }),
+    sellerShipping: rated === null ? '' : String(rated.shipping),
+    sellerCommunication: rated === null ? '' : String(rated.communication),
+  };
+}

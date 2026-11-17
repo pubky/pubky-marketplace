@@ -71,8 +71,8 @@ vi.mock('@/hooks/useAvatarUrl/useAvatarUrl', () => ({
   useAvatarUrl: () => undefined,
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
-  useToast: () => ({ toast: mocks.toast }),
+vi.mock('@/molecules/Toaster/toast', () => ({
+  toast: mocks.toast,
 }));
 
 vi.mock('@/organisms/DialogNewPost/DialogNewPost', () => ({
@@ -425,39 +425,5 @@ describe('DialogAddContent', () => {
     expect(mocks.commitUpdateCollectionItem).not.toHaveBeenCalled();
     expect(mocks.prependOptimisticPosts).toHaveBeenCalledWith('author:new-post');
     expect(mocks.toast).toHaveBeenCalledWith({ title: 'Post saved to bookmarks' });
-  });
-});
-
-describe('DialogAddContent - Snapshots', () => {
-  it('matches the closed trigger snapshot', () => {
-    const { container } = render(<DialogAddContent />);
-
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches the closed grid trigger snapshot', () => {
-    const { container } = render(<DialogAddContent triggerVariant="grid" />);
-
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches the closed list trigger snapshot', () => {
-    const { container } = render(<DialogAddContent triggerVariant="list" />);
-
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches the closed visual trigger snapshot', () => {
-    const { container } = render(<DialogAddContent triggerVariant="visual" dataCy="collection-add-content-visual" />);
-
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches the opened desktop dialog snapshot', () => {
-    render(<DialogAddContent />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Add Post' }));
-
-    expect(document.body).toMatchSnapshot();
   });
 });

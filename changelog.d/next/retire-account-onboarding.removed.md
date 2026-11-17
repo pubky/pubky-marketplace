@@ -1,0 +1,1 @@
+Remove account creation and the onboarding wizard from Pubky Market. Existing accounts can still sign in and complete a missing profile. The in-browser key backup screens are removed with it, and the record the retired signup left in Shop storage is cleared unless it still holds a key. Old onboarding links redirect to profile completion or sign-in.

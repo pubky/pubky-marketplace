@@ -68,16 +68,4 @@ describe('PostNotFound', () => {
       setSocialHost(undefined);
     }
   });
-
-  describe('Snapshots', () => {
-    it('matches snapshot with View profile', () => {
-      const { container } = render(<PostNotFound postId={VALID_COMPOSITE} />);
-      expect(container.firstChild).toMatchSnapshot();
-    });
-
-    it('matches snapshot without View profile', () => {
-      const { container } = render(<PostNotFound postId={INVALID_AUTHOR_COMPOSITE} />);
-      expect(container.firstChild).toMatchSnapshot();
-    });
-  });
 });

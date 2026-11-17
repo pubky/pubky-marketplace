@@ -1,4 +1,5 @@
 import { MuteApplication } from '@/application/mute/mute';
+import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import type { TMuteDirectoryEvent, TMuteParams } from '@/controllers/mute/mute.types';
 import { HttpMethod } from '@/libs/http/http.types';
 import { stripPubkyPrefix } from '@/libs/utils/utils';
@@ -32,7 +33,7 @@ export class MuteController {
    * @returns Array of muted user pubkeys
    */
   static async fetchMutedUsers(pubky: Pubky): Promise<Pubky[]> {
-    return MuteApplication.fetchMutedUsers(pubky);
+    return MuteApplication.fetchMutedUsers(pubky, captureAuthScope());
   }
 
   /**

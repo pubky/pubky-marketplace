@@ -1,8 +1,10 @@
 import { PHASE_PRODUCTION_BUILD } from 'next/constants';
 import { normalizeBasePath } from '@/libs/base-path/base-path';
+import { type RegionPolicy, resolveRegionPolicy } from '@/libs/commerce/region-modes';
 import {
   type CommerceAdapterMode,
   type DeployEnv,
+  type MarketplaceTrustedAttestor,
   type PaykitServerApi,
   PUBKY_RUNTIME_ENV_NAMES,
   type RuntimeConfig,
@@ -196,6 +198,7 @@ export const getDeployEnv = (): DeployEnv => getRuntimeConfig().deployEnv;
 // Optional observability tier (absent DSN = Sentry disabled; rates fall back to schema defaults).
 export const getSentryDsn = (): string | undefined => getRuntimeConfig().sentryDsn;
 export const getSentryEnvironment = (): string | undefined => getRuntimeConfig().sentryEnvironment;
+export const getSentrySampleRate = (): number | undefined => getRuntimeConfig().sentrySampleRate;
 export const getSentryTracesSampleRate = (): number => getRuntimeConfig().sentryTracesSampleRate;
 export const getSentryReplaysSessionSampleRate = (): number => getRuntimeConfig().sentryReplaysSessionSampleRate;
 export const getSentryReplaysOnErrorSampleRate = (): number => getRuntimeConfig().sentryReplaysOnErrorSampleRate;
@@ -243,8 +246,26 @@ export const getMarketplaceGrantSessionEnabled = (): boolean => getRuntimeConfig
 export const getMarketplaceGrantPollMilliseconds = (): number => getRuntimeConfig().marketplaceGrantPollMilliseconds;
 export const getPassportSignInEnabled = (): boolean => getRuntimeConfig().passportSignIn;
 export const getUsdtPaymentsEnabled = (): boolean => getRuntimeConfig().usdtPaymentsEnabled;
-export const getEuFenceEnabled = (): boolean => getRuntimeConfig().euFenceEnabled;
-export const getDigitalRegionBlockEnabled = (): boolean => getRuntimeConfig().digitalRegionBlockEnabled;
+export const getStoreSyncEnabled = (): boolean => getRuntimeConfig().storeSyncEnabled;
+/** C3 and C4 are on for the regions that are nuanced (the EU fence flag, unless the region modes say otherwise). */
+export const getEuFenceEnabled = (): boolean => getRegionPolicy().fenceActive;
+export const getClientRegionHeader = (): string => getRuntimeConfig().clientRegionHeader;
+
+const regionPolicyByConfig = new WeakMap<RuntimeConfig, RegionPolicy>();
+
+/**
+ * The per-region commerce policy this deployment runs: `PUBKY_RUNTIME_REGION_MODES` when set,
+ * otherwise derived from the EU fence and digital hold flags. Resolved once per config.
+ */
+export function getRegionPolicy(): RegionPolicy {
+  const config = getRuntimeConfig();
+  let policy = regionPolicyByConfig.get(config);
+  if (!policy) {
+    policy = resolveRegionPolicy(config);
+    regionPolicyByConfig.set(config, policy);
+  }
+  return policy;
+}
 export const getPrivEncryptionKeysEnabled = (): boolean => getRuntimeConfig().privEncryptionKeys;
 export const getPassportPrivEncryptionKeysEnabled = (): boolean => getRuntimeConfig().passportPrivEncryptionKeys;
 export const getPrivEncryptionKeysHomeservers = (): readonly string[] =>
@@ -273,8 +294,9 @@ export const getStorageAdoptLegacyOverride = (): boolean | undefined => getRunti
 export const getShopPublicPathOverride = (): string | undefined => getRuntimeConfig().shopPublicPath;
 /** Deployer override for the grant sign-in client id; `undefined` keeps the built-in default. */
 export const getShopGrantClientIdOverride = (): string | undefined => getRuntimeConfig().shopGrantClientId;
-export const getPreludeSdkKey = (): string | undefined => getRuntimeConfig().preludeSdkKey;
-export const getPreludeSdkTimeoutMs = (): number => getRuntimeConfig().preludeSdkTimeoutMs;
+/** Runtime additions to the review attestor trust list (see `marketplaceTrustedAttestors` in `@/config/commerce`). */
+export const getMarketplaceTrustedAttestors = (): readonly MarketplaceTrustedAttestor[] =>
+  getRuntimeConfig().marketplaceTrustedAttestors;
 export const getPlausibleDomain = (): string | undefined => getRuntimeConfig().plausibleDomain;
 export const getPlausibleScriptUrl = (): string | undefined => getRuntimeConfig().plausibleScriptUrl;
 export const getPreviewImage = (): string => getRuntimeConfig().previewImage;

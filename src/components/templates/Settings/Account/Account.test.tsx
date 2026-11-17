@@ -1,4 +1,3 @@
-import React from 'react';
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SIGN_OUT_COPY } from '@/hooks/useSignOutCopy/useSignOutCopy';
@@ -31,6 +30,12 @@ describe('Account', () => {
     render(<Account />);
     expect(screen.getByText('Edit your profile')).toBeInTheDocument();
     expect(screen.getByText('Backup your account')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back up' })).toBeDisabled();
+    expect(
+      screen.getByText(
+        'You have already completed the backup, or closed your browser before doing so. Your recovery file and seed phrase have been deleted.',
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText('Delete your account')).toBeInTheDocument();
   });
 });
@@ -59,12 +64,5 @@ describe('Account sign-out copy', () => {
     expect(screen.getByText(SIGN_OUT_COPY.grant)).toBeInTheDocument();
     expect(SIGN_OUT_COPY.grant).toContain('pubky.app is not signed out');
     expect(screen.queryByText(SIGN_OUT_COPY.host)).not.toBeInTheDocument();
-  });
-});
-
-describe('Account - Snapshots', () => {
-  it('matches snapshot', () => {
-    const { container } = render(<Account />);
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

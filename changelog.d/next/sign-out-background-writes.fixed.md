@@ -1,0 +1,1 @@
+Signing out, or signing in as another account, now stops background work that was still running for the previous account: a message send or download, a seller follow, a notification check, a mute-list refresh, profile setup or an automatic payment confirmation that finishes afterwards no longer saves anything for that account.

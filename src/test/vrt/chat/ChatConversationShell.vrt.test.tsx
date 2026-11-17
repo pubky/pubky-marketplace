@@ -60,6 +60,12 @@ vi.mock('@/hooks/useUserDetails/useUserDetails', () => ({
   useUserDetails: () => ({ userDetails: null, isLoading: false }),
 }));
 
+// The launched Shop runs with commerce, so the conversation keeps its Storefront link and linked chips.
+vi.mock('@/config/commerce', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/config/commerce')>()),
+  getCommerceAdapterMode: () => 'transaction-service',
+}));
+
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     ...createMarketplaceVrtCommerceController(),

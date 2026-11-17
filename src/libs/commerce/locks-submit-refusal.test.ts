@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { AppError } from '@/libs/error/error';
-import { ClientErrorCode, RateLimitErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
+import { ClientErrorCode, RateLimitErrorCode, ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
+import { Err } from '@/libs/error/error.factories';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import {
+  LOCKS_PREPARED_TERMS_DIFFER_COPY,
   LOCKS_SUBMIT_RATE_LIMITED_COPY,
   LOCKS_SUBMIT_REFUSAL_CODES,
   LOCKS_SUBMIT_REFUSAL_COPY,
@@ -70,8 +72,21 @@ describe('locksSubmitRefusalMessage', () => {
     expect(locksSubmitRefusalMessage(error, FALLBACK)).toBe(FALLBACK);
   });
 
+  it('tells the buyer to cancel and check out again when the seller changed the lock after checkout', () => {
+    const error = Err.validation(ValidationErrorCode.INVALID_INPUT, 'The listing lock changed after checkout.', {
+      service: ErrorService.Locks,
+      operation: 'beginMarketplaceLocksPayment',
+      context: { preparedTermsDiffer: true },
+    });
+    expect(locksSubmitRefusalMessage(error, FALLBACK)).toBe(LOCKS_PREPARED_TERMS_DIFFER_COPY);
+  });
+
   it('never carries server text into any copy', () => {
-    for (const copy of [...Object.values(LOCKS_SUBMIT_REFUSAL_COPY), LOCKS_SUBMIT_RATE_LIMITED_COPY]) {
+    for (const copy of [
+      ...Object.values(LOCKS_SUBMIT_REFUSAL_COPY),
+      LOCKS_SUBMIT_RATE_LIMITED_COPY,
+      LOCKS_PREPARED_TERMS_DIFFER_COPY,
+    ]) {
       expect(copy).not.toMatch(/[a-z]+_[a-z_]+/);
       expect(copy).not.toMatch(/Lock Server|Paykit server|HTTP|\b4\d\d\b|\b5\d\d\b/);
     }

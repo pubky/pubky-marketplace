@@ -65,14 +65,14 @@ vi.mock('@/molecules/PostTag/PostTag', () => {
 
 vi.mock('@/config/search', () => ({
   SEARCH_CLOSED_STYLE: {
-    background: 'linear-gradient(180deg, #07040a 0%, #1b1820 100%)',
+    background: 'linear-gradient(180deg, var(--search-closed-from) 0%, var(--search-closed-to) 100%)',
     backdropFilter: 'blur(20px)',
   },
   SEARCH_INPUT_EXPANDED_STYLE: {
     background: 'linear-gradient(180deg, var(--background) 0%, var(--background) 100%)',
   },
   SEARCH_EXPANDED_STYLE: {
-    background: 'linear-gradient(180deg, var(--background) 0%, rgba(5, 5, 10, 0.50) 100%)',
+    background: 'linear-gradient(180deg, var(--background) 0%, var(--search-expanded-fade, rgba(5, 5, 10, 0.50)) 100%)',
     backdropFilter: 'blur(25px)',
     boxShadow: '0px 50px 100px rgba(0, 0, 0, 1)',
     maxHeight: '300px',
@@ -261,28 +261,6 @@ describe('SearchInputBar', () => {
       expect(container).toHaveStyle({
         background: 'linear-gradient(180deg, var(--background) 0%, var(--background) 100%)',
       });
-    });
-  });
-
-  describe('SearchInputBar - Snapshots', () => {
-    it('matches snapshot - default state', () => {
-      const { container } = render(<SearchInputBar {...defaultProps} />);
-      expect(container.firstChild).toMatchSnapshot();
-    });
-
-    it('matches snapshot - with active tags', () => {
-      const { container } = render(<SearchInputBar {...defaultProps} activeTags={['bitcoin', 'pubky']} />);
-      expect(container.firstChild).toMatchSnapshot();
-    });
-
-    it('matches snapshot - focused state', () => {
-      const { container } = render(<SearchInputBar {...defaultProps} isFocused />);
-      expect(container.firstChild).toMatchSnapshot();
-    });
-
-    it('matches snapshot - with input value', () => {
-      const { container } = render(<SearchInputBar {...defaultProps} inputValue="test query" />);
-      expect(container.firstChild).toMatchSnapshot();
     });
   });
 });

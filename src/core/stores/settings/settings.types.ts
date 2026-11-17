@@ -32,7 +32,6 @@ export interface SettingsState {
 export interface SettingsActions {
   // Notification actions
   setNotificationPreference: (type: keyof NotificationPreferences, enabled: boolean) => void;
-  setAllNotifications: (preferences: NotificationPreferences) => void;
   // Privacy actions
   setShowConfirm: (showConfirm: boolean) => void;
   setBlurCensored: (blurCensored: boolean) => void;
@@ -42,11 +41,6 @@ export interface SettingsActions {
   setHideActiveFriends: (hideActiveFriends: boolean) => void;
   setHideSearch: (hideSearch: boolean) => void;
   setNeverShowPosts: (neverShowPosts: boolean) => void;
-  // Muted users actions
-  addMutedUser: (userId: string) => void;
-  removeMutedUser: (userId: string) => void;
-  setMutedUsers: (userIds: string[]) => void;
-  clearMutedUsers: () => void;
   // General actions
   reset: () => void;
   // Homeserver sync action, used by bootstrap to load remote settings
@@ -88,7 +82,6 @@ export const settingsInitialState: SettingsState = {
 
 export enum SettingsActionTypes {
   SET_NOTIFICATION_PREFERENCE = 'SET_NOTIFICATION_PREFERENCE',
-  SET_ALL_NOTIFICATIONS = 'SET_ALL_NOTIFICATIONS',
   SET_SHOW_CONFIRM = 'SET_SHOW_CONFIRM',
   SET_BLUR_CENSORED = 'SET_BLUR_CENSORED',
   SET_SIGN_OUT_INACTIVE = 'SET_SIGN_OUT_INACTIVE',
@@ -97,10 +90,6 @@ export enum SettingsActionTypes {
   SET_HIDE_ACTIVE_FRIENDS = 'SET_HIDE_ACTIVE_FRIENDS',
   SET_HIDE_SEARCH = 'SET_HIDE_SEARCH',
   SET_NEVER_SHOW_POSTS = 'SET_NEVER_SHOW_POSTS',
-  ADD_MUTED_USER = 'ADD_MUTED_USER',
-  REMOVE_MUTED_USER = 'REMOVE_MUTED_USER',
-  SET_MUTED_USERS = 'SET_MUTED_USERS',
-  CLEAR_MUTED_USERS = 'CLEAR_MUTED_USERS',
   RESET = 'RESET',
   LOAD_FROM_HOMESERVER = 'LOAD_FROM_HOMESERVER',
 }

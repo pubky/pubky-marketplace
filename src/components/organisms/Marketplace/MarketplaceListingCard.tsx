@@ -18,7 +18,7 @@ import { formatCommerceCondition, formatCommerceMoney } from '@/libs/commerce/fo
 import { cn } from '@/libs/utils/utils';
 import { MarketplaceCategoryIcon } from '@/molecules/Marketplace/MarketplaceCategoryIcon';
 import { MarketplaceFulfillmentBadge } from '@/molecules/MarketplaceFulfillmentBadge/MarketplaceFulfillmentBadge';
-import { MarketplaceStarRating } from '@/molecules/MarketplaceStarRating/MarketplaceStarRating';
+import { MarketplaceSnippetRating } from '@/molecules/MarketplaceSnippetRating/MarketplaceSnippetRating';
 import { MarketplaceCardPrice } from '@/organisms/Marketplace/MarketplaceCardPrice';
 import type { CommerceLayout } from '@/stores/commerce/commerce.types';
 
@@ -96,7 +96,7 @@ export function MarketplaceListingCard({ listing, shopName, layout = 'grid', ind
         ref={liveBidRef}
         className={cn(
           cn(
-            'h-full gap-0 overflow-hidden border-0 py-0 transition-all group-hover:shadow-[0_24px_64px_-8px_rgba(0,0,0,0.8),0_8px_24px_rgba(0,0,0,0.5)]',
+            'h-full gap-0 overflow-hidden border-0 py-0 transition-all group-hover:shadow-[0_24px_64px_-8px_rgba(0,0,0,0.8),0_8px_24px_rgba(0,0,0,0.5)] [.light_&]:group-hover:shadow-[0_24px_64px_-8px_rgba(5,5,10,0.25),0_8px_24px_rgba(5,5,10,0.12)]',
             layout === 'list' && 'flex-row',
           ),
           'p-0',
@@ -190,13 +190,8 @@ export function MarketplaceListingCard({ listing, shopName, layout = 'grid', ind
             <Typography as="p" className="truncate text-base text-secondary-foreground">
               {shopName ?? `${listing.sellerId.slice(0, 8)}…`}
             </Typography>
-            {listing.reputation !== null && listing.reputation.count > 0 ? (
-              <MarketplaceStarRating
-                rating={listing.reputation.avg}
-                count={listing.reputation.count}
-                verifiedCount={listing.reputation.verifiedCount}
-                size="sm"
-              />
+            {listing.listingReputation !== null && listing.listingReputation.count > 0 ? (
+              <MarketplaceSnippetRating snippet={listing.listingReputation} />
             ) : (
               <Typography as="p" className="text-xs text-secondary-foreground">
                 No rating yet

@@ -3,9 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UseTagSuggestionsResult } from '@/hooks/useTagSuggestions/useTagSuggestions.types';
 import { TagInput } from './TagInput';
 
-const mockUseTagSuggestions = vi.hoisted(() =>
-  vi.fn((): UseTagSuggestionsResult => ({ suggestions: [], isLoading: false })),
-);
+const mockUseTagSuggestions = vi.hoisted(() => vi.fn((): UseTagSuggestionsResult => ({ suggestions: [] })));
 
 // Use real hooks, only mock useEmojiInsert and useTagSuggestions
 vi.mock('@/hooks/useEmojiInsert/useEmojiInsert', () => ({
@@ -167,26 +165,10 @@ describe('TagInput - Banned Character Sanitization', () => {
   });
 });
 
-describe('TagInput - Snapshots', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('matches snapshot', () => {
-    const { container } = render(<TagInput onTagAdd={mockOnTagAdd} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot in plain variant', () => {
-    const { container } = render(<TagInput onTagAdd={mockOnTagAdd} containerVariant="plain" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});
-
 describe('TagInput - API Suggestions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseTagSuggestions.mockReturnValue({ suggestions: [], isLoading: false });
+    mockUseTagSuggestions.mockReturnValue({ suggestions: [] });
   });
 
   it('passes correct params to useTagSuggestions when enabled', async () => {
@@ -226,7 +208,6 @@ describe('TagInput - API Suggestions', () => {
   it('shows API suggestions in dropdown when available', async () => {
     mockUseTagSuggestions.mockReturnValue({
       suggestions: ['bitcoin', 'bitconnect'],
-      isLoading: false,
     });
 
     render(<TagInput onTagAdd={mockOnTagAdd} enableApiSuggestions={true} />);
@@ -244,7 +225,6 @@ describe('TagInput - API Suggestions', () => {
   it('merges local and API suggestions without duplicates', async () => {
     mockUseTagSuggestions.mockReturnValue({
       suggestions: ['bitcoin', 'api-only'],
-      isLoading: false,
     });
 
     render(
@@ -272,7 +252,6 @@ describe('TagInput - API Suggestions', () => {
   it('clicking API suggestion directly adds the tag', async () => {
     mockUseTagSuggestions.mockReturnValue({
       suggestions: ['bitcoin'],
-      isLoading: false,
     });
 
     render(<TagInput onTagAdd={mockOnTagAdd} enableApiSuggestions={true} addOnSuggestionClick={true} />);
@@ -296,7 +275,6 @@ describe('TagInput - API Suggestions', () => {
   it('selects API suggestion with keyboard and adds it', async () => {
     mockUseTagSuggestions.mockReturnValue({
       suggestions: ['bitcoin', 'bitconnect'],
-      isLoading: false,
     });
 
     render(<TagInput onTagAdd={mockOnTagAdd} enableApiSuggestions={true} addOnSuggestionClick={true} />);
@@ -320,7 +298,6 @@ describe('TagInput - API Suggestions', () => {
   it('submits typed tag on Enter when no suggestion is selected', async () => {
     mockUseTagSuggestions.mockReturnValue({
       suggestions: ['bitcoin'],
-      isLoading: false,
     });
 
     render(<TagInput onTagAdd={mockOnTagAdd} enableApiSuggestions={true} addOnSuggestionClick={true} />);

@@ -49,9 +49,9 @@ describe('useMarketplaceSellerDeliveryTerms', () => {
     );
 
     const { result } = renderHook(() => useMarketplaceSellerDeliveryTerms([SELLER_B, SELLER_A, SELLER_A]));
-    expect(result.current.isLoading).toBe(true);
+    expect(result.current.entries).toEqual([]);
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => expect(result.current.entries).toHaveLength(2));
     expect(refreshShop).toHaveBeenCalledTimes(2);
     expect(result.current.entries).toEqual([
       { sellerPubky: SELLER_A, shopName: 'Shop A', terms: { deliveryAssumeDays: 3, autoCompleteDays: 5 } },
@@ -64,7 +64,7 @@ describe('useMarketplaceSellerDeliveryTerms', () => {
 
     const { result } = renderHook(() => useMarketplaceSellerDeliveryTerms([SELLER_A]));
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => expect(result.current.entries).toHaveLength(1));
     expect(result.current.entries).toEqual([
       { sellerPubky: SELLER_A, shopName: null, terms: { deliveryAssumeDays: 14, autoCompleteDays: 14 } },
     ]);
@@ -85,7 +85,7 @@ describe('useMarketplaceSellerDeliveryTerms', () => {
 
     const { result } = renderHook(() => useMarketplaceSellerDeliveryTerms([SELLER_A]));
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => expect(result.current.entries).toHaveLength(1));
     expect(result.current.entries).toEqual([
       { sellerPubky: SELLER_A, shopName: 'Cached', terms: { deliveryAssumeDays: 7, autoCompleteDays: 8 } },
     ]);
@@ -96,14 +96,14 @@ describe('useMarketplaceSellerDeliveryTerms', () => {
 
     const { result } = renderHook(() => useMarketplaceSellerDeliveryTerms([SELLER_A]));
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => expect(getShop).toHaveBeenCalledWith(SELLER_A));
     expect(result.current.entries).toEqual([]);
   });
 
   it('does nothing without sellers', () => {
     const { result } = renderHook(() => useMarketplaceSellerDeliveryTerms([]));
 
-    expect(result.current).toEqual({ isLoading: false, entries: [] });
+    expect(result.current).toEqual({ entries: [] });
     expect(refreshShop).not.toHaveBeenCalled();
   });
 });

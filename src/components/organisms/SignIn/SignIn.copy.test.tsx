@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CAPABILITIES } from '@/config/app';
 import grantCapture from '@/test/fixtures/auth/marketplace-grant-priv-parity.staging.json';
@@ -12,8 +12,7 @@ function urlFrom(shape: Shape): string {
     .join('&')}`;
 }
 
-const RING_SIGN_IN_URL = urlFrom({ ...grantCapture.shop_signin_request, caps: CAPABILITIES });
-const BITKIT_SIGN_IN_URL = urlFrom(grantCapture.shop_signin_request);
+const SIGN_IN_URL = urlFrom({ ...grantCapture.shop_signin_request, caps: CAPABILITIES });
 
 const view = vi.hoisted(() => ({
   grantSignIn: false,
@@ -29,14 +28,16 @@ vi.mock('next/image', () => ({
 }));
 
 vi.mock('@/hooks/useMobileAuth/useMobileAuth', () => ({
-  useMobileAuth: (options?: { type?: 'grant' }) => ({
-    url: options?.type === 'grant' ? BITKIT_SIGN_IN_URL : RING_SIGN_IN_URL,
+  useMobileAuth: () => ({
+    url: SIGN_IN_URL,
     isLoading: false,
     isExpired: false,
     fetchUrl: vi.fn(),
     copyAuthUrl: vi.fn(),
     isOpeningRing: false,
+    openingSigner: null,
     onAuthorizeClick: vi.fn(),
+    authorizeWith: vi.fn(),
   }),
 }));
 
@@ -54,14 +55,6 @@ describe('Sign-in page copy', () => {
 
     expect(screen.queryByTestId('session-approval-disclosure')).toBeNull();
     expect(document.body.textContent).not.toMatch(/Approving signs you in|private Shop data|social and Locks access/);
-  });
-
-  it('adds none after switching to Bitkit either', () => {
-    view.grantSignIn = true;
-    render(<SignInContent />);
-    fireEvent.click(screen.getByRole('radio', { name: 'Bitkit' }));
-
-    expect(screen.queryByTestId('session-approval-disclosure')).toBeNull();
   });
 
   it('never prints the capability string', () => {

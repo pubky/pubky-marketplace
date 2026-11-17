@@ -24,7 +24,6 @@ describe('useEnrichedTags', () => {
     const { result } = renderHook(() => useEnrichedTags([]));
 
     expect(result.current.enrichedTags).toEqual([]);
-    expect(result.current.isLoading).toBe(false);
   });
 
   it('should enrich tags with user details from usersMap', () => {
@@ -107,7 +106,6 @@ describe('useEnrichedTags', () => {
 
     // During loading, original avatarUrl should be preserved (prevents flash)
     expect(result.current.enrichedTags[0].taggers[0].avatarUrl).toBe(originalAvatarUrl);
-    expect(result.current.isLoading).toBe(true);
   });
 
   it('should use verified avatarUrl after loading completes', () => {

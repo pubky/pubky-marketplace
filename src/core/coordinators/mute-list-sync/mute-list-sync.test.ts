@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { APP_ROUTES, AUTH_ROUTES, PROFILE_ROUTES } from '@/app/routes';
+import { ACCOUNT_ROUTES, APP_ROUTES, AUTH_ROUTES, PROFILE_ROUTES } from '@/app/routes';
 import {
   MUTE_SYNC_CURSOR_STORAGE_PREFIX,
   MUTE_SYNC_DEBOUNCE_MS,
@@ -169,6 +169,20 @@ describe('MuteListSyncCoordinator', () => {
     expect(subscribe).toHaveBeenCalledTimes(1);
   });
 
+  it('opens the stream when the session is restored after the persisted pubky was hydrated (cold load)', async () => {
+    const pubky = '5a1diz4pghi47ywdfyfzpit5f3bdomzt4pugpbmq4rngdd4iub4y' as Pubky;
+    useAuthStore.setState({ currentUserPubky: pubky, hasProfile: true, hasHydrated: true });
+    const coordinator = MuteListSyncCoordinator.getInstance();
+    coordinator.setRoute(APP_ROUTES.HOME);
+    coordinator.start();
+    await flushPromises();
+    expect(MuteController.subscribeMuteDirectoryEventStream).not.toHaveBeenCalled();
+
+    useAuthStore.setState({ session: mockSession() });
+    await flushPromises();
+    expect(MuteController.subscribeMuteDirectoryEventStream).toHaveBeenCalled();
+  });
+
   it('does not open the homeserver stream on disabled auth routes', async () => {
     const pubky = '5a1diz4pghi47ywdfyfzpit5f3bdomzt4pugpbmq4rngdd4iub4y' as Pubky;
     useAuthStore.getState().init({
@@ -188,6 +202,62 @@ describe('MuteListSyncCoordinator', () => {
 
     expect(subscribe).not.toHaveBeenCalled();
     coordinator.stop();
+  });
+
+  it('does not open or refresh the mute stream when starting on profile completion', async () => {
+    useAuthStore.getState().init({
+      session: mockSession(),
+      currentUserPubky: 'fictional-mute-owner',
+      hasProfile: true,
+    });
+    const coordinator = MuteListSyncCoordinator.getInstance();
+    coordinator.setRoute(ACCOUNT_ROUTES.COMPLETE_PROFILE);
+    coordinator.start();
+
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(MUTE_SYNC_DEBOUNCE_MS + MUTE_SYNC_RECONNECT_BACKOFF_MS);
+
+    expect(MuteController.subscribeMuteDirectoryEventStream).not.toHaveBeenCalled();
+    expect(MuteController.fetchMutedUsers).not.toHaveBeenCalled();
+  });
+
+  it('cancels once on profile completion and reopens once when returning to an allowed route', async () => {
+    const cancelFirstStream = vi.fn();
+    const cancelSecondStream = vi.fn();
+    const subscribe = vi.mocked(MuteController.subscribeMuteDirectoryEventStream);
+    subscribe
+      .mockImplementationOnce(async () => new ReadableStream({ cancel: cancelFirstStream }))
+      .mockImplementationOnce(async () => new ReadableStream({ cancel: cancelSecondStream }));
+    useAuthStore.getState().init({
+      session: mockSession(),
+      currentUserPubky: 'fictional-mute-owner',
+      hasProfile: true,
+    });
+    const coordinator = MuteListSyncCoordinator.getInstance();
+    coordinator.setRoute(APP_ROUTES.HOME);
+    coordinator.start();
+    await flushPromises();
+    expect(subscribe).toHaveBeenCalledTimes(1);
+
+    coordinator.setRoute(ACCOUNT_ROUTES.COMPLETE_PROFILE);
+    await flushPromises();
+    expect(cancelFirstStream).toHaveBeenCalledTimes(1);
+    coordinator.setRoute(ACCOUNT_ROUTES.COMPLETE_PROFILE);
+    coordinator.setRoute(AUTH_ROUTES.SIGN_IN);
+    coordinator.setRoute(ACCOUNT_ROUTES.COMPLETE_PROFILE);
+    await vi.advanceTimersByTimeAsync(MUTE_SYNC_RECONNECT_BACKOFF_MS + MUTE_SYNC_DEBOUNCE_MS);
+    expect(cancelFirstStream).toHaveBeenCalledTimes(1);
+    expect(subscribe).toHaveBeenCalledTimes(1);
+    expect(MuteController.fetchMutedUsers).not.toHaveBeenCalled();
+
+    coordinator.setRoute(APP_ROUTES.HOME);
+    await flushPromises();
+    expect(subscribe).toHaveBeenCalledTimes(2);
+    coordinator.setRoute(APP_ROUTES.HOME);
+    coordinator.setRoute(PROFILE_ROUTES.PROFILE);
+    await flushPromises();
+    expect(subscribe).toHaveBeenCalledTimes(2);
+    expect(cancelSecondStream).not.toHaveBeenCalled();
   });
 
   it('clears reconnect backoff on stop so a second subscribe is not scheduled after backoff', async () => {

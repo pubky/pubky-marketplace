@@ -29,6 +29,16 @@ const view = vi.hoisted(() => ({
   withImages: false,
   loadError: false,
   shipsToCountries: '',
+  selling: {
+    active: false,
+    checking: false,
+    blocked: false,
+    held: false,
+    source: null,
+    message: null,
+    sellingMessage: null,
+    info: null,
+  } as unknown,
 }));
 
 // Deterministic solid-color previews for the images-set editor state.
@@ -60,6 +70,11 @@ vi.mock('@/stores/auth/auth.store', () => ({
   useAuthStore: createMarketplaceVrtAuthStore({ currentUserPubky: 'y'.repeat(52) }),
 }));
 
+// The browser build has no region policy; a scene sets what the policy would say.
+vi.mock('@/hooks/useSellingAvailability/useSellingAvailability', () => ({
+  useSellingAvailability: () => view.selling,
+}));
+
 vi.mock('@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings', async () => {
   const { useForm } = await import('react-hook-form');
   const { marketplaceShopSettingsDefaults } =
@@ -84,15 +99,60 @@ vi.mock('@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings', async (
   };
 });
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main className="w-full py-6">{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => (
+    <main className="w-full py-6">{children}</main>
+  ),
 }));
 
 describe('Marketplace my shop — visual regression', () => {
   beforeEach(() => {
     view.loadError = false;
     view.shipsToCountries = '';
+    view.selling = {
+      active: false,
+      checking: false,
+      blocked: false,
+      held: false,
+      source: null,
+      message: null,
+      sellingMessage: null,
+      info: null,
+    };
   });
+
+  // Where selling is blocked the storefront settings stay open, so the seller can change the shop country.
+  it.each([
+    {
+      name: 'declared',
+      declaredCountry: 'GB',
+      ip: 'CH',
+      line: "Your shop country is United Kingdom, where selling isn't available yet.",
+    },
+    { name: 'ip', declaredCountry: 'CH', ip: 'US', line: "Selling isn't available in your region yet." },
+  ])(
+    'renders the storefront settings with the selling notice, $name case, at desktop viewport',
+    async ({ name, declaredCountry, ip, line }) => {
+      const { evaluateCommerceAvailability } = await import('@/libs/commerce/commerce-availability');
+      const { createRegionPolicy, parseRegionModes } = await import('@/libs/commerce/region-modes');
+      const parsed = parseRegionModes('EU=blocked,GB=blocked,US=blocked');
+      if (!parsed.ok) throw new Error(parsed.error);
+      view.selling = evaluateCommerceAvailability(createRegionPolicy(parsed.entries), {
+        declaredCountry,
+        declaredIs: 'shop',
+        client: { status: 'ready', country: ip },
+      });
+      view.configured = true;
+      view.isLoading = false;
+      view.withImages = false;
+
+      const screen = await renderForVRT(<MarketplaceMyShop />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
+      await vi.waitFor(() => {
+        if (!screen.container.textContent?.includes(line)) throw new Error('The selling notice has not rendered yet.');
+      });
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(`my-shop-region-blocked-${name}-desktop`);
+    },
+  );
   it('renders the create-shop state for a seller without a shop at desktop viewport', async () => {
     view.configured = false;
     view.isLoading = false;

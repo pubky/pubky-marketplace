@@ -1,9 +1,0 @@
-{
-  "buildCommand": "npm run build && (npx tsx scripts/sentry-release/main.ts --deploy --warn-only || echo 'Sentry release: the release script did not run; the deploy continues.')",
-  "crons": [
-    {
-      "path": "/api/marketplace/grant-cleanup",
-      "schedule": "* * * * *"
-    }
-  ]
-}

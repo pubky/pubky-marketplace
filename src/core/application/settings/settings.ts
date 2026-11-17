@@ -67,12 +67,18 @@ export class SettingsApplication {
    * Uses version and timestamp for conflict resolution (newer wins).
    *
    * @param pubky, The user's public key
+   * @param signal, Aborted when the user signs out; local settings are not pushed after that
    * @returns The remote settings if newer than local, or null if local is newer/equal
    * @throws If fetch or sync operations fail, caller should handle errors
    */
-  static async initializeSettings(pubky: Pubky, localSettings: SettingsState): Promise<SettingsState | null> {
+  static async initializeSettings(
+    pubky: Pubky,
+    localSettings: SettingsState,
+    signal?: AbortSignal,
+  ): Promise<SettingsState | null> {
     Logger.info('[Settings] Initializing settings sync');
     const remoteSettings = await this.fetchFromHomeserver(pubky);
+    signal?.throwIfAborted();
 
     if (!remoteSettings) {
       Logger.info('[Settings] No remote settings, pushing local to homeserver');

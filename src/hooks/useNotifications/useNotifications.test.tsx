@@ -122,7 +122,7 @@ describe('useNotifications', () => {
     });
 
     expect(result.current.notifications).toEqual([]);
-    expect(result.current.count).toBe(0);
+    expect(result.current.notifications.length).toBe(0);
   });
 
   it('should return empty unread notifications array when no data', async () => {
@@ -133,7 +133,7 @@ describe('useNotifications', () => {
     });
 
     expect(result.current.unreadNotifications).toEqual([]);
-    expect(result.current.unreadCount).toBe(0);
+    expect(result.current.unreadNotifications.length).toBe(0);
   });
 
   it('should not fetch when no user is authenticated', async () => {
@@ -176,28 +176,6 @@ describe('useNotifications', () => {
     expect(NotificationController.markAllAsRead).toHaveBeenCalled();
   });
 
-  it('should return consistent counts', async () => {
-    const { result } = renderHook(() => useNotifications());
-
-    await waitFor(() => {
-      expect(result.current.isLoading).toBe(false);
-    });
-
-    expect(result.current.count).toBe(result.current.notifications.length);
-    expect(result.current.unreadCount).toBe(result.current.unreadNotifications.length);
-  });
-
-  it('should return isNotificationUnread function', async () => {
-    const { result } = renderHook(() => useNotifications());
-
-    await waitFor(() => {
-      expect(result.current.isLoading).toBe(false);
-    });
-
-    expect(result.current.isNotificationUnread).toBeDefined();
-    expect(typeof result.current.isNotificationUnread).toBe('function');
-  });
-
   it('should return loadMore and refresh functions', async () => {
     const { result } = renderHook(() => useNotifications());
 
@@ -226,7 +204,7 @@ describe('useNotifications', () => {
     });
 
     expect(result.current.notifications).toEqual(mockNotifications);
-    expect(result.current.count).toBe(1);
+    expect(result.current.notifications.length).toBe(1);
   });
 
   it('filters notifications from muted users', async () => {
@@ -254,7 +232,7 @@ describe('useNotifications', () => {
     });
 
     expect(result.current.notifications).toEqual([mockNotifications[1]]);
-    expect(result.current.count).toBe(1);
+    expect(result.current.notifications.length).toBe(1);
   });
 
   it('should call loadMore with olderThan parameter', async () => {
@@ -317,7 +295,7 @@ describe('useNotifications', () => {
     });
 
     expect(result.current.notifications).toEqual(initialNotifications);
-    expect(result.current.count).toBe(1);
+    expect(result.current.notifications.length).toBe(1);
 
     // Simulate the store's unread count increasing (as if polling detected new notifications)
     await act(async () => {
@@ -334,7 +312,7 @@ describe('useNotifications', () => {
       { timeout: 1000 },
     );
 
-    expect(result.current.count).toBe(2);
+    expect(result.current.notifications.length).toBe(2);
     // Should have called getOrFetchNotifications twice: once on mount, once on unread count change
     expect(NotificationController.getOrFetchNotifications).toHaveBeenCalledTimes(2);
   });

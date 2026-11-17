@@ -1,0 +1,1 @@
+Sellers can now delete a listing from the listing page, from each row and the bulk selection in the seller studio table, and from the edit page. Every entry point opens the same confirmation, which says what deletion removes, warns when the listing has open orders, and refuses an auction that has bids. Unlisting stays the way to pause a listing without removing it.

@@ -22,8 +22,6 @@ export interface UseMentionAutocompleteResult {
   selectedIndex: number | null;
   /** Set the selected index */
   setSelectedIndex: (index: number | null) => void;
-  /** Close the popover */
-  close: () => void;
   /**
    * Handle keyboard navigation
    * @param e - The keyboard event

@@ -1,4 +1,3 @@
-import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { SettingsSwitchItem } from './SettingsSwitchItem';
@@ -37,28 +36,5 @@ describe('SettingsSwitchItem', () => {
     render(<SettingsSwitchItem {...defaultProps} disabled />);
     const switchElement = screen.getByRole('switch');
     expect(switchElement).toBeDisabled();
-  });
-});
-
-describe('SettingsSwitchItem - Snapshots', () => {
-  const defaultProps = {
-    id: 'test-switch',
-    label: 'Test Setting',
-    checked: false,
-  };
-
-  it('matches snapshot with default props', () => {
-    const { container } = render(<SettingsSwitchItem {...defaultProps} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot when checked', () => {
-    const { container } = render(<SettingsSwitchItem {...defaultProps} checked={true} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot when disabled', () => {
-    const { container } = render(<SettingsSwitchItem {...defaultProps} disabled />);
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

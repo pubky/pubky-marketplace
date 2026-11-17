@@ -246,12 +246,12 @@ Use `queryNexus` which wraps `safeFetch` + `httpResponseToError` with TanStack Q
 ```typescript
 // src/core/services/nexus/post/post.ts
 export class NexusPostService {
-  static async getPost({ compositeId }: TCompositeId): Promise<NexusPost> {
+  static async getPostTags({ compositeId, skip, limit, viewerId }: TFetchMorePostTagsParams): Promise<NexusTag[]> {
     const { pubky: author_id, id: post_id } = parseCompositeId(compositeId);
-    const url = postApi.view({ author_id, post_id });
+    const url = postApi.tags({ author_id, post_id, skip_tags: skip, limit_tags: limit, viewer_id: viewerId });
 
     // queryNexus handles: safeFetch → httpResponseToError → parseResponseOrThrow → retry
-    return await queryNexus<NexusPost>({ url });
+    return await queryNexus<NexusTag[]>({ url });
   }
 }
 ```
@@ -364,7 +364,7 @@ try {
 
 **TanStack Query** (`src/libs/query-client/query-client.factory.ts`): The QueryClient factory reads `error.context.statusCode` to make retry decisions. Each service configures its own retry limits, non-retryable codes, and exponential backoff delays.
 
-**Utilities** (`src/libs/error/error.utils.ts`): Category predicates (`isNetworkError`, `isAuthError`, etc.), decision helpers (`isRetryable`, `requiresLogin`, `isNotFound`, `getRetryAfter`), and normalization functions (`toAppError`, `getErrorMessage`) support error handling throughout the application.
+**Utilities** (`src/libs/error/error.utils.ts`): Error predicates (`isAuthError`, `isTimeoutError`), decision helpers (`isRetryable`, `requiresLogin`, `isNotFound`, `getRetryAfter`), and normalization functions (`toAppError`, `getErrorMessage`) support error handling throughout the application.
 
 ---
 

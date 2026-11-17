@@ -10,7 +10,7 @@ import {
 import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { usePickupDetailsForm } from './usePickupDetailsForm';
 import { pickupDetailsFormDefaults, pickupDetailsFormSchema } from './usePickupDetailsForm.types';
 
@@ -58,7 +58,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 

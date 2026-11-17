@@ -13,8 +13,6 @@ export interface UseThreadRepliesResult {
   totalCount: number;
   /** Whether there are more replies than currently shown */
   hasMore: boolean;
-  /** Whether the hook is in "show all" mode */
-  showAll: boolean;
   /** Whether expand-all pagination is currently running */
   isExpandingAll: boolean;
   /** Expand to show all remaining replies inline */

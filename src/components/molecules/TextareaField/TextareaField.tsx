@@ -5,6 +5,7 @@ import { FORM_FIELD_SURFACE_CLASSES } from '@/config/forms';
 import { cn } from '@/libs/utils/utils';
 
 interface TextareaFieldProps {
+  'aria-required'?: boolean;
   id?: string;
   name?: string;
   value: string;
@@ -37,6 +38,7 @@ export function TextareaField({
   className,
   textareaClassName,
   variant = 'default',
+  'aria-required': ariaRequired,
   status = 'default',
   onChange,
   onBlur,
@@ -60,8 +62,8 @@ export function TextareaField({
   const messageClasses = {
     default: 'text-muted-foreground',
     info: 'text-blue-500',
-    alert: 'text-yellow-500',
-    error: 'text-red-500',
+    alert: 'text-yellow-500 [.light_&]:text-yellow-700',
+    error: 'text-error-foreground',
     success: 'text-brand',
   } as const;
 
@@ -84,6 +86,7 @@ export function TextareaField({
           maxLength={maxLength}
           rows={rows}
           aria-invalid={status === 'error'}
+          aria-required={ariaRequired}
           aria-describedby={message && id ? `${id}-message` : undefined}
         />
       </Container>

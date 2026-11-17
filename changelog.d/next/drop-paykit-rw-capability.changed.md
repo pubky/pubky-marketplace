@@ -1,0 +1,1 @@
+Shop sign-in no longer asks for write access to `/pub/paykit/`. The Shop only reads Paykit records there, which needs no permission. Sessions approved with the earlier request keep working, so nobody is signed out.

@@ -178,7 +178,7 @@ vi.mock('@/controllers/commerce/commerce', async () => {
       hasActiveMarketplaceSession: vi.fn(() => true),
       clearMarketplaceSession: vi.fn(),
       getDeliveryAddresses: vi.fn(async () => []),
-      getOrFetchShop: vi.fn(async () => null),
+      refreshShopOrGetCached: vi.fn(async () => null),
       getSellerAnnualLimit: vi.fn(async () => ({ enabled: false })),
       getSellerPaymentConfig: vi.fn(async () => ({
         bitcoinAvailable: true,
@@ -303,8 +303,10 @@ vi.mock('@/hooks/useMarketplaceCart/useMarketplaceCart', async (importOriginal) 
   };
 });
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main className="w-full py-6">{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => (
+    <main className="w-full py-6">{children}</main>
+  ),
 }));
 
 vi.mock('@/hooks/useMarketplaceSellerSummary/useMarketplaceSellerSummary', () => ({

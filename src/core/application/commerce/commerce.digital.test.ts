@@ -429,6 +429,29 @@ describe('CommerceApplication buyer digital delivery (digital delivery design §
     });
   });
 
+  it('releases a digital purchase on the order aggregate with the order revision', async () => {
+    const execute = vi.spyOn(MarketplaceGatewayService, 'execute').mockResolvedValue(okResponse as never);
+
+    await CommerceApplication.commitReleaseDigital(SELLER, { orderId: ORDER_ID, expectedRevision: 6 });
+
+    expect(executedCommand(execute)).toMatchObject({
+      kind: 'fulfillment.release_digital',
+      aggregateId: `order:${ORDER_ID}`,
+      expectedRevision: 6,
+      payload: { orderId: ORDER_ID },
+    });
+  });
+
+  it('refuses to release on a non-durable deployment', async () => {
+    vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('sandbox');
+    const execute = vi.spyOn(MarketplaceGatewayService, 'execute');
+
+    await expect(
+      CommerceApplication.commitReleaseDigital(SELLER, { orderId: ORDER_ID, expectedRevision: 6 }),
+    ).rejects.toMatchObject({ context: { refusal: 'digital_delivery_unavailable' } });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it('reads no evidence on a non-durable deployment', async () => {
     vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('sandbox');
     const read = vi.spyOn(MarketplaceGatewayService, 'getOrderDigitalEvidence');

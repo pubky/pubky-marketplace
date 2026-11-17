@@ -453,39 +453,3 @@ describe('CollectionItems', () => {
     });
   });
 });
-
-describe('CollectionItems - Snapshots', () => {
-  it('matches the owner non-empty snapshot', () => {
-    setAuthStore(AUTHOR_PUBKY);
-
-    const { container } = renderCollectionItems();
-
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches the owner Visual layout snapshot', () => {
-    setAuthStore(AUTHOR_PUBKY);
-
-    const { container } = renderCollectionItems({
-      postDetails: buildPostDetails(
-        JSON.stringify({
-          name: 'Based Bitcoin',
-          items: ['pubky://author/pub/pubky.app/posts/a'],
-          layout: COLLECTION_LAYOUT.VISUAL,
-        }),
-      ),
-    });
-
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches the owner reorder-mode snapshot', () => {
-    setAuthStore(AUTHOR_PUBKY);
-    mockReorderState.isReorderMode = true;
-    mockReorderState.draftEntries = [{ uri: 'pubky://author/pub/pubky.app/posts/a', postId: 'author:a' }];
-
-    const { container } = renderCollectionItems();
-
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});

@@ -1,0 +1,1 @@
+New shops no longer start with Country set to US and pre-filled shipping and return policies: Country starts empty and required, and both policies start empty with example text, so a shop cannot publish as a US shop by accident.

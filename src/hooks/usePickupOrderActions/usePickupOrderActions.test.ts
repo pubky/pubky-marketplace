@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { createOrderFixture } from '@/test/fixtures/commerce/orders';
 import { USDT_WIRE_PAYMENT_NOT_FINAL_REFUSAL } from '@/test/fixtures/commerce/usdt-orders';
 import { usePickupOrderActions } from './usePickupOrderActions';
@@ -21,7 +21,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 
@@ -161,6 +161,32 @@ describe('usePickupOrderActions', () => {
         payload: { orderId: ORDER.id, reason: 'The spot no longer works for me' },
       }),
     );
+  });
+
+  it('says a payment was seen when a pickup checkout cancel is refused, and re-reads (#347)', async () => {
+    controllerState.cancelResponse = {
+      ok: false,
+      error: { code: 'INVALID_STATE', message: 'This order can no longer be cancelled.' },
+    };
+    const onChanged = vi.fn();
+    const { result } = renderHook(() =>
+      usePickupOrderActions(
+        createOrderFixture('pending_payment', { fulfillment: 'pickup', paymentMethod: 'paykit' }),
+        onChanged,
+      ),
+    );
+
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.cancelOrder('Changed my mind');
+    });
+
+    expect(outcome).toBe(false);
+    expect(onChanged).toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith({
+      variant: 'error',
+      description: "We've seen a payment for this order, so it can't be cancelled now.",
+    });
   });
 
   it('returns cancel_requested when the service degraded the lost-race request', async () => {

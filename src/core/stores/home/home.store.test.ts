@@ -219,10 +219,10 @@ describe('HomeStore', () => {
   });
 
   describe('Profile Tag Management', () => {
-    it('should set normalized unique profile tags up to the max', () => {
+    it('should add normalized unique profile tags up to the max', () => {
       const store = useHomeStore.getState();
 
-      store.setProfileTags(['Bitcoin', 'bitcoin', 'Nostr', 'Dev', 'Design', 'Lightning', 'Extra']);
+      ['Bitcoin', 'bitcoin', 'Nostr', 'Dev', 'Design', 'Lightning', 'Extra'].forEach((tag) => store.addProfileTag(tag));
 
       expect(useHomeStore.getState().profileTags).toEqual(['bitcoin', 'nostr', 'dev', 'design', 'lightning']);
       expect(useHomeStore.getState().profileTags).toHaveLength(HOME_PROFILE_TAGS_MAX_SELECTED);
@@ -231,7 +231,7 @@ describe('HomeStore', () => {
     it('should strip Nexus-invalid tag label characters and preserve emoji', () => {
       const store = useHomeStore.getState();
 
-      store.setProfileTags(['Bit:coin', 'dev,tag', 'light ning', '🔥']);
+      ['Bit:coin', 'dev,tag', 'light ning', '🔥'].forEach((tag) => store.addProfileTag(tag));
 
       expect(useHomeStore.getState().profileTags).toEqual(['bitcoin', 'devtag', 'lightning', '🔥']);
     });
@@ -272,19 +272,10 @@ describe('HomeStore', () => {
     it('should remove a profile tag case-insensitively', () => {
       const store = useHomeStore.getState();
 
-      store.setProfileTags(['bitcoin', 'nostr']);
+      ['bitcoin', 'nostr'].forEach((tag) => store.addProfileTag(tag));
       store.removeProfileTag('BITCOIN');
 
       expect(useHomeStore.getState().profileTags).toEqual(['nostr']);
-    });
-
-    it('should clear profile tags', () => {
-      const store = useHomeStore.getState();
-
-      store.setProfileTags(['bitcoin', 'nostr']);
-      store.clearProfileTags();
-
-      expect(useHomeStore.getState().profileTags).toEqual([]);
     });
   });
 

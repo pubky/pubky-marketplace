@@ -15,6 +15,7 @@ import { Link } from '@/atoms/Link/Link';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
 import { MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE } from '@/config/commerce-copy';
+import { useDefaultAddressCountry } from '@/hooks/useDefaultAddressCountry/useDefaultAddressCountry';
 import {
   bareDeliveryAddressId,
   useMarketplaceAddressBook,
@@ -24,17 +25,17 @@ import {
   marketplaceAddressFormDefaults,
   marketplaceAddressFormSchema,
 } from '@/hooks/useMarketplaceAddressBook/useMarketplaceAddressBook.types';
-import { browserAddressCountry } from '@/libs/commerce/postal-address';
 import type { CommerceDeliveryAddressModelSchema } from '@/models/commerce/commerce.schema';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { MarketplaceAddressFields } from '@/molecules/MarketplaceAddressFields/MarketplaceAddressFields';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 
 export function MarketplaceAddressSettings() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { addresses, isLoading, save, remove, setDefault } = useMarketplaceAddressBook();
+  const defaultAddressCountry = useDefaultAddressCountry();
   const returnTo = searchParams.get('returnTo');
   const returnPath = returnTo && matchMarketplaceDropRoute(returnTo) ? returnTo : null;
   // null: list only; 'new': creating; otherwise the composite id being edited.
@@ -46,7 +47,7 @@ export function MarketplaceAddressSettings() {
   });
 
   const beginCreate = () => {
-    form.reset({ ...marketplaceAddressFormDefaults, countryCode: browserAddressCountry() });
+    form.reset({ ...marketplaceAddressFormDefaults, countryCode: defaultAddressCountry });
     setEditingId('new');
   };
 
@@ -74,13 +75,7 @@ export function MarketplaceAddressSettings() {
   });
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      className="pb-28"
-    >
+    <MarketplaceContentLayout className="pb-28">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <Link
           href={APP_ROUTES.MARKETPLACE}
@@ -88,7 +83,7 @@ export function MarketplaceAddressSettings() {
           className="inline-flex w-fit items-center gap-2 text-sm text-muted-foreground"
         >
           <ArrowLeft className="size-4" />
-          Marketplace
+          Market
         </Link>
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -198,6 +193,6 @@ export function MarketplaceAddressSettings() {
           </div>
         ) : null}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }

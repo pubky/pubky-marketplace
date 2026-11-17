@@ -26,7 +26,7 @@ import { usePost } from '@/hooks/usePost/usePost';
 import { useUserDetails } from '@/hooks/useUserDetails/useUserDetails';
 import { Logger } from '@/libs/logger/logger';
 import { isViewerExcludedWotStream } from '@/models/stream/post/postStream.types';
-import { useToast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { POST_INPUT_PLACEHOLDER, POST_INPUT_VARIANT } from '@/organisms/PostInput/PostInput.constants';
 import { useTimelineFeedContext } from '@/organisms/Timeline/Feed/TimelineFeed/TimelineFeedContext';
 import { postKindBelongsToStream } from '@/stores/home/home.utils';
@@ -91,7 +91,6 @@ export function usePostInput({
     isSubmitting,
   } = usePost();
   const timelineFeed = useTimelineFeedContext();
-  const { toast } = useToast();
   const { deletePost } = useDeletePost();
 
   // Get original post author's name for repost toast message
@@ -415,7 +414,7 @@ export function usePostInput({
         setAttachments((prev) => [...prev, ...validFiles]);
       }
     },
-    [isArticle, isSubmitting, attachments.length, setAttachments, toast],
+    [isArticle, isSubmitting, attachments.length, setAttachments],
   );
 
   // Drag and drop handlers
@@ -511,7 +510,6 @@ export function usePostInput({
   const handleArticleClick = () => setIsArticle(true);
 
   // Derived values
-  const hasContent = content.trim().length > 0;
   const displayPlaceholder = placeholder ?? POST_INPUT_PLACEHOLDER[variant];
 
   return {
@@ -543,9 +541,6 @@ export function usePostInput({
     mentionIsOpen,
     mentionSelectedIndex,
     setMentionSelectedIndex,
-
-    // Derived values
-    hasContent,
     displayPlaceholder,
     currentUserPubky,
     currentUserDetails,

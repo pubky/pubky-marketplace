@@ -7,7 +7,13 @@ import {
   COMMERCE_LISTING_TITLE_MIN_CHARS,
 } from '@/config/commerce';
 import type { ImportLoss } from './import-loss-report';
-import { IMPORT_CONDITIONS_SET, type ImportSettings, shippingOptionRow } from './import-settings';
+import {
+  IMPORT_CONDITIONS_SET,
+  type ImportSettings,
+  SHIPPING_PROFILE_ID_FIELD,
+  shippingOptionRow,
+  withoutShippingProfileField,
+} from './import-settings';
 
 /** JSON-safe value carried in a canonical import row. */
 export type PresetJson = string | number | boolean | null | PresetJson[] | { [key: string]: PresetJson };
@@ -58,9 +64,9 @@ export const COUNTRY_CODE_FIELD = 'country_code';
 export type SourceImage = { readonly url: string; readonly alt: string };
 
 const ENTITY_ID = /^[A-Za-z0-9_-]{1,128}$/;
-const SKU_MAX_CHARS = 64;
-const OPTION_NAME_MAX_CHARS = 40;
-const OPTION_VALUE_MAX_CHARS = 80;
+export const SKU_MAX_CHARS = 64;
+export const OPTION_NAME_MAX_CHARS = 40;
+export const OPTION_VALUE_MAX_CHARS = 80;
 const TAG_MAX_CHARS = 40;
 
 export function isEntityId(value: string): boolean {
@@ -89,7 +95,8 @@ function loss(
   return { code, severity, source, detail, listing, ...(line === undefined ? {} : { line }), count: 1 };
 }
 
-function clip(value: string, max: number): string {
+/** The text cut to `max` characters, with an ellipsis when something was cut. */
+export function clip(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max - 1).trimEnd()}…`;
 }
 
@@ -318,9 +325,13 @@ export function finalizePresetRows(input: FinalizeInput): FinalizeResult {
         options,
         variantQuantity: quantities[index] ?? 0,
         shippingOptions: shipping,
-        extraFields: settings.countryCode
-          ? { ...row.extraFields, [COUNTRY_CODE_FIELD]: settings.countryCode }
-          : { ...row.extraFields },
+        extraFields: {
+          ...withoutShippingProfileField(row).extraFields,
+          ...(settings.countryCode ? { [COUNTRY_CODE_FIELD]: settings.countryCode } : {}),
+          ...(settings.shipping?.mode === 'profile'
+            ? { [SHIPPING_PROFILE_ID_FIELD]: settings.shipping.profileId }
+            : {}),
+        },
       });
     });
     losses.push(...rowLosses);

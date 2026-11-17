@@ -1,0 +1,1 @@
+Review lists on listings and storefronts can be sorted: Newest (the default), Highest-value purchases, Highest rated and Lowest rated. A store whose reviews carry purchase values also shows a secondary "Weighted by purchase value" average next to its plain rating.

@@ -85,5 +85,5 @@ export function useMarketplaceNotificationFeed() {
     }
   }, []);
 
-  return { items, refresh, markAllRead };
+  return { items, markAllRead };
 }

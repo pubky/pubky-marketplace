@@ -3,7 +3,7 @@
 /**
  * DialogSignIn
  *
- * A dialog that prompts unauthenticated users to sign in or create an account.
+ * A dialog that prompts unauthenticated users to sign in with an existing account.
  * Displayed when users try to perform actions that require authentication
  * (e.g., reply, repost, bookmark, follow, tag).
  *
@@ -13,8 +13,8 @@
  * Inspired by pubky-app's Join modal but uses Franky's design patterns.
  */
 import Link from 'next/link';
-import { ArrowRight, UserRoundPlus } from 'lucide-react';
-import { AUTH_ROUTES, ONBOARDING_ROUTES } from '@/app/routes';
+import { ArrowRight } from 'lucide-react';
+import { AUTH_ROUTES } from '@/app/routes';
 import { BasePathImage as Image } from '@/atoms/BasePathImage/BasePathImage';
 import { Button } from '@/atoms/Button/Button';
 import { Card } from '@/atoms/Card/Card';
@@ -34,39 +34,11 @@ export function DialogSignIn() {
     <Dialog open={showSignInDialog} onOpenChange={setShowSignInDialog}>
       <DialogContent className="w-[576px] gap-6">
         <DialogHeader className="gap-2">
-          <DialogTitle>{'Join Pubky'}</DialogTitle>
-          <DialogDescription>{'Like what you see? Join the freedom web now.'}</DialogDescription>
+          <DialogTitle>{'Sign in to Pubky'}</DialogTitle>
+          <DialogDescription>{'Use your existing account to continue.'}</DialogDescription>
         </DialogHeader>
 
         <Container className="flex flex-col gap-4 sm:flex-row">
-          {/* New User Card */}
-          <Card className="flex flex-1 flex-col gap-3 rounded-md py-6 sm:gap-6">
-            <Container className="gap-2 px-6">
-              <Typography as="h3" size="md" className="font-bold">
-                {'New here?'}
-              </Typography>
-            </Container>
-
-            <Container className="flex flex-1 items-center justify-center">
-              <Image
-                src="/images/new-here.webp"
-                alt={'New here?'}
-                width={202}
-                height={202}
-                className="h-[87px] w-auto max-w-[202px] sm:h-auto sm:w-full"
-              />
-            </Container>
-
-            <Container className="px-6">
-              <Button asChild className="w-full gap-2 font-bold">
-                <Link href={ONBOARDING_ROUTES.HUMAN} onClick={handleClose}>
-                  <UserRoundPlus className="size-4" />
-                  {'Join Pubky'}
-                </Link>
-              </Button>
-            </Container>
-          </Card>
-
           {/* Sign In Card */}
           <Card className="flex flex-1 flex-col gap-3 rounded-md py-6 sm:gap-6">
             <Container className="gap-2 px-6">

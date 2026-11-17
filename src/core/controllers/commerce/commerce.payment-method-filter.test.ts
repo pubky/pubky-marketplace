@@ -4,7 +4,7 @@ import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { CommerceController } from './commerce';
 
 const seller = (index: number) => String.fromCharCode(97 + (index % 26)).repeat(51) + 'y';
-const ANY = { saleFormat: 'all' as const, conditions: [], sort: 'recommended' as const, countryCode: null };
+const ANY = { saleFormat: 'all' as const, conditions: [], sort: 'newest' as const, countryCode: null };
 
 describe('CommerceController.fetchPaymentMethodCatalog', () => {
   beforeEach(() => {

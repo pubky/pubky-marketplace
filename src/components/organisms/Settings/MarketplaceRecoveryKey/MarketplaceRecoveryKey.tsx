@@ -34,7 +34,7 @@ export function MarketplaceRecoveryKey() {
   };
 
   return (
-    <SettingsSectionCard icon={KeyRound} title={'Marketplace data'}>
+    <SettingsSectionCard icon={KeyRound} title={'Market data'}>
       <SettingsSection
         title={'Export recovery key'}
         description={
@@ -61,7 +61,7 @@ export function MarketplaceRecoveryKey() {
           <DialogHeader>
             <DialogTitle>{'Export recovery key'}</DialogTitle>
           </DialogHeader>
-          <Typography className="text-base leading-6 font-normal tracking-wide text-white/80">
+          <Typography className="text-base leading-6 font-normal tracking-wide text-foreground-strong/80">
             {
               'Anyone who has this file can read your encrypted watchlist and order receipts. Keep it offline and never share it.'
             }

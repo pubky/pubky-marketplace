@@ -7,6 +7,7 @@ import { ChatSyncCoordinator } from '@/coordinators/chat-sync/chat-sync';
 import { MarketplaceGrantSessionCoordinator } from '@/coordinators/marketplace-grant-session/marketplace-grant-session';
 import { MuteListSyncCoordinator } from '@/coordinators/mute-list-sync/mute-list-sync';
 import { NotificationCoordinator } from '@/coordinators/notifications/notifications';
+import { SellerPaymentConfirmCoordinator } from '@/coordinators/seller-payment-confirm/seller-payment-confirm';
 import { StreamCoordinator } from '@/coordinators/streams/stream';
 import { TtlCoordinator } from '@/coordinators/ttl/ttl';
 
@@ -17,6 +18,7 @@ function getAppCoordinators() {
     ttl: TtlCoordinator.getInstance(),
     muteListSync: MuteListSyncCoordinator.getInstance(),
     chatSync: ChatSyncCoordinator.getInstance(),
+    sellerPaymentConfirm: SellerPaymentConfirmCoordinator.getInstance(),
   };
 }
 
@@ -27,6 +29,7 @@ function applyRouteToCoordinators(pathname: string): void {
   coordinators.ttl.setRoute(pathname);
   coordinators.muteListSync.setRoute(pathname);
   coordinators.chatSync.setRoute(pathname);
+  void coordinators.sellerPaymentConfirm.setRoute(pathname);
 }
 
 function startAppCoordinators(): void {
@@ -38,6 +41,7 @@ function startAppCoordinators(): void {
   coordinators.ttl.start();
   coordinators.muteListSync.start();
   coordinators.chatSync.start();
+  void coordinators.sellerPaymentConfirm.start();
 }
 
 function stopAppCoordinators(): void {
@@ -49,6 +53,7 @@ function stopAppCoordinators(): void {
   coordinators.ttl.stop();
   coordinators.muteListSync.stop();
   coordinators.chatSync.stop();
+  coordinators.sellerPaymentConfirm.stop();
 }
 
 /**
@@ -60,7 +65,7 @@ function stopAppCoordinators(): void {
  * Responsibilities:
  * - Initialize coordinators on mount (NotificationCoordinator, StreamCoordinator,
  *   MuteListSyncCoordinator, TtlCoordinator, ChatSyncCoordinator,
- *   MarketplaceGrantSessionCoordinator)
+ *   MarketplaceGrantSessionCoordinator, SellerPaymentConfirmCoordinator)
  * - Start coordination when the component is mounted
  * - Track route changes and inform coordinators
  * - Stop coordination and cleanup when unmounted

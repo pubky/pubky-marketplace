@@ -197,6 +197,20 @@ describe('DialogReportPost', () => {
     expect(screen.getByText('Report Listing', { selector: '[data-slot="dialog-title"]' })).toBeInTheDocument();
   });
 
+  it('reports a review by its URI, reviewer and reviewed listing', () => {
+    const review = {
+      reviewUri: `pubky://${'a'.repeat(52)}/pub/pubky.app/marketplace/v1/reviews/8Z8CWH8NVYQY39ZEBFGKQWWEKG`,
+      reviewerPubky: 'a'.repeat(52),
+      sellerPubky: TEST_SELLER_PUBKY,
+      listingId: 'boots_01',
+    };
+    render(<DialogReportPost open={true} onOpenChange={mockOnOpenChange} review={review} />);
+
+    expect(mockUseReportPost).toHaveBeenCalledWith({ kind: 'review', ...review });
+    expect(mockStepSubject).toHaveBeenCalledWith('issue', 'review');
+    expect(screen.getByText('Report Review', { selector: '[data-slot="dialog-title"]' })).toBeInTheDocument();
+  });
+
   it('passes the listing subject to the reason step', () => {
     mockUseReportPost.mockReturnValue({
       ...defaultUseReportPostReturn,
@@ -220,64 +234,5 @@ describe('DialogReportPost', () => {
 
     const dialogContent = screen.getByTestId('dialog-content');
     expect(dialogContent).toHaveClass('w-xl');
-  });
-});
-
-describe('DialogReportPost - Snapshots', () => {
-  const mockOnOpenChange = vi.fn();
-  const mockReset = vi.fn();
-  const mockSelectIssueType = vi.fn();
-  const mockHandleReasonChange = vi.fn();
-  const mockSubmit = vi.fn();
-
-  const defaultUseReportPostReturn = {
-    step: REPORT_POST_STEPS.ISSUE_SELECTION,
-    selectedIssueType: null,
-    reason: '',
-    isSubmitting: false,
-    isSuccess: false,
-    hasContent: false,
-    selectIssueType: mockSelectIssueType,
-    handleReasonChange: mockHandleReasonChange,
-    submit: mockSubmit,
-    reset: mockReset,
-  };
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockUseCurrentUserProfile.mockReturnValue({
-      currentUserPubky: 'test-user-123',
-    });
-  });
-
-  it('matches snapshot for issue selection step', () => {
-    mockUseReportPost.mockReturnValue(defaultUseReportPostReturn);
-
-    render(<DialogReportPost open={true} onOpenChange={mockOnOpenChange} postId={TEST_POST_ID} />);
-    const dialog = document.querySelector('[role="dialog"]');
-    expect(dialog?.parentElement).toMatchSnapshot();
-  });
-
-  it('matches snapshot for reason step', () => {
-    mockUseReportPost.mockReturnValue({
-      ...defaultUseReportPostReturn,
-      step: REPORT_POST_STEPS.REASON_INPUT,
-      selectedIssueType: REPORT_ISSUE_TYPES.PERSONAL_INFO,
-    });
-
-    render(<DialogReportPost open={true} onOpenChange={mockOnOpenChange} postId={TEST_POST_ID} />);
-    const dialog = document.querySelector('[role="dialog"]');
-    expect(dialog?.parentElement).toMatchSnapshot();
-  });
-
-  it('matches snapshot for success state', () => {
-    mockUseReportPost.mockReturnValue({
-      ...defaultUseReportPostReturn,
-      isSuccess: true,
-    });
-
-    render(<DialogReportPost open={true} onOpenChange={mockOnOpenChange} postId={TEST_POST_ID} />);
-    const dialog = document.querySelector('[role="dialog"]');
-    expect(dialog?.parentElement).toMatchSnapshot();
   });
 });

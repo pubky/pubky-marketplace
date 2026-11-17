@@ -20,6 +20,8 @@ export function useMarketplaceSellerPaymentReviewForm(
   orderId: string,
   onChanged: () => void | Promise<void>,
   rail: PaymentReviewRail = 'bitcoin',
+  /** Release the order's instant digital lines in the same step as the confirmation. */
+  releaseDigital = false,
 ): {
   confirmForm: UseFormReturn<SellerPaymentConfirmationForm, unknown, SellerPaymentConfirmationSubmission>;
   resolveForm: UseFormReturn<SellerPaymentResolutionForm, unknown, SellerPaymentResolutionSubmission>;
@@ -51,7 +53,7 @@ export function useMarketplaceSellerPaymentReviewForm(
     let succeeded = false;
     await confirmForm.handleSubmit(async (input) => {
       submitted = true;
-      succeeded = await mutation.confirm(orderId, input.reason);
+      succeeded = await mutation.confirm(orderId, input.reason, releaseDigital);
       if (succeeded) confirmForm.reset();
     })();
     return submitted && succeeded;

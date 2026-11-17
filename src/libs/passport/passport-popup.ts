@@ -53,7 +53,7 @@ export const PASSPORT_CALLBACK_MESSAGE = 'shop.pubky.app.passport-return';
 const PASSPORT_OUTCOME_MESSAGE = 'pubky-passport.authorization-outcome';
 const PASSPORT_OUTCOME_ACK_MESSAGE = 'pubky-passport.authorization-outcome-ack';
 const PASSPORT_MESSAGE_VERSION = 1;
-const PASSPORT_SOURCE_NAME = 'Pubky Shop';
+const PASSPORT_SOURCE_NAME = 'Pubky Market';
 
 const POPUP_FEATURES = 'popup,width=520,height=760';
 export const PASSPORT_ATTEMPT_TIMEOUT_MS = 5 * 60_000;

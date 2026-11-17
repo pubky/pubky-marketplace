@@ -293,10 +293,6 @@ export function postalLabelForCountry(countryCode: string): string {
   return postalCountryRule(countryCode).postalLabel;
 }
 
-export function isRegionRequired(countryCode: string): boolean {
-  return postalCountryRule(countryCode).regionRequired;
-}
-
 export function subdivisionsForCountry(countryCode: string): readonly SubdivisionOption[] | null {
   return postalCountryRule(countryCode).subdivisions;
 }

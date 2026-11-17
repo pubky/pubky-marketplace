@@ -6,7 +6,7 @@ import { LISTING_PUBLISH_BLOCK_COPY } from '@/libs/commerce/listing-publish-guar
 import { AuthErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { COMMERCE_FIXTURE_SELLER, createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { useMarketplaceInventory } from './useMarketplaceInventory';
 
@@ -41,7 +41,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 

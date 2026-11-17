@@ -40,9 +40,7 @@ describe('listingPriceLabel', () => {
 
 describe('buildListingTitle', () => {
   it('combines the record title, price, and marketplace label', () => {
-    expect(buildListingTitle(createCommerceListingFixture())).toBe(
-      'Vintage leather boots — $125.00 | Pubky Marketplace',
-    );
+    expect(buildListingTitle(createCommerceListingFixture())).toBe('Vintage leather boots — $125.00 | Pubky Market');
   });
 });
 
@@ -147,7 +145,7 @@ describe('listingConditionLabel', () => {
 
 describe('shop SEO builders', () => {
   it('builds the shop title from the record name', () => {
-    expect(buildShopTitle(createCommerceShopFixture())).toBe('Satoshi Vintage — Shop | Pubky Marketplace');
+    expect(buildShopTitle(createCommerceShopFixture())).toBe('Satoshi Vintage — Shop | Pubky Market');
   });
 
   it('derives the description from the bio', () => {

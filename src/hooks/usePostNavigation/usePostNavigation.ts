@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import type React from 'react';
-import { getCollectionRoute, POST_ROUTES } from '@/app/routes';
+import { POST_ROUTES } from '@/app/routes';
 import { parseCompositeId } from '@/models/models.utils';
 import type { UsePostNavigationResult } from './usePostNavigation.types';
 
@@ -39,15 +39,6 @@ export function usePostNavigation(): UsePostNavigationResult {
 
   const navigateToPost = (postId: string) => {
     router.push(getPostHref(postId));
-  };
-
-  const getCollectionHref = (postId: string) => {
-    const { pubky, id } = parseCompositeId(postId);
-    return getCollectionRoute(pubky, id);
-  };
-
-  const navigateToCollection = (postId: string) => {
-    router.push(getCollectionHref(postId));
   };
 
   const handlePostClick = (postId: string, event: React.MouseEvent) => {
@@ -87,10 +78,7 @@ export function usePostNavigation(): UsePostNavigationResult {
   };
 
   return {
-    getPostHref,
     navigateToPost,
-    getCollectionHref,
-    navigateToCollection,
     handlePostClick,
     handlePostAuxClick,
     handlePostKeyDown,

@@ -15,7 +15,7 @@ const HOMESERVER = 'tkrq8zmwb8a3m9k15csu3q17qmfgqnp9dskbrg9uq1rydpyxp7qy';
 const HOMESERVER_ORIGIN = 'https://legacy-cookie.test';
 const RELAY = 'https://launch-relay.test/inbox/';
 const SHOP_CLIENT_ID = 'shop.pubky.app';
-const SHOP_CAPABILITIES = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw';
+const SHOP_CAPABILITIES = '/pub/pubky.app/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw';
 const SERVICE_CAPABILITIES = '/pub/pubky.app/marketplace-service/v1/:rw,/priv/pubky.app/:rw';
 const SDK_PATH = '/__launch_sdk.js';
 const HELPER_PATH = '/__launch_fixture';
@@ -60,7 +60,23 @@ function sameCapabilities(actual, expected) {
   );
 }
 
-export async function installSyntheticLaunchFixture({ context, baseUrl, serviceUrl, nexusUrl, root }) {
+/**
+ * `clientRegion` is the visitor country the Shop's `/api/marketplace/client-region` route answers
+ * (an uppercase ISO alpha-2 code), or null when the edge cannot tell: what a launch run with a
+ * region policy needs from the fixture.
+ */
+export async function installSyntheticLaunchFixture({
+  context,
+  baseUrl,
+  serviceUrl,
+  nexusUrl,
+  root,
+  clientRegion = /** @type {string | null} */ (null),
+}) {
+  assert(
+    clientRegion === null || /^[A-Z]{2}$/.test(clientRegion),
+    'The synthetic client region is null or an ISO alpha-2 code',
+  );
   const origin = localOrigin(baseUrl, 'Synthetic launch app');
   const nexusOrigin = localOrigin(nexusUrl, 'Synthetic launch Nexus');
   const serviceOrigin = new URL(serviceUrl).origin;
@@ -321,6 +337,8 @@ export async function installSyntheticLaunchFixture({ context, baseUrl, serviceU
         const endpoint = url.pathname.slice(url.pathname.indexOf('/api/'));
         if (endpoint === '/api/fx-rate' && method === 'GET')
           return await reply({ status: 503, json: { error: 'synthetic_rate_unavailable' } });
+        if (endpoint === '/api/marketplace/client-region' && method === 'GET')
+          return await reply({ json: { country: clientRegion } });
         if (endpoint === '/api/marketplace/session' && method === 'DELETE') return await reply({ status: 204 });
         if (endpoint === '/api/marketplace/bootstrap-challenges' && method === 'POST') {
           if (request.postDataJSON().pubky !== SELLER) return await reject('bootstrap_identity_mismatch');

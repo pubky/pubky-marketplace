@@ -19,7 +19,6 @@ import type {
   TGrantAuthUrlOptions,
   THomeserverPublicKeyParams,
   THomeserverSessionResult,
-  THomeserverSignUpParams,
 } from '@/services/homeserver/homeserver.types';
 
 export function isDefinitiveSessionAuthFailure(error: unknown): boolean {
@@ -99,29 +98,6 @@ export class AuthApplication {
   }
 
   /**
-   * Signs up a new user in the homeserver with the provided keypair and authentication credentials.
-   *
-   * @param params - The authentication parameters containing user credentials
-   * @param params.keypair - The cryptographic keypair for the user
-   * @param params.signupToken - Invitation code for user registration
-   * @param params.secretKey - Secret key for homeserver service
-   * @returns Session and pubky of the signed up user
-   */
-  static async signUp({ keypair, signupToken }: THomeserverSignUpParams): Promise<THomeserverSessionResult> {
-    return await HomeserverService.signUp({ keypair, signupToken });
-  }
-
-  /**
-   * Verifies a signup token (invite code) against the homeserver.
-   *
-   * @param signupToken - The signup token / invite code to verify
-   * @returns `'valid'`, `'used'`, or `'invalid'` depending on the homeserver response
-   */
-  static async verifySignupToken(signupToken: string) {
-    return await HomeserverService.verifySignupToken(signupToken);
-  }
-
-  /**
    * Authenticates the user against the homeserver using their cryptographic keypair.
    *
    * @param params - The authentication parameters
@@ -133,7 +109,7 @@ export class AuthApplication {
     if (!keypair) {
       throw Err.validation(
         ValidationErrorCode.INVALID_INPUT,
-        'Keypair not found in onboarding store. Please regenerate your keys and try again.',
+        'Recovery key is unavailable. Try restoring your account again.',
         {
           service: ErrorService.Local,
           operation: 'signIn',
@@ -231,17 +207,6 @@ export class AuthApplication {
   }
 
   /**
-   * Generates a signup authentication URL for Pubky Ring App.
-   * Decorates a standard auth URL with homeserver address and invite code metadata.
-   *
-   * @param inviteCode - The invite code for signup
-   * @returns Authentication URL and approval promise
-   */
-  static async generateSignupAuthUrl(inviteCode: string): Promise<TGenerateAuthUrlResult> {
-    return await HomeserverService.generateSignupAuthUrl({ inviteCode });
-  }
-
-  /**
    * Logs out a user from the system.
    *
    * @param params - The logout parameters
@@ -252,29 +217,12 @@ export class AuthApplication {
     await HomeserverService.logout(data);
   }
 
-  /**
-   * Generates a signup token for user registration.
-   * @returns Promise resolving to the generated signup token
-   */
-  static async generateSignupToken() {
-    return await HomeserverService.generateSignupToken();
-  }
-
   /** Staging guard: reject keys whose PKARR homeserver does not match this deploy. */
   static async assertUserHomeserverAllowed({ publicKey }: THomeserverPublicKeyParams): Promise<void> {
     await HomeserverService.assertUserHomeserverAllowed({ publicKey });
   }
 
-  /**
-   * In the application, there are two signups to do.
-   * 1. First the user has to register the user key in the homeserver, throw the inviation code
-   * 2. Then the user has to create a profile.json file in the homeserver. That file acts as a proof that the user has signed up.
-   * This is a critical step because after that it will start indexing all user related data
-   *
-   * @param params - Parameters containing the user's public key
-   * @param params.pubky - The user's public key identifier
-   * @returns Promise resolving to the user profile or undefined if not found
-   */
+  /** Check whether an existing account has the profile document required for Shop access and indexing. */
   static async userIsSignedUp({ pubky }: { pubky: Pubky }): Promise<boolean> {
     try {
       const profile = await HomeserverService.getJsonIfFound({ url: userUriBuilder(pubky) });

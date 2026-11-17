@@ -20,7 +20,7 @@ export function useMuteUser(): UseMuteUserResult {
   const { currentUserPubky } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
   const [loadingUserId, setLoadingUserId] = useState<Pubky | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [, setError] = useState<string | null>(null);
 
   const toggleMute = useCallback(
     async (userId: Pubky, isCurrentlyMuted: boolean) => {
@@ -70,8 +70,6 @@ export function useMuteUser(): UseMuteUserResult {
   return {
     toggleMute,
     isLoading,
-    loadingUserId,
     isUserLoading,
-    error,
   };
 }

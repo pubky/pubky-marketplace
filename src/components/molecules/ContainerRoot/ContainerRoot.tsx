@@ -1,13 +1,15 @@
 import { Inter_Tight } from 'next/font/google';
 import Script from 'next/script';
 import { Container } from '@/atoms/Container/Container';
-import { PLAUSIBLE_QUERYLESS_PAGE_BOOTSTRAP } from '@/libs/observability/plausible-page-url';
+import { getBasePath } from '@/config/base-path';
+import { plausiblePageUrlBootstrap } from '@/libs/observability/plausible-page-url';
 import {
   getEmbeddedFlag,
   getPlausibleDomain,
   getPlausibleScriptUrl,
   serializeRuntimeConfig,
 } from '@/libs/runtime-config/runtime-config';
+import { buildThemePrepaintScript } from '@/libs/theme/theme';
 import { PageContainer } from '../Page/Page';
 
 const interTight = Inter_Tight({
@@ -24,7 +26,13 @@ export function RootContainer({ children }: RootContainerProps) {
   const plausibleScriptUrl = getPlausibleScriptUrl();
 
   return (
-    <Container as="html" lang="en-US" dir="ltr" {...(getEmbeddedFlag() && { 'data-shop-embedded': 'true' })}>
+    <Container
+      as="html"
+      lang="en-US"
+      dir="ltr"
+      suppressHydrationWarning
+      {...(getEmbeddedFlag() && { 'data-shop-embedded': 'true' })}
+    >
       <Container as="body" className={`${interTight.variable} antialiased`}>
         {/*
           Publish runtime config before any Next.js bundle executes. This must stay a RAW
@@ -37,11 +45,16 @@ export function RootContainer({ children }: RootContainerProps) {
           NOTE: if a Content-Security-Policy is added later, this inline script needs a nonce.
         */}
         <script id="pubky-runtime-config" dangerouslySetInnerHTML={{ __html: serializeRuntimeConfig() }} />
+        {/*
+          Raw inline script for the same reason: it applies pubky-app's shared `pubky-theme`
+          during parsing, before the first paint, so a light visitor never sees the dark base.
+        */}
+        <script id="pubky-theme-prepaint" dangerouslySetInnerHTML={{ __html: buildThemePrepaintScript() }} />
         {plausibleDomain && plausibleScriptUrl && (
           <>
             <script
               id="pubky-plausible-page-url"
-              dangerouslySetInnerHTML={{ __html: PLAUSIBLE_QUERYLESS_PAGE_BOOTSTRAP }}
+              dangerouslySetInnerHTML={{ __html: plausiblePageUrlBootstrap(getBasePath()) }}
             />
             <Script
               data-domain={plausibleDomain}

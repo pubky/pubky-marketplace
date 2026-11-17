@@ -5,8 +5,8 @@ export { MarketplaceOffers as default } from '@/templates/Marketplace/Marketplac
 
 export function generateMetadata() {
   return gatedMarketplaceMetadata(
-    'Offers | Pubky Marketplace',
-    'Manage offers you have made and received on Pubky Marketplace.',
+    'Offers | Pubky Market',
+    'Manage offers you have made and received on Pubky Market.',
     MARKETPLACE_ROUTES.OFFERS,
   );
 }

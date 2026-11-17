@@ -1,4 +1,5 @@
 import { HttpMethod } from '@/libs/http/http.types';
+import type { IoDeadlineEndpoint } from '@/libs/http/io-deadline.types';
 
 /**
  * Parameters for building a Nexus URL with query string.
@@ -44,6 +45,8 @@ export type TFetchNexusParams = {
   body?: string | null;
   /** Optional bound for this request and its response body; enabled for auth bootstrap. */
   timeoutMs?: number;
+  /** Static, PII-free route template for distinguishing IO timeout reports. */
+  ioEndpoint?: IoDeadlineEndpoint;
 };
 
 /**
@@ -59,6 +62,8 @@ export type TQueryNexusParams = {
   body?: string | null;
   /** Per-attempt IO deadline; query retry/cache behavior is unchanged. */
   timeoutMs?: number;
+  /** Static route template shared by the per-attempt and total IO deadlines. */
+  ioEndpoint?: IoDeadlineEndpoint;
   /** Bound retries and offline/hidden pauses for auth bootstrap; cancels this exact query. */
   totalTimeoutMs?: number;
 };

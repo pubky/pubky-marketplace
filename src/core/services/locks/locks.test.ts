@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppError } from '@/libs/error/error';
 import { Logger } from '@/libs/logger/logger';
-import { LocksGatewayService } from './locks';
+import { isValidLocksClientReference, LocksGatewayService } from './locks';
 
 const CREATOR = 'y'.repeat(52);
 const READER = 'b'.repeat(52);
 const BUNDLE_ID = '000G40R40M30E209185GR38E1W';
+const CLIENT_REFERENCE = 'x9Kq_3-jW0sN8uYv1tB6rZpLmE4cA2dHfG7iOoQwXyU';
 
 const sdkMocks = vi.hoisted(() => ({
   init: vi.fn(),
@@ -31,6 +32,16 @@ vi.mock('@/config/commerce', async () => {
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+}
+
+function bound(resource: string, criterionId = 'criterion-1') {
+  return {
+    client_binding: {
+      client_reference: CLIENT_REFERENCE,
+      pubky_lock_resource: resource,
+      criterion_ids: [criterionId],
+    },
+  };
 }
 
 function lifecycle(status: 'pending' | 'completed' = 'pending') {
@@ -62,8 +73,10 @@ describe('LocksGatewayService', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('submits the canonical empty Paykit proof without invoice material', async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(lifecycle()));
+  it('submits the canonical empty Paykit proof with the payment reference and no invoice material', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({ ...lifecycle(), ...bound(`pubky${CREATOR}/pub/locks.app/lock.json`) }),
+    );
 
     await LocksGatewayService.submitPaykitProof({
       creatorPubky: CREATOR,
@@ -71,6 +84,7 @@ describe('LocksGatewayService', () => {
       bundleId: BUNDLE_ID,
       lockResource: `pubky://${CREATOR}/pub/locks.app/lock.json`,
       criterionId: 'criterion-1',
+      clientReference: CLIENT_REFERENCE,
     });
 
     expect(fetch).toHaveBeenCalledWith(
@@ -83,11 +97,93 @@ describe('LocksGatewayService', () => {
             bundle_id: BUNDLE_ID,
             pubky_lock_resource: `pubky${CREATOR}/pub/locks.app/lock.json`,
             reader_public_key: `pubky${READER}`,
+            client_reference: CLIENT_REFERENCE,
             proofs: [{ criterion_id: 'criterion-1', verifier_type: 'paykit-payment', payload: {} }],
           },
         }),
       }),
     );
+  });
+
+  describe('payment reference binding (pubky/locks#52)', () => {
+    const submit = (clientReference = CLIENT_REFERENCE) =>
+      LocksGatewayService.submitPaykitProof({
+        creatorPubky: CREATOR,
+        readerPubky: READER,
+        bundleId: BUNDLE_ID,
+        lockResource: `pubky://${CREATOR}/pub/locks.app/lock.json`,
+        criterionId: 'criterion-1',
+        clientReference,
+      });
+
+    it('returns the lifecycle when the Lock Server echoes the reference it was sent', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse({ ...lifecycle(), ...bound(`pubky${CREATOR}/pub/locks.app/lock.json`) }),
+      );
+
+      await expect(submit()).resolves.toMatchObject({
+        status: 'pending',
+        client_binding: { client_reference: CLIENT_REFERENCE, criterion_ids: ['criterion-1'] },
+      });
+    });
+
+    it.each([
+      ['no binding (a Lock Server before v0.1.1-rc2)', {}],
+      ['a null binding', { client_binding: null }],
+      [
+        'another payment reference',
+        {
+          client_binding: {
+            client_reference: 'someone-elses-reference',
+            pubky_lock_resource: 'x',
+            criterion_ids: ['criterion-1'],
+          },
+        },
+      ],
+    ])('refuses a submit answered with %s, after the bundle is stored', async (_label, extra) => {
+      vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ ...lifecycle(), ...extra }));
+
+      await expect(submit()).rejects.toMatchObject({ name: 'AppError', code: 'INVALID_RESPONSE' });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['', 'a\nb', 'a\u0000b', 'a\u007fb', 'a\u0085b', 'é'.repeat(33)])(
+      'sends nothing for a reference the Lock Server would refuse (%j)',
+      async (reference) => {
+        await expect(submit(reference)).rejects.toMatchObject({ name: 'AppError', code: 'INVALID_INPUT' });
+        expect(fetch).not.toHaveBeenCalled();
+      },
+    );
+
+    it('accepts the references the service mints and the Lock Server limits', () => {
+      expect(isValidLocksClientReference(CLIENT_REFERENCE)).toBe(true);
+      expect(isValidLocksClientReference('a')).toBe(true);
+      expect(isValidLocksClientReference('a'.repeat(64))).toBe(true);
+      expect(isValidLocksClientReference('a'.repeat(65))).toBe(false);
+      expect(isValidLocksClientReference('é'.repeat(32))).toBe(true);
+    });
+
+    it('reads the echoed binding on a lookup and treats its absence as an older Lock Server', async () => {
+      vi.mocked(fetch)
+        .mockResolvedValueOnce(jsonResponse({ ...lifecycle('completed'), ...bound('r') }))
+        .mockResolvedValueOnce(jsonResponse(lifecycle('completed')));
+
+      const withBinding = await LocksGatewayService.lookupVerification(CREATOR, BUNDLE_ID);
+      expect(withBinding.client_binding?.client_reference).toBe(CLIENT_REFERENCE);
+      const without = await LocksGatewayService.lookupVerification(CREATOR, BUNDLE_ID);
+      expect(without.client_binding).toBeUndefined();
+    });
+
+    it('rejects a binding that is not the documented shape', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse({ ...lifecycle(), client_binding: { client_reference: CLIENT_REFERENCE } }),
+      );
+
+      await expect(LocksGatewayService.lookupVerification(CREATOR, BUNDLE_ID)).rejects.toMatchObject({
+        name: 'AppError',
+        code: 'INVALID_RESPONSE',
+      });
+    });
   });
 
   it('rejects a lock resource that is not owned by the creator without any network call', async () => {
@@ -98,6 +194,7 @@ describe('LocksGatewayService', () => {
         bundleId: BUNDLE_ID,
         lockResource: `pubky://${READER}/pub/locks.app/lock.json`,
         criterionId: 'criterion-1',
+        clientReference: CLIENT_REFERENCE,
       }),
     ).rejects.toMatchObject({ name: 'AppError', code: 'INVALID_INPUT' });
     expect(fetch).not.toHaveBeenCalled();
@@ -175,6 +272,7 @@ describe('LocksGatewayService', () => {
         bundleId: BUNDLE_ID,
         lockResource: `pubky://${CREATOR}/pub/locks.app/lock.json`,
         criterionId: 'criterion-1',
+        clientReference: CLIENT_REFERENCE,
       });
     const refused = (status: number, code: string) =>
       new Response(JSON.stringify({ error: { code, message: 'SENTINEL_SERVER_TEXT' } }), {

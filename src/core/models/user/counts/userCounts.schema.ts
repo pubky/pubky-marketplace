@@ -5,8 +5,6 @@ export interface UserCountsModelSchema extends NexusUserCounts {
   id: Pubky;
 }
 
-export type TUserCountsFields = keyof Omit<UserCountsModelSchema, 'id'>;
-
 // Keep only the primary key index. Other counters are read/updated by id.
 export const userCountsTableSchema = `
   &id

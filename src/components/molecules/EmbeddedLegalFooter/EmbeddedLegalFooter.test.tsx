@@ -17,7 +17,7 @@ describe('EmbeddedLegalFooter', () => {
     render(<EmbeddedLegalFooter />);
 
     const footer = screen.getByRole('contentinfo', { name: 'Legal' });
-    expect(footer).toHaveTextContent('Pubky Shop is provided by Synonym Software, S.A. de C.V.');
+    expect(footer).toHaveTextContent('Pubky Market is provided by Synonym Software, S.A. de C.V.');
     expect(screen.getByRole('link', { name: 'report@synonym.to' })).toHaveAttribute('href', 'mailto:report@synonym.to');
     expect(footer).toHaveTextContent('To report a listing, open it and choose Report listing.');
   });

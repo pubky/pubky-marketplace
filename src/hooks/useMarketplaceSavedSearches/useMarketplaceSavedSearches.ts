@@ -17,7 +17,7 @@ import {
 import type { PaymentMethodFilter } from '@/libs/commerce/payment-method-filter';
 import { Logger } from '@/libs/logger/logger';
 import type { CommerceSavedSearchModelSchema, CommerceSavedSearchParams } from '@/models/commerce/commerce.schema';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { buildMarketplaceCatalogItems } from '../useMarketplaceCatalog/useMarketplaceCatalog.utils';
@@ -42,7 +42,7 @@ async function readPaymentSellerSets(
         const sellers = await CommerceController.fetchPaymentMethodCatalog(method, {
           saleFormat: 'all',
           conditions: [],
-          sort: 'recommended',
+          sort: 'newest',
         });
         sets.set(method, new Set(sellers));
       } catch (error) {

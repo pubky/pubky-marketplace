@@ -1,4 +1,3 @@
-import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { FileText, LockKeyhole, Users } from 'lucide-react';
 import { describe, expect, it, vi } from 'vitest';
@@ -41,19 +40,14 @@ describe('SidebarButton', () => {
   });
 });
 
-describe('SidebarButton - Snapshots', () => {
-  it('matches snapshot with FileText icon', () => {
-    const { container } = render(<SidebarButton icon={FileText}>Terms of service</SidebarButton>);
-    expect(container.firstChild).toMatchSnapshot();
+describe('SidebarButton - Rendering', () => {
+  it('applies the sidebar button classes', () => {
+    render(<SidebarButton icon={FileText}>Terms of service</SidebarButton>);
+    expect(screen.getByRole('button')).toHaveClass('w-full', 'border-border', 'bg-glass', 'text-xs', 'font-bold');
   });
 
-  it('matches snapshot with LockKeyhole icon', () => {
-    const { container } = render(<SidebarButton icon={LockKeyhole}>Privacy policy</SidebarButton>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with Users icon', () => {
-    const { container } = render(<SidebarButton icon={Users}>See all</SidebarButton>);
-    expect(container.firstChild).toMatchSnapshot();
+  it('renders the icon at the fixed size', () => {
+    render(<SidebarButton icon={FileText}>Terms of service</SidebarButton>);
+    expect(screen.getByRole('button').querySelector('svg')).toHaveClass('size-4');
   });
 });

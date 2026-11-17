@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft, LayoutDashboard, Store, User, UserCheck, UserPlus } from 'lucide-react';
 import { APP_ROUTES, getProfileRoute, MARKETPLACE_ROUTES, PROFILE_ROUTES } from '@/app/routes';
@@ -11,22 +11,27 @@ import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
+import { getCommerceAdapterMode } from '@/config/commerce';
 import { getSocialHostUrl } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useCommerceShopFollow } from '@/hooks/useCommerceShopFollow/useCommerceShopFollow';
 import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
+import { useLiveSellerShop } from '@/hooks/useLiveSellerShop/useLiveSellerShop';
 import {
   buildMarketplaceCatalogItems,
+  isCatalogItemOpen,
   type MarketplaceCatalogItem,
 } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { useMarketplaceMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
+import { useMarketplaceReviews } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
 import { useSellerPaymentBadges } from '@/hooks/useSellerPaymentBadges/useSellerPaymentBadges';
+import { useSellingAvailability } from '@/hooks/useSellingAvailability/useSellingAvailability';
 import { sellerDeclaration } from '@/libs/commerce/eu-region';
 import { resolveSellerDeliveryTerms, sellerDeliveryTermsCopy } from '@/libs/commerce/seller-delivery-terms';
 import { formatShipsToCountries, shopShipsToCountries } from '@/libs/commerce/ships-to';
 import { MarketplacePaymentMethodBadges } from '@/molecules/MarketplacePaymentMethodBadges/MarketplacePaymentMethodBadges';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceCommunityTags } from '@/organisms/Marketplace/MarketplaceCommunityTags';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceListingCard } from '@/organisms/Marketplace/MarketplaceListingCard';
 import { MarketplaceReputationHeader } from '@/organisms/Marketplace/MarketplaceReputationHeader';
 import { MarketplaceReviewsSection } from '@/organisms/Marketplace/MarketplaceReviewsSection';
@@ -39,6 +44,8 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const isOwner = currentUserPubky === sellerPubky;
   const paymentBadges = useSellerPaymentBadges(sellerPubky);
+  // One list for the review section and the rating header, so a reviewer chip changes both.
+  const reviews = useMarketplaceReviews({ sellerPubky });
   const profileRoute = getProfileRoute(PROFILE_ROUTES.PROFILE, sellerPubky);
   // With social link-out on, profiles live on the social host; plain <a>, same tab.
   const socialProfileUrl = getSocialHostUrl(profileRoute);
@@ -46,23 +53,14 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
   const isEmbedded = useIsEmbedded();
   // The shop record lives on the seller's homeserver; a visitor's local cache
   // may not hold it yet, so resolve network-first and only then treat a
-  // missing record as "this seller has no shop".
-  const [shopFetchSettled, setShopFetchSettled] = useState(false);
+  // missing record as "this seller has no shop". The hook also keeps it
+  // current while the page is open.
+  const shopFetchSettled = useLiveSellerShop(sellerPubky, { live: getCommerceAdapterMode() !== 'sandbox' });
 
   useEffect(() => {
-    let active = true;
-    setShopFetchSettled(false);
-    CommerceController.getOrFetchShop(sellerPubky)
-      .catch(() => undefined)
-      .finally(() => {
-        if (active) setShopFetchSettled(true);
-      });
     // Best-effort: hydrate this seller's listings from the Nexus index so a
     // direct shop visit is not limited to what this device already cached.
     void CommerceController.fetchSellerCatalogListings(sellerPubky).catch(() => undefined);
-    return () => {
-      active = false;
-    };
   }, [sellerPubky]);
 
   const shop = useLiveQuery(() => CommerceController.getShop(sellerPubky), [sellerPubky]);
@@ -70,10 +68,13 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
   // plus Nexus index projections discovered for this seller.
   const sellerListings = useLiveQuery(() => CommerceController.getListingsBySeller(sellerPubky), [sellerPubky]);
   const sellerEntries = useLiveQuery(() => CommerceController.getCatalogEntriesBySeller(sellerPubky), [sellerPubky]);
+  // The local cache also holds records in other states (a review's listing is
+  // read for its summary even when paused), so the storefront keeps only what
+  // a buyer can act on, like the home grid.
   const listings =
     sellerListings === undefined || sellerEntries === undefined
       ? undefined
-      : buildMarketplaceCatalogItems(sellerListings, sellerEntries);
+      : buildMarketplaceCatalogItems(sellerListings, sellerEntries).filter((item) => isCatalogItemOpen(item));
 
   const isLoading = listings === undefined || shop === undefined || (!shop && !shopFetchSettled);
 
@@ -84,13 +85,7 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
   const shipsToCountries = shopShipsToCountries(shop?.record);
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      className="pb-28 lg:pb-16"
-    >
+    <MarketplaceContentLayout className="pb-28 lg:pb-16">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <Link
           href={APP_ROUTES.MARKETPLACE}
@@ -98,7 +93,7 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
           className="inline-flex w-fit items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
-          Marketplace
+          Market
         </Link>
 
         {isLoading ? (
@@ -121,7 +116,12 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
               }
               afterLocation={
                 <>
-                  <MarketplaceReputationHeader sellerPubky={sellerPubky} variant="full" className="mt-3" />
+                  <MarketplaceReputationHeader
+                    sellerPubky={sellerPubky}
+                    variant="full"
+                    filterSummary={reviews.filterSummary}
+                    className="mt-3"
+                  />
                   <MarketplacePaymentMethodBadges
                     methods={paymentBadges}
                     className="mt-3"
@@ -199,7 +199,7 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
 
             {/* The section styles its own container and renders NOTHING when no
                 review index serves this deployment — no empty card shell. */}
-            <MarketplaceReviewsSection sellerPubky={sellerPubky} className="rounded-md bg-card p-5" />
+            <MarketplaceReviewsSection reviews={reviews} className="rounded-md bg-card p-5" />
           </>
         ) : (
           <>
@@ -207,7 +207,7 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
               <div className="h-28 bg-linear-to-br from-brand/24 to-brand/8 sm:h-40" />
               <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-end sm:justify-between">
                 <div className="-mt-16">
-                  <div className="mb-4 flex size-20 items-center justify-center rounded-2xl border-4 border-card bg-brand text-primary-foreground shadow-lg">
+                  <div className="mb-4 flex size-20 items-center justify-center rounded-2xl border-4 border-card bg-brand text-bright-fill-foreground shadow-lg">
                     <Store className="size-9" aria-hidden="true" />
                   </div>
                   <Heading level={1} size="xl" className="text-3xl break-all sm:text-5xl">
@@ -218,7 +218,12 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
                       ? 'Add a shop name, description, and images to personalize your storefront.'
                       : 'This seller hasn\u2019t set up a shop profile yet. Their owner-signed listings are below.'}
                   </Typography>
-                  <MarketplaceReputationHeader sellerPubky={sellerPubky} variant="full" className="mt-3" />
+                  <MarketplaceReputationHeader
+                    sellerPubky={sellerPubky}
+                    variant="full"
+                    filterSummary={reviews.filterSummary}
+                    className="mt-3"
+                  />
                   <MarketplacePaymentMethodBadges
                     methods={paymentBadges}
                     className="mt-3"
@@ -253,11 +258,11 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
 
             <ShopListingsGrid listings={listings} isOwner={isOwner} />
 
-            <MarketplaceReviewsSection sellerPubky={sellerPubky} className="rounded-md bg-card p-5" />
+            <MarketplaceReviewsSection reviews={reviews} className="rounded-md bg-card p-5" />
           </>
         )}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }
 
@@ -270,6 +275,9 @@ function ShopListingsGrid({
   shopName?: string;
   isOwner: boolean;
 }) {
+  const selling = useSellingAvailability();
+  // An owner who can't sell from here is not pointed at Sell: it only leads to the block page.
+  const canPublish = isOwner && !selling.held;
   if (listings.length === 0) {
     return (
       <div className="flex min-h-64 flex-col items-center justify-center rounded-md bg-card/40 p-6 text-center">
@@ -278,11 +286,15 @@ function ShopListingsGrid({
           {isOwner ? 'No listings yet' : 'No listings from this seller yet'}
         </Heading>
         <Typography as="p" className="mt-2 text-muted-foreground">
-          {isOwner ? 'Publish your first item to fill this page.' : 'Check back later or browse the marketplace.'}
+          {canPublish
+            ? 'Publish your first item to fill this page.'
+            : isOwner && selling.sellingMessage
+              ? selling.sellingMessage
+              : 'Check back later or browse the marketplace.'}
         </Typography>
         <Button asChild className="mt-6 rounded-full">
-          <Link href={isOwner ? MARKETPLACE_ROUTES.SELL : APP_ROUTES.MARKETPLACE} overrideDefaults>
-            {isOwner ? 'Sell an item' : 'Browse the marketplace'}
+          <Link href={canPublish ? MARKETPLACE_ROUTES.SELL : APP_ROUTES.MARKETPLACE} overrideDefaults>
+            {canPublish ? 'Sell an item' : 'Browse the market'}
           </Link>
         </Button>
       </div>

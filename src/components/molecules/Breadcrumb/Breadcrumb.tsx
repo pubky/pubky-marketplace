@@ -4,7 +4,6 @@ import * as React from 'react';
 import { cva } from 'class-variance-authority';
 // Shadcn-based Breadcrumb with custom variants
 import { ChevronDown, ChevronRight, MoreHorizontal } from 'lucide-react';
-import { Slot } from 'radix-ui';
 import { cn } from '@/libs/utils/utils';
 import type {
   BreadcrumbEllipsisProps,
@@ -67,21 +66,6 @@ export const Breadcrumb = React.forwardRef<HTMLElement, BreadcrumbProps>(
 );
 Breadcrumb.displayName = 'Breadcrumb';
 
-// BreadcrumbList - Shadcn primitive
-export const BreadcrumbList = React.forwardRef<HTMLOListElement, React.ComponentPropsWithoutRef<'ol'>>(
-  ({ className, ...props }, ref) => (
-    <ol
-      ref={ref}
-      className={cn(
-        'flex flex-wrap items-center gap-1.5 text-sm break-words text-muted-foreground sm:gap-2.5',
-        className,
-      )}
-      {...props}
-    />
-  ),
-);
-BreadcrumbList.displayName = 'BreadcrumbList';
-
 // BreadcrumbItem - Custom implementation with Shadcn base
 export const BreadcrumbItem = React.forwardRef<HTMLLIElement, BreadcrumbItemProps>(
   ({ className, variant, children, href, dropdown, onClick, ...props }, ref) => {
@@ -118,18 +102,6 @@ export const BreadcrumbItem = React.forwardRef<HTMLLIElement, BreadcrumbItemProp
   },
 );
 BreadcrumbItem.displayName = 'BreadcrumbItem';
-
-// BreadcrumbLink - Shadcn primitive
-export const BreadcrumbLink = React.forwardRef<
-  HTMLAnchorElement,
-  React.ComponentPropsWithoutRef<'a'> & {
-    asChild?: boolean;
-  }
->(({ asChild, className, ...props }, ref) => {
-  const Comp = asChild ? Slot.Root : 'a';
-  return <Comp ref={ref} className={cn('transition-colors hover:text-foreground', className)} {...props} />;
-});
-BreadcrumbLink.displayName = 'BreadcrumbLink';
 
 // BreadcrumbSeparator - Custom implementation with Shadcn base
 export const BreadcrumbSeparator = React.forwardRef<HTMLLIElement, BreadcrumbSeparatorProps>(
@@ -168,21 +140,6 @@ export const BreadcrumbEllipsis = React.forwardRef<HTMLSpanElement, BreadcrumbEl
   ),
 );
 BreadcrumbEllipsis.displayName = 'BreadcrumbEllipsis';
-
-// BreadcrumbPage - Shadcn primitive
-export const BreadcrumbPage = React.forwardRef<HTMLSpanElement, React.ComponentPropsWithoutRef<'span'>>(
-  ({ className, ...props }, ref) => (
-    <span
-      ref={ref}
-      role="link"
-      aria-disabled="true"
-      aria-current="page"
-      className={cn('font-normal text-foreground', className)}
-      {...props}
-    />
-  ),
-);
-BreadcrumbPage.displayName = 'BreadcrumbPage';
 
 // Export variants for external use
 export { breadcrumbItemVariants, breadcrumbSeparatorVariants, breadcrumbVariants };

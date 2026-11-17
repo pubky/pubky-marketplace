@@ -1,7 +1,7 @@
 # Marketplace production Nexus replay heads-up
 
 **To:** Pubky Nexus team  
-**From:** Pubky Marketplace integration  
+**From:** Pubky Market integration  
 **Date:** 2026-09-08
 
 Shop uses a dedicated production Nexus for marketplace discovery: listing, shop, review, reputation, and drop reads use the marketplace Nexus, while social reads remain on the social Nexus. The Shop production alias currently exposes a catalog problem: the production Nexus serves 26 listing IDs that are identical to the staging catalog. Those rows came from an earlier crash-loop period when this Nexus ran with default configuration and indexed staging-derived data.

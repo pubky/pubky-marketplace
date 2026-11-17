@@ -29,7 +29,6 @@ vi.mock('@/libs/query-client/query-client.factory', async (original) => ({
   clearAllQueryClients: vi.fn(),
 }));
 vi.mock('@/libs/shop-session/bridge', () => ({ requestShopHostAction: vi.fn().mockReturnValue(true) }));
-vi.mock('@/libs/utils/utils', async (original) => ({ ...(await original<object>()), clearCookies: vi.fn() }));
 vi.mock('@/services/marketplace/marketplace-grant-client', async (original) => ({
   ...(await original<object>()),
   clearMarketplaceBffSessionConfirmed: vi.fn().mockResolvedValue(undefined),
@@ -87,8 +86,7 @@ describe('App-owned grant consumer', () => {
     await expect(AuthController.getAuthUrl()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
   });
   it.each([
-    ['Ring', () => AuthController.getAuthUrl()],
-    ['Bitkit', () => AuthController.getGrantAuthUrl()],
+    ['Ring or Bitkit', () => AuthController.getAuthUrl()],
     ['Passport', () => AuthController.getPassportGrantAuthUrl()],
   ])('sends a %s sign-in started in the embedded Shop to App without reporting it', async (_signer, start) => {
     vi.mocked(captureAppError).mockClear();

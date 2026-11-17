@@ -137,6 +137,14 @@ export class TagApplication {
   }
 
   /**
+   * The labels the viewer put on users, most-used first, from the local copy.
+   * A read of this device's data: it reflects the users it has seen.
+   */
+  static async getViewerUserTagLabels(taggerId: Pubky, limit: number): Promise<string[]> {
+    return await LocalUserTagService.getLabelsTaggedBy(taggerId, limit);
+  }
+
+  /**
    * Clears all viewer-mutation tag markers (sessionStorage) for the given user.
    * Called from logout / session-cleanup paths to drop stale markers before the
    * next user signs in on the same tab.

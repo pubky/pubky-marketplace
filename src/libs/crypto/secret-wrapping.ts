@@ -63,7 +63,7 @@ export async function wrapPayload(key: CryptoKey, aad: Uint8Array, plaintext: Ui
  * Reverses {@link wrapPayload}. Throws (WebCrypto `OperationError`) when the
  * payload is malformed, tampered with, wrapped under a different/lost key,
  * or bound to a different AAD — callers distinguish that authentication
- * failure from environmental errors via {@link isUnwrapAuthenticationError}.
+ * failure from environmental errors by the `OperationError` name.
  */
 export async function unwrapPayload(key: CryptoKey, aad: Uint8Array, wrapped: Uint8Array): Promise<Uint8Array> {
   if (wrapped.byteLength <= WRAP_IV_BYTES) {
@@ -79,16 +79,4 @@ export async function unwrapPayload(key: CryptoKey, aad: Uint8Array, wrapped: Ui
     ciphertext as BufferSource,
   );
   return new Uint8Array(plaintext);
-}
-
-/**
- * True when an unwrap failure is GCM authentication (wrong key, tampered or
- * transplanted ciphertext, wrong AAD) — i.e. the wrapped row is unrecoverable
- * and must be treated as LOST. False for environmental failures (WebCrypto
- * missing, IDB down), which must fail closed instead of discarding state.
- */
-export function isUnwrapAuthenticationError(error: unknown): boolean {
-  // Name-based, not instanceof: jsdom's DOMException does not extend Error,
-  // and a DOMException crossing realms fails instanceof either way.
-  return typeof error === 'object' && error !== null && (error as { name?: unknown }).name === 'OperationError';
 }

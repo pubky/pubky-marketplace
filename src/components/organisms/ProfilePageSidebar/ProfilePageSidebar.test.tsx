@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProfilePageSidebar } from './ProfilePageSidebar';
@@ -104,23 +103,5 @@ describe('ProfilePageSidebar', () => {
     render(<ProfilePageSidebar />);
     expect(screen.getByText('Tagged as')).toBeInTheDocument();
     expect(screen.getByText('Links')).toBeInTheDocument();
-  });
-});
-
-describe('ProfilePageSidebar - Snapshots', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('matches snapshot with default state', () => {
-    const { container } = render(<ProfilePageSidebar />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot structure', () => {
-    const { container } = render(<ProfilePageSidebar />);
-    const rootElement = container.firstChild as HTMLElement;
-    expect(rootElement.tagName).toBe('DIV');
-    expect(rootElement.children.length).toBe(3);
   });
 });

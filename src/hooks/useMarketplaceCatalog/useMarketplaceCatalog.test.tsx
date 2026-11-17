@@ -83,7 +83,7 @@ describe('useMarketplaceCatalog', () => {
       minimumPriceMinor: null,
       maximumPriceMinor: null,
       countryCode: null,
-      sort: 'recommended',
+      sort: 'newest',
     };
     const { result } = renderHook(() => useMarketplaceCatalog([], [], filters), { wrapper: readyWrapper });
     expect(result.current.listings).toEqual([catalogItemFromListingModel(cached)]);
@@ -132,7 +132,7 @@ describe('useMarketplaceCatalog', () => {
       expect(mockFetchCatalogListings).toHaveBeenCalledWith({
         saleFormat: 'all',
         conditions: [],
-        sort: 'recommended',
+        sort: 'newest',
         countryCode: null,
       }),
     );
@@ -207,7 +207,7 @@ describe('useMarketplaceCatalog', () => {
       expect(mockFetchCatalogListings).toHaveBeenCalledWith({
         saleFormat: 'all',
         conditions: [],
-        sort: 'recommended',
+        sort: 'newest',
         countryCode: null,
       }),
     );
@@ -218,7 +218,7 @@ describe('useMarketplaceCatalog', () => {
       expect(mockFetchCatalogListings).toHaveBeenLastCalledWith({
         saleFormat: 'auction',
         conditions: [],
-        sort: 'recommended',
+        sort: 'newest',
         countryCode: null,
       }),
     );
@@ -295,7 +295,7 @@ describe('useMarketplaceCatalog payment-method filter', () => {
     expect(mockFetchPaymentMethodCatalog).toHaveBeenCalledWith('paypal', {
       saleFormat: 'all',
       conditions: [],
-      sort: 'recommended',
+      sort: 'newest',
       countryCode: null,
     });
   });
@@ -346,7 +346,7 @@ describe('useMarketplaceCatalog payment-method filter', () => {
       minimumPriceMinor: null,
       maximumPriceMinor: null,
       countryCode: null,
-      sort: 'recommended',
+      sort: 'newest',
     };
 
     const { result } = renderHook(() => useMarketplaceCatalog([], [], filters), { wrapper: readyWrapper });

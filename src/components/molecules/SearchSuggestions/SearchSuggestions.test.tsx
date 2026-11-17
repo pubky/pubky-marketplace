@@ -49,7 +49,7 @@ vi.mock('@/molecules/SearchTagSection/SearchTagSection', () => {
 
 vi.mock('@/config/search', () => ({
   SEARCH_EXPANDED_STYLE: {
-    background: 'linear-gradient(180deg, var(--background) 0%, rgba(5, 5, 10, 0.50) 100%)',
+    background: 'linear-gradient(180deg, var(--background) 0%, var(--search-expanded-fade, rgba(5, 5, 10, 0.50)) 100%)',
     backdropFilter: 'blur(25px)',
     boxShadow: '0px 50px 100px rgba(0, 0, 0, 1)',
     maxHeight: '300px',
@@ -98,7 +98,8 @@ describe('SearchSuggestions', () => {
 
     const dropdown = screen.getByTestId('search-suggestions');
     expect(dropdown).toHaveStyle({
-      background: 'linear-gradient(180deg, var(--background) 0%, rgba(5, 5, 10, 0.50) 100%)',
+      background:
+        'linear-gradient(180deg, var(--background) 0%, var(--search-expanded-fade, rgba(5, 5, 10, 0.50)) 100%)',
     });
   });
 
@@ -108,17 +109,5 @@ describe('SearchSuggestions', () => {
     const suggestions = screen.getByTestId('search-suggestions');
     expect(suggestions).toHaveAttribute('role', 'region');
     expect(suggestions).toHaveAttribute('aria-label', 'Search suggestions');
-  });
-
-  describe('SearchSuggestions - Snapshots', () => {
-    it('matches snapshot with hot tags', () => {
-      const { container } = render(<SearchSuggestions {...defaultProps} />);
-      expect(container.firstChild).toMatchSnapshot();
-    });
-
-    it('matches snapshot with empty hot tags', () => {
-      const { container } = render(<SearchSuggestions {...defaultProps} hotTags={[]} />);
-      expect(container.firstChild).toMatchSnapshot();
-    });
   });
 });

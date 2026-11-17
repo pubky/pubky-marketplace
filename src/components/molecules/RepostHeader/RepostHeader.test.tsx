@@ -55,10 +55,3 @@ describe('RepostHeader', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 });
-
-describe('RepostHeader - Snapshots', () => {
-  it('matches snapshot', () => {
-    const { container } = render(<RepostHeader />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});

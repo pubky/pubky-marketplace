@@ -40,8 +40,8 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: ReactNode }) => <main>{children}</main>,
 }));
 
 vi.mock('@/hooks/useMarketplaceInventory/useMarketplaceInventory', () => ({

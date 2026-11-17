@@ -121,6 +121,26 @@ export function isAssignedCountryCode(code: string): boolean {
 }
 
 /**
+ * The code to publish for a typed country: uppercase, with an alias such as UK
+ * written as its ISO code (GB), so the region policy and the service, which
+ * match on the ISO code, see the same country the seller meant.
+ */
+export function publishedCountryCode(value: string): string {
+  return canonicalCountryCode(value);
+}
+
+/**
+ * The validation message for a typed shop or listing country, or null when it
+ * names a real country or territory (an alias like UK counts). Two letters are
+ * not enough: "ZZ" and "XX" are not countries.
+ */
+export function countryFieldError(value: string): string | null {
+  const typed = value.trim();
+  if (isAssignedCountryCode(canonicalCountryCode(typed))) return null;
+  return `"${typed}" is not a country code. Use a two-letter code like CH or US.`;
+}
+
+/**
  * Splits the settings field ("CH, LI" or "ch li") into canonical uppercase
  * codes (UK is saved as GB), each kept once in entry order.
  */

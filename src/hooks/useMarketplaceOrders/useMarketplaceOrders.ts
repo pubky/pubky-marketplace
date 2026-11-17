@@ -2,14 +2,18 @@
 
 import { type Dispatch, type SetStateAction, useEffect, useState } from 'react';
 import { getCommerceAdapterMode, getCommercePollIntervalMs, isTransactionalCommerceMode } from '@/config/commerce';
+import { REVIEW_PENDING_COPY } from '@/config/commerce-copy';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { readReviewResultPending } from '@/libs/commerce/attestation';
 import {
   MARKETPLACE_FAILURE_MESSAGES,
   marketplaceErrorCode,
   marketplaceFailureMessage,
 } from '@/libs/commerce/failure-messages';
 import { orderShowsCommandResult } from '@/libs/commerce/order-command-result';
+import { formatReviewDate, isReviewWindowClosedRefusal } from '@/libs/commerce/order-reviews';
 import { plainRefundRefusal } from '@/libs/commerce/partial-refund';
+import { CHECKOUT_CANCEL_PAYMENT_SEEN_COPY } from '@/libs/commerce/paykit-rail';
 import { pickupRefusalFailureMessage } from '@/libs/commerce/pickup';
 import { orderChangedMessage } from '@/libs/commerce/refund-copy';
 import {
@@ -21,11 +25,12 @@ import {
 import { PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
 import { CONFIRM_REFUND_DESTINATION_KIND, usdtRefundRefusalMessage } from '@/libs/commerce/usdt-refund';
 import { isPaymentNotFinalRefusal } from '@/libs/commerce/usdt-settlement-contract';
-import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { isMarketplaceCommandValidationError, isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
+import { toast } from '@/molecules/Toaster/toast';
 import type { MarketplaceOrder, MarketplacePayment, MarketplaceReceipt } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
+import { ORDER_COMMAND_UNSENDABLE_COPY } from '../useMarketplaceOrderAction/useMarketplaceOrderAction.types';
 
 export interface MarketplaceOrderView {
   order: MarketplaceOrder;
@@ -155,6 +160,34 @@ export function useMarketplaceOrders() {
           });
           return false;
         }
+        // A second tab that submitted the same listings loses to the first: the
+        // service refuses the repeat on the unique key (`INVARIANT_VIOLATION`) or
+        // on the already-reviewed check (`INVALID_STATE`). When the order now
+        // shows these reviews, the first tab's command did the work, and
+        // that tab publishes the records, so this one publishes nothing.
+        if (kind === 'review.create' && ['INVARIANT_VIOLATION', 'INVALID_STATE'].includes(response.error.code)) {
+          const fresh = await readOrders();
+          const current = fresh?.find((view) => view.order.id === order.id)?.order;
+          if (current && orderShowsCommandResult(current, kind, payload)) return true;
+        }
+        // The service refuses a checkout cancel once it has seen a payment on the
+        // request (#347): say so and re-read, so the cancel is no longer offered.
+        if (
+          kind === 'order.cancel_request' &&
+          order.state === 'pending_payment' &&
+          response.error.code === 'INVALID_STATE'
+        ) {
+          const fresh = await readOrders();
+          const current = fresh?.find((view) => view.order.id === order.id)?.order;
+          if (current?.state === 'cancelled') return true;
+          toast({ variant: 'error', description: CHECKOUT_CANCEL_PAYMENT_SEEN_COPY });
+          return false;
+        }
+        // The service's own words: a seller's review after the window is refused, not failed.
+        if (kind === 'review.create' && isReviewWindowClosedRefusal(response)) {
+          toast({ variant: 'error', description: response.error.message });
+          return false;
+        }
         if (isPaymentNotFinalRefusal(response)) {
           toast({ variant: 'error', description: PAYMENT_NOT_FINAL_COPY });
           return false;
@@ -182,7 +215,7 @@ export function useMarketplaceOrders() {
         return false;
       }
       if (kind === 'review.create' || kind === 'review.update') {
-        await publishReviewRecord(order, response.result);
+        await publishReviewRecord(order, response.result, order.buyerPubky === currentUserPubky ? 'buyer' : 'seller');
       }
       await refresh();
       return true;
@@ -191,6 +224,10 @@ export function useMarketplaceOrders() {
         setNeedsSession(true);
         setError(MARKETPLACE_FAILURE_MESSAGES.session);
         toast({ variant: 'error', description: MARKETPLACE_FAILURE_MESSAGES.session });
+        return false;
+      }
+      if (isMarketplaceCommandValidationError(actionError)) {
+        toast({ variant: 'error', description: ORDER_COMMAND_UNSENDABLE_COPY });
         return false;
       }
       toast({ variant: 'error', description: MARKETPLACE_FAILURE_MESSAGES.order });
@@ -207,14 +244,32 @@ export function useMarketplaceOrders() {
  * itself already succeeded; a publication failure is reported honestly and
  * the staged record retries when the orders surface next loads.
  */
-async function publishReviewRecord(order: MarketplaceOrder, result: unknown): Promise<void> {
+async function publishReviewRecord(
+  order: MarketplaceOrder,
+  result: unknown,
+  reviewerRole: 'buyer' | 'seller',
+): Promise<void> {
+  const resultRecord = (result ?? {}) as Record<string, unknown>;
   try {
-    const published = await CommerceController.publishOwnMarketplaceReview(
-      order,
-      (result ?? {}) as Record<string, unknown>,
-    );
-    if (published === null) return; // No attestation issued: review stays service-only.
-    toast({ description: 'Review published to your homeserver with its purchase attestation.' });
+    const published = await CommerceController.publishOwnMarketplaceReviews(order, resultRecord);
+    const withheld = readReviewResultPending(resultRecord);
+    if (withheld !== null) {
+      // A double-blind window holds the review back: it is saved and publishes at release.
+      toast({
+        description: REVIEW_PENDING_COPY.savedToast(
+          reviewerRole,
+          withheld.releaseAt === null ? null : formatReviewDate(withheld.releaseAt),
+        ),
+      });
+      return;
+    }
+    if (published.length === 0) return; // No attestation issued: review stays service-only.
+    toast({
+      description:
+        published.length === 1
+          ? 'Review published to your homeserver with its purchase attestation.'
+          : `${published.length} reviews published to your homeserver with their purchase attestations.`,
+    });
   } catch {
     toast({
       variant: 'error',
@@ -236,6 +291,7 @@ async function loadOrders(
   // mid-flight is retried whenever this surface loads. Best-effort — a
   // failure keeps the row pending and is logged inside the application.
   void CommerceController.resumeOwnReviewPublications().catch(() => undefined);
+  void CommerceController.resumeOwnReviewRemovals().catch(() => undefined);
   void CommerceController.sweepOwnAuctionReserves().catch(() => undefined);
   // Same outbox semantics for own review-RESPONSE records (subject-only
   // responses published to the responder's homeserver).

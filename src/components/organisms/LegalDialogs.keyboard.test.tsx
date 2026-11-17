@@ -1,14 +1,12 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import { DialogAge } from './DialogAge/DialogAge';
 import { DialogPrivacy } from './DialogPrivacy/DialogPrivacy';
 import { DialogTerms } from './DialogTerms/DialogTerms';
 
 const LEGAL_DIALOGS = [
   { name: 'Terms of Service', element: <DialogTerms />, dialogName: 'Terms of Service' },
   { name: 'Privacy Policy', element: <DialogPrivacy />, dialogName: 'Privacy Policy' },
-  { name: 'over 18 years old.', element: <DialogAge />, dialogName: 'Age minimum: 18' },
 ];
 
 describe.each(LEGAL_DIALOGS)('$name link', ({ name, element, dialogName }) => {

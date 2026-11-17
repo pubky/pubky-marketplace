@@ -1,6 +1,6 @@
 import { PubkySpecsBuilder } from 'pubky-app-specs';
 import { describe, expect, it } from 'vitest';
-import { isListingUri, parseListingUri } from './listingUri';
+import { parseListingUri } from './listingUri';
 
 const SELLER = 'pxnu33x7jtpx9ar1ytsi4yxbp6a5o36gwhffs8zoxmbuptici1jy';
 const LISTING_ID = '0034A0X7NJ52A';
@@ -31,13 +31,6 @@ describe('parseListingUri', () => {
       sellerPubky: SELLER,
       listingId: LONG_LISTING_ID,
     });
-  });
-});
-
-describe('isListingUri', () => {
-  it('accepts the canonical form and rejects everything else', () => {
-    expect(isListingUri(CANONICAL)).toBe(true);
-    expect(isListingUri(`pubky://${SELLER}/pub/pubky.app/posts/${LISTING_ID}`)).toBe(false);
   });
 });
 

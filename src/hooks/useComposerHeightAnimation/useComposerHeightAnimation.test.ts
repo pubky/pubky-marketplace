@@ -26,7 +26,7 @@ describe('useComposerHeightAnimation', () => {
     );
 
     expect(result.current.animatedHeight).toBe(80);
-    expect(result.current.isAnimatingHeight).toBe(false);
+    expect(result.current.heightTransition.duration).toBe(0);
     expect(result.current.heightTransition).toEqual({ duration: 0 });
     expect(result.current.heightTransitionStyle).toEqual({ transition: 'none' });
   });
@@ -43,7 +43,7 @@ describe('useComposerHeightAnimation', () => {
     );
 
     rerender({ isExpanded: true, measuredHeight: 80 });
-    expect(result.current.isAnimatingHeight).toBe(true);
+    expect(result.current.heightTransition.duration).toBeGreaterThan(0);
     expect(result.current.animatedHeight).toBe(80);
     expect(result.current.heightTransition).toEqual({
       duration: COMPOSER_EXPAND_DURATION,
@@ -54,7 +54,7 @@ describe('useComposerHeightAnimation', () => {
     act(() => {
       result.current.onHeightAnimationComplete();
     });
-    expect(result.current.isAnimatingHeight).toBe(true);
+    expect(result.current.heightTransition.duration).toBeGreaterThan(0);
 
     rerender({ isExpanded: true, measuredHeight: 260 });
     expect(result.current.animatedHeight).toBe(260);
@@ -63,7 +63,7 @@ describe('useComposerHeightAnimation', () => {
       result.current.onHeightAnimationComplete();
     });
 
-    expect(result.current.isAnimatingHeight).toBe(false);
+    expect(result.current.heightTransition.duration).toBe(0);
     expect(result.current.animatedHeight).toBe(260);
     expect(result.current.heightTransition).toEqual({ duration: 0 });
     expect(result.current.heightTransitionStyle).toEqual({ transition: 'none' });
@@ -84,12 +84,12 @@ describe('useComposerHeightAnimation', () => {
     act(() => {
       result.current.onHeightAnimationComplete();
     });
-    expect(result.current.isAnimatingHeight).toBe(false);
+    expect(result.current.heightTransition.duration).toBe(0);
     expect(result.current.heightTransition).toEqual({ duration: 0 });
 
     rerender({ isExpanded: true, measuredHeight: 320 });
     expect(result.current.animatedHeight).toBe(320);
-    expect(result.current.isAnimatingHeight).toBe(false);
+    expect(result.current.heightTransition.duration).toBe(0);
     expect(result.current.heightTransition).toEqual({ duration: 0 });
   });
 
@@ -105,12 +105,12 @@ describe('useComposerHeightAnimation', () => {
     );
 
     rerender({ isExpanded: true, measuredHeight: 260 });
-    expect(result.current.isAnimatingHeight).toBe(true);
+    expect(result.current.heightTransition.duration).toBeGreaterThan(0);
 
     act(() => {
       result.current.onHeightAnimationComplete();
     });
-    expect(result.current.isAnimatingHeight).toBe(false);
+    expect(result.current.heightTransition.duration).toBe(0);
     expect(result.current.heightTransition).toEqual({ duration: 0 });
   });
 
@@ -129,7 +129,7 @@ describe('useComposerHeightAnimation', () => {
     expect(result.current.heightTransition).toEqual({ duration: 0 });
 
     rerender({ isExpanded: false, measuredHeight: 260 });
-    expect(result.current.isAnimatingHeight).toBe(true);
+    expect(result.current.heightTransition.duration).toBeGreaterThan(0);
     expect(result.current.heightTransition).toEqual({
       duration: COMPOSER_COLLAPSE_DURATION,
       ease: COMPOSER_HEIGHT_EASE,
@@ -139,14 +139,14 @@ describe('useComposerHeightAnimation', () => {
       result.current.onHeightAnimationComplete();
     });
     // Still at the pre-collapse height — keep tweening until layout shrinks.
-    expect(result.current.isAnimatingHeight).toBe(true);
+    expect(result.current.heightTransition.duration).toBeGreaterThan(0);
 
     rerender({ isExpanded: false, measuredHeight: 80 });
     act(() => {
       result.current.onHeightAnimationComplete();
     });
 
-    expect(result.current.isAnimatingHeight).toBe(false);
+    expect(result.current.heightTransition.duration).toBe(0);
     expect(result.current.heightTransition).toEqual({ duration: 0 });
   });
 
@@ -162,13 +162,13 @@ describe('useComposerHeightAnimation', () => {
     );
 
     rerender({ isExpanded: true, measuredHeight: 260 });
-    expect(result.current.isAnimatingHeight).toBe(true);
+    expect(result.current.heightTransition.duration).toBeGreaterThan(0);
 
     act(() => {
       vi.advanceTimersByTime(COMPOSER_EXPAND_DURATION * 1000 + 100);
     });
 
-    expect(result.current.isAnimatingHeight).toBe(false);
+    expect(result.current.heightTransition.duration).toBe(0);
     expect(result.current.heightTransition).toEqual({ duration: 0 });
   });
 

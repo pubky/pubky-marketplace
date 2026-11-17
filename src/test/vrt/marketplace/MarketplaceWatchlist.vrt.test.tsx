@@ -234,8 +234,10 @@ vi.mock('@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl', async () => {
   return createMarketplaceMediaHooks((uri) => (uri ? ROW_IMAGE_DATA_URL : null));
 });
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main className="w-full py-6">{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => (
+    <main className="w-full py-6">{children}</main>
+  ),
 }));
 
 async function setView(overrides: Partial<typeof view>) {

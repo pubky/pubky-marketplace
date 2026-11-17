@@ -66,6 +66,14 @@ describe('seller payment review contract mapping', () => {
     sellerPaymentResolutionSchema.parse(toCamelCaseWire(hydrate(resolveSamples.paid.response.body.resolution)));
     sellerPaymentResolutionSchema.parse(toCamelCaseWire(hydrate(resolveSamples.replay.response.body.resolution)));
   });
+
+  it("parses a replayed confirmation the seller's wallet Receipt made", () => {
+    const replayConfirmation = confirmSamples.replay.response.body.confirmation;
+    const parsed = sellerPaymentConfirmationSchema.parse(
+      toCamelCaseWire(hydrate({ ...replayConfirmation, confirmation_basis: 'seller_wallet_receipt' })),
+    );
+    expect(parsed.confirmationBasis).toBe('seller_wallet_receipt');
+  });
 });
 
 function hydrate(value: unknown): unknown {

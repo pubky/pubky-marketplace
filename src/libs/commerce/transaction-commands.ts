@@ -1,9 +1,12 @@
 import { z } from 'zod';
-import { COMMERCE_LISTING_MAX_QUANTITY, COMMERCE_LISTING_MAX_VARIANTS } from '@/config/commerce';
+import {
+  COMMERCE_LISTING_MAX_QUANTITY,
+  COMMERCE_LISTING_MAX_VARIANTS,
+  COMMERCE_REVIEW_TEXT_MAX_CHARS,
+} from '@/config/commerce';
+import { trimmedText } from './code-point-text';
 import { DELIVERY_ENVELOPE_BYTES, DELIVERY_KEY_ID_PATTERN } from './delivery-envelope-format';
 import {
-  type DigitalDeliveryCommandResult,
-  digitalDeliveryCommandResultSchema,
   digitalDeliverySetSchema,
   marketplaceDeliveryEmailSchema,
   marketplaceDigitalDeliveryChannelSchema,
@@ -21,6 +24,7 @@ import {
   commercePositiveMoneySchema,
   commercePubkySchema,
   createCommerceCommandSchema,
+  refundUnitSchema,
 } from './transaction-contracts';
 import { isValidArbitrumAddress } from './usdt-refund';
 
@@ -70,7 +74,7 @@ const registerListingPayloadSchema = z
   .object({
     sellerPubky: commercePubkySchema,
     listingId: commerceEntityIdSchema,
-    title: z.string().trim().min(1).max(80).default('Marketplace item'),
+    title: trimmedText({ min: 1, max: 80 }).default('Marketplace item'),
     listingRevision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     contentHash: z.string().regex(/^[a-f0-9]{64}$/),
     quantity: z.number().int().positive().max(1_000_000),
@@ -244,6 +248,43 @@ export const releaseDropListingsCommandSchema = createCommerceCommandSchema(
  */
 export const buyerCountrySchema = z.string().regex(/^[A-Z]{2}$/, 'Expected an ISO 3166-1 alpha-2 code');
 
+/**
+ * The buyer's rate for one shipping group of a checkout: the lines of one seller that share a
+ * profile (pinned by the SHA-256 of the profile bytes the buyer saw), or the one listing whose
+ * inline zones price it.
+ */
+export const shippingChoiceSchema = z
+  .object({
+    sellerPubky: commercePubkySchema,
+    profileId: commerceEntityIdSchema.optional(),
+    listingAggregateId: z.string().min(1).max(200).optional(),
+    rateId: commerceEntityIdSchema,
+    profileSha256: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/, 'Expected a 64-character lowercase hex hash')
+      .optional(),
+  })
+  .strict()
+  .superRefine((choice, context) => {
+    const profileGroup = choice.profileId !== undefined && choice.listingAggregateId === undefined;
+    const inlineGroup = choice.profileId === undefined && choice.listingAggregateId !== undefined;
+    if (!profileGroup && !inlineGroup) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A shipping choice names a profile or a listing, not both and not neither.',
+      });
+    }
+    if (profileGroup !== (choice.profileSha256 !== undefined)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['profileSha256'],
+        message: 'A profile choice carries the digest of the profile read, and an inline choice carries none.',
+      });
+    }
+  });
+
+export type ShippingChoice = z.infer<typeof shippingChoiceSchema>;
+
 const offerTermsSchema = z
   .object({
     amount: commercePositiveMoneySchema,
@@ -253,7 +294,7 @@ const offerTermsSchema = z
       .int()
       .min(300)
       .max(7 * 24 * 60 * 60),
-    message: z.string().trim().max(500),
+    message: trimmedText({ max: 500 }),
   })
   .strict();
 
@@ -354,8 +395,8 @@ export const updateMarketplaceNotificationPreferencesCommandSchema = createComme
  */
 const checkoutLineVariantOptionSchema = z
   .object({
-    name: z.string().trim().min(1).max(40),
-    value: z.string().trim().min(1).max(80),
+    name: trimmedText({ min: 1, max: 40 }),
+    value: trimmedText({ min: 1, max: 80 }),
   })
   .strict();
 
@@ -381,7 +422,12 @@ export const connectorShareSchema = z
   .object({
     sellerPubky: commercePubkySchema,
     shopDomain: z.string().min(1).max(255),
-    consentVersion: z.number().int().positive(),
+    // The service stores this as text: 1 to 32 characters of letters, digits, `.`, `_` and `-`.
+    consentVersion: z
+      .string()
+      .min(1)
+      .max(32)
+      .regex(/^[A-Za-z0-9._-]+$/),
     keyId: z.string().min(1).max(128),
     envelope: deliveryEnvelopeFieldsSchema.shape.envelope,
   })
@@ -413,6 +459,11 @@ export const createMarketplaceCheckoutCommandSchema = createCommerceCommandSchem
       // checkout hook decides and this schema checks only its form.
       deliveryEmail: marketplaceDeliveryEmailSchema.optional(),
       buyerCountry: buyerCountrySchema.optional(),
+      // Where the order ships, in clear text: the service prices zone rates and applies a shop's
+      // ships-to list and the region block from it. Sent only when a line is zone-priced or a
+      // shipped seller limits its destinations.
+      destinationCountry: buyerCountrySchema.optional(),
+      shippingChoices: z.array(shippingChoiceSchema).min(1).max(50).optional(),
     })
     .strict()
     .superRefine((payload, context) => {
@@ -522,7 +573,11 @@ export const locksBareLockResourceSchema = z
  * service validates the seller's lock against the checkout-time snapshot,
  * takes the payment hold and pins the payment to the `locks` adapter. It must
  * succeed before `payment.register_locks`. A repeat for a live preparation
- * replays it. Its opaque `client_reference` is not needed by the Shop.
+ * replays it. The result carries the payment's opaque `client_reference`, which
+ * the Shop submits in the Locks proof bundle (the service confirms only a task
+ * that carries it), and the terms the payment was prepared against: the BLAKE3
+ * hex of the checkout-time lock resource (`lock_resource_hash`) and its
+ * `criterion_id`. The Shop submits only when the listing's lock matches them.
  */
 export const prepareLocksPaymentCommandSchema = createCommerceCommandSchema(
   'payment.prepare_locks',
@@ -553,7 +608,7 @@ const orderIdPayload = z.object({ orderId: z.uuid() }).strict();
 
 export const requestOrderCancellationCommandSchema = createCommerceCommandSchema(
   'order.cancel_request',
-  orderIdPayload.extend({ reason: z.string().trim().min(1).max(500) }).strict(),
+  orderIdPayload.extend({ reason: trimmedText({ min: 1, max: 500 }) }).strict(),
 );
 
 export const approveOrderCancellationCommandSchema = createCommerceCommandSchema(
@@ -565,11 +620,11 @@ export const shipOrderCommandSchema = createCommerceCommandSchema(
   'fulfillment.ship',
   orderIdPayload
     .extend({
-      carrier: z.string().trim().min(1).max(100),
+      carrier: trimmedText({ min: 1, max: 100 }),
       // Optional: a seller may mark an order shipped before a number exists
       // (connected stores complete orders without one) and add it later with
       // `fulfillment.update_tracking`.
-      trackingNumber: z.string().trim().min(1).max(200).optional(),
+      trackingNumber: trimmedText({ min: 1, max: 200 }).optional(),
     })
     .strict(),
 );
@@ -578,8 +633,8 @@ export const updateOrderTrackingCommandSchema = createCommerceCommandSchema(
   'fulfillment.update_tracking',
   orderIdPayload
     .extend({
-      carrier: z.string().trim().min(1).max(100),
-      trackingNumber: z.string().trim().min(1).max(200),
+      carrier: trimmedText({ min: 1, max: 100 }),
+      trackingNumber: trimmedText({ min: 1, max: 200 }),
     })
     .strict(),
 );
@@ -682,6 +737,13 @@ export const deliverDigitalCommandSchema = createCommerceCommandSchema(
   orderIdPayload.extend({ channel: marketplaceDigitalDeliveryChannelSchema }).strict(),
 );
 
+/**
+ * `fulfillment.release_digital` (seller, own paid digital order): releases the
+ * order's instant lines to the buyer when they wait for the seller's release;
+ * the order moves to `delivered` once no manual channel is left to mark.
+ */
+export const releaseDigitalCommandSchema = createCommerceCommandSchema('fulfillment.release_digital', orderIdPayload);
+
 /** `digital_delivery.clear` (seller, own listing only): removes delivery; refused while buyers pay for or download it (C4). */
 export const clearDigitalDeliveryCommandSchema = createCommerceCommandSchema(
   'digital_delivery.clear',
@@ -707,7 +769,7 @@ export const requestReturnCommandSchema = createCommerceCommandSchema(
   'return.request',
   orderIdPayload
     .extend({
-      reason: z.string().trim().min(1).max(1_000),
+      reason: trimmedText({ min: 1, max: 1_000 }),
       requestedAmountMinor: z.number().int().positive(),
     })
     .strict(),
@@ -715,13 +777,21 @@ export const requestReturnCommandSchema = createCommerceCommandSchema(
 
 export const approveReturnCommandSchema = createCommerceCommandSchema('return.approve', orderIdPayload);
 export const receiveReturnCommandSchema = createCommerceCommandSchema('return.receive', orderIdPayload);
+export const cancelReturnCommandSchema = createCommerceCommandSchema('return.cancel', orderIdPayload);
 
+/**
+ * `refund.record_external` (seller). `amountUnit` names the unit
+ * `amountMinor` is in, as the seller's `refundCap` names it; the service
+ * refuses a unit other than the order's. It is sent only when the service
+ * projected a cap: one that predates the unit refuses the field.
+ */
 export const recordExternalRefundCommandSchema = createCommerceCommandSchema(
   'refund.record_external',
   orderIdPayload
     .extend({
       amountMinor: z.number().int().positive(),
-      transactionId: z.string().trim().min(8).max(200),
+      transactionId: trimmedText({ min: 8, max: 200 }),
+      amountUnit: refundUnitSchema.optional(),
     })
     .strict(),
 );
@@ -744,13 +814,25 @@ export const confirmRefundDestinationCommandSchema = createCommerceCommandSchema
 
 /**
  * Review terms shared by `review.create` and `review.update`, mirroring the
- * service's single `ReviewTermsPayload` validator: an integer rating 1–5 and
- * trimmed text of 1–5,000 characters against the reviewed order.
+ * service's single `ReviewTermsPayload` validator, which takes exactly one of
+ * two shapes against the reviewed order.
+ *
+ * v1 carries one integer rating 1–5 and trimmed text of 1–5,000 characters.
+ * A seller reviewing the buyer always sends v1; a buyer's v1 rates the
+ * order's first line.
+ *
+ * v2 (buyer only) carries one entry per reviewed listing (`listingId` is the
+ * seller's record id, each at most once, 1–50 items) with a rating 1–5 and
+ * optional trimmed text of 0–5,000 characters, plus optional per-order
+ * `seller` ratings, which the service writes on every item review of the
+ * order.
  */
-const reviewTermsPayloadSchema = orderIdPayload
+const reviewRatingSchema = z.number().int().min(1).max(5);
+
+const reviewV1TermsPayloadSchema = orderIdPayload
   .extend({
-    rating: z.number().int().min(1).max(5),
-    text: z.string().trim().min(1).max(5_000),
+    rating: reviewRatingSchema,
+    text: trimmedText({ min: 1, max: COMMERCE_REVIEW_TEXT_MAX_CHARS }),
     /**
      * Buyer-side amount-band opt-in (ratified D2, ADR 0024): the purchase
      * attestation carries a log-decade amount band only when this is true
@@ -762,13 +844,47 @@ const reviewTermsPayloadSchema = orderIdPayload
   })
   .strict();
 
+export const MARKETPLACE_REVIEW_MAX_ITEMS = 50;
+
+const reviewItemTermsSchema = z
+  .object({
+    listingId: commerceEntityIdSchema,
+    rating: reviewRatingSchema,
+    text: trimmedText({ max: COMMERCE_REVIEW_TEXT_MAX_CHARS }).default(''),
+  })
+  .strict();
+
+export const reviewSellerRatingTermsSchema = z
+  .object({
+    shipping: reviewRatingSchema,
+    communication: reviewRatingSchema,
+  })
+  .strict();
+
+const reviewV2TermsPayloadSchema = orderIdPayload
+  .extend({
+    items: z
+      .array(reviewItemTermsSchema)
+      .min(1)
+      .max(MARKETPLACE_REVIEW_MAX_ITEMS)
+      .refine((items) => new Set(items.map(({ listingId }) => listingId)).size === items.length, {
+        message: 'Each listing may be reviewed once per command.',
+      }),
+    seller: reviewSellerRatingTermsSchema.optional(),
+    allowAmountBand: z.boolean().optional(),
+  })
+  .strict();
+
+const reviewTermsPayloadSchema = z.union([reviewV1TermsPayloadSchema, reviewV2TermsPayloadSchema]);
+
 export const createReviewCommandSchema = createCommerceCommandSchema('review.create', reviewTermsPayloadSchema);
 
 /**
  * `review.update` exists only on the durable service (the sandbox prototype
- * had no review editing): the reviewer may revise their own review's rating
- * and text within `COMMERCE_REVIEW_EDIT_WINDOW_SECONDS` (24 hours, the
- * service's `REVIEW_EDIT_WINDOW_SECONDS`) of the review's creation. Outside
+ * had no review editing): the reviewer may revise the rating and text of the
+ * listings they reviewed, and a buyer's seller ratings, within
+ * `COMMERCE_REVIEW_EDIT_WINDOW_SECONDS` (24 hours, the service's
+ * `REVIEW_EDIT_WINDOW_SECONDS`) of their first review of the order. Outside
  * the window the service answers `INVALID_STATE` ("The review edit window
  * has closed."), so the UI withholds the affordance instead of failing on
  * submit. `expected_revision` is the ORDER's revision — the service bumps
@@ -776,6 +892,20 @@ export const createReviewCommandSchema = createCommerceCommandSchema('review.cre
  * `REVISION_CONFLICT` refetch-and-retry treatment.
  */
 export const updateReviewCommandSchema = createCommerceCommandSchema('review.update', reviewTermsPayloadSchema);
+
+/**
+ * `review.withdraw` (durable service only): the reviewer records that they
+ * removed their public review, so no device republishes it. It sets the
+ * author's own review rows of the order to withdrawn (all of them, or the
+ * one item when `listingId` is given) and is idempotent; the rating, text
+ * and attestation stay at the service. `review.update` clears the mark.
+ * Answers `INVALID_STATE` when the caller has no review to withdraw.
+ * `expected_revision` is the ORDER's revision, like `review.update`.
+ */
+export const withdrawReviewCommandSchema = createCommerceCommandSchema(
+  'review.withdraw',
+  orderIdPayload.extend({ listingId: z.string().min(1).optional() }).strict(),
+);
 
 export const sendMarketplaceMessageCommandSchema = createCommerceCommandSchema(
   'message.send',
@@ -822,16 +952,40 @@ export const marketplaceCommandSchema = z.union([
   clearDigitalDeliveryCommandSchema,
   setDeliveryEmailCommandSchema,
   deliverDigitalCommandSchema,
+  releaseDigitalCommandSchema,
   markReadyForPickupCommandSchema,
   confirmPickupCommandSchema,
   requestReturnCommandSchema,
   approveReturnCommandSchema,
+  cancelReturnCommandSchema,
   receiveReturnCommandSchema,
   recordExternalRefundCommandSchema,
   confirmRefundDestinationCommandSchema,
   createReviewCommandSchema,
   updateReviewCommandSchema,
+  withdrawReviewCommandSchema,
 ]);
+
+const marketplaceCommandPayloadSchemas: ReadonlyMap<string, z.ZodType> = new Map(
+  marketplaceCommandSchema.options.map((schema) => [schema.shape.kind.value, schema.shape.payload]),
+);
+
+/**
+ * The payload paths the Shop's own command contract refuses for an order
+ * command, as `actOnOrder` sends it (with `orderId`), or null when it takes
+ * it. The command normalizer refuses the same payload before anything is
+ * sent, so a dialog checks first and can say so.
+ */
+export function orderCommandPayloadIssues(
+  kind: string,
+  orderId: string,
+  payload: Record<string, unknown>,
+): string[] | null {
+  const schema = marketplaceCommandPayloadSchemas.get(kind);
+  if (!schema) return ['kind'];
+  const parsed = schema.safeParse({ orderId, ...payload });
+  return parsed.success ? null : parsed.error.issues.map(({ path }) => ['payload', ...path].join('.'));
+}
 
 export const marketplaceCommandResponseSchema = z.discriminatedUnion('ok', [
   z
@@ -885,15 +1039,10 @@ export const marketplaceCommandResponseSchema = z.discriminatedUnion('ok', [
 ]);
 
 export type RegisterListingCommand = z.infer<typeof registerListingCommandSchema>;
-export type SyncListingCommand = z.infer<typeof syncListingCommandSchema>;
-export type SyncDropCommand = z.infer<typeof syncDropCommandSchema>;
-export type CancelDropCommand = z.infer<typeof cancelDropCommandSchema>;
-export type ReleaseDropListingsCommand = z.infer<typeof releaseDropListingsCommandSchema>;
 export type ReserveInventoryCommand = z.infer<typeof reserveInventoryCommandSchema>;
 export type CreateOfferCommand = z.infer<typeof createOfferCommandSchema>;
 export type CounterOfferCommand = z.infer<typeof counterOfferCommandSchema>;
 export type AcceptOfferCommand = z.infer<typeof acceptOfferCommandSchema>;
-export type OfferCheckoutCommand = z.infer<typeof offerCheckoutCommandSchema>;
 export type RejectOfferCommand = z.infer<typeof rejectOfferCommandSchema>;
 export type WithdrawOfferCommand = z.infer<typeof withdrawOfferCommandSchema>;
 export type PlaceBidCommand = z.infer<typeof placeBidCommandSchema>;
@@ -905,8 +1054,6 @@ export type UpdateMarketplaceNotificationPreferencesCommand = z.infer<
 >;
 export type CreateMarketplaceCheckoutCommand = z.infer<typeof createMarketplaceCheckoutCommandSchema>;
 export type AdvanceSandboxPaymentCommand = z.infer<typeof advanceSandboxPaymentCommandSchema>;
-export type PrepareLocksPaymentCommand = z.infer<typeof prepareLocksPaymentCommandSchema>;
-export type RegisterLocksPaymentCommand = z.infer<typeof registerLocksPaymentCommandSchema>;
 export type RequestOrderCancellationCommand = z.infer<typeof requestOrderCancellationCommandSchema>;
 export type ApproveOrderCancellationCommand = z.infer<typeof approveOrderCancellationCommandSchema>;
 export type ShipOrderCommand = z.infer<typeof shipOrderCommandSchema>;
@@ -914,19 +1061,14 @@ export type UpdateOrderTrackingCommand = z.infer<typeof updateOrderTrackingComma
 export type ConfirmOrderDeliveryCommand = z.infer<typeof confirmOrderDeliveryCommandSchema>;
 export type SetPickupDetailsCommand = z.infer<typeof setPickupDetailsCommandSchema>;
 export type ClearPickupDetailsCommand = z.infer<typeof clearPickupDetailsCommandSchema>;
-export type SetDigitalDeliveryCommand = z.infer<typeof setDigitalDeliveryCommandSchema>;
-export type ClearDigitalDeliveryCommand = z.infer<typeof clearDigitalDeliveryCommandSchema>;
-export type SetDeliveryEmailCommand = z.infer<typeof setDeliveryEmailCommandSchema>;
-export type DeliverDigitalCommand = z.infer<typeof deliverDigitalCommandSchema>;
 export type MarkReadyForPickupCommand = z.infer<typeof markReadyForPickupCommandSchema>;
 export type ConfirmPickupCommand = z.infer<typeof confirmPickupCommandSchema>;
 export type RequestReturnCommand = z.infer<typeof requestReturnCommandSchema>;
 export type ApproveReturnCommand = z.infer<typeof approveReturnCommandSchema>;
 export type ReceiveReturnCommand = z.infer<typeof receiveReturnCommandSchema>;
+export type CancelReturnCommand = z.infer<typeof cancelReturnCommandSchema>;
 export type RecordExternalRefundCommand = z.infer<typeof recordExternalRefundCommandSchema>;
-export type ConfirmRefundDestinationCommand = z.infer<typeof confirmRefundDestinationCommandSchema>;
 export type CreateReviewCommand = z.infer<typeof createReviewCommandSchema>;
-export type UpdateReviewCommand = z.infer<typeof updateReviewCommandSchema>;
 export type MarketplaceCommand = z.infer<typeof marketplaceCommandSchema>;
 export type MarketplaceCommandResponse = z.infer<typeof marketplaceCommandResponseSchema>;
 
@@ -1023,26 +1165,6 @@ export const pickupDetailsCommandResultSchema = z
 export type PickupDetailsCommandResult = z.infer<typeof pickupDetailsCommandResultSchema>;
 
 /**
- * Narrows a command response to the pickup-details result, or null for a
- * refusal / a different command's result. Callers that need the new version
- * for the next CAS use this instead of casting the passthrough result.
- */
-export function asPickupDetailsCommandResult(response: MarketplaceCommandResponse): PickupDetailsCommandResult | null {
-  if (!response.ok) return null;
-  const parsed = pickupDetailsCommandResultSchema.safeParse(response.result);
-  return parsed.success ? parsed.data : null;
-}
-
-/** Narrows a command response to the digital-delivery result, or null for a refusal or another result. */
-export function asDigitalDeliveryCommandResult(
-  response: MarketplaceCommandResponse,
-): DigitalDeliveryCommandResult | null {
-  if (!response.ok) return null;
-  const parsed = digitalDeliveryCommandResultSchema.safeParse(response.result);
-  return parsed.success ? parsed.data : null;
-}
-
-/**
  * True when a command was refused because the caller's `expected_revision`
  * went stale (both services answer 409 `REVISION_CONFLICT` with the current
  * revision). The correct reaction is to refetch the projection the revision
@@ -1112,4 +1234,10 @@ export function buildMarketplacePaymentAggregateId(paymentId: string): string {
 
 export function buildMarketplaceOrderAggregateId(orderId: string): string {
   return `order:${orderId}`;
+}
+
+/** The order id of an `order:{id}` aggregate id, or null for any other aggregate. */
+export function orderIdFromMarketplaceAggregateId(aggregateId: string): string | null {
+  const orderId = aggregateId.startsWith('order:') ? aggregateId.slice('order:'.length) : '';
+  return orderId === '' ? null : orderId;
 }

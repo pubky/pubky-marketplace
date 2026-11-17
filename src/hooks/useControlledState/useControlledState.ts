@@ -30,10 +30,6 @@ export interface UseControlledStateReturn<T> {
    * Function to update the value
    */
   setValue: (value: T) => void;
-  /**
-   * Whether the component is in controlled mode
-   */
-  isControlled: boolean;
 }
 
 /**
@@ -70,7 +66,7 @@ export interface UseControlledStateReturn<T> {
  * ```
  *
  * @param options - Configuration options
- * @returns Object containing the current value, setter, and controlled state flag
+ * @returns Object containing the current value and setter
  */
 export function useControlledState<T>({
   value: controlledValue,
@@ -91,5 +87,5 @@ export function useControlledState<T>({
     [isControlled, onChange],
   );
 
-  return { value, setValue, isControlled };
+  return { value, setValue };
 }

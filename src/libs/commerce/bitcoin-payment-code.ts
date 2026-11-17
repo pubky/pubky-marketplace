@@ -3,8 +3,8 @@ import { formatCommerceMoney } from './format';
 import { mayPayInBitcoin, observedPaymentRail } from './paykit-rail';
 import type { PaymentMethodKind } from './payment-methods';
 import { formatBitcoinAmount, hasSameAsset, isBitcoinAsset, MAX_BITCOIN_BASE_UNITS } from './pricing';
-import type { CommerceMoney } from './transaction-contracts';
-import { usdtRefundCap } from './usdt-refund';
+import type { CommerceMoney, RefundCap } from './transaction-contracts';
+import { usdtRefundCap, usdtRefundCapMinor } from './usdt-refund';
 
 /**
  * On the fork Paykit server a Bitcoin payment adds a random 1–999 sat amount
@@ -66,9 +66,11 @@ export type OrderAmountEntry = {
 };
 
 /**
- * The amount a refund or return form records. A Bitcoin order is integer
- * satoshis (the payable, including the payment code). Any other rail keeps
- * the order total's own currency and exponent.
+ * The order's amount in the units a refund form entered it in before the
+ * service projected a refund cap. A Bitcoin order is integer satoshis (the
+ * payable, including the payment code). A USDT order priced outside USD is
+ * the USDT paid. Any other rail keeps the order total's own currency and
+ * exponent. A refund records `orderRefundEntry`, a return `orderReturnEntry`.
  */
 export function orderAmountEntry(order: BitcoinPaymentOrder & { total: CommerceMoney }): OrderAmountEntry {
   const usdtCap = usdtRefundCap(order);
@@ -83,6 +85,69 @@ export function orderAmountEntry(order: BitcoinPaymentOrder & { total: CommerceM
     if (sats !== null) return { amountMinor: sats, exponent: 0, unitLabel: '₿' };
   }
   return { amountMinor: order.total.amountMinor, exponent: order.total.exponent, unitLabel: order.total.currency };
+}
+
+/**
+ * The amount a seller's refund records and is capped at, as the service
+ * projects it on the seller's order (`refundCap`): the sats a Bitcoin order
+ * received, whatever its price currency, the USDT a USDT order received, else
+ * the order total. An order from a service that projects no cap keeps the
+ * earlier entry: `orderAmountEntry`, with a USDT order capped at the USDT it
+ * received rather than its total. A return request asks for at most the
+ * merchandise total (`orderReturnEntry`): the service caps it there.
+ */
+export function orderRefundEntry(
+  order: BitcoinPaymentOrder & { total: CommerceMoney; refundCap?: RefundCap | null },
+): OrderAmountEntry {
+  const cap = order.refundCap;
+  if (!cap) {
+    const entry = orderAmountEntry(order);
+    const received = usdtRefundCapMinor(order);
+    return received === null ? entry : { ...entry, amountMinor: received };
+  }
+  switch (cap.unit) {
+    case 'sat':
+      return { amountMinor: cap.amountMinor, exponent: 0, unitLabel: '₿' };
+    case 'usdt0':
+      return { amountMinor: cap.amountMinor, exponent: cap.exponent, unitLabel: 'USDT' };
+    case 'order':
+      return {
+        amountMinor: cap.amountMinor,
+        exponent: cap.exponent,
+        unitLabel: satoshiCount(order.total) === null ? order.total.currency : '₿',
+      };
+  }
+}
+
+/**
+ * The line beside a Bitcoin refund form naming the sats received, its cap,
+ * when the payment breakdown above it does not already end on that figure.
+ */
+export function bitcoinRefundReceivedNote(
+  order: BitcoinPaymentOrder & { refundCap?: RefundCap | null },
+): string | null {
+  const cap = order.refundCap;
+  if (cap?.unit !== 'sat') return null;
+  const breakdown = bitcoinPaymentBreakdown(order);
+  if (breakdown && satoshiCount(breakdown.payable) === cap.amountMinor) return null;
+  return `Received ${formatBitcoinAmount(cap.amountMinor)}. Record the refund in bitcoin, up to that amount.`;
+}
+
+/**
+ * The amount a return request asks for, at most: the merchandise total in the
+ * order's own currency (satoshis for a Bitcoin price), whichever rail paid it.
+ * `return.request` compares the request with that total, never with the USDT
+ * received or a Bitcoin payable that includes the payment code.
+ */
+export function orderReturnEntry(order: {
+  total: CommerceMoney;
+  merchandiseTotal?: CommerceMoney | null;
+}): OrderAmountEntry {
+  const merchandise =
+    order.merchandiseTotal && hasSameAsset(order.merchandiseTotal, order.total) ? order.merchandiseTotal : order.total;
+  const sats = satoshiCount(merchandise);
+  if (sats !== null) return { amountMinor: sats, exponent: 0, unitLabel: '₿' };
+  return { amountMinor: merchandise.amountMinor, exponent: merchandise.exponent, unitLabel: merchandise.currency };
 }
 
 export function formatBitcoinAmountBreakdown(breakdown: BitcoinPaymentBreakdown): string {

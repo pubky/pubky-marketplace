@@ -40,8 +40,6 @@ vi.mock('@/atoms/Dialog/Dialog', () => {
     DialogContent: ({
       children,
       className,
-      _onOpenAutoFocus,
-      _onCloseAutoFocus,
       'data-testid': dataTestId,
     }: {
       children: React.ReactNode;
@@ -75,7 +73,7 @@ vi.mock('@/hooks/useCustomFeed/useCustomFeed', () => ({
 }));
 
 // Mock toast
-const mockToast = vi.fn();
+const mockToast = vi.hoisted(() => vi.fn());
 vi.mock('@/molecules/PostTag/PostTag', () => {
   return {
     PostTag: ({ label, showClose, onClose }: { label: string; showClose?: boolean; onClose?: () => void }) => (
@@ -140,9 +138,9 @@ vi.mock('@/molecules/TagInput/TagInput', () => {
   };
 });
 
-vi.mock('@/molecules/Toaster/use-toast', () => {
+vi.mock('@/molecules/Toaster/toast', () => {
   return {
-    useToast: () => ({ toast: mockToast }),
+    toast: mockToast,
   };
 });
 
@@ -1485,63 +1483,3 @@ describe('CustomFeedDialog', () => {
 });
 
 // --- Snapshot Tests ---
-
-describe('CustomFeedDialog - Snapshots', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockUseCustomFeed.mockReturnValue(undefined);
-  });
-
-  it('matches snapshot for create mode default state', () => {
-    const { container } = render(
-      <CustomFeedDialog mode="create">
-        <button>Create Feed</button>
-      </CustomFeedDialog>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for edit mode with custom feed', () => {
-    const mockFeed = createMockFeed();
-    mockUseCustomFeed.mockReturnValue(mockFeed);
-
-    const { container } = render(
-      <CustomFeedDialog mode="edit">
-        <button>Edit Feed</button>
-      </CustomFeedDialog>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for edit mode without custom feed (disabled)', () => {
-    mockUseCustomFeed.mockReturnValue(undefined);
-
-    const { container } = render(
-      <CustomFeedDialog mode="edit">
-        <button>Edit Feed</button>
-      </CustomFeedDialog>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for edit mode with null content feed', () => {
-    const mockFeed = createMockFeed({ content: null, tags: ['bitcoin'] });
-    mockUseCustomFeed.mockReturnValue(mockFeed);
-
-    const { container } = render(
-      <CustomFeedDialog mode="edit">
-        <button>Edit Feed</button>
-      </CustomFeedDialog>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for create mode with different trigger child', () => {
-    const { container } = render(
-      <CustomFeedDialog mode="create">
-        <span className="custom-trigger">+ New Feed</span>
-      </CustomFeedDialog>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});

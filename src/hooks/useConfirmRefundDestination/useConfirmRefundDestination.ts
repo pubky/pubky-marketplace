@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { CONFIRM_REFUND_DESTINATION_KIND } from '@/libs/commerce/usdt-refund';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import {
   type ConfirmRefundDestinationFormData,
@@ -29,6 +29,7 @@ type UseConfirmRefundDestinationResult = {
 export function useConfirmRefundDestination(
   order: MarketplaceOrder,
   actOnOrder: (order: MarketplaceOrder, kind: string, payload: Record<string, unknown>) => Promise<boolean>,
+  paykitAddress: string | null = null,
 ): UseConfirmRefundDestinationResult {
   const paymentAddress = order.paymentAddress ?? null;
   const defaults: ConfirmRefundDestinationFormData = {
@@ -48,7 +49,12 @@ export function useConfirmRefundDestination(
   const submit = async (): Promise<boolean> => {
     let succeeded = false;
     await form.handleSubmit(async (data) => {
-      const address = data.source === 'payment' && paymentAddress ? paymentAddress : data.address;
+      const address =
+        data.source === 'payment' && paymentAddress
+          ? paymentAddress
+          : data.source === 'paykit' && paykitAddress
+            ? paykitAddress
+            : data.address;
       succeeded = await actOnOrder(order, CONFIRM_REFUND_DESTINATION_KIND, { address });
       if (succeeded) toast({ title: 'Refund address confirmed' });
     })();

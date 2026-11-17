@@ -1,10 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ModerationApplication } from '@/application/moderation/moderation';
-import type { EnrichedPostDetails, EnrichedUserDetails } from '@/application/moderation/moderation.types';
-import type { Pubky } from '@/models/models.types';
+import type { EnrichedPostDetails } from '@/application/moderation/moderation.types';
 import { ModerationType } from '@/models/moderation/moderation.schema';
 import type { PostDetailsModelSchema } from '@/models/post/details/postDetails.schema';
-import type { UserDetailsModelSchema } from '@/models/user/details/userDetails.schema';
 import { useSettingsStore } from '@/stores/settings/settings.store';
 import type { SettingsStore } from '@/stores/settings/settings.types';
 import { ModerationController } from './moderation';
@@ -13,7 +11,6 @@ vi.mock('@/application/moderation/moderation', () => ({
   ModerationApplication: {
     setUnBlur: vi.fn(),
     enrichPostsWithModeration: vi.fn(),
-    enrichUsersWithModeration: vi.fn(),
     getModerationStatus: vi.fn(),
   },
 }));
@@ -77,69 +74,6 @@ describe('ModerationController', () => {
       const enrichSpy = vi.spyOn(ModerationApplication, 'enrichPostsWithModeration').mockResolvedValue([]);
 
       const result = await ModerationController.enrichPosts([]);
-
-      expect(result).toEqual([]);
-      expect(enrichSpy).toHaveBeenCalledWith([], false);
-    });
-  });
-
-  describe('enrichUsers', () => {
-    it('should pass isBlurDisabledGlobally from settings store', async () => {
-      const users: UserDetailsModelSchema[] = [
-        {
-          id: 'pk:user1' as Pubky,
-          name: 'Test User',
-          bio: 'Test bio',
-          image: null,
-          links: [],
-          status: null,
-          indexed_at: 123456,
-        },
-      ];
-
-      const enrichedUsers: EnrichedUserDetails[] = [{ ...users[0], is_moderated: true, is_blurred: true }];
-
-      vi.spyOn(useSettingsStore, 'getState').mockReturnValue({
-        privacy: { blurCensored: true },
-      } as Partial<SettingsStore> as SettingsStore);
-      const enrichSpy = vi.spyOn(ModerationApplication, 'enrichUsersWithModeration').mockResolvedValue(enrichedUsers);
-
-      const result = await ModerationController.enrichUsers(users);
-
-      expect(result).toEqual(enrichedUsers);
-      expect(enrichSpy).toHaveBeenCalledWith(users, false); // blurCensored: true means isBlurDisabledGlobally: false
-    });
-
-    it('should handle blur disabled globally', async () => {
-      const users: UserDetailsModelSchema[] = [
-        {
-          id: 'pk:user1' as Pubky,
-          name: 'Test User',
-          bio: 'Test bio',
-          image: null,
-          links: [],
-          status: null,
-          indexed_at: 123456,
-        },
-      ];
-
-      vi.spyOn(useSettingsStore, 'getState').mockReturnValue({
-        privacy: { blurCensored: false },
-      } as Partial<SettingsStore> as SettingsStore);
-      const enrichSpy = vi.spyOn(ModerationApplication, 'enrichUsersWithModeration').mockResolvedValue([]);
-
-      await ModerationController.enrichUsers(users);
-
-      expect(enrichSpy).toHaveBeenCalledWith(users, true); // blurCensored: false means isBlurDisabledGlobally: true
-    });
-
-    it('should handle empty array', async () => {
-      vi.spyOn(useSettingsStore, 'getState').mockReturnValue({
-        privacy: { blurCensored: true },
-      } as Partial<SettingsStore> as SettingsStore);
-      const enrichSpy = vi.spyOn(ModerationApplication, 'enrichUsersWithModeration').mockResolvedValue([]);
-
-      const result = await ModerationController.enrichUsers([]);
 
       expect(result).toEqual([]);
       expect(enrichSpy).toHaveBeenCalledWith([], false);

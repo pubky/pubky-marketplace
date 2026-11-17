@@ -3,11 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { marketplaceOrderSchema } from '@/core/services/marketplace/marketplace-projections';
 import resolveSamples from '@/libs/commerce/contracts/samples/resolve.json';
-import { sellerPaymentResolutionSchema } from '@/libs/commerce/marketplace-payment-review';
+import { REASON_TOO_LONG_COPY, sellerPaymentResolutionSchema } from '@/libs/commerce/marketplace-payment-review';
 import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
+import { toast } from '@/molecules/Toaster/toast';
 import { useMarketplaceSellerPaymentReview } from './useMarketplaceSellerPaymentReview';
 
 vi.mock('@/controllers/commerce/commerce', () => ({
@@ -17,9 +18,38 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
+
 describe('useMarketplaceSellerPaymentReview', () => {
   beforeEach(() => {
     vi.mocked(CommerceController.resolveBitcoinPayment).mockReset();
+  });
+
+  it.each([
+    [
+      'confirm',
+      (hook: ReturnType<typeof useMarketplaceSellerPaymentReview>) => hook.confirm('order-1', '\u{1F600}'.repeat(126)),
+    ],
+    [
+      'resolve',
+      (hook: ReturnType<typeof useMarketplaceSellerPaymentReview>) =>
+        hook.resolve('order-1', 'paid', '\u{1F600}'.repeat(126)),
+    ],
+  ])('%s names the byte limit when the reason is too long, and sends nothing', async (_name, call) => {
+    vi.mocked(toast).mockClear();
+    vi.mocked(CommerceController.confirmBitcoinPayment).mockReset();
+    vi.mocked(CommerceController.resolveBitcoinPayment).mockReset();
+    const { result } = renderHook(() => useMarketplaceSellerPaymentReview(vi.fn()));
+
+    let sent = true;
+    await act(async () => {
+      sent = await call(result.current);
+    });
+
+    expect(sent).toBe(false);
+    expect(toast).toHaveBeenCalledWith({ variant: 'error', description: REASON_TOO_LONG_COPY });
+    expect(CommerceController.confirmBitcoinPayment).not.toHaveBeenCalled();
+    expect(CommerceController.resolveBitcoinPayment).not.toHaveBeenCalled();
   });
 
   it('reuses an idempotency key only for the same order and body', async () => {

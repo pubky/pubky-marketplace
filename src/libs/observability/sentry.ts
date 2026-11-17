@@ -9,12 +9,9 @@ import {
   scrubTransactionEvent,
   shouldDropAppErrorFromSentry,
 } from '@/libs/observability/sentry.utils';
-import {
-  getSentryDsn,
-  getSentryEnvironment,
-  getSentryTracesSampleRate,
-  getTestnet,
-} from '@/libs/runtime-config/runtime-config';
+import { getSentryErrorSampling, resolveSentryEnvironment } from '@/libs/observability/sentry-settings';
+import { createTimeoutQuotaFilter } from '@/libs/observability/sentry-timeout-quota';
+import { getSentryDsn, getSentryTracesSampleRate, getTestnet } from '@/libs/runtime-config/runtime-config';
 
 /**
  * Single source of truth for Sentry configuration shared across the three Next.js runtimes
@@ -67,17 +64,6 @@ export function isSentryInitialized(): boolean {
 }
 
 /**
- * Resolved environment tag attached to every event.
- * Falls back to NODE_ENV when the runtime sentryEnvironment is unset.
- * Internal: consumed only by getSentryInitBase() in the same file (which only runs after
- * shouldEnableSentry() returned true, so the runtime config is already resolved and memoized).
- */
-function resolveSentryEnvironment(): string {
-  if (!Env) return 'unknown';
-  return getSentryEnvironment() ?? Env.NODE_ENV;
-}
-
-/**
  * Shared options applied to every Sentry.init() call (browser, node, edge).
  * Each runtime layers its own additions on top (e.g. replayIntegration only on browser).
  *
@@ -89,14 +75,19 @@ function resolveSentryEnvironment(): string {
  * second enablement path readers have to reconcile.
  */
 export function getSentryInitBase(): Sentry.NodeOptions & Sentry.BrowserOptions {
+  const environment = resolveSentryEnvironment();
+  const { isStaging, sampleRate } = getSentryErrorSampling(environment);
+  const timeoutQuota = createTimeoutQuotaFilter();
   return {
     dsn: getSentryDsn(),
-    environment: resolveSentryEnvironment(),
+    environment,
     // The release stays build-time on purpose: it is the deployed commit SHA (Docker CI, Vercel),
     // which source-map uploads and scripts/sentry-release use too; local builds use the package version.
     release: Env.NEXT_PUBLIC_APP_VERSION,
     debug: false,
     sendDefaultPii: false,
+    // Error events have their own quota; tracesSampleRate does not sample them.
+    sampleRate,
     tracesSampleRate: getSentryTracesSampleRate(),
     ignoreErrors: [
       'ResizeObserver loop limit exceeded',
@@ -107,7 +98,24 @@ export function getSentryInitBase(): Sentry.NodeOptions & Sentry.BrowserOptions 
       'Non-Error promise rejection captured',
     ],
     beforeBreadcrumb: scrubBreadcrumb,
-    beforeSend: scrubSensitiveData,
+    beforeSend: (event, hint) => {
+      // Gate at final dispatch so automatic SDK captures cannot bypass it.
+      // The SDK applies sampleRate before this hook; retain the first sampled
+      // timeout, then one per minute if the outage continues.
+      try {
+        // Scrubbing replaces non-plain originalException objects in the hint.
+        const originalException = hint?.originalException;
+        if (isStaging && timeoutQuota.shouldDrop(originalException)) return null;
+        const scrubbed = scrubSensitiveData(event, hint);
+        if (scrubbed === null) return null;
+        // Only accepted events consume a slot; a privacy rejection must not
+        // suppress the next report. Repeats skip the recursive scrub above.
+        if (isStaging) timeoutQuota.record(originalException);
+        return scrubbed;
+      } catch {
+        return null;
+      }
+    },
     beforeSendTransaction: scrubTransactionEvent,
     beforeSendSpan: scrubSpanJson,
   };

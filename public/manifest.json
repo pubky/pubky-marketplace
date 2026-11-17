@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "Pubky App",
-  "short_name": "Pubky",
-  "description": "A social-media experience built on Pubky Core",
+  "name": "Pubky Market",
+  "short_name": "Pubky Market",
+  "description": "Buy and sell on Pubky: listings and shops published to seller-owned homeservers, fixed prices and auctions, with encrypted buyer-seller messaging.",
   "scope": "/",
   "lang": "en",
   "orientation": "portrait-primary",
@@ -97,12 +97,6 @@
       "sizes": "640x1136",
       "type": "image/png",
       "form_factor": "narrow"
-    }
-  ],
-  "protocol_handlers": [
-    {
-      "protocol": "web+pubkyring",
-      "url": "/invite/%s"
     }
   ],
   "share_target": {

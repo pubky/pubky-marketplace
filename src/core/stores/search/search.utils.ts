@@ -6,7 +6,7 @@ import { MAX_ACTIVE_SEARCH_TAGS } from './search.constants';
  * - If at max capacity, remove oldest (first) tag
  * - Otherwise, append to end
  *
- * Used by both calculateNewTags (hook) and addActiveTag (store) for consistency.
+ * Used by calculateNewTags to keep tag updates consistent.
  *
  * @param currentTags - Current array of tags
  * @param newTag - Tag to add (should be normalized)

@@ -28,9 +28,6 @@ const SORT_TO_SORTING = {
   [SORT.ENGAGEMENT]: StreamSorting.ENGAGEMENT,
 } as const satisfies Record<SortType, StreamSorting>;
 
-/** Maps streamId SORTING part to SORT filter (auto-generated) */
-const SORTING_TO_SORT = reverseMapping(SORT_TO_SORTING);
-
 /** Maps REACH filter to streamId SOURCE part */
 type SourceMappedReachType = Exclude<ReachType, typeof REACH.ME>;
 
@@ -40,9 +37,6 @@ const REACH_TO_SOURCE = {
   [REACH.FOLLOWING]: 'following',
   [REACH.FRIENDS]: 'friends',
 } as const satisfies Record<SourceMappedReachType, string>;
-
-/** Maps streamId SOURCE part to REACH filter (auto-generated) */
-const SOURCE_TO_REACH = reverseMapping(REACH_TO_SOURCE);
 
 /** Maps CONTENT filter to streamId KIND part */
 const CONTENT_TO_KIND = {
@@ -136,55 +130,6 @@ export function getHomeStreamIdFromFilters({
   }
 
   return getStreamId(sort, effectiveReach, content);
-}
-
-/**
- * Checks if a streamId matches the current filter state
- *
- * @example
- * matchesFilters('timeline:all:all', 'recent', 'all', 'all') // => true
- * matchesFilters('timeline:following:all', 'recent', 'all', 'all') // => false
- */
-export function matchesFilters(streamId: string, sort: SortType, reach: ReachType, content: ContentType): boolean {
-  // Me streams require viewer-aware author ids, which this legacy matcher cannot derive.
-  if (reach === REACH.ME) {
-    return false;
-  }
-
-  const expectedStreamId = getStreamIdFromFilters(sort, reach, content);
-  return streamId === expectedStreamId;
-}
-
-/**
- * Parses a streamId back into filter components
- *
- * @example
- * parseStreamId('timeline:all:all') // => { sort: 'recent', reach: 'all', content: 'all' }
- * parseStreamId('total_engagement:following:image') // => { sort: 'popularity', reach: 'following', content: 'images' }
- */
-export function parseStreamId(streamId: string): {
-  sort: SortType;
-  reach: ReachType;
-  content: ContentType;
-} | null {
-  const parts = streamId.split(':');
-  if (parts.length !== 3) {
-    return null;
-  }
-
-  const [sorting, source, kind] = parts;
-
-  // Use the reverse mappings with type assertions for string keys
-  const sort = SORTING_TO_SORT[sorting as keyof typeof SORTING_TO_SORT];
-  const reach = SOURCE_TO_REACH[source as keyof typeof SOURCE_TO_REACH];
-  const content = KIND_TO_CONTENT[kind as keyof typeof KIND_TO_CONTENT];
-
-  // Validate all parts were found
-  if (!sort || !reach || !content) {
-    return null;
-  }
-
-  return { sort, reach, content };
 }
 
 const POST_KIND_TO_CONTENT = {

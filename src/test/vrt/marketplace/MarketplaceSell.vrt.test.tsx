@@ -219,8 +219,10 @@ vi.mock('@/hooks/useListingMediaManager/useListingMediaManager', async (importOr
   };
 });
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main className="w-full py-6">{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => (
+    <main className="w-full py-6">{children}</main>
+  ),
 }));
 
 function photoItem(key: string, altText: string): MockMediaItem {
@@ -420,6 +422,77 @@ describe('Marketplace sell studio — visual regression', () => {
     });
     await expect(await expectVrtSurface('seller-studio')).toMatchScreenshot('sell-shipping-presets-desktop');
     view.shippingPresets = [];
+  });
+
+  // A shipped listing priced by country: the shipping-rates choice and the
+  // zones editor of a listing with prices of its own.
+  it('renders per-country shipping prices for one listing at desktop viewport', async () => {
+    view.drafts = [
+      {
+        ...draftFixture,
+        data: {
+          form: {
+            ...draftFixture.data.form,
+            shippingMode: 'custom',
+            shippingZoneValues: [
+              {
+                zoneId: 'europe',
+                name: 'Europe',
+                countries: 'DE, FR, PT',
+                restOfWorld: false,
+                rates: [
+                  {
+                    rateId: 'std',
+                    label: 'Standard',
+                    pricing: 'per_item',
+                    amount: '8.99',
+                    additionalAmount: '4.50',
+                    minDays: '6',
+                    maxDays: '12',
+                  },
+                  {
+                    rateId: 'exp',
+                    label: 'Express',
+                    pricing: 'flat',
+                    amount: '25.00',
+                    additionalAmount: '',
+                    minDays: '2',
+                    maxDays: '4',
+                  },
+                ],
+              },
+              {
+                zoneId: 'world',
+                name: 'Rest of world',
+                countries: '',
+                restOfWorld: true,
+                rates: [
+                  {
+                    rateId: 'int',
+                    label: 'International',
+                    pricing: 'flat',
+                    amount: '29.00',
+                    additionalAmount: '',
+                    minDays: '9',
+                    maxDays: '20',
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    ];
+    view.mediaItems = [];
+
+    const screen = await renderForVRT(<MarketplaceSell />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await resumeAutosavedDraft(screen);
+    await vi.waitFor(() => {
+      if (!screen.container.querySelector('[data-testid="shipping-zones-editor"]')) {
+        throw new Error('The zones editor has not rendered yet.');
+      }
+    });
+    await expect(await expectVrtSurface('seller-studio')).toMatchScreenshot('sell-shipping-zones-desktop');
   });
 
   // Digital delivery beside shipping (digital delivery design §2): the three

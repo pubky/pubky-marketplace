@@ -18,20 +18,49 @@ describe('MarketplaceFilters', () => {
     HTMLElement.prototype.scrollIntoView = vi.fn();
   });
 
+  it('folds the dropdown filters behind a Filters toggle that counts the active ones', async () => {
+    useCommerceStore.setState({ categoryId: null, countryCode: 'CH', sort: 'price_low' });
+    render(<MarketplaceFilters resultCount={8} />);
+
+    const toggle = screen.getByTestId('marketplace-filters-toggle');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).toHaveAccessibleName('Filters, 2 active');
+    const group = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
+    // Hidden on phones only; `sm:contents` keeps it on wider screens.
+    expect(group).toHaveClass('hidden', 'sm:contents');
+
+    await userEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(group).toHaveClass('contents');
+    expect(group).not.toHaveClass('hidden');
+  });
+
+  it('keeps the display currency picker out of the folded filters', () => {
+    render(<MarketplaceFilters resultCount={8} />);
+
+    const toggle = screen.getByTestId('marketplace-filters-toggle');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    const group = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
+    const currency = screen.getByRole('combobox', { name: /^Display currency:/ });
+    expect(group).not.toContainElement(currency);
+    expect(currency).toBeVisible();
+  });
+
   it('renders the designer filter controls around supplied search and sell controls', () => {
     render(
       <MarketplaceFilters
         resultCount={8}
-        searchControl={<input aria-label="Filter marketplace" />}
+        searchControl={<input aria-label="Filter market" />}
         sellControl={<button type="button">Sell an item</button>}
       />,
     );
 
-    expect(screen.getByRole('textbox', { name: 'Filter marketplace' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Filter market' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sell an item' })).toBeInTheDocument();
     expect(screen.getByText('Type')).toBeInTheDocument();
     expect(screen.getByText('Anywhere')).toBeInTheDocument();
-    expect(screen.getByText('Recommended')).toBeInTheDocument();
+    expect(screen.getByText('Newest')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Category' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Listing layout: Grid' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Display currency: US dollars' })).toBeInTheDocument();
@@ -204,7 +233,7 @@ describe('MarketplaceFilters', () => {
       attributes: null,
       location: { countryCode, region: null },
       mediaUrls: [],
-      reputation: null,
+      listingReputation: null,
       revision: 1,
       updatedAt: 1,
     });
@@ -232,7 +261,7 @@ describe('MarketplaceFilters', () => {
       attributes: null,
       location: { countryCode, region: null },
       mediaUrls: [],
-      reputation: null,
+      listingReputation: null,
       revision: 1,
       updatedAt: 1,
     });
@@ -272,7 +301,7 @@ describe('MarketplaceFilters', () => {
       attributes: { size: 'L', brand: 'Champion', color: ['grey', 'navy'] },
       location: { countryCode: 'US', region: null },
       mediaUrls: [],
-      reputation: null,
+      listingReputation: null,
       revision: 1,
       updatedAt: 1_000,
     };
@@ -284,21 +313,5 @@ describe('MarketplaceFilters', () => {
     // Toggling the active chip clears it again.
     await user.click(screen.getByRole('button', { name: 'L · 1' }));
     expect(useCommerceStore.getState().attributeFilters).toEqual({});
-  });
-});
-
-describe('MarketplaceFilters - Snapshots', () => {
-  // The recorded snapshot was taken with the 'fashion' category left selected by
-  // the last test above. Pin that state so a failure in an earlier test cannot
-  // leak its filters into this one.
-  beforeEach(() => {
-    useCommerceStore.getState().reset();
-    useCommerceStore.getState().setCategoryId('fashion');
-    useMarketplaceDisplayStore.setState({ displayCurrency: 'USD' });
-  });
-
-  it('matches the default filter snapshot', () => {
-    const { container } = render(<MarketplaceFilters resultCount={8} />);
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

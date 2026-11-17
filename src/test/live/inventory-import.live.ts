@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { establishMarketplaceGrantSession } from './marketplace-grant-session';
 
 /**
  * LIVE STAGING PROOF for Inventory Studio W2: 250-row CSV plan, then a mixed
@@ -13,8 +14,10 @@ import { beforeAll, describe, expect, it } from 'vitest';
  *   npm run test:marketplace:inventory
  */
 
-const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? 'https://staging-api.pubky.app';
-const NEXUS_URL = process.env.MARKETPLACE_NEXUS_URL ?? 'https://nexusd-production-7108.up.railway.app';
+const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? '';
+if (!SERVICE_URL) throw new Error('set MARKETPLACE_SERVICE_URL: the live suites have no default service');
+const NEXUS_URL = process.env.MARKETPLACE_NEXUS_URL ?? '';
+if (!NEXUS_URL) throw new Error('set MARKETPLACE_NEXUS_URL: the live suites have no default Nexus');
 const PROOF_DIR = process.env.INVENTORY_IMPORT_PROOF_DIR ?? '/Volumes/t7/vibes-dev/.evidence/studio-w2/live';
 
 process.env.PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE = 'transaction-service';
@@ -31,7 +34,6 @@ type AppModules = {
   CommerceInventoryImportApplication: typeof import('@/application/commerce/inventory-import').CommerceInventoryImportApplication;
   listingToCanonicalRows: typeof import('@/application/commerce/inventory-listing-map').listingToCanonicalRows;
   DexieManifestStore: typeof import('@/services/marketplace/marketplace-import-store').DexieManifestStore;
-  INVENTORY_GRANT: typeof import('@/services/marketplace/marketplace-inventory-grant').INVENTORY_GRANT;
   MARKETPLACE_SESSION_GRANT: typeof import('@/services/marketplace/marketplace-session-grant').MARKETPLACE_SESSION_GRANT;
   MarketplaceShopClientService: typeof import('@/services/marketplace/marketplace-shop-client').MarketplaceShopClientService;
   PubkyShopError: typeof import('@/services/marketplace/marketplace-shop-client').PubkyShopError;
@@ -54,6 +56,7 @@ type ShopBrowserFile = {
 
 let modules: AppModules;
 let sellerPubky = '';
+let serviceCapabilities = '';
 
 class BytesFile implements ShopBrowserFile {
   constructor(
@@ -144,7 +147,6 @@ function csvFile(records: Array<ReturnType<typeof liveListing>>, name: string): 
 describe('inventory import staging proof', () => {
   beforeAll(async () => {
     const shopClient = await import('@/services/marketplace/marketplace-shop-client');
-    const grant = await import('@/services/marketplace/marketplace-inventory-grant');
     const sessionGrant = await import('@/services/marketplace/marketplace-session-grant');
     const importApp = await import('@/application/commerce/inventory-import');
     const listingMap = await import('@/application/commerce/inventory-listing-map');
@@ -158,7 +160,6 @@ describe('inventory import staging proof', () => {
       CommerceInventoryImportApplication: importApp.CommerceInventoryImportApplication,
       listingToCanonicalRows: listingMap.listingToCanonicalRows,
       DexieManifestStore: importStore.DexieManifestStore,
-      INVENTORY_GRANT: grant.INVENTORY_GRANT,
       MARKETPLACE_SESSION_GRANT: sessionGrant.MARKETPLACE_SESSION_GRANT,
       MarketplaceShopClientService: shopClient.MarketplaceShopClientService,
       PubkyShopError: shopClient.PubkyShopError,
@@ -179,7 +180,6 @@ describe('inventory import staging proof', () => {
       HomeserverService,
       MarketplaceSessionService,
       MarketplaceInventorySessionService,
-      INVENTORY_GRANT,
       MARKETPLACE_SESSION_GRANT,
       useAuthStore,
       sdk,
@@ -194,18 +194,14 @@ describe('inventory import staging proof', () => {
     useAuthStore.setState({ session: signedIn.session, currentUserPubky: sellerPubky });
     expect(useAuthStore.getState().selectSession()?.info?.publicKey?.z32()).toBe(sellerPubky);
 
-    const identityFlow = MarketplaceSessionService.beginSessionFlow();
-    expect(new URL(identityFlow.authorizationUrl).searchParams.get('caps')).toBe(MARKETPLACE_SESSION_GRANT);
-    await new sdk.Pubky().signer(keypair).approveAuthRequest(identityFlow.authorizationUrl);
-    await identityFlow.awaitSession();
+    const purchaseInfo = await establishMarketplaceGrantSession({ session: signedIn?.session, pubky: sellerPubky });
+    serviceCapabilities = purchaseInfo.capabilities;
+    expect(purchaseInfo.capabilities).toBe(MARKETPLACE_SESSION_GRANT);
+    expect(purchaseInfo.capabilities).not.toBe('/:rw');
     expect(MarketplaceSessionService.getActiveSession()?.pubky).toBe(sellerPubky);
-
-    const inventoryFlow = MarketplaceInventorySessionService.beginInventorySessionFlow(sellerPubky);
-    expect(new URL(inventoryFlow.authorizationUrl).searchParams.get('caps')).toBe(INVENTORY_GRANT);
-    await new sdk.Pubky().signer(keypair).approveAuthRequest(inventoryFlow.authorizationUrl);
-    const inventoryInfo = await inventoryFlow.awaitSession();
-    expect(inventoryInfo.capabilities).toBe(INVENTORY_GRANT);
-    expect(inventoryInfo.capabilities).not.toBe('/:rw');
+    const inventoryBearer = MarketplaceInventorySessionService.getCoveringBearer(sellerPubky);
+    expect(inventoryBearer?.source).toBe('purchase');
+    expect(inventoryBearer?.token === MarketplaceSessionService.getActiveSession()?.token).toBe(true);
 
     mkdirSync(PROOF_DIR, { recursive: true });
   }, 180_000);
@@ -238,7 +234,7 @@ describe('inventory import staging proof', () => {
       [
         `service=${SERVICE_URL}`,
         `pubky=${sellerPubky}`,
-        `grant=${modules.INVENTORY_GRANT}`,
+        `grant=${serviceCapabilities}`,
         `stamp=${STAMP}`,
         `manifest_id=${planned.manifestId}`,
         `row_count=${planned.rowCount}`,
@@ -269,7 +265,7 @@ describe('inventory import staging proof', () => {
       syncMany: async (listings) => {
         syncRound += 1;
         syncCalls.push([...listings]);
-        const inventory = modules.MarketplaceInventorySessionService.getActiveSession();
+        const inventory = modules.MarketplaceInventorySessionService.getCoveringBearer(sellerPubky);
         expect(inventory, 'inventory session is required for sync_many').toBeTruthy();
         if (!inventory) {
           return { ok: false, error: new modules.PubkyShopError('session_rejected') };
@@ -349,7 +345,7 @@ describe('inventory import staging proof', () => {
       [
         `service=${SERVICE_URL}`,
         `pubky=${sellerPubky}`,
-        `grant=${modules.INVENTORY_GRANT}`,
+        `grant=${serviceCapabilities}`,
         `stamp=${STAMP}`,
         `manifest_id=${planned.manifestId}`,
         `ok_id=${okId}`,

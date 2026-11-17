@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useForm, type UseFormReturn, useWatch } from 'react-hook-form';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { useDefaultAddressCountry } from '@/hooks/useDefaultAddressCountry/useDefaultAddressCountry';
 import {
   type DeliveryKeyBlock,
   type PendingDeliveryKeyChange,
@@ -12,7 +13,7 @@ import {
 } from '@/hooks/useDeliveryKeyGate/useDeliveryKeyGate';
 import { checkDestinationCountry } from '@/hooks/useMarketplaceSellerShipsTo/useMarketplaceSellerShipsTo';
 import type { BindDeliveryAddress } from '@/libs/commerce/payment-methods';
-import { browserAddressCountry, commerceDeliveryAddressValueSchema } from '@/libs/commerce/postal-address';
+import { commerceDeliveryAddressValueSchema } from '@/libs/commerce/postal-address';
 import type { CommerceDeliveryAddressModelSchema } from '@/models/commerce/commerce.schema';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import {
@@ -102,12 +103,22 @@ export function useAuctionWinnerDeliveryAddress({
     [] as CommerceDeliveryAddressModelSchema[],
   );
 
-  // A new address starts in the browser's country, set after mount so the
-  // server-rendered form and the first client render agree.
+  // A new address starts in the default country (the browser's, or where a region is blocked
+  // the IP country when it is open, else none), set after mount so the server-rendered form and
+  // the first client render agree. An IP country that arrives later fills only a country still empty.
+  const defaultAddressCountry = useDefaultAddressCountry();
+  const addressCountryDefaulted = useRef(false);
   useEffect(() => {
     if (!enabled || form.getFieldState('countryCode').isDirty) return;
-    form.reset({ ...form.getValues(), countryCode: browserAddressCountry() }, { keepDirtyValues: true });
-  }, [enabled, form]);
+    if (addressCountryDefaulted.current) {
+      if (defaultAddressCountry && form.getValues('countryCode') === '') {
+        form.setValue('countryCode', defaultAddressCountry);
+      }
+      return;
+    }
+    addressCountryDefaulted.current = true;
+    form.reset({ ...form.getValues(), countryCode: defaultAddressCountry }, { keepDirtyValues: true });
+  }, [enabled, form, defaultAddressCountry]);
 
   // Pre-fill once from the picker's top address, never over what was typed.
   useEffect(() => {

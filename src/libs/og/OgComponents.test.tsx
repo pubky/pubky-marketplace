@@ -10,7 +10,6 @@ describe('OgAvatar', () => {
     expect(html).not.toContain('<img');
     expect(html).toContain('<svg');
     expect(html).toContain(OG_TOKENS.brand);
-    expect(html).toMatchSnapshot();
   });
 
   it('renders a circular image when an avatar src is provided', () => {
@@ -19,7 +18,6 @@ describe('OgAvatar', () => {
     expect(html).toContain('<img');
     expect(html).toContain('border-radius:50%');
     expect(html).toContain('object-fit:cover');
-    expect(html).toMatchSnapshot();
   });
 });
 
@@ -30,6 +28,5 @@ describe('OgHeader', () => {
     expect(html).toContain('Satoshi Nakamoto');
     // brand mark (Pubky keyhole) is present via its brand-colored path fill
     expect(html).toContain(OG_TOKENS.brand);
-    expect(html).toMatchSnapshot();
   });
 });

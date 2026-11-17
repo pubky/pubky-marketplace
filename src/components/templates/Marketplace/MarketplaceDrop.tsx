@@ -24,12 +24,12 @@ import { useMarketplaceDropClaim } from '@/hooks/useMarketplaceDropClaim/useMark
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { formatDateTime } from '@/libs/utils/dateTime';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DropClaimPanel } from '@/organisms/Marketplace/DropClaimPanel';
 import { DropCountdown } from '@/organisms/Marketplace/DropCountdown';
 import { DropReadyCheckPanel } from '@/organisms/Marketplace/DropReadyCheckPanel';
 import { DropRemindMe } from '@/organisms/Marketplace/DropRemindMe';
 import { DropStockDisplay } from '@/organisms/Marketplace/DropStockDisplay';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
@@ -62,12 +62,14 @@ export function MarketplaceDrop({ sellerPubky, dropId }: MarketplaceDropProps) {
   const claim = useMarketplaceDropClaim(drop.refresh);
   const shopFollow = useCommerceShopFollow(sellerPubky);
   const [shopName, setShopName] = useState<string | null>(null);
-  const [shopRecord, setShopRecord] = useState<{ sellerStatus?: string } | null>(null);
+  const [shopRecord, setShopRecord] = useState<{ sellerStatus?: string; location?: { countryCode?: string } } | null>(
+    null,
+  );
   const teaserUrl = useMarketplaceFirstMediaUrl(drop.record?.media ?? []);
 
   useEffect(() => {
     let active = true;
-    CommerceController.getOrFetchShop(sellerPubky)
+    CommerceController.refreshShopOrGetCached(sellerPubky)
       .then((shop) => {
         if (!active) return;
         setShopName(shop.name);
@@ -185,13 +187,19 @@ export function MarketplaceDrop({ sellerPubky, dropId }: MarketplaceDropProps) {
       </Card>
 
       {state === 'unavailable' && (
-        <div role="status" className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+        <div
+          role="status"
+          className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-notice-foreground"
+        >
           This drop cannot go live here. You can still view the announcement below.
         </div>
       )}
 
       {state === 'unregistered' && (
-        <div role="status" className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+        <div
+          role="status"
+          className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-notice-foreground"
+        >
           This drop is not ready yet. The start time is provisional, and availability is not confirmed.
         </div>
       )}
@@ -314,16 +322,10 @@ function ArchiveFact({ label, value }: { label: string; value: string }) {
 
 function DropPageShell({ children }: { children: React.ReactNode }) {
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      className="pb-28 lg:pb-16"
-    >
+    <MarketplaceContentLayout className="pb-28 lg:pb-16">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         {children}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }

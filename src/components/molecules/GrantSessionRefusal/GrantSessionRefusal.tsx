@@ -7,7 +7,7 @@ import { Typography } from '@/atoms/Typography/Typography';
  * is missing and that the rest of Shop works. Chat has its own notice.
  */
 export function grantSessionRefusalCopy(): string {
-  return 'Marketplace approvals are unavailable on this deployment. Try again when access is enabled.';
+  return 'Market approvals are unavailable on this deployment. Try again when access is enabled.';
 }
 
 /** Shown instead of a Pubky Ring approval QR when the Shop session came from a grant sign-in. */

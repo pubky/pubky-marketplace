@@ -79,8 +79,7 @@ Route `/shop` and `/shop/*` to **App**. Route `/shop-embed` and `/shop-embed/*` 
 - **Headers.** Pass `Host` and `X-Forwarded-Proto: https` through. The Shop's grant bridge checks the browser `Origin` against its allow-list, so `Origin` must arrive unmodified. Preserve `Sec-Fetch-Site` for the browser request checks. Set `SHOP_BFF_CLI_TRUSTED_PROXY_COUNT` to the actual trusted proxy count and ensure those proxies sanitize/populate `X-Forwarded-For`; browser bootstrap also uses this setting for per-IP rate limits. The default `0` ignores forwarded addresses and groups requests in one fallback bucket.
 - **Cookies.** The Shop's bridge cookies, `__Host-shop-bff-session` and `__Host-shop-marketplace-grant`, use `Secure`, `HttpOnly`, `SameSite=Strict` and `Path=/`. On `pubky.app` they are sent to App routes too; reserve those names for Shop. App asks the mounted Shop BFF to clear them at logout.
 - **Entry.** App `/shop` opens `/shop-embed/marketplace` in its iframe. The Shop root redirect stays within its configured mount.
-- **Vercel cron.** If the embedded build runs on Vercel, the cron in `vercel.json` (`/api/marketplace/grant-cleanup`) must point at `/shop-embed/api/marketplace/grant-cleanup` in that deployment's config.
-- **Docker cleanup.** `vercel.json` does not schedule jobs for Docker. Configure an external scheduler to call `GET /shop-embed/api/marketplace/grant-cleanup` every minute with `Authorization: Bearer <CRON_SECRET>`, through a route that reaches the Shop BFF. Verify HTTP 200 and `{"ok":true}`; account for any staging edge authentication separately.
+- **Grant cleanup.** The repository schedules no jobs. Configure an external scheduler to call `GET /shop-embed/api/marketplace/grant-cleanup` every minute with `Authorization: Bearer <CRON_SECRET>`, through a route that reaches the Shop BFF. Verify HTTP 200 and `{"ok":true}`; account for any staging edge authentication separately.
 - **Socials.** Leave `NEXT_PUBLIC_SOCIAL_HOST` unset in the embedded build. With it set, `/shop-embed/home` and the other social routes answer a 307 to the App and would load the App inside the frame.
 
 The Shop exposes no manifest and registers no service worker under a base path (see [Service worker](#service-worker)), so the App's manifest and worker are the only ones on the origin.
@@ -131,7 +130,7 @@ Notes:
 - **Grant-bridge trust.** `SHOP_PUBLIC_ORIGIN` and `SHOP_GRANT_ASSERTION_ISSUER` on the Shop must be equal, and the marketplace service's `SHOP_GRANT_ASSERTION_ISSUER` must name the same origin and trust the Shop's assertion key (`SHOP_GRANT_ASSERTION_VERIFYING_KEYS_JSON`). Moving the Shop to `pubky.app` changes the issuer from `https://shop.pubky.app`; it is a trust change on the service, not only a Shop setting.
 - **PayPal return.** The service builds `return` and `cancel_return` as `{PUBLIC_APP_ORIGIN}/marketplace/orders`. With the value above the buyer lands on `https://pubky.app/shop/marketplace/orders`, a full page load of the App wrapper, which opens the Shop order route in its iframe (see the `Returns that land top-level` note above). A value without `/shop` sends the buyer to a `pubky.app` route that is not the Shop. The service accepts a mount path in this one variable; see the service README.
 - **Passport.** Embedded Shop responses omit COOP so the App owns the top-level opener policy, including the popup return. The fallback link carries the Shop base path. The Passport return page is `{origin}/shop-embed/auth/passport/return`; it needs no allow-list entry on our side. Passport itself accepts any HTTPS callback.
-- **Development instances.** A development Shop on its own host (Vercel or Railway) lists its own origin in `SHOP_ALLOWED_ORIGINS`, `SHOP_PUBLIC_ORIGIN` and `SHOP_GRANT_ASSERTION_ISSUER`. The development services it talks to list that host in `ALLOWED_ORIGINS`, Paykit `[setup] allowed_origins`, Locks `allowed_return_origins` and the Nexus and fiat verifier CORS lists, next to `https://staging.pubky.app` when both are in use.
+- **Development instances.** A development Shop on its own host lists its own origin in `SHOP_ALLOWED_ORIGINS`, `SHOP_PUBLIC_ORIGIN` and `SHOP_GRANT_ASSERTION_ISSUER`. The development services it talks to list that host in `ALLOWED_ORIGINS`, Paykit `[setup] allowed_origins`, Locks `allowed_return_origins` and the Nexus and fiat verifier CORS lists, next to `https://staging.pubky.app` when both are in use.
 
 Run [install verification](install-verification.md) against the configured App origin. For staging, use `https://staging.pubky.app` with `SHOP_PATH=/shop/marketplace`, `SHOP_EMBED_PATH=/shop-embed` and `SERVICE_PUBLIC_APP_ORIGIN=https://staging.pubky.app/shop`: the `service.cors.*`, `wiring.*-origins`, `flow.paykit-setup.*` and `flow.locks-connect.*` checks cover these settings. Also verify the shared-session journeys in the embedded browser.
 
@@ -187,11 +186,9 @@ These are prior embedding observations, not a completed live test of the new sha
 
 ### Where it is used
 
-- Every signer deep link, all from inside the tap handler with no async boundary before the call (each has a test that asserts this, via `navigatesWithinGesture` in `src/test-utils/user-gesture.ts`): `useMobileAuth`, `useStepUpReauth`, `useMarketplaceSessionConnect`, `useMarketplaceMessagingEnable`, `useMarketplaceInventoryGrantConnect`.
+- Every signer deep link, all from inside the tap handler with no async boundary before the call (each has a test that asserts this, via `navigatesWithinGesture` in `src/test-utils/user-gesture.ts`): `useMobileAuth`, `useStepUpReauth`, `useMarketplaceSessionConnect`, `useMarketplaceMessagingEnable`.
 - The PayPal checkout hand-off, in the cart and accepted-offer paths.
 - Social-host profile links render `target="_top"` when embedded.
-
-The recovery-phrase "open in Ring" button (`DialogBackupExport`) still uses `window.open(url, '_blank')`: it belongs to onboarding, which the embedded Shop does not offer, and a new-tab open is a different mechanism from the frame navigation that fails.
 
 The Paykit setup and Lock Server connect panels are nested iframes whose sandbox already grants top navigation to custom protocols. They write no `location`, so nothing changes there; see the next section for their storage limits.
 
@@ -230,7 +227,7 @@ Names the App also defines now carry a `shop-` prefix:
 |---|---|
 | Dexie `franky` | `shop-franky` |
 | Messaging keyring `franky-messaging-keyring` (retired with the old messaging transport; the Shop deletes it, see below) | `shop-franky-messaging-keyring` |
-| `auth-store`, `onboarding-storage`, `notification-store`, `search-store`, `home-store`, `hot-store`, `settings-storage`, `marketplace-display-storage` | the same names with `shop-` |
+| `auth-store`, `notification-store`, `search-store`, `home-store`, `hot-store`, `settings-storage`, `marketplace-display-storage` | the same names with `shop-` |
 | `pubky-feature-discovery:*` | `shop-pubky-feature-discovery:*` |
 | session keys `pubky:force-feed-scroll-top`, `pubky-app:mute-sync-cursor:*` | `shop-` prefixed (not migrated; per-tab) |
 
@@ -272,7 +269,7 @@ A standalone Shop can run and migrate its own legacy storage independently. The 
 
 ## Mounted-path details
 
-Prefixed with the mount path: same-origin API calls (including marketplace grant/bootstrap clients and development signup-token requests), Passport popup callbacks, public images (through `BasePathImage`), `<video>` and CSS-referenced artwork, `history.replaceState` for the checkout URL, and the OG fallback redirect. Prefixed with the public path (the mount path unless `PUBKY_RUNTIME_SHOP_PUBLIC_PATH` is set): share links, canonical and Open Graph URLs (`metadataBase` stays the origin; root-relative values are prefixed) and structured data. Next.js handles the router, `next/link`, redirects and `/_next` assets itself. The web manifest link is omitted under a base path.
+Prefixed with the mount path: same-origin API calls (including marketplace grant/bootstrap clients), Passport popup callbacks, public images (through `BasePathImage`), `<video>` and CSS-referenced artwork, `history.replaceState` for the checkout URL, and the OG fallback redirect. Prefixed with the public path (the mount path unless `PUBKY_RUNTIME_SHOP_PUBLIC_PATH` is set): share links, canonical and Open Graph URLs (`metadataBase` stays the origin; root-relative values are prefixed) and structured data. Next.js handles the router, `next/link`, redirects and `/_next` assets itself. The web manifest link is omitted under a base path.
 
 ## Remaining deployment and release work
 
@@ -281,10 +278,10 @@ The outer/inner route scheme, App-owned sign-in, targeted SDK cleanup and mounte
 - Deploy both compatible frontends, the prefix-preserving proxy and updated App worker together. Require the mounted BFF readiness check to pass before sending users to the new deployment.
 - Verify desktop/mobile Shop navigation and direct `/shop` links load the embedded Shop without an enable flag. Simulate a BFF outage, restore it, and verify the unavailable state recovers automatically at the same Shop URL.
 - Enable/configure marketplace grant bootstrap, origin allow-lists, assertion issuer/key trust and service callback origins. Grant-only homeserver login does not remove Shop BFF cookies or replace marketplace/Locks service approval. An unavailable grant backend must remain an explicit unavailable state.
-- Exercise real Ring, Bitkit, Passport, recovery-file and signup journeys, migrated cookie users, narrow grants, rejected approvals, account switches, two tabs, revoked records and sign-out while approval is pending.
+- Exercise real Ring, Bitkit, Passport, recovery-file and existing-profile completion journeys, migrated cookie users, narrow grants, rejected approvals, account switches, two tabs, revoked records and sign-out while approval is pending.
 - Verify Safari/mobile IndexedDB persistence across restart, Web Locks, cross-tab lifecycle, synchronous signer/popup gestures, and nested Paykit/Locks frames with the deployed origin.
 - Verify deep links, refresh, Back/Forward, search/hash preservation, top-level signer/PayPal returns, and updated visual baselines.
-- Coordinate Matthew's separate Inbox/chat migration with the same account lifecycle and existing history. No `e` scope or new messaging protocol is introduced by this embedding work.
+- Coordinate secondl1ght's separate Inbox/chat migration with the same account lifecycle and existing history. No `e` scope or new messaging protocol is introduced by this embedding work.
 
 The SDK 0.16.1 local production pair passed restoration of genuine SDK 0.16.0 records, reload, two tabs, and App logout with both Shop iframes absent in Chromium and WebKit on 2026-10-13, without session revival. Chromium also passed temporary-renewal recovery and BFF HTTP 503 cleanup followed by explicit HTTP 204 retry. Synthetic cross-origin popups from App and framed Shop returned through the actual mounted Passport callback in both browsers, preserving the opener and mounted fallback. These checks used real SDK/WASM and IndexedDB with intercepted network fixtures; they do not establish deployed Passport behavior, real backend availability, mobile signer gestures or payment completion.
 

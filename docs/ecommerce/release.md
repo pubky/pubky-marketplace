@@ -1,40 +1,34 @@
 # Shop Release Runbook
 
-How a Shop release goes from merged pull requests to a proven deployment. The launched Shop runs on Synonym's GCP at
-<https://pubky.app/shop>, deployed by Vlad from [pubky/shop-migration](https://github.com/pubky/shop-migration);
-`shop.pubky.app` belongs to that deployment and redirects to `pubky.app/shop`. The Vercel projects in this runbook are
-John Prod (<https://pubky-marketplace-production.vercel.app>) and John Staging
-(<https://pubky-marketplace-staging.vercel.app>), test environments where a release is deployed and proven first.
-Production operations (kill switch, rollback, Railway restarts, the `shop.pubky.app` rule) are in
-[`runbook-production.md`](runbook-production.md). Local setup is in [`onboarding.md`](onboarding.md) and
+How a Shop release goes from merged pull requests to a proven deployment. Team deployments (staging, then production)
+run on Synonym's GCP and are deployed through [pubky/shop-migration](https://github.com/pubky/shop-migration); the
+launched Shop is served at <https://pubky.app/shop>, and `shop.pubky.app` redirects there. This repository carries no
+host-specific deployment instructions: deploying, rolling back and operating a host live in shop-migration, and
+personal development hosting is out of scope. Local setup is in [`onboarding.md`](onboarding.md) and
 [`RUNNING.md`](RUNNING.md).
 
 "Live" means the deployed grant sign-in, shared-session lifecycle and service-approval journeys have passed against the release revisions. A green build or synthetic network fixture is not that proof; the [signed-in production proof](#signed-in-production-proof) is.
 
 ## Branches and targets
 
-The Vercel targets and deploy commands in this runbook deploy the standalone Shop to John Prod and John Staging. The GCP
-deployment takes the Shop as a Docker image built from a `v*` tag by
+The GCP deployment takes the Shop as a Docker image built from a `v*` tag by
 [`release-docker.yml`](../../.github/workflows/release-docker.yml), which shop-migration then pins; agree the tag with
-Vlad there, because this runbook tags `shop-vX.Y.Z`. The [embedding guide](../launch/shop-embedding.md) specifies the
-embedded frontend requirements.
+the shop-migration maintainers there, because this runbook tags `shop-vX.Y.Z`. The
+[embedding guide](../launch/shop-embedding.md) specifies the embedded frontend requirements.
 
-| Item               | Value                                                                                                                                                                                                                       |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Release branch     | `master`, the repository default and the Shop line; every release ships from it. Releases up to `shop-v0.6.46` shipped from `release/shop-v0.6.8` in `BitcoinErrorLog/pubky-app`, whose history is part of this repository. |
-| Train branches     | `train/shop-<YYYY-MM-DD>-<am\|pm>`, cut from the release branch head                                                                                                                                                        |
-| Tags               | `shop-vX.Y.Z` on the deployed commit, with a GitHub release                                                                                                                                                                 |
-| Launched Shop      | Synonym GCP, <https://pubky.app/shop> (`shop.pubky.app` redirects there), deployed from [pubky/shop-migration](https://github.com/pubky/shop-migration) by Vlad                                                             |
-| John Prod          | Vercel project `pubky-marketplace-production`, team `synonymdev`, <https://pubky-marketplace-production.vercel.app>. Never attach `shop.pubky.app` to it ([why](runbook-production.md#shoppubkyapp-is-not-a-vercel-domain)) |
-| John Staging       | Vercel project `pubky-marketplace-staging`, team `synonymdev`, <https://pubky-marketplace-staging.vercel.app>                                                                                                               |
-| Backend services   | Separate repositories, deployed separately: `pubky-marketplace-service`, `pubky/marketplace-nexus`, the `paykit-server` fork (until the upstream Paykit switch). See their READMEs.                                         |
-| Unrelated branches | `pubchi/v1` is a different product. Do not base Shop work on it.                                                                                                                                                            |
+| Item                        | Value                                                                                                                                                                                                                       |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release branch              | `master`, the repository default and the Shop line; every release ships from it. Releases up to `shop-v0.6.46` shipped from `release/shop-v0.6.8` in `BitcoinErrorLog/pubky-app`, whose history is part of this repository. |
+| Train branches              | `train/shop-<YYYY-MM-DD>-<am\|pm>`, cut from the release branch head                                                                                                                                                        |
+| Tags                        | `shop-vX.Y.Z` on the deployed commit, with a GitHub release                                                                                                                                                                 |
+| Team staging and production | Synonym GCP, deployed through [pubky/shop-migration](https://github.com/pubky/shop-migration). Production is <https://pubky.app/shop> (`shop.pubky.app` redirects there)                                                    |
+| Backend services            | Separate repositories, deployed separately: `pubky-marketplace-service`, `pubky/marketplace-nexus`, the `paykit-server` fork (until the upstream Paykit switch). See their READMEs.                                         |
+| Unrelated branches          | `pubchi/v1` is a different product. Do not base Shop work on it.                                                                                                                                                            |
 
 ## Tools
 
 - Node from [`.nvmrc`](../../.nvmrc), `npm`, the GitHub CLI (`gh`), and Docker (the Linux VRT gate runs in a pinned
   Playwright container).
-- The Vercel CLI (`npm i -g vercel`), logged in as a member of the `synonymdev` team.
 - Playwright's Chromium for the production proof: `npx playwright install chromium`.
 - At least 30 GiB of free disk before a VRT run or a release build; the VRT container and its screenshots need that
   headroom.
@@ -65,23 +59,15 @@ Follow [Shop embedding](../launch/shop-embedding.md) for the fixed `/shop-embed`
 
 ## Day-to-day merges
 
-1. Branch from the current train branch (or from the release branch if no train is open) and open the pull request
-   against the train.
-2. Before every push run `bash scripts/prepush.sh`. Fast mode (the default) runs `prettier --check` and `eslint` on
-   files changed since the merge base, `npm run typecheck`, and `npx vitest related --run` on those files. The last
-   line on success is `PREPUSH OK <sha> <seconds> fast`. A tree that already passed is not re-run.
-3. Auto-merge is off in this repository, and maintainers do the merges. After pushing, wait for CI with
-   `gh pr checks <N> --watch` and ask a maintainer to merge. The maintainer merges with `gh pr merge <N> --squash`
-   (train-to-release pull requests keep a merge commit: `--merge`), only when every check passed or skipped, and never
-   with `--admin`. Automated agents open pull requests and comment; they never merge and never push `master`.
-4. Required checks on `master`: Check Code Quality, Check NextJS Build, Run Shard Tests (1) to (5), Run Tests, Merge
-   Coverage Reports, `vrt-marketplace`, `vrt-core`, `launch-e2e`. A pull request is required; no approving review is
-   configured, so the team sets its own review rule. Force pushes and branch deletion are blocked. `launch-e2e` runs on
-   pull requests into `master` and `release/shop-*` in explicit synthetic mode: real SDK grants and browser
-   persistence, with isolated PKARR, homeserver, BFF and marketplace fixtures. It needs no seller secret and also
-   runs on forks. Optional live mode requires `LAUNCH_E2E_SELLER_SECRET_HEX` and a grant-enabled backend; synthetic
-   success does not replace staging approval/payment QA. Pull requests that change only `docs/`, `payments-env/` or `*.md` files skip the build, the unit suite
-   and VRT; their checks still report.
+1. Branch from the current train branch (or from `master` if no train is open). Target the agreed train or `master`; use the actual PR base for review, never an assumed `dev` branch.
+2. Before every push run `bash scripts/prepush.sh`. Fast mode (the default) runs `prettier --check` and `eslint` on files changed since the merge base, `npm run typecheck`, and `npx vitest related --run` on those files. The last line on success is `PREPUSH OK <sha> <seconds> fast`. A valid stamp can reuse a previous result for an unchanged tree; full release mode remains `PREPUSH_FULL=1 bash scripts/prepush.sh`.
+3. After pushing, wait for CI with `gh pr checks <N> --watch`. Maintainers normally perform merges. Feature-to-train PRs use squash; train-to-release PRs keep a merge commit and use the protected branch's merge queue. Do not use `--admin` or bypass a failing required check. Automated agents open PRs and report evidence; merging or pushing `master` requires an explicit instruction.
+4. The [master ruleset](https://github.com/pubky/pubky-marketplace/rules/26693412) is authoritative for current requirements. It requires approval, dismisses stale approvals after a push, requires resolved review threads and an up-to-date checked base, and uses a merge queue. Force pushes and branch deletion are blocked. Do not assume a train branch has the same rules.
+5. Preserve the Market-specific checks in addition to Code Quality, NextJS Build and unit tests: Linux `vrt-marketplace` and `vrt-core`, synthetic `launch-e2e`, and the separate local-stack `chat-e2e` workflow job. The current required-check list includes the VRT and launch jobs; `chat-e2e` runs but is not listed as required in that ruleset. Check the live rules before reporting a job as merge-blocking.
+
+`launch-e2e` runs for relevant PRs into `master` and `release/shop-*`, and for merge groups, in explicit synthetic mode: real SDK grants and browser persistence with isolated PKARR, homeserver, BFF and marketplace fixtures. It needs no seller secret and also runs on forks. Optional live mode requires `LAUNCH_E2E_SELLER_SECRET_HEX` and a grant-enabled backend; synthetic success does not replace staging approval/payment QA. The separate `chat-e2e` uses a local stack.
+
+Path filters can skip the build, unit suite and VRT on documentation-only PRs while still reporting check statuses; Code Quality still runs. The filters differ by workflow and fail closed if their path-filter job fails. Merge groups run the full configured gates regardless of the PR's documentation-only classification. See `.github/workflows/test.yml`, `build.yml`, `format.yml` and `vrt-marketplace.yml` for exact triggers.
 
 **Flake outside the diff.** If the only failures are test files the diff does not touch, rerun those files alone
 twice. If both reruns pass and the rest of the gate passed, the push may skip the hook (`--no-verify`) with the gate
@@ -117,13 +103,13 @@ At most one or two Shop releases a day. An extra cut runs only for a production 
 1. **Find the live release.** `gh release list -R pubky/pubky-marketplace --limit 1` gives the last `shop-vX.Y.Z`
    (`-R BitcoinErrorLog/pubky-app` for `shop-v0.6.46` and earlier).
 2. **Close the train.** Open one pull request from `train/shop-<date>-<am|pm>` into `master`. A pull
-   request that missed the cut waits for the next train. Nothing merges to the release branch outside a train.
+   request that missed the cut waits for the next train. Normal releases go through a train; a direct-to-master exception must be explicitly agreed by the maintainer or requested for the task, and still follows the protected branch rules.
 3. **Baselines once.** If any merged change moved a scene, regenerate Linux baselines once on the train head (rules
    above), then run the full marketplace VRT suite once.
 4. **Proof on the release head.** On the merged release branch commit, in a clean checkout:
 
    ```bash
-   PREPUSH_FULL=1 bash scripts/prepush.sh               # last line must end in "full"
+   PREPUSH_FULL=1 bash scripts/prepush.sh               # require full mode; a reused:full result is valid
    npm run typecheck && npm run lint
    npm run test                                          # the whole unit suite; keep the summary lines
    bash scripts/vrt-linux.sh src/test/vrt/marketplace/   # the whole marketplace VRT suite
@@ -133,88 +119,56 @@ At most one or two Shop releases a day. An extra cut runs only for a production 
 
    A proof is reusable only while no file has changed since it ran. A merge commit is a new source state.
 
-5. **Check deployment config parity** before every deploy, for both Vercel projects. `vercel env ls` shows variable
-   names and targets only (every value reads `Encrypted`), so names and values are checked separately:
-   - **Names, per target.** From a checkout linked to each project, run `vercel env ls production --scope synonymdev`
-     and `vercel env ls preview --scope synonymdev`. `NEXT_PUBLIC_VIBE_SESSION_BRIDGE_ORIGIN` and
-     `NEXT_PUBLIC_VIBE_ID` must not be listed for either target. They no longer enable cookie-based sign-in; remove obsolete configuration so it cannot be mistaken for the
-     supported same-origin integration.
-   - **Values, from what a deployment serves.** Public runtime values are inlined into each deployment's HTML, so
-     read them there instead of pulling env (`vercel env pull` writes every secret to disk):
+5. **Check deployment config parity** before every deploy. Public runtime values are inlined into each deployment's
+   HTML, so read them from what the target serves instead of from its environment (which holds secrets):
 
-     ```bash
-     curl -fsS https://pubky-marketplace-production.vercel.app/marketplace \
-       | grep -oE '"(marketplaceNexusUrl|marketplaceUrl|locksUrl|paykitSetupUrl|homeserverUrl|commerceAdapterMode)":"[^"]*"'
-     ```
+   ```bash
+   curl -fsS <origin>/marketplace \
+     | grep -oE '"(marketplaceNexusUrl|marketplaceUrl|locksUrl|paykitSetupUrl|homeserverUrl|commerceAdapterMode)":"[^"]*"'
+   ```
 
-     Repeat for `https://pubky-marketplace-staging.vercel.app/marketplace` and for any Preview deployment
-     (`vercel ls <project> --environment preview --scope synonymdev` lists them). `marketplaceNexusUrl` must be
-     `https://nexusd-production-7108.up.railway.app`; `https://nexusd-production-95a0.up.railway.app` is retired.
-     A Preview target with no deployment has no served values; check it in the Vercel dashboard
-     (Settings → Environment Variables) when one is about to be built.
-
-   Vercel env changes take effect on the next deployment. For a non-Vercel `next start` process, runtime values
-   are read from its environment and memoized; restart after changing them. Build-time `NEXT_PUBLIC_*` values
-   still require a rebuild. See [the non-Docker startup example](../launch/shop-embedding.md#running-with-next-start-without-docker).
+   Repeat for every origin the release will reach. `NEXT_PUBLIC_VIBE_SESSION_BRIDGE_ORIGIN` and `NEXT_PUBLIC_VIBE_ID`
+   must not be set in any deployment's environment: they no longer enable cookie-based sign-in, and obsolete
+   configuration can be mistaken for the supported same-origin integration. Runtime values are read from the
+   process environment and memoized; restart after changing them. Build-time `NEXT_PUBLIC_*` values still require a
+   rebuild. See [the non-Docker startup example](../launch/shop-embedding.md#running-with-next-start-without-docker).
 
 6. **Deploy** (next section), **prove** (the section after), then **tag and publish notes**.
 
 ## Deploy
 
-A fresh clone or worktree is not linked to any Vercel project, because `.vercel/` is gitignored. Running
-`vercel --prod` unlinked creates a new project named after the directory and leaves John Prod untouched. Stray
-`VERCEL_PROJECT_ID` or `VERCEL_ORG_ID` variables in the shell override the link, so unset them. Link first, every time
-you deploy from a new checkout:
-
-```bash
-rm -rf .vercel
-vercel link --yes --project pubky-marketplace-production --scope synonymdev
-cat .vercel/project.json            # must name pubky-marketplace-production
-```
-
-If a stray project was created, delete it with `vercel project rm <name> --yes`.
-
-Record the deployment currently on the alias before deploying; it is the rollback target:
-
-```bash
-vercel inspect pubky-marketplace-production.vercel.app --scope synonymdev    # note the dpl_… id
-```
-
-Deploy with a fresh build cache. Corrupt caches have stalled builds at `Running TypeScript` for 40 minutes:
-
-```bash
-vercel --prod --yes --force --scope synonymdev --env GIT_COMMIT="$(git rev-parse HEAD)" --build-env GIT_COMMIT="$(git rev-parse HEAD)" 2>&1 | tee <evidence-folder>/deploy.log
-```
+Deployment is done through [pubky/shop-migration](https://github.com/pubky/shop-migration): GCP staging first, then
+production. Agree the release tag and the pinned image with the shop-migration maintainers there; this repository does
+not deploy anything itself.
 
 `GET /api/build` (under the base path when the Shop is mounted on one) returns `{"commit":"<12-char SHA>"}` and nothing
-else: no version, build time or host. It reads `GIT_COMMIT`, then Vercel's `VERCEL_GIT_COMMIT_SHA`, and reports
-`unknown` for anything that is not a hex SHA, so `--env GIT_COMMIT` keeps CLI deploys exact. Docker images take the
-`GIT_COMMIT` build arg. `--build-env GIT_COMMIT` makes the commit the build's Sentry release; the build command in
-`vercel.json` then creates that release with its commits and records the deploy
-([Sentry → Releases](../sentry.md#releases)). Use it to confirm which commit a host runs; the Shop has no version endpoint or build meta tag.
-The deployment itself is still identified from the records we keep:
-`vercel inspect pubky-marketplace-production.vercel.app --scope synonymdev` prints the `dpl_…` id and the build for the alias; the id is what the proof's `EXPECTED_DPL` pins, and the release notes record it next to the tag and exact commit. For the
-marketplace service, the digest of the running image (Railway, or GCP once the service runs there) is the record; see
+else: no version, build time or host. It reads `GIT_COMMIT`, then `VERCEL_GIT_COMMIT_SHA` where a platform sets it, and
+reports `unknown` for anything that is not a hex SHA. Docker images take the `GIT_COMMIT` build arg. A build whose
+`GIT_COMMIT` is set also makes that commit its Sentry release; the build creates the release with its commits and
+records the deploy ([Sentry → Releases](../sentry.md#releases)). Use it to confirm which commit a host runs; the Shop has
+no version endpoint or build meta tag. For the marketplace service, the digest of the running image is the record; see
 [Backend releases](#backend-releases).
 
-After a deploy, `PROOF_ORIGIN=<origin> EXPECTED_DPL=dpl_<new> node scripts/release/served-checks.mjs` checks what the site
-serves with plain HTTP: the deployment id, that the Locks SDK wasm is named in a chunk and served as `application/wasm`
-byte-identical to the pinned SDK, USDT off in the served config, and the service's `/health`. The wasm sits in a lazy
+The proof scripts check that the origin serves the deployment under proof, and one of two expectations is required:
+
+- `EXPECTED_COMMIT`: the git commit (7 to 40 hex characters) that `GET /api/build` must report. It works on any host,
+  GCP included, once the build reports its commit (`GIT_COMMIT` build arg). The build route lives under the mount
+  path, so for the embedded build set `PROOF_ORIGIN=https://<app origin>/shop-embed` and the scripts read
+  `/shop-embed/api/build`. The build reports a short SHA; a full SHA or any prefix of at least 7 characters matches it.
+- `EXPECTED_DPL`: a Vercel `dpl_…` deployment id that the served page must name. For Vercel instances.
+
+When both are set the origin must satisfy both. With neither, the scripts refuse to run.
+
+After a deploy, `PROOF_ORIGIN=<origin> EXPECTED_COMMIT=<sha> node scripts/release/served-checks.mjs` checks what the site
+serves with plain HTTP: the deployment identity, that the Locks SDK wasm is named in a chunk and served as `application/wasm`
+byte-identical to the pinned SDK, the USDT flag in the served config, and the service's `/health`. The wasm sits in a lazy
 chunk, so the script reads webpack's chunk map (Next.js writes it in more than one shape) and crawls every chunk. It has
-no build-meta or version check; `/api/build` is for people confirming a deploy.
+no build-meta or version check; `/api/build` is read only when `EXPECTED_COMMIT` is set.
 
-A build takes about six minutes. Allow ten before treating it as stuck, and do not cancel earlier. On
-`Error: Deployment not found`, run `vercel ls pubky-marketplace-production --scope synonymdev` before redeploying.
-
-Confirm the alias moved: `vercel alias ls --scope synonymdev | grep pubky-marketplace-production.vercel.app` must show
-the new deployment.
-After any `vercel rollback`, the production alias stays pinned to the rolled-back deployment, and the next
-`vercel --prod` gets only its own deployment URL. Un-pin with `vercel promote <dpl_id> --yes --scope synonymdev` and
-re-check the alias before proving anything.
-
-**Pre-launch policy: fix forward.** Do not roll back for a failed proof or an ordinary incident. Roll back only when
-data is being lost or money is moving wrongly, and then to the **previous** known-good deployment id, never the
-current one. The commands are in [`runbook-production.md`](runbook-production.md#vercel-rollback-or-promote).
+The USDT checks expect USDT off unless `SERVED_CHECKS_USDT=on`; then the served config must have `usdtPaymentsEnabled`
+true and `/health` must list `usdt_payments`. Set it to the target's real state: John Prod has had USDT on since
+2026-10-16, so its target file (`proof/targets/production.env` in pubky-dev-hosting) sets `SERVED_CHECKS_USDT=on`.
+Without it, the two USDT checks fail on John Prod by design.
 
 ## Signed-in production proof
 
@@ -224,6 +178,13 @@ with a `signin_grant`, sign-in mints the marketplace session from the grant wher
 the grant session, and checkout, Activity and the seller surfaces work for a signed-in seat. Nothing is paid and no
 order command is sent. Afterwards it revokes every marketplace session either seat gained and deletes any storefront
 (`shop.json`) the run caused, and verifies both.
+
+The Node audit and fixture helpers also mint through the grant-session challenge/proof API.
+The service must enable `MARKETPLACE_GRANT_SESSION_ENABLED`, allow `PROOF_CLIENT_ID` in
+`MARKETPLACE_GRANT_SESSION_CLIENT_IDS`, and configure `PUBLIC_SERVICE_ORIGIN` and
+`HOMESERVER_URL` for the target and test seats. This is required for audit/cleanup mints even
+when `PROOF_GS1` is unset. Helpers delete their proof documents and sign out their temporary
+grants; service bearers remain separately tracked and revoked. No cookie fallback is used.
 
 `scripts/release/production-paypal-fixture.mjs` can wrap it: it gives the seller seat a temporary PayPal rail and one
 `TEST, do not buy <run>` listing, runs the proof against that listing, then always tears everything down and verifies
@@ -235,20 +196,20 @@ never either seat's own).
 All inputs are environment variables. Seat files, passphrases and the PayPal address never enter the repository, a
 command line, or the evidence folder.
 
-| Variable                                                      | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PROOF_SELLER_RECOVERY_FILE`, `PROOF_BUYER_RECOVERY_FILE`     | Encrypted `pubky.org/recovery` backups of the two production test seats                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `PROOF_RECOVERY_PASSPHRASE`                                   | Passphrase for those backups                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `PROOF_SEAT_SECRET_HEX`, `PROOF_BUYER_SECRET_HEX`             | Alternative to the files: 32-byte seat secrets as hex (used for staging-homeserver seats)                                                                                                                                                                                                                                                                                                                                                                                  |
-| `PROOF_SELLER_PREFIX`, `PROOF_BUYER_PREFIX`                   | Optional. The run stops unless each seat's pubky starts with this, which catches a swapped seat                                                                                                                                                                                                                                                                                                                                                                            |
-| `PAYPAL_TEST_EMAIL`                                           | PayPal address for the temporary seller rail. Never logged or written                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `PROOF_EVIDENCE`                                              | Evidence folder for this release, outside the repository (the scripts refuse a path inside it)                                                                                                                                                                                                                                                                                                                                                                             |
-| `EXPECTED_DPL`                                                | The `dpl_…` id now aliased to the origin. The proof fails if production serves anything else                                                                                                                                                                                                                                                                                                                                                                               |
-| `PROOF_CLIENT_ID`                                             | Optional. The grant client id the Shop's QRs must carry (`cid=`), the Shop's `PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID`. Default `shop.pubky.app`                                                                                                                                                                                                                                                                                                                                |
-| `PROOF_GS1`                                                   | `1` where grant sessions are on (`MARKETPLACE_GRANT_SESSION_ENABLED` on the service, `PUBKY_RUNTIME_MARKETPLACE_GRANT_SESSION_ENABLED` on the Shop): step 1 also checks that sign-in minted the marketplace session from the grant, one challenge and one mint, with no further approval                                                                                                                                                                                   |
-| `PROOF_STEPS`                                                 | Optional comma-separated subset, e.g. `1,2,9`. Step 0 and cleanup always run; `1` runs the Ring journey with steps 5 and 6. Step 11 runs only when named                                                                                                                                                                                                                                                                                                                   |
-| `PROOF_PAYPAL_LISTING_URL`, `PROOF_BITCOIN_LISTING_URL`       | Optional listing paths (`/marketplace/listing/<seller>/<id>`) for steps 4 and 9. The PayPal fixture sets the first; without them the proof picks test listings from Nexus                                                                                                                                                                                                                                                                                                  |
-| `PROOF_ORIGIN`, `PROOF_SERVICE`, `PROOF_NEXUS`, `PROOF_RELAY` | Optional overrides. Defaults: John Prod (`https://pubky-marketplace-production.vercel.app`), the production marketplace service, Nexus `-7108`, `https://httprelay.pubky.app/inbox`. When the Shop is served under a mount path, `PROOF_ORIGIN` carries it (`https://pubky.app/shop`, or `https://pubky.app/shop-embed` when the App owns `/shop` and frames the build, because the proof drives the build itself); every route the scripts open is joined under that path |
+| Variable                                                  | Meaning                                                                                                                                                                                                                                                                                                                                                                                         |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PROOF_SELLER_RECOVERY_FILE`, `PROOF_BUYER_RECOVERY_FILE` | Encrypted `pubky.org/recovery` backups of the two production test seats                                                                                                                                                                                                                                                                                                                         |
+| `PROOF_RECOVERY_PASSPHRASE`                               | Passphrase for those backups                                                                                                                                                                                                                                                                                                                                                                    |
+| `PROOF_SEAT_SECRET_HEX`, `PROOF_BUYER_SECRET_HEX`         | Alternative to the files: 32-byte seat secrets as hex (used for staging-homeserver seats)                                                                                                                                                                                                                                                                                                       |
+| `PROOF_SELLER_PREFIX`, `PROOF_BUYER_PREFIX`               | Optional. The run stops unless each seat's pubky starts with this, which catches a swapped seat                                                                                                                                                                                                                                                                                                 |
+| `PAYPAL_TEST_EMAIL`                                       | PayPal address for the temporary seller rail. Never logged or written                                                                                                                                                                                                                                                                                                                           |
+| `PROOF_EVIDENCE`                                          | Evidence folder for this release, outside the repository (the scripts refuse a path inside it)                                                                                                                                                                                                                                                                                                  |
+| `EXPECTED_COMMIT`, `EXPECTED_DPL`                         | One is required. `EXPECTED_COMMIT`: the commit `GET /api/build` must report (a full SHA or a prefix of at least 7 characters). `EXPECTED_DPL`: the Vercel `dpl_…` id now aliased to the origin. The proof fails if the origin serves anything else; with both set, both must match                                                                                                              |
+| `PROOF_CLIENT_ID`                                         | Optional. The grant client id the Shop's QRs must carry (`cid=`), the Shop's `PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID`. Default `shop.pubky.app`; also used by Node audit/fixture grants and must be service-allowed                                                                                                                                                                                 |
+| `PROOF_GS1`                                               | `1` where grant sessions are on (`MARKETPLACE_GRANT_SESSION_ENABLED` on the service, `PUBKY_RUNTIME_MARKETPLACE_GRANT_SESSION_ENABLED` on the Shop): step 1 also checks that sign-in minted the marketplace session from the grant, one challenge and one mint, with no further approval                                                                                                        |
+| `PROOF_STEPS`                                             | Optional comma-separated subset, e.g. `1,2,9`. Step 0 and cleanup always run; `1` runs the Ring journey with steps 5 and 6. Step 11 runs only when named                                                                                                                                                                                                                                        |
+| `PROOF_PAYPAL_LISTING_URL`, `PROOF_BITCOIN_LISTING_URL`   | Optional listing paths (`/marketplace/listing/<seller>/<id>`) for steps 4 and 9. The PayPal fixture sets the first; without them the proof picks test listings from Nexus                                                                                                                                                                                                                       |
+| `PROOF_ORIGIN`, `PROOF_SERVICE`, `PROOF_NEXUS`            | Required: the target. There are no defaults, so a proof can never reach a host the operator did not name. When the Shop is served under a mount path, `PROOF_ORIGIN` carries it (`https://pubky.app/shop`, or `https://pubky.app/shop-embed` when the App owns `/shop` and frames the build, because the proof drives the build itself); every route the scripts open is joined under that path |
 
 The production seats belong to the product owner, who passes seat backups, the passphrase and the PayPal address out
 of band. The seller seat owns the long-lived "Cutover test — do not buy" listings and must not buy its own listing;
@@ -263,7 +224,9 @@ Start every proof in a new shell with no `PROOF_*` variables left over from anot
 the target explicitly:
 
 ```bash
-export PROOF_ORIGIN=https://pubky-marketplace-production.vercel.app
+export PROOF_ORIGIN=<origin of the Shop under proof>
+export PROOF_SERVICE=<marketplace service URL>
+export PROOF_NEXUS=<marketplace Nexus URL>
 export PROOF_SELLER_RECOVERY_FILE=/secure/path/seller.pkarr
 export PROOF_BUYER_RECOVERY_FILE=/secure/path/buyer.pkarr
 read -rs PROOF_RECOVERY_PASSPHRASE && export PROOF_RECOVERY_PASSPHRASE
@@ -271,11 +234,11 @@ read -rs PAYPAL_TEST_EMAIL && export PAYPAL_TEST_EMAIL
 export PROOF_EVIDENCE=$HOME/shop-evidence/shop-vX.Y.Z/live-proof
 export PROOF_GS1=1
 mkdir -p "$PROOF_EVIDENCE"
-EXPECTED_DPL=dpl_<new> node scripts/release/production-paypal-fixture.mjs proof -- \
+EXPECTED_COMMIT=<sha> node scripts/release/production-paypal-fixture.mjs proof -- \
   node scripts/release/release-proof.mjs | tee "$PROOF_EVIDENCE/run.log"
 ```
 
-Without the PayPal fixture, run `EXPECTED_DPL=dpl_<new> node scripts/release/release-proof.mjs` directly; step 4
+Without the PayPal fixture, run `EXPECTED_COMMIT=<sha> node scripts/release/release-proof.mjs` directly; step 4
 then needs an existing PayPal-ready test listing on Nexus.
 
 The proof passes when `release-proof.mjs` prints `RESULT PASS n/n` (and, with the wrapper, the fixture prints
@@ -285,20 +248,20 @@ The proof passes when `release-proof.mjs` prints `RESULT PASS n/n` (and, with th
 
 Step 3 is unused; step ids are stable across releases.
 
-| Step    | Checks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0       | The origin serves `EXPECTED_DPL`                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| 1       | Ring and Bitkit QRs are both live on `/sign-in`; the Ring QR is a `signin_grant` for the Shop's capabilities and `PROOF_CLIENT_ID` and is not in the DOM; one approval gives one grant `POST` 2xx and no cookie homeserver `POST /session` or marketplace `POST /v1/auth/sessions`; the seat is signed in with a grant record and no cookie export; both QRs are gone. With `PROOF_GS1=1`, sign-in also minted the marketplace session from the grant (one challenge and one mint, both 2xx) |
-| 2       | The Bitkit QR is a `signin_grant` for the Shop's capabilities and client id; approval signs in with a grant record; reload restores it; sign-out from Settings clears it and holds across a reload                                                                                                                                                                                                                                                                                           |
-| 4       | The buyer seat (Ring) reaches checkout on a PayPal listing; `payment-config` loads; PayPal is offered, selectable, and its Pay control renders (never clicked); no "no payment method" copy; no USDT at checkout; nothing is paid and no order command is sent; the cart is emptied; sign-out ends the grant session (`DELETE` 2xx)                                                                                                                                                          |
-| 5       | The seat's marketplace session is approved where the Shop still asks ("Authorize" or "Enable selling" in Settings); Activity is in the marketplace nav, has no unrecognized events, lists order rows, and a row opens its order card on the Orders page. If the seller's rows only point at orders its Orders page hides, the buyer seat is used                                                                                                                                             |
-| 6       | Sign-out of the Ring session from Settings clears the Shop state, ends the grant session (`DELETE /auth/grant/session` 2xx), and holds across a reload                                                                                                                                                                                                                                                                                                                                       |
-| 7       | Runs when step 4 found a listing. A Bitkit-grant buyer sees a purchase control; "Approve to buy" opens a grant-link approval QR that is never approved; Settings is reachable from the shared navigation at desktop and mobile width; the seller's Bitcoin availability is recorded                                                                                                                                                                                                          |
-| 8       | The seller seat opens cart, checkout, orders, My shop and storefront at desktop and mobile width with a heading and no error page, sending no command                                                                                                                                                                                                                                                                                                                                        |
-| 9       | The buyer seat adds a Bitcoin test listing, completes the "Enable purchases" approval when the Shop asks for it, and reaches checkout: Bitcoin is offered, with no Bitkit 2.6 or "Couldn't verify your Bitcoin wallet" notice; nothing is paid; the cart is emptied. When the fixture seller is not Paykit-ready (`bitcoin_available` false) the offer is reported `KNOWN` instead                                                                                                           |
-| 10      | The seller's payment settings and My shop show no USDT, and no request during the run mentions USDT (flag off)                                                                                                                                                                                                                                                                                                                                                                               |
-| 11      | Only with `PROOF_STEPS=11`: the service `/health` lists `woocommerce` under `connectors.providers`, the seller sees the WooCommerce and Shopify store types and the WooCommerce connect form, and nothing is written to `/v1/connectors`                                                                                                                                                                                                                                                     |
-| cleanup | Every marketplace session either seat gained during the run is revoked, the audit bearer last, and none remain. A storefront (`shop.json`) a seat did not have before the run is deleted and verified gone from the homeserver and Nexus; one that existed before is kept, and an unknown "before" state fails                                                                                                                                                                               |
+| Step    | Checks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0       | The origin serves the expected deployment: `EXPECTED_COMMIT` equals the commit at `/api/build` and/or `EXPECTED_DPL` is named by the page                                                                                                                                                                                                                                                                                                                                             |
+| 1       | The one Ring and Bitkit QR is live on `/sign-in`; the QR is a `signin_grant` for the Shop's capabilities and `PROOF_CLIENT_ID` and is not in the DOM; one approval gives one grant `POST` 2xx and no cookie homeserver `POST /session` or marketplace `POST /v1/auth/sessions`; the seat is signed in with a grant record and no cookie export; the QR is gone. With `PROOF_GS1=1`, sign-in also minted the marketplace session from the grant (one challenge and one mint, both 2xx) |
+| 2       | The same QR, read as Bitkit's, is a `signin_grant` for the Shop's capabilities and client id; approval signs in with a grant record; reload restores it; sign-out from Settings clears it and holds across a reload                                                                                                                                                                                                                                                                   |
+| 4       | The buyer seat (Ring) reaches checkout on a PayPal listing; `payment-config` loads; PayPal is offered, selectable, and its Pay control renders (never clicked); no "no payment method" copy; no USDT at checkout; nothing is paid and no order command is sent; the cart is emptied; sign-out ends the grant session (`DELETE` 2xx)                                                                                                                                                   |
+| 5       | The seat's marketplace session is approved where the Shop still asks ("Authorize" or "Enable selling" in Settings); Activity is in the marketplace nav, has no unrecognized events, lists order rows, and a row opens its order card on the Orders page. If the seller's rows only point at orders its Orders page hides, the buyer seat is used                                                                                                                                      |
+| 6       | Sign-out of the Ring session from Settings clears the Shop state, ends the grant session (`DELETE /auth/grant/session` 2xx), and holds across a reload                                                                                                                                                                                                                                                                                                                                |
+| 7       | Runs when step 4 found a listing. A Bitkit-grant buyer sees a purchase control; "Approve to buy" opens a grant-link approval QR that is never approved; Settings is reachable from the shared navigation at desktop and mobile width; the seller's Bitcoin availability is recorded                                                                                                                                                                                                   |
+| 8       | The seller seat opens cart, checkout, orders, My shop and storefront at desktop and mobile width with a heading and no error page, sending no command                                                                                                                                                                                                                                                                                                                                 |
+| 9       | The buyer seat adds a Bitcoin test listing, completes the "Enable purchases" approval when the Shop asks for it, and reaches checkout: Bitcoin is offered, with no Bitkit 2.6 or "Couldn't verify your Bitcoin wallet" notice; nothing is paid; the cart is emptied. When the fixture seller is not Paykit-ready (`bitcoin_available` false) the offer is reported `KNOWN` instead                                                                                                    |
+| 10      | The seller's payment settings and My shop show no USDT, and no request during the run mentions USDT (flag off)                                                                                                                                                                                                                                                                                                                                                                        |
+| 11      | Only with `PROOF_STEPS=11`: the service `/health` lists `woocommerce` under `connectors.providers`, the seller sees the WooCommerce and Shopify store types and the WooCommerce connect form, and nothing is written to `/v1/connectors`                                                                                                                                                                                                                                              |
+| cleanup | Every marketplace session either seat gained during the run is revoked, the audit bearer last, and none remain. A storefront (`shop.json`) a seat did not have before the run is deleted and verified gone from the homeserver and Nexus; one that existed before is kept, and an unknown "before" state fails                                                                                                                                                                        |
 
 The number of checks depends on the steps run and on which fallbacks fire, so the result is reported as `n/n`. Rows
 reported as `KNOWN` are informational defects outside the release and never gate it. Steps 9 and 10 expect USDT off;
@@ -337,8 +300,8 @@ release notes and removed before the next release.
 
 The staging Shop signs out accounts that live on the production homeserver, so a staging run needs seats created on
 `homeserver.staging.pubky.app` (signup tokens come from the staging homeserver admin; ask the team), passed as
-`PROOF_SEAT_SECRET_HEX` and `PROOF_BUYER_SECRET_HEX`, with `PROOF_ORIGIN=https://pubky-marketplace-staging.vercel.app`
-and `PROOF_SERVICE=https://staging-api.pubky.app` (listing discovery then reads the staging Nexus). Step 4 needs a
+`PROOF_SEAT_SECRET_HEX` and `PROOF_BUYER_SECRET_HEX`, with `PROOF_ORIGIN`, `PROOF_SERVICE` and `PROOF_NEXUS` pointing at the GCP staging stack
+(listing discovery then reads the staging Nexus). Step 4 needs a
 "do not buy" listing whose seller has a PayPal sandbox rail: pass it as `PROOF_PAYPAL_LISTING_URL`, or step 4 fails
 when discovery finds none. Production is the release gate.
 
@@ -348,12 +311,13 @@ when discovery finds none. Production is the release gate.
 test seats: one `SMOKE FIXTURE, do not buy <run> <kind>` listing per delivery kind (file, link, text, "I'll email it", "I'll
 send it in messages"), a buyer checkout paid in Bitcoin, the delivery checks on both sides, then teardown and
 verification. It is not part of the release gate. It refuses to start without `PROOF_DIGITAL_GO=GO-<UTC date>`, which
-the product owner authorizes per run, and it needs both `PROOF_*_PREFIX` seat guards and `EXPECTED_DPL`.
+the product owner authorizes per run, and it needs both `PROOF_*_PREFIX` seat guards and `EXPECTED_COMMIT` or `EXPECTED_DPL`.
 
-Two guards are enforced in code. Every mode but `plan` refuses unless `PROOF_ORIGIN`, `PROOF_SERVICE` and `PROOF_NEXUS`
-are the staging stack (John Staging, `https://staging-api.pubky.app`, `https://nexusd-staging-production.up.railway.app`);
-the production defaults are refused, and `PROOF_ALLOW_PRODUCTION=1` is the explicit, deliberate way to run against
-production. Every mode that publishes or spends first checks that the origin serves `EXPECTED_DPL`, including `publish`
+Two guards are enforced in code. The script has no default target: every mode but `plan` refuses unless
+`PROOF_ORIGIN`, `PROOF_SERVICE` and `PROOF_NEXUS` are set, and then refuses unless all three are the staging stack named
+in `PROOF_STAGING_ORIGINS`, `PROOF_STAGING_SERVICES` and `PROOF_STAGING_NEXUS` (comma lists of URLs). With those lists
+unset every target counts as production, and `PROOF_ALLOW_PRODUCTION=1` is the explicit, deliberate way to run against
+production. Every mode that publishes or spends first checks that the origin serves the expected deployment (`EXPECTED_COMMIT` and/or `EXPECTED_DPL`), including `publish`
 and `await-buyer`. `plan` prints which side of that line the environment is on.
 
 The email kind types and shows the tester mailbox, so its screenshots are not saved unless `PROOF_DIGITAL_EMAIL_SCREENSHOTS=1`.
@@ -397,8 +361,8 @@ argument, and puts the kinds in `HOLD_SMOKE_DIGITAL_FIXTURE_KINDS` (comma separa
 | `teardown` | `production-digital-fixture.mjs teardown`                                                                                   |
 
 The wrapper is yours to write and keep outside the repository, because it carries the environment: the fixture seller's
-seat (see `seats.mjs`), `PROOF_SELLER_PREFIX`, `EXPECTED_DPL`, the day's `PROOF_DIGITAL_GO`, `PROOF_DIGITAL_KINDS`
-set from `HOLD_SMOKE_DIGITAL_FIXTURE_KINDS`, `PROOF_ORIGIN`, `PROOF_SERVICE`, `PROOF_NEXUS` and `PROOF_RELAY` pointing
+seat (see `seats.mjs`), `PROOF_SELLER_PREFIX`, `EXPECTED_COMMIT` or `EXPECTED_DPL`, the day's `PROOF_DIGITAL_GO`, `PROOF_DIGITAL_KINDS`
+set from `HOLD_SMOKE_DIGITAL_FIXTURE_KINDS`, `PROOF_ORIGIN`, `PROOF_SERVICE`, `PROOF_NEXUS` and an allowed `PROOF_CLIENT_ID` pointing
 at the staging stack, and a `PROOF_EVIDENCE` folder that is emptied before each `publish`. It must exit non-zero when a
 step fails: hold-smoke then runs `teardown` and a sweep, and stops if the seller still has any listing.
 
@@ -420,7 +384,7 @@ gh release create shop-vX.Y.Z -R pubky/pubky-marketplace --title "Shop vX.Y.Z" -
 
 The notes body is also kept in the repository as `docs/ecommerce/release-notes/shop-vX.Y.Z.md` (see `shop-v0.6.50.md` and `shop-v0.6.51.md`). The GitHub release is the record; the file is its committed copy.
 
-The notes carry the version, date, exact commit, Vercel deployment id and URL, one line per user-visible change, the
+The notes carry the version, date, exact commit, deployment id (where the host issues one) and URL, one line per user-visible change, the
 backend deploys the release depends on (for example `marketplace-service <sha>`), known limitations, the proof result
 (`RESULT PASS n/n`), and a tester notice:
 
@@ -431,8 +395,6 @@ backend deploys the release depends on (for example `marketplace-service <sha>`)
 
 ## Backend releases
 
-The marketplace service, the Nexus fork and the Paykit server release from their own repositories: build the GHCR
-image, pin its digest in the repository's Railway infrastructure file (`.railway/railway.ts`), confirm a
-`railway config plan` shows no unexpected change, deploy, then check health. See each repository's README and
-`.railway/README.md`, and the Nexus fork's `docs/railway-deploy.md`. The services currently run in the product
-owner's Railway account, so backend pull requests merge on GitHub and the owner deploys them.
+The marketplace service, the Nexus fork and the Paykit server release from their own repositories: each builds and
+publishes its container image, and the team deploys the pinned image through
+[pubky/shop-migration](https://github.com/pubky/shop-migration). See each repository's README.

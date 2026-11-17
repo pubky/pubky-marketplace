@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { useWatch } from 'react-hook-form';
 import { getMarketplaceShopRoute } from '@/app/routes';
@@ -9,8 +10,12 @@ import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useMarketplaceShopSettings } from '@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings';
+import { useSellingAvailability } from '@/hooks/useSellingAvailability/useSellingAvailability';
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard/useUnsavedChangesGuard';
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { SellingUnavailableNotice } from '@/molecules/Marketplace/SellingUnavailableNotice';
+import { UnsavedChangesDialog } from '@/molecules/Marketplace/UnsavedChangesDialog';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceShopSettingsFormView } from '@/organisms/Marketplace/MarketplaceShopSettingsForm';
 import { ShopProfileCard } from '@/organisms/Marketplace/ShopProfileCard/ShopProfileCard';
@@ -19,28 +24,39 @@ import { useAuthStore } from '@/stores/auth/auth.store';
 export function MarketplaceMyShop() {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const settings = useMarketplaceShopSettings();
+  const selling = useSellingAvailability();
+  const leaveGuard = useUnsavedChangesGuard(settings.isDirty);
   const [name, bio, countryCode, region, vacationMode] = useWatch({
     control: settings.form.control,
     name: ['name', 'bio', 'countryCode', 'region', 'vacationMode'],
   });
-  const previewName = String(name ?? '').trim() || 'Your shop name';
+  const typedName = String(name ?? '').trim();
+  const previewName = typedName || 'Your shop name';
   const previewBio = String(bio ?? '').trim() || 'Your shop description will appear here.';
   const previewCountryCode = String(countryCode ?? '')
     .trim()
     .toUpperCase();
   const previewRegion = String(region ?? '').trim();
 
+  // The link from a selling notice ends at the country field: bring it into view and focus it once the form is there.
+  useEffect(() => {
+    if (settings.isLoading || window.location.hash !== '#countryCode') return;
+    const field = document.getElementById('countryCode');
+    field?.scrollIntoView({ block: 'center' });
+    field?.focus({ preventScroll: true });
+  }, [settings.isLoading]);
+
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      className="pb-28"
-    >
+    <MarketplaceContentLayout disableMainContentOverflow className="pb-28">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <MarketplaceSectionNav />
         <BackToMyShop />
+        <SellingUnavailableNotice
+          selling={selling}
+          testId="storefront-selling-unavailable"
+          onShopSettings
+          countryLocked={settings.countryLocked}
+        />
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <Heading level={1} size="xl" className="text-4xl sm:text-6xl">
@@ -62,21 +78,33 @@ export function MarketplaceMyShop() {
           </div>
         </div>
 
-        <ShopProfileCard
-          variant="mini"
-          name={previewName}
-          bio={previewBio}
-          avatarUrl={settings.avatar.previewUrl}
-          bannerUrl={settings.banner.previewUrl}
-          location={{ countryCode: previewCountryCode, region: previewRegion }}
-          vacation={Boolean(vacationMode)}
-          bannerAlt={`${previewName} banner preview`}
-          avatarAlt={`${previewName} avatar preview`}
-          testId="shop-live-preview"
-        />
+        <div className="grid gap-2">
+          <Typography as="p" className="text-sm text-muted-foreground" data-testid="shop-live-preview-caption">
+            This is a preview of your public storefront. Edit your shop details in the form below.
+          </Typography>
+          <ShopProfileCard
+            variant="mini"
+            name={previewName}
+            nameIsPlaceholder={typedName === ''}
+            bio={previewBio}
+            avatarUrl={settings.avatar.previewUrl}
+            bannerUrl={settings.banner.previewUrl}
+            location={{ countryCode: previewCountryCode, region: previewRegion }}
+            vacation={Boolean(vacationMode)}
+            bannerAlt={`${previewName} banner preview`}
+            avatarAlt={`${previewName} avatar preview`}
+            testId="shop-live-preview"
+          />
+        </div>
 
         <MarketplaceShopSettingsFormView settings={settings} />
       </Container>
-    </ContentLayout>
+      <UnsavedChangesDialog
+        open={leaveGuard.pendingLink !== null}
+        subject="storefront"
+        onStay={leaveGuard.stay}
+        onLeave={leaveGuard.leave}
+      />
+    </MarketplaceContentLayout>
   );
 }

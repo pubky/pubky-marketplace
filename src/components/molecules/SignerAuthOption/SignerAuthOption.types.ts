@@ -10,7 +10,7 @@ export type SignerAuthCopy = {
   copyLabel: string;
   reloadLabel: string;
   openingLabel: string;
-  showRingLogo: boolean;
+  logo: 'ring' | 'bitkit' | 'both';
 };
 
 export type SignerAuthOptionProps = {
@@ -28,5 +28,6 @@ export type SignerAuthorizeButtonProps = {
   copy: SignerAuthCopy;
   auth: SignerAuth;
   testId: string;
-  authorizeLabel?: string;
+  /** Opens the approval in this signer. Defaults to the plain `onAuthorizeClick`. */
+  onAuthorize?: () => void;
 };

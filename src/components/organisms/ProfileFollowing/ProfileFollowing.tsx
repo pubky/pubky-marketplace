@@ -87,7 +87,6 @@ export function ProfileFollowing() {
             key={connection.id}
             user={connection}
             variant="full"
-            followButtonVariant="icon"
             isLoading={isUserLoading(connection.id)}
             isStatusLoading={isLoading}
             isCurrentUser={currentUserPubky === connection.id}

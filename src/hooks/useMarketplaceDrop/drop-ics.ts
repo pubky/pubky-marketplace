@@ -57,7 +57,7 @@ export function buildDropCalendarIcs(input: DropCalendarEventInput): string {
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Pubky Marketplace//Drops//EN',
+    'PRODID:-//Pubky Market//Drops//EN',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
     'BEGIN:VEVENT',

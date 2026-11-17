@@ -14,7 +14,7 @@ import {
   type VariantMode,
 } from '@/libs/commerce/connectors';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 

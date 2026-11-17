@@ -1,6 +1,6 @@
 import { getDeployEnv } from '@/config/network';
 import { AppError, isAppError } from './error';
-import { AuthErrorCode, ClientErrorCode, DatabaseErrorCode, ServerErrorCode } from './error.codes';
+import { AuthErrorCode, ClientErrorCode, DatabaseErrorCode, ServerErrorCode, ValidationErrorCode } from './error.codes';
 import { Err } from './error.factories';
 import { ErrorCategory, ErrorService } from './error.types';
 
@@ -11,17 +11,8 @@ export { isAppError };
 // Category Checks
 // =============================================================================
 
-/** Check if error is a network error (connection-level failures) */
-export const isNetworkError = (e: AppError): boolean => e.category === ErrorCategory.Network;
-
 /** Check if error is a timeout error */
 export const isTimeoutError = (e: AppError): boolean => e.category === ErrorCategory.Timeout;
-
-/** Check if error is a server error (5xx) */
-export const isServerError = (e: AppError): boolean => e.category === ErrorCategory.Server;
-
-/** Check if error is a client error (4xx) */
-export const isClientError = (e: AppError): boolean => e.category === ErrorCategory.Client;
 
 /** Check if error is an auth error (401, 403) */
 export const isAuthError = (e: AppError): boolean => e.category === ErrorCategory.Auth;
@@ -42,12 +33,6 @@ export const isWritePathNotAllowedError = (e: AppError): boolean =>
   e.category === ErrorCategory.Auth &&
   e.code === AuthErrorCode.FORBIDDEN &&
   e.message.includes(HOMESERVER_WRITE_PATH_NOT_ALLOWED);
-
-/** Check if error is a validation error (local) */
-export const isValidationError = (e: AppError): boolean => e.category === ErrorCategory.Validation;
-
-/** Check if error is a database error (local storage) */
-export const isDatabaseError = (e: AppError): boolean => e.category === ErrorCategory.Database;
 
 // =============================================================================
 // Decision Helpers
@@ -110,6 +95,19 @@ export const isMarketplaceSessionRequiredError = (error: unknown): error is AppE
     error.context?.statusCode === 401
   );
 };
+
+/**
+ * True when the Shop's own command normalizer refused a marketplace command
+ * before anything was sent (`CommerceRecordNormalizer.marketplaceCommand`). The
+ * remedy is not a retry, so callers say the command was never sent instead of
+ * a generic failure.
+ */
+export const isMarketplaceCommandValidationError = (error: unknown): error is AppError =>
+  isAppError(error) &&
+  error.category === ErrorCategory.Validation &&
+  error.code === ValidationErrorCode.INVALID_INPUT &&
+  error.service === ErrorService.Local &&
+  error.operation === 'normalizeCommercemarketplaceCommand';
 
 /**
  * True when the HOMESERVER refused a write because the browser's session
@@ -210,3 +208,10 @@ export const getErrorMessage = (error: unknown): string => {
   }
   return 'Unexpected error occurred.';
 };
+
+/**
+ * The work was cancelled through its AbortSignal (for example, its account began signing out), so
+ * nothing failed that the user should hear about.
+ */
+export const isAbortError = (error: unknown): boolean =>
+  typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError';

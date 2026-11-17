@@ -13,12 +13,8 @@ export interface TFetchStreamParams {
   lastPostId?: string;
   tags?: string[];
   order?: StreamOrder;
-}
-
-export interface TInitialStreamParams {
-  streamId: PostStreamId;
-  limit: number;
-  cachedStream: { stream: string[] } | null;
+  /** Once aborted, nothing fetched is saved locally. */
+  signal?: AbortSignal;
 }
 
 export interface TPostStreamChunkResponse {
@@ -46,12 +42,15 @@ export interface TPartialCacheHitParams {
   streamId: PostStreamId;
   /** Optional viewer ID for relationship data. Null for unauthenticated views. */
   viewerId: Pubky | null;
+  signal?: AbortSignal;
 }
 
 export interface TMissingPostsParams {
   cacheMissPostIds: string[];
   /** Optional viewer ID for relationship data. Null/undefined for unauthenticated views. */
   viewerId?: Pubky | null;
+  /** Aborted when the viewer signs out; nothing is persisted after that. */
+  signal?: AbortSignal;
 }
 
 export interface TCacheStreamParams {
@@ -64,11 +63,14 @@ export interface TFetchMissingUsersParams {
   posts: NexusPost[];
   /** Optional viewer ID for relationship data. Null/undefined for unauthenticated views. */
   viewerId?: Pubky | null;
+  /** Aborted when the viewer signs out; nothing is persisted after that. */
+  signal?: AbortSignal;
 }
 
 export interface TPersistUnreadNewStreamChunkParams {
   streamId: PostStreamId;
   compositePostIds: string[];
+  signal?: AbortSignal;
 }
 
 /**

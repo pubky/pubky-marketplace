@@ -1,6 +1,6 @@
 # Shop Developer Onboarding
 
-Everything a developer needs to run, test and release [Pubky Shop](https://shop.pubky.app), the marketplace client
+Everything a developer needs to run, test and release [Pubky Market](https://shop.pubky.app), the marketplace client
 built from this repository.
 
 ## What the Shop is
@@ -26,14 +26,14 @@ feature inventory.
 
 The deployment column is an early-October handover snapshot, not a verified current infrastructure inventory. Confirm current images, hosts and environment values with VV in [pubky/shop-migration](https://github.com/pubky/shop-migration).
 
-| Repository                                                                            | What                                                                               | Work branch | Deployment snapshot                                                                     |
-| ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ----------- | --------------------------------------------------------------------------------------- |
-| [pubky/pubky-marketplace](https://github.com/pubky/pubky-marketplace)                 | Shop web client (Next.js, `@synonymdev/pubky` 0.16.2), project docs, tester issues | `master`    | Vercel `pubky-marketplace-production` (shop.pubky.app) and `pubky-marketplace-staging`  |
-| [pubky/pubky-marketplace-service](https://github.com/pubky/pubky-marketplace-service) | Transaction service (Rust, sqlx, Postgres)                                         | `main`      | Railway, GHCR image pinned in `.railway/railway.ts`; staging at `staging-api.pubky.app` |
-| [pubky/marketplace-nexus](https://github.com/pubky/marketplace-nexus)                 | Marketplace indexer (upstream Nexus plus marketplace indexing)                     | `main`      | Railway; see its `docs/railway-deploy.md`                                               |
-| [BitcoinErrorLog/paykit-server](https://github.com/BitcoinErrorLog/paykit-server)     | Paykit server (fork)                                                               | `master`    | Railway; production host `paykit-shop.pubky.app`                                        |
-| [BitcoinErrorLog/pubky-app-specs](https://github.com/BitcoinErrorLog/pubky-app-specs) | Marketplace record types (specs fork)                                              | —           | Vendored into this repository as a tarball                                              |
-| [pubky/pubky-shop-sdk](https://github.com/pubky/pubky-shop-sdk)                       | `@bitcoinerrorlog/pubky-shop` SDK                                                  | `main`      | npm                                                                                     |
+| Repository                                                                            | What                                                                               | Work branch | Deployment snapshot                                                                                                       |
+| ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------- |
+| [pubky/pubky-marketplace](https://github.com/pubky/pubky-marketplace)                 | Shop web client (Next.js, `@synonymdev/pubky` 0.16.2), project docs, tester issues | `master`    | Deployed through [pubky/shop-migration](https://github.com/pubky/shop-migration)                                          |
+| [pubky/pubky-marketplace-service](https://github.com/pubky/pubky-marketplace-service) | Transaction service (Rust, sqlx, Postgres)                                         | `main`      | GHCR image, deployed through [pubky/shop-migration](https://github.com/pubky/shop-migration)                              |
+| [pubky/marketplace-nexus](https://github.com/pubky/marketplace-nexus)                 | Marketplace indexer (upstream Nexus plus marketplace indexing)                     | `main`      | Deployed through [pubky/shop-migration](https://github.com/pubky/shop-migration)                                          |
+| [BitcoinErrorLog/paykit-server](https://github.com/BitcoinErrorLog/paykit-server)     | Paykit server (fork)                                                               | `master`    | Deployed through [pubky/shop-migration](https://github.com/pubky/shop-migration); production host `paykit-shop.pubky.app` |
+| [BitcoinErrorLog/pubky-app-specs](https://github.com/BitcoinErrorLog/pubky-app-specs) | Marketplace record types (specs fork)                                              | —           | Vendored into this repository as a tarball                                                                                |
+| [pubky/pubky-shop-sdk](https://github.com/pubky/pubky-shop-sdk)                       | `@bitcoinerrorlog/pubky-shop` SDK                                                  | `main`      | npm                                                                                                                       |
 
 In this repository, `master` is the default branch and the Shop release line. Releases up to `shop-v0.6.46` were cut
 from `release/shop-v0.6.8` in `BitcoinErrorLog/pubky-app`; that history and its tags are part of this repository.
@@ -41,7 +41,7 @@ from `release/shop-v0.6.8` in `BitcoinErrorLog/pubky-app`; that history and its 
 ## Access to request on day one
 
 - Write access to the repositories above.
-- Access to the current deployment platform from VV; historical Vercel projects use team `synonymdev`.
+- Access to the deployment configuration in [pubky/shop-migration](https://github.com/pubky/shop-migration), from its maintainers.
 - Sentry, for the Shop's error reports.
 - Test seats for the release proof, passed out of band by the product owner. Never commit them.
 
@@ -65,28 +65,36 @@ a local Pubky testnet, drops, and real Locks/Paykit payments.
 | What                            | Command                                                                 |
 | ------------------------------- | ----------------------------------------------------------------------- |
 | Pre-push gate (required)        | `bash scripts/prepush.sh` (last line `PREPUSH OK <sha> <seconds> fast`) |
-| Release gate                    | `PREPUSH_FULL=1 bash scripts/prepush.sh` (last line ends in `full`)     |
+| Release gate                    | `PREPUSH_FULL=1 bash scripts/prepush.sh` (adds related Linux VRT)       |
 | Types and lint                  | `npm run typecheck`, `npm run lint`                                     |
 | Unit tests                      | `npm run test`                                                          |
 | Sandbox service tests           | `npm run test:marketplace`                                              |
 | Linux visual regression         | `bash scripts/vrt-linux.sh [spec...]` (Docker; the CI merge gate)       |
 | Launch-critical browser journey | `LAUNCH_E2E_MODE=synthetic bash scripts/ci-launch-e2e.sh`               |
 
-Live suites that need a running service, a local Pubky testnet, or staging signup tokens are listed in
-[`RUNNING.md`](RUNNING.md#running-the-tests). They are run on demand, not as standing gates.
+The pre-push scheduler uses `lockf` and defaults its shared lock directory to
+`/Volumes/t7/vibes-dev/.locks` (`scripts/heavy-lock.sh`). On a machine without that writable volume,
+set a shared local directory before running the gate or pushing:
+
+```bash
+export HEAVY_LOCK_DIR="$HOME/.cache/pubky-marketplace/locks"
+```
+
+Use the same directory for all Market worktrees on the machine so concurrent heavy checks still share their slots.
+This changes only where the existing scheduler stores its locks; it does not skip any checks.
+
+Additional integration/live suites and their service, local-testnet or staging-token requirements are listed in
+[`RUNNING.md`](RUNNING.md#running-the-tests). Run those on demand with the required environment. The separate
+`chat-e2e` CI job provisions its own local stack; synthetic launch and local-stack chat checks do not replace deployed release proof.
 
 ## Merge
 
-- Pull requests target the open train branch `train/shop-<date>-<am|pm>`; the train merges into
-  `master` at the cut.
-- CI must pass: Check Code Quality, Check NextJS Build, the five test shards, Run Tests, Merge Coverage Reports,
-  `vrt-marketplace`, `vrt-core`, `launch-e2e`. No approving review is configured; agree a review rule as a team.
-- Auto-merge is off, and maintainers do the merges. After pushing, wait with `gh pr checks <N> --watch`, then ask a
-  maintainer to merge; they merge with `gh pr merge <N> --squash` once every check passed or skipped. Automated agents
-  never merge and never push `master`.
-- Regenerate Linux VRT baselines only for scenes you changed, once, in a commit of PNGs alone. Never re-pin a scene
-  you did not touch. Details: [`release.md`](release.md#visual-regression-baselines).
-- User-visible changes add a fragment under `changelog.d/next/`.
+- Use the agreed target: the open `train/shop-<date>-<am|pm>` branch when working on a train, or `master` when no train is open or the task explicitly targets it. Train cuts follow [`release.md`](release.md#release-train).
+- The current [master ruleset](https://github.com/pubky/pubky-marketplace/rules/26693412) requires an approving review, dismisses stale approvals after new commits, requires resolved review discussions and passing required checks, and uses a merge queue. Check GitHub for the current rules instead of assuming train branches have the same protection.
+- Preserve Market's additional CI: unit shards and coverage, Code Quality, NextJS Build, Linux `vrt-marketplace`/`vrt-core`, and synthetic `launch-e2e`. The separate local-stack `chat-e2e` also runs on relevant PRs; running in CI does not by itself make a job a required check.
+- Run `bash scripts/prepush.sh` before every push, then watch CI with `gh pr checks <N> --watch`. Maintainers normally perform merges: feature-to-train PRs are squashed; train-to-master keeps a merge commit and follows the queue. Agents do not merge or push `master` without an explicit instruction, and never bypass protection with `--admin`.
+- Regenerate Linux VRT baselines only for scenes you changed, once, in a commit of PNGs alone. Never re-pin a scene you did not touch. Details: [`release.md`](release.md#visual-regression-baselines).
+- User-visible changes add a fragment under `changelog.d/next/`. Follow the general [PR conventions](../commit-message.md#branches-and-pull-requests) and complete the PR template with actual verification results.
 
 ## Code rules
 
@@ -101,8 +109,7 @@ Live suites that need a running service, a local Pubky testnet, or staging signu
 
 ## Release
 
-Follow [`release.md`](release.md) for source gates, deployed grant-session verification, tags and notes. Its Vercel recipe is for the historical standalone deployment; use VV’s current deployment configuration for the embedded pair. The older `scripts/release/release-proof.mjs` still asserts Ring cookie sign-in and cannot certify this grant-only release. Production operations, the kill switch and rollback are
-in [`runbook-production.md`](runbook-production.md).
+Follow [`release.md`](release.md) for source gates, deployed grant-session verification, tags and notes. Deployment is through [pubky/shop-migration](https://github.com/pubky/shop-migration); use its configuration for the embedded pair. `scripts/release/release-proof.mjs` verifies grant-session sign-in (`signin_grant`, a persisted grant record and no cookie session export) and rejects cookie-session POSTs. Run it with the test seats and target configuration described in the runbook; synthetic PR checks do not replace this deployed proof. Production operations, the kill switch and rollback are in shop-migration.
 
 ## Known limits
 
@@ -123,12 +130,12 @@ specs, local-first commerce state, drops, and the former session consumer. Curre
 
 ## Who to ask
 
-| Topic                                                         | GitHub                                                                                                                                  |
-| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Product decisions, Vercel access, test seats, backend deploys | [BitcoinErrorLog](https://github.com/BitcoinErrorLog)                                                                                   |
-| Testing, issue reports, payment canaries                      | [thisispav](https://github.com/thisispav)                                                                                               |
-| Bitkit testing                                                | [piotr-iohk](https://github.com/piotr-iohk)                                                                                             |
-| Visual design                                                 | [aldertnl](https://github.com/aldertnl)                                                                                                 |
-| pubky.app changes                                             | [secondl1ght](https://github.com/secondl1ght), [infin1t3](https://github.com/infin1t3), [talosmachina](https://github.com/talosmachina) |
-| Bitkit and Paykit client issues                               | [ovitrif](https://github.com/ovitrif)                                                                                                   |
-| Nexus, homeserver, Paykit server, Locks, Passport             | The maintainers of the corresponding `pubky/*` repositories                                                                             |
+| Topic                                                | GitHub                                                                                                                                  |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Product decisions, test seats, backend pull requests | [BitcoinErrorLog](https://github.com/BitcoinErrorLog)                                                                                   |
+| Testing, issue reports, payment canaries             | [thisispav](https://github.com/thisispav)                                                                                               |
+| Bitkit testing                                       | [piotr-iohk](https://github.com/piotr-iohk)                                                                                             |
+| Visual design                                        | [aldertnl](https://github.com/aldertnl)                                                                                                 |
+| pubky.app changes                                    | [secondl1ght](https://github.com/secondl1ght), [infin1t3](https://github.com/infin1t3), [talosmachina](https://github.com/talosmachina) |
+| Bitkit and Paykit client issues                      | [ovitrif](https://github.com/ovitrif)                                                                                                   |
+| Nexus, homeserver, Paykit server, Locks, Passport    | The maintainers of the corresponding `pubky/*` repositories                                                                             |

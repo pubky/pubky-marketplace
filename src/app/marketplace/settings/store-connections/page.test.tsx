@@ -25,7 +25,7 @@ describe('store connections routes', () => {
     render(<StoreConnectionsPage />);
     expect(screen.getByText('store connections page')).toBeInTheDocument();
     expect(notFound).not.toHaveBeenCalled();
-    expect(generateMetadata().title).toBe('Store connections | Pubky Marketplace');
+    expect(generateMetadata().title).toBe('Store connections | Pubky Market');
     expect(generateMetadata().alternates?.canonical).toContain(MARKETPLACE_ROUTES.SETTINGS_STORE_CONNECTIONS);
   });
 
@@ -34,6 +34,6 @@ describe('store connections routes', () => {
     expect(screen.getByText('catalog of c1')).toBeInTheDocument();
     expect(notFound).not.toHaveBeenCalled();
     const metadata = await catalogMetadata({ params: Promise.resolve({ connectionId: 'c1' }) });
-    expect(metadata.title).toBe('Store products | Pubky Marketplace');
+    expect(metadata.title).toBe('Store products | Pubky Market');
   });
 });

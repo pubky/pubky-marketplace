@@ -3,7 +3,6 @@ import { buildNexusUrl, buildUrlWithQuery, encodePathSegment } from '@/services/
 import {
   type TUserPaginationParams,
   type TUserRelationshipParams,
-  type TUserTaggersParams,
   type TUserTagsParams,
   type TUserViewParams,
   USER_PATH_PARAMS,
@@ -67,15 +66,6 @@ export const userApi = {
     const viewerId = encodePathSegment(params.viewer_id);
     return buildNexusUrl(`${PREFIX}/${userId}/relationship/${viewerId}`);
   },
-  taggers: (params: TUserTaggersParams) => {
-    const userId = encodePathSegment(params.user_id);
-    const label = encodePathSegment(params.label);
-    return buildUrlWithQuery({
-      baseRoute: `${PREFIX}/${userId}/taggers/${label}`,
-      params,
-      excludeKeys: USER_PATH_PARAMS,
-    });
-  },
   tags: (params: TUserTagsParams) => {
     const userId = encodePathSegment(params.user_id);
     return buildUrlWithQuery({
@@ -85,5 +75,3 @@ export const userApi = {
     });
   },
 };
-
-export type UserApiEndpoint = keyof typeof userApi;

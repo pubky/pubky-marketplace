@@ -33,21 +33,6 @@ const AUTH_POLL_INTERVAL_MS = 100;
 const AUTH_POLL_MAX_ATTEMPTS = 3_000;
 
 /**
- * Encode bytes as standard (padded) base64 — the same alphabet `session.export()`
- * uses, so a `/signup` response body (serialized SessionInfo) can be fed to
- * `Pubky.restoreSession`. Chunked to stay under the argument limit of
- * `String.fromCharCode.apply` for large inputs.
- */
-export const bytesToBase64 = (bytes: Uint8Array): string => {
-  const CHUNK_SIZE = 0x8000;
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK_SIZE));
-  }
-  return btoa(binary);
-};
-
-/**
  * Checks if a URL is an HTTP or HTTPS URL
  * @param url - The URL to check
  * @returns True if the URL is HTTP/HTTPS, false otherwise
@@ -165,7 +150,7 @@ export const parseResponseOrUndefined = async <T>({
  * Times a flow is resumed after the relay could not be reached before the flow counts as dead. Each resume waits
  * until the page is visible (a second when it already is).
  */
-export const AUTH_POLL_MAX_RESUMES = 60;
+const AUTH_POLL_MAX_RESUMES = 60;
 
 /**
  * How long the relay keeps an approval (per the SDK docs). A flow older than this when the page is visible again
@@ -177,7 +162,7 @@ export const AUTH_RELAY_RETENTION_MS = 5 * 60 * 1000;
  * A transport failure with no HTTP status: the relay never answered (aborted, refused or offline fetch).
  * The SDK reports it as a `RequestError` without `data.statusCode`; an HTTP error response carries one.
  */
-export const isTransientPollError = (error: unknown): boolean => {
+const isTransientPollError = (error: unknown): boolean => {
   if (extractStatusCode(error) !== undefined) return false;
   return error instanceof Error && error.name === 'RequestError';
 };
@@ -186,7 +171,7 @@ export const isTransientPollError = (error: unknown): boolean => {
  * Resolves at once when the page is visible (after a second), else on the next `visibilitychange` to visible.
  * Aborting the signal resolves it early and drops the listener.
  */
-export const waitUntilVisible = (signal?: AbortSignal): Promise<void> =>
+const waitUntilVisible = (signal?: AbortSignal): Promise<void> =>
   new Promise((resolve) => {
     if (signal?.aborted) {
       resolve();
@@ -245,14 +230,23 @@ export const createCancelableAuthApproval = (
   const releasable = Boolean(options?.resume && options.releaseWhileHidden);
   let endPause: (() => void) | null = null;
 
+  let pendingPoll: Promise<unknown> | null = null;
+
+  // Freeing a flow while its `tryPollOnce` future is still running lets that future write to freed WASM memory,
+  // which later surfaces as a `memory access out of bounds` panic. A cancel during a poll frees once it settles.
   const freeFlow = () => {
     if (freed) return;
     freed = true;
-    try {
-      flow.free();
-    } catch {
-      // Ignore double-free or already-finalized WASM objects.
-    }
+    const target = flow;
+    const release = () => {
+      try {
+        target.free();
+      } catch {
+        // Ignore double-free or already-finalized WASM objects.
+      }
+    };
+    if (pendingPoll) void pendingPoll.then(release, release);
+    else release();
   };
 
   /** Waits between polls; a hide ends the wait early. */
@@ -336,7 +330,14 @@ export const createCancelableAuthApproval = (
       }
 
       try {
-        const maybeSession = await flow.tryPollOnce();
+        const poll = flow.tryPollOnce();
+        pendingPoll = poll;
+        let maybeSession: Session | undefined;
+        try {
+          maybeSession = await poll;
+        } finally {
+          pendingPoll = null;
+        }
         if (maybeSession) {
           if (canceled) {
             await options?.onCanceledSession?.(maybeSession);

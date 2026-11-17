@@ -1,5 +1,6 @@
 import { gatedMarketplaceMetadata } from '@/app/marketplace/gated-metadata';
 import { getMarketplaceListingEditRoute } from '@/app/routes';
+import { SellingUnavailableGate } from '@/organisms/Marketplace/SellingUnavailableGate';
 import { MarketplaceEditListing } from '@/templates/Marketplace/MarketplaceEditListing';
 
 export interface MarketplaceEditListingPageProps {
@@ -14,13 +15,17 @@ export interface MarketplaceEditListingPageProps {
 export async function generateMetadata({ params }: MarketplaceEditListingPageProps) {
   const { sellerPubky, listingId } = await params;
   return gatedMarketplaceMetadata(
-    'Edit listing | Pubky Marketplace',
-    'Edit your Pubky Marketplace listing.',
+    'Edit listing | Pubky Market',
+    'Edit your Pubky Market listing.',
     getMarketplaceListingEditRoute(sellerPubky, listingId),
   );
 }
 
 export default async function MarketplaceEditListingPage({ params }: MarketplaceEditListingPageProps) {
   const { sellerPubky, listingId } = await params;
-  return <MarketplaceEditListing sellerPubky={sellerPubky} listingId={listingId} />;
+  return (
+    <SellingUnavailableGate>
+      <MarketplaceEditListing sellerPubky={sellerPubky} listingId={listingId} />
+    </SellingUnavailableGate>
+  );
 }

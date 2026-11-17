@@ -27,8 +27,9 @@ export class PostCountsModel extends TupleModelBase<string, PostCountsModelSchem
     return { id: data[0], ...data[1] };
   }
 
-  static async updateCounts({ postCompositeId, countChanges }: TPostCountsParams): Promise<void> {
+  static async updateCounts({ postCompositeId, countChanges, signal }: TPostCountsParams): Promise<void> {
     const postCounts = await PostCountsModel.findById(postCompositeId);
+    signal?.throwIfAborted();
     if (!postCounts) return;
 
     const updates: Partial<PostCountsModelSchema> = {};

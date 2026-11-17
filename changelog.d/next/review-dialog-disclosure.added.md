@@ -1,0 +1,1 @@
+The review dialog now says, before you submit, that your review is public, tied to your Pubky, and shows that you bought the item (or, for a seller, that the buyer ordered from you). The price-range opt-in also says the band becomes public with your review.

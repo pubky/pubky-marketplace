@@ -96,8 +96,10 @@ vi.mock('@/hooks/useMarketplaceActivityUnread/useMarketplaceActivityUnread', () 
   useMarketplaceActivityUnread: () => 2,
 }));
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main className="w-full py-6">{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => (
+    <main className="w-full py-6">{children}</main>
+  ),
 }));
 
 describe('Marketplace offers — visual regression', () => {
@@ -153,7 +155,7 @@ describe('Marketplace offers — visual regression', () => {
   it('renders the error state at desktop viewport', async () => {
     view.offers = [];
     view.isLoading = false;
-    view.error = 'Marketplace offers are unavailable.';
+    view.error = 'Market offers are unavailable.';
 
     const screen = await renderForVRT(<MarketplaceOffers />, { viewport: VRT_VIEWPORT_DESKTOP });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('offers-error-desktop');

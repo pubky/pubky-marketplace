@@ -13,22 +13,6 @@ function normalizeProfileTag(profileTag: string): string {
   return sanitizeTagInput(profileTag.trim()).toLowerCase();
 }
 
-function normalizeProfileTags(profileTags: string[]): string[] {
-  const normalizedTags = new Set<string>();
-
-  for (const profileTag of profileTags) {
-    const normalizedTag = normalizeProfileTag(profileTag);
-    if (normalizedTag) {
-      normalizedTags.add(normalizedTag);
-    }
-    if (normalizedTags.size >= HOME_PROFILE_TAGS_MAX_SELECTED) {
-      break;
-    }
-  }
-
-  return Array.from(normalizedTags);
-}
-
 // Actions/Mutators - State modification functions
 export const createHomeActions = (set: ZustandSet<HomeStore>): HomeActions => ({
   setLayout: (layout) => {
@@ -80,10 +64,6 @@ export const createHomeActions = (set: ZustandSet<HomeStore>): HomeActions => ({
     set({ content }, false, HomeActionTypes.SET_HOME_CONTENT);
   },
 
-  setProfileTags: (profileTags) => {
-    set({ profileTags: normalizeProfileTags(profileTags) }, false, HomeActionTypes.SET_HOME_PROFILE_TAGS);
-  },
-
   addProfileTag: (profileTag) => {
     set(
       (state) => {
@@ -111,10 +91,6 @@ export const createHomeActions = (set: ZustandSet<HomeStore>): HomeActions => ({
       false,
       HomeActionTypes.REMOVE_HOME_PROFILE_TAG,
     );
-  },
-
-  clearProfileTags: () => {
-    set({ profileTags: [] }, false, HomeActionTypes.CLEAR_HOME_PROFILE_TAGS);
   },
 
   setHasHydrated: (hasHydrated) => {

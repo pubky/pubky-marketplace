@@ -37,6 +37,7 @@ import {
   createReconnectFlow,
   getGrantStatus,
   GrantServiceError,
+  revokeMarketplaceSession,
   verifyMarketplaceSession,
 } from './service';
 
@@ -86,7 +87,7 @@ export async function parseStrictJson<T>(request: Request, schema: z.ZodType<T>,
 export async function pairSession(
   request: Request,
   authorization: string | null,
-): Promise<{ cookie: string; maxAge: number }> {
+): Promise<{ cookie: string; maxAge: number } | null> {
   const config = requiredConfig();
   assertSameOrigin(request, config);
   await assertGrantSchema(config);
@@ -98,7 +99,8 @@ export async function pairSession(
   const bound = makeBoundCookie(bridgeId);
   const cookieHash = hashBoundCookie(config, config.stateKeyEpoch, 'session', bridgeId, bound.secret);
   const bearerSealed = sealBearer(config, bridgeId, input.session_id, input.pubky, bearer);
-  await replaceBridge(config, {
+  // Another pairing for this user won the race: keep its bridge and set no cookie.
+  const installed = await replaceBridge(config, {
     bridgeId,
     cookieHash,
     pubky: input.pubky,
@@ -107,6 +109,7 @@ export async function pairSession(
     keyEpoch: config.stateKeyEpoch,
     expiresAt,
   });
+  if (!installed) return null;
   return { cookie: bound.value, maxAge: Math.max(1, Math.floor((expiresAt.getTime() - Date.now()) / 1000)) };
 }
 
@@ -278,10 +281,42 @@ export async function cancelFlow(
 }
 
 /**
+ * Ends the marketplace session a bridge holds, at the service. The bridge is
+ * the only place that still has the bearer once the host App has cleared the
+ * browser's copy, which it does at sign-out whether or not the Shop frame is
+ * loaded. Only a cookie that proves possession of the bridge opens it. Best
+ * effort: a sealed bearer that cannot be opened (rotated key) or a service that
+ * does not answer must not keep the bridge from being deleted.
+ */
+async function revokeBridgedSession(
+  config: MarketplaceGrantConfig,
+  parsed: NonNullable<ReturnType<typeof parseBoundCookie>>,
+): Promise<void> {
+  try {
+    const bridge = await getBridge(config, parsed.id);
+    if (!bridge) return;
+    const expectedHash = hashBoundCookie(config, bridge.key_epoch, 'session', bridge.bridge_id, parsed.secret);
+    if (!cookieMatches(bridge.cookie_hash, expectedHash)) return;
+    const bearer = openBearer(
+      config,
+      bridge.bridge_id,
+      bridge.marketplace_session_id,
+      bridge.pubky,
+      bridge.key_epoch,
+      bridge.bearer_sealed,
+    );
+    await revokeMarketplaceSession(config, bearer, bridge.marketplace_session_id);
+  } catch {
+    // The caller deletes the bridge next; the session then expires on its own.
+  }
+}
+
+/**
  * Unpairs the session cookie's bridge. A `session_id` query scopes it to that
  * marketplace session, so one tab's expired bearer cannot unpair a newer
- * session another tab paired on the shared cookie. Returns whether the
- * cookie should be dropped.
+ * session another tab paired on the shared cookie. Without it (sign-out) the
+ * marketplace session the bridge holds is also revoked at the service.
+ * Returns whether the cookie should be dropped.
  */
 export async function clearSession(request: Request, sessionCookie: string | undefined): Promise<boolean> {
   const config = requiredConfig();
@@ -293,6 +328,7 @@ export async function clearSession(request: Request, sessionCookie: string | und
   const parsed = parseBoundCookie(sessionCookie);
   if (!parsed) return true;
   if (ownedSessionId === null) {
+    await revokeBridgedSession(config, parsed);
     await deleteBridge(config, parsed.id);
     return true;
   }

@@ -16,7 +16,6 @@ import {
   HeaderContainer,
   HeaderExploreNavigationButtons,
   HeaderNavigationButtons,
-  HeaderOnboarding,
   HeaderSocialLinks,
   HeaderTitle,
 } from './Header';
@@ -70,7 +69,6 @@ vi.mock('@/stores/search/search.store', () => ({
     addUser: vi.fn(),
     addTag: vi.fn(),
     setActiveTags: vi.fn(),
-    addActiveTag: vi.fn(),
     removeActiveTag: vi.fn(),
   })),
 }));
@@ -133,16 +131,6 @@ vi.mock('@/organisms/SearchInput/SearchInput', () => {
   };
 });
 
-vi.mock('@/molecules/ProgressSteps/ProgressSteps', () => {
-  return {
-    ProgressSteps: ({ currentStep, totalSteps }: { currentStep: number; totalSteps: number }) => (
-      <div data-testid="progress-steps" data-current={currentStep} data-total={totalSteps}>
-        Progress Steps
-      </div>
-    ),
-  };
-});
-
 // Mock the libs - keep real implementations and only stub helpers we need
 
 // Mock the config
@@ -183,6 +171,7 @@ describe('Header Components', () => {
     refresh: vi.fn(),
     replace: vi.fn(),
     prefetch: vi.fn(),
+    bfcacheId: '',
   };
 
   beforeEach(() => {
@@ -306,16 +295,6 @@ describe('Header Components', () => {
     });
   });
 
-  describe('HeaderOnboarding', () => {
-    it('renders with progress steps', () => {
-      render(<HeaderOnboarding currentStep={3} />);
-
-      const progressSteps = screen.getByTestId('progress-steps');
-      expect(progressSteps).toHaveAttribute('data-current', '3');
-      expect(progressSteps).toHaveAttribute('data-total', '5');
-    });
-  });
-
   describe('HeaderSocialLinks', () => {
     it('renders social links', () => {
       render(<HeaderSocialLinks />);
@@ -366,20 +345,20 @@ describe('Header Components', () => {
       expect(mockPush).toHaveBeenCalledWith('/sign-in');
     });
 
-    it('renders new here button on the sign-in page', () => {
+    it('renders sign in button on the sign-in page', () => {
       vi.mocked(usePathname).mockReturnValue('/sign-in');
       render(<HeaderButtonSignIn />);
 
-      expect(screen.getByText('New here?')).toBeInTheDocument();
+      expect(screen.getByText('Sign in')).toBeInTheDocument();
     });
 
-    it('navigates to onboarding when clicked on the sign-in page', () => {
+    it('stays on sign-in when clicked on the sign-in page', () => {
       vi.mocked(usePathname).mockReturnValue('/sign-in');
       render(<HeaderButtonSignIn />);
 
-      fireEvent.click(screen.getByText('New here?'));
+      fireEvent.click(screen.getByText('Sign in'));
 
-      expect(mockPush).toHaveBeenCalledWith('/onboarding/human');
+      expect(mockPush).toHaveBeenCalledWith('/sign-in');
     });
 
     it('renders sign in button on the onboarding page', () => {
@@ -512,7 +491,7 @@ describe('Header Components', () => {
 
       const collectionsButton = document.querySelector('.lucide-library')?.closest('button');
       expect(collectionsButton).toHaveClass('bg-secondary');
-      expect(collectionsButton).not.toHaveClass('bg-white/5');
+      expect(collectionsButton).not.toHaveClass('bg-glass');
     });
 
     it('does not highlight Collections as new before dismissal', () => {
@@ -556,13 +535,13 @@ describe('Header Components', () => {
       });
     });
 
-    it('hides Marketplace from navigation by default', () => {
+    it('hides Market from navigation by default', () => {
       render(<HeaderNavigationButtons avatarName="TU" />);
       const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
       expect(hrefs).not.toContain('/marketplace');
     });
 
-    it('shows Marketplace in navigation when the commerce adapter is enabled', () => {
+    it('shows Market in navigation when the commerce adapter is enabled', () => {
       const adapterMode = vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('sandbox');
       try {
         render(<HeaderNavigationButtons avatarName="TU" />);
@@ -579,7 +558,7 @@ describe('Header Components', () => {
       try {
         render(<HeaderNavigationButtons avatarName="TU" />);
 
-        expect(screen.getByRole('button', { name: 'Marketplace, 3 items in cart' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Market, 3 items in cart' })).toBeInTheDocument();
         expect(document.querySelector('[data-cy="header-marketplace-btn-counter"]')).toHaveTextContent('3');
       } finally {
         adapterMode.mockRestore();
@@ -592,7 +571,7 @@ describe('Header Components', () => {
       try {
         render(<HeaderNavigationButtons avatarName="TU" />);
 
-        expect(screen.getByRole('button', { name: 'Marketplace, 1 item in cart' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Market, 1 item in cart' })).toBeInTheDocument();
       } finally {
         adapterMode.mockRestore();
       }
@@ -609,7 +588,7 @@ describe('Header Components', () => {
         vi.mocked(useMarketplaceCartCount).mockReturnValue(22);
         render(<HeaderNavigationButtons avatarName="TU" />);
         expect(document.querySelector('[data-cy="header-marketplace-btn-counter"]')).toHaveTextContent('21+');
-        expect(screen.getByRole('button', { name: 'Marketplace, 22 items in cart' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Market, 22 items in cart' })).toBeInTheDocument();
       } finally {
         adapterMode.mockRestore();
       }
@@ -622,7 +601,7 @@ describe('Header Components', () => {
       try {
         render(<HeaderNavigationButtons avatarName="TU" />);
 
-        expect(screen.getByRole('button', { name: 'Marketplace, 2 need attention' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Market, 2 need attention' })).toBeInTheDocument();
         expect(document.querySelector('[data-cy="header-marketplace-btn-counter"]')).toHaveTextContent('2');
       } finally {
         adapterMode.mockRestore();
@@ -667,7 +646,7 @@ describe('Header Components', () => {
 
       const collectionsButton = document.querySelector('.lucide-library')?.closest('button');
       expect(collectionsButton).toHaveClass('bg-secondary');
-      expect(collectionsButton).not.toHaveClass('bg-white/5');
+      expect(collectionsButton).not.toHaveClass('bg-glass');
     });
   });
 
@@ -700,7 +679,7 @@ describe('Header Components', () => {
           'https://pubky.app/profile',
         ]);
         expect(screen.getByRole('button', { name: 'Shop' })).toHaveClass('bg-secondary');
-        expect(screen.getByRole('button', { name: 'Home' })).toHaveClass('bg-white/5');
+        expect(screen.getByRole('button', { name: 'Home' })).toHaveClass('bg-glass');
         expect(document.querySelector('[data-cy="header-nav-profile-btn"]')).toHaveAttribute('target', '_self');
         expect(document.querySelector('[data-cy="header-notification-counter"]')).toBeNull();
         expect(useChatUnread).toHaveBeenCalledWith({ enabled: false });
@@ -785,74 +764,5 @@ describe('Header Components', () => {
       expect(avatar).toBeInTheDocument();
       expect(avatar).toHaveAttribute('data-name', 'Test User');
     });
-  });
-});
-
-describe('Header Components - Snapshots', () => {
-  const mockPush = vi.fn();
-  const mockRouter = {
-    push: mockPush,
-    back: vi.fn(),
-    forward: vi.fn(),
-    refresh: vi.fn(),
-    replace: vi.fn(),
-    prefetch: vi.fn(),
-  };
-
-  beforeEach(() => {
-    vi.mocked(useRouter).mockReturnValue(mockRouter as ReturnType<typeof useRouter>);
-    vi.mocked(usePathname).mockReturnValue('/home');
-    vi.mocked(useAuthStore).mockReturnValue({ currentUserPubky: 'test-pubky' });
-    vi.mocked(useNotificationStore).mockReturnValue({ selectUnread: () => 0 });
-    vi.mocked(useLiveQuery).mockReturnValue({ name: 'Test User', image: 'test-image.jpg' });
-  });
-
-  it('matches snapshot for HeaderContainer', () => {
-    const { container } = render(
-      <HeaderContainer>
-        <div>Test Content</div>
-      </HeaderContainer>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for HeaderTitle', () => {
-    const { container } = render(<HeaderTitle currentTitle="Test Title" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for HeaderOnboarding', () => {
-    const { container } = render(<HeaderOnboarding currentStep={3} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for HeaderSocialLinks', () => {
-    const { container } = render(<HeaderSocialLinks />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for HeaderButtonSignIn', () => {
-    const { container } = render(<HeaderButtonSignIn />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for HeaderHome', () => {
-    const { container } = render(<HeaderHome />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for HeaderSignIn', () => {
-    const { container } = render(<HeaderSignIn />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for HeaderNavigationButtons', () => {
-    const { container } = render(<HeaderNavigationButtons avatarName="TU" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for HeaderNavigationButtons with counter', () => {
-    const { container } = render(<HeaderNavigationButtons avatarName="TU" counter={5} />);
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

@@ -96,7 +96,7 @@ function buildMediaMock(): UseListingMediaManagerResult {
 
 function FormHarness({ values }: { values: Partial<CreateMarketplaceListingData> }) {
   const form = useForm<CreateMarketplaceListingData>({
-    defaultValues: { ...createMarketplaceListingDefaults, ...values },
+    defaultValues: { ...createMarketplaceListingDefaults, countryCode: 'US', ...values },
   });
   return (
     <main className="mx-auto w-full max-w-3xl px-6 py-8">

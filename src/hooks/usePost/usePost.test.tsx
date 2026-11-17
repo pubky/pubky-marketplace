@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
+import type { ToastOptions } from '@/molecules/Toaster/toast';
 import { usePost } from './usePost';
 
 // Hoist mock data and functions
@@ -17,7 +18,7 @@ const {
   const userId = { current: 'test-user-id' as string | null };
   const postControllerCreate = vi.fn();
   const postControllerEdit = vi.fn();
-  const toast = vi.fn();
+  const toast = vi.fn<(options: ToastOptions) => void>();
   const loggerError = vi.fn();
   return {
     mockCurrentUserId: userId,
@@ -49,11 +50,9 @@ vi.mock('@/stores/auth/auth.store', () => ({
 }));
 
 // Mock Molecules
-vi.mock('@/molecules/Toaster/use-toast', () => {
+vi.mock('@/molecules/Toaster/toast', () => {
   return {
-    useToast: vi.fn(() => ({
-      toast: mockToast,
-    })),
+    toast: mockToast,
   };
 });
 
@@ -1283,7 +1282,7 @@ describe('usePost', () => {
       );
     });
 
-    it('should include ToastAction with onUndo', async () => {
+    it('offers Undo for the created repost and runs it only when selected', async () => {
       const { result } = renderHook(() => usePost());
       const mockOnUndo = vi.fn();
 
@@ -1297,9 +1296,13 @@ describe('usePost', () => {
 
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
-          action: expect.anything(),
+          action: { label: 'Undo', altText: 'Undo', onClick: expect.any(Function) },
         }),
       );
+      expect(mockOnUndo).not.toHaveBeenCalled();
+      const action = mockToast.mock.calls.at(-1)?.[0].action;
+      await act(() => action?.onClick());
+      expect(mockOnUndo).toHaveBeenCalledExactlyOnceWith('created-post-id');
     });
 
     describe('edit method', () => {

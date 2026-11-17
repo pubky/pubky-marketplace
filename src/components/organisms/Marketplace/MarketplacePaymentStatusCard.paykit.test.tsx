@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useMarketplaceOrderPayment } from '@/hooks/useMarketplaceOrderPayment/useMarketplaceOrderPayment';
-import { PAYMENT_RECEIVED_REVIEW_COPY } from '@/libs/commerce/bitcoin-buyer-status';
+import { PAYMENT_RECEIVED_REVIEW_COPY, PAYMENT_SEEN_HOLD_COPY } from '@/libs/commerce/bitcoin-buyer-status';
 import { APPROVE_IN_BITKIT_FALLBACK_COPY } from '@/libs/commerce/checkout-hold';
 import { PAYMENT_RAIL_BADGE } from '@/libs/commerce/paykit-rail';
 import {
@@ -99,23 +99,23 @@ beforeEach(() => {
 
 describe('MarketplacePaymentStatusCard — one Paykit order before payment', () => {
   it('tells the buyer to pay in Bitkit with Bitcoin or USDT, without naming a rail yet', () => {
-    const { container } = renderPhase('unpaid', true);
+    const { container } = renderPhase('unpaid', true, { createdAt: '2026-08-20T20:46:00.000Z' });
 
     expect(screen.getByText(PAYMENT_RAIL_BADGE.paykit)).toBeInTheDocument();
     expect(screen.queryByText(PAYMENT_RAIL_BADGE.bitcoin)).not.toBeInTheDocument();
     expect(screen.queryByText(PAYMENT_RAIL_BADGE.usdt)).not.toBeInTheDocument();
     expect(screen.getByTestId('paykit-awaiting-status')).toHaveTextContent('Pay in Bitkit (Bitcoin or USDT)');
     expect(screen.getByTestId('paykit-awaiting-status')).toHaveTextContent('choose Bitcoin or USDT');
-    expect(screen.getByTestId('paykit-accept-by')).toHaveTextContent('Approve in Bitkit by 20 Aug 2026, 21:15.');
+    expect(screen.getByTestId('paykit-accept-by')).toHaveTextContent('Approve in Bitkit by 20 Aug 2026, 21:00.');
     expect(container).not.toHaveTextContent(/Pay exactly/);
     expect(screen.queryByTestId('usdt-payment-awaiting')).not.toBeInTheDocument();
     expect(screen.queryByTestId('bitcoin-payment-seen')).not.toBeInTheDocument();
   });
 
-  it('states the window the order carries and agrees with its Pay by line', () => {
-    renderPhase('unpaid', true, { holdExpiresAt: '2026-08-20T21:45:00.000Z' });
+  it('names an approval deadline before its Pay by line, as Bitkit expires an unapproved request first', () => {
+    renderPhase('unpaid', true, { createdAt: '2026-08-20T20:46:00.000Z', holdExpiresAt: '2026-08-20T21:45:00.000Z' });
 
-    expect(screen.getByTestId('paykit-accept-by')).toHaveTextContent('Approve in Bitkit by 20 Aug 2026, 21:45.');
+    expect(screen.getByTestId('paykit-accept-by')).toHaveTextContent('Approve in Bitkit by 20 Aug 2026, 21:15.');
     expect(screen.getByTestId('paykit-accept-by')).not.toHaveTextContent(/minutes/);
     expect(screen.getByText('Pay by 20 Aug 2026, 21:45. If the window ends, the item restocks.')).toBeInTheDocument();
   });
@@ -157,7 +157,7 @@ describe('MarketplacePaymentStatusCard — one Paykit order before payment', () 
     expect(screen.queryByTestId('paykit-awaiting-status')).not.toBeInTheDocument();
   });
 
-  it('puts the checkout action next to the unconfirmed-delivery copy only', () => {
+  it('puts the checkout action next to the unconfirmed-delivery copy, else under the awaiting status', () => {
     const failed = createPaykitOrderFixture('unpaid', { paykitDeliveryState: 'failed' });
     const { unmount } = render(
       <MarketplacePaymentStatusCard
@@ -187,17 +187,18 @@ describe('MarketplacePaymentStatusCard — one Paykit order before payment', () 
         checkoutActions={<button type="button">Cancel checkout</button>}
       />,
     );
-    expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('paykit-awaiting-status')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel checkout' })).toBeInTheDocument();
   });
 
   it.each([
-    ['pending', 'pending', true],
-    ['pending', null, true],
-    ['pending', 'failed', false],
-    ['awaiting_seller_confirmation', 'failed', true],
+    ['pending', 'pending', true, true],
+    ['pending', null, true, true],
+    ['pending', 'failed', false, false],
+    ['awaiting_seller_confirmation', 'failed', true, false],
   ] as const)(
-    'offers no checkout action for a request %s whose delivery reads %s (buyer: %s), even when one is passed',
-    (paykitRequestState, paykitDeliveryState, isBuyer) => {
+    'for a request %s whose delivery reads %s (buyer: %s), renders the passed checkout action: %s',
+    (paykitRequestState, paykitDeliveryState, isBuyer, shown) => {
       const { order, payment } = createPaykitOrderFixture('unpaid', { paykitRequestState, paykitDeliveryState });
       render(
         <MarketplacePaymentStatusCard
@@ -211,7 +212,7 @@ describe('MarketplacePaymentStatusCard — one Paykit order before payment', () 
         />,
       );
 
-      expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Cancel checkout' }) !== null).toBe(shown);
     },
   );
 
@@ -274,17 +275,84 @@ describe('MarketplacePaymentStatusCard — one Paykit order after payment', () =
     expect(screen.getByTestId('payment-manual-review-copy')).toHaveTextContent(PAYMENT_RECEIVED_REVIEW_COPY);
   });
 
-  it('offers a seller no Bitcoin confirmation for a USDT payment', () => {
+  it('asks the seller to confirm a USDT payment that waits for them, in USDT', () => {
     const { order } = createPaykitOrderFixture('paid-usdt');
     renderCard(
       {
-        order: { ...order, state: 'pending_payment', paykitRequestState: 'awaiting_seller_confirmation' },
+        order: {
+          ...order,
+          state: 'pending_payment',
+          paykitRequestState: 'awaiting_seller_confirmation',
+          paymentConfirmation: 'seller',
+          paykitObservation: {
+            txid: `0x${'9f2c'.repeat(16)}`,
+            asset: 'USDT',
+            observedUnits: 137_000_000,
+            confirmations: 1,
+            amountMatched: true,
+            disappeared: false,
+          },
+        },
         payment: createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' }),
       },
       false,
     );
 
+    expect(screen.getByTestId('seller-bitcoin-confirm-prompt')).toHaveTextContent(
+      'Confirm you received 137.000000 USDT',
+    );
+    expect(screen.getByText('137.000000 USDT', { selector: 'dd' })).toBeInTheDocument();
+    expect(screen.getByTestId('usdt-phase-copy')).toHaveTextContent(USDT_SELLER_PHASE_COPY.seen);
+  });
+
+  it('tells the buyer a USDT payment waits for the seller', () => {
+    const { order } = createPaykitOrderFixture('paid-usdt');
+    renderCard(
+      {
+        order: {
+          ...order,
+          state: 'pending_payment',
+          paykitRequestState: 'awaiting_seller_confirmation',
+          paykitSellerConfirmationDeadline: '2099-01-02T10:00:00.000Z',
+        },
+        payment: createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' }),
+      },
+      true,
+    );
+
+    expect(screen.getByTestId('usdt-phase-copy')).toHaveTextContent(USDT_BUYER_PHASE_COPY.seen);
+    expect(screen.getByTestId('usdt-seller-confirms-by')).toHaveTextContent(/^Seller confirms by .+ left$/);
+    expect(screen.getByTestId('usdt-seen-hold-copy')).toHaveTextContent(PAYMENT_SEEN_HOLD_COPY);
     expect(screen.queryByTestId('seller-bitcoin-confirm-prompt')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('usdt-payment-awaiting')).not.toBeInTheDocument();
+    expect(screen.queryByText(USDT_BUYER_PHASE_COPY.awaiting)).not.toBeInTheDocument();
+  });
+
+  it('shows a USDT observation with no amount as not provided, never as zero', () => {
+    const { order } = createPaykitOrderFixture('paid-usdt');
+    renderCard(
+      {
+        order: {
+          ...order,
+          state: 'pending_payment',
+          paykitRequestState: 'awaiting_seller_confirmation',
+          paymentConfirmation: 'seller',
+          paykitObservation: {
+            txid: `0x${'9f2c'.repeat(16)}`,
+            asset: 'USDT',
+            observedUnits: null,
+            confirmations: 1,
+            amountMatched: true,
+            disappeared: false,
+          },
+        },
+        payment: createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' }),
+      },
+      false,
+    );
+
+    expect(screen.queryByText('0.000000 USDT')).not.toBeInTheDocument();
+    expect(screen.getByText('Observed amount').nextElementSibling).toHaveTextContent('Not provided');
   });
 });
 

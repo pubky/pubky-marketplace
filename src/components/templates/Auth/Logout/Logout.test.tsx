@@ -14,13 +14,8 @@ const mocks = vi.hoisted(() => {
     }),
   };
 
-  const onboardingState = {
-    hasHydrated: true,
-  };
-
   return {
     authState,
-    onboardingState,
     mockPush: vi.fn(),
     mockLogout: vi.fn(),
     mockLoggerError: vi.fn(),
@@ -118,15 +113,6 @@ vi.mock('@/stores/auth/auth.store', () => ({
     },
   ),
 }));
-vi.mock('@/stores/onboarding/onboarding.store', () => ({
-  useOnboardingStore: Object.assign(
-    (selector?: (state: typeof mocks.onboardingState) => unknown) =>
-      selector ? selector(mocks.onboardingState) : mocks.onboardingState,
-    {
-      getState: () => mocks.onboardingState,
-    },
-  ),
-}));
 vi.mock('@/controllers/auth/auth', () => ({
   AuthController: {
     logout: (...args: unknown[]) => mocks.mockLogout(...args),
@@ -136,7 +122,6 @@ vi.mock('@/controllers/auth/auth', () => ({
 describe('Logout', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.onboardingState.hasHydrated = true;
     mocks.authState.hasHydrated = true;
     mocks.authState.session = {};
     mocks.authState.sessionExport = null;

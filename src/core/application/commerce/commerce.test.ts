@@ -8,7 +8,12 @@ import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { NEXUS_LISTINGS_PER_PAGE } from '@/config/nexus';
 import { bumpAuthEpoch } from '@/controllers/auth/auth-epoch';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { marketplaceCommandResponseSchema } from '@/libs/commerce/transaction-commands';
+import { AUCTION_HAS_BIDS_MESSAGE, AUCTION_HAS_BIDS_REFUSAL } from '@/libs/commerce/auction-removal';
+import { sellerDeclaration } from '@/libs/commerce/eu-region';
+import {
+  buildMarketplaceListingAggregateId,
+  marketplaceCommandResponseSchema,
+} from '@/libs/commerce/transaction-commands';
 import { UNLIMITED_STOCK_REFUSAL, UNLIMITED_STOCK_RESERVED_MESSAGE } from '@/libs/commerce/unlimited-stock';
 import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
 import { AppError } from '@/libs/error/error';
@@ -35,6 +40,8 @@ import {
 import { LocalCommerceService } from '@/services/local/commerce/commerce';
 import { LocalMarketplaceTagService } from '@/services/local/tag/marketplace/tag.marketplace';
 import { MarketplaceGatewayService } from '@/services/marketplace/marketplace';
+import * as marketplaceBootstrapClient from '@/services/marketplace/marketplace-bootstrap-client';
+import * as marketplaceGrantClient from '@/services/marketplace/marketplace-grant-client';
 import { MarketplaceSessionService } from '@/services/marketplace/marketplace-session';
 import { NexusMarketplaceService } from '@/services/nexus/marketplace/marketplace';
 import type { NexusListingDetails } from '@/services/nexus/marketplace/marketplace.types';
@@ -48,8 +55,9 @@ import {
   createNexusListingDetailsFixture,
 } from '@/test/fixtures/commerce/commerce';
 import { toCommerceListingModel } from '@/test/fixtures/commerce/listing-models';
+import { createAuctionProjectionFixture } from '@/test/fixtures/commerce/projections';
 import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';
-import { CommerceApplication, LISTING_REGISTRATION_LOCK_PREFIX } from './commerce';
+import { CommerceApplication, DROP_WITHDRAW_RECHECK_DELAYS_MS, LISTING_REGISTRATION_LOCK_PREFIX } from './commerce';
 
 const SHOP_URL = `pubky://${COMMERCE_FIXTURE_SELLER}/pub/pubky.app/marketplace/v1/shop.json`;
 const LISTING_URL = `pubky://${COMMERCE_FIXTURE_SELLER}/pub/pubky.app/marketplace/v1/listings/boots_01`;
@@ -280,6 +288,44 @@ describe('CommerceApplication', () => {
     expect(fetchJson).not.toHaveBeenCalled();
   });
 
+  it("reads a cached shop fresh so a seller's later declaration reaches the buyer's EU fence", async () => {
+    const cached = createCommerceShopFixture();
+    const updated = {
+      ...cached,
+      sellerStatus: 'private' as const,
+      location: { countryCode: 'BE' },
+      revision: cached.revision + 1,
+    };
+    await LocalCommerceService.upsertShop(cached, 'synced');
+    vi.mocked(CommerceHomeserverService.fetchJson).mockResolvedValue(updated);
+
+    const shop = await CommerceApplication.refreshShopOrGetCached(cached.ownerPubky);
+
+    expect(shop).toEqual(updated);
+    expect(sellerDeclaration(shop)).toBe('private');
+    expect(await CommerceController.getShop(cached.ownerPubky)).toMatchObject({
+      record: updated,
+      sync_status: 'synced',
+    });
+  });
+
+  it.each([
+    {
+      reason: 'offline',
+      fail: () => vi.mocked(CommerceHomeserverService.fetchJson).mockRejectedValue(new TypeError('offline')),
+    },
+    {
+      reason: 'a 404',
+      fail: () => vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockResolvedValue({ found: false }),
+    },
+  ])('falls back to the cached shop when the read fails ($reason)', async ({ fail }) => {
+    const cached = createCommerceShopFixture();
+    await LocalCommerceService.upsertShop(cached, 'synced');
+    fail();
+
+    await expect(CommerceApplication.refreshShopOrGetCached(cached.ownerPubky)).resolves.toEqual(cached);
+  });
+
   it.each([
     { available: 0, expected: 0 },
     { available: 2, expected: 2 },
@@ -308,6 +354,7 @@ describe('CommerceApplication', () => {
     const [listing] = await CommerceApplication.getListingsBySeller(record.ownerPubky);
 
     expect(listing.purchasableQuantity).toBe(expected);
+    expect(listing.registeredWithService).toBe(true);
     expect(listing.record.variants[0].quantity).toBe(3);
   });
 
@@ -371,6 +418,18 @@ describe('CommerceApplication', () => {
 
     const [listing] = await CommerceApplication.getListingsBySeller(record.ownerPubky);
 
+    expect(listing.purchasableQuantity).toBeNull();
+    expect(listing.registeredWithService).toBe(true);
+  });
+
+  it('knows a listing is not registered with the service while no projection of it is cached', async () => {
+    const model = toCommerceListingModel(createCommerceListingFixture());
+    vi.spyOn(LocalCommerceService, 'getListingsBySeller').mockResolvedValue([model]);
+    vi.spyOn(LocalCommerceService, 'getListingProjection').mockResolvedValue(null);
+
+    const [listing] = await CommerceApplication.getListingsBySeller(model.seller_id);
+
+    expect(listing.registeredWithService).toBe(false);
     expect(listing.purchasableQuantity).toBeNull();
   });
 
@@ -469,6 +528,34 @@ describe('CommerceApplication', () => {
     vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockRejectedValue(failure);
 
     await expect(CommerceApplication.getOrFetchShop(COMMERCE_FIXTURE_SELLER)).rejects.toBe(failure);
+  });
+
+  it("reads the cursor of the seller's latest shop write", async () => {
+    vi.spyOn(HomeserverService, 'resolveHomeserverOf').mockResolvedValue('h'.repeat(52));
+    const subscribe = vi.spyOn(HomeserverService, 'subscribeHomeserverEventStream').mockResolvedValue(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue({ cursor: '259582', eventType: 'PUT', owner: COMMERCE_FIXTURE_SELLER, path: '' });
+          controller.close();
+        },
+      }),
+    );
+
+    await expect(CommerceApplication.latestShopEventCursor(COMMERCE_FIXTURE_SELLER)).resolves.toBe('259582');
+    expect(subscribe).toHaveBeenCalledWith(expect.objectContaining({ latestOnly: true }));
+  });
+
+  it("subscribes to the seller's homeserver events for their shop record only", async () => {
+    const stream = new ReadableStream();
+    vi.spyOn(HomeserverService, 'resolveHomeserverOf').mockResolvedValue('h'.repeat(52));
+    const subscribe = vi.spyOn(HomeserverService, 'subscribeHomeserverEventStream').mockResolvedValue(stream);
+
+    await expect(CommerceApplication.subscribeShopEvents(COMMERCE_FIXTURE_SELLER)).resolves.toBe(stream);
+    expect(subscribe).toHaveBeenCalledWith({
+      homeserver: 'h'.repeat(52),
+      users: [[COMMERCE_FIXTURE_SELLER, null]],
+      pathPrefixes: ['/pub/pubky.app/marketplace/v1/shop.json'],
+    });
   });
 
   it('refreshes shop settings into the cache used by the public shop', async () => {
@@ -3023,6 +3110,146 @@ describe('CommerceApplication', () => {
     expect(HomeserverService.listAll).toHaveBeenCalledWith({ baseDirectory: base });
   });
 
+  describe('withdrawing an unregistered drop announcement', () => {
+    const service = 'https://service.this-deployment.example';
+    const publicDropUrl = `${service}/v0/drops/${COMMERCE_FIXTURE_SELLER}/drop_faraday_01`;
+    const dropRecordUrl = `pubky://${COMMERCE_FIXTURE_SELLER}/pub/pubky.app/marketplace/v1/drops/drop_faraday_01`;
+    /** The service's 404 for a drop it never registered (captured from a deployed service). */
+    const notFound = () =>
+      new Response(JSON.stringify({ ok: false, error: { code: 'NOT_FOUND', message: 'The drop was not found.' } }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    const registered = () =>
+      new Response(
+        JSON.stringify({
+          drop: {
+            seller_pubky: COMMERCE_FIXTURE_SELLER,
+            drop_id: 'drop_faraday_01',
+            aggregate_id: `drop:${COMMERCE_FIXTURE_SELLER}_drop_faraday_01`,
+            state: 'announced',
+            format: 'fcfs',
+            starts_at: '2026-12-01T17:00:00.000Z',
+            ends_at: null,
+            stock_display: 'exact',
+            total_quantity: 3,
+            per_buyer_limit: 1,
+            remaining: 3,
+            remaining_band: null,
+            revision: 1,
+            server_time: '2026-11-05T06:00:00.000Z',
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    const upstreamDown = () => new Response('upstream down', { status: 502 });
+    const dropRecord = CommerceRecordNormalizer.drop({
+      schemaVersion: 1,
+      recordType: 'drop',
+      ownerPubky: COMMERCE_FIXTURE_SELLER,
+      revision: 1,
+      createdAt: '2026-09-10T10:00:00.000Z',
+      updatedAt: '2026-09-10T10:00:00.000Z',
+      dropId: 'drop_faraday_01',
+      title: 'Faraday cage drop',
+      description: 'Three numbered pieces.',
+      media: [],
+      format: 'fcfs',
+      startsAt: '2026-12-01T17:00:00.000Z',
+      listingIds: ['listing_faraday_01'],
+      totalQuantity: 3,
+      perBuyerLimit: 1,
+      stockDisplay: 'exact',
+    });
+    const fetchMock = vi.fn();
+    const answers = (...responses: (() => Response)[]) => {
+      for (const respond of responses) fetchMock.mockImplementationOnce(async () => respond());
+    };
+    /** Runs a withdraw through every re-check delay. */
+    const withdraw = async (actor = COMMERCE_FIXTURE_SELLER) => {
+      const pending = CommerceApplication.withdrawUnregisteredDrop(actor, dropRecord);
+      pending.catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(DROP_WITHDRAW_RECHECK_DELAYS_MS.at(-1)!);
+      return await pending;
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
+      vi.spyOn(commerceConfig, 'getMarketplaceUrl').mockReturnValue(service);
+      vi.stubGlobal('fetch', fetchMock);
+      fetchMock.mockReset();
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    });
+
+    it('deletes the seller-signed record when the service never registered the drop', async () => {
+      answers(notFound, notFound, notFound);
+      const remove = vi.spyOn(CommerceHomeserverService, 'delete').mockResolvedValue();
+      const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue();
+
+      await expect(withdraw()).resolves.toBe('withdrawn');
+      expect(remove).toHaveBeenCalledExactlyOnceWith(dropRecordUrl);
+      expect(put).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(1 + DROP_WITHDRAW_RECHECK_DELAYS_MS.length);
+      expect(fetchMock).toHaveBeenCalledWith(publicDropUrl, expect.objectContaining({ method: 'GET' }));
+    });
+
+    it('never deletes the record of a registered drop', async () => {
+      answers(registered);
+      const remove = vi.spyOn(CommerceHomeserverService, 'delete').mockResolvedValue();
+
+      await expect(withdraw()).resolves.toBe('registered');
+      expect(remove).not.toHaveBeenCalled();
+    });
+
+    it('refuses another account without reading or deleting anything', async () => {
+      const remove = vi.spyOn(CommerceHomeserverService, 'delete').mockResolvedValue();
+
+      await expect(withdraw('z'.repeat(52))).rejects.toMatchObject({ code: AuthErrorCode.FORBIDDEN });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(remove).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['right after the delete', [notFound, registered]],
+      ['only at the delayed re-check', [notFound, notFound, registered]],
+    ])('publishes the record back when a concurrent drop.sync registered it %s', async (_when, responses) => {
+      answers(...responses);
+      vi.spyOn(CommerceHomeserverService, 'delete').mockResolvedValue();
+      const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue();
+
+      await expect(withdraw()).resolves.toBe('registered');
+      expect(put).toHaveBeenCalledExactlyOnceWith(
+        dropRecordUrl,
+        expect.objectContaining({ dropId: 'drop_faraday_01', revision: 1, listingIds: ['listing_faraday_01'] }),
+      );
+    });
+
+    it('publishes the record back and reports the failure when a re-check after the delete fails', async () => {
+      answers(notFound, upstreamDown);
+      vi.spyOn(CommerceHomeserverService, 'delete').mockResolvedValue();
+      const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue();
+
+      await expect(withdraw()).rejects.toSatisfy((error) => hasHttpStatus(error, 502));
+      expect(put).toHaveBeenCalledExactlyOnceWith(
+        dropRecordUrl,
+        expect.objectContaining({ dropId: 'drop_faraday_01' }),
+      );
+    });
+
+    it('deletes nothing when the first service read fails', async () => {
+      answers(upstreamDown);
+      const remove = vi.spyOn(CommerceHomeserverService, 'delete').mockResolvedValue();
+
+      await expect(withdraw()).rejects.toSatisfy((error) => hasHttpStatus(error, 502));
+      expect(remove).not.toHaveBeenCalled();
+    });
+  });
+
   it('deletes a listing from the homeserver, then every local cache, then its media', async () => {
     const record = createCommerceListingFixture();
     const compositeId = `${record.ownerPubky}:${record.listingId}`;
@@ -3061,6 +3288,140 @@ describe('CommerceApplication', () => {
     expect(remove.mock.invocationCallOrder[0]).toBeLessThan(deleteLocal.mock.invocationCallOrder[0]);
   });
 
+  describe('deleting an auction', () => {
+    const liveAuctionRecord = (endsAt = '2099-01-01T00:00:00.000Z') => {
+      const record = createCommerceListingFixture();
+      record.sale = {
+        format: 'auction',
+        startingPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+        minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
+        startsAt: '2026-08-19T20:00:00.000Z',
+        endsAt,
+        antiSnipingWindowSeconds: 120,
+        antiSnipingExtensionSeconds: 120,
+      };
+      return record;
+    };
+
+    const stageDelete = (record: ReturnType<typeof liveAuctionRecord>) => {
+      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
+      vi.spyOn(LocalCommerceService, 'getListing').mockResolvedValue(
+        new CommerceListingModel(toCommerceListingModel(record)),
+      );
+      return {
+        upsertJob: vi.spyOn(LocalCommerceService, 'upsertSyncJob').mockResolvedValue(undefined),
+        remove: vi.spyOn(CommerceHomeserverService, 'delete').mockResolvedValue(undefined),
+        deleteLocal: vi.spyOn(LocalCommerceService, 'deleteListing').mockResolvedValue(undefined),
+        completeJob: vi.spyOn(LocalCommerceService, 'completeSyncJob').mockResolvedValue(undefined),
+      };
+    };
+
+    const projectionWith = (bidCount: number, status?: string) =>
+      createAuctionProjectionFixture({
+        auction: { ...createAuctionProjectionFixture().auction!, bidCount, ...(status ? { status } : {}) },
+      });
+
+    it('refuses while the auction has not ended and has bids, and changes nothing', async () => {
+      const record = liveAuctionRecord();
+      const staged = stageDelete(record);
+      vi.spyOn(MarketplaceGatewayService, 'getListing').mockResolvedValue(projectionWith(2, 'active'));
+
+      const attempt = CommerceApplication.commitDeleteListing(record.ownerPubky, record.listingId);
+
+      await expect(attempt).rejects.toMatchObject({
+        message: AUCTION_HAS_BIDS_MESSAGE,
+        context: expect.objectContaining({ refusal: AUCTION_HAS_BIDS_REFUSAL, bidCount: 2 }),
+      });
+      expect(MarketplaceGatewayService.getListing).toHaveBeenCalledWith(
+        record.ownerPubky,
+        buildMarketplaceListingAggregateId(record.ownerPubky, record.listingId),
+      );
+      expect(staged.upsertJob).not.toHaveBeenCalled();
+      expect(staged.remove).not.toHaveBeenCalled();
+      expect(staged.deleteLocal).not.toHaveBeenCalled();
+    });
+
+    it('deletes an auction nobody has bid on', async () => {
+      const record = liveAuctionRecord();
+      const staged = stageDelete(record);
+      vi.spyOn(MarketplaceGatewayService, 'getListing').mockResolvedValue(projectionWith(0, 'active'));
+
+      await CommerceApplication.commitDeleteListing(record.ownerPubky, record.listingId);
+
+      expect(staged.remove).toHaveBeenCalledWith(LISTING_URL, undefined, { singleAttempt: true });
+      expect(staged.deleteLocal).toHaveBeenCalled();
+    });
+
+    it('deletes an auction the service never registered', async () => {
+      const record = liveAuctionRecord();
+      const staged = stageDelete(record);
+      vi.spyOn(MarketplaceGatewayService, 'getListing').mockResolvedValue(null);
+
+      await CommerceApplication.commitDeleteListing(record.ownerPubky, record.listingId);
+
+      expect(staged.remove).toHaveBeenCalled();
+    });
+
+    it.each(['sold', 'unsold', 'cancelled'])(
+      'deletes an auction the service closed as %s, bids and all',
+      async (status) => {
+        const record = liveAuctionRecord();
+        const staged = stageDelete(record);
+        vi.spyOn(MarketplaceGatewayService, 'getListing').mockResolvedValue(projectionWith(3, status));
+
+        await CommerceApplication.commitDeleteListing(record.ownerPubky, record.listingId);
+
+        expect(staged.remove).toHaveBeenCalled();
+      },
+    );
+
+    it('deletes an auction past its end time without asking the service', async () => {
+      const record = liveAuctionRecord('2026-08-29T20:00:00.000Z');
+      const staged = stageDelete(record);
+      const projection = vi.spyOn(MarketplaceGatewayService, 'getListing');
+
+      await CommerceApplication.commitDeleteListing(record.ownerPubky, record.listingId);
+
+      expect(projection).not.toHaveBeenCalled();
+      expect(staged.remove).toHaveBeenCalled();
+    });
+
+    it('waits when the bids cannot be read, rather than deleting an auction that may have them', async () => {
+      const record = liveAuctionRecord();
+      const staged = stageDelete(record);
+      vi.spyOn(MarketplaceGatewayService, 'getListing').mockRejectedValue(new TypeError('service unavailable'));
+
+      await expect(CommerceApplication.commitDeleteListing(record.ownerPubky, record.listingId)).rejects.toThrow(
+        'service unavailable',
+      );
+      expect(staged.remove).not.toHaveBeenCalled();
+      expect(staged.deleteLocal).not.toHaveBeenCalled();
+    });
+
+    it('asks the service nothing where no transaction service runs', async () => {
+      const record = liveAuctionRecord();
+      const staged = stageDelete(record);
+      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('unavailable');
+      const projection = vi.spyOn(MarketplaceGatewayService, 'getListing');
+
+      await CommerceApplication.commitDeleteListing(record.ownerPubky, record.listingId);
+
+      expect(projection).not.toHaveBeenCalled();
+      expect(staged.remove).toHaveBeenCalled();
+    });
+
+    it('asks the service nothing for a fixed-price listing', async () => {
+      const record = createCommerceListingFixture();
+      const staged = stageDelete(record as ReturnType<typeof liveAuctionRecord>);
+      const projection = vi.spyOn(MarketplaceGatewayService, 'getListing');
+
+      await CommerceApplication.commitDeleteListing(record.ownerPubky, record.listingId);
+
+      expect(projection).not.toHaveBeenCalled();
+      expect(staged.remove).toHaveBeenCalled();
+    });
+  });
+
   it('keeps the local listing when the homeserver record deletion fails', async () => {
     const record = createCommerceListingFixture();
     vi.spyOn(LocalCommerceService, 'getListing').mockResolvedValue(null);
@@ -3083,6 +3444,18 @@ describe('CommerceApplication', () => {
     const capturedById = new Map(capturedRecords.map((record) => [record.listingId, record]));
     const capturedSeller = capturedRecords[0].ownerPubky;
 
+    // The refresh reads records through fetchJsonIfFound; these tests stub fetchJson, so bridge the two.
+    beforeEach(() => {
+      vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockImplementation(async (url) => {
+        try {
+          return { found: true, json: await CommerceHomeserverService.fetchJson(url) };
+        } catch (error) {
+          if (isAppError(error) && error.context?.statusCode === 404) return { found: false };
+          throw error;
+        }
+      });
+    });
+
     it('refreshes discovery and hydrates the missing canonical listing while retaining cached records', async () => {
       vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
       await CommerceCatalogEntryModel.table.clear();
@@ -3100,6 +3473,42 @@ describe('CommerceApplication', () => {
       expect(await LocalCommerceService.getListingsBySeller(capturedSeller)).toHaveLength(3);
       expect(fetchJson).toHaveBeenCalledExactlyOnceWith(
         `pubky://${capturedSeller}/pub/pubky.app/marketplace/v1/listings/aa2c8b308dbc47619793fe64dcefa9e8`,
+      );
+    });
+
+    it('skips a listing Nexus still indexes after its record was deleted, instead of failing the refresh', async () => {
+      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
+      await CommerceCatalogEntryModel.table.clear();
+      await CommerceListingModel.table.clear();
+      const deletedId = 'aa2c8b308dbc47619793fe64dcefa9e8';
+      // This browser met the listing before it was deleted elsewhere: its index entry is cached.
+      await CommerceCatalogEntryModel.table.put(
+        createCommerceCatalogEntryFixture({
+          id: `${capturedSeller}:${deletedId}`,
+          seller_id: capturedSeller,
+          listing_id: deletedId,
+        }),
+      );
+      vi.spyOn(NexusMarketplaceService, 'fetchListingStream').mockResolvedValue(SELLER_REFRESH_FIXTURE.nexus);
+      vi.spyOn(CommerceHomeserverService, 'fetchJson').mockImplementation(async (url) => {
+        const listingId = url.split('/').pop()!;
+        if (listingId === deletedId) {
+          throw Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
+            service: ErrorService.Homeserver,
+            operation: 'fetchJson',
+            context: { statusCode: 404 },
+          });
+        }
+        return capturedById.get(listingId)!;
+      });
+
+      await CommerceApplication.refreshListingsBySeller(capturedSeller);
+
+      const listings = await LocalCommerceService.getListingsBySeller(capturedSeller);
+      expect(listings).toHaveLength(2);
+      expect(listings.map(({ listing_id }) => listing_id)).not.toContain(deletedId);
+      expect((await CommerceCatalogEntryModel.table.toArray()).map(({ listing_id }) => listing_id)).not.toContain(
+        deletedId,
       );
     });
 
@@ -3386,100 +3795,6 @@ describe('CommerceApplication', () => {
 
       expect(commitRefresh).not.toHaveBeenCalled();
       expect(await LocalCommerceService.getListingsBySeller(capturedSeller)).toHaveLength(1);
-    });
-
-    it('returns locally cached seller listings without fetching the catalog', async () => {
-      const first = createCommerceListingFixture({ listingId: 'boots_01' });
-      const second = createCommerceListingFixture({ listingId: 'boots_02' });
-      await CommerceCatalogEntryModel.table.clear();
-      await CommerceListingModel.table.clear();
-      await LocalCommerceService.upsertListing(first, 'synced');
-      await LocalCommerceService.upsertListing(second, 'synced');
-      await LocalCommerceService.bulkUpsertCatalogEntries([
-        createCommerceCatalogEntryFixture({ listing_id: 'boots_01' }),
-        createCommerceCatalogEntryFixture({ id: `${COMMERCE_FIXTURE_SELLER}:boots_02`, listing_id: 'boots_02' }),
-      ]);
-
-      const fetchCatalog = vi.spyOn(CommerceApplication, 'fetchSellerCatalogListings');
-      const fetchJson = vi.spyOn(CommerceHomeserverService, 'fetchJson');
-
-      await expect(CommerceApplication.getOrFetchListingsBySeller(COMMERCE_FIXTURE_SELLER)).resolves.toHaveLength(2);
-
-      expect(fetchCatalog).not.toHaveBeenCalled();
-      expect(fetchJson).not.toHaveBeenCalled();
-    });
-
-    it('fetches an empty seller catalog and persists fetched listings in Dexie', async () => {
-      const listing = createCommerceListingFixture();
-      const catalogEntry = createCommerceCatalogEntryFixture();
-      await CommerceCatalogEntryModel.table.clear();
-      await CommerceListingModel.table.clear();
-      const fetchStream = vi
-        .spyOn(NexusMarketplaceService, 'fetchListingStream')
-        .mockResolvedValue([createNexusListingDetailsFixture()]);
-      const fetchJson = vi.spyOn(CommerceHomeserverService, 'fetchJson').mockResolvedValue(listing);
-
-      await expect(CommerceApplication.getOrFetchListingsBySeller(COMMERCE_FIXTURE_SELLER)).resolves.toMatchObject([
-        expect.objectContaining({ listing_id: 'boots_01' }),
-      ]);
-
-      expect(fetchStream).toHaveBeenCalledWith(
-        expect.objectContaining({ seller_id: COMMERCE_FIXTURE_SELLER, state: 'active' }),
-      );
-      expect(fetchJson).toHaveBeenCalledOnce();
-      expect(await LocalCommerceService.getCatalogEntriesBySeller(COMMERCE_FIXTURE_SELLER)).toEqual([catalogEntry]);
-      expect(await LocalCommerceService.getListingsBySeller(COMMERCE_FIXTURE_SELLER)).toHaveLength(1);
-    });
-
-    it('hydrates canonical seller listings after discovering catalog entries', async () => {
-      const first = createCommerceListingFixture({ listingId: 'boots_01' });
-      const second = createCommerceListingFixture({ listingId: 'boots_02' });
-      const listingRows = [
-        new CommerceListingModel({
-          id: `${COMMERCE_FIXTURE_SELLER}:boots_01`,
-          listing_id: 'boots_01',
-          record: first,
-          revision: first.revision,
-          state: 'active',
-          category_id: first.categoryId,
-          format: 'fixed_price',
-          price_minor: 12_500,
-          currency: 'USD',
-          sync_status: 'synced',
-          updated_at: Date.parse(first.updatedAt),
-          seller_id: COMMERCE_FIXTURE_SELLER,
-        }),
-        new CommerceListingModel({
-          id: `${COMMERCE_FIXTURE_SELLER}:boots_02`,
-          listing_id: 'boots_02',
-          record: second,
-          revision: second.revision,
-          state: 'active',
-          category_id: second.categoryId,
-          format: 'fixed_price',
-          price_minor: 12_500,
-          currency: 'USD',
-          sync_status: 'synced',
-          updated_at: Date.parse(second.updatedAt),
-          seller_id: COMMERCE_FIXTURE_SELLER,
-        }),
-      ];
-      vi.spyOn(LocalCommerceService, 'getListingsBySeller')
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce(listingRows);
-      vi.spyOn(LocalCommerceService, 'getCatalogEntriesBySeller').mockResolvedValue([
-        createCommerceCatalogEntryFixture({ listing_id: 'boots_01' }),
-        createCommerceCatalogEntryFixture({ listing_id: 'boots_02' }),
-      ]);
-      vi.spyOn(CommerceApplication, 'fetchSellerCatalogListings').mockResolvedValue(undefined);
-      const hydrate = vi
-        .spyOn(CommerceApplication, 'getOrFetchListing')
-        .mockResolvedValueOnce(first)
-        .mockResolvedValueOnce(second);
-
-      await expect(CommerceApplication.getOrFetchListingsBySeller(COMMERCE_FIXTURE_SELLER)).resolves.toHaveLength(2);
-      expect(hydrate).toHaveBeenCalledWith(COMMERCE_FIXTURE_SELLER, 'boots_01');
-      expect(hydrate).toHaveBeenCalledWith(COMMERCE_FIXTURE_SELLER, 'boots_02');
     });
 
     it('hydrates one seller from the Nexus index outside sandbox mode', async () => {
@@ -3868,18 +4183,19 @@ describe('CommerceApplication', () => {
     it('persists the live Nexus stream into the catalog cache', async () => {
       vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('unavailable');
       await CommerceCatalogEntryModel.table.clear();
-      vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-        new Response(JSON.stringify(liveListingStream), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
+      vi.spyOn(globalThis, 'fetch').mockImplementation(
+        async () =>
+          new Response(JSON.stringify(liveListingStream), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
       );
       vi.spyOn(CommerceApplication, 'getOrFetchShop').mockResolvedValue(createCommerceShopFixture());
 
       await CommerceController.fetchCatalogListings({
         saleFormat: 'all',
         conditions: [],
-        sort: 'recommended',
+        sort: 'newest',
         countryCode: null,
       });
 
@@ -4099,16 +4415,27 @@ describe('CommerceApplication', () => {
    * its CTA — src/hooks/useStepUpReauth/useStepUpReauth.test.ts.)
    */
   describe('step-up re-approval is never auto-triggered', () => {
+    const approvalFlow: marketplaceGrantClient.MarketplaceGrantFlow = {
+      authorizationUrl: 'pubkyauth://signin_grant/fixture',
+      awaitResult: async () => ({ status: 'cancelled' }),
+      cancel: async () => {},
+    };
     it('browsing the catalog never requests a widened grant or a service session', async () => {
       vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
       vi.spyOn(NexusMarketplaceService, 'fetchListingStream').mockResolvedValue([]);
       const generateAuthUrlSpy = vi.spyOn(HomeserverService, 'generateAuthUrl');
-      const beginSessionFlowSpy = vi.spyOn(MarketplaceSessionService, 'beginSessionFlow');
+      const grantApprovalSpy = vi
+        .spyOn(marketplaceGrantClient, 'beginMarketplaceGrantFlow')
+        .mockResolvedValue(approvalFlow);
+      const bootstrapApprovalSpy = vi
+        .spyOn(marketplaceBootstrapClient, 'beginMarketplaceBootstrapFlow')
+        .mockResolvedValue(approvalFlow);
 
       await CommerceApplication.fetchCatalogListings();
 
       expect(generateAuthUrlSpy).not.toHaveBeenCalled();
-      expect(beginSessionFlowSpy).not.toHaveBeenCalled();
+      expect(grantApprovalSpy).not.toHaveBeenCalled();
+      expect(bootstrapApprovalSpy).not.toHaveBeenCalled();
     });
 
     it('publishing a listing under the narrow bridged grant never requests a widened grant', async () => {
@@ -4130,7 +4457,12 @@ describe('CommerceApplication', () => {
       );
       vi.spyOn(Logger, 'warn').mockImplementation(() => {});
       const generateAuthUrlSpy = vi.spyOn(HomeserverService, 'generateAuthUrl');
-      const beginSessionFlowSpy = vi.spyOn(MarketplaceSessionService, 'beginSessionFlow');
+      const grantApprovalSpy = vi
+        .spyOn(marketplaceGrantClient, 'beginMarketplaceGrantFlow')
+        .mockResolvedValue(approvalFlow);
+      const bootstrapApprovalSpy = vi
+        .spyOn(marketplaceBootstrapClient, 'beginMarketplaceBootstrapFlow')
+        .mockResolvedValue(approvalFlow);
 
       await expect(CommerceApplication.commitUpsertListing(record)).rejects.toMatchObject({
         code: AuthErrorCode.SESSION_EXPIRED,
@@ -4138,7 +4470,8 @@ describe('CommerceApplication', () => {
 
       expect(put).not.toHaveBeenCalled();
       expect(generateAuthUrlSpy).not.toHaveBeenCalled();
-      expect(beginSessionFlowSpy).not.toHaveBeenCalled();
+      expect(grantApprovalSpy).not.toHaveBeenCalled();
+      expect(bootstrapApprovalSpy).not.toHaveBeenCalled();
     });
 
     it('the first checkout fails closed on a missing session instead of auto-requesting any approval', async () => {
@@ -4149,7 +4482,12 @@ describe('CommerceApplication', () => {
       });
       vi.spyOn(MarketplaceGatewayService, 'execute').mockRejectedValue(sessionRequired);
       const generateAuthUrlSpy = vi.spyOn(HomeserverService, 'generateAuthUrl');
-      const beginSessionFlowSpy = vi.spyOn(MarketplaceSessionService, 'beginSessionFlow');
+      const grantApprovalSpy = vi
+        .spyOn(marketplaceGrantClient, 'beginMarketplaceGrantFlow')
+        .mockResolvedValue(approvalFlow);
+      const bootstrapApprovalSpy = vi
+        .spyOn(marketplaceBootstrapClient, 'beginMarketplaceBootstrapFlow')
+        .mockResolvedValue(approvalFlow);
 
       await expect(
         CommerceApplication.executeMarketplaceCommand(COMMERCE_FIXTURE_SELLER, {
@@ -4180,10 +4518,11 @@ describe('CommerceApplication', () => {
         } as never),
       ).rejects.toMatchObject({ code: AuthErrorCode.SESSION_EXPIRED, service: ErrorService.Marketplace });
 
-      // The empty-caps service token comes only from the explicit connect
-      // dialog; the wide homeserver grant only from the re-auth CTA.
+      // The command must surface the missing session; grant approval belongs
+      // to the explicit connect dialog.
       expect(generateAuthUrlSpy).not.toHaveBeenCalled();
-      expect(beginSessionFlowSpy).not.toHaveBeenCalled();
+      expect(grantApprovalSpy).not.toHaveBeenCalled();
+      expect(bootstrapApprovalSpy).not.toHaveBeenCalled();
     });
   });
 });

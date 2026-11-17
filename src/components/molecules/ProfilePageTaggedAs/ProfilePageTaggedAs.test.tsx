@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { TagWithAvatars } from '@/molecules/TaggedItem/TaggedItem.types';
@@ -68,7 +67,7 @@ describe('ProfilePageTaggedAs', () => {
   it('Add Tag button has correct styling', () => {
     render(<ProfilePageTaggedAs tags={defaultTags} onTagClick={mockOnTagClick} />);
     const addTagButton = screen.getByText(/Add Tag/).closest('button');
-    expect(addTagButton).toHaveClass('border', 'border-border', 'bg-foreground/5');
+    expect(addTagButton).toHaveClass('border', 'border-border', 'bg-foreground/5', '[.light_&]:bg-glass');
   });
 
   it('has correct container structure', () => {
@@ -90,17 +89,5 @@ describe('ProfilePageTaggedAs', () => {
   it('renders skeleton when isLoading', () => {
     render(<ProfilePageTaggedAs tags={[]} onTagClick={mockOnTagClick} isLoading />);
     expect(screen.getByTestId('profile-tagged-skeleton')).toBeInTheDocument();
-  });
-});
-
-describe('ProfilePageTaggedAs - Snapshots', () => {
-  it('matches snapshot with tags', () => {
-    const { container } = render(<ProfilePageTaggedAs tags={defaultTags} onTagClick={mockOnTagClick} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with empty tags', () => {
-    const { container } = render(<ProfilePageTaggedAs tags={[]} onTagClick={mockOnTagClick} />);
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

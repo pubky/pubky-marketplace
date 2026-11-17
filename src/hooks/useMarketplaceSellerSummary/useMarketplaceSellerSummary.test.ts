@@ -34,9 +34,7 @@ describe('useMarketplaceSellerSummary', () => {
     const seller = 's'.repeat(52);
     const { result } = renderHook(() => useMarketplaceSellerSummary(seller, { includeReputation: false }));
 
-    await waitFor(() => {
-      expect(result.current.reputation).toEqual({ status: 'unavailable' });
-    });
+    expect(result.current.displayName).toBe(`${seller.slice(0, 10)}…`);
     expect(fetchSellerReputation).not.toHaveBeenCalled();
   });
 });

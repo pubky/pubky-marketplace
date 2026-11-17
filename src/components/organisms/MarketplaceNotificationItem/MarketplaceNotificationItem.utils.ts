@@ -1,3 +1,4 @@
+import { REVIEW_NOTIFICATION_COPY } from '@/config/commerce-copy';
 import { formatBitcoinAwareMoney } from '@/libs/commerce/bitcoin-payment-code';
 import type { MarketplaceNotification } from '@/services/marketplace/marketplace';
 import {
@@ -57,7 +58,7 @@ export function getMarketplaceNotificationActionText(notification: MarketplaceNo
 function getBaseActionText(type: MarketplaceNotification['type']): string {
   switch (type) {
     case 'message_received':
-      return 'sent you a marketplace message';
+      return 'sent you a market message';
     case 'offer_received':
       return 'sent you an offer';
     case 'offer_countered':
@@ -84,6 +85,12 @@ function getBaseActionText(type: MarketplaceNotification['type']): string {
       return 'flagged a bitcoin payment for a decision';
     case 'bitcoin_payment_seen':
       return 'saw a Bitcoin payment waiting for your confirmation';
+    case 'usdt_payment_seen':
+      return 'saw a USDT payment waiting for your confirmation';
+    case 'paypal_payment_seen':
+      return 'reported a PayPal payment waiting for your confirmation';
+    case 'digital_released':
+      return 'released your purchase';
     case 'bitcoin_prepare_voided':
       return 'expired a bitcoin payment';
     case 'order_cancelled':
@@ -108,6 +115,10 @@ function getBaseActionText(type: MarketplaceNotification['type']): string {
       return 'confirmed a USDT refund address for an order';
     case 'review_received':
       return 'left you a review';
+    case 'review_waiting':
+      return REVIEW_NOTIFICATION_COPY.waiting.action;
+    case 'review_released':
+      return REVIEW_NOTIFICATION_COPY.released.action;
     case 'pickup_details_updated':
       return 'updated the pickup details';
     case 'pickup_details_cleared':
@@ -120,6 +131,8 @@ function getBaseActionText(type: MarketplaceNotification['type']): string {
       return 'sold out a drop';
     case 'payment_reversal_cancelled':
       return 'restored a disputed payment';
+    case 'moderation_decision':
+      return 'sent you a moderation decision';
     default: {
       const exhaustiveCheck: never = type;
       return exhaustiveCheck;

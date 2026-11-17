@@ -37,7 +37,7 @@ matches() {
   git add -A
   git commit -qm "change $1"
   : > "$WORK/output"
-  BASE_SHA="$base" RUNNER_TEMP="$WORK" GITHUB_OUTPUT="$WORK/output" bash "$WORK/filter.sh" >/dev/null
+  EVENT_NAME="${EVENT_NAME:-pull_request}" BASE_SHA="$base" RUNNER_TEMP="$WORK" GITHUB_OUTPUT="$WORK/output" bash "$WORK/filter.sh" >/dev/null
   grep -qx 'run=true' "$WORK/output"
 }
 
@@ -60,5 +60,13 @@ for file in docs/readme.md README.md .github/workflows/test.yml scripts/prepush.
     fail "$file ran VRT"
   fi
 done
+
+echo "test: merge_group always runs VRT"
+git reset -q --hard "$base"
+mkdir -p docs && printf 'x\n' > docs/readme.md
+git add -A && git commit -qm "docs only"
+: > "$WORK/output"
+EVENT_NAME=merge_group BASE_SHA="" RUNNER_TEMP="$WORK" GITHUB_OUTPUT="$WORK/output" bash "$WORK/filter.sh" >/dev/null
+grep -qx 'run=true' "$WORK/output" || fail "merge_group did not run VRT"
 
 echo "ALL OK"

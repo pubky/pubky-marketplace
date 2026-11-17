@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { CommerceController } from '@/controllers/commerce/commerce';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import { createOrderFixture, createUsdtOrderFixture } from '@/test/fixtures/commerce/orders';
 import {
@@ -10,7 +11,12 @@ import {
 } from '@/test/fixtures/commerce/usdt-refund.wire';
 import { MarketplaceUsdtRefundAddress } from './MarketplaceUsdtRefundAddress';
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
+
+// The Paykit lookup reads homeservers; it finds nothing unless a test says otherwise.
+beforeEach(() => {
+  vi.spyOn(CommerceController, 'fetchBuyerPaykitUsdtAddress').mockResolvedValue(null);
+});
 
 const destination = {
   address: REFUND_FIXTURE_ADDRESS,
@@ -22,13 +28,14 @@ const destination = {
 
 function renderPanel(
   order: MarketplaceOrder,
-  { isBuyer = true, paymentInReview = false, actOnOrder = vi.fn(async () => true) } = {},
+  { isBuyer = true, paymentInReview = false, reviewAbandoned = false, actOnOrder = vi.fn(async () => true) } = {},
 ) {
   const view = render(
     <MarketplaceUsdtRefundAddress
       order={order}
       isBuyer={isBuyer}
       paymentInReview={paymentInReview}
+      reviewAbandoned={reviewAbandoned}
       actOnOrder={actOnOrder}
     />,
   );
@@ -55,7 +62,7 @@ describe('MarketplaceUsdtRefundAddress — buyer', () => {
     const { actOnOrder } = renderPanel(createUsdtOrderFixture('return_approved'));
     const user = userEvent.setup();
 
-    expect(screen.getByText(/Confirm where your USDT refund should go/)).toBeInTheDocument();
+    expect(screen.getByText(/Confirm your refund address so the seller can refund you/)).toBeInTheDocument();
     expect(screen.getByTestId('usdt-refund-network-warning')).toHaveTextContent(
       'If this is an exchange deposit address, check that the exchange accepts USDT on Arbitrum One. Funds sent on the wrong network can be lost.',
     );
@@ -155,6 +162,16 @@ describe('MarketplaceUsdtRefundAddress — buyer', () => {
     renderPanel(createUsdtOrderFixture('pending_payment'), { paymentInReview: true });
     expect(screen.getByTestId('usdt-refund-buyer')).toBeInTheDocument();
   });
+
+  it('stays offered once the review ended abandoned and the order was cancelled', () => {
+    const cancelled = { ...createUsdtOrderFixture('cancelled'), receiptId: null };
+    const { container, unmount } = renderPanel(cancelled);
+    expect(container).toBeEmptyDOMElement();
+    unmount();
+    renderPanel(cancelled, { reviewAbandoned: true });
+    expect(screen.getByTestId('usdt-refund-buyer')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirm refund address' })).toBeInTheDocument();
+  });
 });
 
 describe('MarketplaceUsdtRefundAddress — seller', () => {
@@ -171,7 +188,7 @@ describe('MarketplaceUsdtRefundAddress — seller', () => {
       />,
     );
     expect(screen.getByTestId('usdt-refund-seller')).toHaveTextContent(
-      "The buyer hasn't confirmed a refund address yet.",
+      "Waiting for the buyer's refund address. You can record the refund once they confirm it.",
     );
     expect(screen.queryByTestId('usdt-refund-destination')).not.toBeInTheDocument();
   });
@@ -222,6 +239,22 @@ describe('MarketplaceUsdtRefundAddress — seller', () => {
     expect(panel).not.toHaveTextContent('Record refund');
   });
 
+  it.each([
+    ['underpaid', 136_000_000, '136.000000 USDT'],
+    ['overpaid', 138_000_000, '138.000000 USDT'],
+  ])('asks the seller to return what an %s transfer carried, not the quote', (_case, received, amount) => {
+    // A mismatched review closed as abandoned: the order is cancelled with the money still to return.
+    renderPanel(
+      createUsdtOrderFixture('cancelled', {
+        paymentMethod: 'paykit',
+        paymentAmountMinor: received,
+        refundDestination: destination,
+      }),
+      { isBuyer: false },
+    );
+    expect(screen.getByTestId('usdt-refund-amount')).toHaveTextContent(`Refund amount: ${amount}`);
+  });
+
   it('asks for the requested return amount instead of the whole order', () => {
     renderPanel(
       createUsdtOrderFixture('return_approved', {
@@ -255,5 +288,103 @@ describe('MarketplaceUsdtRefundAddress — seller', () => {
       'You recorded a refund to this address. The Shop has not checked it on Arbitrum.',
     );
     expect(screen.queryByTestId('usdt-refund-amount')).not.toBeInTheDocument();
+  });
+});
+
+describe('MarketplaceUsdtRefundAddress — Paykit endpoint', () => {
+  it("offers the buyer's published Paykit USDT address and confirms it", async () => {
+    vi.spyOn(CommerceController, 'fetchBuyerPaykitUsdtAddress').mockResolvedValue(REFUND_FIXTURE_ADDRESS);
+    const { actOnOrder } = renderPanel(createUsdtOrderFixture('return_approved'));
+    const user = userEvent.setup();
+
+    const choice = await screen.findByRole('radio', { name: /Send it to my Paykit USDT address/ });
+    expect(choice).toBeChecked();
+    expect(screen.queryByLabelText('Arbitrum One USDT address')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('checkbox', { name: 'This address accepts USDT on Arbitrum One' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm refund address' }));
+    await waitFor(() =>
+      expect(actOnOrder).toHaveBeenCalledWith(expect.anything(), 'refund.confirm_destination', {
+        address: REFUND_FIXTURE_ADDRESS,
+      }),
+    );
+  });
+
+  it("keeps the buyer's own choice when the Paykit lookup finishes late", async () => {
+    let resolveLookup: (address: string | null) => void = () => {};
+    vi.spyOn(CommerceController, 'fetchBuyerPaykitUsdtAddress').mockReturnValue(
+      new Promise((resolve) => {
+        resolveLookup = resolve;
+      }),
+    );
+    const { actOnOrder } = renderPanel(createUsdtOrderFixture('return_approved'));
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText('Arbitrum One USDT address'), REFUND_FIXTURE_OTHER_ADDRESS);
+    resolveLookup(REFUND_FIXTURE_ADDRESS);
+
+    expect(await screen.findByRole('radio', { name: /Send it to my Paykit USDT address/ })).not.toBeChecked();
+    await user.click(screen.getByRole('checkbox', { name: 'This address accepts USDT on Arbitrum One' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm refund address' }));
+    await waitFor(() =>
+      expect(actOnOrder).toHaveBeenCalledWith(expect.anything(), 'refund.confirm_destination', {
+        address: REFUND_FIXTURE_OTHER_ADDRESS,
+      }),
+    );
+  });
+
+  it('keeps the selected address when the lookup finishes after the buyer ticked the network box', async () => {
+    let resolveLookup: (address: string | null) => void = () => {};
+    vi.spyOn(CommerceController, 'fetchBuyerPaykitUsdtAddress').mockReturnValue(
+      new Promise((resolve) => {
+        resolveLookup = resolve;
+      }),
+    );
+    const order = createUsdtOrderFixture('return_approved', { paymentAddress: REFUND_FIXTURE_OTHER_ADDRESS });
+    const { actOnOrder } = renderPanel(order);
+    const user = userEvent.setup();
+
+    expect(screen.getByRole('radio', { name: /Send it back to the address I paid from/ })).toBeChecked();
+    await user.click(screen.getByRole('checkbox', { name: 'This address accepts USDT on Arbitrum One' }));
+    resolveLookup(REFUND_FIXTURE_ADDRESS);
+
+    expect(await screen.findByRole('radio', { name: /Send it to my Paykit USDT address/ })).not.toBeChecked();
+    await user.click(screen.getByRole('button', { name: 'Confirm refund address' }));
+    await waitFor(() =>
+      expect(actOnOrder).toHaveBeenCalledWith(expect.anything(), 'refund.confirm_destination', {
+        address: REFUND_FIXTURE_OTHER_ADDRESS,
+      }),
+    );
+  });
+
+  it.each([
+    ['another', [/Send it to another Arbitrum One USDT address/]],
+    [
+      'the paid-from address again',
+      [/Send it to another Arbitrum One USDT address/, /Send it back to the address I paid from/],
+    ],
+  ])('keeps %s when the buyer picked it before the lookup finished', async (_, picks) => {
+    let resolveLookup: (address: string | null) => void = () => {};
+    vi.spyOn(CommerceController, 'fetchBuyerPaykitUsdtAddress').mockReturnValue(
+      new Promise((resolve) => {
+        resolveLookup = resolve;
+      }),
+    );
+    renderPanel(createUsdtOrderFixture('return_approved', { paymentAddress: REFUND_FIXTURE_OTHER_ADDRESS }));
+    const user = userEvent.setup();
+
+    for (const name of picks) await user.click(screen.getByRole('radio', { name }));
+    resolveLookup(REFUND_FIXTURE_ADDRESS);
+
+    expect(await screen.findByRole('radio', { name: /Send it to my Paykit USDT address/ })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: picks[picks.length - 1] })).toBeChecked();
+  });
+
+  it('logs a failed lookup instead of leaving it unhandled', async () => {
+    vi.spyOn(CommerceController, 'fetchBuyerPaykitUsdtAddress').mockRejectedValue(new Error('bad pubky'));
+    renderPanel(createUsdtOrderFixture('return_approved'));
+
+    expect(await screen.findByLabelText('Arbitrum One USDT address')).toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: /Send it to my Paykit USDT address/ })).toBeNull();
   });
 });

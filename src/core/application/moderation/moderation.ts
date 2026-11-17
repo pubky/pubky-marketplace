@@ -1,7 +1,6 @@
-import type { EnrichedPostDetails, EnrichedUserDetails } from '@/application/moderation/moderation.types';
+import type { EnrichedPostDetails } from '@/application/moderation/moderation.types';
 import { type ModerationModelSchema, ModerationType } from '@/models/moderation/moderation.schema';
 import type { PostDetailsModelSchema } from '@/models/post/details/postDetails.schema';
-import type { UserDetailsModelSchema } from '@/models/user/details/userDetails.schema';
 import { LocalModerationService } from '@/services/local/moderation/moderation';
 import { shouldBlur } from './moderation.utils';
 
@@ -17,7 +16,6 @@ export class ModerationApplication {
 
   /**
    * Enriches items with moderation status.
-   * Generic method that works for both posts and users.
    */
   private static enrichWithModeration<T extends { id: string }>(
     items: T[],
@@ -47,21 +45,6 @@ export class ModerationApplication {
     const recordMap = new Map(records.map((r) => [r.id, r]));
 
     return this.enrichWithModeration(posts, recordMap, isBlurDisabledGlobally);
-  }
-
-  static async enrichUsersWithModeration(
-    users: UserDetailsModelSchema[],
-    isBlurDisabledGlobally: boolean,
-  ): Promise<EnrichedUserDetails[]> {
-    if (users.length === 0) return [];
-
-    const records = await LocalModerationService.getModerationRecords(
-      users.map((u) => u.id),
-      ModerationType.PROFILE,
-    );
-    const recordMap = new Map(records.map((r) => [r.id, r]));
-
-    return this.enrichWithModeration(users, recordMap, isBlurDisabledGlobally);
   }
 
   /**

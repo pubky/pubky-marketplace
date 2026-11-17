@@ -4,6 +4,8 @@ import { AuthApplication } from '@/application/auth/auth';
 import { BootstrapApplication } from '@/application/bootstrap/bootstrap';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { clearDatabase, clearPrivateData } from '@/database/franky/franky.helpers';
+import { readGrantSigner } from '@/hooks/useGrantSigner/useGrantSigner';
+import { marketplaceSignerChoice } from '@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner';
 import { Identity } from '@/libs/identity/identity';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { AUTH_PERSIST_KEY } from '@/stores/persistedKeys';
@@ -18,7 +20,6 @@ vi.mock('@/libs/query-client/query-client.factory', async (original) => ({
 }));
 vi.mock('@/libs/utils/utils', async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  clearCookies: vi.fn(),
 }));
 
 beforeEach(() => {
@@ -67,6 +68,37 @@ describe('grant-only authentication lifecycle', () => {
     },
   );
 
+  it('records an unidentified QR scan as an unknown signer that later approvals start on Pubky Ring', async () => {
+    const session = grantSession();
+    await approve(session, 'unknown');
+    await AuthController.initializeAuthenticatedSession({ session });
+    expect(useAuthStore.getState()).toMatchObject({ session, grantSigner: 'unknown' });
+    expect(readGrantSigner(useAuthStore.getState())).toBe('unknown');
+    expect(marketplaceSignerChoice(readGrantSigner(useAuthStore.getState()))).toBe('ring');
+  });
+
+  it('records the app the user opened last for the sign-in', async () => {
+    const session = grantSession();
+    vi.spyOn(AuthApplication, 'generateGrantAuthUrl').mockResolvedValue({
+      authorizationUrl: 'pubkyauth://signin_grant',
+      awaitApproval: Promise.resolve(session),
+      cancelAuthFlow: vi.fn(),
+    });
+    const flow = await AuthController.getAuthUrl();
+    AuthController.noteSignInSigner('ring');
+    AuthController.noteSignInSigner('bitkit');
+    await AuthController.initializeAuthenticatedSession({ session: await flow.awaitApproval });
+    expect(useAuthStore.getState().grantSigner).toBe('bitkit');
+  });
+
+  it('forgets the app opened for an earlier QR when a new QR is made', async () => {
+    AuthController.noteSignInSigner('ring');
+    const session = grantSession();
+    await approve(session, 'unknown');
+    await AuthController.initializeAuthenticatedSession({ session });
+    expect(useAuthStore.getState().grantSigner).toBe('unknown');
+  });
+
   it('never bootstraps or persists a live identity after a blocked SDK save', async () => {
     const session = grantSession();
     await approve(session);
@@ -89,45 +121,24 @@ describe('grant-only authentication lifecycle', () => {
     expect(clearCommerce).not.toHaveBeenCalled();
   });
 
-  it.each(['mnemonic', 'encrypted-file', 'signup'] as const)(
+  it.each(['mnemonic', 'encrypted-file'] as const)(
     'records %s as local-key and saves before store initialization',
     async (mode) => {
       const session = grantSession();
       const keypair = mockKeypair({ publicKey: session.info.publicKey });
       vi.spyOn(Identity, 'keypairFromMnemonic').mockReturnValue(keypair);
       vi.spyOn(Identity, 'decryptRecoveryFile').mockResolvedValue(keypair);
-      vi.spyOn(Identity, 'keypairFromSecretKey').mockReturnValue(keypair);
       vi.spyOn(AuthApplication, 'signIn').mockResolvedValue({ session });
-      vi.spyOn(AuthApplication, 'signUp').mockResolvedValue({ session });
       if (mode === 'mnemonic') await AuthController.loginWithMnemonic({ mnemonic: 'test' });
-      else if (mode === 'encrypted-file')
-        await AuthController.loginWithEncryptedFile({ encryptedFile: new File([], 'test'), password: 'test' });
-      else await AuthController.signUp({ secretKey: 'test', signupToken: 'invite' });
+      else await AuthController.loginWithEncryptedFile({ encryptedFile: new File([], 'test'), password: 'test' });
       expect(AuthApplication.saveGrantSession).toHaveBeenCalledWith(session);
       expect(useAuthStore.getState()).toMatchObject({
         session,
         grantSigner: 'local-key',
         grantSessionRecordId: 'alice:grant-1',
       });
-      if (mode === 'signup') {
-        expect(AuthApplication.userIsSignedUp).not.toHaveBeenCalled();
-        expect(useAuthStore.getState().hasProfile).toBe(false);
-      }
     },
   );
-
-  it('saves Ring signup grants with Ring ownership', async () => {
-    const session = grantSession();
-    vi.spyOn(AuthApplication, 'generateSignupAuthUrl').mockResolvedValue({
-      authorizationUrl: 'pubkyauth://signup_grant',
-      awaitApproval: Promise.resolve(session),
-      cancelAuthFlow: vi.fn(),
-    });
-    const flow = await AuthController.getSignupAuthUrl('invite');
-    await AuthController.initializeAuthenticatedSession({ session: await flow.awaitApproval });
-    expect(useAuthStore.getState().grantSigner).toBe('ring');
-    expect(AuthApplication.saveGrantSession).toHaveBeenCalledWith(session);
-  });
 
   it('does not restore an old cookie or destroy legacy local history on migration', async () => {
     useAuthStore.setState({ currentUserPubky: 'alice', sessionExport: 'legacy-cookie', session: null });
@@ -261,14 +272,14 @@ describe('grant-only authentication lifecycle', () => {
       awaitApproval: new Promise<Session>(() => undefined),
       cancelAuthFlow: vi.fn(),
     });
-    await AuthController.getGrantAuthUrl();
+    await AuthController.getAuthUrl();
     expect(generate).toHaveBeenLastCalledWith();
-    await AuthController.getGrantAuthUrl({ withPrivKeys: false });
+    await AuthController.getAuthUrl({ withPrivKeys: false });
     expect(generate).toHaveBeenLastCalledWith(undefined, { withPrivKeys: false });
-    await AuthController.getPassportGrantAuthUrl({ xSource: 'Pubky Shop' });
-    expect(generate).toHaveBeenLastCalledWith({ xSource: 'Pubky Shop' }, { signer: 'passport' });
-    await AuthController.getPassportGrantAuthUrl({ xSource: 'Pubky Shop' }, { withPrivKeys: false });
-    expect(generate).toHaveBeenLastCalledWith({ xSource: 'Pubky Shop' }, { withPrivKeys: false, signer: 'passport' });
+    await AuthController.getPassportGrantAuthUrl({ xSource: 'Pubky Market' });
+    expect(generate).toHaveBeenLastCalledWith({ xSource: 'Pubky Market' }, { signer: 'passport' });
+    await AuthController.getPassportGrantAuthUrl({ xSource: 'Pubky Market' }, { withPrivKeys: false });
+    expect(generate).toHaveBeenLastCalledWith({ xSource: 'Pubky Market' }, { withPrivKeys: false, signer: 'passport' });
     await AuthController.getStepUpAuthUrl({ signer: 'bitkit' });
     expect(generate).toHaveBeenLastCalledWith(undefined);
   });

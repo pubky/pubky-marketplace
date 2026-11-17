@@ -53,7 +53,7 @@ export function HelpContent() {
           id: '3',
           question: 'How can I restore my account?',
           answer:
-            'When you signed up, you were prompted to back up your identity using one of the following:\n\n- Recovery file (.pkarr)\n- Recovery phrase (mnemonic)\n- QR code\n\nTo restore with a .pkarr file:\n\n1. Select the file you saved.\n2. Enter your password.\n3. Click "Sign In".',
+            'Pubky Market does not create accounts. When you created yours, for example in Pubky App, you were prompted to back up your identity using one of the following:\n\n- Recovery file (.pkarr)\n- Recovery phrase (mnemonic)\n- QR code\n\nTo restore with a .pkarr file:\n\n1. Select the file you saved.\n2. Enter your password.\n3. Click "Sign In".',
         },
         {
           id: '4',
@@ -80,7 +80,7 @@ export function HelpContent() {
         {
           id: '8',
           question: 'I missed downloading the recovery file. Can I back up again?',
-          answer: 'Currently, backups can only be created once via the web app. This may change in future updates.',
+          answer: 'Pubky Market cannot create backups.',
         },
       ] as FAQAccordionItem[],
     },

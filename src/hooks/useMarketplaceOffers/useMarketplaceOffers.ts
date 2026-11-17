@@ -21,7 +21,7 @@ import {
 import { amountInputSchemaForAsset, amountInputToMoney } from '@/libs/commerce/pricing';
 import { isMarketplaceRevisionConflict } from '@/libs/commerce/transaction-commands';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import type { MarketplaceOffer } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';

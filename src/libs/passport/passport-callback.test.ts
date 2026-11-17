@@ -5,7 +5,7 @@ import { PASSPORT_CALLBACK_MESSAGE } from './passport-popup';
 type Opener = { closed: boolean; postMessage: ReturnType<typeof vi.fn> };
 
 function runCallbackScript({ search, opener }: { search: string; opener: Opener | null | 'throws' }) {
-  const status = { textContent: 'You can close this window and return to Pubky Shop.' };
+  const status = { textContent: 'You can close this window and return to Pubky Market.' };
   const close = vi.fn();
   const fakeWindow = {
     location: { search, origin: 'https://shop.pubky.app' },
@@ -45,7 +45,7 @@ describe('Passport return page', () => {
 
     expect(opener.postMessage).not.toHaveBeenCalled();
     expect(close).not.toHaveBeenCalled();
-    expect(status.textContent).toBe('You can close this window and return to Pubky Shop.');
+    expect(status.textContent).toBe('You can close this window and return to Pubky Market.');
   });
 
   it.each([
@@ -56,11 +56,11 @@ describe('Passport return page', () => {
     const { close, status } = runCallbackScript({ search: '?outcome=success', opener });
 
     expect(close).not.toHaveBeenCalled();
-    expect(status.textContent).toBe('Approved in Pubky Passport. Return to Pubky Shop to continue.');
+    expect(status.textContent).toBe('Approved in Pubky Passport. Return to Pubky Market to continue.');
   });
 
   it('is a static document with a link back to the Shop and nothing taken from the request', () => {
-    expect(PASSPORT_CALLBACK_HTML).toContain('<a href="/marketplace">Return to Pubky Shop</a>');
+    expect(PASSPORT_CALLBACK_HTML).toContain('<a href="/marketplace">Return to Pubky Market</a>');
     expect(PASSPORT_CALLBACK_HTML).toContain('<meta name="robots" content="noindex">');
     expect(PASSPORT_CALLBACK_HTML).toContain(PASSPORT_CALLBACK_SCRIPT);
     expect(PASSPORT_CALLBACK_SCRIPT).not.toContain('innerHTML');

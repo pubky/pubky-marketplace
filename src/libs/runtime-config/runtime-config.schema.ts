@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isValidBasePath } from '../base-path/base-path';
+import { parseRegionModes } from '../commerce/region-modes';
 
 /**
  * Shared, zod-only schema for the environment-specific values that must be configurable at
@@ -12,7 +13,7 @@ import { isValidBasePath } from '../base-path/base-path';
  *  - OPTIONAL observability values (sentry*): absent means the feature is disabled (DSN) or
  *    a documented default applies (sample rates).
  *  - OPTIONAL/DEFAULTED app/deployer values: public operational, moderation, metadata,
- *    analytics, Prelude, and external-link values that deployers may override without rebuilding.
+ *    analytics, and external-link values that deployers may override without rebuilding.
  *
  * This module is a leaf (zod only, no `Env`, no logger) so the runtime-config resolver never
  * pulls in the heavy `env -> libs/error -> logger -> env` import cycle.
@@ -75,6 +76,31 @@ const pubkyValue = z
   .string()
   .trim()
   .regex(/^[ybndrfg8ejkmcpqxot1uwisza345h769]{52}$/, 'Expected a 52-character z-base-32 Pubky');
+
+/** An RFC 3339 instant with an offset, or a `YYYY-MM-DD` date meaning 00:00 UTC that day. */
+const trustWindowInstantValue = z.union([z.iso.datetime({ offset: true }), z.iso.date()]);
+
+/**
+ * One review attestor this deployment trusts for "Verified purchase". An
+ * attestation counts only when its issuer is `pubky` and its time falls in
+ * `[validFrom, validUntil)`; an absent `validUntil` leaves the window open.
+ * `label` names the attestor on the badge ("Verified purchase · Pubky Market").
+ * Unknown keys are rejected so a misspelt `validUntil` cannot silently leave a
+ * retired key trusted forever.
+ */
+export const marketplaceTrustedAttestorValue = z
+  .object({
+    pubky: pubkyValue,
+    label: z.string().trim().min(1).max(40),
+    validFrom: trustWindowInstantValue,
+    validUntil: trustWindowInstantValue.optional(),
+  })
+  .strict()
+  .refine((entry) => entry.validUntil === undefined || Date.parse(entry.validUntil) > Date.parse(entry.validFrom), {
+    message: 'validUntil must be later than validFrom',
+    path: ['validUntil'],
+  });
+export type MarketplaceTrustedAttestor = z.infer<typeof marketplaceTrustedAttestorValue>;
 
 /** Parse a JSON-array-of-strings env value into a string[]. Throws on malformed input. */
 function parseJsonStringArray(val: string, label = 'value'): string[] {
@@ -192,6 +218,24 @@ const optionalHomeserverArrayFromString = (label: string) =>
     })
     .pipe(z.array(homeserverValue).optional());
 
+/** Env form: a JSON array of trust-list entries. Blank or unset means no runtime entries. */
+const optionalTrustedAttestorsFromString = z
+  .string()
+  .optional()
+  .transform((val, ctx) => {
+    if (val === undefined || val.trim() === '') return undefined;
+    try {
+      return JSON.parse(val) as unknown;
+    } catch (error) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Invalid MARKETPLACE_TRUSTED_ATTESTORS value: ${(error as Error).message}`,
+      });
+      return z.NEVER;
+    }
+  })
+  .pipe(z.array(marketplaceTrustedAttestorValue).optional());
+
 /**
  * Optional-tier env strings: a missing OR empty/whitespace value means "unset".
  * The outer `.optional()` keeps the key optional in the OUTPUT type too, so the env-input
@@ -293,6 +337,34 @@ const shopGrantClientIdValue = z.string().regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(
   message: 'Expected a lowercase host name like pubky.app: no scheme, port or path',
 });
 const optionalShopGrantClientIdFromString = optionalTrimmedString.pipe(shopGrantClientIdValue.optional());
+
+/**
+ * The per-region commerce modes (`SELECTOR=MODE` list, see `@/libs/commerce/region-modes`). The
+ * resolved value is the canonical spelling, so the injected browser config and the env agree.
+ */
+const regionModesValue = z.string().superRefine((value, ctx) => {
+  const parsed = parseRegionModes(value);
+  if (!parsed.ok) ctx.addIssue({ code: 'custom', message: `Invalid REGION_MODES value: ${parsed.error}` });
+});
+const optionalRegionModesFromString = optionalTrimmedString
+  .transform((val, ctx) => {
+    if (val === undefined) return undefined;
+    const parsed = parseRegionModes(val);
+    if (!parsed.ok) {
+      ctx.addIssue({ code: 'custom', message: `Invalid REGION_MODES value: ${parsed.error}` });
+      return z.NEVER;
+    }
+    return parsed.canonical;
+  })
+  .pipe(regionModesValue.optional());
+
+/** An HTTP header name, kept lowercase so the lookup matches however the edge spells it. */
+const clientRegionHeaderValue = z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, {
+  message: 'Expected a lowercase HTTP header name like x-client-region',
+});
+const optionalClientRegionHeaderFromString = optionalTrimmedString
+  .transform((val) => val?.trim().toLowerCase())
+  .pipe(clientRegionHeaderValue.optional());
 
 /** Rates validate eagerly (bad number/range throws here); the default applies in the value schema. */
 const sampleRateFromString = z
@@ -426,9 +498,9 @@ function validateStagingEndpointsEnvInput(
 }
 
 /**
- * Defaults for the optional Sentry sample rates (applied by `runtimeConfigValueSchema`, which
- * every parse path runs through, so the resolved config always carries concrete numbers even
- * when the env leaves them unset).
+ * Defaults for trace and Replay rates, applied by every runtime parse path.
+ * sentrySampleRate stays optional: SDK initialization selects its error-event
+ * default from the resolved Sentry environment, independently of deployment identity.
  */
 export const SENTRY_RUNTIME_DEFAULTS = {
   sentryTracesSampleRate: 0.1,
@@ -468,16 +540,18 @@ export const APP_RUNTIME_DEFAULTS = {
   marketplaceGrantPollMilliseconds: 1_000,
   passportSignIn: true,
   usdtPaymentsEnabled: false,
+  storeSyncEnabled: false,
   euFenceEnabled: false,
   digitalRegionBlockEnabled: false,
+  clientRegionHeader: 'x-client-region',
   frameAncestors: [] as string[],
   embedded: false,
   privEncryptionKeys: false,
   passportPrivEncryptionKeys: false,
   privEncryptionKeysHomeservers: [] as string[],
-  preludeSdkTimeoutMs: 5_000,
+  marketplaceTrustedAttestors: [] as MarketplaceTrustedAttestor[],
   previewImage: '/preview.webp',
-  siteName: 'Pubky App',
+  siteName: 'Pubky Market',
   locale: 'en_US',
   author: 'Pubky Team',
   keywords: 'pubky, social media, decentralized, key, pkarr, pubky core',
@@ -528,6 +602,8 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
   sentryDsn: urlValue.optional(),
   /** Environment tag attached to every Sentry event. Absent falls back to NODE_ENV (see sentry.ts). */
   sentryEnvironment: z.string().min(1).optional(),
+  /** Error-event sampling; absent selects 0.1 on staging and 1 elsewhere at SDK init. */
+  sentrySampleRate: sampleRateValue.optional(),
   sentryTracesSampleRate: sampleRateValue.default(SENTRY_RUNTIME_DEFAULTS.sentryTracesSampleRate),
   sentryReplaysSessionSampleRate: sampleRateValue.default(SENTRY_RUNTIME_DEFAULTS.sentryReplaysSessionSampleRate),
   sentryReplaysOnErrorSampleRate: sampleRateValue.default(SENTRY_RUNTIME_DEFAULTS.sentryReplaysOnErrorSampleRate),
@@ -612,10 +688,18 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
    */
   usdtPaymentsEnabled: z.boolean().default(APP_RUNTIME_DEFAULTS.usdtPaymentsEnabled),
   /**
+   * Shop-side switch for syncing linked listings with a connected Shopify store
+   * (docs/ecommerce/store-connections.md, "Product sync"). Off by default. On, the Store connections
+   * page shows the Shopify changes review and the Sync table, the Shop applies store text and a product
+   * the store stopped selling when the page opens, and the listing editor shows the parts that follow the
+   * store read-only. Off hides all of it and applies nothing, without a service deploy.
+   */
+  storeSyncEnabled: z.boolean().default(APP_RUNTIME_DEFAULTS.storeSyncEnabled),
+  /**
    * Shop-side switch for the EU scope fence (legal launch plan C2-C4), mirroring the
    * marketplace service's `EU_FENCE_ENABLED`. Off by default. On, the Shop asks the buyer
    * for their country where no address supplies it, sends it with every selling command,
-   * shows business and undeclared sellers as unavailable to EU buyers, and shows sellers
+   * shows business and undeclared sellers as unavailable to EU and UK buyers, and shows sellers
    * their annual-limit counters. The seller declaration and the consumer-law copy do not
    * depend on it.
    */
@@ -626,6 +710,18 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
    * Independent of `euFenceEnabled`. Off by default; ON for launch.
    */
   digitalRegionBlockEnabled: z.boolean().default(APP_RUNTIME_DEFAULTS.digitalRegionBlockEnabled),
+  /**
+   * Per-region commerce modes for the Shop (`SELECTOR=MODE` list; selectors are ISO alpha-2 codes,
+   * `EU` or `UNKNOWN`; modes are `open`, `nuanced`, `blocked`; `none` opens everything), mirroring
+   * the service's `REGION_MODES`. Unset, the two flags above decide (EU and GB nuanced); once set it
+   * wins and they are ignored. See `@/libs/commerce/region-modes`.
+   */
+  regionModes: regionModesValue.optional(),
+  /**
+   * The request header the edge sets to the visitor's country, read by the Shop's
+   * `/api/marketplace/client-region` route. Mirrors the service's `CLIENT_COUNTRY_HEADER`.
+   */
+  clientRegionHeader: clientRegionHeaderValue.default(APP_RUNTIME_DEFAULTS.clientRegionHeader),
   /**
    * Pubky Passport origin override. Absent means the Passport deployment that
    * signs users up on this deploy's homeserver (see `getPassportOrigin`).
@@ -684,8 +780,14 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
     .default([...APP_RUNTIME_DEFAULTS.privEncryptionKeysHomeservers]),
   /** Client id of the Shop's grant sign-in. Absent means `SHOP_GRANT_CLIENT_ID` in `src/config/app.ts`. */
   shopGrantClientId: shopGrantClientIdValue.optional(),
-  preludeSdkKey: nonEmptyStringValue.optional(),
-  preludeSdkTimeoutMs: positiveIntValue.default(APP_RUNTIME_DEFAULTS.preludeSdkTimeoutMs),
+  /**
+   * Review attestors this deployment trusts in addition to the compiled
+   * defaults (`MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS` in `src/config/commerce.ts`).
+   * Empty by default.
+   */
+  marketplaceTrustedAttestors: z
+    .array(marketplaceTrustedAttestorValue)
+    .default(() => [...APP_RUNTIME_DEFAULTS.marketplaceTrustedAttestors]),
   plausibleDomain: nonEmptyStringValue.optional(),
   plausibleScriptUrl: urlValue.optional(),
   previewImage: nonEmptyStringValue.default(APP_RUNTIME_DEFAULTS.previewImage),
@@ -735,6 +837,7 @@ export const runtimeEnvInputSchema = z
     deployEnv: deployEnvValue,
     sentryDsn: optionalTrimmedString,
     sentryEnvironment: optionalTrimmedString,
+    sentrySampleRate: sampleRateFromString,
     sentryTracesSampleRate: sampleRateFromString,
     sentryReplaysSessionSampleRate: sampleRateFromString,
     sentryReplaysOnErrorSampleRate: sampleRateFromString,
@@ -772,8 +875,11 @@ export const runtimeEnvInputSchema = z
     marketplaceGrantPollMilliseconds: optionalPositiveIntFromString,
     passportSignIn: optionalBooleanFromString,
     usdtPaymentsEnabled: optionalBooleanFromString,
+    storeSyncEnabled: optionalBooleanFromString,
     euFenceEnabled: optionalBooleanFromString,
     digitalRegionBlockEnabled: optionalBooleanFromString,
+    regionModes: optionalRegionModesFromString,
+    clientRegionHeader: optionalClientRegionHeaderFromString,
     passportUrl: optionalPassportUrlFromString,
     frameAncestors: optionalFrameAncestorsFromString(false),
     embedded: optionalBooleanFromString,
@@ -783,8 +889,7 @@ export const runtimeEnvInputSchema = z
     passportPrivEncryptionKeys: optionalBooleanFromString,
     privEncryptionKeysHomeservers: optionalHomeserverArrayFromString('PRIV_ENCRYPTION_KEYS_HOMESERVERS'),
     shopGrantClientId: optionalShopGrantClientIdFromString,
-    preludeSdkKey: optionalTrimmedString,
-    preludeSdkTimeoutMs: optionalPositiveIntFromString,
+    marketplaceTrustedAttestors: optionalTrustedAttestorsFromString,
     plausibleDomain: optionalTrimmedString,
     plausibleScriptUrl: optionalUrlFromString,
     previewImage: optionalTrimmedString,
@@ -844,6 +949,7 @@ export const runtimeEnvInputSchemaWithDefaults = z
     deployEnv: deployEnvValue.default(NETWORK_RUNTIME_DEFAULTS.deployEnv),
     sentryDsn: optionalTrimmedString,
     sentryEnvironment: optionalTrimmedString,
+    sentrySampleRate: sampleRateFromString,
     sentryTracesSampleRate: sampleRateFromString,
     sentryReplaysSessionSampleRate: sampleRateFromString,
     sentryReplaysOnErrorSampleRate: sampleRateFromString,
@@ -881,8 +987,11 @@ export const runtimeEnvInputSchemaWithDefaults = z
     marketplaceGrantPollMilliseconds: optionalPositiveIntFromString,
     passportSignIn: optionalBooleanFromString,
     usdtPaymentsEnabled: optionalBooleanFromString,
+    storeSyncEnabled: optionalBooleanFromString,
     euFenceEnabled: optionalBooleanFromString,
     digitalRegionBlockEnabled: optionalBooleanFromString,
+    regionModes: optionalRegionModesFromString,
+    clientRegionHeader: optionalClientRegionHeaderFromString,
     passportUrl: optionalDevPassportUrlFromString,
     frameAncestors: optionalFrameAncestorsFromString(true),
     embedded: optionalBooleanFromString,
@@ -892,8 +1001,7 @@ export const runtimeEnvInputSchemaWithDefaults = z
     passportPrivEncryptionKeys: optionalBooleanFromString,
     privEncryptionKeysHomeservers: optionalHomeserverArrayFromString('PRIV_ENCRYPTION_KEYS_HOMESERVERS'),
     shopGrantClientId: optionalShopGrantClientIdFromString,
-    preludeSdkKey: optionalTrimmedString,
-    preludeSdkTimeoutMs: optionalPositiveIntFromString,
+    marketplaceTrustedAttestors: optionalTrustedAttestorsFromString,
     plausibleDomain: optionalTrimmedString,
     plausibleScriptUrl: optionalUrlFromString,
     previewImage: optionalTrimmedString,
@@ -944,6 +1052,7 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   ...NETWORK_RUNTIME_ENV_NAMES,
   sentryDsn: 'PUBKY_RUNTIME_SENTRY_DSN',
   sentryEnvironment: 'PUBKY_RUNTIME_SENTRY_ENVIRONMENT',
+  sentrySampleRate: 'PUBKY_RUNTIME_SENTRY_SAMPLE_RATE',
   sentryTracesSampleRate: 'PUBKY_RUNTIME_SENTRY_TRACES_SAMPLE_RATE',
   sentryReplaysSessionSampleRate: 'PUBKY_RUNTIME_SENTRY_REPLAYS_SESSION_SAMPLE_RATE',
   sentryReplaysOnErrorSampleRate: 'PUBKY_RUNTIME_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE',
@@ -981,8 +1090,11 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   marketplaceGrantPollMilliseconds: 'PUBKY_RUNTIME_MARKETPLACE_GRANT_POLL_MILLISECONDS',
   passportSignIn: 'PUBKY_RUNTIME_PASSPORT_SIGN_IN',
   usdtPaymentsEnabled: 'PUBKY_RUNTIME_USDT_PAYMENTS_ENABLED',
+  storeSyncEnabled: 'PUBKY_RUNTIME_STORE_SYNC_ENABLED',
   euFenceEnabled: 'PUBKY_RUNTIME_EU_FENCE_ENABLED',
   digitalRegionBlockEnabled: 'PUBKY_RUNTIME_DIGITAL_REGION_BLOCK_ENABLED',
+  regionModes: 'PUBKY_RUNTIME_REGION_MODES',
+  clientRegionHeader: 'PUBKY_RUNTIME_CLIENT_REGION_HEADER',
   passportUrl: 'PUBKY_RUNTIME_PASSPORT_URL',
   frameAncestors: 'PUBKY_RUNTIME_FRAME_ANCESTORS',
   embedded: 'PUBKY_RUNTIME_EMBEDDED',
@@ -992,8 +1104,7 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   passportPrivEncryptionKeys: 'PUBKY_RUNTIME_PASSPORT_PRIV_ENCRYPTION_KEYS',
   privEncryptionKeysHomeservers: 'PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS_HOMESERVERS',
   shopGrantClientId: 'PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID',
-  preludeSdkKey: 'PUBKY_RUNTIME_PRELUDE_SDK_KEY',
-  preludeSdkTimeoutMs: 'PUBKY_RUNTIME_PRELUDE_SDK_TIMEOUT_MS',
+  marketplaceTrustedAttestors: 'PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS',
   plausibleDomain: 'PUBKY_RUNTIME_PLAUSIBLE_DOMAIN',
   plausibleScriptUrl: 'PUBKY_RUNTIME_PLAUSIBLE_SCRIPT_URL',
   previewImage: 'PUBKY_RUNTIME_PREVIEW_IMAGE',

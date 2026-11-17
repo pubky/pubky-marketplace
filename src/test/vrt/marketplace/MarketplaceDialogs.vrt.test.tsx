@@ -96,6 +96,42 @@ describe('Marketplace dialogs — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('dialog-bid-open-mobile');
   });
 
+  it('renders the open bid dialog in light mode at desktop viewport', async () => {
+    const { auctionProjection } = await fixtures;
+
+    const screen = await renderForVRT(
+      <DialogHarness>
+        <MarketplaceBidDialog
+          aggregateId={auctionProjection.aggregateId}
+          projection={auctionProjection}
+          priceAsset={USD_ASSET}
+          onAccepted={() => {}}
+        />
+      </DialogHarness>,
+      { viewport: VRT_VIEWPORT_DESKTOP, theme: 'light' },
+    );
+    await openDialog(screen.getByRole('button', { name: 'Place a bid' }));
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('dialog-bid-open-light-desktop');
+  });
+
+  it('renders the open bid dialog in light mode at mobile viewport', async () => {
+    const { auctionProjection } = await fixtures;
+
+    const screen = await renderForVRT(
+      <DialogHarness>
+        <MarketplaceBidDialog
+          aggregateId={auctionProjection.aggregateId}
+          projection={auctionProjection}
+          priceAsset={USD_ASSET}
+          onAccepted={() => {}}
+        />
+      </DialogHarness>,
+      { viewport: VRT_VIEWPORT_MOBILE, theme: 'light' },
+    );
+    await openDialog(screen.getByRole('button', { name: 'Place a bid' }));
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('dialog-bid-open-light-mobile');
+  });
+
   it('renders the open offer dialog at desktop viewport', async () => {
     const { auctionProjection } = await fixtures;
 

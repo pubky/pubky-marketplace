@@ -4,7 +4,7 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import type { MarketplaceOffer } from '@/services/marketplace/marketplace';
 import { parseContractFaithfulOffer } from '@/test/fixtures/commerce/offer-award';
 import { setupFixedDateLocale } from '@/test-utils/date-locale';
@@ -46,7 +46,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 
@@ -189,14 +189,14 @@ describe('useMarketplaceOffers', () => {
 
     expect(succeeded).toBe(false);
     expect(CommerceController.getMarketplaceOffers).toHaveBeenCalled();
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: expect.stringContaining('reloaded') }),
     );
   });
 
   it('names a removed listing when accepting is refused with LISTING_NOT_ACTIVE', async () => {
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const { result } = renderHook(() => useMarketplaceOffers());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
@@ -217,7 +217,7 @@ describe('useMarketplaceOffers', () => {
 
   it('maps server and thrown sentinel failures to static copy', async () => {
     const sentinel = 'SENTINEL_SERVER_TEXT_offers';
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const { result } = renderHook(() => useMarketplaceOffers());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 

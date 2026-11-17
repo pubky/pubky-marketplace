@@ -1,5 +1,4 @@
-import crypto from 'node:crypto';
-import { listingUriBuilder } from 'pubky-app-specs';
+import { PubkySpecsBuilder } from 'pubky-app-specs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
@@ -7,81 +6,10 @@ import { LocalCommerceService } from '@/services/local/commerce/commerce';
 import { MarketplaceGatewayService } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { createOrderFixture, ORDER_FIXTURE_BUYER, ORDER_FIXTURE_SELLER } from '@/test/fixtures/commerce/orders';
+import { issuedAttestation, reviewResult } from '@/test-utils/review-attestation';
 import { CommerceApplication } from './commerce';
 
 const FOREIGN_PUBKY = 'z'.repeat(52);
-
-const Z_ALPHABET = 'ybndrfg8ejkmcpqxot1uwisza345h769';
-function zbase32(bytes: Uint8Array): string {
-  let bits = 0;
-  let accumulator = 0;
-  let out = '';
-  for (const byte of bytes) {
-    accumulator = (accumulator << 8) | byte;
-    bits += 8;
-    while (bits >= 5) {
-      bits -= 5;
-      out += Z_ALPHABET[(accumulator >> bits) & 31];
-    }
-  }
-  if (bits > 0) out += Z_ALPHABET[(accumulator << (5 - bits)) & 31];
-  return out;
-}
-const b64u = (input: Uint8Array | string): string => Buffer.from(input).toString('base64url');
-
-/** A real EdDSA attestation, camelCased the way the wire boundary delivers it. */
-function issuedAttestation(listingId: string) {
-  const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
-  const iss = zbase32(publicKey.export({ type: 'spki', format: 'der' }).subarray(-32));
-  const jwsClaims = {
-    v: 1,
-    iss,
-    sub: ORDER_FIXTURE_BUYER,
-    cpk: ORDER_FIXTURE_SELLER,
-    role: 'buyer_reviewing_seller',
-    listing: listingUriBuilder(ORDER_FIXTURE_SELLER, listingId),
-    order_ref: 'cd'.repeat(32),
-    completed_on: '2026-08-21',
-    iat: 1_787_654_321,
-  };
-  const header = { alg: 'EdDSA', typ: 'pubky-purchase-attestation+v1' };
-  const signingInput = `${b64u(JSON.stringify(header))}.${b64u(JSON.stringify(jwsClaims))}`;
-  const jws = `${signingInput}.${b64u(crypto.sign(null, Buffer.from(signingInput), privateKey))}`;
-  return {
-    iss,
-    jws,
-    wire: {
-      jws,
-      claims: {
-        v: 1,
-        iss,
-        sub: ORDER_FIXTURE_BUYER,
-        cpk: ORDER_FIXTURE_SELLER,
-        role: 'buyer_reviewing_seller',
-        listing: jwsClaims.listing,
-        orderRef: jwsClaims.order_ref,
-        completedOn: jwsClaims.completed_on,
-        iat: jwsClaims.iat,
-      },
-    },
-  };
-}
-
-function reviewResult(attestation: unknown) {
-  return {
-    kind: 'review',
-    review: {
-      reviewerPubky: ORDER_FIXTURE_BUYER,
-      reviewerRole: 'buyer',
-      subjectPubky: ORDER_FIXTURE_SELLER,
-      rating: 5,
-      text: 'Accurate and fast.',
-      createdAt: '2026-08-21T10:00:00.000Z',
-      updatedAt: '2026-08-21T10:00:00.000Z',
-    },
-    ...(attestation === null ? {} : { attestation }),
-  };
-}
 
 describe('CommerceApplication own-review publication', () => {
   afterEach(() => {
@@ -141,6 +69,81 @@ describe('CommerceApplication own-review publication', () => {
     expect(put).not.toHaveBeenCalled();
   });
 
+  it('gives a second order of the same listing its own record instead of replacing the first', async () => {
+    const firstOrder = createOrderFixture('completed');
+    const secondOrder = { ...createOrderFixture('completed'), id: 'c09b506c-0000-4000-8000-000000000002' };
+    vi.spyOn(LocalCommerceService, 'getOwnReviewById').mockResolvedValue(undefined);
+    vi.spyOn(LocalCommerceService, 'stageOwnReviewSync').mockResolvedValue(undefined);
+    vi.spyOn(LocalCommerceService, 'upsertOwnReview').mockResolvedValue(undefined);
+    vi.spyOn(LocalCommerceService, 'completeSyncJob').mockResolvedValue(undefined);
+    const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
+
+    const first = await CommerceApplication.commitPublishOwnReview({
+      actorPubky: ORDER_FIXTURE_BUYER,
+      order: firstOrder,
+      result: reviewResult(issuedAttestation('boots', '11'.repeat(32)).wire),
+    });
+    const second = await CommerceApplication.commitPublishOwnReview({
+      actorPubky: ORDER_FIXTURE_BUYER,
+      order: secondOrder,
+      result: reviewResult(issuedAttestation('boots', '22'.repeat(32)).wire),
+    });
+
+    expect(first!.record.orderRef).toBe('11'.repeat(32));
+    expect(second!.record.orderRef).toBe('22'.repeat(32));
+    expect(second!.review_id).not.toBe(first!.review_id);
+    expect(second!.record.revision).toBe(1);
+    expect(second!.attestation_verified).toBe(true);
+    expect(put.mock.calls.map(([url]) => url)).toEqual([
+      `pubky://${ORDER_FIXTURE_BUYER}/pub/pubky.app/marketplace/v1/reviews/${first!.review_id}`,
+      `pubky://${ORDER_FIXTURE_BUYER}/pub/pubky.app/marketplace/v1/reviews/${second!.review_id}`,
+    ]);
+  });
+
+  it('revises a review published before per-order ids at its legacy path when edited', async () => {
+    const { wire } = issuedAttestation('boots');
+    const order = createOrderFixture('completed');
+    vi.spyOn(LocalCommerceService, 'stageOwnReviewSync').mockResolvedValue(undefined);
+    vi.spyOn(LocalCommerceService, 'upsertOwnReview').mockResolvedValue(undefined);
+    vi.spyOn(LocalCommerceService, 'completeSyncJob').mockResolvedValue(undefined);
+    vi.spyOn(LocalCommerceService, 'getOwnReviewById').mockResolvedValue(undefined);
+    const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
+    const current = await CommerceApplication.commitPublishOwnReview({
+      actorPubky: ORDER_FIXTURE_BUYER,
+      order,
+      result: reviewResult(wire),
+    });
+    const { orderRef: _orderRef, ...legacyFields } = current!.record;
+    const legacyBuilt = new PubkySpecsBuilder(ORDER_FIXTURE_BUYER).createMarketplaceReview({
+      ...legacyFields,
+      reviewId: '',
+    });
+    const legacyRow: CommerceReviewModelSchema = {
+      ...current!,
+      id: `${ORDER_FIXTURE_BUYER}:${legacyBuilt.meta.id}`,
+      review_id: legacyBuilt.meta.id,
+      record: legacyBuilt.marketplace_review.toJson() as CommerceReviewModelSchema['record'],
+    };
+    vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(legacyRow);
+    vi.spyOn(LocalCommerceService, 'getOwnReviewById').mockResolvedValue(legacyRow);
+    put.mockClear();
+
+    const edited = await CommerceApplication.commitPublishOwnReview({
+      actorPubky: ORDER_FIXTURE_BUYER,
+      order,
+      result: reviewResult(wire),
+    });
+
+    expect(edited!.review_id).toBe(legacyRow.review_id);
+    expect(edited!.record.orderRef).toBeUndefined();
+    expect(edited!.record.revision).toBe(2);
+    expect(put).toHaveBeenCalledOnce();
+    expect(put).toHaveBeenCalledWith(
+      `pubky://${ORDER_FIXTURE_BUYER}/pub/pubky.app/marketplace/v1/reviews/${legacyRow.review_id}`,
+      expect.anything(),
+    );
+  });
+
   it('revises the living record on republication instead of forking it', async () => {
     const { wire } = issuedAttestation('boots');
     const order = createOrderFixture('completed');
@@ -191,6 +194,9 @@ describe('CommerceApplication own-review publication', () => {
 
     // The retry path re-puts the staged record verbatim and marks it synced.
     vi.spyOn(LocalCommerceService, 'getPendingOwnReviews').mockResolvedValue([staged]);
+    vi.spyOn(LocalCommerceService, 'getOwnReviewById').mockResolvedValue(staged);
+    vi.spyOn(LocalCommerceService, 'completeOwnReviewPublishJobs').mockResolvedValue(undefined);
+    vi.spyOn(MarketplaceGatewayService, 'getOrder').mockResolvedValue(order);
     const retryPut = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
     const retried = await CommerceApplication.resumeOwnReviewPublications(ORDER_FIXTURE_BUYER);
     expect(retried).toBe(1);
@@ -224,6 +230,7 @@ describe('CommerceApplication own-review hydrate after local miss', () => {
 
   async function publishedOwnReview() {
     const { iss, wire } = issuedAttestation('boots');
+    vi.spyOn(MarketplaceGatewayService, 'getReviewAttestation').mockResolvedValue(wire);
     const order = createOrderFixture('completed');
     vi.spyOn(LocalCommerceService, 'getOwnReviewById').mockResolvedValue(undefined);
     vi.spyOn(LocalCommerceService, 'stageOwnReviewSync').mockResolvedValue(undefined);
@@ -290,7 +297,175 @@ describe('CommerceApplication own-review hydrate after local miss', () => {
 
     await expect(CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order)).resolves.toBeNull();
     await expect(CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order)).resolves.toBeNull();
-    expect(fetch).toHaveBeenCalledTimes(1);
+    // One pass: the per-order path, then the legacy per-listing path.
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('stays unresolved without fetching when the order has no attestation', async () => {
+    const order = createOrderFixture('completed');
+    vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(undefined);
+    vi.spyOn(MarketplaceGatewayService, 'getReviewAttestation').mockResolvedValue(null);
+    const fetch = vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound');
+
+    await expect(CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order)).resolves.toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  /** The record as published before per-order reviews: no orderRef, per-listing path. */
+  function legacyRecord(record: CommerceReviewModelSchema['record'], eligibilityAttestation: string) {
+    const { orderRef: _orderRef, ...rest } = record;
+    const built = new PubkySpecsBuilder(ORDER_FIXTURE_BUYER).createMarketplaceReview({
+      ...rest,
+      reviewId: '',
+      eligibilityAttestation,
+    });
+    return built.marketplace_review.toJson() as CommerceReviewModelSchema['record'];
+  }
+
+  it("hydrates a legacy per-listing record that embeds this order's attestation", async () => {
+    const { order, published } = await publishedOwnReview();
+    const legacy = legacyRecord(published.record, published.record.eligibilityAttestation);
+    vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(undefined);
+    const fetch = vi
+      .spyOn(CommerceHomeserverService, 'fetchJsonIfFound')
+      .mockResolvedValueOnce({ found: false })
+      .mockResolvedValueOnce({ found: true, json: legacy });
+
+    const hydrated = await CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order);
+
+    expect(hydrated).not.toBeNull();
+    expect(hydrated!.review_id).toBe(legacy.reviewId);
+    expect(hydrated!.review_id).not.toBe(published.review_id);
+    expect(hydrated!.attestation_verified).toBe(true);
+    expect(fetch).toHaveBeenLastCalledWith(
+      `pubky://${ORDER_FIXTURE_BUYER}/pub/pubky.app/marketplace/v1/reviews/${legacy.reviewId}`,
+    );
+  });
+
+  it('ignores a legacy per-listing record that belongs to another order', async () => {
+    const { order, published } = await publishedOwnReview();
+    const otherOrder = issuedAttestation('boots', 'ef'.repeat(32));
+    vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(undefined);
+    vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound')
+      .mockResolvedValueOnce({ found: false })
+      .mockResolvedValueOnce({ found: true, json: legacyRecord(published.record, otherOrder.jws) });
+
+    await expect(CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order)).resolves.toBeNull();
+  });
+
+  /** The order as the service returns it, still holding the reviewer's review. */
+  function orderWithServiceReview(order: ReturnType<typeof createOrderFixture>) {
+    return {
+      ...order,
+      reviews: [
+        {
+          id: '0f9b6a6e-1c2d-4e5f-8a9b-0c1d2e3f4a5b',
+          reviewerPubky: ORDER_FIXTURE_BUYER,
+          subjectPubky: ORDER_FIXTURE_SELLER,
+          rating: 5,
+          text: 'Arrived early, exactly as listed.',
+          createdAt: '2026-10-20T20:10:00.000Z',
+          updatedAt: '2026-10-20T20:11:00.000Z',
+        },
+      ],
+    };
+  }
+
+  it("republishes a review a later order overwrote, once, at this order's own path", async () => {
+    const { order, published } = await publishedOwnReview();
+    const otherOrder = issuedAttestation('boots', 'ef'.repeat(32));
+    const servedOrder = orderWithServiceReview(order);
+    vi.spyOn(MarketplaceGatewayService, 'getOrder').mockResolvedValue(servedOrder);
+    vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(undefined);
+    vi.spyOn(LocalCommerceService, 'getOwnReviewById').mockResolvedValue(undefined);
+    vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound')
+      .mockResolvedValueOnce({ found: false })
+      .mockResolvedValueOnce({ found: true, json: legacyRecord(published.record, otherOrder.jws) });
+    const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
+    put.mockClear();
+
+    const restored = await CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, servedOrder);
+
+    expect(restored).not.toBeNull();
+    expect(restored!.review_id).toBe(published.review_id);
+    expect(restored!.record.ratings.overall).toBe(5);
+    expect(restored!.record.text).toBe('Arrived early, exactly as listed.');
+    expect(restored!.record.createdAt).toBe('2026-10-20T20:10:00.000Z');
+    expect(restored!.record.eligibilityAttestation).toBe(published.record.eligibilityAttestation);
+    expect(restored!.attestation_verified).toBe(true);
+    expect(put).toHaveBeenCalledOnce();
+    expect(put).toHaveBeenCalledWith(
+      `pubky://${ORDER_FIXTURE_BUYER}/pub/pubky.app/marketplace/v1/reviews/${published.review_id}`,
+      expect.objectContaining({ text: 'Arrived early, exactly as listed.' }),
+    );
+  });
+
+  it('stops the republish when the signed-in identity changes before it writes', async () => {
+    const { order, published } = await publishedOwnReview();
+    const otherOrder = issuedAttestation('boots', 'ef'.repeat(32));
+    vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(undefined);
+    vi.spyOn(LocalCommerceService, 'getOwnReviewById').mockImplementation(async () => {
+      // The user signs out while the republish builds its record.
+      useAuthStore.getState().setCurrentUserPubky(FOREIGN_PUBKY);
+      return undefined;
+    });
+    vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound')
+      .mockResolvedValueOnce({ found: false })
+      .mockResolvedValueOnce({ found: true, json: legacyRecord(published.record, otherOrder.jws) });
+    const stage = vi.spyOn(LocalCommerceService, 'stageOwnReviewSync');
+    stage.mockClear();
+    const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
+    put.mockClear();
+
+    await expect(
+      CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, orderWithServiceReview(order)),
+    ).resolves.toBeNull();
+    expect(stage).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it('leaves an order that already has its per-order record alone', async () => {
+    const { order, published } = await publishedOwnReview();
+    vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(undefined);
+    vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockResolvedValue({ found: true, json: published.record });
+    const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
+    put.mockClear();
+
+    const hydrated = await CommerceApplication.getOwnMarketplaceReview(
+      ORDER_FIXTURE_BUYER,
+      orderWithServiceReview(order),
+    );
+
+    expect(hydrated!.review_id).toBe(published.review_id);
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it('publishes nothing on a second run once the review is restored', async () => {
+    const { order, published } = await publishedOwnReview();
+    const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
+    put.mockClear();
+    // The first run left the restored row on the device.
+    vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(published);
+    const fetch = vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound');
+
+    await CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, orderWithServiceReview(order));
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it('publishes nothing when the service holds no review for the order', async () => {
+    const { order, published } = await publishedOwnReview();
+    const otherOrder = issuedAttestation('boots', 'ef'.repeat(32));
+    vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(undefined);
+    vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound')
+      .mockResolvedValueOnce({ found: false })
+      .mockResolvedValueOnce({ found: true, json: legacyRecord(published.record, otherOrder.jws) });
+    const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
+    put.mockClear();
+
+    await expect(CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order)).resolves.toBeNull();
+    expect(put).not.toHaveBeenCalled();
   });
 
   it('does not upsert when the live identity differs from the hydrate actor', async () => {

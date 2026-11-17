@@ -38,12 +38,8 @@ export interface UseProfileConnectionsResult {
   isLoading: boolean;
   /** Whether loading more connections (pagination) */
   isLoadingMore: boolean;
-  /** Error message if fetch failed */
-  error: string | null;
   /** Whether there are more connections to load */
   hasMore: boolean;
   /** Function to trigger loading more connections */
   loadMore: () => Promise<void>;
-  /** Function to manually trigger a refresh */
-  refresh: () => Promise<void>;
 }

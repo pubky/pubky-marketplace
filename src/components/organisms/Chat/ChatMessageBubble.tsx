@@ -40,8 +40,12 @@ export function ChatMessageBubble({
       <div
         className={cn(
           'max-w-[85%] rounded-2xl px-4 py-2 text-sm wrap-anywhere whitespace-pre-wrap sm:max-w-[70%]',
-          mine ? 'rounded-br-md bg-brand text-background' : 'rounded-bl-md bg-secondary text-secondary-foreground',
-          message.status === 'queued' && message.last_error === 'peer_not_enabled' && 'opacity-70',
+          mine
+            ? 'rounded-br-md bg-brand text-brand-foreground'
+            : 'rounded-bl-md bg-secondary text-secondary-foreground',
+          message.status === 'queued' &&
+            message.last_error === 'peer_not_enabled' &&
+            'opacity-70 [.light_&]:bg-brand/70 [.light_&]:opacity-100',
           message.status === 'failed' && 'bg-destructive/20 text-foreground',
         )}
       >
@@ -66,7 +70,11 @@ export function ChatMessageBubble({
         ) : null}
         {mine && message.status === 'failed' ? (
           <>
-            <Typography as="span" size="xs" className="flex items-center gap-1 text-destructive">
+            <Typography
+              as="span"
+              size="xs"
+              className="flex items-center gap-1 text-destructive [.light_&]:text-error-foreground"
+            >
               <AlertCircle className="size-3" aria-hidden="true" />
               Not sent
             </Typography>

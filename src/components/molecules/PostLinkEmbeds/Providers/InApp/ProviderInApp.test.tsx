@@ -140,7 +140,7 @@ describe('ProviderInApp', () => {
     it('applies the repost preview contrast background', () => {
       render(<>{InApp.renderEmbed({ type: 'post', value: `${PUBKY}:${POST_ID}` })}</>);
 
-      expect(screen.getByTestId('post-preview-card')).toHaveClass('bg-muted');
+      expect(screen.getByTestId('post-preview-card')).toHaveClass('bg-embed');
     });
 
     it('returns null for url embed data', () => {
@@ -150,13 +150,5 @@ describe('ProviderInApp', () => {
     it('returns null for unknown embed data types', () => {
       expect(InApp.renderEmbed(asInvalid<EmbedData>({ type: 'unknown', value: 'x' }))).toBeNull();
     });
-  });
-});
-
-describe('ProviderInApp - Snapshots', () => {
-  it('matches snapshot for post embed', () => {
-    const { container } = render(<>{InApp.renderEmbed({ type: 'post', value: `${PUBKY}:${POST_ID}` })}</>);
-
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

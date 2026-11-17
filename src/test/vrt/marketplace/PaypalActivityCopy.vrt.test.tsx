@@ -162,8 +162,10 @@ vi.mock('@/hooks/useMarketplaceLocksPayment/useMarketplaceLocksPayment', () => (
   }),
 }));
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main className="w-full py-6">{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => (
+    <main className="w-full py-6">{children}</main>
+  ),
 }));
 
 async function saveSurface(selector: string, name: string) {

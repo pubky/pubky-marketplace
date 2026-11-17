@@ -35,7 +35,6 @@ export type PaymentNetwork = (typeof PAYMENT_NETWORKS)[number];
  * gate, never escrow: no mode here means the marketplace holds funds.
  */
 export const SETTLEMENT_MODES = ['locked', 'paykit', 'gateway-notified', 'seller-attested'] as const;
-export type SettlementMode = (typeof SETTLEMENT_MODES)[number];
 
 export const PAYMENT_OPTION_IDS = ['paykit.btc.bitcoin', 'paykit.usdt.arbitrum-one', 'paypal.fiat'] as const;
 export type PaymentOptionId = (typeof PAYMENT_OPTION_IDS)[number];

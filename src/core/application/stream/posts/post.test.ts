@@ -492,6 +492,74 @@ describe('PostStreamApplication', () => {
       expect(cached?.stream).toEqual(result.nextPageIds);
     });
 
+    /** Holds the next Nexus stream read until the returned function releases it. */
+    const holdNexusStream = (keyStream: NexusPostsKeyStream) => {
+      let release!: () => void;
+      const held = new Promise<NexusPostsKeyStream>((resolve) => {
+        release = () => resolve(keyStream);
+      });
+      vi.spyOn(NexusPostStreamService, 'fetch').mockReturnValue(held);
+      return release;
+    };
+
+    it('saves no page fetched for a viewer whose sign-out started during the fetch', async () => {
+      await createStreamWithPosts([]);
+      const release = holdNexusStream(createMockNexusPostsKeyStream(5));
+      const scope = new AbortController();
+
+      const slice = PostStreamApplication.getOrFetchStreamSlice({
+        streamId,
+        limit: 10,
+        streamHead: 0,
+        streamTail: 0,
+        viewerId: 'user-viewer' as Pubky,
+        signal: scope.signal,
+      });
+      scope.abort();
+      release();
+
+      await expect(slice).rejects.toMatchObject({ name: 'AbortError' });
+      expect((await PostStreamModel.findById(streamId))?.stream).toEqual([]);
+    });
+
+    it('saves no new posts a head poll fetched for a viewer whose sign-out started during the fetch', async () => {
+      await createStreamWithPosts([]);
+      const release = holdNexusStream(createMockNexusPostsKeyStream(3, 1, DEFAULT_AUTHOR, BASE_TIMESTAMP + 10));
+      const scope = new AbortController();
+
+      const poll = PostStreamApplication.getOrFetchStreamSlice({
+        streamId,
+        limit: 10,
+        streamHead: BASE_TIMESTAMP,
+        streamTail: 0,
+        viewerId: 'user-viewer' as Pubky,
+        signal: scope.signal,
+      });
+      scope.abort();
+      release();
+
+      await expect(poll).rejects.toMatchObject({ name: 'AbortError' });
+      expect(await UnreadPostStreamModel.findById(streamId)).toBeFalsy();
+    });
+
+    it('passes its signal on to the stream writes', async () => {
+      await createStreamWithPosts([]);
+      const scope = new AbortController();
+      const persistChunk = vi.spyOn(LocalStreamPostsService, 'persistNewStreamChunk');
+      const persistUnread = vi.spyOn(LocalStreamPostsService, 'persistUnreadNewStreamChunk');
+      const params = { streamId, limit: 10, streamTail: 0, viewerId: 'user-viewer' as Pubky, signal: scope.signal };
+
+      vi.spyOn(NexusPostStreamService, 'fetch').mockResolvedValueOnce(createMockNexusPostsKeyStream(2));
+      await PostStreamApplication.getOrFetchStreamSlice({ ...params, streamHead: 0 });
+      vi.spyOn(NexusPostStreamService, 'fetch').mockResolvedValueOnce(
+        createMockNexusPostsKeyStream(2, 10, DEFAULT_AUTHOR, BASE_TIMESTAMP + 10),
+      );
+      await PostStreamApplication.getOrFetchStreamSlice({ ...params, streamHead: BASE_TIMESTAMP });
+
+      expect(persistChunk).toHaveBeenCalledWith(expect.objectContaining({ signal: scope.signal }));
+      expect(persistUnread).toHaveBeenCalledWith(expect.objectContaining({ signal: scope.signal }));
+    });
+
     it('should paginate using cursor (post_id and timestamp)', async () => {
       const initialPostIds = Array.from({ length: 5 }, (_, i) => `${DEFAULT_AUTHOR}:post-${i + 1}`);
       await createStreamWithPosts(initialPostIds);
@@ -1211,6 +1279,35 @@ describe('PostStreamApplication', () => {
       });
       expect(mocks.persistPosts).toHaveBeenCalledWith({ posts: mockNexusPosts });
       expect(mocks.persistFiles).toHaveBeenCalledWith([]);
+    });
+
+    it('passes its signal on to the post write', async () => {
+      const { cacheMissPostIds, mockNexusPosts } = createTestData(1);
+      const mocks = setupDefaultMocks();
+      mocks.getUserDetails.mockResolvedValue(mockAllUsersCached(1));
+      vi.spyOn(NexusPostStreamService, 'fetchByIds').mockResolvedValue(mockNexusPosts);
+      const scope = new AbortController();
+
+      await PostStreamApplication.fetchMissingPostsFromNexus({ cacheMissPostIds, viewerId, signal: scope.signal });
+
+      expect(mocks.persistPosts).toHaveBeenCalledWith({ posts: mockNexusPosts, signal: scope.signal });
+    });
+
+    it('passes its signal on to the reposted originals write', async () => {
+      const { mockNexusPosts } = createTestData(1);
+      const mocks = setupDefaultMocks();
+      mocks.getUserDetails.mockResolvedValue(mockAllUsersCached(1));
+      vi.spyOn(LocalStreamPostsService, 'getNotPersistedPostsInCache').mockResolvedValue([`${DEFAULT_AUTHOR}:post-0`]);
+      vi.spyOn(NexusPostStreamService, 'fetchByIds').mockResolvedValue(mockNexusPosts);
+      const scope = new AbortController();
+
+      await PostStreamApplication.fetchOriginalPostsByUris({
+        repostedUris: [`pubky://${DEFAULT_AUTHOR}/pub/pubky.app/posts/post-0`],
+        viewerId,
+        signal: scope.signal,
+      });
+
+      expect(mocks.persistPosts).toHaveBeenCalledWith({ posts: mockNexusPosts, signal: scope.signal });
     });
 
     it('should fetch and persist users when cacheMissUserIds exist', async () => {
@@ -3089,6 +3186,27 @@ describe('PostStreamApplication', () => {
       // Verify: Reply count should be incremented to 1 for the truly new reply
       const parentCounts = await PostCountsModel.findById(parentPostCompositeId);
       expect(parentCounts?.replies).toBe(1);
+    });
+
+    it('passes its signal on to the reply count update', async () => {
+      await PostCountsModel.create({ id: parentPostCompositeId, replies: 0, tags: 0, unique_tags: 0, reposts: 0 });
+      vi.spyOn(NexusPostStreamService, 'fetch').mockResolvedValue({
+        post_keys: [`${DEFAULT_AUTHOR}:new-reply-1`],
+        last_post_score: BASE_TIMESTAMP,
+      });
+      const updateCounts = vi.spyOn(PostCountsModel, 'updateCounts');
+      const scope = new AbortController();
+
+      await PostStreamApplication.getOrFetchStreamSlice({
+        streamId: replyStreamId,
+        limit: 10,
+        streamHead: BASE_TIMESTAMP + 1000,
+        streamTail: 0,
+        viewerId: 'viewer' as Pubky,
+        signal: scope.signal,
+      });
+
+      expect(updateCounts).toHaveBeenCalledWith(expect.objectContaining({ signal: scope.signal }));
     });
 
     it('should correctly count mixed batch of new and existing posts', async () => {

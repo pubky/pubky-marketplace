@@ -16,18 +16,15 @@ import { InputField } from '@/molecules/InputField/InputField';
 import { ProfileNavigation } from '@/molecules/ProfileNavigation/ProfileNavigation';
 import { TextareaField } from '@/molecules/TextareaField/TextareaField';
 import { useAuthStore } from '@/stores/auth/auth.store';
-import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
 import { DialogAddLink } from '../DialogAddLink/DialogAddLink';
 import { DialogCropImage } from '../DialogCropImage/DialogCropImage';
 
 export const CreateProfileForm = () => {
-  const { setShowWelcomeDialog } = useOnboardingStore();
   const authStore = useAuthStore();
-  const pubky = authStore.selectCurrentUserPubky();
+  const pubky = authStore.currentUserPubky;
   const { state, errors, handlers, cropDialog, fileInputRef, isSubmitDisabled } = useProfileForm({
     mode: 'create',
     pubky,
-    setShowWelcomeDialog,
   });
   const avatarFallbackSeed = pubky || state.name || 'user';
   const avatarFallbackInitial =

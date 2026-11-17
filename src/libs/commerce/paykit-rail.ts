@@ -57,8 +57,8 @@ export function mayPayInBitcoin(order: RailOrder): boolean {
   return observedPaymentRail(order) === 'bitcoin' || isUnobservedPaykitOrder(order);
 }
 
-/** Request states that mean the service has already seen a Bitcoin payment. */
-const BITCOIN_SEEN_REQUEST_STATES = new Set(['detected', 'awaiting_seller_confirmation', 'confirmed']);
+/** Request states that mean the service has already seen a payment. */
+const SEEN_REQUEST_STATES = new Set(['detected', 'awaiting_seller_confirmation', 'confirmed']);
 
 /**
  * Bitcoin is paid through a seller-confirmation window, so the service sees the
@@ -71,7 +71,35 @@ export function followsBitcoinFlow(order: RailOrder & { paykitRequestState?: str
   return (
     order.paymentMethod === PAYKIT_PAYMENT_METHOD &&
     order.paykitRequestState != null &&
-    BITCOIN_SEEN_REQUEST_STATES.has(order.paykitRequestState)
+    SEEN_REQUEST_STATES.has(order.paykitRequestState)
+  );
+}
+
+/**
+ * A bound Paykit checkout the buyer can still cancel: the service refuses the
+ * cancel once it has seen money on the request, on either rail.
+ */
+export function paykitCheckoutCancellable(order: RailOrder & { paykitRequestState?: string | null }): boolean {
+  return (
+    isPaykitOrder(order) && (order.paykitRequestState == null || !SEEN_REQUEST_STATES.has(order.paykitRequestState))
+  );
+}
+
+/** The refusal a checkout cancel gets once the service has seen its payment (#347). */
+export const CHECKOUT_CANCEL_PAYMENT_SEEN_COPY = "We've seen a payment for this order, so it can't be cancelled now.";
+
+/**
+ * Whether the buyer is offered a cancel for an order: a Paykit checkout only
+ * while no payment has been seen on its request (#345); any other unpaid,
+ * paid or processing order as before.
+ */
+export function buyerCancelOffered(
+  order: RailOrder & { state: string; fulfillment?: string | null; paykitRequestState?: string | null },
+): boolean {
+  if (order.state === 'pending_payment') return !isPaykitOrder(order) || paykitCheckoutCancellable(order);
+  return (
+    ['paid', 'processing'].includes(order.state) ||
+    (order.fulfillment === 'pickup' && order.state === 'ready_for_pickup')
   );
 }
 
@@ -132,9 +160,16 @@ export function paykitPickerLabel(assets: readonly PaymentAsset[]): { assets: st
   return { assets: paykitAssetsLabel(assets.length > 0 ? assets : ['BTC']), wallet: 'via Bitkit' };
 }
 
-/** The checkout submit button says where the buyer goes next, per selected rail. */
+/**
+ * The checkout submit button says what happens next, per selected rail. Paykit
+ * sends the request without opening Bitkit until Bitkit ships a link to its
+ * payment requests (issue #357).
+ */
+/** A Locks checkout creates the order and pays on the order page, so it sends nothing to Bitkit yet. */
+export const LOCKS_CHECKOUT_SUBMIT_LABEL = 'Continue to payment';
+
 export const CHECKOUT_SUBMIT_LABEL: Record<'paykit' | 'paypal', string> = {
-  paykit: 'Continue to Bitkit',
+  paykit: 'Send request to Bitkit',
   paypal: 'Continue to PayPal',
 };
 
@@ -148,7 +183,7 @@ export function paykitRequirementCopy(assets: readonly PaymentAsset[]): string {
     return 'Paykit payments require Bitkit. You choose Bitcoin or USDT there.';
   }
   if (assets.includes('USDT')) return 'Paykit payments require Bitkit. You pay in USDT there.';
-  return 'Bitcoin payments require Bitkit. Marketplace currently supports on-chain bitcoin payments only.';
+  return 'Bitcoin payments require Bitkit. Market currently supports on-chain bitcoin payments only.';
 }
 
 /** The neutral status before any payment is seen: the buyer has not chosen an asset yet. */

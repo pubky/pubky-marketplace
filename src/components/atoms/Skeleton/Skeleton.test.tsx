@@ -12,14 +12,14 @@ describe('Skeleton', () => {
   });
 });
 
-describe('Skeleton - Snapshots', () => {
-  it('matches snapshot with default props', () => {
-    const { container } = render(<Skeleton />);
-    expect(container.firstChild).toMatchSnapshot();
+describe('Skeleton - Rendering', () => {
+  it('applies the base classes by default', () => {
+    render(<Skeleton data-testid="skeleton" />);
+    expect(screen.getByTestId('skeleton')).toHaveClass('animate-pulse', 'rounded-md', 'bg-muted');
   });
 
-  it('matches snapshot with custom className', () => {
-    const { container } = render(<Skeleton className="h-4 w-24 rounded-full" />);
-    expect(container.firstChild).toMatchSnapshot();
+  it('merges a custom className with the base classes', () => {
+    render(<Skeleton data-testid="skeleton" className="h-4 w-24 rounded-full" />);
+    expect(screen.getByTestId('skeleton')).toHaveClass('animate-pulse', 'h-4', 'w-24', 'rounded-full');
   });
 });

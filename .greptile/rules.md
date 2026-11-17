@@ -1,5 +1,7 @@
 # Architecture Decision Enforcement
 
+`docs/` is canonical. This summary and `.greptile/config.json` apply those rules during review; consult the attached per-path docs before reporting a conflict. `AGENTS.md` indexes the current workflow and Marketplace-specific contracts.
+
 ## Layer Boundary Summary
 
 Entry points (UI, Coordinators) -> Controllers -> Application -> Services -> Models
@@ -7,6 +9,10 @@ Entry points (UI, Coordinators) -> Controllers -> Application -> Services -> Mod
 - Controllers may also call Pipes (normalization) and Stores (UI state)
 - Application is NOT an entry point — only Controllers call it
 - Services are IO boundaries — only Application calls them
+
+## Account maintenance
+
+Shop account creation is retired. Existing accounts retain sign-in and `/complete-profile`. Shop no longer stores or exports account keys; preserve explicit logout/account-boundary cleanup and the existing storage namespace. See `docs/launch/grant-auth-session.md`; registration helpers still used by explicit test harnesses are not dead code.
 
 ## Controller Naming Conventions
 
@@ -28,7 +34,7 @@ Entry points (UI, Coordinators) -> Controllers -> Application -> Services -> Mod
 ## Data Patterns
 
 - Posts use composite IDs: `author:postId`
-- Always update TTL after writes
+- Update the affected TTL rows after writes to TTL-managed entities; commerce records retain their own persistence contract
 - External data must pass through pipes before reaching controllers
 - Pipes are pure — no IO, no side effects
 
@@ -43,7 +49,7 @@ Entry points (UI, Coordinators) -> Controllers -> Application -> Services -> Mod
 
 - **Stock Lucide**: `import { IconName } from 'lucide-react'` — import stock icons directly from `lucide-react`.
 - **Custom / brand SVGs**: `import { CustomMark } from '@/icons'` — alias → `src/libs/icons/icons.tsx` (see `docs/components.md`).
-- **URL → icon / label**: `getIconFromUrl`, `getLabelFromUrl`, etc. from `@/libs/utils/urlToIcon` (`src/libs/utils/urlToIcon.ts`), not from `@/icons`.
+- **URL → icon**: `getIconFromUrl` from `@/libs/utils/urlToIcon` (`src/libs/utils/urlToIcon.ts`), not from `@/icons`.
 
 ## Code Quality
 

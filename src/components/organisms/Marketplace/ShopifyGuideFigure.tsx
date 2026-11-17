@@ -4,7 +4,7 @@ import { SHOPIFY_GUIDE_SCREENSHOTS, type ShopifyGuideScreen } from '@/config/sho
 
 const FIGURE_LABELS: Readonly<Record<ShopifyGuideScreen, string>> = {
   admin: 'Shopify admin with Settings, Apps and Develop apps highlighted',
-  create: 'Dev Dashboard with the Create app button and the app name Pubky Shop',
+  create: 'Dev Dashboard with the Create app button and the app name Pubky Market',
   configure: 'The app version form with the App URL, redirection URL, scopes and the Release button',
   keys: 'The app Settings page with the Client ID and Client secret fields',
   install: 'The Shopify permission screen with the Install button',
@@ -104,7 +104,7 @@ function CreateScreen() {
       <Line x={36} y={72} width={170} />
       <rect x="36" y="94" width="180" height="22" rx="5" className="fill-card stroke-brand" strokeWidth="1.8" />
       <text x="46" y="109" className="fill-foreground" fontSize="11" fontFamily="inherit">
-        Pubky Shop
+        Pubky Market
       </text>
       <rect x="36" y="128" width="84" height="22" rx="11" className="fill-brand" />
       <rect x="48" y="136" width="60" height="6" rx="3" className="fill-background" />

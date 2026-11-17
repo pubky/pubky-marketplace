@@ -22,13 +22,26 @@ import { CONNECTOR_SHARE_CONSENT_VERSION } from '@/config/commerce-copy';
 import { BASE_UNITS_PER_BITCOIN } from '@/config/currencies';
 import { NEXUS_LISTINGS_PER_PAGE } from '@/config/nexus';
 import { readAuthEpoch } from '@/controllers/auth/auth-epoch';
+import { withExclusiveLock } from '@/libs/chat/web-locks';
 import {
   extractReviewAttestation,
+  extractReviewAttestations,
+  type MarketplaceAttestation,
+  marketplaceAttestationSchema,
+  type MarketplaceItemAttestation,
+  readReviewAttestationPending,
+  readReviewResultPending,
   verifyOrderReceiptClaims,
   verifyOwnDropEdition,
   verifyOwnOrderReceipt,
   verifyOwnReviewAttestation,
 } from '@/libs/commerce/attestation';
+import { isAuctionSaleEnded } from '@/libs/commerce/auction-phase';
+import {
+  AUCTION_HAS_BIDS_MESSAGE,
+  AUCTION_HAS_BIDS_REFUSAL,
+  bidsBlockingDelete,
+} from '@/libs/commerce/auction-removal';
 import { decodeConnectorRecipientKey, sealConnectorAddress } from '@/libs/commerce/connector-address-envelope';
 import {
   sealDeliveryAddressForSellers,
@@ -38,6 +51,7 @@ import {
 import {
   DIGITAL_DELIVERY_COPY,
   type DigitalFileOpenFailure,
+  hasInstantDigitalLines,
   type MarketplaceDigitalDeliveryCapability,
   type MarketplaceDigitalDeliveryChannel,
   type MarketplaceDigitalDeliveryInput,
@@ -60,7 +74,12 @@ import {
 import { listingPublishNeedsMarketplaceSession } from '@/libs/commerce/listing-publish-guards';
 import { buildRegisterVariants, type RegisterListingVariant } from '@/libs/commerce/listing-variants';
 import { locksAdmissionView } from '@/libs/commerce/locks-lifecycle';
-import { lockPolicyCreator, toBareLockResource } from '@/libs/commerce/locks-payment';
+import {
+  lockMatchesPreparedTerms,
+  lockPolicyCreator,
+  type PreparedLockTerms,
+  toBareLockResource,
+} from '@/libs/commerce/locks-payment';
 import {
   assertReserveFreePublicRecord,
   type CommerceDigitalLock,
@@ -75,6 +94,21 @@ import {
   findForbiddenPublicReserveKey,
   stripForbiddenPublicReserveKeys,
 } from '@/libs/commerce/marketplace-records';
+import {
+  listingIdFromAggregate,
+  orderReviewListings,
+  reviewListingAggregateId,
+  reviewOfListing,
+  reviewsOfReviewer,
+} from '@/libs/commerce/order-reviews';
+import {
+  PAYKIT_ENDPOINT_MAX_BYTES,
+  PAYKIT_REFUND_MAX_APPS,
+  paykitEndpointUrl,
+  paykitRegistryAppIds,
+  USDT_ARBITRUM_ENDPOINT_ID,
+  usdtAddressFromEndpointPayload,
+} from '@/libs/commerce/paykit-refund-endpoint';
 import {
   appRegistryTakesPaymentRequests,
   type BuyerPaykitWallet,
@@ -109,7 +143,16 @@ import {
   type PrivKeyring,
 } from '@/libs/commerce/priv-envelope';
 import type { MarketplacePrivKeysResult } from '@/libs/commerce/priv-keys';
+import { attestorWindowsParam } from '@/libs/commerce/review-counting';
+import type { MarketplaceReviewFilterRequest } from '@/libs/commerce/review-filter';
+import type { MarketplaceReviewSortParam } from '@/libs/commerce/review-sort';
 import { createCommerceSandboxCatalog } from '@/libs/commerce/sandbox-catalog';
+import {
+  autoConfirmableRail,
+  mayAwaitSellerConfirmation,
+  SELLER_AUTO_CONFIRM_REASON,
+} from '@/libs/commerce/seller-auto-confirm';
+import { isAssignedCountryCode, publishedCountryCode } from '@/libs/commerce/ships-to';
 import {
   buildMarketplaceCheckoutAggregateId,
   buildMarketplaceDropAggregateId,
@@ -124,6 +167,8 @@ import {
   isSuccessfulListingRegistrationResponse,
   type MarketplaceCommand,
   type MarketplaceCommandResponse,
+  orderIdFromMarketplaceAggregateId,
+  type ShippingChoice,
 } from '@/libs/commerce/transaction-commands';
 import type { CommerceJsonValue, CommerceMoney } from '@/libs/commerce/transaction-contracts';
 import { assertPublishableListingStock } from '@/libs/commerce/unlimited-stock';
@@ -135,13 +180,16 @@ import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { hasHttpStatus, isAppError, isNotFound } from '@/libs/error/error.utils';
 import { HttpMethod, HttpStatusCode } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
+import { getRegionPolicy } from '@/libs/runtime-config/runtime-config';
 import type {
   CommerceAuctionRegistrationCommand,
   CommerceCatalogEntryModelSchema,
   CommerceIndexedReview,
   CommerceListingModelSchema,
   CommerceListingProjectionModelSchema,
+  CommerceReputationSnippet,
   CommerceReputationSummary,
+  CommerceReviewMatch,
   CommerceReviewModelSchema,
   CommerceReviewResponseModelSchema,
   CommerceSavedSearchModelSchema,
@@ -164,7 +212,7 @@ import {
   watchlistStatesEqual,
   watchlistStateToRecordBody,
 } from '@/pipes/commerce/commerce.watchlist';
-import { buildDefaultShopRecord } from '@/pipes/commerce/default-shop';
+import { buildDefaultShopRecord, DEFAULT_SHOP_COUNTRY_CODE } from '@/pipes/commerce/default-shop';
 import {
   detectWatchAlerts,
   type WatchIndexObservation,
@@ -178,6 +226,7 @@ import type { BtcRate } from '@/services/exchangerate/exchangerate.types';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
 import { CommercePrivStoreService } from '@/services/homeserver/commerce/priv-store';
 import { HomeserverService, PRIVATE_APP_DATA_PATH } from '@/services/homeserver/homeserver';
+import type { THomeserverResourceEvent } from '@/services/homeserver/homeserver.types';
 import { retryHomeserverWrite, retryHomeserverWriteAfterReread } from '@/services/homeserver/write-retry';
 import { type CommerceListingRowGeneration, LocalCommerceService } from '@/services/local/commerce/commerce';
 import {
@@ -185,10 +234,15 @@ import {
   LocalMarketplaceTagService,
   type MarketplaceTagKind,
 } from '@/services/local/tag/marketplace/tag.marketplace';
-import { LocksGatewayService } from '@/services/locks/locks';
+import {
+  isValidLocksClientReference,
+  LocksGatewayService,
+  locksTaskCarriesClientReference,
+} from '@/services/locks/locks';
 import { RetiredLocksSessionStorage } from '@/services/locks/retired-locks-session';
 import {
   MarketplaceGatewayService,
+  type MarketplaceNotificationEntry,
   type MarketplaceOrder,
   type MarketplacePayment,
 } from '@/services/marketplace/marketplace';
@@ -197,6 +251,7 @@ import {
   MarketplaceGrantSessionService,
   type MintedGrantSession,
 } from '@/services/marketplace/marketplace-grant-session';
+import { isRecognizedMarketplaceNotification } from '@/services/marketplace/marketplace-projections';
 import {
   type MarketplaceSessionEndedEvent,
   MarketplaceSessionService,
@@ -207,6 +262,7 @@ import type {
   NexusListingDetails,
   NexusListingSaleFormat,
   NexusListingState,
+  NexusReviewFilterParams,
 } from '@/services/nexus/marketplace/marketplace.types';
 import type { NexusTag } from '@/services/nexus/nexus.types';
 import { PaykitReceiverService } from '@/services/paykit/paykit-receiver';
@@ -222,11 +278,48 @@ const reviewResultSchema = z
     reviewerRole: z.enum(['buyer', 'seller']),
     subjectPubky: z.string().length(52),
     rating: z.number().int().min(1).max(5),
-    text: z.string().min(1),
+    text: z.string(),
+    /** The buyer's per-order seller ratings, on every one of their item reviews; absent or null when unrated. */
+    shipping: z.number().int().min(1).max(5).nullish(),
+    communication: z.number().int().min(1).max(5).nullish(),
     createdAt: z.string().min(1),
     updatedAt: z.string().min(1),
   })
   .passthrough();
+
+/** One entry of a per-item command result's `reviews[]`: the `review` view plus the listing it rates. */
+const reviewItemResultSchema = reviewResultSchema.extend({ listingAggregateId: z.string().min(1) });
+
+/**
+ * The payload of a review the service withholds behind a double-blind window:
+ * the terms of the latest `review.create` / `review.update` result (every item
+ * review, kept in line order), which publish once the service issues the
+ * attestations. `withdrawn` marks a review the user removed while it was
+ * withheld: it never publishes, and only the service withdrawal is still owed.
+ */
+const awaitingReleasePayloadSchema = z.object({
+  orderId: z.string().min(1),
+  /** The seller and the first-line listing the order's single v1 review rates, for display. */
+  sellerPubky: z.string(),
+  firstListingId: z.string().min(1).nullable(),
+  releaseAt: z.string().min(1).nullable(),
+  withdrawn: z.boolean().optional(),
+  result: z.object({
+    review: reviewResultSchema.optional(),
+    reviews: z.array(reviewItemResultSchema).optional(),
+  }),
+});
+
+type AwaitingReleasePayload = z.infer<typeof awaitingReleasePayloadSchema>;
+
+/** A review withheld by a double-blind window, as the surfaces show it. */
+export interface AwaitingReleaseReview {
+  orderId: string;
+  /** The window's end, or null when the service named none. */
+  releaseAt: string | null;
+  reviewerRole: 'buyer' | 'seller';
+  items: { listingOwnerPubky: string; listingId: string; rating: number; text: string; updatedAt: string }[];
+}
 
 export interface TCommitCreateDefaultShopParams {
   ownerPubky: string;
@@ -259,6 +352,9 @@ export interface CommerceCatalogStreamFilters {
 export const LISTING_REGISTRATION_LOCK_PREFIX = 'pubky-listing-registration|';
 /** Deadline for the service requests one attempt makes while holding the lock. */
 export const LISTING_REGISTRATION_TIMEOUT_MS = 20_000;
+
+/** When a drop withdraw re-reads the registration after deleting the record. */
+export const DROP_WITHDRAW_RECHECK_DELAYS_MS = [0, 2_000] as const;
 
 /**
  * One registration, publish or delete of a listing. Its session binding
@@ -403,6 +499,10 @@ export type CommerceCheckoutFulfillmentInput = {
   deliveryEmail?: string;
   /** The buyer's country, sent in clear text so the service can apply the EU fence (plan C2). */
   buyerCountry?: string;
+  /** The country the order ships to, for zone pricing and a shop's ships-to list. */
+  destinationCountry?: string;
+  /** One rate per zone-priced shipping group of the order. */
+  shippingChoices?: readonly ShippingChoice[];
 };
 
 export type ConnectorShareChoice = {
@@ -412,14 +512,154 @@ export type ConnectorShareChoice = {
   publicKey: Uint8Array;
 };
 
-/** A review-list page, or the honest signal that no review index serves this deployment. */
+/**
+ * An own review read from the reviewer's homeserver: the record, an ordinary
+ * 404, no claim, or `overwritten` — no record carries this order's
+ * attestation, so a later order's review took the shared per-listing path.
+ */
+type OwnReviewRead =
+  | { kind: 'found'; model: CommerceReviewModelSchema }
+  | { kind: 'missing' }
+  | { kind: 'overwritten'; attestation: z.infer<typeof marketplaceAttestationSchema> }
+  | { kind: 'unresolved' };
+
+/** What deleting an own review did: confirmed by the homeserver, owed in the outbox, or nothing to delete. */
+export type OwnReviewDeleteOutcome = 'removed' | 'queued' | 'absent';
+
+const OWN_REVIEW_WITHDRAW_ATTEMPTS = 3;
+
+const ownReviewRemovalPayloadSchema = z.object({
+  url: z.string().min(1),
+  orderId: z.string().min(1),
+  /** The reviewed listing the record rates; absent on a job staged before per-item reviews, which covers the order. */
+  listingId: z.string().min(1).optional(),
+});
+
+/**
+ * The `client_reference` the service minted in `payment.prepare_locks` and
+ * returns only to the buyer. A preparation without a usable one is a broken
+ * service contract: the bundle cannot be bound, so nothing is submitted.
+ */
+function readPreparedClientReference(result: unknown): string {
+  const clientReference = (result as { clientReference?: unknown } | null)?.clientReference;
+  if (typeof clientReference !== 'string' || !isValidLocksClientReference(clientReference)) {
+    throw Err.server(
+      ServerErrorCode.INVALID_RESPONSE,
+      'The payment preparation did not return a usable Lock Server reference.',
+      { service: ErrorService.Locks, operation: 'beginMarketplaceLocksPayment' },
+    );
+  }
+  return clientReference;
+}
+
+/**
+ * The terms `payment.prepare_locks` prepared the payment against: the hash of
+ * the checkout-time lock resource and its criterion id. Without them the
+ * listing's lock cannot be matched to the payment, so nothing is submitted.
+ */
+function readPreparedLockTerms(result: unknown): PreparedLockTerms {
+  const { lockResourceHash, criterionId } = (result ?? {}) as { lockResourceHash?: unknown; criterionId?: unknown };
+  if (
+    typeof lockResourceHash !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(lockResourceHash) ||
+    typeof criterionId !== 'string' ||
+    criterionId === ''
+  ) {
+    throw Err.server(
+      ServerErrorCode.INVALID_RESPONSE,
+      'The payment preparation did not return the lock terms it was prepared against.',
+      { service: ErrorService.Locks, operation: 'beginMarketplaceLocksPayment' },
+    );
+  }
+  return { lockResourceHash, criterionId };
+}
+
+function ownReviewRemovalUrl(payload: unknown): string | null {
+  const parsed = ownReviewRemovalPayloadSchema.safeParse(payload);
+  return parsed.success ? parsed.data.url : null;
+}
+
+function ownReviewRemovalTarget(payload: unknown): { orderId: string; listingId?: string } | null {
+  const parsed = ownReviewRemovalPayloadSchema.safeParse(payload);
+  return parsed.success ? { orderId: parsed.data.orderId, listingId: parsed.data.listingId } : null;
+}
+
+/**
+ * A review-list page, the honest signal that no review index serves this
+ * deployment, or an index's refusal of a reviewer filter.
+ *
+ * `sortApplied` and `filterApplied` are true only when the index answered a
+ * requested sort or filter in its envelope form; false for a list read without
+ * one and for an index that ignored the parameter (before IX4), whose list is
+ * everyone's, newest first. `matched` carries the figures of the counted
+ * matches of a filtered list, and only when the request named the trusted
+ * attestor windows: without them the index would count attestors this client
+ * does not trust, so no figure is claimed. `rejected` is a 400 for a filter:
+ * the index understood the request and refused it.
+ */
 export type CommerceIndexedReviewsResult =
-  | { status: 'ok'; reviews: CommerceIndexedReview[] }
+  | {
+      status: 'ok';
+      reviews: CommerceIndexedReview[];
+      sortApplied: boolean;
+      filterApplied: boolean;
+      matched: CommerceReviewMatch | null;
+    }
+  | { status: 'rejected' }
   | { status: 'unavailable' };
+
+/**
+ * One page of a review list; `sort` is the parameter to send, absent for the
+ * default order, and `filter` the reviewer filter, absent for everyone's.
+ */
+export interface CommerceReviewsPage {
+  skip?: number;
+  limit?: number;
+  sort?: MarketplaceReviewSortParam;
+  filter?: MarketplaceReviewFilterRequest;
+}
+
+/**
+ * The query of a review page. A reviewer filter also names the trusted
+ * attestor windows, so the index counts what this client counts; they narrow
+ * the list itself to reviews those windows cover.
+ */
+function reviewsQuery({ skip, limit, sort, filter }: CommerceReviewsPage): NexusReviewFilterParams & {
+  skip?: number;
+  limit?: number;
+  sort?: MarketplaceReviewSortParam;
+} {
+  const attestors = filter === undefined ? null : attestorWindowsParam();
+  return {
+    skip,
+    limit,
+    ...(sort !== undefined && { sort }),
+    ...(filter !== undefined && {
+      viewer_id: filter.viewerId,
+      ...(filter.reach !== undefined && { reach: filter.reach }),
+      ...(filter.depth !== undefined && { depth: filter.depth }),
+      ...(filter.taggedLabels !== undefined && { tagged_by_viewer: filter.taggedLabels.join(',') }),
+      ...(attestors !== null && { attestors }),
+    }),
+  };
+}
+
+function reviewsResult(payload: unknown, page: CommerceReviewsPage): CommerceIndexedReviewsResult {
+  const { reviews, envelope, matched } = CommerceRecordNormalizer.nexusReviewPage(payload);
+  return {
+    status: 'ok',
+    reviews,
+    sortApplied: page.sort !== undefined && envelope,
+    filterApplied: page.filter !== undefined && envelope,
+    matched: page.filter !== undefined && attestorWindowsParam() !== null ? matched : null,
+  };
+}
 
 type CommerceListingWithProjection = CommerceListingModelSchema & {
   /** What a buyer can take now; `null` while unknown, and for made-to-order stock, which has no count. */
   purchasableQuantity: number | null;
+  /** The service holds a projection of this listing, so it is registered for checkout (a sold one included). */
+  registeredWithService: boolean;
 };
 
 function applyInventoryProjection(
@@ -429,12 +669,14 @@ function applyInventoryProjection(
   const recordQuantity = listing.record.variants
     .filter(({ enabled }) => enabled)
     .reduce((total, variant) => total + variant.quantity, 0);
+  const registeredWithService = projection != null;
   if (!projection || projection.listing_revision !== listing.revision || projection.made_to_order) {
-    return { ...listing, purchasableQuantity: null };
+    return { ...listing, purchasableQuantity: null, registeredWithService };
   }
   return {
     ...listing,
     purchasableQuantity: Math.min(recordQuantity, projection.available_quantity),
+    registeredWithService,
   };
 }
 
@@ -494,6 +736,63 @@ export class CommerceApplication {
 
     const record = await this.fetchShop(ownerPubky);
     return await LocalCommerceService.cacheRefreshedShop(record, local?.record ?? null);
+  }
+
+  /**
+   * A seller's current shop record, read network-first so a seller's later
+   * changes (seller type, country) reach buyers who cached the shop before.
+   * Falls back to the cached copy when the read fails, including a 404, which
+   * may be transient; with nothing cached, the read's error propagates.
+   */
+  static async refreshShopOrGetCached(ownerPubky: string): Promise<CommerceShopRecord> {
+    try {
+      return await this.refreshShop(ownerPubky);
+    } catch (error) {
+      const local = await LocalCommerceService.getShop(ownerPubky).catch(() => null);
+      if (local) return local.record;
+      throw error;
+    }
+  }
+
+  /**
+   * A live stream of changes to the seller's `shop.json`, from the seller's
+   * homeserver `/events-stream` (public, no session), starting after `cursor`;
+   * a null cursor replays the file's past events first. Null when the seller
+   * has no homeserver. Callers own the reader lifecycle.
+   */
+  static async subscribeShopEvents(
+    ownerPubky: string,
+    cursor: string | null = null,
+  ): Promise<ReadableStream<THomeserverResourceEvent> | null> {
+    return await this.shopEventStream(ownerPubky, cursor, false);
+  }
+
+  /** The cursor of the latest write to the seller's `shop.json`, so a live stream can start after it; null when none. */
+  static async latestShopEventCursor(ownerPubky: string): Promise<string | null> {
+    const stream = await this.shopEventStream(ownerPubky, null, true);
+    if (!stream) return null;
+    const reader = stream.getReader();
+    try {
+      const { done, value } = await reader.read();
+      return done ? null : value.cursor;
+    } finally {
+      void reader.cancel().catch(() => {});
+    }
+  }
+
+  private static async shopEventStream(
+    ownerPubky: string,
+    cursor: string | null,
+    latestOnly: boolean,
+  ): Promise<ReadableStream<THomeserverResourceEvent> | null> {
+    const homeserver = await HomeserverService.resolveHomeserverOf(ownerPubky);
+    if (!homeserver) return null;
+    return await HomeserverService.subscribeHomeserverEventStream({
+      homeserver,
+      users: [[ownerPubky, cursor]],
+      pathPrefixes: [CommerceRecordNormalizer.shopUri(ownerPubky).slice(`pubky://${ownerPubky}`.length)],
+      ...(latestOnly ? { latestOnly } : {}),
+    });
   }
 
   static async getOrFetchShop(ownerPubky: string): Promise<CommerceShopRecord> {
@@ -608,16 +907,6 @@ export class CommerceApplication {
     await LocalCommerceService.cacheListingProjection(projection);
   }
 
-  static async getOrFetchListingsBySeller(sellerPubky: string) {
-    const listings = await LocalCommerceService.getListingsBySeller(sellerPubky);
-    if (listings.length > 0) return listings;
-
-    await this.fetchSellerCatalogListings(sellerPubky);
-    const entries = await LocalCommerceService.getCatalogEntriesBySeller(sellerPubky);
-    await Promise.all(entries.map((entry) => this.getOrFetchListing(sellerPubky, entry.listing_id)));
-    return await LocalCommerceService.getListingsBySeller(sellerPubky);
-  }
-
   /**
    * Refreshes one seller's discovery stream, then hydrates only records that
    * are absent locally or newer than the canonical record already cached.
@@ -660,11 +949,18 @@ export class CommerceApplication {
     const localListings = await LocalCommerceService.getListingsBySeller(sellerPubky);
     const localListingsById = new Map(localListings.map((listing) => [listing.listing_id, listing]));
     const recordsToCommit: CommerceListingRecord[] = [];
+    // Nexus keeps indexing a listing for a while after the seller deletes it.
+    // Its record is gone, so it is skipped rather than failing the refresh.
+    const deleted = new Set<string>();
 
     for (const entry of entries) {
       const local = localListingsById.get(entry.listing_id);
       if (local && local.revision >= entry.revision) continue;
-      const record = await this.fetchListing(sellerPubky, entry.listing_id);
+      const record = await this.fetchListingIfFound(sellerPubky, entry.listing_id);
+      if (!record) {
+        deleted.add(entry.listing_id);
+        continue;
+      }
       if (record.revision < entry.revision) {
         throw Err.validation(
           ValidationErrorCode.INVALID_INPUT,
@@ -679,11 +975,11 @@ export class CommerceApplication {
       recordsToCommit.push(record);
     }
 
-    await LocalCommerceService.commitSellerCatalogRefresh(entries, recordsToCommit);
-  }
-
-  static async getListingsByCategory(categoryId: string) {
-    return await LocalCommerceService.getListingsByCategory(categoryId);
+    await LocalCommerceService.commitSellerCatalogRefresh(
+      entries.filter((entry) => !deleted.has(entry.listing_id)),
+      recordsToCommit,
+      { sellerPubky, deletedListingIds: deleted },
+    );
   }
 
   static async getAllListings() {
@@ -817,6 +1113,11 @@ export class CommerceApplication {
   static async fetchUsdtPaymentsAvailable(): Promise<boolean> {
     if (!getUsdtPaymentsEnabled()) return false;
     return await MarketplaceGatewayService.getUsdtPaymentsCapability();
+  }
+
+  /** Who marks orders paid on this deployment; null when the service does not say. */
+  static async fetchPaymentConfirmationMode(): Promise<'seller' | 'automatic' | null> {
+    return await MarketplaceGatewayService.getPaymentConfirmationMode();
   }
 
   /**
@@ -1158,6 +1459,28 @@ export class CommerceApplication {
   }
 
   /**
+   * `fulfillment.release_digital`: the seller releases a paid order's instant
+   * lines when they wait for the seller's release. `expectedRevision` is the
+   * order's current revision, so a racing buyer cancel request has one winner.
+   */
+  static async commitReleaseDigital(
+    actorPubky: string,
+    input: { orderId: string; expectedRevision: number },
+  ): Promise<MarketplaceCommandResponse> {
+    this.assertDigitalDeployment('commitReleaseDigital');
+    const command = CommerceRecordNormalizer.marketplaceCommand({
+      version: 1,
+      commandId: crypto.randomUUID(),
+      aggregateId: buildMarketplaceOrderAggregateId(input.orderId),
+      expectedRevision: input.expectedRevision,
+      issuedAt: new Date().toISOString(),
+      kind: 'fulfillment.release_digital',
+      payload: { orderId: input.orderId },
+    });
+    return await this.executeMarketplaceCommand(actorPubky, command);
+  }
+
+  /**
    * `fulfillment.mark_ready` (§A6): the seller arms a paid pickup order for
    * handover (`paid` → `ready_for_pickup`). `expectedRevision` is the
    * order's current revision.
@@ -1256,6 +1579,10 @@ export class CommerceApplication {
         ...(await this.sealConnectorShares(actorPubky, commandId, input, sealedAddress)),
         ...(input.deliveryEmail !== undefined ? { deliveryEmail: input.deliveryEmail } : {}),
         ...(input.buyerCountry !== undefined ? { buyerCountry: input.buyerCountry } : {}),
+        ...(input.destinationCountry !== undefined ? { destinationCountry: input.destinationCountry } : {}),
+        ...(input.shippingChoices !== undefined && input.shippingChoices.length > 0
+          ? { shippingChoices: input.shippingChoices }
+          : {}),
       },
     });
     return await this.executeMarketplaceCommand(actorPubky, command);
@@ -1446,18 +1773,6 @@ export class CommerceApplication {
   }
 
   /**
-   * Starts the interactive Marketplace Transaction Service session flow:
-   * returns the `pubkyauth://` authorization URL to hand to the user's signer
-   * (QR or deeplink) plus a lazy `awaitSession` that resolves once the signer
-   * approves and the AuthToken is exchanged for a bearer session. AuthTokens
-   * are single-use, so every retry must come back through here for a fresh
-   * flow. Durable modes only; the service fails closed otherwise.
-   */
-  static beginMarketplaceSessionFlow() {
-    return MarketplaceSessionService.beginSessionFlow();
-  }
-
-  /**
    * Mints a marketplace session from the Shop's own sign-in grant, with no
    * signer approval. Nothing is installed: the caller installs it with
    * {@link installGrantMarketplaceSession} once it knows the identity is
@@ -1534,6 +1849,7 @@ export class CommerceApplication {
   private static clearSessionScopedState(): void {
     this.publishedReceiptUrls.clear();
     this.ownReviewHomeserverMisses.clear();
+    this.deletedOwnReviews.clear();
     CommercePrivKeyringApplication.clear();
   }
 
@@ -1555,10 +1871,6 @@ export class CommerceApplication {
 
   static onInventorySessionEnded(listener: (event: MarketplaceSessionEndedEvent) => void): () => void {
     return CommerceInventoryApplication.onInventorySessionEnded(listener);
-  }
-
-  static beginInventorySessionFlow(expectedPubky: string) {
-    return CommerceInventoryApplication.beginInventorySessionFlow(expectedPubky);
   }
 
   /**
@@ -1599,7 +1911,36 @@ export class CommerceApplication {
   static async getMarketplaceNotifications(actorPubky: string) {
     const notifications = await MarketplaceGatewayService.getNotifications(actorPubky);
     if (!isDurableCommerceMode(getCommerceAdapterMode())) return notifications;
+    this.retryReleasedReviews(actorPubky, notifications);
     return notifications.filter((notification) => notification.type !== 'message_received');
+  }
+
+  /** Notifications whose `review_released` already started a retry in this tab, so each starts one. */
+  private static releaseNotificationsSeen = new Set<string>();
+
+  /** Test seam: forgets which release notifications this tab already acted on. */
+  static resetReleaseNotificationMemo(): void {
+    this.releaseNotificationsSeen.clear();
+  }
+
+  /**
+   * A `review_released` notification means the service now issues the
+   * attestations of that order's reviews: the user's withheld review for it
+   * is retried at once, once per notification, instead of waiting for the
+   * next orders load. The retry runs beside the notification read, never in
+   * front of it, and a failure is logged inside the retry.
+   */
+  private static retryReleasedReviews(actorPubky: string, notifications: MarketplaceNotificationEntry[]): void {
+    for (const notification of notifications) {
+      if (!isRecognizedMarketplaceNotification(notification) || notification.type !== 'review_released') continue;
+      const orderId = orderIdFromMarketplaceAggregateId(notification.aggregateId);
+      const seen = `${actorPubky}|${notification.id}`;
+      if (orderId === null || this.releaseNotificationsSeen.has(seen)) continue;
+      this.releaseNotificationsSeen.add(seen);
+      void this.resumeAwaitingReleaseReviews(actorPubky, orderId).catch((error) => {
+        Logger.warn('Retrying a released review failed', { orderId, error });
+      });
+    }
   }
 
   static async getMarketplaceNotificationPreferences(actorPubky: string) {
@@ -1614,8 +1955,57 @@ export class CommerceApplication {
     return await MarketplaceGatewayService.getPayment(actorPubky, paymentId);
   }
 
-  static async confirmBitcoinPayment(actorPubky: string, orderId: string, reason?: string) {
-    return await MarketplaceGatewayService.confirmBitcoinPayment(actorPubky, orderId, reason);
+  static async confirmBitcoinPayment(actorPubky: string, orderId: string, reason?: string, releaseDigital = false) {
+    return await MarketplaceGatewayService.confirmBitcoinPayment(actorPubky, orderId, reason, releaseDigital);
+  }
+
+  /**
+   * The seller's own automatic confirmation: confirms, as the seller, every
+   * open order of theirs whose payment waits for them and matched (see
+   * `autoConfirmableRail`). Each candidate is re-read in full first, and a
+   * failed confirmation leaves that order for the seller without stopping the
+   * rest. `isStillEnabled` is asked before every confirmation, so a seller who
+   * turns the setting off mid-pass confirms nothing more. Every request carries
+   * `signal`; once it aborts the pass ends, so a request that never answers
+   * cannot hold it open. Returns the ids it confirmed.
+   */
+  static async autoConfirmSellerPayments(
+    sellerPubky: string,
+    isStillEnabled: () => boolean,
+    signal: AbortSignal,
+  ): Promise<string[]> {
+    const orders = await MarketplaceGatewayService.getOrders(sellerPubky, { signal });
+    const confirmed: string[] = [];
+    for (const row of orders) {
+      if (signal.aborted) break;
+      if (!mayAwaitSellerConfirmation(row, sellerPubky)) continue;
+      try {
+        const order = await MarketplaceGatewayService.getOrder(sellerPubky, row.id, { signal });
+        const rail = order ? autoConfirmableRail(order, sellerPubky) : null;
+        if (rail !== null && !isStillEnabled()) break;
+        const releaseDigital = order !== null && hasInstantDigitalLines(order);
+        if (rail === 'paykit') {
+          await MarketplaceGatewayService.confirmBitcoinPayment(
+            sellerPubky,
+            row.id,
+            SELLER_AUTO_CONFIRM_REASON,
+            releaseDigital,
+            { signal },
+          );
+        } else if (rail === 'paypal') {
+          await MarketplaceGatewayService.confirmFiatReceived(sellerPubky, row.id, releaseDigital, { signal });
+        } else {
+          continue;
+        }
+        confirmed.push(row.id);
+      } catch (error) {
+        Logger.warn('Automatic seller payment confirmation failed; the order stays with the seller', {
+          orderId: row.id,
+          error,
+        });
+      }
+    }
+    return confirmed;
   }
 
   static async resolveBitcoinPayment(
@@ -1664,6 +2054,7 @@ export class CommerceApplication {
       registry = await HomeserverService.getJsonIfFound<unknown>({
         url: paykitAppRegistryUrl(buyerPubky),
         logUrl: PAYKIT_APP_REGISTRY_PATH,
+        publicRead: true,
       });
     } catch {
       return 'unverified';
@@ -1677,6 +2068,7 @@ export class CommerceApplication {
         const authorization = await HomeserverService.getJsonIfFound<unknown>({
           url: paykitReaderAuthorizationUrl(buyerPubky),
           logUrl: PAYKIT_READER_AUTHORIZATION_PATH,
+          publicRead: true,
         });
         return authorization.found ? 'payable' : 'not_payable';
       } catch {
@@ -1685,6 +2077,42 @@ export class CommerceApplication {
     }
     if (registry.found && foundAppRegistryShowsNewWallet(registry.json)) return 'unsupported';
     return (await PaykitReceiverService.hasPaymentRequestReceiver(buyerPubky)) ? 'payable' : 'not_payable';
+  }
+
+  /**
+   * pubky/pubky-marketplace#371: the Arbitrum USDT address the
+   * buyer's Paykit wallet publishes as a public `usdt-arbitrum-address`
+   * endpoint, from the first app in their App Registry that has one. Null
+   * when none is published or anything cannot be read: the buyer then types
+   * an address as before.
+   */
+  static async fetchBuyerPaykitUsdtAddress(buyerPubky: string): Promise<string | null> {
+    let appIds: string[];
+    try {
+      const registry = await HomeserverService.getJsonIfFound<unknown>({
+        url: paykitAppRegistryUrl(buyerPubky),
+        logUrl: PAYKIT_APP_REGISTRY_PATH,
+      });
+      appIds = registry.found ? paykitRegistryAppIds(registry.json) : [];
+    } catch {
+      return null;
+    }
+    for (const appId of appIds.slice(0, PAYKIT_REFUND_MAX_APPS)) {
+      // An app that doesn't publish the endpoint is an expected miss, not an error.
+      try {
+        const endpoint = await HomeserverService.getJsonIfFound<unknown>({
+          url: paykitEndpointUrl(buyerPubky, appId, USDT_ARBITRUM_ENDPOINT_ID),
+          logUrl: `/pub/paykit/v0/apps/${appId}/endpoints/${USDT_ARBITRUM_ENDPOINT_ID}`,
+          maxBytes: PAYKIT_ENDPOINT_MAX_BYTES,
+          tolerateUnreachable: true,
+        });
+        const address = endpoint.found ? usdtAddressFromEndpointPayload(endpoint.json) : null;
+        if (address) return address;
+      } catch {
+        // An unreadable endpoint: try the next app.
+      }
+    }
+    return null;
   }
 
   static async getMyPaymentConfig(actorPubky: string) {
@@ -1715,8 +2143,8 @@ export class CommerceApplication {
     return await MarketplaceGatewayService.markFiatPaid(actorPubky, orderId, transactionRef);
   }
 
-  static async confirmFiatReceived(actorPubky: string, orderId: string) {
-    return await MarketplaceGatewayService.confirmFiatReceived(actorPubky, orderId);
+  static async confirmFiatReceived(actorPubky: string, orderId: string, releaseDigital = false) {
+    return await MarketplaceGatewayService.confirmFiatReceived(actorPubky, orderId, releaseDigital);
   }
 
   static async getMarketplaceReceipt(actorPubky: string, receiptId: string) {
@@ -1735,16 +2163,6 @@ export class CommerceApplication {
     return await MarketplaceGatewayService.fetchAttachment(actorPubky, attachmentId);
   }
 
-  static async submitLocksPaykitProof(params: {
-    creatorPubky: string;
-    readerPubky: string;
-    bundleId: string;
-    lockResource: string;
-    criterionId: string;
-  }) {
-    return await LocksGatewayService.submitPaykitProof(params);
-  }
-
   /**
    * The buyer's side of a real Locks/Paykit payment (`locks-paykit` mode):
    *
@@ -1753,7 +2171,10 @@ export class CommerceApplication {
    * 1. Generate (or reuse a persisted, not-yet-registered) bundle id and
    *    submit the proof bundle to the Lock Server, which requests the real
    *    Paykit invoice and delivers the private Payment Request to the buyer's
-   *    wallet.
+   *    wallet. The bundle carries the `client_reference` the preparation
+   *    returned for this payment, and the Lock Server must echo it: the
+   *    service confirms only a completed task that carries it. A task that
+   *    does not carry it stops the flow here, before registration.
    * 2. Register the correlation with the transaction service via
    *    `payment.register_locks` with only the payment and bundle ids, at the
    *    revision the preparation left.
@@ -1783,8 +2204,16 @@ export class CommerceApplication {
         operation: 'beginMarketplaceLocksPayment',
       });
     }
-    const creator = lockPolicyCreator(digitalLock.policyUri);
-    const bareLockResource = toBareLockResource(digitalLock.policyUri);
+    const existing = await LocalCommerceService.getLocksCorrelation(buyerPubky, payment.id);
+    // A saved correlation carries the lock this payment was started against,
+    // and its Lock Server task (if one exists) was created for that lock. Every
+    // later step of that payment uses it, whatever the listing shows now; only
+    // a payment with no saved correlation takes the listing's current lock.
+    const lock = existing
+      ? { policyUri: existing.policy_uri, criterionId: existing.criterion_id }
+      : { policyUri: digitalLock.policyUri, criterionId: digitalLock.criterionId };
+    const creator = lockPolicyCreator(lock.policyUri);
+    const bareLockResource = toBareLockResource(lock.policyUri);
     if (!creator || !bareLockResource) {
       throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'The listing carries an invalid Locks policy URI.', {
         service: ErrorService.Locks,
@@ -1800,14 +2229,16 @@ export class CommerceApplication {
       });
     }
 
-    const existing = await LocalCommerceService.getLocksCorrelation(buyerPubky, payment.id);
     // Prepare first: the service checks the seller's lock against the
     // checkout snapshot, takes the hold and pins the `locks` adapter, so a
     // refused payment never gets a Lock Server invoice. A repeat replays a
     // live preparation, so a bundle submitted earlier (or before the service
-    // required this step) still registers after it. Locks takes no client
-    // reference yet (pubky/locks#52), so the minted one is not sent.
+    // required this step) still registers after it. The reference the service
+    // minted for this payment travels in the proof bundle (pubky/locks#52); a
+    // replayed preparation returns the same one, so every submit below,
+    // including a retry after a reload, sends the reference of this payment.
     let expectedRevision = payment.revision;
+    let bundleId = existing?.bundle_id;
     if (!existing?.registered) {
       const prepared = await MarketplaceGatewayService.execute(buyerPubky, {
         version: 1,
@@ -1820,46 +2251,68 @@ export class CommerceApplication {
       });
       if (!prepared.ok) return prepared;
       expectedRevision = prepared.revision;
-    }
-    let bundleId = existing?.bundle_id;
-    const submit = async (id: string) => {
-      await LocksGatewayService.submitPaykitProof({
-        creatorPubky: creator,
-        readerPubky: buyerPubky,
-        bundleId: id,
-        lockResource: digitalLock.policyUri,
-        criterionId: digitalLock.criterionId,
-      });
-    };
-    if (!existing) {
-      bundleId = await LocksGatewayService.generateBundleId();
-      // Persist BEFORE the submit: the bundle id is the buyer's only handle on
-      // the upstream lifecycle. A Lock Server with durable invoice admission
-      // (pubky/locks#72) keeps the task even when its response is lost, so a
-      // retry must find that task again rather than mint a second one.
-      await LocalCommerceService.upsertLocksCorrelation({
-        owner_id: buyerPubky,
-        payment_id: payment.id,
-        order_id: order.id,
-        seller_pubky: creator,
-        bundle_id: bundleId,
-        policy_uri: digitalLock.policyUri,
-        criterion_id: digitalLock.criterionId,
-        content_path: digitalLock.contentPath,
-        resource_hash: digitalLock.resourceHash,
-        window_expires_at: null,
-        registered: false,
-        created_at: Date.now(),
-        updated_at: Date.now(),
-      });
-      await submit(bundleId);
-    } else if (!existing.registered) {
-      // An unregistered correlation may predate a submit that never reached the
-      // Lock Server. Look the task up: if it exists the buyer keeps polling it,
-      // and only a missing task is submitted, with the same bundle id. A
-      // submitted bundle is never submitted again.
-      const task = await LocksGatewayService.findVerification(creator, existing.bundle_id);
-      if (!task) await submit(existing.bundle_id);
+      const clientReference = readPreparedClientReference(prepared.result);
+      // The service prepared the checkout-time lock. A new submission must be
+      // for the lock the listing shows, so it has to match; a recovery uses the
+      // saved lock, which has to be the prepared one.
+      if (!lockMatchesPreparedTerms(readPreparedLockTerms(prepared.result), lock)) {
+        throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'The listing\u2019s lock changed after checkout.', {
+          service: ErrorService.Locks,
+          operation: 'beginMarketplaceLocksPayment',
+          context: { preparedTermsDiffer: true },
+        });
+      }
+      const submit = async (id: string) => {
+        await LocksGatewayService.submitPaykitProof({
+          creatorPubky: creator,
+          readerPubky: buyerPubky,
+          bundleId: id,
+          lockResource: lock.policyUri,
+          criterionId: lock.criterionId,
+          clientReference,
+        });
+      };
+      if (!existing) {
+        bundleId = await LocksGatewayService.generateBundleId();
+        // Persist BEFORE the submit: the bundle id is the buyer's only handle on
+        // the upstream lifecycle. A Lock Server with durable invoice admission
+        // (pubky/locks#72) keeps the task even when its response is lost, so a
+        // retry must find that task again rather than mint a second one.
+        await LocalCommerceService.upsertLocksCorrelation({
+          owner_id: buyerPubky,
+          payment_id: payment.id,
+          order_id: order.id,
+          seller_pubky: creator,
+          bundle_id: bundleId,
+          policy_uri: digitalLock.policyUri,
+          criterion_id: digitalLock.criterionId,
+          content_path: digitalLock.contentPath,
+          resource_hash: digitalLock.resourceHash,
+          window_expires_at: null,
+          registered: false,
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        });
+        await submit(bundleId);
+      } else {
+        // An unregistered correlation may predate a submit that never reached the
+        // Lock Server. Look the task up: if it exists the buyer keeps polling it,
+        // and only a missing task is submitted, with the same bundle id. A
+        // submitted bundle is never submitted again.
+        const task = await LocksGatewayService.findVerification(creator, existing.bundle_id);
+        if (!task) {
+          await submit(existing.bundle_id);
+        } else if (!locksTaskCarriesClientReference(task, clientReference)) {
+          // A task stored without this payment's reference (submitted before the
+          // reference existed, or by a Lock Server that does not echo it) can
+          // never be confirmed, and its stored bundle cannot be changed.
+          throw Err.server(
+            ServerErrorCode.INVALID_RESPONSE,
+            'The stored Lock Server task does not carry the payment reference.',
+            { service: ErrorService.Locks, operation: 'beginMarketplaceLocksPayment' },
+          );
+        }
+      }
     }
 
     const response = await MarketplaceGatewayService.execute(buyerPubky, {
@@ -2085,7 +2538,7 @@ export class CommerceApplication {
   /** In-flight sync per owner, so overlapping triggers share one round-trip. */
   private static watchlistSyncInFlight = new Map<
     string,
-    { run: Promise<CommerceWatchlistSyncStatus>; purchaseSession: string; keysEpoch: number }
+    { run: Promise<CommerceWatchlistSyncStatus>; purchaseSession: string; keysEpoch: number; signal?: AbortSignal }
   >();
 
   /** Which purchase session a round started under: the private data key is released to it, and only to it. */
@@ -2153,8 +2606,12 @@ export class CommerceApplication {
    * caller (controller) surfaces that state; nothing silently no-ops. A
    * browser without the Web Locks API gets `unsupported` and a refused lock
    * gets `error`; neither touches the homeserver.
+   *
+   * Once `signal` aborts, the round writes nothing more, locally or remotely,
+   * and rejects with the abort reason.
    */
-  static async syncWatchlist(ownerPubky: string): Promise<CommerceWatchlistSyncStatus> {
+  static async syncWatchlist(ownerPubky: string, signal?: AbortSignal): Promise<CommerceWatchlistSyncStatus> {
+    signal?.throwIfAborted();
     if (getCommerceAdapterMode() === 'sandbox') return 'skipped';
 
     const capability = this.getWatchlistSyncCapability();
@@ -2163,7 +2620,21 @@ export class CommerceApplication {
 
     const inFlight = this.watchlistSyncInFlight.get(ownerPubky);
     if (inFlight) {
-      const outcome = await inFlight.run;
+      let outcome: CommerceWatchlistSyncStatus;
+      try {
+        outcome = await inFlight.run;
+      } catch (error) {
+        // The shared round stopped because its own scope ended; a caller
+        // whose scope is still live needs a round of its own.
+        if (signal?.aborted || !inFlight.signal?.aborted) throw error;
+        return await this.syncWatchlist(ownerPubky, signal);
+      }
+      // A round whose scope ended may have stopped early with an outcome that
+      // describes nothing about the state this caller sees.
+      if (inFlight.signal?.aborted) {
+        signal?.throwIfAborted();
+        return await this.syncWatchlist(ownerPubky, signal);
+      }
       // A round that started before the purchase session changed asked the
       // marketplace for the key without it (or with the old one), and one that
       // ended without the document while keys became available meanwhile
@@ -2171,7 +2642,7 @@ export class CommerceApplication {
       // nothing about the new state, so read the document again.
       const sessionChanged = inFlight.purchaseSession !== this.watchlistPurchaseSessionId();
       const keysArrived = outcome !== 'synced' && inFlight.keysEpoch !== CommercePrivKeyringApplication.getReadyEpoch();
-      if (sessionChanged || keysArrived) return await this.syncWatchlist(ownerPubky);
+      if (sessionChanged || keysArrived) return await this.syncWatchlist(ownerPubky, signal);
       return outcome;
     }
 
@@ -2183,8 +2654,11 @@ export class CommerceApplication {
 
     const run = (async (): Promise<CommerceWatchlistSyncStatus> => {
       try {
-        return await locks.request(`pubky-priv|watchlist|${ownerPubky}`, () => this.runWatchlistSync(ownerPubky));
+        return await locks.request(`pubky-priv|watchlist|${ownerPubky}`, () =>
+          this.runWatchlistSync(ownerPubky, signal),
+        );
       } catch (error) {
+        if (signal?.aborted) throw error;
         Logger.warn('The watchlist sync lock was refused; the outbox job stays pending', privErrorSummary(error));
         return 'error';
       } finally {
@@ -2195,6 +2669,7 @@ export class CommerceApplication {
       run,
       purchaseSession: this.watchlistPurchaseSessionId(),
       keysEpoch: CommercePrivKeyringApplication.getReadyEpoch(),
+      signal,
     });
     return await run;
   }
@@ -2214,7 +2689,10 @@ export class CommerceApplication {
    * The outbox job is completed only if no change was staged after this
    * round read the local state; a later change keeps it pending.
    */
-  private static async runWatchlistSync(ownerPubky: string): Promise<CommerceWatchlistSyncStatus> {
+  private static async runWatchlistSync(
+    ownerPubky: string,
+    signal: AbortSignal | undefined,
+  ): Promise<CommerceWatchlistSyncStatus> {
     const legacyUrl = CommerceRecordNormalizer.watchlistUri(ownerPubky);
     const jobId = this.watchlistSyncJobId(ownerPubky);
     try {
@@ -2251,6 +2729,7 @@ export class CommerceApplication {
         : encryptedState;
       const merged = mergeWatchlistStates(localState, remoteState);
 
+      signal?.throwIfAborted();
       if (!watchlistStatesEqual(merged, localState)) {
         await LocalCommerceService.applyWatchlistState(ownerPubky, merged.items, merged.tombstones);
       }
@@ -2276,6 +2755,7 @@ export class CommerceApplication {
         const { PubkySpecsBuilder } = await import('pubky-app-specs');
         const built = new PubkySpecsBuilder(ownerPubky).createWatchlist(body);
         const record = CommerceRecordNormalizer.watchlistRecord(built.watchlist.toJson());
+        signal?.throwIfAborted();
         try {
           await CommercePrivStoreService.write(keyring, 'watchlist', WATCHLIST_PRIV_ENTRY_ID, { ...record });
         } catch (error) {
@@ -2285,13 +2765,16 @@ export class CommerceApplication {
       }
       // v2 now holds a state that includes every v1 entry and tombstone.
       if (legacy) {
+        signal?.throwIfAborted();
         assertPrivKeyringLive(keyring);
         await CommerceHomeserverService.delete(legacyUrl, PRIV_V1_LOG_PATH);
       }
 
+      signal?.throwIfAborted();
       await LocalCommerceService.completeSyncJobIfUnchanged(jobId, stagedAt);
       return 'synced';
     } catch (error) {
+      if (signal?.aborted) throw error;
       Logger.warn('Watchlist sync failed; the outbox job stays pending', privErrorSummary(error));
       return 'error';
     }
@@ -2905,10 +3388,6 @@ export class CommerceApplication {
     return await LocalCommerceService.isShopFollowed(ownerPubky, sellerPubky);
   }
 
-  static async getShopFollows(ownerPubky: string) {
-    return await LocalCommerceService.getShopFollows(ownerPubky);
-  }
-
   static async commitCreateShopFollow(ownerPubky: string, sellerPubky: string): Promise<void> {
     await LocalCommerceService.createShopFollow(ownerPubky, sellerPubky, Date.now());
   }
@@ -3312,9 +3791,17 @@ export class CommerceApplication {
    */
   private static ownReviewHomeserverMisses = new Set<string>();
 
-  /** Test support: clears the session-scoped own-review 404 memo. */
+  /**
+   * Reviews this session deleted (composite IDs). A homeserver that still
+   * serves a record just after its DEL must not write it back through a
+   * refresh; a new publication of the review lifts the entry.
+   */
+  private static deletedOwnReviews = new Set<string>();
+
+  /** Test support: clears the session-scoped own-review 404 memo and deleted set. */
   static resetOwnReviewHydrateMemo(): void {
     this.ownReviewHomeserverMisses.clear();
+    this.deletedOwnReviews.clear();
   }
 
   private static ownReviewMissKey(actorPubky: string, orderId: string): string {
@@ -3334,7 +3821,8 @@ export class CommerceApplication {
    * Local-first: a Dexie hit returns immediately. After a fresh sign-in the
    * local row is gone (wiped with identity) even when the homeserver record
    * is live — hydrate from the deterministic review URI (listing + subject
-   * + role) so the order card can resolve publication/attestation state
+   * + role + the order's attested `order_ref`), and republish a review a
+   * later order overwrote before per-order IDs, so the order card can resolve publication/attestation state
    * instead of waiting forever.
    */
   static async getOwnMarketplaceReview(
@@ -3357,9 +3845,11 @@ export class CommerceApplication {
   }
 
   /**
-   * Specs hash ID for the living review of this (listing, subject, role).
+   * Specs hash ID for the review of this (listing, subject, role, order).
    * Dummy text/attestation are ignored by the hash — only listing URI,
-   * subject, and role feed the id.
+   * subject, role and `orderRef` feed the id. Without `orderRef` it is the
+   * legacy per-listing id that reviews published before per-order reviews
+   * live at.
    */
   private static async ownReviewPathId(input: {
     actorPubky: string;
@@ -3367,6 +3857,7 @@ export class CommerceApplication {
     listingId: string;
     subjectPubky: string;
     role: 'buyer_reviewing_seller' | 'seller_reviewing_buyer';
+    orderRef?: string;
   }): Promise<string> {
     const { PubkySpecsBuilder } = await import('pubky-app-specs');
     const built = new PubkySpecsBuilder(input.actorPubky).createMarketplaceReview({
@@ -3384,13 +3875,16 @@ export class CommerceApplication {
       ratings: { overall: 1 },
       text: 'path-id-probe',
       eligibilityAttestation: 'A'.repeat(32),
+      ...(input.orderRef === undefined ? {} : { orderRef: input.orderRef }),
     });
     return built.meta.id;
   }
 
   /**
    * Rebuilds the local own-review row from the reviewer's homeserver after
-   * a cache miss. GET only — never PUT. A 404 or identity mismatch stays
+   * a cache miss. The only write to the homeserver is the one-time republish
+   * of a review no record carries
+   * ({@link republishOverwrittenOwnReview}). A 404 or identity mismatch stays
    * unresolved (the order card's waiting copy), never a false published
    * or unpublished claim.
    */
@@ -3400,27 +3894,197 @@ export class CommerceApplication {
   ): Promise<CommerceReviewModelSchema | null> {
     const hydrateIdentity = actorPubky;
     if (!this.liveIdentityMatches(hydrateIdentity)) return null;
-    const listingId = this.listingIdFromOrder(order);
-    if (listingId === null) return null;
-    const isBuyer = actorPubky === order.buyerPubky;
-    const isSeller = actorPubky === order.sellerPubky;
-    if (!isBuyer && !isSeller) return null;
-    const role = isBuyer ? 'buyer_reviewing_seller' : 'seller_reviewing_buyer';
-    const subjectPubky = isBuyer ? order.sellerPubky : order.buyerPubky;
-    let reviewId = '';
+    const read = await this.readOwnReviewFromHomeserver(actorPubky, order);
+    if (read.kind === 'missing') {
+      this.ownReviewHomeserverMisses.add(this.ownReviewMissKey(actorPubky, order.id));
+      return null;
+    }
+    if (read.kind === 'overwritten') {
+      return await this.republishOverwrittenOwnReview(actorPubky, order, read.attestation, hydrateIdentity);
+    }
+    if (read.kind !== 'found') return null;
+    // Auth-cleanup may wipe `commerce_reviews` while this GET is in flight.
+    // Do not re-seed another identity's private table; skip if the live
+    // session pubky is no longer the one captured at hydrate start.
+    if (!this.liveIdentityMatches(hydrateIdentity)) return null;
     try {
-      reviewId = await this.ownReviewPathId({
-        actorPubky,
-        listingOwnerPubky: order.sellerPubky,
-        listingId,
-        subjectPubky,
-        role,
-      });
-      const url = CommerceRecordNormalizer.reviewUri(actorPubky, reviewId);
-      const stored = await CommerceHomeserverService.fetchJsonIfFound(url);
-      if (!stored.found) {
+      // The user removed this review: a record still served (a DEL owed, or
+      // not yet visible) must not be shown again.
+      if (await this.ownReviewWithdrawn(actorPubky, order, read.model.record.listingId)) {
         this.ownReviewHomeserverMisses.add(this.ownReviewMissKey(actorPubky, order.id));
         return null;
+      }
+      await LocalCommerceService.upsertOwnReview(read.model);
+    } catch (error) {
+      Logger.warn('Own review homeserver hydrate failed; leaving publication status unresolved', {
+        orderId: order.id,
+        reviewId: read.model.review_id,
+        error,
+      });
+      return null;
+    }
+    return read.model;
+  }
+
+  /**
+   * A review a later order overwrote at the shared per-listing path before
+   * per-order IDs: no homeserver record carries this order's attestation,
+   * but the service still holds the review, so it is republished once at
+   * this order's own path. Runs outside the order lock (the publish takes
+   * it). A review the user removed is never republished: the service records
+   * the withdrawal, so this holds on every device, not only the one that
+   * removed it (see {@link commitPublishOwnReview}'s `repair`).
+   */
+  private static async republishOverwrittenOwnReview(
+    actorPubky: string,
+    order: MarketplaceOrder,
+    attestation: z.infer<typeof marketplaceAttestationSchema>,
+    hydrateIdentity: string,
+  ): Promise<CommerceReviewModelSchema | null> {
+    const miss = this.ownReviewMissKey(actorPubky, order.id);
+    const listingId = this.listingIdFromOrder(order);
+    const serviceReview = order.reviews?.find(({ reviewerPubky }) => reviewerPubky === actorPubky);
+    if (
+      listingId === null ||
+      serviceReview === undefined ||
+      serviceReview.text.trim().length === 0 ||
+      serviceReview.publicRemoved === true ||
+      (await LocalCommerceService.hasOwedOwnReviewRemoval(actorPubky, order.id, listingId))
+    ) {
+      this.ownReviewHomeserverMisses.add(miss);
+      return null;
+    }
+    if (!this.liveIdentityMatches(hydrateIdentity)) return null;
+    Logger.info('Republishing an own review no homeserver record carries', { orderId: order.id });
+    const isBuyer = actorPubky === order.buyerPubky;
+    return await this.commitPublishOwnReview({
+      actorPubky,
+      order,
+      repair: true,
+      stillCurrent: () => this.liveIdentityMatches(hydrateIdentity),
+      result: {
+        review: {
+          reviewerPubky: actorPubky,
+          reviewerRole: isBuyer ? 'buyer' : 'seller',
+          subjectPubky: isBuyer ? order.sellerPubky : order.buyerPubky,
+          rating: serviceReview.rating,
+          text: serviceReview.text,
+          createdAt: serviceReview.createdAt,
+          updatedAt: serviceReview.updatedAt ?? serviceReview.createdAt,
+        },
+        attestation,
+      },
+    });
+  }
+
+  /**
+   * Whether the service holds the actor's review of one listing of the order
+   * as withdrawn, read fresh. `unknown` when the read fails or finds no
+   * order: a caller about to publish must treat that as "do not".
+   */
+  private static async fetchOwnReviewRemovalState(
+    actorPubky: string,
+    orderId: string,
+    listingId: string,
+  ): Promise<'removed' | 'live' | 'unknown'> {
+    try {
+      const fresh = await MarketplaceGatewayService.getOrder(actorPubky, orderId);
+      if (fresh === null) return 'unknown';
+      return reviewOfListing(fresh, actorPubky, listingId)?.publicRemoved === true ? 'removed' : 'live';
+    } catch (error) {
+      Logger.warn('Could not read the order to check whether its review was removed', { orderId, listingId, error });
+      return 'unknown';
+    }
+  }
+
+  /**
+   * True when the user removed their review of this listing of the order: an
+   * owed removal on this device, or a withdrawal the service holds for that
+   * listing (confirmed fresh when the order data says so, since that data may
+   * predate a later edit). An old service sends no flag, which reads as not
+   * removed.
+   */
+  private static async ownReviewWithdrawn(
+    actorPubky: string,
+    order: MarketplaceOrder,
+    listingId: string,
+  ): Promise<boolean> {
+    if (await LocalCommerceService.hasOwedOwnReviewRemoval(actorPubky, order.id, listingId)) return true;
+    if (reviewOfListing(order, actorPubky, listingId)?.publicRemoved !== true) return false;
+    return (await this.fetchOwnReviewRemovalState(actorPubky, order.id, listingId)) !== 'live';
+  }
+
+  /**
+   * Reads one of the actor's reviews of an order from their homeserver. With
+   * `knownReviewId` (a local row's ID, possibly the legacy per-listing one)
+   * the record is read at that path; without it the path comes from the
+   * listing's attested `order_ref`: the order's first-line attestation, or
+   * the listing's own entry of `attestations` (the order's per-listing
+   * attestations) when those are given. `listingId` names the reviewed
+   * listing and defaults to the order's first line. `missing` is an ordinary
+   * 404, `unresolved` anything that makes no claim (a record that is not
+   * this order's, a failed read).
+   */
+  private static async readOwnReviewFromHomeserver(
+    actorPubky: string,
+    order: MarketplaceOrder,
+    options: {
+      knownReviewId?: string;
+      listingId?: string;
+      attestations?: MarketplaceItemAttestation[];
+    } = {},
+  ): Promise<OwnReviewRead> {
+    const { knownReviewId, attestations } = options;
+    const firstLineListingId = this.listingIdFromOrder(order);
+    const listingId = options.listingId ?? firstLineListingId;
+    if (listingId === null) return { kind: 'unresolved' };
+    const isBuyer = actorPubky === order.buyerPubky;
+    const isSeller = actorPubky === order.sellerPubky;
+    if (!isBuyer && !isSeller) return { kind: 'unresolved' };
+    const role: 'buyer_reviewing_seller' | 'seller_reviewing_buyer' = isBuyer
+      ? 'buyer_reviewing_seller'
+      : 'seller_reviewing_buyer';
+    const subjectPubky = isBuyer ? order.sellerPubky : order.buyerPubky;
+    let reviewId = knownReviewId ?? '';
+    try {
+      let stored: { found: false } | { found: true; json: unknown };
+      if (knownReviewId === undefined) {
+        // The order's own attestation names its `order_ref`: no attestation
+        // means nothing was ever published for this order.
+        const attestation =
+          attestations === undefined
+            ? marketplaceAttestationSchema.safeParse(
+                await MarketplaceGatewayService.getReviewAttestation(actorPubky, order.id),
+              )
+            : { success: true as const, data: attestations.find((candidate) => candidate.listingId === listingId) };
+        if (!attestation.success || attestation.data === undefined) return { kind: 'missing' };
+        const pathInput = { actorPubky, listingOwnerPubky: order.sellerPubky, listingId, subjectPubky, role };
+        reviewId = await this.ownReviewPathId({ ...pathInput, orderRef: attestation.data.claims.orderRef });
+        stored = await CommerceHomeserverService.fetchJsonIfFound(
+          CommerceRecordNormalizer.reviewUri(actorPubky, reviewId),
+        );
+        if (!stored.found && listingId === firstLineListingId) {
+          // A review published before per-order reviews lives at the legacy
+          // per-listing path of the first line; it is this order's only when
+          // it embeds this order's attestation.
+          const legacyId = await this.ownReviewPathId(pathInput);
+          const legacy = await CommerceHomeserverService.fetchJsonIfFound(
+            CommerceRecordNormalizer.reviewUri(actorPubky, legacyId),
+          );
+          const legacyMatches =
+            legacy.found &&
+            (legacy.json as { eligibilityAttestation?: unknown } | null)?.eligibilityAttestation ===
+              attestation.data.jws;
+          if (!legacyMatches) return { kind: 'overwritten', attestation: attestation.data };
+          reviewId = legacyId;
+          stored = legacy;
+        }
+        if (!stored.found) return { kind: 'missing' };
+      } else {
+        stored = await CommerceHomeserverService.fetchJsonIfFound(
+          CommerceRecordNormalizer.reviewUri(actorPubky, knownReviewId),
+        );
+        if (!stored.found) return { kind: 'missing' };
       }
       const record = CommerceRecordNormalizer.review(stored.json);
       if (
@@ -3435,39 +4099,374 @@ export class CommerceApplication {
           orderId: order.id,
           reviewId,
         });
-        return null;
+        return { kind: 'unresolved' };
       }
       const verifiedIss = verifyOwnReviewAttestation(record);
-      const model: CommerceReviewModelSchema = {
-        id: `${actorPubky}:${reviewId}`,
-        owner_id: actorPubky,
-        review_id: reviewId,
-        order_id: order.id,
-        subject_id: record.subjectPubky,
-        record,
-        attestation_verified: verifiedIss !== null,
-        attestation_iss: verifiedIss,
-        sync_status: 'synced',
-        updated_at: Date.now(),
+      return {
+        kind: 'found',
+        model: {
+          id: `${actorPubky}:${reviewId}`,
+          owner_id: actorPubky,
+          review_id: reviewId,
+          order_id: order.id,
+          subject_id: record.subjectPubky,
+          record,
+          attestation_verified: verifiedIss !== null,
+          attestation_iss: verifiedIss,
+          sync_status: 'synced',
+          updated_at: Date.now(),
+        },
       };
-      // Auth-cleanup may wipe `commerce_reviews` while this GET is in flight.
-      // Do not re-seed another identity's private table; skip if the live
-      // session pubky is no longer the one captured at hydrate start.
-      if (!this.liveIdentityMatches(hydrateIdentity)) return null;
-      await LocalCommerceService.upsertOwnReview(model);
-      return model;
     } catch (error) {
-      if (isAppError(error) && isNotFound(error)) {
-        this.ownReviewHomeserverMisses.add(this.ownReviewMissKey(actorPubky, order.id));
-      } else {
+      if (isAppError(error) && isNotFound(error)) return { kind: 'missing' };
+      Logger.warn('Own review homeserver read failed; leaving publication status unresolved', {
+        orderId: order.id,
+        reviewId,
+        error,
+      });
+      return { kind: 'unresolved' };
+    }
+  }
+
+  /**
+   * The current user's published review rows of one order, one per reviewed
+   * listing in line order. Local-first like {@link getOwnMarketplaceReview}:
+   * rows in Dexie return at once, and a listing the service shows the user
+   * reviewed but that has no local row (wiped with identity, or published
+   * from another device) is hydrated from the reviewer's homeserver: the
+   * order's per-listing attestations name each `order_ref`, and each record
+   * is read from its deterministic path. GET only, never PUT; a missing
+   * record stays unresolved instead of claiming unpublished.
+   */
+  static async getOwnMarketplaceOrderReviews(
+    actorPubky: string,
+    order: MarketplaceOrder,
+  ): Promise<CommerceReviewModelSchema[]> {
+    const local = await LocalCommerceService.getOwnReviewsByOrder(actorPubky, order.id);
+    const reviewed = reviewsOfReviewer(order, actorPubky).flatMap((review) => {
+      const aggregateId = reviewListingAggregateId(order, review);
+      return aggregateId === null ? [] : [aggregateId];
+    });
+    const missing = orderReviewListings(order).filter(
+      ({ listingAggregateId, listingId }) =>
+        reviewed.includes(listingAggregateId) &&
+        !local.some((row) => row.record.listingId === listingId) &&
+        !this.ownReviewHomeserverMisses.has(this.ownReviewItemMissKey(actorPubky, order.id, listingId)),
+    );
+    const hydrated =
+      missing.length === 0
+        ? []
+        : await this.hydrateOwnReviewItemsFromHomeserver(
+            actorPubky,
+            order,
+            missing.map(({ listingId }) => listingId),
+          );
+    const lineOrder = orderReviewListings(order).map(({ listingId }) => listingId);
+    return [...local, ...hydrated].sort(
+      (a, b) => lineOrder.indexOf(a.record.listingId) - lineOrder.indexOf(b.record.listingId),
+    );
+  }
+
+  private static ownReviewItemMissKey(actorPubky: string, orderId: string, listingId: string): string {
+    return `${actorPubky}:${orderId}:${listingId}`;
+  }
+
+  /**
+   * Rebuilds the local rows of the listings that have none, from one read of
+   * the order's review attestations and one GET per record. Never a PUT.
+   */
+  private static async hydrateOwnReviewItemsFromHomeserver(
+    actorPubky: string,
+    order: MarketplaceOrder,
+    listingIds: string[],
+  ): Promise<CommerceReviewModelSchema[]> {
+    if (!this.liveIdentityMatches(actorPubky)) return [];
+    let attestations: MarketplaceItemAttestation[];
+    try {
+      attestations = extractReviewAttestations({
+        attestations: (await MarketplaceGatewayService.getReviewAttestations(actorPubky, order.id)) ?? [],
+      });
+    } catch (error) {
+      Logger.warn('Own review attestations read failed; leaving publication status unresolved', {
+        orderId: order.id,
+        error,
+      });
+      return [];
+    }
+
+    const hydrated: CommerceReviewModelSchema[] = [];
+    for (const listingId of listingIds) {
+      const read = await this.readOwnReviewFromHomeserver(actorPubky, order, { listingId, attestations });
+      if (read.kind === 'missing') {
+        this.ownReviewHomeserverMisses.add(this.ownReviewItemMissKey(actorPubky, order.id, listingId));
+        continue;
+      }
+      if (read.kind === 'overwritten') {
+        // Only a one-review order can predate per-order IDs, so the service's
+        // single review of the reviewer is the one the repair republishes.
+        if (reviewsOfReviewer(order, actorPubky).length !== 1) continue;
+        const { jws, claims } = read.attestation;
+        const repaired = await this.republishOverwrittenOwnReview(actorPubky, order, { jws, claims }, actorPubky);
+        if (repaired !== null) hydrated.push(repaired);
+        else this.ownReviewHomeserverMisses.add(this.ownReviewItemMissKey(actorPubky, order.id, listingId));
+        continue;
+      }
+      if (read.kind !== 'found') continue;
+      // Auth-cleanup may wipe `commerce_reviews` while the GET is in flight,
+      // and a publication may have staged this record since: never re-seed
+      // another identity's table or overwrite a newer local row.
+      if (!this.liveIdentityMatches(actorPubky)) return hydrated;
+      try {
+        const current = await LocalCommerceService.getOwnReviewById(read.model.id);
+        if (current !== undefined) {
+          hydrated.push(current);
+          continue;
+        }
+        // The user removed this item's review: a record still served (a DEL
+        // owed, or not yet visible) must not be shown again.
+        if (await this.ownReviewWithdrawn(actorPubky, order, listingId)) {
+          this.ownReviewHomeserverMisses.add(this.ownReviewItemMissKey(actorPubky, order.id, listingId));
+          continue;
+        }
+        await LocalCommerceService.upsertOwnReview(read.model);
+        hydrated.push(read.model);
+      } catch (error) {
         Logger.warn('Own review homeserver hydrate failed; leaving publication status unresolved', {
           orderId: order.id,
-          reviewId,
+          listingId,
           error,
         });
       }
-      return null;
     }
+    return hydrated;
+  }
+
+  /**
+   * One order's review writes (publish, refresh, delete) take this lock, per
+   * actor and order, so a read that raced a delete cannot write a review
+   * back, a DEL cannot land after a newer publication, and two tabs
+   * publishing one order revise its records in turn instead of at once.
+   * Without Web Locks the writes queue in this tab only. The holder takes no
+   * other lock.
+   */
+  private static async withOwnReviewLock<T>(actorPubky: string, orderId: string, body: () => Promise<T>): Promise<T> {
+    return await withExclusiveLock(`pubky-review|${actorPubky}|${orderId}`, body);
+  }
+
+  /**
+   * Re-reads the actor's own reviews of these orders from their homeserver
+   * and refreshes the local rows, so an edit made on another device shows
+   * without waiting for a cache miss. Only orders that already carry the
+   * actor's review at the service are read, one record per local row (an
+   * order with no local row reads its first line's record). A local row wins
+   * over the homeserver while it is unsynced, owes a removal, or is not
+   * older than the homeserver record; a homeserver 404 or a failed read
+   * never clears a local row (reads lag acked writes). Returns the number of
+   * rows changed.
+   */
+  static async refreshOwnReviews(actorPubky: string, orders: MarketplaceOrder[]): Promise<number> {
+    let refreshed = 0;
+    for (const order of orders) {
+      if (!this.liveIdentityMatches(actorPubky)) break;
+      if (!order.reviews?.some(({ reviewerPubky }) => reviewerPubky === actorPubky)) continue;
+      refreshed += await this.withOwnReviewLock(actorPubky, order.id, async () => {
+        const rows = await LocalCommerceService.getOwnReviewsByOrder(actorPubky, order.id);
+        const targets = rows.length === 0 ? [undefined] : rows;
+        let changed = 0;
+        for (const local of targets) {
+          if (local?.sync_status === 'pending') continue;
+          const listingId = local?.record.listingId ?? this.listingIdFromOrder(order);
+          if (listingId !== null && (await this.ownReviewWithdrawn(actorPubky, order, listingId))) {
+            // Removed on another device: this device's copy of the item goes too.
+            if (local === undefined || !this.liveIdentityMatches(actorPubky)) continue;
+            await LocalCommerceService.abandonOwnReviewPublication(local);
+            changed += 1;
+            continue;
+          }
+          const read = await this.readOwnReviewFromHomeserver(actorPubky, order, {
+            knownReviewId: local?.review_id,
+            listingId: local?.record.listingId,
+          });
+          if (read.kind !== 'found') continue;
+          if (this.deletedOwnReviews.has(read.model.id)) continue;
+          if (!this.liveIdentityMatches(actorPubky)) continue;
+          if (await LocalCommerceService.applyRefreshedOwnReview(read.model)) changed += 1;
+        }
+        return changed;
+      });
+    }
+    return refreshed;
+  }
+
+  /**
+   * Removes the actor's published reviews of one order. The local rows go at
+   * once (one per reviewed listing), each with its own `remove` job in the
+   * outbox, in one transaction per row. Then, one item at a time, the
+   * service records that item's withdrawal (`review.withdraw` naming the
+   * listing) and only then the homeserver DEL of its record; a failed step
+   * keeps the job, and {@link resumeOwnReviewRemovals} retries both (each is
+   * idempotent) instead of leaving a record public or republishable.
+   * Returns `removed` once every record was withdrawn and deleted (one
+   * already gone counts), `queued` while any removal is still owed, and
+   * `absent` when there was no local review to remove. A review still
+   * withheld by a double-blind window counts as one. The service keeps the
+   * reviews themselves; this never re-opens the order for a new review.
+   */
+  static async commitDeleteOwnReview(actorPubky: string, orderId: string): Promise<OwnReviewDeleteOutcome> {
+    return await this.withOwnReviewLock(actorPubky, orderId, async () => {
+      const rows = await LocalCommerceService.getOwnReviewsByOrder(actorPubky, orderId);
+      // A review still withheld by a double-blind window has no record: its
+      // held terms are marked withdrawn first (so a release never publishes
+      // them), and the service withdrawal follows below.
+      const [withheld] = await LocalCommerceService.getAwaitingReleaseReviewJobs(actorPubky, orderId);
+      if (rows.length === 0 && withheld === undefined) return 'absent';
+      if (withheld !== undefined) {
+        const held = awaitingReleasePayloadSchema.safeParse(withheld.payload);
+        await LocalCommerceService.stageAwaitingReleaseReview({
+          ...withheld,
+          payload: {
+            ...(held.success
+              ? held.data
+              : { orderId, sellerPubky: '', firstListingId: null, releaseAt: null, result: {} }),
+            withdrawn: true,
+          } as CommerceJsonValue,
+          updated_at: Math.max(Date.now(), withheld.updated_at + 1),
+        });
+      }
+      const removals: { jobId: string; url: string; listingId: string }[] = [];
+      for (const local of rows) {
+        const listingId = local.record.listingId;
+        const url = CommerceRecordNormalizer.reviewUri(actorPubky, local.review_id);
+        const job = this.createSyncJob({
+          ownerId: actorPubky,
+          entityType: 'review',
+          entityId: local.review_id,
+          operation: 'remove',
+          payload: { url, orderId, listingId },
+          now: Date.now(),
+        });
+        this.deletedOwnReviews.add(local.id);
+        await LocalCommerceService.stageOwnReviewRemoval(local, job);
+        removals.push({ jobId: job.id, url, listingId });
+      }
+      // Every item is cleared locally and owed before the first network call,
+      // so an interrupted removal resumes from the outbox. Then one item at a
+      // time: its withdrawal, then its DEL.
+      let outcome: OwnReviewDeleteOutcome = 'removed';
+      for (const { jobId, url, listingId } of removals) {
+        if (!(await this.sendOwnReviewRemoval(actorPubky, jobId, url, orderId, listingId))) outcome = 'queued';
+      }
+      if (withheld !== undefined && !(await this.finishWithdrawnAwaitingReview(actorPubky, withheld.id, orderId))) {
+        outcome = 'queued';
+      }
+      return outcome;
+    });
+  }
+
+  /**
+   * Sends one staged removal in its fixed order: the service records the
+   * withdrawal FIRST, then the homeserver DEL. A repair that PUT before the
+   * withdrawal is erased by the DEL that follows; one that PUT after the DEL
+   * sees the withdrawal and retracts its own record. Both steps are
+   * idempotent (a withdrawal already recorded and a 404 both count as done),
+   * so the job simply retries from the top. Any other failure keeps the job,
+   * with its attempt count and cause recorded.
+   */
+  private static async sendOwnReviewRemoval(
+    actorPubky: string,
+    jobId: string,
+    url: string,
+    orderId: string,
+    listingId?: string,
+  ): Promise<boolean> {
+    const withdrawal = await this.withdrawOwnReviewAtService(actorPubky, orderId, listingId);
+    if (withdrawal !== null) {
+      Logger.warn('Own review withdrawal failed; the outbox job stays and retries', { jobId, code: withdrawal });
+      await LocalCommerceService.recordSyncJobFailure(jobId, withdrawal);
+      return false;
+    }
+    try {
+      await CommerceHomeserverService.delete(url);
+    } catch (error) {
+      if (!(isAppError(error) && isNotFound(error))) {
+        Logger.warn('Own review removal failed; the outbox job stays and retries', { jobId, error });
+        await LocalCommerceService.recordSyncJobFailure(jobId, isAppError(error) ? String(error.code) : null);
+        return false;
+      }
+    }
+    await LocalCommerceService.completeSyncJob(jobId);
+    return true;
+  }
+
+  /**
+   * `review.withdraw` for the actor's review of one listing of an order (the
+   * order's reviews as a whole when no listing is named, as on a job staged
+   * before per-item reviews). Reads the order first: no such review, or one
+   * already withdrawn, is done without a command; otherwise the command
+   * carries the order's current revision, and a revision conflict re-reads
+   * and tries again. `listing_id` is sent only when the service names the
+   * listing of its review. Returns `null` when the withdrawal stands, else a
+   * short failure code.
+   */
+  private static async withdrawOwnReviewAtService(
+    actorPubky: string,
+    orderId: string,
+    listingId?: string,
+  ): Promise<string | null> {
+    try {
+      for (let attempt = 0; attempt < OWN_REVIEW_WITHDRAW_ATTEMPTS; attempt += 1) {
+        const order = await MarketplaceGatewayService.getOrder(actorPubky, orderId);
+        if (order === null) return 'ORDER_NOT_FOUND';
+        const own =
+          listingId === undefined
+            ? reviewsOfReviewer(order, actorPubky)
+            : [reviewOfListing(order, actorPubky, listingId)].filter((review) => review !== undefined);
+        if (own.length === 0 || own.every(({ publicRemoved }) => publicRemoved === true)) return null;
+        const itemListingId =
+          listingId !== undefined && own[0]?.listingAggregateId !== undefined ? listingId : undefined;
+        const response = await MarketplaceGatewayService.execute(
+          actorPubky,
+          CommerceRecordNormalizer.marketplaceCommand({
+            version: 1,
+            commandId: crypto.randomUUID(),
+            aggregateId: buildMarketplaceOrderAggregateId(orderId),
+            expectedRevision: order.revision,
+            issuedAt: new Date().toISOString(),
+            kind: 'review.withdraw',
+            payload: itemListingId === undefined ? { orderId } : { orderId, listingId: itemListingId },
+          }),
+        );
+        if (response.ok) return null;
+        if (response.error.code === 'INVALID_STATE') return null;
+        if (response.error.code !== 'REVISION_CONFLICT') return String(response.error.code);
+      }
+      return 'REVISION_CONFLICT';
+    } catch (error) {
+      return isAppError(error) ? String(error.code) : 'UNKNOWN';
+    }
+  }
+
+  /**
+   * Retries every removal whose service withdrawal or homeserver DEL never
+   * landed. Each job is
+   * re-read under its order's lock first, so two tabs retrying one job send
+   * one DEL. Returns the number of removals that completed.
+   */
+  static async resumeOwnReviewRemovals(actorPubky: string): Promise<number> {
+    const jobs = await LocalCommerceService.getOwnReviewRemovalJobs(actorPubky);
+    let removed = 0;
+    for (const queued of jobs) {
+      const target = ownReviewRemovalTarget(queued.payload);
+      if (target === null) continue;
+      const { orderId, listingId } = target;
+      removed += await this.withOwnReviewLock(actorPubky, orderId, async () => {
+        const job = await LocalCommerceService.getSyncJob(queued.id);
+        const url = job ? ownReviewRemovalUrl(job.payload) : null;
+        if (!job || url === null) return 0;
+        return (await this.sendOwnReviewRemoval(actorPubky, job.id, url, orderId, listingId)) ? 1 : 0;
+      });
+    }
+    return removed;
   }
 
   /**
@@ -3480,6 +4479,10 @@ export class CommerceApplication {
    * PUT leaves a visible pending row that
    * {@link resumeOwnReviewPublications} retries.
    *
+   * This publishes the one record of a result that names no listing: the
+   * `review` and first-line `attestation` of v1 terms. Results of per-item
+   * terms go through {@link commitPublishOwnReviews}.
+   *
    * Returns `null` (publishing nothing) when the command result carries no
    * attestation: the record's `eligibilityAttestation` is required, so a
    * deployment without an attestor keeps reviews service-only — an honest
@@ -3489,8 +4492,17 @@ export class CommerceApplication {
     actorPubky: string;
     order: MarketplaceOrder;
     result: Record<string, unknown>;
+    /** Checked right before each write; a publish not started by the user stops when the signed-in identity changes. */
+    stillCurrent?: () => boolean;
+    /**
+     * A repair of a review the service holds, not the user's own act: it
+     * yields to a removal made on this device, and returns a local row that
+     * appeared meanwhile instead of writing over it.
+     */
+    repair?: boolean;
   }): Promise<CommerceReviewModelSchema | null> {
     const { actorPubky, order, result } = input;
+    const stillCurrent = input.stillCurrent ?? (() => true);
     const attestation = extractReviewAttestation(result);
     if (attestation === null) return null;
     const review = reviewResultSchema.parse(result.review);
@@ -3503,7 +4515,116 @@ export class CommerceApplication {
         context: { orderId: order.id },
       });
     }
+    return await this.withOwnReviewLock(actorPubky, order.id, () =>
+      this.publishReviewRecord({
+        actorPubky,
+        order,
+        listingId,
+        review,
+        attestation,
+        stillCurrent,
+        repair: input.repair === true,
+      }),
+    );
+  }
+
+  /**
+   * Publishes one record per reviewed listing of a review command result:
+   * each `reviews[]` entry is paired with the attestation the service issued
+   * for its listing and written to the reviewer's homeserver, so an edit of
+   * one item revises only that item's record. The buyer's seller ratings
+   * ride on every record the command wrote. A result without per-item
+   * entries publishes its single v1 record.
+   *
+   * The order's records are published under a cross-tab lock and in line
+   * order. A record whose PUT fails stays pending for the resume; the others
+   * are still published, and the first failure is thrown once all were
+   * attempted.
+   */
+  static async commitPublishOwnReviews(input: {
+    actorPubky: string;
+    order: MarketplaceOrder;
+    result: Record<string, unknown>;
+  }): Promise<CommerceReviewModelSchema[]> {
+    const { actorPubky, order, result } = input;
+    const withheld = readReviewResultPending(result);
+    if (withheld !== null) {
+      await this.stageAwaitingReleaseReview(actorPubky, order, result, withheld.releaseAt);
+      return [];
+    }
+    const items = this.reviewItemsOf(order, result, extractReviewAttestations(result));
+    if (items.length === 0) {
+      const single = await this.commitPublishOwnReview(input);
+      return single === null ? [] : [single];
+    }
+
+    return await this.withOwnReviewLock(actorPubky, order.id, async () => {
+      const published: CommerceReviewModelSchema[] = [];
+      let firstFailure: unknown;
+      for (const item of items) {
+        try {
+          const record = await this.publishReviewRecord({ actorPubky, order, ...item });
+          if (record !== null) published.push(record);
+        } catch (error) {
+          firstFailure ??= error;
+        }
+      }
+      if (firstFailure !== undefined) throw firstFailure;
+      return published;
+    });
+  }
+
+  /**
+   * The per-item reviews of a command result, each paired with the attestation
+   * the service issued for its listing, in the result's order. Reviews of
+   * listings without an attestation are left out.
+   */
+  private static reviewItemsOf(
+    order: MarketplaceOrder,
+    result: Record<string, unknown>,
+    attestations: MarketplaceItemAttestation[],
+  ) {
+    const entries = Array.isArray(result.reviews)
+      ? result.reviews.flatMap((entry) => {
+          const parsed = reviewItemResultSchema.safeParse(entry);
+          return parsed.success ? [parsed.data] : [];
+        })
+      : [];
+    return entries.flatMap((review) => {
+      const listingId = listingIdFromAggregate(order.sellerPubky, review.listingAggregateId);
+      const attestation = attestations.find((candidate) => candidate.listingId === listingId);
+      return listingId === null || attestation === undefined ? [] : [{ listingId, review, attestation }];
+    });
+  }
+
+  /** Builds, stages and PUTs the record of one reviewed listing; the caller holds the order's publication lock. */
+  private static async publishReviewRecord(input: {
+    actorPubky: string;
+    order: MarketplaceOrder;
+    listingId: string;
+    review: z.infer<typeof reviewResultSchema>;
+    attestation: MarketplaceAttestation;
+    stillCurrent?: () => boolean;
+    repair?: boolean;
+  }): Promise<CommerceReviewModelSchema | null> {
+    const { actorPubky, order, listingId, review, attestation } = input;
+    const stillCurrent = input.stillCurrent ?? (() => true);
     const role = review.reviewerRole === 'buyer' ? 'buyer_reviewing_seller' : 'seller_reviewing_buyer';
+    // A review published before per-order IDs lives at the per-listing path
+    // without `orderRef`; its edits revise it there instead of forking a
+    // second record for the same order.
+    const existing = await LocalCommerceService.getOwnReviewByOrder(actorPubky, order.id, listingId);
+    if (input.repair === true) {
+      if (await LocalCommerceService.hasOwedOwnReviewRemoval(actorPubky, order.id, listingId)) return null;
+      if (existing !== undefined) return existing;
+    }
+    const orderRef =
+      existing !== undefined && existing.record.orderRef === undefined ? undefined : attestation.claims.orderRef;
+    // The seller ratings are one per order: both or neither, on every item record.
+    const sellerRatings =
+      review.shipping != null && review.communication != null
+        ? { shipping: review.shipping, communication: review.communication }
+        : {};
 
     const build = async (revision: number, createdAt: string) => {
       const { PubkySpecsBuilder } = await import('pubky-app-specs');
@@ -3519,9 +4640,10 @@ export class CommerceApplication {
         listingOwnerPubky: order.sellerPubky,
         listingId,
         role,
-        ratings: { overall: review.rating },
+        ratings: { overall: review.rating, ...sellerRatings },
         text: review.text,
         eligibilityAttestation: attestation.jws,
+        ...(orderRef === undefined ? {} : { orderRef }),
       });
       return {
         record: commerceReviewRecordSchema.parse(built.marketplace_review.toJson()),
@@ -3529,9 +4651,9 @@ export class CommerceApplication {
       };
     };
 
-    // The hash ID is deterministic per (listing, subject, role): a revision
-    // of the living record — an edit, or a repeat purchase refreshing the
-    // attestation — bumps `revision` and keeps the original `createdAt`.
+    // The hash ID is deterministic per (listing, subject, role, order): an
+    // edit of this item's review bumps `revision` and keeps the original
+    // `createdAt`; another item or order gets its own record.
     const probe = await build(1, review.createdAt);
     const prior = await LocalCommerceService.getOwnReviewById(`${actorPubky}:${probe.reviewId}`);
     const { record, reviewId } =
@@ -3560,37 +4682,394 @@ export class CommerceApplication {
       now: Date.now(),
     });
 
+    if (!stillCurrent()) return null;
+    if (input.repair !== true) this.deletedOwnReviews.delete(model.id);
     await LocalCommerceService.stageOwnReviewSync(model, job);
+    if (!stillCurrent()) return null;
+    if (input.repair === true && (await this.fetchOwnReviewRemovalState(actorPubky, order.id, listingId)) !== 'live') {
+      // Removed since the order was read, or not checkable: publish nothing.
+      await LocalCommerceService.abandonOwnReviewPublication(model);
+      return null;
+    }
     await CommerceHomeserverService.putJson(url, { ...record });
+    if (input.repair === true) {
+      // A withdrawal sets its flag before its DEL, so a flag that appeared
+      // during the PUT means the DEL may have missed this record: take it
+      // back. A check that cannot answer leaves the row pending; the retry
+      // checks again before it writes anything.
+      const after = await this.fetchOwnReviewRemovalState(actorPubky, order.id, listingId);
+      if (after === 'removed') {
+        await this.retractRepublishedOwnReview(model, url);
+        return null;
+      }
+      if (after === 'unknown') return model;
+    }
     const synced: CommerceReviewModelSchema = { ...model, sync_status: 'synced', updated_at: Date.now() };
+    if (!stillCurrent()) return null;
     await LocalCommerceService.upsertOwnReview(synced);
     await LocalCommerceService.completeSyncJob(job.id);
     return synced;
   }
 
   /**
-   * Retries every own-review record whose homeserver PUT never landed (the
-   * visible retryable outbox): re-publishes the staged record verbatim and
-   * marks it synced. Called when the orders surface loads, so a failed
-   * publication heals on the next visit instead of rotting silently.
+   * Takes back a publication a withdrawal overtook: DELs the record (a 404
+   * counts) and drops the row and its jobs. A failed DEL leaves the pending
+   * row for the next retry, which finds the withdrawal again.
    */
-  static async resumeOwnReviewPublications(actorPubky: string): Promise<number> {
-    const pending = await LocalCommerceService.getPendingOwnReviews(actorPubky);
-    let published = 0;
-    for (const row of pending) {
-      const url = CommerceRecordNormalizer.reviewUri(row.owner_id, row.review_id);
-      try {
-        await CommerceHomeserverService.putJson(url, { ...row.record });
-        await LocalCommerceService.upsertOwnReview({ ...row, sync_status: 'synced', updated_at: Date.now() });
-        published += 1;
-      } catch (error) {
-        Logger.warn('Own review publication retry failed; the row stays pending', {
+  private static async retractRepublishedOwnReview(row: CommerceReviewModelSchema, url: string): Promise<void> {
+    try {
+      await CommerceHomeserverService.delete(url);
+    } catch (error) {
+      if (!(isAppError(error) && isNotFound(error))) {
+        Logger.warn('Could not take back a review that was removed meanwhile; it stays pending', {
           reviewId: row.review_id,
           error,
         });
+        return;
       }
     }
+    await LocalCommerceService.abandonOwnReviewPublication(row);
+  }
+
+  /**
+   * Retries every own-review record whose homeserver PUT never landed (the
+   * visible retryable outbox): re-publishes the staged record verbatim and
+   * marks it synced, and re-reads the attestations of reviews a double-blind
+   * window still withheld ({@link resumeAwaitingReleaseReviews}). Called when
+   * the orders surface loads, so a failed publication heals on the next visit
+   * instead of rotting silently.
+   */
+  static async resumeOwnReviewPublications(actorPubky: string): Promise<number> {
+    const pending = await LocalCommerceService.getPendingOwnReviews(actorPubky);
+    let published = await this.resumeAwaitingReleaseReviews(actorPubky);
+    for (const queued of pending) {
+      const url = CommerceRecordNormalizer.reviewUri(queued.owner_id, queued.review_id);
+      published += await this.withOwnReviewLock(queued.owner_id, queued.order_id, async () => {
+        // Re-read under the lock: a removal or a newer publication since the
+        // scan owns the review now.
+        const row = await LocalCommerceService.getOwnReviewById(queued.id);
+        if (row === undefined || row.sync_status !== 'pending') return 0;
+        if (await LocalCommerceService.hasOwedOwnReviewRemoval(row.owner_id, row.order_id, row.record.listingId)) {
+          return 0;
+        }
+        // The user may have removed this item's review elsewhere since it was staged.
+        const removal = await this.fetchOwnReviewRemovalState(row.owner_id, row.order_id, row.record.listingId);
+        if (removal === 'unknown') return 0;
+        if (removal === 'removed') {
+          await this.retractRepublishedOwnReview(row, url);
+          return 0;
+        }
+        try {
+          await CommerceHomeserverService.putJson(url, { ...row.record });
+          await LocalCommerceService.upsertOwnReview({ ...row, sync_status: 'synced', updated_at: Date.now() });
+          await LocalCommerceService.completeOwnReviewPublishJobs(row.owner_id, row.review_id);
+          return 1;
+        } catch (error) {
+          Logger.warn('Own review publication retry failed; the row stays pending', {
+            reviewId: row.review_id,
+            error,
+          });
+          return 0;
+        }
+      });
+    }
     return published;
+  }
+
+  /**
+   * Holds a review the service withheld behind a double-blind window: it
+   * issued no attestation, so there is no record to build yet. The terms of
+   * the result wait in the outbox as one `awaiting_release` job per order
+   * (not a failure: no attempts, no backoff), and an edit made meanwhile
+   * replaces the item it edits. Nothing is published before release.
+   */
+  private static async stageAwaitingReleaseReview(
+    actorPubky: string,
+    order: MarketplaceOrder,
+    result: Record<string, unknown>,
+    releaseAt: string | null,
+  ): Promise<void> {
+    const review = reviewResultSchema.safeParse(result.review);
+    const reviews = Array.isArray(result.reviews)
+      ? result.reviews.flatMap((entry) => {
+          const parsed = reviewItemResultSchema.safeParse(entry);
+          return parsed.success ? [parsed.data] : [];
+        })
+      : [];
+    if (!review.success && reviews.length === 0) {
+      Logger.warn('A withheld review result carried no review terms; nothing was held for release', {
+        orderId: order.id,
+      });
+      return;
+    }
+    await this.withOwnReviewLock(actorPubky, order.id, async () => {
+      const [earlier] = await LocalCommerceService.getAwaitingReleaseReviewJobs(actorPubky, order.id);
+      const held = earlier === undefined ? null : awaitingReleasePayloadSchema.safeParse(earlier.payload);
+      const before = held?.success === true && held.data.withdrawn !== true ? held.data.result : null;
+      const merged = [...(before?.reviews ?? [])];
+      for (const next of reviews) {
+        const at = merged.findIndex(({ listingAggregateId }) => listingAggregateId === next.listingAggregateId);
+        if (at === -1) merged.push(next);
+        else merged[at] = next;
+      }
+      const lineOf = (aggregateId: string) => order.lines.findIndex((line) => line.listingAggregateId === aggregateId);
+      merged.sort((left, right) => lineOf(left.listingAggregateId) - lineOf(right.listingAggregateId));
+      const payload: AwaitingReleasePayload = {
+        orderId: order.id,
+        sellerPubky: order.sellerPubky,
+        firstListingId: this.listingIdFromOrder(order),
+        releaseAt: releaseAt ?? (held?.success === true ? held.data.releaseAt : null),
+        result: {
+          ...(review.success ? { review: review.data } : before?.review ? { review: before.review } : {}),
+          ...(merged.length > 0 ? { reviews: merged } : {}),
+        },
+      };
+      const now = Date.now();
+      await LocalCommerceService.stageAwaitingReleaseReview({
+        ...this.createSyncJob({
+          ownerId: actorPubky,
+          entityType: 'review',
+          entityId: order.id,
+          operation: 'publish',
+          payload: payload as CommerceJsonValue,
+          now,
+        }),
+        status: 'awaiting_release',
+        created_at: earlier?.created_at ?? now,
+      });
+    });
+  }
+
+  /** The reviews the user wrote that a double-blind window still withholds, newest terms first-written first; withdrawn ones are gone. */
+  static async getAwaitingReleaseReviews(actorPubky: string): Promise<AwaitingReleaseReview[]> {
+    const jobs = await LocalCommerceService.getAwaitingReleaseReviewJobs(actorPubky);
+    return jobs.flatMap((job) => {
+      const parsed = awaitingReleasePayloadSchema.safeParse(job.payload);
+      if (!parsed.success || parsed.data.withdrawn === true) return [];
+      const { orderId, sellerPubky, firstListingId, releaseAt, result } = parsed.data;
+      const reviews = result.reviews ?? (result.review === undefined ? [] : [result.review]);
+      const items = [
+        ...(result.reviews ?? []).map((review) => ({
+          listingId: listingIdFromAggregate(sellerPubky, review.listingAggregateId),
+          review,
+        })),
+        ...((result.reviews ?? []).length === 0 && result.review !== undefined
+          ? [{ listingId: firstListingId, review: result.review }]
+          : []),
+      ].flatMap(({ listingId, review }) =>
+        listingId === null
+          ? []
+          : [
+              {
+                listingOwnerPubky: sellerPubky,
+                listingId,
+                rating: review.rating,
+                text: review.text,
+                updatedAt: review.updatedAt,
+              },
+            ],
+      );
+      const role = reviews[0]?.reviewerRole;
+      return role === undefined || items.length === 0 ? [] : [{ orderId, releaseAt, reviewerRole: role, items }];
+    });
+  }
+
+  /**
+   * Retries the reviews a double-blind window withheld: each order's job is
+   * re-read under that order's lock (two tabs retrying one job publish one
+   * set of records), and the attestations are asked for again. Still
+   * withheld leaves the job as it is, a released answer publishes the item
+   * records in line order, and a review the user removed meanwhile never
+   * publishes. With `orderId` only that order is retried. Returns the number
+   * of records published.
+   */
+  static async resumeAwaitingReleaseReviews(actorPubky: string, orderId?: string): Promise<number> {
+    const jobs = await LocalCommerceService.getAwaitingReleaseReviewJobs(actorPubky, orderId);
+    let published = 0;
+    for (const queued of jobs) {
+      if (!this.liveIdentityMatches(actorPubky)) break;
+      published += await this.withOwnReviewLock(actorPubky, queued.entity_id, () =>
+        this.releaseAwaitingReview(actorPubky, queued.id),
+      );
+    }
+    return published;
+  }
+
+  /** One retry of a withheld review; the caller holds its order's publication lock. */
+  private static async releaseAwaitingReview(actorPubky: string, jobId: string): Promise<number> {
+    const job = await LocalCommerceService.getSyncJob(jobId);
+    if (job === undefined || job === null || job.status !== 'awaiting_release') return 0;
+    const orderId = job.entity_id;
+    const parsed = awaitingReleasePayloadSchema.safeParse(job.payload);
+    if (!parsed.success) {
+      Logger.warn('A withheld review job carries unreadable terms; dropping it', { orderId });
+      await LocalCommerceService.completeSyncJob(job.id);
+      return 0;
+    }
+    const payload = parsed.data;
+    if (payload.withdrawn === true) {
+      await this.finishWithdrawnAwaitingReview(actorPubky, job.id, orderId);
+      return 0;
+    }
+
+    let order: MarketplaceOrder | null;
+    let attestations: MarketplaceItemAttestation[];
+    try {
+      order = await MarketplaceGatewayService.getOrder(actorPubky, orderId);
+      if (order === null) return 0;
+      const read = await this.readAwaitingReleaseAttestations(actorPubky, order, payload);
+      if (read === 'unavailable') return 0;
+      if (read.kind === 'pending') {
+        if (read.releaseAt !== payload.releaseAt) {
+          await LocalCommerceService.stageAwaitingReleaseReview({
+            ...job,
+            payload: { ...payload, releaseAt: read.releaseAt } as CommerceJsonValue,
+            updated_at: Math.max(Date.now(), job.updated_at + 1),
+          });
+        }
+        return 0;
+      }
+      attestations = read.attestations;
+    } catch (error) {
+      Logger.warn('Could not re-read the attestations of a withheld review; it stays held', { orderId, error });
+      return 0;
+    }
+
+    if (attestations.length === 0) {
+      // Released, and this deployment issues no attestations: the review stays
+      // service-only, as when no attestor is configured.
+      await LocalCommerceService.completeSyncJob(job.id);
+      return 0;
+    }
+    const stillCurrent = () => this.liveIdentityMatches(actorPubky);
+    const items = this.awaitingReleaseItems(order, payload, attestations);
+    let published = 0;
+    let keepJob = false;
+    for (const item of items) {
+      if (!stillCurrent()) return published;
+      if (await LocalCommerceService.hasOwedOwnReviewRemoval(actorPubky, orderId, item.listingId)) continue;
+      try {
+        const record = await this.publishReviewRecord({ actorPubky, order, ...item, stillCurrent, repair: true });
+        if (record === null) {
+          // Nothing was written. A removal is final; anything else (a read that
+          // could not answer, an identity change) is retried.
+          if ((await this.fetchOwnReviewRemovalState(actorPubky, orderId, item.listingId)) !== 'removed') {
+            keepJob = true;
+          }
+        } else if (record.sync_status === 'synced') {
+          published += 1;
+        }
+      } catch (error) {
+        Logger.warn('A released review could not be published yet', { orderId, listingId: item.listingId, error });
+        // The row staged before the failed PUT carries on from the outbox;
+        // before that, the held terms are the only copy.
+        if ((await LocalCommerceService.getOwnReviewByOrder(actorPubky, orderId, item.listingId)) === undefined) {
+          keepJob = true;
+        }
+      }
+    }
+    if (!keepJob && stillCurrent()) await LocalCommerceService.completeSyncJob(job.id);
+    return published;
+  }
+
+  /**
+   * Re-reads the attestations of a withheld review: one per held item on
+   * the per-item route, or the single first-line one for a review held
+   * without per-item terms. `pending` carries the window end the service
+   * answered with; `unavailable` means the service knows no such order.
+   */
+  private static async readAwaitingReleaseAttestations(
+    actorPubky: string,
+    order: MarketplaceOrder,
+    payload: AwaitingReleasePayload,
+  ): Promise<
+    | { kind: 'pending'; releaseAt: string | null }
+    | { kind: 'released'; attestations: MarketplaceItemAttestation[] }
+    | 'unavailable'
+  > {
+    const perItem = (payload.result.reviews?.length ?? 0) > 0;
+    const raw = perItem
+      ? await MarketplaceGatewayService.getReviewAttestations(actorPubky, order.id)
+      : await MarketplaceGatewayService.getReviewAttestation(actorPubky, order.id);
+    if (raw === null) return 'unavailable';
+    const pending = readReviewAttestationPending(raw);
+    if (pending !== null) return { kind: 'pending', releaseAt: pending.releaseAt };
+    if (perItem) {
+      return { kind: 'released', attestations: extractReviewAttestations({ attestations: raw }) };
+    }
+    const single = marketplaceAttestationSchema.safeParse(raw);
+    const listingId = this.listingIdFromOrder(order);
+    return {
+      kind: 'released',
+      attestations: single.success && listingId !== null ? [{ ...single.data, listingId }] : [],
+    };
+  }
+
+  /** The held terms paired with the released attestations, in line order. */
+  private static awaitingReleaseItems(
+    order: MarketplaceOrder,
+    payload: AwaitingReleasePayload,
+    attestations: MarketplaceItemAttestation[],
+  ) {
+    if ((payload.result.reviews?.length ?? 0) > 0) {
+      return this.reviewItemsOf(order, { reviews: payload.result.reviews }, attestations);
+    }
+    const [single] = attestations;
+    return payload.result.review === undefined || single === undefined
+      ? []
+      : [{ listingId: single.listingId, review: payload.result.review, attestation: single }];
+  }
+
+  /**
+   * Finishes the removal of a review withdrawn while it was withheld: the
+   * service withdrawal, then the job. Nothing was ever published, so there is
+   * no homeserver record to delete. A withdrawal that does not land leaves
+   * the (already withdrawn-marked) job for the next retry.
+   */
+  private static async finishWithdrawnAwaitingReview(
+    actorPubky: string,
+    jobId: string,
+    orderId: string,
+  ): Promise<boolean> {
+    const failure = await this.withdrawOwnReviewAtService(actorPubky, orderId);
+    if (failure !== null) {
+      Logger.warn('Withdrawal of a withheld review failed; the outbox job stays and retries', { orderId, failure });
+      return false;
+    }
+    await LocalCommerceService.completeSyncJob(jobId);
+    return true;
+  }
+
+  /**
+   * One product's own rating (buyer reviews of this listing only), from the
+   * Nexus listing projection. `null` when the index answered and holds no
+   * reviews for it (the page shows "No rating yet"); `unavailable` when the
+   * index did not answer, has not indexed the listing, or sent a malformed
+   * projection, so the page makes no claim. A single attempt, so a listing
+   * Nexus has not indexed yet does not wait out the 404 backoff.
+   *
+   * The request names the effective trust list's windows (`attestors=`), so
+   * an index with trust buckets also serves the exact counted figure, carried
+   * on the snippet as `scoped`; older indexes ignore the parameter.
+   */
+  static async fetchListingRating(
+    sellerPubky: string,
+    listingId: string,
+  ): Promise<CommerceReputationSnippet | null | 'unavailable'> {
+    if (getCommerceAdapterMode() === 'sandbox') return 'unavailable';
+    try {
+      const attestors = attestorWindowsParam();
+      const details = await NexusMarketplaceService.fetchListingDetailsOnce({
+        seller_id: sellerPubky,
+        listing_id: listingId,
+        ...(attestors !== null && { attestors }),
+      });
+      const rating = CommerceRecordNormalizer.nexusListingDetails(details).listing_reputation;
+      const scoped = CommerceRecordNormalizer.nexusScopedListingReputation(details);
+      return rating === null || scoped === undefined ? rating : { ...rating, scoped };
+    } catch {
+      return 'unavailable';
+    }
   }
 
   /**
@@ -3603,12 +5082,20 @@ export class CommerceApplication {
    * answers 200 (proving the deployment indexes reviews at all). Anything
    * else degrades to `unavailable`, which renders NO reputation surface —
    * absence, never a fake state.
+   *
+   * The request names the effective trust list's windows (`attestors=`), so
+   * an index with trust buckets also serves the exact counted figure
+   * (`scoped`); older indexes ignore the parameter.
    */
   static async fetchSellerReputationOverview(sellerPubky: string): Promise<CommerceSellerReputationOverview> {
     if (getCommerceAdapterMode() === 'sandbox') return { status: 'unavailable' };
 
     try {
-      const payload = await NexusMarketplaceService.fetchShopReputation({ seller_id: sellerPubky });
+      const attestors = attestorWindowsParam();
+      const payload = await NexusMarketplaceService.fetchShopReputation({
+        seller_id: sellerPubky,
+        ...(attestors !== null && { attestors }),
+      });
       return { status: 'rated', summary: CommerceRecordNormalizer.nexusReputationSummary(payload) };
     } catch (error) {
       if (!(isAppError(error) && isNotFound(error))) {
@@ -3628,19 +5115,23 @@ export class CommerceApplication {
 
   /**
    * A page of indexed reviews about a seller (with joined seller responses),
-   * newest-indexed first. `unavailable` means the index does not serve
-   * review routes (old deployment or unreachable) — callers render no
-   * review section rather than an empty one.
+   * newest-indexed first unless the page names a sort. `unavailable` means
+   * the index does not serve review routes (old deployment or unreachable) —
+   * callers render no review section rather than an empty one.
    */
   static async fetchSellerReviews(
     sellerPubky: string,
-    page: { skip?: number; limit?: number } = {},
+    page: CommerceReviewsPage = {},
   ): Promise<CommerceIndexedReviewsResult> {
     if (getCommerceAdapterMode() === 'sandbox') return { status: 'unavailable' };
     try {
-      const payload = await NexusMarketplaceService.fetchShopReviews({ seller_id: sellerPubky, ...page });
-      return { status: 'ok', reviews: CommerceRecordNormalizer.nexusReviewStream(payload) };
+      const payload = await NexusMarketplaceService.fetchShopReviews({
+        seller_id: sellerPubky,
+        ...reviewsQuery(page),
+      });
+      return reviewsResult(payload, page);
     } catch (error) {
+      if (page.filter !== undefined && hasHttpStatus(error, HttpStatusCode.BAD_REQUEST)) return { status: 'rejected' };
       Logger.warn('Seller reviews fetch failed; rendering no review section', { sellerPubky, error });
       return { status: 'unavailable' };
     }
@@ -3650,17 +5141,18 @@ export class CommerceApplication {
   static async fetchListingReviews(
     sellerPubky: string,
     listingId: string,
-    page: { skip?: number; limit?: number } = {},
+    page: CommerceReviewsPage = {},
   ): Promise<CommerceIndexedReviewsResult> {
     if (getCommerceAdapterMode() === 'sandbox') return { status: 'unavailable' };
     try {
       const payload = await NexusMarketplaceService.fetchListingReviews({
         seller_id: sellerPubky,
         listing_id: listingId,
-        ...page,
+        ...reviewsQuery(page),
       });
-      return { status: 'ok', reviews: CommerceRecordNormalizer.nexusReviewStream(payload) };
+      return reviewsResult(payload, page);
     } catch (error) {
+      if (page.filter !== undefined && hasHttpStatus(error, HttpStatusCode.BAD_REQUEST)) return { status: 'rejected' };
       Logger.warn('Listing reviews fetch failed; rendering no review section', { sellerPubky, listingId, error });
       return { status: 'unavailable' };
     }
@@ -3804,9 +5296,19 @@ export class CommerceApplication {
     profile,
     location,
   }: TCommitCreateDefaultShopParams): Promise<void> {
-    const shipsFrom =
-      location ??
-      (await LocalCommerceService.getListingsBySeller(ownerPubky)).find((row) => row.record.location)?.record.location;
+    // Listings published before the country field was checked may carry UK or a code that names no country:
+    // the shop takes the ISO code of the first real country, or none.
+    const namesCountry = (candidate: CommerceShopRecord['location'] | undefined) =>
+      candidate !== undefined && isAssignedCountryCode(publishedCountryCode(candidate.countryCode));
+    const source = namesCountry(location)
+      ? location
+      : (await LocalCommerceService.getListingsBySeller(ownerPubky))
+          .map((row) => row.record.location)
+          .find(namesCountry);
+    const shipsFrom = source ? { ...source, countryCode: publishedCountryCode(source.countryCode) } : undefined;
+    // Nothing says where this shop is, so it would fall back to the default country. A blocked default
+    // must not be published for the seller: they choose a country in shop settings instead.
+    if (!shipsFrom && getRegionPolicy().modeOf(DEFAULT_SHOP_COUNTRY_CODE) === 'blocked') return;
     const record = buildDefaultShopRecord({ ownerPubky, profile, location: shipsFrom, now: new Date() });
     await this.queueShopWrite(ownerPubky, async () => {
       if (await LocalCommerceService.getShop(ownerPubky)) return;
@@ -4350,6 +5852,57 @@ export class CommerceApplication {
   }
 
   /**
+   * Withdraws an announcement the transaction service never registered by
+   * deleting the seller-signed record from the seller's homeserver; Nexus
+   * removes it from discovery on the delete event. A registered drop keeps
+   * its record, because the record backs the public drop page: an announced
+   * one is withdrawn with `drop.cancel`, and an ended one keeps its archive.
+   *
+   * Any signed-in viewer may run `drop.sync`, and one that fetched the record
+   * just before the delete can commit after the first check. The registration
+   * is therefore re-read after the delete, again after
+   * {@link DROP_WITHDRAW_RECHECK_DELAYS_MS} (a sync commits milliseconds after
+   * its homeserver fetch), and if the drop turned out registered, or the
+   * re-read failed, the same record is published back before returning.
+   */
+  static async withdrawUnregisteredDrop(
+    actorPubky: string,
+    record: CommerceDropRecord,
+  ): Promise<'withdrawn' | 'registered'> {
+    if (!isDurableCommerceMode(getCommerceAdapterMode())) {
+      throw Err.client(ClientErrorCode.BAD_REQUEST, 'Drops require the durable transaction service.', {
+        service: ErrorService.Marketplace,
+        operation: 'withdrawUnregisteredDrop',
+      });
+    }
+    if (record.ownerPubky !== actorPubky) {
+      throw Err.auth(AuthErrorCode.FORBIDDEN, 'Only the seller can withdraw a drop announcement.', {
+        service: ErrorService.Marketplace,
+        operation: 'withdrawUnregisteredDrop',
+      });
+    }
+    const { ownerPubky, dropId } = record;
+    if ((await MarketplaceGatewayService.getPublicDrop(ownerPubky, dropId)) !== null) return 'registered';
+    await CommerceHomeserverService.delete(CommerceRecordNormalizer.dropUri(ownerPubky, dropId));
+    let registeredMeanwhile = false;
+    try {
+      for (const delayMs of DROP_WITHDRAW_RECHECK_DELAYS_MS) {
+        if (delayMs > 0) await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+        if ((await MarketplaceGatewayService.getPublicDrop(ownerPubky, dropId)) !== null) {
+          registeredMeanwhile = true;
+          break;
+        }
+      }
+    } catch (readError) {
+      await this.commitPublishDrop(record);
+      throw readError;
+    }
+    if (!registeredMeanwhile) return 'withdrawn';
+    await this.commitPublishDrop(record);
+    return 'registered';
+  }
+
+  /**
    * Seller-only drop lifecycle commands, both CAS-guarded with the freshly
    * read revision: `drop.cancel` (kill switch, announced/live) and
    * `drop.release_listings` (return an ENDED drop's listings to open sale).
@@ -4424,6 +5977,34 @@ export class CommerceApplication {
    * cleanup — a media file that outlives its record is unreferenced bytes,
    * not a live listing, so media failures never block the deletion.
    */
+  /**
+   * A listing is a homeserver record the service can only follow, so the check that keeps an auction
+   * with bids from being deleted out from under its bidders has to run here, before the DELETE. The
+   * service's bid count is the authority; where it can't be read the delete waits, because an auction
+   * that has not ended may have bids this device does not know of. Nothing is asked for a listing that
+   * is not an auction, an auction that has ended, or a deployment without a transaction service.
+   */
+  private static async assertNoLiveAuctionBids(
+    ownerPubky: string,
+    listingId: string,
+    local: CommerceListingModelSchema | null | undefined,
+  ): Promise<void> {
+    if (!local || local.record.sale.format !== 'auction') return;
+    if (!isDurableCommerceMode(getCommerceAdapterMode())) return;
+    if (isAuctionSaleEnded(local.record.sale, Date.now())) return;
+    const projection = await MarketplaceGatewayService.getListing(
+      ownerPubky,
+      buildMarketplaceListingAggregateId(ownerPubky, listingId),
+    );
+    const bids = bidsBlockingDelete(projection?.auction, false);
+    if (bids === 0) return;
+    throw Err.client(ClientErrorCode.CONFLICT, AUCTION_HAS_BIDS_MESSAGE, {
+      service: ErrorService.Marketplace,
+      operation: 'commitDeleteListing',
+      context: { refusal: AUCTION_HAS_BIDS_REFUSAL, bidCount: bids },
+    });
+  }
+
   static async commitDeleteListing(ownerPubky: string, listingId: string): Promise<void> {
     const compositeListingId = `${ownerPubky}:${listingId}`;
     const local = await LocalCommerceService.getListing(compositeListingId);
@@ -4436,6 +6017,8 @@ export class CommerceApplication {
       payload: { url },
       now: Date.now(),
     });
+
+    await this.assertNoLiveAuctionBids(ownerPubky, listingId, local);
 
     const attempt = this.beginListingRegistration(ownerPubky, listingId);
     this.assertListingRegistrationFence(attempt);
@@ -4996,7 +6579,7 @@ export class CommerceApplication {
 
 function listingRegistrationRefusal(response: MarketplaceCommandResponse) {
   const variantCopy = response.ok ? null : variantRefusalMessage(response.error);
-  return Err.client(ClientErrorCode.BAD_REQUEST, variantCopy ?? 'Marketplace listing registration was refused.', {
+  return Err.client(ClientErrorCode.BAD_REQUEST, variantCopy ?? 'Market listing registration was refused.', {
     service: ErrorService.Marketplace,
     operation: 'registerListing',
   });

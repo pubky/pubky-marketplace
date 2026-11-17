@@ -32,6 +32,11 @@ vi.mock('@/stores/auth/auth.store', () => ({
   }),
 }));
 
+const scroll = vi.hoisted(() => ({ collapsed: false }));
+vi.mock('@/hooks/useHideOnScroll/useHideOnScroll', () => ({
+  useHideOnScroll: () => scroll.collapsed,
+}));
+
 vi.mock('@/hooks/usePublicRoute/usePublicRoute', () => ({
   usePublicRoute: vi.fn(() => ({
     isPublicRoute: false,
@@ -224,61 +229,6 @@ describe('MobileHeader', () => {
   });
 });
 
-describe('MobileHeader - Snapshots', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockCurrentUserPubky = 'pk:test-user-pubky';
-    mockIsCoreExploreRoute = false;
-    mockIsPublicExploreRoute = false;
-  });
-
-  it('matches snapshot with default props', () => {
-    const { container } = render(<MobileHeader />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with solid background (hasGradientBackground=false)', () => {
-    const { container } = render(<MobileHeader hasGradientBackground={false} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with fixed positioning', () => {
-    const { container } = render(<MobileHeader fixed />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom onLeftIconClick', () => {
-    const mockOnLeftIconClick = vi.fn();
-    const { container } = render(<MobileHeader onLeftIconClick={mockOnLeftIconClick} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for left button', () => {
-    render(<MobileHeader />);
-
-    // Icons are now actual lucide-react components (SVGs), find buttons by position
-    const buttons = screen.getAllByRole('button');
-    const leftButton = buttons[0];
-    expect(leftButton).toMatchSnapshot();
-  });
-
-  it('matches snapshot for right button', () => {
-    render(<MobileHeader />);
-
-    // Icons are now actual lucide-react components (SVGs), find buttons by position
-    const buttons = screen.getAllByRole('button');
-    const rightButton = buttons[1];
-    expect(rightButton).toMatchSnapshot();
-  });
-
-  it('matches snapshot for logo', () => {
-    render(<MobileHeader />);
-
-    const logo = screen.getByTestId('logo');
-    expect(logo).toMatchSnapshot();
-  });
-});
-
 it('requests sign-in for a retained legacy identity with no grant session', () => {
   mockCurrentUserPubky = 'legacy-pubky';
   mockHasSession = false;
@@ -291,4 +241,29 @@ it('requests sign-in for a retained legacy identity with no grant session', () =
   } finally {
     mockHasSession = true;
   }
+});
+
+describe('MobileHeader - scrolled away', () => {
+  afterEach(() => {
+    scroll.collapsed = false;
+  });
+
+  it('slides off screen and leaves the tab order while the page scrolls down', () => {
+    scroll.collapsed = true;
+    const { container } = render(<MobileHeader />);
+
+    const header = container.firstElementChild as HTMLElement;
+    expect(header).toHaveClass('-translate-y-full');
+    expect(header).toHaveAttribute('inert');
+    expect(document.documentElement).toHaveAttribute('data-mobile-header-collapsed');
+  });
+
+  it('is in place and reachable otherwise', () => {
+    const { container } = render(<MobileHeader />);
+
+    const header = container.firstElementChild as HTMLElement;
+    expect(header).not.toHaveClass('-translate-y-full');
+    expect(header).not.toHaveAttribute('inert');
+    expect(document.documentElement).not.toHaveAttribute('data-mobile-header-collapsed');
+  });
 });

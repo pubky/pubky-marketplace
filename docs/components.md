@@ -38,7 +38,7 @@ templates/ → Page layouts
 ```
 src/components/atoms/Button/
 ├── Button.tsx           # Main component
-├── Button.test.tsx      # Unit + snapshot tests
+├── Button.test.tsx      # Unit tests
 └── Button.types.ts      # Type definitions
 ```
 
@@ -53,11 +53,11 @@ Do not add `index.ts` / `index.tsx` under `src/components` whose sole job is re-
 
 Guests can open routes that do not require a session:
 
-| Kind           | Paths                                                                                             | `@/app/routes` helper  | `usePublicRoute()` flag |
-| -------------- | ------------------------------------------------------------------------------------------------- | ---------------------- | ----------------------- |
-| Core explore   | `/home`, `/hot`, `/search`, `/collections`                                                        | `isCoreExploreRoute`   | `isCoreExploreRoute`    |
-| Dynamic public | `/post/[userId]/[postId]`, `/profile/[pubky]`, `/invite/[code]`, `/collections/[userId]/[postId]` | `isDynamicPublicRoute` | `isDynamicPublicRoute`  |
-| Either         | —                                                                                                 | `isPublicExploreRoute` | `isPublicExploreRoute`  |
+| Kind           | Paths                                                                           | `@/app/routes` helper  | `usePublicRoute()` flag |
+| -------------- | ------------------------------------------------------------------------------- | ---------------------- | ----------------------- |
+| Core explore   | `/home`, `/hot`, `/search`, `/collections`                                      | `isCoreExploreRoute`   | `isCoreExploreRoute`    |
+| Dynamic public | `/post/[userId]/[postId]`, `/profile/[pubky]`, `/collections/[userId]/[postId]` | `isDynamicPublicRoute` | `isDynamicPublicRoute`  |
+| Either         | —                                                                               | —                      | `isPublicExploreRoute`  |
 
 - **Route guard:** `EXPLORE_ROUTES` is included in `UNAUTHENTICATED_ROUTES`; dynamic public paths are allowed via `isDynamicPublicRoute()` in `RouteGuardProvider`.
 - **UI chrome:** use `usePublicRoute()` for layout (e.g. explore header, mobile footer on `/home`). `isPublicRoute` on the hook result is a **legacy alias** for `isDynamicPublicRoute` only—it is `false` on `/home` even though the page is browsable.
@@ -164,57 +164,81 @@ The `@/icons` alias is defined in `tsconfig.json` and points at `src/libs/icons/
 
 ### URL → icon / label helpers
 
-Helpers such as **`getIconFromUrl`** and **`getLabelFromUrl`** live in **`@/libs/utils/urlToIcon`** (`src/libs/utils/urlToIcon.ts`). They return Lucide component types or labels for link previews — import them from `@/libs/utils/urlToIcon`, not from `@/icons`.
+**`getIconFromUrl`** lives in **`@/libs/utils/urlToIcon`** (`src/libs/utils/urlToIcon.ts`). It returns icon component types for link previews — import it from `@/libs/utils/urlToIcon`, not from `@/icons`.
 
 ### Tests
 
 Component tests must use **real** `lucide-react` and `@/icons` implementations (no `vi.mock('lucide-react')` / `vi.mock('@/icons')` for icons). See `docs/component-testing.md` — _Icon components: Always Real_.
 
+## Unsaved changes
+
+A settings form that is not auto-saved guards its edits with [`useUnsavedChangesGuard`](../src/hooks/useUnsavedChangesGuard/useUnsavedChangesGuard.ts) and [`UnsavedChangesDialog`](../src/components/molecules/Marketplace/UnsavedChangesDialog.tsx): pass the form's dirty flag (for a form with images, include them, as `useMarketplaceShopSettings().isDirty` does). While dirty, closing or reloading the tab asks through the browser, and a click on a link to another page of the site is held back until the seller chooses Keep editing or Discard changes. Hash-only links, new-tab links, downloads and modifier-clicks are not held back. The browser's Back button cannot be intercepted by an app-router page, so it is not covered. The Storefront page (`MarketplaceMyShop`) uses it.
+
 ## Toasts
 
-Stack: atom [`Toast`](../src/components/atoms/Toast/Toast.tsx) + [`Toast.variants.ts`](../src/components/atoms/Toast/Toast.variants.ts) + [`Toast.icons.tsx`](../src/components/atoms/Toast/Toast.icons.tsx), molecule [`Toaster`](../src/components/molecules/Toaster/Toaster.tsx), API [`toast()`](../src/components/molecules/Toaster/use-toast.ts) / `useToast()`. `<Toaster />` is mounted in the app layout.
+Use [`toast()`](../src/components/molecules/Toaster/toast.ts) from `@/molecules/Toaster/toast` in components, hooks and providers. `<Toaster />` is mounted in the app layout. The store, subscription hook and Radix atoms are internal; callers do not subscribe to toast state.
 
 ### Variants (`ToastVariant`)
 
-Icons are **not** stock Lucide — they are bespoke filled shapes with knocked-out glyphs in `Toast.icons.tsx`, wired via `TOAST_ICONS` in `Toast.variants.ts` (same semantics as check / alert / info, different source and silhouette).
+| Variant   | Use for                                          |
+| --------- | ------------------------------------------------ |
+| `default` | Success, confirmation, neutral completion        |
+| `error`   | Failures, validation errors, caught exceptions   |
+| `warning` | Caution, rate limits, recoverable problems       |
+| `info`    | Informational feedback, including clipboard copy |
 
-| Variant   | Use for                                         | Icon (`TOAST_ICONS`) |
-| --------- | ----------------------------------------------- | -------------------- |
-| `default` | Success, confirmation, neutral completion       | `ToastSuccessIcon`   |
-| `error`   | Failures, validation errors, caught exceptions  | `ToastErrorIcon`     |
-| `warning` | Caution, rate limits, recoverable problems      | `ToastWarningIcon`   |
-| `info`    | Informational feedback (e.g. copy-to-clipboard) | `ToastInfoIcon`      |
-
-Colors and per-variant styling live in `Toast.variants.ts` (`toastVariants`, `toastIconVariants`, `toastActionVariants`). Update tokens there — do not ad-hoc style toasts with `className` unless intentionally overriding.
+Omit `title` on an error toast to display the fallback “Error”. Icons are custom filled shapes in `Toast.icons.tsx`, wired through `TOAST_ICONS` in `Toast.variants.ts`.
 
 ### Calling `toast()`
 
 ```tsx
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 
-// Success / default (brand styling)
-toast({ title: t('saved'), description: t('savedDesc') });
+toast({ title: 'Saved' });
+toast({ variant: 'error', description: 'Could not save your changes.' });
 
-// Error — omit title to use toast.genericErrorTitle (filled in by Toaster)
-toast({ variant: 'error', description: t('failed') });
-
-// Custom error title when domain copy is specific
-toast({ variant: 'error', title: t('uploadFailed'), description: t('uploadFailedDesc') });
-
-// Warning / info
-toast({ variant: 'warning', title: t('headsUp'), description: t('...') });
-toast({ variant: 'info', title: t('copied'), description: text, dismissButton: true });
+toast({
+  title: 'Item removed from cart',
+  durationMs: 5_000,
+  action: { label: 'Undo', altText: 'Restore the removed item', onClick: restoreItem },
+});
 ```
 
-- Import `toast` from `@/molecules/Toaster/use-toast` (module-level; works in hooks and providers). Use `useToast()` in components when you only need the hook-bound `toast`.
-- **`variant: 'error'`** for errors — not `title: tToast('error')`, not `className: 'destructive …'`, and **no** `showErrorToast` / `showSuccessToast` wrapper helpers.
-- **`dismissButton: true`** when the toast should show an OK action (styled via `toastActionVariants` for the toast variant).
-- **`action`** for a custom `<ToastAction>` (e.g. repost Undo). Pass `variant` on `ToastAction` when it is not rendered by `Toaster`.
-- **`toast()` return value** supports `dismiss()` / `update()` (e.g. Undo flow).
+- Supply at least one of `title` or `description`, both strings. JSX, `className` and Radix props are not part of the public API.
+- `action` is `{ label, altText, onClick }`. The renderer dismisses the current toast before invoking the callback, so a replacement toast stays open. All custom action buttons use the neutral App style.
+- `dismissButton: true` adds a separate OK button. It uses brand styling for the default variant and neutral styling for other variants.
+- The returned handle exposes only `dismiss()`. Callers cannot read or update internal toast state.
+- Ordinary toasts expire after **3 seconds**. Set `durationMs` for a finite extension: cart Undo uses **5 seconds**, and wallet setup/retry uses **60 seconds**. Durations must be finite, greater than zero and no greater than `2_147_483_647`; invalid runtime values fall back to 3 seconds.
+- Only one transient toast is kept at a time, including messages with custom durations. A newer transient message replaces the previous one.
+- `persistent: true` disables expiry and keeps that message outside the transient replacement limit until acted on or dismissed. Reserve it for state the user must resolve; do not use it to extend a wallet retry message. It cannot be combined with `durationMs`.
+- The store owns expiry timers and cancels them on dismissal or replacement. Radix's timer is disabled to avoid competing deadlines. Dismissed toasts leave internal state after 20 seconds.
+- Use `variant: 'error'` for errors; do not add `showErrorToast` / `showSuccessToast` wrappers or style overrides. Styling belongs in `Toast.variants.ts`.
 
 ### Tests
 
-Mock `@/molecules/Toaster/use-toast` in unit tests; assert `variant: 'error'` (or other variant) instead of `title: 'Error'`.
+Mock `@/molecules/Toaster/toast` in feature unit tests; assert the options and invoke action descriptors to exercise their callbacks. Toast integration tests render the real store and Radix renderer, including timing, action replacement and dismissal. Appearance belongs in `Toaster.vrt.test.tsx`.
+
+## Forms
+
+Build forms with `react-hook-form` and `zod` through `@hookform/resolvers/zod`. Use
+`src/hooks/useCreateCollection/useCreateCollection.ts` and its sibling `useCreateCollection.types.ts`
+as a reference for the hook/schema layout.
+
+- The hook owns validation and the mutation. Components call a `use{Action}Form` or `use{Verb}{Entity}` hook that exposes
+  `{ form, submit, reset, ... }`, instead of calling `commit*` controllers directly.
+- `submit()` returns `Promise<boolean>` when the caller only needs success/failure, or a created entity ID as
+  `Promise<string | null>` when navigation needs it, as in `useCreateCollection`. Preserve the caller's existing contract
+  and keep closing or navigation in the caller.
+- Put the Zod schema, `*_FORM_FIELDS` map, inferred type and default values in a sibling `*.types.ts` file.
+- Use React Hook Form's `Controller` through `ControlledInputField` and `ControlledTextareaField` where applicable.
+  Preserve field errors, loading/disabled states and required labels.
+- Compose dedicated hooks for non-text inputs such as cover images and file pickers; their resource lifecycle does not
+  belong in a text-field controller.
+- Keep user-facing validation messages as literal US-English strings. Use Zod v4 `z.url()` for URL validation.
+- Choose validation timing for the interaction being built. For example, `useCreateCollection` uses `onChange` so a blur
+  error does not move the dialog close button during a click. Do not copy a different validation mode incidentally.
+- Follow the existing error-handling and notification contracts; avoid logging an error again when its `Err.*` factory
+  already logged it. See `error-handling.md` and the existing Toasts section above.
 
 ## Design System Integration
 
@@ -289,7 +313,7 @@ When migrating/creating a component:
 - [ ] Component imports point at concrete files (e.g. `@/atoms/Button/Button`), not aggregate folder indexes or re-export-only paths
 - [ ] All Figma variants implemented
 - [ ] CVA used for variant management
-- [ ] Tests created (unit + snapshot) — see `docs/component-testing.md`
+- [ ] Tests created (unit) — see `docs/component-testing.md`
 - [ ] Build passes (`npm run build`)
 - [ ] Visual verification in browser
 
@@ -302,6 +326,6 @@ When creating/modifying components:
 - [ ] Using concrete `@/atoms/*`, `@/molecules/*`, `@/organisms/*`, or `@/templates/*` imports?
 - [ ] Design tokens (not hardcoded colors)?
 - [ ] Figma sizing/spacing matched?
-- [ ] Tests created (unit + snapshot)?
+- [ ] Tests created (unit)?
 - [ ] No re-export-only `index.ts` / `index.tsx` added under `src/components`?
 - [ ] Build passes?

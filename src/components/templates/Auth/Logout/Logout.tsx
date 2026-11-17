@@ -14,7 +14,6 @@ import { ContentCard } from '@/molecules/Content/Content';
 import { LogoutContent, LogoutNavigation } from '@/molecules/Logout/Logout';
 import { PageTitle } from '@/molecules/Page/Page';
 import { useAuthStore } from '@/stores/auth/auth.store';
-import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
 
 type LogoutViewState = 'idle' | 'loading' | 'success' | 'error';
 
@@ -33,15 +32,13 @@ async function handleRouteLogout(setViewState: Dispatch<SetStateAction<LogoutVie
 
 export function Logout() {
   const router = useRouter();
-  const onboardingHasHydrated = useOnboardingStore((state) => state.hasHydrated);
-  const authHasHydrated = useAuthStore((state) => state.hasHydrated);
+  const isHydrated = useAuthStore((state) => state.hasHydrated);
   const session = useAuthStore((state) => state.session);
   const sessionExport = useAuthStore((state) => state.sessionExport);
   const grantSessionRecordId = useAuthStore((state) => state.grantSessionRecordId);
   const isLoggingOut = useAuthStore((state) => state.isLoggingOut);
   const [viewState, setViewState] = useState<LogoutViewState>('idle');
 
-  const isHydrated = onboardingHasHydrated && authHasHydrated;
   const isSignedOut = session === null && sessionExport === null && !grantSessionRecordId;
 
   useEffect(() => {

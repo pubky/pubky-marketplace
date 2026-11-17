@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { MarketplaceCartItem } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
@@ -9,9 +9,13 @@ import { SHIPS_TO_UNAVAILABLE_MESSAGE } from '@/libs/commerce/ships-to';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
+import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
+import { toast } from '@/molecules/Toaster/toast';
+import { useClientRegionStore } from '@/stores/client-region/client-region.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
-import { asOpaque } from '@/test-utils/type-assertions';
+import { createOrderFixture } from '@/test/fixtures/commerce/orders';
+import { resetRegionState, setRegionModes, stubClientRegion } from '@/test-utils/region-modes';
 import { useMarketplaceCheckout } from './useMarketplaceCheckout';
 
 const listing = createCommerceSandboxCatalog().listings.find(({ sale }) => sale.format === 'fixed_price')!;
@@ -68,6 +72,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     fetchPickupAvailable: vi.fn(async () => true),
     fetchDigitalDeliveryCapability: vi.fn(async () => ({ available: true, maxBytes: null })),
     commitCreateMarketplaceCheckout: vi.fn(),
+    setBuyerCountry: vi.fn(),
     getShippedSellers: vi.fn(),
     resolveDeliveryKeysForCheckout: vi.fn(),
     commitAcceptDeliveryKeyChange: vi.fn(),
@@ -83,7 +88,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 
@@ -127,6 +132,24 @@ describe('useMarketplaceCheckout', () => {
     config.paykitServerApi = 'fork';
     authMock.currentUserPubky = null;
     useCommerceStore.setState({ marketplaceSession: null });
+    const order = createOrderFixture('pending_payment', {
+      id: '018f47d2-6a27-7c23-a49d-000000001200',
+      sellerPubky: listing.ownerPubky,
+      buyerPubky: 'b'.repeat(52),
+      lines: [
+        {
+          listingAggregateId: `listing:${listing.ownerPubky}_${listing.listingId}`,
+          listingRevision: listing.revision,
+          contentHash: listing.media[0].contentHash,
+          title: listing.title,
+          quantity: 1,
+          unitPrice: price,
+          subtotal: price,
+        },
+      ],
+    });
+    vi.mocked(CommerceController.getMarketplaceOrders).mockResolvedValue([order]);
+    vi.mocked(CommerceController.bindPaymentMethod).mockResolvedValue({ ...order, paymentMethod: 'bitcoin' });
     vi.mocked(CommerceController.getDeliveryAddresses).mockResolvedValue([]);
     vi.mocked(CommerceController.commitUpsertDeliveryAddress).mockResolvedValue(undefined);
     vi.mocked(CommerceController.commitMarkDeliveryAddressUsed).mockResolvedValue(undefined);
@@ -159,7 +182,7 @@ describe('useMarketplaceCheckout', () => {
       aggregateId: 'checkout:00000000-0000-4000-8000-000000001100',
       revision: 1,
       eventIds: ['00000000-0000-4000-8000-000000001101'],
-      result: { kind: 'checkout' },
+      result: { kind: 'checkout', orders: [{ id: '018f47d2-6a27-7c23-a49d-000000001200' }] },
     });
   });
 
@@ -185,7 +208,7 @@ describe('useMarketplaceCheckout', () => {
 
     let succeeded = true;
     await act(async () => {
-      succeeded = await result.current.submit();
+      succeeded = (await result.current.pay('bitcoin')).ok;
     });
 
     expect(succeeded).toBe(false);
@@ -222,7 +245,7 @@ describe('useMarketplaceCheckout', () => {
     });
 
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
     expect(vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mock.calls[0]?.[0]).not.toHaveProperty(
       'connectorShares',
@@ -231,11 +254,50 @@ describe('useMarketplaceCheckout', () => {
     vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockClear();
     act(() => result.current.storeShare.setShare(listing.ownerPubky, true));
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
     expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledWith(
       expect.objectContaining({ connectorShares: [choice] }),
     );
+  });
+
+  it('remembers the address country as the buyer country only once the order is placed', async () => {
+    process.env[PUBKY_RUNTIME_ENV_NAMES.digitalRegionBlockEnabled] = 'true';
+    resetRuntimeConfigForTests();
+    try {
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [item],
+          vi.fn(async () => {}),
+        ),
+      );
+      act(() => {
+        result.current.form.setValue('name', 'Alice Buyer');
+        result.current.form.setValue('line1', '1 Market Street');
+        result.current.form.setValue('city', 'New York');
+        result.current.form.setValue('region', 'NY');
+        result.current.form.setValue('postalCode', '10001');
+        result.current.form.setValue('countryCode', 'us');
+      });
+      expect(CommerceController.setBuyerCountry).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await result.current.pay('bitcoin');
+      });
+      expect(CommerceController.setBuyerCountry).toHaveBeenCalledWith('US');
+
+      act(() => result.current.form.setValue('countryCode', 'uk'));
+      await act(async () => {
+        await result.current.pay('bitcoin');
+      });
+      expect(CommerceController.setBuyerCountry).toHaveBeenLastCalledWith('GB');
+      expect(vi.mocked(CommerceController.setBuyerCountry).mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mock.invocationCallOrder[0] ?? 0,
+      );
+    } finally {
+      delete process.env[PUBKY_RUNTIME_ENV_NAMES.digitalRegionBlockEnabled];
+      resetRuntimeConfigForTests();
+    }
   });
 
   it('refreshes terms and creates a guarantee-versioned checkout', async () => {
@@ -251,7 +313,7 @@ describe('useMarketplaceCheckout', () => {
 
     let succeeded = false;
     await act(async () => {
-      succeeded = await result.current.submit();
+      succeeded = (await result.current.pay('bitcoin')).ok;
     });
 
     expect(succeeded).toBe(true);
@@ -320,10 +382,15 @@ describe('useMarketplaceCheckout', () => {
 
     let succeeded = false;
     await act(async () => {
-      succeeded = await result.current.submit();
+      succeeded = (await result.current.pay('bitcoin')).ok;
     });
 
     expect(succeeded).toBe(true);
+    expect(CommerceController.bindPaymentMethod).toHaveBeenCalledWith(
+      '018f47d2-6a27-7c23-a49d-000000001200',
+      'bitcoin',
+    );
+    expect(clear).toHaveBeenCalledOnce();
     expect(CommerceController.syncListingRegistration).toHaveBeenCalledTimes(1);
     expect(CommerceController.syncListingRegistration).toHaveBeenCalledWith(listing.ownerPubky, listing.listingId);
     expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledWith(
@@ -352,14 +419,14 @@ describe('useMarketplaceCheckout', () => {
 
     let succeeded = true;
     await act(async () => {
-      succeeded = await result.current.submit();
+      succeeded = (await result.current.pay('bitcoin')).ok;
     });
 
     expect(succeeded).toBe(false);
     expect(CommerceController.syncListingRegistration).toHaveBeenCalledTimes(1);
     expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
     expect(clear).not.toHaveBeenCalled();
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: expect.stringContaining("isn't available for checkout right now") }),
     );
@@ -390,14 +457,14 @@ describe('useMarketplaceCheckout', () => {
 
     let succeeded = true;
     await act(async () => {
-      succeeded = await result.current.submit();
+      succeeded = (await result.current.pay('bitcoin')).ok;
     });
 
     expect(succeeded).toBe(false);
     expect(CommerceController.syncListingRegistration).toHaveBeenCalledTimes(1);
     expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
     expect(clear).not.toHaveBeenCalled();
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: 'This listing was removed. Nothing was reserved.' }),
     );
@@ -438,7 +505,7 @@ describe('useMarketplaceCheckout', () => {
       act(() => fillAddress(result.current.form));
       let succeeded = false;
       await act(async () => {
-        succeeded = await result.current.submit();
+        succeeded = (await result.current.pay('bitcoin')).ok;
       });
       return succeeded;
     };
@@ -671,12 +738,12 @@ describe('useMarketplaceCheckout', () => {
 
     let succeeded = true;
     await act(async () => {
-      succeeded = await result.current.submit();
+      succeeded = (await result.current.pay('bitcoin')).ok;
     });
 
     expect(succeeded).toBe(false);
     expect(clear).not.toHaveBeenCalled();
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: expect.stringContaining('try again') }),
     );
@@ -709,12 +776,12 @@ describe('useMarketplaceCheckout', () => {
 
     let succeeded = true;
     await act(async () => {
-      succeeded = await result.current.submit();
+      succeeded = (await result.current.pay('bitcoin')).ok;
     });
 
     expect(succeeded).toBe(false);
     expect(clear).not.toHaveBeenCalled();
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(expect.objectContaining({ description: expected }));
   });
 
@@ -739,11 +806,11 @@ describe('useMarketplaceCheckout', () => {
 
     let succeeded = true;
     await act(async () => {
-      succeeded = await result.current.submit();
+      succeeded = (await result.current.pay('bitcoin')).ok;
     });
 
     expect(succeeded).toBe(false);
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: 'This listing has sold out.' }),
     );
@@ -827,7 +894,7 @@ describe('useMarketplaceCheckout', () => {
       fillAddress(result);
 
       await act(async () => {
-        await result.current.submit();
+        await result.current.pay('bitcoin');
       });
 
       expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledWith(
@@ -848,7 +915,7 @@ describe('useMarketplaceCheckout', () => {
 
       let succeeded = true;
       await act(async () => {
-        succeeded = await result.current.submit();
+        succeeded = (await result.current.pay('bitcoin')).ok;
       });
 
       expect(succeeded).toBe(false);
@@ -880,7 +947,7 @@ describe('useMarketplaceCheckout', () => {
 
       let succeeded = true;
       await act(async () => {
-        succeeded = await result.current.submit();
+        succeeded = (await result.current.pay('bitcoin')).ok;
       });
 
       expect(succeeded).toBe(false);
@@ -912,11 +979,11 @@ describe('useMarketplaceCheckout', () => {
     });
 
     await act(async () => {
-      expect(await result.current.submit()).toBe(false);
+      expect((await result.current.pay('bitcoin')).ok).toBe(false);
     });
 
     expect(result.current.needsSession).toBe(false);
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: 'You cannot purchase your own listing.' }),
     );
@@ -943,10 +1010,10 @@ describe('useMarketplaceCheckout', () => {
     });
 
     await act(async () => {
-      expect(await result.current.submit()).toBe(false);
+      expect((await result.current.pay('bitcoin')).ok).toBe(false);
     });
 
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: 'Checkout could not be completed.' }),
     );
@@ -964,10 +1031,10 @@ describe('useMarketplaceCheckout', () => {
     });
 
     await act(async () => {
-      expect(await result.current.submit()).toBe(true);
+      expect((await result.current.pay('bitcoin')).ok).toBe(true);
     });
 
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const descriptions = vi.mocked(toast).mock.calls.map(([call]) => call.description);
     expect(descriptions).toContain('Checkout completed, but your cart could not be cleared.');
   });
@@ -992,10 +1059,10 @@ describe('useMarketplaceCheckout', () => {
     });
 
     await act(async () => {
-      expect(await result.current.submit()).toBe(true);
+      expect((await result.current.pay('bitcoin')).ok).toBe(true);
     });
 
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const descriptions = vi.mocked(toast).mock.calls.map(([call]) => call.description);
     expect(descriptions).toContain('Checkout completed, but the address could not be saved.');
   });
@@ -1028,6 +1095,88 @@ describe('useMarketplaceCheckout', () => {
     }
   });
 
+  describe('where a region is blocked, the address country is never taken from the browser language', () => {
+    const LAUNCH = 'EU=blocked,GB=blocked,US=blocked';
+    const open = () =>
+      renderHook(() =>
+        useMarketplaceCheckout(
+          [item],
+          vi.fn(async () => {}),
+        ),
+      );
+    let languages: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      resetRegionState();
+      authMock.currentUserPubky = BUYER;
+      languages = vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['en-GB', 'en']);
+    });
+    afterEach(() => {
+      languages.mockRestore();
+      resetRegionState();
+    });
+
+    it('starts in the IP country when that is open, with an en-GB browser', async () => {
+      setRegionModes(LAUNCH);
+      stubClientRegion('CH');
+      const { result } = open();
+
+      await waitFor(() => expect(result.current.form.getValues('countryCode')).toBe('CH'));
+      expect(result.current.form.getFieldState('countryCode').isDirty).toBe(false);
+    });
+
+    it.each([
+      ['blocked', 'GB'],
+      ['unknown', null],
+    ])('starts with no country when the IP country is %s, and asks the buyer to choose', async (_name, ip) => {
+      setRegionModes(LAUNCH);
+      stubClientRegion(ip);
+      const { result } = open();
+      await waitFor(() => expect(useClientRegionStore.getState().status).toBe('ready'));
+
+      expect(result.current.form.getValues('countryCode')).toBe('');
+      await act(async () => {
+        await result.current.form.trigger('countryCode');
+      });
+      expect(result.current.form.getFieldState('countryCode').error?.message).toBe('Choose your country.');
+    });
+
+    it('does not replace a country the buyer picked when the IP country arrives later', async () => {
+      setRegionModes(LAUNCH);
+      let answer: (response: Response) => void = () => undefined;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => new Promise<Response>((resolve) => (answer = resolve))),
+      );
+      const { result } = open();
+      act(() => result.current.form.setValue('countryCode', 'DE', { shouldDirty: true }));
+
+      await act(async () => {
+        answer(new Response(JSON.stringify({ country: 'CH' }), { status: 200 }));
+      });
+      await waitFor(() => expect(useClientRegionStore.getState().country).toBe('CH'));
+      expect(result.current.form.getValues('countryCode')).toBe('DE');
+    });
+
+    it('does not replace a saved address country when the IP country arrives later', async () => {
+      setRegionModes(LAUNCH);
+      let answer: (response: Response) => void = () => undefined;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => new Promise<Response>((resolve) => (answer = resolve))),
+      );
+      vi.mocked(CommerceController.getDeliveryAddresses).mockResolvedValue([savedAddress]);
+      const { result } = open();
+      await waitFor(() => expect(result.current.selectedAddressId).toBe(savedAddress.id));
+
+      await act(async () => {
+        answer(new Response(JSON.stringify({ country: 'CH' }), { status: 200 }));
+      });
+      await waitFor(() => expect(useClientRegionStore.getState().country).toBe('CH'));
+      expect(result.current.form.getValues('countryCode')).toBe('US');
+    });
+  });
+
   it('prefills from the top saved address and marks it used after a successful order', async () => {
     authMock.currentUserPubky = BUYER;
     vi.mocked(CommerceController.getDeliveryAddresses).mockResolvedValue([savedAddress]);
@@ -1043,7 +1192,7 @@ describe('useMarketplaceCheckout', () => {
 
     let succeeded = false;
     await act(async () => {
-      succeeded = await result.current.submit();
+      succeeded = (await result.current.pay('bitcoin')).ok;
     });
 
     expect(succeeded).toBe(true);
@@ -1080,7 +1229,7 @@ describe('useMarketplaceCheckout', () => {
 
     let succeeded = false;
     await act(async () => {
-      succeeded = await result.current.submit();
+      succeeded = (await result.current.pay('bitcoin')).ok;
     });
 
     expect(succeeded).toBe(true);
@@ -1118,12 +1267,15 @@ describe('useMarketplaceCheckout', () => {
       if (result.current.selectedAddressId !== null) throw new Error('Selection has not been dropped yet.');
     });
 
-    // Re-picking restores the saved values.
+    // Re-picking restores the saved values and drops a pending save whose label input it hides (#355).
     act(() => {
+      result.current.form.setValue('saveAddress', true);
       result.current.selectAddress(savedAddress.id);
     });
     expect(result.current.form.getValues('line1')).toBe('1 Market Street');
     expect(result.current.selectedAddressId).toBe(savedAddress.id);
+    expect(result.current.form.getValues('saveAddress')).toBe(false);
+    expect(result.current.form.getValues('saveLabel')).toBe('');
   });
 
   it('reports hasMarketplaceSession only when the store and getActiveSession agree', () => {
@@ -1274,7 +1426,7 @@ describe('useMarketplaceCheckout', () => {
     });
     expect(vi.mocked(CommerceController.bindPaymentMethod).mock.calls.length).toBe(bindsBefore + 1);
     expect(onRetry).not.toHaveBeenCalled();
-    asOpaque<{ props: { onClick: () => void } }>(setupToast?.action).props.onClick();
+    setupToast?.action?.onClick();
     expect(onRetry).toHaveBeenCalledTimes(1);
     expect(vi.mocked(CommerceController.bindPaymentMethod).mock.calls.length).toBe(bindsBefore + 1);
   });
@@ -1405,7 +1557,7 @@ describe('useMarketplaceCheckout', () => {
 
       let succeeded = false;
       await act(async () => {
-        succeeded = await result.current.submit();
+        succeeded = (await result.current.pay('bitcoin')).ok;
       });
 
       expect(succeeded).toBe(true);
@@ -1427,7 +1579,7 @@ describe('useMarketplaceCheckout', () => {
 
       let succeeded = true;
       await act(async () => {
-        succeeded = await result.current.submit();
+        succeeded = (await result.current.pay('bitcoin')).ok;
       });
 
       expect(succeeded).toBe(false);
@@ -1450,7 +1602,7 @@ describe('useMarketplaceCheckout', () => {
 
       let succeeded = true;
       await act(async () => {
-        succeeded = await result.current.submit();
+        succeeded = (await result.current.pay('bitcoin')).ok;
       });
 
       expect(succeeded).toBe(false);
@@ -1474,7 +1626,7 @@ describe('useMarketplaceCheckout', () => {
       );
       let succeeded = true;
       await act(async () => {
-        succeeded = await result.current.submit();
+        succeeded = (await result.current.pay('bitcoin')).ok;
       });
       expect(succeeded).toBe(false);
       expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
@@ -1497,7 +1649,7 @@ describe('useMarketplaceCheckout', () => {
 
       let succeeded = false;
       await act(async () => {
-        succeeded = await result.current.submit();
+        succeeded = (await result.current.pay('bitcoin')).ok;
       });
 
       expect(succeeded).toBe(true);
@@ -1757,7 +1909,7 @@ describe('useMarketplaceCheckout local pickup (§A2)', () => {
       aggregateId: 'checkout:00000000-0000-4000-8000-000000001100',
       revision: 1,
       eventIds: ['00000000-0000-4000-8000-000000001101'],
-      result: { kind: 'checkout' },
+      result: { kind: 'checkout', orders: [{ id: '018f47d2-6a27-7c23-a49d-000000001200' }] },
     });
   });
 
@@ -1825,7 +1977,7 @@ describe('useMarketplaceCheckout local pickup (§A2)', () => {
 
     let succeeded = false;
     await act(async () => {
-      succeeded = await result.current.submit();
+      succeeded = (await result.current.pay('bitcoin')).ok;
     });
 
     expect(succeeded).toBe(true);
@@ -1860,7 +2012,7 @@ describe('useMarketplaceCheckout local pickup (§A2)', () => {
 
     let succeeded = false;
     await act(async () => {
-      succeeded = await result.current.submit();
+      succeeded = (await result.current.pay('bitcoin')).ok;
     });
 
     expect(succeeded).toBe(true);
@@ -1954,7 +2106,7 @@ describe('useMarketplaceCheckout local pickup (§A2)', () => {
 
   it('maps server and thrown sentinel failures to static copy', async () => {
     const sentinel = 'SENTINEL_SERVER_TEXT_checkout';
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const clear = vi.fn(async () => {});
     const { result } = renderHook(() => useMarketplaceCheckout([item], clear));
     act(() => {
@@ -1970,7 +2122,7 @@ describe('useMarketplaceCheckout local pickup (§A2)', () => {
       error: { code: 'INVALID_STATE', message: sentinel },
     } as never);
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
     expect(vi.mocked(toast).mock.calls[0]?.[0]?.description).toBeTypeOf('string');
     expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain(sentinel);
@@ -1985,7 +2137,7 @@ describe('useMarketplaceCheckout local pickup (§A2)', () => {
       }),
     );
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
     expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain(sentinel);
   });
@@ -2059,7 +2211,7 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
       aggregateId: 'checkout:00000000-0000-4000-8000-000000001100',
       revision: 1,
       eventIds: ['00000000-0000-4000-8000-000000001101'],
-      result: { kind: 'checkout' },
+      result: { kind: 'checkout', orders: [{ id: '018f47d2-6a27-7c23-a49d-000000001200' }] },
     });
   });
 
@@ -2084,7 +2236,7 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
 
     let succeeded = false;
     await act(async () => {
-      succeeded = await result.current.submit();
+      succeeded = (await result.current.pay('bitcoin')).ok;
     });
 
     expect(succeeded).toBe(true);
@@ -2108,7 +2260,7 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
     await waitFor(() => expect(result.current.requiresDeliveryEmail).toBe(true));
     expect(result.current.hasManualDigitalLine).toBe(true);
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
     expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
     expect(result.current.form.getFieldState('deliveryEmail').error?.message).toBe(
@@ -2117,7 +2269,7 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
 
     act(() => result.current.form.setValue('deliveryEmail', 'buyer@example'));
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
     const command = vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mock.calls[0][0];
     expect(command.deliveryEmail).toBe('buyer@example');
@@ -2139,7 +2291,7 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
     });
 
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
 
     expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
@@ -2169,7 +2321,7 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
     });
 
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
 
     const command = vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mock.calls[0][0];
@@ -2263,7 +2415,7 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
   });
 
   it('re-reads the kind at Pay and asks for the email when the seller switched to email', async () => {
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     kinds.pattern = 'file';
     const pattern = digitalCartItem('pattern', ['digital']);
     const { result } = renderHook(() =>
@@ -2276,7 +2428,7 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
 
     kinds.pattern = 'email';
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
 
     expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
@@ -2288,7 +2440,7 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
   });
 
   it('names a digital refusal from its reason and re-reads the kinds', async () => {
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     kinds.guide = 'file';
     const guide = digitalCartItem('guide', ['digital']);
     const { result } = renderHook(() =>
@@ -2309,7 +2461,7 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
     const reads = vi.mocked(CommerceController.getMarketplaceListingProjection).mock.calls.length;
 
     await act(async () => {
-      await result.current.submit();
+      await result.current.pay('bitcoin');
     });
 
     expect(vi.mocked(toast)).toHaveBeenCalledWith({

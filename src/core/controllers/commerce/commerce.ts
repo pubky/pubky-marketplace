@@ -1,7 +1,10 @@
+import { CommerceAttestorApplication, type CommerceAttestorOrderRef } from '@/application/commerce/attestor';
 import {
   CommerceApplication,
   type CommerceCatalogStreamFilters,
   type CommerceCheckoutFulfillmentInput,
+  type CommerceReviewsPage,
+  type CommerceWatchlistSyncStatus,
 } from '@/application/commerce/commerce';
 import {
   type CheckoutDeliveryKeysResolution,
@@ -10,9 +13,13 @@ import {
 } from '@/application/commerce/delivery-keys';
 import { CommerceInventoryApplication, type InventoryBoardRow } from '@/application/commerce/inventory';
 import { CommerceInventoryAutomationsApplication } from '@/application/commerce/inventory-automations';
-import { CommerceInventoryImportApplication } from '@/application/commerce/inventory-import';
+import {
+  CommerceInventoryImportApplication,
+  type InventoryImportListingProgress,
+} from '@/application/commerce/inventory-import';
 import { CommercePrivKeyringApplication } from '@/application/commerce/priv-keyring';
 import { CommerceShippingApplication } from '@/application/commerce/shipping';
+import { CommerceShippingProfilesApplication } from '@/application/commerce/shipping-profiles';
 import { ProfileApplication } from '@/application/profile/profile';
 import { TagKind } from '@/application/tag/tag.types';
 import { UserApplication } from '@/application/user/user';
@@ -23,6 +30,7 @@ import {
   isTransactionalCommerceMode,
 } from '@/config/commerce';
 import { IMAGE_MAX_UPLOAD_SIZE } from '@/config/images';
+import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import type { SellerDeliveryKey } from '@/libs/commerce/delivery-envelope';
 import {
   type MarketplaceDigitalDeliveryCapability,
@@ -37,6 +45,7 @@ import type { BindDeliveryAddress, PaymentMethodKind } from '@/libs/commerce/pay
 import { resolveCheckoutFulfillment } from '@/libs/commerce/pickup';
 import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-address';
 import type { PrivRecoveryKeyExport } from '@/libs/commerce/priv-recovery-key';
+import { SELLER_AUTO_CONFIRM_PASS_TIMEOUT_MS } from '@/libs/commerce/seller-auto-confirm';
 import type { ShipFromAddress, ShippingParcel, ShippoRate } from '@/libs/commerce/shipping';
 import {
   buildMarketplaceListingAggregateId,
@@ -48,11 +57,7 @@ import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
-import {
-  getDigitalRegionBlockEnabled,
-  getEuFenceEnabled,
-  getMarketplaceGrantSessionEnabled,
-} from '@/libs/runtime-config/runtime-config';
+import { getMarketplaceGrantSessionEnabled, getRegionPolicy } from '@/libs/runtime-config/runtime-config';
 import type { CommerceIndexedReview, CommerceListingProjectionModelSchema } from '@/models/commerce/commerce.schema';
 import type { Pubky } from '@/models/models.types';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
@@ -61,10 +66,12 @@ import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplac
 import { isRecognizedMarketplaceNotification } from '@/services/marketplace/marketplace-projections';
 import type { MarketplaceSessionEndedEvent, MarketplaceSessionInfo } from '@/services/marketplace/marketplace-session';
 import { useAuthStore } from '@/stores/auth/auth.store';
-import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
+import { buyerCountryFor, useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import type { CommerceConditionFilter, CommerceSaleFormatFilter, CommerceSort } from '@/stores/commerce/commerce.types';
 import { useNotificationStore } from '@/stores/notification/notification.store';
+import { SELLER_PAYMENT_CONFIRM_PERSIST_KEY } from '@/stores/persistedKeys';
+import { useSellerPaymentConfirmStore } from '@/stores/seller-payment-confirm/seller-payment-confirm.store';
 
 /** Rates for an order, or why this device could not open the address to quote against. */
 export type ShippingRatesResult =
@@ -126,20 +133,57 @@ export class CommerceController {
     return await CommerceApplication.getShop(CommerceRecordNormalizer.pubky(ownerPubky));
   }
 
-  static async getAllShops() {
-    return await CommerceApplication.getAllShops();
+  static async fetchShippingProfile(ownerPubky: unknown, profileId: unknown) {
+    return await CommerceShippingProfilesApplication.fetch(
+      CommerceRecordNormalizer.pubky(ownerPubky),
+      CommerceRecordNormalizer.entityId(profileId),
+    );
   }
 
-  static async fetchShop(ownerPubky: unknown) {
-    return await CommerceApplication.fetchShop(CommerceRecordNormalizer.pubky(ownerPubky));
+  static async listShippingProfiles(ownerPubky: unknown) {
+    return await CommerceShippingProfilesApplication.list(CommerceRecordNormalizer.pubky(ownerPubky));
+  }
+
+  static async countListingsUsingShippingProfile(ownerPubky: unknown, profileId: unknown) {
+    return await CommerceShippingProfilesApplication.countListingsUsing(
+      CommerceRecordNormalizer.pubky(ownerPubky),
+      CommerceRecordNormalizer.entityId(profileId),
+    );
+  }
+
+  static async putShippingProfile(record: unknown) {
+    return await CommerceShippingProfilesApplication.put(CommerceRecordNormalizer.shippingProfile(record));
+  }
+
+  static async deleteShippingProfile(ownerPubky: unknown, profileId: unknown) {
+    await CommerceShippingProfilesApplication.delete(
+      CommerceRecordNormalizer.pubky(ownerPubky),
+      CommerceRecordNormalizer.entityId(profileId),
+    );
+  }
+
+  static async getAllShops() {
+    return await CommerceApplication.getAllShops();
   }
 
   static async refreshShop(ownerPubky: unknown) {
     return await CommerceApplication.refreshShop(CommerceRecordNormalizer.pubky(ownerPubky));
   }
 
+  static async refreshShopOrGetCached(ownerPubky: unknown) {
+    return await CommerceApplication.refreshShopOrGetCached(CommerceRecordNormalizer.pubky(ownerPubky));
+  }
+
   static async getOrFetchShop(ownerPubky: unknown) {
     return await CommerceApplication.getOrFetchShop(CommerceRecordNormalizer.pubky(ownerPubky));
+  }
+
+  static async subscribeShopEvents(ownerPubky: unknown, cursor: string | null = null) {
+    return await CommerceApplication.subscribeShopEvents(CommerceRecordNormalizer.pubky(ownerPubky), cursor);
+  }
+
+  static async latestShopEventCursor(ownerPubky: unknown) {
+    return await CommerceApplication.latestShopEventCursor(CommerceRecordNormalizer.pubky(ownerPubky));
   }
 
   static async getListing(ownerPubky: unknown, listingId: unknown) {
@@ -153,12 +197,6 @@ export class CommerceController {
       CommerceRecordNormalizer.listingCompositeId(listingCompositeId),
     );
     return await CommerceApplication.getManyListings(ids);
-  }
-
-  static async fetchListing(ownerPubky: unknown, listingId: unknown) {
-    const owner = CommerceRecordNormalizer.pubky(ownerPubky);
-    const id = CommerceRecordNormalizer.entityId(listingId);
-    return await CommerceApplication.fetchListing(owner, id);
   }
 
   /** Network, then local: replaces the cached row with the record the owner's homeserver publishes. */
@@ -191,10 +229,6 @@ export class CommerceController {
     return await CommerceApplication.getListingsBySeller(CommerceRecordNormalizer.pubky(sellerPubky));
   }
 
-  static async getOrFetchListingsBySeller(sellerPubky: unknown) {
-    return await CommerceApplication.getOrFetchListingsBySeller(CommerceRecordNormalizer.pubky(sellerPubky));
-  }
-
   static async refreshListingsBySeller(sellerPubky: unknown): Promise<void> {
     await CommerceApplication.refreshListingsBySeller(CommerceRecordNormalizer.pubky(sellerPubky));
   }
@@ -212,11 +246,6 @@ export class CommerceController {
     if (previous !== undefined && previous !== availability) {
       useCommerceStore.getState().refreshListingCards([projection.id]);
     }
-  }
-
-  /** Tells the catalog cards of these listings to re-read their availability. */
-  static refreshListingCards(compositeListingIds: readonly string[]): void {
-    useCommerceStore.getState().refreshListingCards(compositeListingIds);
   }
 
   /**
@@ -280,10 +309,6 @@ export class CommerceController {
     });
   }
 
-  static async getListingsByCategory(categoryId: unknown) {
-    return await CommerceApplication.getListingsByCategory(CommerceRecordNormalizer.entityId(categoryId));
-  }
-
   static async getAllListings() {
     return await CommerceApplication.getAllListings();
   }
@@ -308,6 +333,8 @@ export class CommerceController {
    * server-side filters only narrow what gets fetched, never what renders.
    */
   static async fetchCatalogListings(filters: CommerceCatalogUiFilters): Promise<void> {
+    // Read the attestor profiles alongside the stream, not before it: cards re-render when one narrows the trust list.
+    void CommerceAttestorApplication.loadKeyWindows();
     await CommerceApplication.fetchCatalogListings(this.catalogStreamFilters(filters));
   }
 
@@ -338,28 +365,6 @@ export class CommerceController {
 
   static async initializeSandboxCatalog(): Promise<boolean> {
     return await CommerceApplication.initializeSandboxCatalog();
-  }
-
-  /**
-   * Starts the interactive session-connect flow for the durable Marketplace
-   * Transaction Service. The returned `awaitSession` resolves once the user
-   * approves on their signer and the AuthToken is exchanged for a bearer
-   * session; on success the session's public facts (never the token) are
-   * mirrored into the commerce store so every durable-mode surface refetches.
-   * `cancel` frees the underlying auth flow. Flows are single-use — a retry
-   * after failure or cancellation must call this again for a fresh flow.
-   */
-  static beginMarketplaceSessionConnect() {
-    const flow = CommerceApplication.beginMarketplaceSessionFlow();
-    return {
-      authorizationUrl: flow.authorizationUrl,
-      awaitSession: async () => {
-        const session = await flow.awaitSession();
-        this.writeMarketplaceSessionStore(session);
-        return session;
-      },
-      cancel: flow.cancel,
-    };
   }
 
   /**
@@ -489,19 +494,6 @@ export class CommerceController {
     this.clearInventorySessionStore();
   }
 
-  static beginInventorySessionConnect(expectedPubky: string) {
-    const flow = CommerceApplication.beginInventorySessionFlow(expectedPubky);
-    return {
-      authorizationUrl: flow.authorizationUrl,
-      awaitSession: async () => {
-        const session = await flow.awaitSession();
-        this.writeInventorySessionStore(session);
-        return session;
-      },
-      cancel: flow.cancel,
-    };
-  }
-
   static async loadInventoryBoard(sellerPubky: string) {
     return await CommerceInventoryApplication.loadBoard(sellerPubky);
   }
@@ -518,10 +510,6 @@ export class CommerceController {
 
   static async retryInventorySync(sellerPubky: string, listingId: string) {
     return await CommerceInventoryApplication.retrySync(sellerPubky, listingId);
-  }
-
-  static inventoryImportAuth(sellerPubky: string) {
-    return CommerceInventoryImportApplication.authStatus(sellerPubky);
   }
 
   static async planInventoryImport(
@@ -592,16 +580,20 @@ export class CommerceController {
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).importDefaults();
   }
 
-  static async dryRunInventoryImport(sellerPubky: string, manifestId: string) {
-    return await CommerceInventoryImportApplication.forSeller(sellerPubky).dryRun(manifestId);
+  static async publishInventoryImport(
+    sellerPubky: string,
+    manifestId: string,
+    onProgress?: InventoryImportListingProgress,
+  ) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).publish(manifestId, onProgress);
   }
 
-  static async publishInventoryImport(sellerPubky: string, manifestId: string) {
-    return await CommerceInventoryImportApplication.forSeller(sellerPubky).publish(manifestId);
-  }
-
-  static async resumeInventoryImport(sellerPubky: string, manifestId: string) {
-    return await CommerceInventoryImportApplication.forSeller(sellerPubky).resume(manifestId);
+  static async resumeInventoryImport(
+    sellerPubky: string,
+    manifestId: string,
+    onProgress?: InventoryImportListingProgress,
+  ) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).resume(manifestId, onProgress);
   }
 
   static async confirmInventoryImportConflict(sellerPubky: string, manifestId: string, listingId: string) {
@@ -655,21 +647,23 @@ export class CommerceController {
 
   /** The country the buyer said they live in on this device, or null until they say (plan C2). */
   static getBuyerCountry(): string | null {
-    return useBuyerCountryStore.getState().country;
+    return buyerCountryFor(useBuyerCountryStore.getState(), useAuthStore.getState().currentUserPubky);
   }
 
   static setBuyerCountry(countryCode: string | null): void {
-    useBuyerCountryStore.getState().setCountry(countryCode);
+    useBuyerCountryStore.getState().setCountry(countryCode, useAuthStore.getState().currentUserPubky);
   }
 
   /**
-   * The commands that sell carry the buyer's country in clear text while either region flag is
-   * on (the EU fence, the digital hold). A command that already names one keeps it; otherwise
-   * the device's remembered country is added when there is one.
+   * The commands that sell carry the buyer's country in clear text while a region is nuanced (the EU
+   * fence and the digital hold need it). A command that already names one keeps it; otherwise the
+   * country this account gave on the device is added when there is one. While regions are only
+   * blocked, the service decides from the IP country and nothing is added: the field is left out,
+   * never sent empty.
    */
   private static withBuyerCountry(input: unknown): unknown {
-    if (!getEuFenceEnabled() && !getDigitalRegionBlockEnabled()) return input;
-    const country = useBuyerCountryStore.getState().country;
+    if (!getRegionPolicy().hasNuanced) return input;
+    const country = this.getBuyerCountry();
     if (!country || typeof input !== 'object' || input === null) return input;
     const command = input as { kind?: unknown; payload?: unknown };
     const sells =
@@ -753,22 +747,75 @@ export class CommerceController {
     return await CommerceApplication.getOwnMarketplaceReview(this.getCurrentUserPubky(), order);
   }
 
+  /** The current user's own published review rows of one order, one per reviewed listing. */
+  static async getOwnMarketplaceOrderReviews(order: MarketplaceOrder) {
+    if (typeof order?.id !== 'string' || order.id.length === 0) {
+      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'An order id is required.', {
+        service: ErrorService.Marketplace,
+        operation: 'getOwnMarketplaceOrderReviews',
+      });
+    }
+    return await CommerceApplication.getOwnMarketplaceOrderReviews(this.getCurrentUserPubky(), order);
+  }
+
   /**
-   * Publishes the current user's review record (with its embedded purchase
-   * attestation) to their homeserver after a successful review command.
-   * Returns null when the command result carried no attestation.
+   * Publishes the current user's review records (one per reviewed listing,
+   * each with its embedded purchase attestation) to their homeserver after
+   * a successful review command. Returns no records when the command result
+   * carried no attestation.
    */
-  static async publishOwnMarketplaceReview(order: MarketplaceOrder, result: Record<string, unknown>) {
-    return await CommerceApplication.commitPublishOwnReview({
+  static async publishOwnMarketplaceReviews(order: MarketplaceOrder, result: Record<string, unknown>) {
+    return await CommerceApplication.commitPublishOwnReviews({
       actorPubky: this.getCurrentUserPubky(),
       order,
       result,
     });
   }
 
-  /** Retries own-review records whose homeserver publication never landed. */
+  /**
+   * The current user's reviews a double-blind window still withholds: the
+   * held terms and the window end, which the surfaces show as "Publishes when
+   * the other side reviews, or on {date}".
+   */
+  static async getAwaitingReleaseOwnMarketplaceReviews() {
+    return await CommerceApplication.getAwaitingReleaseReviews(this.getCurrentUserPubky());
+  }
+
+  /**
+   * Retries own-review records whose homeserver publication never landed, and
+   * re-reads the attestations of reviews a double-blind window withheld.
+   */
   static async resumeOwnReviewPublications() {
     return await CommerceApplication.resumeOwnReviewPublications(this.getCurrentUserPubky());
+  }
+
+  /**
+   * Re-reads the current user's own reviews of these orders from their
+   * homeserver and refreshes the local rows (an edit made on another device).
+   * Returns the number of rows changed.
+   */
+  static async refreshOwnMarketplaceReviews(orders: MarketplaceOrder[]) {
+    return await CommerceApplication.refreshOwnReviews(this.getCurrentUserPubky(), orders);
+  }
+
+  /**
+   * Removes the current user's published review of one order: local row now,
+   * homeserver DEL through the retryable outbox. See
+   * `CommerceApplication.commitDeleteOwnReview` for the outcomes.
+   */
+  static async commitDeleteOwnMarketplaceReview(orderId: unknown) {
+    if (typeof orderId !== 'string' || orderId.length === 0) {
+      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'An order id is required.', {
+        service: ErrorService.Marketplace,
+        operation: 'commitDeleteOwnMarketplaceReview',
+      });
+    }
+    return await CommerceApplication.commitDeleteOwnReview(this.getCurrentUserPubky(), orderId);
+  }
+
+  /** Retries own-review removals whose homeserver DEL never landed. */
+  static async resumeOwnReviewRemovals() {
+    return await CommerceApplication.resumeOwnReviewRemovals(this.getCurrentUserPubky());
   }
 
   /**
@@ -835,6 +882,14 @@ export class CommerceController {
   /** Publishes the seller-signed drop record (specs-validated) to the homeserver. */
   static async publishDrop(record: unknown) {
     return await CommerceApplication.commitPublishDrop(CommerceRecordNormalizer.drop(record));
+  }
+
+  /** Deletes the current seller's drop record when the service never registered the drop. */
+  static async withdrawUnregisteredDrop(record: unknown) {
+    return await CommerceApplication.withdrawUnregisteredDrop(
+      this.getCurrentUserPubky(),
+      CommerceRecordNormalizer.drop(record),
+    );
   }
 
   /** Seller kill switch: announced/live → ended_cancelled (CAS). */
@@ -920,6 +975,11 @@ export class CommerceController {
       this.catalogStreamFilters(filters),
     );
     return sellers;
+  }
+
+  /** The USDT address the buyer's Paykit wallet publishes publicly, or null (pubky/pubky-marketplace#371). */
+  static async fetchBuyerPaykitUsdtAddress(buyerPubky: unknown) {
+    return await CommerceApplication.fetchBuyerPaykitUsdtAddress(CommerceRecordNormalizer.pubky(buyerPubky));
   }
 
   /** Whether the buyer's Paykit wallet can receive a Bitcoin payment request from the Shop. */
@@ -1090,8 +1150,9 @@ export class CommerceController {
   }
 
   /** Seller's PayPal receipt confirmation — this is what pays the order. */
-  static async confirmFiatReceived(orderId: string) {
-    return await CommerceApplication.confirmFiatReceived(this.getCurrentUserPubky(), orderId);
+  /** `releaseDigital` also releases the order's instant digital lines when they wait for the seller. */
+  static async confirmFiatReceived(orderId: string, releaseDigital = false) {
+    return await CommerceApplication.confirmFiatReceived(this.getCurrentUserPubky(), orderId, releaseDigital);
   }
 
   /**
@@ -1099,26 +1160,54 @@ export class CommerceController {
    * `unavailable`) for rating headers. Network-only: reputation is index
    * data, never cached as a record.
    */
+  static async fetchListingRating(sellerPubky: unknown, listingId: unknown) {
+    await CommerceAttestorApplication.loadKeyWindows();
+    return await CommerceApplication.fetchListingRating(
+      CommerceRecordNormalizer.pubky(sellerPubky),
+      CommerceRecordNormalizer.entityId(listingId),
+    );
+  }
+
   static async fetchSellerReputation(sellerPubky: unknown) {
+    await CommerceAttestorApplication.loadKeyWindows();
     return await CommerceApplication.fetchSellerReputationOverview(CommerceRecordNormalizer.pubky(sellerPubky));
   }
 
   /** A page of indexed reviews about a seller, with joined responses. */
-  static async fetchSellerReviews(sellerPubky: unknown, page: { skip?: number; limit?: number } = {}) {
-    return await CommerceApplication.fetchSellerReviews(CommerceRecordNormalizer.pubky(sellerPubky), page);
+  static async fetchSellerReviews(sellerPubky: unknown, page: CommerceReviewsPage = {}) {
+    await CommerceAttestorApplication.loadKeyWindows();
+    return await CommerceApplication.fetchSellerReviews(
+      CommerceRecordNormalizer.pubky(sellerPubky),
+      this.reviewsPage(page),
+    );
   }
 
   /** A page of indexed buyer reviews of one listing, with joined responses. */
-  static async fetchListingReviews(
-    sellerPubky: unknown,
-    listingId: unknown,
-    page: { skip?: number; limit?: number } = {},
-  ) {
+  static async fetchListingReviews(sellerPubky: unknown, listingId: unknown, page: CommerceReviewsPage = {}) {
+    await CommerceAttestorApplication.loadKeyWindows();
     return await CommerceApplication.fetchListingReviews(
       CommerceRecordNormalizer.pubky(sellerPubky),
       CommerceRecordNormalizer.entityId(listingId),
-      page,
+      this.reviewsPage(page),
     );
+  }
+
+  /** The page with its reviewer filter's viewer validated as a pubky before it reaches the index. */
+  private static reviewsPage(page: CommerceReviewsPage): CommerceReviewsPage {
+    const { filter } = page;
+    return filter === undefined
+      ? page
+      : { ...page, filter: { ...filter, viewerId: CommerceRecordNormalizer.pubky(filter.viewerId) } };
+  }
+
+  /**
+   * The refund and return notes for a page of reviews: each attested order's
+   * outcomes from its attestor's annotation, keyed by `reviewOutcomeKey`.
+   * Network-only and never throwing: until the attestor publishes, and on an
+   * index without the routes, the map is simply empty.
+   */
+  static async fetchReviewOutcomes(orders: readonly CommerceAttestorOrderRef[]) {
+    return await CommerceAttestorApplication.fetchOutcomes(orders);
   }
 
   /** The current user's own published review rows, newest update first (local-first). */
@@ -1241,7 +1330,9 @@ export class CommerceController {
       notificationStore.setMarketplaceUnread(0);
       return;
     }
+    const signal = captureAuthScope();
     const notifications = await CommerceApplication.getMarketplaceNotifications(this.getCurrentUserPubky());
+    signal.throwIfAborted();
     notificationStore.setMarketplaceUnread(
       notifications.filter((notification) => isRecognizedMarketplaceNotification(notification) && !notification.readAt)
         .length,
@@ -1299,11 +1390,12 @@ export class CommerceController {
     );
   }
 
-  static async confirmBitcoinPayment(orderId: unknown, reason?: string) {
+  static async confirmBitcoinPayment(orderId: unknown, reason?: string, releaseDigital = false) {
     return await CommerceApplication.confirmBitcoinPayment(
       this.getCurrentUserPubky(),
       CommerceRecordNormalizer.entityId(orderId),
       reason,
+      releaseDigital,
     );
   }
 
@@ -1377,6 +1469,63 @@ export class CommerceController {
   /** Whether USDT may be offered: the Shop flag AND the service capability. A failed read rejects. */
   static async fetchUsdtPaymentsAvailable(): Promise<boolean> {
     return await CommerceApplication.fetchUsdtPaymentsAvailable();
+  }
+
+  /** Turns this browser's automatic confirmation of the signed-in seller's matching payments on or off. */
+  static setSellerPaymentAutoConfirm(enabled: boolean): void {
+    useSellerPaymentConfirmStore.getState().setAutoConfirm(this.getCurrentUserPubky(), enabled);
+  }
+
+  /**
+   * One pass of the seller's automatic confirmation, when the signed-in seller
+   * turned it on in this browser and the durable service is in use. Returns the
+   * order ids it confirmed; a signed-out or opted-out session confirms nothing.
+   */
+  static async autoConfirmSellerPayments(): Promise<string[]> {
+    if (!isDurableCommerceMode(getCommerceAdapterMode())) return [];
+    const pubky = useAuthStore.getState().currentUserPubky;
+    const scope = captureAuthScope();
+    const isEnabled = () =>
+      pubky !== null &&
+      !scope.aborted &&
+      useAuthStore.getState().currentUserPubky === pubky &&
+      useSellerPaymentConfirmStore.getState().autoConfirmByPubky[pubky] !== false;
+    if (!pubky || !isEnabled()) return [];
+    const pass = new AbortController();
+    const deadline = setTimeout(() => pass.abort(), SELLER_AUTO_CONFIRM_PASS_TIMEOUT_MS);
+    const endPass = () => pass.abort();
+    scope.addEventListener('abort', endPass, { once: true });
+    try {
+      return await CommerceApplication.autoConfirmSellerPayments(pubky, isEnabled, pass.signal);
+    } finally {
+      clearTimeout(deadline);
+      scope.removeEventListener('abort', endPass);
+    }
+  }
+
+  /**
+   * Keeps this tab's automatic confirmation setting in step with the seller's
+   * other tabs: a change made in one is read into the others' store at once.
+   */
+  static subscribeSellerPaymentAutoConfirmSync(): () => void {
+    if (typeof window === 'undefined') return () => {};
+    const onStorage = (event: StorageEvent) => {
+      // A null key is `localStorage.clear()` in another tab.
+      if (event.key !== null && event.key !== SELLER_PAYMENT_CONFIRM_PERSIST_KEY) return;
+      // Rehydrating from a removed key keeps the old state, so a removal resets this tab to the default too.
+      if (event.newValue === null) {
+        useSellerPaymentConfirmStore.getState().reset();
+        return;
+      }
+      void useSellerPaymentConfirmStore.persist.rehydrate();
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }
+
+  /** Who marks orders paid on this deployment (`seller` | `automatic`); null when unknown. A failed read rejects. */
+  static async fetchPaymentConfirmationMode(): Promise<'seller' | 'automatic' | null> {
+    return await CommerceApplication.fetchPaymentConfirmationMode();
   }
 
   /**
@@ -1503,6 +1652,14 @@ export class CommerceController {
     });
   }
 
+  /** `fulfillment.release_digital`: the seller releases a paid order's instant lines to the buyer. */
+  static async commitReleaseDigital(orderId: unknown, expectedRevision: unknown) {
+    return await CommerceApplication.commitReleaseDigital(this.getCurrentUserPubky(), {
+      orderId: CommerceRecordNormalizer.entityId(orderId),
+      expectedRevision: this.pickupOrderRevision(expectedRevision),
+    });
+  }
+
   /** `fulfillment.deliver_digital` (§6 F13): the seller marks a digital order's email or message lines delivered. */
   static async commitDeliverDigital(orderId: unknown, expectedRevision: unknown, channel: unknown) {
     const parsed = marketplaceDigitalDeliveryChannelSchema.safeParse(channel);
@@ -1586,9 +1743,9 @@ export class CommerceController {
    * address.
    */
   static async commitCreateMarketplaceCheckout(rawInput: CommerceCheckoutFulfillmentInput) {
-    const country = useBuyerCountryStore.getState().country;
+    const country = this.getBuyerCountry();
     const input =
-      (getEuFenceEnabled() || getDigitalRegionBlockEnabled()) && country && rawInput.buyerCountry === undefined
+      getRegionPolicy().hasNuanced && country && rawInput.buyerCountry === undefined
         ? { ...rawInput, buyerCountry: country }
         : rawInput;
     const response = await CommerceApplication.commitCreateMarketplaceCheckout(this.getCurrentUserPubky(), input);
@@ -1647,26 +1804,6 @@ export class CommerceController {
       this.getCurrentUserPubky(),
       CommerceRecordNormalizer.entityId(attachmentId),
     );
-  }
-
-  static async submitLocksPaykitProof({
-    creatorPubky,
-    bundleId,
-    lockResource,
-    criterionId,
-  }: {
-    creatorPubky: unknown;
-    bundleId: unknown;
-    lockResource: unknown;
-    criterionId: unknown;
-  }) {
-    return await CommerceApplication.submitLocksPaykitProof({
-      creatorPubky: CommerceRecordNormalizer.pubky(creatorPubky),
-      readerPubky: this.getCurrentUserPubky(),
-      bundleId: CommerceRecordNormalizer.entityId(bundleId),
-      lockResource: CommerceRecordNormalizer.lockResource(lockResource),
-      criterionId: CommerceRecordNormalizer.entityId(criterionId),
-    });
   }
 
   /**
@@ -1947,15 +2084,24 @@ export class CommerceController {
    * Runs one cross-device watchlist sync round (pull, merge, push) and
    * mirrors the outcome into the commerce store for UI surfaces. Safe to call
    * opportunistically: signed-out/sandbox rounds are skipped and leave the
-   * status at `idle`, and overlapping calls share one round-trip.
+   * status at `idle`, and overlapping calls share one round-trip. A round
+   * whose auth scope ends (sign-out, account switch) stops writing and
+   * leaves the status alone.
    */
-  static async syncWatchlist(): Promise<void> {
+  static async syncWatchlist({ signal = captureAuthScope() }: { signal?: AbortSignal } = {}): Promise<void> {
     const currentUserPubky = useAuthStore.getState().currentUserPubky;
     if (!currentUserPubky) {
       useCommerceStore.getState().setWatchlistSyncStatus('idle');
       return;
     }
-    const status = await CommerceApplication.syncWatchlist(currentUserPubky);
+    let status: CommerceWatchlistSyncStatus;
+    try {
+      status = await CommerceApplication.syncWatchlist(currentUserPubky, signal);
+    } catch (error) {
+      if (signal.aborted) return;
+      throw error;
+    }
+    if (signal.aborted) return;
     useCommerceStore.getState().setWatchlistSyncStatus(status === 'skipped' ? 'idle' : status);
   }
 
@@ -2116,10 +2262,6 @@ export class CommerceController {
     );
   }
 
-  static async getShopFollows() {
-    return await CommerceApplication.getShopFollows(this.getCurrentUserPubky());
-  }
-
   static async commitCreateShopFollow(sellerPubky: unknown): Promise<void> {
     const ownerPubky = this.getCurrentUserPubky();
     const seller = CommerceRecordNormalizer.pubky(sellerPubky);
@@ -2223,7 +2365,7 @@ export class CommerceController {
   /**
    * Mirrors public session facts into the commerce store. Last write wins by
    * `issuedAt` so a restore or a late connect cannot overwrite a newer session.
-   * Auth restore and `beginMarketplaceSessionConnect` both go through here.
+   * Auth restore and verified marketplace grant approvals both go through here.
    */
   static writeMarketplaceSessionStore(session: MarketplaceSessionInfo): void {
     const current = useCommerceStore.getState().marketplaceSession;

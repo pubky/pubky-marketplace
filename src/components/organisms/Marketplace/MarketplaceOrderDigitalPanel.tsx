@@ -15,7 +15,7 @@ import {
   useOrderDigitalDelivery,
 } from '@/hooks/useOrderDigitalDelivery/useOrderDigitalDelivery';
 import {
-  DELIVERY_EMAIL_MAX_CHARS,
+  awaitsSellerRelease,
   DIGITAL_ORDER_COPY,
   DIGITAL_READ_REFUSAL_COPY,
   digitalOrderEmailLine,
@@ -75,6 +75,10 @@ export function MarketplaceOrderDigitalPanel({
           ) : !paid ? (
             <Typography as="p" className="text-sm text-muted-foreground">
               {DIGITAL_ORDER_COPY.notPaid}
+            </Typography>
+          ) : awaitsSellerRelease(order) ? (
+            <Typography as="p" className="text-sm text-muted-foreground" data-testid="order-digital-awaiting-release">
+              {DIGITAL_ORDER_COPY.awaitingRelease}
             </Typography>
           ) : (
             <OrderInstantLine line={line} delivery={delivery} />
@@ -156,12 +160,24 @@ function OrderInstantLine({
             {line.kind === 'file'
               ? opening
                 ? DIGITAL_ORDER_COPY.downloading
-                : DIGITAL_ORDER_COPY.download
+                : state.status === 'started'
+                  ? DIGITAL_ORDER_COPY.downloadAgain
+                  : DIGITAL_ORDER_COPY.download
               : line.kind === 'link'
                 ? DIGITAL_ORDER_COPY.showLink
                 : DIGITAL_ORDER_COPY.revealText}
           </Button>
         </div>
+      )}
+      {state.status === 'started' && (
+        <Typography
+          as="p"
+          role="status"
+          className="text-sm text-muted-foreground"
+          data-testid={`order-digital-started-${line.lineIndex}`}
+        >
+          {DIGITAL_ORDER_COPY.downloadStarted}
+        </Typography>
       )}
       {state.status === 'failed' && state.message && (
         <Typography as="p" role="alert" className="text-sm text-muted-foreground">
@@ -241,7 +257,6 @@ function OrderEmailLine({
             theme="dashed"
             id={`delivery-email-${order.id}`}
             value={value}
-            maxLength={DELIVERY_EMAIL_MAX_CHARS}
             placeholder="you@example.com"
             onChange={(event) => setValue(event.target.value)}
             data-sentry-mask

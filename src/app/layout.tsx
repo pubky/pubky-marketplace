@@ -1,8 +1,10 @@
 import './globals.css';
 import type { Viewport } from 'next';
 import { TooltipProvider } from '@/atoms/Tooltip/Tooltip';
+import { getSiteName } from '@/config/metadata';
 import { TOOLTIP_DELAY_MS } from '@/config/ui';
 import { buildMarketplacePromoPrepaintScript } from '@/libs/commerce/promo-prepaint';
+import { MARKETPLACE_STATIC_SEO } from '@/libs/commerce/seo';
 import { renderPerRequestOutsideVercel } from '@/libs/runtime-config/render-mode';
 import { RootContainer } from '@/molecules/ContainerRoot/ContainerRoot';
 import { EmbeddedDocumentFlag } from '@/molecules/EmbeddedDocumentFlag/EmbeddedDocumentFlag';
@@ -12,6 +14,7 @@ import { Fab } from '@/molecules/Fab/Fab';
 import { Metadata } from '@/molecules/Metadata/Metadata';
 import { ServiceWorkerRegistration } from '@/molecules/ServiceWorkerRegistration/ServiceWorkerRegistration';
 import { StructuredData } from '@/molecules/StructuredData/StructuredData';
+import { ThemeSync } from '@/molecules/ThemeSync/ThemeSync';
 import { Toaster } from '@/molecules/Toaster/Toaster';
 import { CoordinatorsManager } from '@/organisms/CoordinatorsManager/CoordinatorsManager';
 import { DialogSignIn } from '@/organisms/DialogSignIn/DialogSignIn';
@@ -32,9 +35,8 @@ export const viewport: Viewport = {
 
 export function generateMetadata() {
   return Metadata({
-    title: 'Pubky App - Unlock the web',
-    description:
-      'Pubky App is a social-media-like experience built over Pubky Core. It serves as a working example on how to build over Pubky Core to create simple or complex applications.',
+    title: getSiteName(),
+    description: MARKETPLACE_STATIC_SEO.description,
   });
 }
 
@@ -54,6 +56,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         readiness, so anything inside them is missing from the initial server-rendered HTML.
       */}
       <StructuredData />
+      <ThemeSync />
       <TooltipProvider delayDuration={TOOLTIP_DELAY_MS}>
         <GlobalErrorHandlerProvider>
           <ErrorBoundaryProvider>

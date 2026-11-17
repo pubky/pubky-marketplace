@@ -6,7 +6,7 @@ import type { Pubky } from '@/models/models.types';
 import type { PostStreamId } from '@/models/stream/post/postStream.types';
 import type { UserCountsModel } from '@/models/user/counts/userCounts';
 import { FollowNormalizer } from '@/pipes/follow/follow.normalizer';
-import type { NexusTag, NexusTaggers, NexusUserCounts, NexusUserDetails } from '@/services/nexus/nexus.types';
+import type { NexusTag, NexusUserCounts, NexusUserDetails } from '@/services/nexus/nexus.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useHomeStore } from '@/stores/home/home.store';
 import { CONTENT, REACH, SORT } from '@/stores/home/home.types';
@@ -164,49 +164,6 @@ describe('UserController', () => {
       vi.spyOn(UserApplication, 'getCounts').mockRejectedValue(new Error('Database error'));
 
       await expect(UserController.getCounts({ userId })).rejects.toThrow('Database error');
-    });
-  });
-
-  describe('getOrFetchCounts', () => {
-    it('should delegate to UserApplication.getOrFetchCounts', async () => {
-      const userId = 'test-user-id';
-      const mockUserCounts: NexusUserCounts = {
-        posts: 10,
-        replies: 5,
-        followers: 20,
-        following: 15,
-        friends: 8,
-        tagged: 3,
-        tags: 2,
-        unique_tags: 1,
-        collections: 0,
-        bookmarks: 7,
-      };
-
-      const countsSpy = vi.spyOn(UserApplication, 'getOrFetchCounts').mockResolvedValue(mockUserCounts);
-
-      const result = await UserController.getOrFetchCounts({ userId });
-
-      expect(result).toEqual(mockUserCounts);
-      expect(countsSpy).toHaveBeenCalledWith({ userId });
-    });
-
-    it('should return null when user counts not found', async () => {
-      const userId = 'non-existent-user';
-
-      vi.spyOn(UserApplication, 'getOrFetchCounts').mockResolvedValue(null);
-
-      const result = await UserController.getOrFetchCounts({ userId });
-
-      expect(result).toBeNull();
-    });
-
-    it('should propagate errors from application layer', async () => {
-      const userId = 'test-user-id';
-
-      vi.spyOn(UserApplication, 'getOrFetchCounts').mockRejectedValue(new Error('Database error'));
-
-      await expect(UserController.getOrFetchCounts({ userId })).rejects.toThrow('Database error');
     });
   });
 
@@ -597,45 +554,6 @@ describe('UserController', () => {
           user_id: userId,
           skip_tags: 0,
           limit_tags: 10,
-        }),
-      ).rejects.toThrow('Application error');
-    });
-  });
-
-  describe('taggers', () => {
-    it('should delegate to UserApplication with correct params', async () => {
-      const userId = 'pubky-user';
-      const mockTaggers: NexusTaggers[] = [];
-
-      const taggersSpy = vi.spyOn(UserApplication, 'fetchTaggers').mockResolvedValue(mockTaggers);
-
-      const result = await UserController.fetchTaggers({
-        user_id: userId,
-        label: 'rust & wasm',
-        skip: 10,
-        limit: 5,
-      });
-
-      expect(result).toEqual(mockTaggers);
-      expect(taggersSpy).toHaveBeenCalledWith({
-        user_id: userId,
-        label: 'rust & wasm',
-        skip: 10,
-        limit: 5,
-      });
-    });
-
-    it('should propagate errors from application layer', async () => {
-      const userId = 'pubky-user';
-
-      vi.spyOn(UserApplication, 'fetchTaggers').mockRejectedValue(new Error('Application error'));
-
-      await expect(
-        UserController.fetchTaggers({
-          user_id: userId,
-          label: 'developer',
-          skip: 0,
-          limit: 10,
         }),
       ).rejects.toThrow('Application error');
     });

@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { type FieldErrors, useForm } from 'react-hook-form';
 import { withBasePath } from '@/config/base-path';
 import { postJson } from '@/libs/api/client-request';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { COPYRIGHT_ROLES, copyrightFormDefaultValues } from './useCopyrightForm.constants';
 import { type CopyrightFormData, copyrightFormSchema } from './useCopyrightForm.types';
 

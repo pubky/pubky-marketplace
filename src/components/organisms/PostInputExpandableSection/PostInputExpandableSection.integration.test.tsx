@@ -1,7 +1,6 @@
-import { render } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useIsMobile } from '@/hooks/useIsMobile/useIsMobile';
-import { resetViewport, setMobileViewport } from '@/test-utils/viewport';
 import { POST_INPUT_VARIANT } from '../PostInput/PostInput.constants';
 import { PostInputExpandableSection } from './PostInputExpandableSection';
 
@@ -22,31 +21,43 @@ const defaultProps = {
   onEmojiSelect: vi.fn(),
 };
 
-describe('PostInputExpandableSection - Snapshots', () => {
+describe('PostInputExpandableSection - Integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(useIsMobile).mockReturnValue(false);
   });
 
-  it('matches the desktop snapshot with the real action bar', () => {
-    const { container } = render(<PostInputExpandableSection {...defaultProps} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});
+  it('renders the real action bar with the tag input', () => {
+    render(<PostInputExpandableSection {...defaultProps} />);
 
-describe('PostInputExpandableSection - Mobile Snapshots', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+    expect(screen.getByRole('button', { name: 'Add new tag' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add emoji' })).toBeEnabled();
+  });
+
+  it('disables the reply button when there is no content', () => {
+    render(<PostInputExpandableSection {...defaultProps} />);
+
+    const reply = screen.getByRole('button', { name: 'Reply' });
+    expect(reply).toBeDisabled();
+    expect(reply).toHaveAttribute('data-cy', 'post-input-action-bar-reply');
+  });
+
+  it('enables the reply button when there is content', () => {
+    render(<PostInputExpandableSection {...defaultProps} content="Hello world" />);
+
+    expect(screen.getByRole('button', { name: 'Reply' })).toBeEnabled();
+  });
+
+  it('uses the small post button on desktop', () => {
+    render(<PostInputExpandableSection {...defaultProps} />);
+
+    expect(screen.getByRole('button', { name: 'Reply' })).toHaveAttribute('data-size', 'sm');
+  });
+
+  it('uses the default-size post button on mobile', () => {
     vi.mocked(useIsMobile).mockReturnValue(true);
-    setMobileViewport();
-  });
+    render(<PostInputExpandableSection {...defaultProps} />);
 
-  afterEach(() => {
-    resetViewport();
-  });
-
-  it('matches the mobile snapshot with the real action bar', () => {
-    const { container } = render(<PostInputExpandableSection {...defaultProps} />);
-    expect(container.firstChild).toMatchSnapshot();
+    expect(screen.getByRole('button', { name: 'Reply' })).toHaveAttribute('data-size', 'default');
   });
 });

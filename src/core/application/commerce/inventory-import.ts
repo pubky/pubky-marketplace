@@ -71,7 +71,11 @@ import {
   pausedSummary,
   payloadShips,
 } from '@/pipes/commerce/import-publish-gate';
-import { DEFAULT_IMPORT_SETTINGS, type ImportSettings, type ImportShipping } from '@/pipes/commerce/import-settings';
+import {
+  DEFAULT_IMPORT_SETTINGS,
+  type ImportRateShipping,
+  type ImportSettings,
+} from '@/pipes/commerce/import-settings';
 import { shippingDefaultFromListings, shopCountryForImport } from '@/pipes/commerce/import-settings-defaults';
 import type { WooStoreCatalog } from '@/pipes/commerce/import-woo-store';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
@@ -149,7 +153,7 @@ const IMPORT_STARTED_FIELD = 'import_started_at';
 /** What the dry run can prefill from the seller's Shop data. */
 export type InventoryImportDefaults = {
   countryCode: string | null;
-  shipping: ImportShipping | null;
+  shipping: ImportRateShipping | null;
   /** The currency of the listing the shipping option came from. */
   currency: string | null;
 };
@@ -159,6 +163,8 @@ export type InventoryImportPlanResult =
       status: 'planned';
       manifestId: string;
       rowCount: number;
+      /** Listings the publish will save: a listing with several variants is several rows and one listing. */
+      listingCount: number;
       counts: DryRunCounts;
       /** Set when the file was a WooCommerce or Shopify export mapped by a preset. */
       format?: ImportSourceFormat;
@@ -170,6 +176,9 @@ export type InventoryImportPlanResult =
   | { status: 'parse-failed'; message: string; puts: 0 }
   | Exclude<InventoryImportAuth, { status: 'ready' }>
   | { status: 'error'; message: string };
+
+/** Listings saved so far out of the listings this publish saves (not rows: a listing's variants are its rows). */
+export type InventoryImportListingProgress = (progress: { done: number; total: number }) => void;
 
 export type InventoryImportPublishResult =
   | {
@@ -193,7 +202,7 @@ export type InventoryImportPublishResult =
 
 export type InventoryImportConflictAckResult =
   | InventoryImportPublishResult
-  | { status: 'planned'; manifestId: string; rowCount: number; counts: DryRunCounts };
+  | { status: 'planned'; manifestId: string; rowCount: number; listingCount: number; counts: DryRunCounts };
 
 export type InventoryImportHost = {
   readonly sellerPubky: string;
@@ -403,6 +412,7 @@ export class CommerceInventoryImportApplication {
       status: 'planned',
       manifestId: planned.value.manifestId,
       rowCount: planned.value.rowCount,
+      listingCount: plannedListingCount(manifest.rows),
       publishGate: planned.value.rowCount === 0 ? NO_PUBLISH_GATE : await this.publishGate(planned.value.manifestId),
       counts: MarketplaceShopClientService.dryRunCounts(manifest as ImportManifest),
       ...(photoCount > 0
@@ -425,13 +435,16 @@ export class CommerceInventoryImportApplication {
     return MarketplaceShopClientService.dryRunCounts(manifest as ImportManifest);
   }
 
-  async publish(manifestId: string): Promise<InventoryImportPublishResult> {
+  async publish(
+    manifestId: string,
+    onProgress?: InventoryImportListingProgress,
+  ): Promise<InventoryImportPublishResult> {
     const auth = CommerceInventoryImportApplication.authStatus(this.host.sellerPubky);
     if (auth.status !== 'ready') return auth;
-    return this.resume(manifestId);
+    return this.resume(manifestId, onProgress);
   }
 
-  async resume(manifestId: string): Promise<InventoryImportPublishResult> {
+  async resume(manifestId: string, onProgress?: InventoryImportListingProgress): Promise<InventoryImportPublishResult> {
     const auth = CommerceInventoryImportApplication.authStatus(this.host.sellerPubky);
     if (auth.status !== 'ready') return auth;
     const loaded = await this.host.store.load(manifestId);
@@ -445,6 +458,7 @@ export class CommerceInventoryImportApplication {
     let gate: InventoryImportPublishGate | null = null;
     let existing: ReadonlyMap<string, CommerceListingRecord> | null = null;
 
+    const queue: [string, HostPlannedImportRow[], HostPlannedImportRow[]][] = [];
     for (const [listingId, group] of groups) {
       const actionable = group.filter((row) => resumeNext(row.checkpoint) !== 'none');
       if (actionable.length === 0) continue;
@@ -454,7 +468,12 @@ export class CommerceInventoryImportApplication {
         continue;
       }
       if (group.every((row) => row.intendedAction === 'unchanged')) continue;
+      queue.push([listingId, group, actionable]);
+    }
+    onProgress?.({ done: 0, total: queue.length });
 
+    for (const [position, [listingId, group, actionable]] of queue.entries()) {
+      onProgress?.({ done: position, total: queue.length });
       const needsPut = actionable.some((row) => {
         const next = resumeNext(row.checkpoint);
         return next === 'publish' || next === 'reconcile_publish';
@@ -484,6 +503,8 @@ export class CommerceInventoryImportApplication {
         pendingSync.push({ seller_pubky: this.host.sellerPubky, listing_id: listingId });
       }
     }
+
+    onProgress?.({ done: queue.length, total: queue.length });
 
     const sync = await this.syncPending(manifestId, pendingSync, groups);
     if (sync.status === 'rate-limited' || sync.status === 'error') return sync;
@@ -992,6 +1013,7 @@ export class CommerceInventoryImportApplication {
       status: 'planned',
       manifestId,
       rowCount: loaded.rowCount,
+      listingCount: plannedListingCount(loaded.rows),
       counts: remainingDryRunCounts(loaded.rows),
     };
   }
@@ -1130,7 +1152,7 @@ export class CommerceInventoryImportApplication {
       if (!parsed) return { status: 'error', message: IMPORT_PARSE_FAIL_COPY };
       payloads.push(parsed);
     }
-    const mapped = mapCanonicalRowsToListing(payloads, this.host.sellerPubky);
+    const mapped = mapCanonicalRowsToListing(payloads, this.host.sellerPubky, existing?.shippingProfileId ?? null);
     if (!mapped.ok) {
       const failure = classifyListingPublishFailure(mapped.message);
       const failureCode =
@@ -1294,6 +1316,18 @@ function remainingDryRunCounts(rows: readonly HostPlannedImportRow[]): DryRunCou
     else if (row.intendedAction === 'conflict') counts.conflict += 1;
   }
   return counts;
+}
+
+/** Distinct listings with something to create, update or end: the rows are variants, a listing groups them. */
+function plannedListingCount(rows: readonly HostPlannedImportRow[]): number {
+  const listings = new Set<string>();
+  for (const row of rows) {
+    if (isAcknowledgedConflict(row)) continue;
+    if (row.intendedAction === 'create' || row.intendedAction === 'update' || row.intendedAction === 'end') {
+      listings.add(row.listingId);
+    }
+  }
+  return listings.size;
 }
 
 function firstUnresolvedConflict(groups: Map<string, HostPlannedImportRow[]>): string | null {

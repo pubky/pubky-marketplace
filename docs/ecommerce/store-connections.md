@@ -36,7 +36,8 @@ Try again. The dashboard itself sends no connector request.
 `MarketplaceConnectorsService` (service client) → `ConnectorsApplication` →
 `ConnectorsController` → hooks (`useStoreConnections`, `useConnectWooCommerce`,
 `useConnectShopify`, `useReplaceStoreCredentials`, `useConnectionStatusCheck`,
-`useConnectorCatalog`, `useConnectorPushStatus`) → organisms. Wire shapes,
+`useConnectorCatalog`, `useConnectorPushStatus`, `useConnectorChanges`,
+`useConnectorSync`, `useListingStoreSync`) → organisms. Wire shapes,
 copy and the pure helpers are in `src/libs/commerce/connectors.ts`.
 
 ## Credentials
@@ -114,6 +115,193 @@ Currencies other than USD and BTC can be listed only after the multi-currency
 listing form (PR #235) is in; until then a CHF store stops at the settings step
 with a message.
 
+## Product sync (Shopify)
+
+A listing linked to a store product can follow the store for three groups:
+**content** (title, description and photos), **price** (each variant's price) and
+**variants** (option choices, SKU, and which variants exist). Stock is not a group:
+it already follows the store through the service's inventory sync. A product the
+store stops selling pauses its listing whatever the settings say, because an order
+for it could not reach the store.
+
+It is behind `PUBKY_RUNTIME_STORE_SYNC_ENABLED` (default `false`). Off, the Store
+connections page shows neither the review nor the Sync table, the listing editor
+shows every field editable, and the Shop applies nothing. The service queues store
+changes either way; see "Product changes" in the marketplace service's
+`docs/api.md` for its routes and the base and proposal it keeps per group.
+
+### Where it shows
+
+- **Sync table** (Store connections, under each connected Shopify store): one row
+  per group, **From your store** or **Off**. The default for all three is from
+  the store. Saving a row drops that group's pending changes in the service, so
+  the review reads them again; a change reviewed under the old setting can never
+  apply under the new one. `useConnectorSync` reads and saves it
+  (`GET`/`PUT /v1/connectors/{id}/sync`). A load that failed shows the message with Try again; a server
+  with no store connections shows nothing.
+- **Shopify changes (N)** (Store connections, above the Sync table): the changes
+  that wait for the seller. `useConnectorChanges` loads them
+  (`GET /v1/connectors/{id}/changes`) and the organism
+  `MarketplaceConnectorChanges` lists them. Nothing is listed when there are none.
+- **Follow switch** (listing editor, for a listing linked to a Shopify store): one
+  per group and per linked store. On, the group follows the store: its fields are
+  read-only, with "Edit in Shopify" (only for a real `*.myshopify.com` store), so a
+  store edit never collides with one made here. Off, the group is not synced for
+  this listing. The switch shows what applies to the listing; the line under it says
+  whether that is the connection's setting or the listing's own. A click asks
+  for the opposite of what applies to the listing now, for this listing only
+  (`PUT /v1/connectors/{id}/sync/listings/{listing_id}`): it clears the listing's own
+  setting (`null`) when the connection's setting already gives that state, and sets
+  it otherwise, so a listing can opt in for a group the connection leaves alone and
+  an override that equals the connection's setting still turns following off in one
+  click. A group counts as followed when any store the listing is linked to says so.
+  `useListingStoreSync` finds the linked stores from the connection mappings.
+  Stock stays editable.
+- **What a followed field cannot do.** Read-only fields are also enforced on save:
+  the saved record takes a followed group's values from the published record,
+  whatever the form holds (`src/core/pipes/commerce/listing-followed-fields.ts`).
+  A listing whose variants follow the store keeps its own variants, ids and
+  disabled ones, and takes only stock from the form (and each variant's price
+  override while price does not follow); photos are not uploaded and dropping files
+  does nothing. While variants or prices follow the store, variants cannot be added
+  or removed in the editor, because each variant's price is paired with the
+  published variant. The save is held until the linked stores have been asked: a
+  server with no store connections or a missing marketplace session ends the lookup
+  with nothing followed, any other failure keeps the save held with "Try again".
+  A listing whose price follows the store keeps the ids of its variants. Whenever a
+  group becomes followed, including when the first lookup finishes after the editor
+  has loaded, its fields go back to the published values (all variant rows if a row
+  was removed, and for the price group the published currency too). A follow switch
+  and a save never overlap: the switch is disabled while a save runs, and a save is
+  refused while a switch waits for the service; a save that was already running
+  commits with the groups followed at that moment.
+
+### What applies when
+
+The Shop applies a change because only the seller's Shop can sign a listing write.
+
+| Change                                                                                                 | When the page opens                | Needs a tap                |
+| ------------------------------------------------------------------------------------------------------ | ---------------------------------- | -------------------------- |
+| Title, description, photos                                                                             | applied                            | only a conflict            |
+| A product the store no longer sells                                                                    | listing paused, even with sync Off |                            |
+| Price                                                                                                  |                                    | Apply price                |
+| Option choices, SKU, a variant the store removed (the listing price is rebuilt from the variants left) |                                    | Apply                      |
+| Making a paused listing active again                                                                   |                                    | Make active                |
+| A variant the listing has no link to                                                                   |                                    | Import it (catalog import) |
+
+### The three-way rule
+
+`src/core/pipes/commerce/connector-change-apply.ts` (pure) decides, per field, from
+the listing's value, the service's `base` (what the store held when the listing last
+followed it) and the `proposed` value:
+
+- the listing already equals the proposal: nothing to do;
+- the listing equals the base: the seller has not touched it, so the proposal
+  applies;
+- otherwise both sides changed it: a **conflict**. Nothing moves until the seller
+  picks **Use the store's** (apply the proposal), **Keep mine** (resolve the change
+  as dismissed) or **Stop following the store for this listing** (set that group
+  Off for the listing).
+
+A change with no base cannot tell, so it conflicts. Photos are a set, not a value:
+a photo the store added or removed is merged one by one, and a photo the seller
+removed stays removed while the store still has it, so photos never conflict. A
+listing holds at most 12 photos: when store photos find no room, the rest of the
+change applies and the change stays in the review with the reason until the seller
+removes a photo or dismisses it, instead of being resolved as done. A change that would leave the listing without an image (a
+video does not count) is refused. Photos go through the import's photo phase
+(`runImportImageBatches`): fetched through the server route, stripped of metadata
+and uploaded to the seller's homeserver, never referenced by the store's address.
+
+Mapping details: the title and description follow the import's rules (plain text,
+the title limit, the title standing in for an empty description; a store
+description of `null` leaves the listing's). A price changes the listing price and
+each linked variant's price, with the lowest as the listing price and the others
+as price overrides, as the import writes them; it is refused, with the reason, for
+an auction, a currency other than the listing's (nothing is converted), a price
+that does not fit the listing's decimals, or a price of zero. A link the listing
+cannot use (no link, a blank store or listing variant id, or only links to variants the
+seller deleted) is refused as an incomplete link instead of being read as an empty
+change. A removed store variant is turned off, the listing price is rebuilt from
+the variants left, and the listing is paused when no enabled variant with stock is
+left. Every result is checked against the listing record schema before it is
+written; a change the listing cannot hold is refused with that reason and can be
+dismissed.
+
+A split listing (one listing per store variant, with an id the import gives a store variant) holds the
+import's projection of the product, so the same projection is applied to the base and the proposal before
+they are compared: the title is the product title with the variant's choice ("Trail Boots, 42"), and a photo
+whose source is in neither the base's nor the proposal's photo list is the variant's own photo and is kept.
+Without it an untouched split listing would show a title conflict on every store update. The choice is read
+from the listing's variant options; a store variant with no option values (Shopify always sends at least
+one) would carry its title instead, which the content change does not include.
+
+### Applying is safe to repeat
+
+For each change the Shop reads the changes again (a proposal replaced or withdrawn
+since the list was read is not applied, and the listings it writes are the ones
+the service links it to now, so a variant relinked since then is not written
+through the old link), reads each listing again from the
+homeserver and evaluates it, reads the changes once more immediately before each
+write (a change in its links at that moment stops the write) (photo uploads can take a while, and the seller may have switched the group
+off meanwhile), writes the listing with `commitUpsertListing`, reads the write back,
+and only then resolves the change as `applied` with the proposal hash it acted on.
+A write counts as confirmed only when the homeserver serves back that exact
+revision and timestamp; a newer revision written elsewhere leaves the change
+pending. A change that looks already done is settled only from what the homeserver
+serves, never from the Shop's local copy, which may hold a write the homeserver
+never took. A listing that already equals the proposal is only resolved, so a retry
+after a crash writes nothing twice. A write the homeserver has not served back yet
+leaves the change pending ("has not confirmed the update yet") until the revision
+shows. A resolve answered `change_stale` or `change_not_found` is not an error: the
+Shop reads the changes again. A change whose every listing is switched off or gone
+has nothing to apply and is dismissed. A change that looks done but cannot be
+confirmed against the homeserver yet stays pending and is counted in the review
+("could not be checked yet", with Try again). If some photos fail to load, the listing
+keeps the ones that loaded and the change stays pending with the reason; the next
+try loads only the missing ones, and photos already uploaded in the same visit are
+reused.
+
+The service returns one page of at most 200 pending changes, oldest first, and has no
+cursor or filter. A load resolves a page and reads the queue again until a page brings
+nothing new, so 201 automatic changes are all applied, up to 25 processing reads of the
+queue in one visit (and one more look to tell a queue that ended there from one that
+continues). Two cases leave work out of reach, and the review says so with an action:
+
+- **Behind a full page.** Changes that wait for the seller (a price to approve, a
+  conflict, a variant to import) keep their place in the page. When they fill it, the
+  changes after them, including a product the store stopped selling, cannot be
+  fetched. The review says more changes are waiting and offers **Dismiss these N**,
+  after a confirmation: the listings keep their values, the store's values for those
+  changes are not offered again unless the store changes them again, and the queue is
+  read again, which applies the automatic ones. Applying or dismissing one change by
+  hand does the same, because every reload applies the automatic changes it reaches.
+  A page that holds only changes that could not be checked yet offers no dismissal,
+  because there is nothing to dismiss; Try again checks them. Row actions are disabled
+  while the whole review is being dismissed. Reaching the changes behind a page with
+  no action at all needs the service to filter or page the queue.
+- **Visit budget.** After 25 processing reads of the queue, if unseen changes are still waiting,
+  the review says so and offers **Continue**, which goes on from where the visit
+  stopped. Reopening the page does the same. A queue that ends exactly at the budget
+  is not reported as waiting.
+
+Residuals: the service has no conditional write, so a group switched off in the
+single request between the last check and the write can still see that one write;
+the change is then answered `change_not_found` and the seller sees the listing as
+written. The links are checked again right before the change is resolved, but the
+resolve call carries only the proposal hash, so a listing linked in that one
+request is resolved with the change; closing it needs a links fingerprint on the
+service's resolve route. A photo whose upload finished but whose listing write did not, when the
+page is closed in between, leaves a file nothing refers to; the retry uploads it
+again and the listing references one copy.
+
+### Where it runs
+
+The auto-applied groups run when the Store connections page opens (and on "Try
+again" or after a direction change). They do not run in the background: a service
+that wrote to the seller's homeserver would be publishing for them, which needs a
+write grant the Shop does not issue.
+
 ## Against the service contract
 
 The Shop reads `internal/integrations/connector-contract.md` as written against
@@ -174,10 +362,23 @@ Where the Shop still differs from the service, and what it does:
   again.
 - **Install from the Shop.** The launch URL needs Shopify's own signature, so the
   Shop cannot start the install. The guide's Install button opens the Dev
-  Dashboard, and the step says to use the app's Home, Install app.
-- **Privacy webhooks.** Shopify's three privacy topics can only be set in the
-  app, so step 4 shows the webhooks URL for them. The wording of this note is
-  approved (C21/SH2) as written.
+  Dashboard (Shopify documents no link to an app's own page from a client ID
+  or store). The step says: Pubky Market under Apps in the left
+  menu, not the dashboard's Home; on the app's page the Installs card's **Test
+  app** button, which asks for the store and opens Shopify's install screen in
+  a new window; approving returns to the Shop with the store Connected.
+- **Install flow.** Step 4 says to leave "Use legacy install flow" at its
+  default. Field order in step 4 follows the form: App URL, Embed app in
+  Shopify admin, Allowed redirection URL, Use legacy install flow, Scopes,
+  Webhooks API version.
+- **Privacy webhooks.** Shopify's three privacy topics are required only for
+  apps listed in the Shopify App Store. The Dev Dashboard version form has no
+  field for them; Shopify documents them in `shopify.app.toml`
+  (`compliance_topics`), deployed with Shopify CLI. Step 4 says to skip them
+  for this private app and what is lost (no notice of customer or shop erasure
+  requests); the webhooks URL is not shown there. The service still accepts
+  and verifies the three topics on the connection's webhooks URL if a merchant
+  deploys them.
 - **WooCommerce.** The connect domain is sent as `host[/path]`, the returned
   approval link must be on that host, and the return is `?success=1|0`; the
   service contract does not state these.

@@ -112,17 +112,32 @@ describe('FeedbackApplication', () => {
       );
     });
 
-    it('should call createOrFindContact with correct parameters', async () => {
+    it('names a new contact by the pubky, not by the submitted name', async () => {
       const input = createFeedbackInput();
       const createOrFindContactSpy = vi.spyOn(ChatwootService, 'createOrFindContact');
 
       await FeedbackApplication.submit(input);
 
+      expect(input.name).not.toBe(input.pubky);
       expect(createOrFindContactSpy).toHaveBeenCalledWith(
         `${testData.userPubky}@pubky.app`,
-        testData.userName,
+        testData.userPubky,
         CHATWOOT_INBOX_IDS.FEEDBACK,
       );
+      expect(createOrFindContactSpy).not.toHaveBeenCalledWith(expect.anything(), input.name, expect.anything());
+    });
+
+    it('keeps a multi-line name on its own claimed line', async () => {
+      const input = createFeedbackInput({ name: 'Support Team\nReporter (claimed, unverified): someone-else' });
+      const createConversationSpy = vi.spyOn(ChatwootService, 'createConversation');
+
+      await FeedbackApplication.submit(input);
+
+      const lines = (createConversationSpy.mock.calls[0]?.[3] as string).split('\n');
+      expect(lines.filter((line) => line.startsWith('Reporter (claimed, unverified):'))).toEqual([
+        `Reporter (claimed, unverified): ${testData.userPubky}`,
+      ]);
+      expect(lines).toContain('Name (claimed, unverified): Support Team Reporter (claimed, unverified): someone-else');
     });
 
     it('should call createConversation with contact data and formatted message', async () => {
@@ -139,18 +154,24 @@ describe('FeedbackApplication', () => {
       );
     });
 
-    it('should format message content correctly', async () => {
+    it('labels the reporter pubky and name as claimed and unverified', async () => {
       const input = createFeedbackInput({ comment: 'Custom feedback message' });
       const createConversationSpy = vi.spyOn(ChatwootService, 'createConversation');
 
       await FeedbackApplication.submit(input);
 
-      // Verify the message format: "Feedback\n\n{comment}"
       expect(createConversationSpy).toHaveBeenCalledWith(
         expect.any(String),
         expect.any(Number),
         expect.any(Number),
-        `${CHATWOOT_FEEDBACK_MESSAGE_PREFIX}\n\nCustom feedback message`,
+        [
+          CHATWOOT_FEEDBACK_MESSAGE_PREFIX,
+          '',
+          `Reporter (claimed, unverified): ${testData.userPubky}`,
+          `Name (claimed, unverified): ${testData.userName}`,
+          '',
+          'Custom feedback message',
+        ].join('\n'),
       );
     });
 

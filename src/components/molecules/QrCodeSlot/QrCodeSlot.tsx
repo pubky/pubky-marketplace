@@ -21,14 +21,13 @@ export function QrCodeSlot({
   fillWidth = false,
   activeQrHasHoverEffect = false,
   expiredReloadAction,
-  showRingLogo = true,
-  logo = showRingLogo ? 'ring' : undefined,
+  logo = 'ring',
 }: QrCodeSlotProps) {
   if (isLoading || (!url && !isExpired)) {
     return (
       <Container className="items-center gap-2">
-        <Loader2 className="size-8 animate-spin text-background" />
-        <Typography as="small" size="sm" className="text-background">
+        <Loader2 className="size-8 animate-spin text-background [.light_&]:text-foreground" />
+        <Typography as="small" size="sm" className="text-background [.light_&]:text-foreground">
           {generatingLabel}
         </Typography>
       </Container>
@@ -88,7 +87,17 @@ export function QrCodeSlot({
             activeQrHasHoverEffect && HOVER_OPACITY,
           )}
         >
-          {logo === 'bitkit' ? (
+          {logo === 'both' ? (
+            <span className="flex items-center gap-1">
+              <PubkyIcon
+                size={18}
+                className="size-[18px] text-white [&_path]:fill-current"
+                role="img"
+                aria-label="Pubky Ring"
+              />
+              <Bitkit size={18} className="size-[18px]" role="img" aria-label="Bitkit" />
+            </span>
+          ) : logo === 'bitkit' ? (
             <Bitkit size={24} className="size-6" role="img" aria-label="Bitkit" />
           ) : (
             <PubkyIcon

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { COMMERCE_SHOP_SHIPS_TO_MAX_COUNTRIES } from '@/config/commerce';
 import {
   countryDisplayName,
+  countryFieldError,
   destinationCountryError,
   destinationRefusalMessage,
   formatShipsToCountries,
@@ -9,6 +10,7 @@ import {
   isAssignedCountryCode,
   isDestinationAllowed,
   parseShipsToField,
+  publishedCountryCode,
   SHIPS_TO_ANYWHERE,
   SHIPS_TO_LOADING,
   SHIPS_TO_UNAVAILABLE_MESSAGE,
@@ -158,6 +160,20 @@ describe('settings field', () => {
     expect(shipsToFieldError('')).toBeNull();
     expect(shipsToFieldError('CH, LI')).toBeNull();
     expect(shipsToFieldError('CH, EU, Swiss')).toBe('Not a two-letter country code: EU, SWISS.');
+  });
+
+  it('validates a typed shop or listing country as a real country, accepting aliases', () => {
+    expect(countryFieldError('CF')).toBeNull();
+    expect(countryFieldError(' ch ')).toBeNull();
+    expect(countryFieldError('UK')).toBeNull();
+    expect(countryFieldError('ZZ')).toBe('"ZZ" is not a country code. Use a two-letter code like CH or US.');
+    expect(countryFieldError('Swiss')).toBe('"Swiss" is not a country code. Use a two-letter code like CH or US.');
+  });
+
+  it('publishes the ISO code for what was typed', () => {
+    expect(publishedCountryCode('uk')).toBe('GB');
+    expect(publishedCountryCode(' ch ')).toBe('CH');
+    expect(publishedCountryCode('')).toBe('');
   });
 
   it('caps the list length', () => {

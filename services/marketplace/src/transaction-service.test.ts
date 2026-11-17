@@ -1185,6 +1185,53 @@ describe('MarketplaceTransactionService', () => {
     await expect(
       service.execute(BUYER, orderCommand('review.update', order.id, 6, { rating: 3, text: 'Edited.' }, 1_206)),
     ).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_COMMAND' } });
+    await expect(
+      service.execute(BUYER, orderCommand('review.withdraw', order.id, 6, {}, 1_207)),
+    ).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_COMMAND' } });
+  });
+
+  it('refuses per-item review terms instead of dropping the items', async () => {
+    const { service } = createService();
+    const order = await createPaidOrder(service);
+    await service.execute(
+      SELLER,
+      orderCommand('fulfillment.ship', order.id, 2, { carrier: 'Sandbox Post', trackingNumber: 'TRACK-ITEMS' }, 1_260),
+    );
+    await service.execute(BUYER, orderCommand('fulfillment.confirm_delivery', order.id, 3, {}, 1_261));
+
+    await expect(
+      service.execute(
+        BUYER,
+        orderCommand('review.create', order.id, 4, { items: [{ listingId: 'boots_01', rating: 5, text: '' }] }, 1_262),
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_COMMAND' } });
+  });
+
+  it('lets the buyer cancel a return until the seller acts', async () => {
+    const { service } = createService();
+    const order = await createPaidOrder(service);
+    await service.execute(
+      SELLER,
+      orderCommand('fulfillment.ship', order.id, 2, { carrier: 'Sandbox Post', trackingNumber: 'TRACK-CANCEL' }, 1_250),
+    );
+    await service.execute(BUYER, orderCommand('fulfillment.confirm_delivery', order.id, 3, {}, 1_251));
+    const request = { reason: 'Changed my mind', requestedAmountMinor: order.total.amountMinor };
+    await service.execute(BUYER, orderCommand('return.request', order.id, 4, request, 1_252));
+
+    await expect(service.execute(SELLER, orderCommand('return.cancel', order.id, 5, {}, 1_253))).resolves.toMatchObject(
+      { ok: false, error: { code: 'UNAUTHORIZED' } },
+    );
+    await expect(service.execute(BUYER, orderCommand('return.cancel', order.id, 5, {}, 1_254))).resolves.toMatchObject({
+      ok: true,
+      result: { order: { state: 'delivered', returnRequest: null, revision: 6 } },
+    });
+
+    await service.execute(BUYER, orderCommand('return.request', order.id, 6, request, 1_255));
+    await service.execute(SELLER, orderCommand('return.approve', order.id, 7, {}, 1_256));
+    await expect(service.execute(BUYER, orderCommand('return.cancel', order.id, 8, {}, 1_257))).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'INVALID_STATE' },
+    });
   });
 
   it('runs return approval, receipt, and externally verified refund without claiming custody', async () => {

@@ -460,6 +460,127 @@ describe('CommerceApplication.syncWatchlist across tabs', () => {
   });
 });
 
+describe('CommerceApplication.syncWatchlist when its auth scope ends mid-round', () => {
+  let homeserver: FakeHomeserver;
+  const writes = () => homeserver.log.filter((entry) => !entry.startsWith('GET ') && !entry.startsWith('LIST '));
+
+  beforeEach(() => {
+    vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
+    vi.spyOn(HomeserverService, 'hasActiveSession').mockReturnValue(true);
+    vi.spyOn(HomeserverService, 'canCurrentSessionWrite').mockReturnValue(true);
+    vi.spyOn(HomeserverService, 'isCurrentSessionGrant').mockReturnValue(false);
+    vi.spyOn(CommercePrivKeyringApplication, 'get').mockResolvedValue({ kind: 'keys', keyring: KEYRING });
+    vi.spyOn(LocalCommerceService, 'getFavorites').mockResolvedValue([]);
+    vi.spyOn(LocalCommerceService, 'getWatchTombstones').mockResolvedValue([]);
+    vi.spyOn(LocalCommerceService, 'applyWatchlistState').mockResolvedValue(undefined);
+    vi.spyOn(LocalCommerceService, 'getSyncJob').mockResolvedValue({ updated_at: 7 } as never);
+    vi.spyOn(LocalCommerceService, 'completeSyncJobIfUnchanged').mockResolvedValue(true);
+    homeserver = installFakeHomeserver();
+    homeserver.files.set(WATCHLIST_URL, v1Record(2, [['boots_01', 100]]));
+    installWebLocks();
+  });
+
+  afterEach(() => {
+    removeWebLocks();
+    CommerceApplication.resetWatchlistSyncInFlight();
+    vi.restoreAllMocks();
+  });
+
+  it('applies nothing locally and writes nothing back when the scope ends during the remote read', async () => {
+    const warn = vi.spyOn(Logger, 'warn');
+    const scope = new AbortController();
+    const read = homeserver.holdNext(HttpMethod.GET, V2_URL);
+    const round = CommerceApplication.syncWatchlist(OWNER, scope.signal).catch((error: unknown) => error);
+    await read.reached;
+    scope.abort(new DOMException('Signed out', 'AbortError'));
+    read.release();
+
+    expect(await round).toMatchObject({ name: 'AbortError' });
+    expect(LocalCommerceService.applyWatchlistState).not.toHaveBeenCalled();
+    expect(writes()).toEqual([]);
+    expect(LocalCommerceService.completeSyncJobIfUnchanged).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('keeps v1 and the outbox job when the scope ends during the encrypted write', async () => {
+    const scope = new AbortController();
+    const put = homeserver.holdNext(HttpMethod.PUT, V2_URL);
+    const round = CommerceApplication.syncWatchlist(OWNER, scope.signal).catch((error: unknown) => error);
+    await put.reached;
+    scope.abort(new DOMException('Signed out', 'AbortError'));
+    put.release();
+
+    expect(await round).toMatchObject({ name: 'AbortError' });
+    expect(homeserver.files.has(WATCHLIST_URL)).toBe(true);
+    expect(homeserver.log.some((entry) => entry.startsWith('DELETE '))).toBe(false);
+    expect(LocalCommerceService.completeSyncJobIfUnchanged).not.toHaveBeenCalled();
+  });
+
+  it('starts no round once the scope has ended', async () => {
+    const scope = new AbortController();
+    scope.abort(new DOMException('Signed out', 'AbortError'));
+
+    await expect(CommerceApplication.syncWatchlist(OWNER, scope.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(homeserver.log).toEqual([]);
+    expect(CommercePrivKeyringApplication.get).not.toHaveBeenCalled();
+  });
+
+  it('runs a round of its own for a caller with a live scope that joined a round whose scope ended', async () => {
+    const ended = new AbortController();
+    const read = homeserver.holdNext(HttpMethod.GET, V2_URL);
+    const first = CommerceApplication.syncWatchlist(OWNER, ended.signal).catch((error: unknown) => error);
+    await read.reached;
+    const joined = CommerceApplication.syncWatchlist(OWNER, new AbortController().signal);
+    ended.abort(new DOMException('Signed out', 'AbortError'));
+    read.release();
+
+    expect(await first).toMatchObject({ name: 'AbortError' });
+    await expect(joined).resolves.toBe('synced');
+    expect(LocalCommerceService.applyWatchlistState).toHaveBeenCalledOnce();
+    expect(homeserver.files.has(WATCHLIST_URL)).toBe(false);
+  });
+
+  it('does not hand a caller with a live scope the outcome of a joined round whose scope ended', async () => {
+    let keysLookup!: () => void;
+    vi.mocked(CommercePrivKeyringApplication.get).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          keysLookup = () => resolve({ kind: 'unavailable' });
+        }),
+    );
+    const ended = new AbortController();
+    const first = CommerceApplication.syncWatchlist(OWNER, ended.signal);
+    await vi.waitFor(() => expect(keysLookup).toBeDefined());
+    const joined = CommerceApplication.syncWatchlist(OWNER, new AbortController().signal);
+    ended.abort(new DOMException('Signed out', 'AbortError'));
+    keysLookup();
+
+    await first;
+    await expect(joined).resolves.toBe('synced');
+    expect(LocalCommerceService.applyWatchlistState).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a joiner whose own scope ended along with the round it joined', async () => {
+    let keysLookup!: () => void;
+    vi.mocked(CommercePrivKeyringApplication.get).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          keysLookup = () => resolve({ kind: 'unavailable' });
+        }),
+    );
+    const scope = new AbortController();
+    const first = CommerceApplication.syncWatchlist(OWNER, scope.signal);
+    await vi.waitFor(() => expect(keysLookup).toBeDefined());
+    const joined = CommerceApplication.syncWatchlist(OWNER, scope.signal).catch((error: unknown) => error);
+    scope.abort(new DOMException('Signed out', 'AbortError'));
+    keysLookup();
+
+    await first;
+    expect(await joined).toMatchObject({ name: 'AbortError' });
+    expect(CommercePrivKeyringApplication.get).toHaveBeenCalledOnce();
+  });
+});
+
 describe('CommerceApplication.syncWatchlist when the marketplace session is replaced mid-round', () => {
   let homeserver: FakeHomeserver;
 

@@ -35,13 +35,15 @@ export class MuteApplication {
    * Fetches the list of muted user IDs from the homeserver and persists them to the local MUTED stream.
    * Callers do not need to persist the result; this method handles fetch + persist.
    * @param pubky - The user's pubky to fetch mutes for
+   * @param signal - Aborted when `pubky` signs out; nothing is persisted after that
    * @returns Array of muted user pubkeys
    */
-  static async fetchMutedUsers(pubky: Pubky): Promise<Pubky[]> {
+  static async fetchMutedUsers(pubky: Pubky, signal?: AbortSignal): Promise<Pubky[]> {
     const mutesDirectory = `${baseUriBuilder(pubky)}mutes/`;
     const muteUris = await HomeserverService.list({ baseDirectory: mutesDirectory });
     const stream = muteUris.map((uri) => uri.split('/').pop()).filter((id): id is string => !!id) as Pubky[];
 
+    signal?.throwIfAborted();
     await LocalStreamUsersService.upsert({
       streamId: UserStreamTypes.MUTED,
       stream,

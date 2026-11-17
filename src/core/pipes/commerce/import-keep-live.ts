@@ -145,6 +145,8 @@ export function keepLiveRecord(
     fulfillmentMethods: fulfillment.fulfillmentMethods,
     package: fulfillment === existing ? existing.package : packageFor(existing, fulfillment, source),
     shippingOptions: fulfillment.shippingOptions,
+    shippingProfileId: fulfillment.shippingProfileId,
+    shippingZones: fulfillment.shippingZones,
     digitalLock: existing.digitalLock,
   };
   const parsed = commerceListingRecordSchema.safeParse(candidate);

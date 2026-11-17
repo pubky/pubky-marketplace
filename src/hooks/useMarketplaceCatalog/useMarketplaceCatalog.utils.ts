@@ -61,14 +61,14 @@ export interface MarketplaceCatalogItem {
    */
   mediaUrls: string[];
   /**
-   * Seller-scoped reputation from the Nexus stream projection (buyer
-   * reviews across all the seller's listings). Only index entries carry it:
-   * a card built from a cached canonical record inherits the entry's value
-   * in {@link buildMarketplaceCatalogItems}, and `null` renders nothing —
-   * honest absence, never 0.0. Display only; never a ranking input
-   * (ratified D4).
+   * This product's own rating from the Nexus stream projection (buyer
+   * reviews of this listing only, never the seller's other listings). Only
+   * index entries carry it: a card built from a cached canonical record
+   * inherits the entry's value in {@link buildMarketplaceCatalogItems}, and
+   * `null` renders "No rating yet", never 0.0. Display only; never a ranking
+   * input (ratified D4).
    */
-  reputation: CommerceReputationSnippet | null;
+  listingReputation: CommerceReputationSnippet | null;
   revision: number;
   updatedAt: number;
 }
@@ -115,7 +115,7 @@ export function catalogItemFromListingModel(listing: CommerceListingModelSchema)
     mediaUrls: record.media.filter(({ type }) => type === 'image').map(({ url }) => url),
     // Canonical records carry no aggregate; the catalog merge fills this in
     // from the index entry when one exists for the same listing.
-    reputation: null,
+    listingReputation: null,
     revision: listing.revision,
     updatedAt: listing.updated_at,
   };
@@ -141,7 +141,7 @@ export function catalogItemFromCatalogEntry(entry: CommerceCatalogEntryModelSche
     // Nullish fallback: entries cached before the model carried media_urls.
     mediaUrls: entry.media_urls ?? [],
     // Nullish fallback: entries cached before the model carried reputation.
-    reputation: entry.reputation ?? null,
+    listingReputation: entry.listing_reputation ?? null,
     revision: entry.revision,
     updatedAt: entry.updated_at,
   };
@@ -169,7 +169,7 @@ export function buildMarketplaceCatalogItems(
       // The cached canonical record wins the card content, but reputation
       // only exists in the index projection — carry it over so a hydrated
       // listing does not lose its stars.
-      items.set(entry.id, { ...cached, reputation: entry.reputation ?? null });
+      items.set(entry.id, { ...cached, listingReputation: entry.listing_reputation ?? null });
     }
   }
   return [...items.values()];
@@ -224,8 +224,6 @@ export function filterMarketplaceCatalog(
         return right.price.amountMinor - left.price.amountMinor;
       case 'ending_soon':
         return auctionEnd(left) - auctionEnd(right);
-      case 'recommended':
-        return recommendationScore(right) - recommendationScore(left);
     }
   });
 }
@@ -291,29 +289,18 @@ function auctionEnd(item: MarketplaceCatalogItem): number {
   return item.auction ? Date.parse(item.auction.endsAt) : Number.MAX_SAFE_INTEGER - 1;
 }
 
-function recommendationScore(item: MarketplaceCatalogItem): number {
-  const auctionBoost = item.saleFormat === 'auction' ? 10_000 : 0;
-  const conditionBoost = item.condition === 'new' || item.condition === 'excellent' ? 5_000 : 0;
-  return item.updatedAt + auctionBoost + conditionBoost;
-}
-
 /** The order drops are shown in on the marketplace page: live, then upcoming, then ended. */
 export const DROP_DISPLAY_BUCKET_ORDER = ['live', 'upcoming', 'ended'] as const;
 
 /**
- * "Recommended" with every sale type shown: one entry from each group in turn
- * (fixed-price, auctions, drops), each group keeping its own order, until all
- * are used. A shorter group simply runs out and the rest follow in turn.
- * The ranking line in `eu-region.ts` describes exactly this, so changing one
- * means changing the other.
+ * "Newest" with every sale type shown: listings by last update and drops by start time, newest
+ * first. A drop that has not started yet is announced news, so upcoming drops lead, soonest first.
  */
-export function interleaveInTurn<T>(groups: readonly (readonly T[])[]): T[] {
-  const mixed: T[] = [];
-  const longest = Math.max(0, ...groups.map((group) => group.length));
-  for (let index = 0; index < longest; index++) {
-    for (const group of groups) {
-      if (index < group.length) mixed.push(group[index]);
-    }
-  }
-  return mixed;
+export function orderNewestFirst<L, D>(
+  listings: readonly { card: L; at: number }[],
+  drops: readonly { card: D; at: number; upcoming: boolean }[],
+): Array<L | D> {
+  const upcoming = drops.filter((drop) => drop.upcoming).map(({ card }) => card);
+  const dated: { card: L | D; at: number }[] = [...listings, ...drops.filter((drop) => !drop.upcoming)];
+  return [...upcoming, ...dated.sort((left, right) => right.at - left.at).map(({ card }) => card)];
 }

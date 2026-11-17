@@ -35,8 +35,10 @@ vi.mock('@/hooks/useStoreConnections/useStoreConnections', () => ({
   }),
 }));
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main className="w-full py-6">{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => (
+    <main className="w-full py-6">{children}</main>
+  ),
 }));
 
 vi.mock('@/organisms/Marketplace/MarketplaceSectionNav', () => ({ MarketplaceSectionNav: () => null }));
@@ -48,6 +50,29 @@ vi.mock('@/hooks/useConnectorListingLinks/useConnectorListingLinks', () => ({
     check: async () => true,
     linkByHand: async () => true,
     store: 'Shopify',
+  }),
+}));
+
+vi.mock('@/hooks/useConnectorChanges/useConnectorChanges', () => ({
+  CHANGE_FAILURE_COPY: {},
+  DISMISS_ALL_KEY: 'all',
+  useConnectorChanges: () => ({
+    state: { status: 'ready', items: [], unsettled: 0, waiting: 'none' },
+    workingId: null,
+    refresh: async () => {},
+    dismissAll: async () => {},
+    apply: async () => {},
+    dismiss: async () => {},
+    detach: async () => {},
+  }),
+}));
+
+vi.mock('@/hooks/useConnectorSync/useConnectorSync', () => ({
+  useConnectorSync: () => ({
+    state: { status: 'idle' },
+    savingGroup: null,
+    setDirection: async () => true,
+    reload: async () => {},
   }),
 }));
 

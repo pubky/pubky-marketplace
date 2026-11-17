@@ -125,7 +125,7 @@ export function httpStatusCodeToError(
  * @example
  * ```typescript
  * if (!response.ok) {
- *   throw httpResponseToError(response, ErrorService.Homegate, 'verifySmsCode', url);
+ *   throw httpResponseToError(response, ErrorService.Homeserver, 'request', url);
  * }
  * ```
  */

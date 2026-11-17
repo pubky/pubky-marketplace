@@ -3,7 +3,7 @@ import { ReportValidators } from '@/pipes/report/report.validators';
 import type { TReportSubmitParams } from './report.types';
 
 /**
- * Controller for post report submission.
+ * Controller for post, listing and review report submission.
  * Entry point for the report feature, called from the API route.
  */
 export class ReportController {
@@ -21,15 +21,29 @@ export class ReportController {
    * @param params.name - Reporter's display name
    * @param params.listingId - Listing id, when the report is about a listing
    * @param params.sellerPubky - Listing seller, required with `listingId`
+   * @param params.reviewUri - Review URI, when the report is about a review (with the reviewed listing)
+   * @param params.reviewerPubky - Review author, required with `reviewUri`
    * @throws AppError if validation fails or submission fails
    */
   static async submit(params: TReportSubmitParams): Promise<void> {
     // Validate and normalize inputs using pipes layer
     const pubky = ReportValidators.validatePubky(params.pubky);
     const postUrl = ReportValidators.validatePostUrl(params.postUrl);
-    const issueType = ReportValidators.validateIssueType(params.issueType);
     const reason = ReportValidators.validateReason(params.reason);
     const name = ReportValidators.validateName(params.name);
+    const review = ReportValidators.validateReviewReference(
+      params.reviewUri,
+      params.reviewerPubky,
+      params.listingId,
+      params.sellerPubky,
+    );
+    if (review) {
+      const issueType = ReportValidators.validateReviewIssueType(params.issueType);
+      await ReportApplication.submit({ pubky, postUrl, issueType, reason, name, review });
+      return;
+    }
+
+    const issueType = ReportValidators.validateIssueType(params.issueType);
     const listing = ReportValidators.validateListingReference(params.listingId, params.sellerPubky);
 
     await ReportApplication.submit({ pubky, postUrl, issueType, reason, name, ...(listing ? { listing } : {}) });

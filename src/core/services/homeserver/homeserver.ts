@@ -15,7 +15,6 @@ import {
 } from '@synonymdev/pubky';
 import type { TKeypairParams } from '@/application/auth/auth.types';
 import { CAPABILITIES, getShopGrantClientId, isPrivKeysRequested, KEYED_CAPABILITIES } from '@/config/app';
-import { withBasePath } from '@/config/base-path';
 import {
   getDefaultHttpRelay,
   getDeployEnv,
@@ -31,7 +30,6 @@ import { GRANT_STORAGE_UNAVAILABLE_MESSAGE } from '@/libs/auth/sign-in-error-cop
 import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, DatabaseErrorCode, ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
-import { httpResponseToError } from '@/libs/error/error.http';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { isAppError, isAuthError } from '@/libs/error/error.utils';
 import { HttpMethod, HttpStatusCode } from '@/libs/http/http.types';
@@ -42,18 +40,15 @@ import { Logger } from '@/libs/logger/logger';
 import { isIosUserAgent } from '@/libs/navigation/bitkit-ios-url';
 import type { Pubky as TPubkyModel } from '@/models/models.types';
 import type {
-  TGenerateAuthTokenFlowResult,
   TGenerateAuthUrlResult,
   TGrantAuthUrlOptions,
   THomeserverRestoreSessionParams,
   THomeserverSessionResult,
   THomeserverSignUpParams,
-  TSignupTokenVerificationStatus,
 } from '@/services/homeserver/homeserver.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { extractStatusCode, grantKeyRemovalFailed, handleError } from './error.utils';
 import type {
-  TGenerateSignupAuthUrlParams,
   TGetBlobParams,
   THomeserverFetchParams,
   THomeserverGetJsonIfFoundParams,
@@ -70,20 +65,17 @@ import type {
 } from './homeserver.types';
 import {
   assertOk,
-  AUTH_POLL_MAX_RESUMES,
   AUTH_RELAY_RETENTION_MS,
   capabilitiesGrantWrite,
   createCancelableAuthApproval,
   getOwnedResponse,
   getResponseOrNullWhenMissing,
   isHttpUrl,
-  isTransientPollError,
   parseResponseOrUndefined,
   PUBKY_PREFIX,
   readResponseBytes,
   resolveOwnedSessionPath,
   toSdkPath,
-  waitUntilVisible,
 } from './homeserver.utils';
 import {
   assertOwnedGrantStorageAvailable,
@@ -292,6 +284,7 @@ export class HomeserverService {
    * @param signupToken - The signup token to use
    * @returns The session
    */
+  // Retained for explicit integration/live harnesses; Shop auth controllers do not expose account creation.
   static async signUp({ keypair, signupToken }: THomeserverSignUpParams): Promise<THomeserverSessionResult> {
     if (isStagingHomeserverDeploy()) {
       return await this.signUpViaHomeserverUrl({ keypair, signupToken });
@@ -433,60 +426,6 @@ export class HomeserverService {
   }
 
   /**
-   * Verifies a signup token (invite code) against the homeserver.
-   *
-   * Performs a GET to the homeserver's `/signup_tokens/<token>` endpoint. This is a
-   * homeserver-root endpoint that cannot be reached via the homeserver pubkey (its PKARR
-   * record has no resolvable HTTPS endpoint), so the explicit {@link getHomeserverUrl} is used.
-   *
-   * A definitive homeserver response distinguishes valid, used, and unknown tokens, whereas
-   * a failure to reach the homeserver is surfaced as a thrown error so callers can tell
-   * verification outcomes apart from "couldn't verify right now".
-   *
-   * @param signupToken - The signup token / invite code to verify
-   * @returns `'valid'` when the token exists and is unused, `'used'` when already redeemed,
-   *   `'invalid'` when the homeserver does not recognise the token (404).
-   * @throws When the homeserver could not be reached (network error, timeout, DNS/PKARR failure)
-   *   or returns an unexpected status.
-   */
-  static async verifySignupToken(signupToken: string): Promise<TSignupTokenVerificationStatus> {
-    const url = `${getHomeserverUrl()}/signup_tokens/${encodeURIComponent(signupToken)}`;
-    try {
-      const response = await this.getPubkySdk().client.fetch(url, { method: HttpMethod.GET });
-      Logger.debug('Signup token verification response', { status: response.status });
-
-      if (response.status === HttpStatusCode.NOT_FOUND) {
-        return 'invalid';
-      }
-
-      if (!response.ok) {
-        throw new Error(`Signup token verification failed with status ${response.status}`);
-      }
-
-      const text = await response.text();
-      let data: { status?: string };
-      try {
-        data = JSON.parse(text) as { status?: string };
-      } catch {
-        Logger.warn('Signup token verification returned a non-JSON body', { status: response.status });
-        return 'invalid';
-      }
-      if (data.status === 'valid') {
-        return 'valid';
-      }
-      if (data.status === 'used') {
-        return 'used';
-      }
-
-      Logger.warn('Unexpected signup token verification payload', { status: data.status });
-      return 'invalid';
-    } catch (error) {
-      Logger.warn('Signup token verification could not reach the homeserver');
-      throw error;
-    }
-  }
-
-  /**
    * Signs in a user to the homeserver.
    *
    * If signin fails due to missing homeserver records, this method will attempt to republish
@@ -563,68 +502,6 @@ export class HomeserverService {
       });
     }
     return this.generateGrantAuthUrl();
-  }
-
-  /**
-   * Starts an authentication-only Pubky auth flow whose approval yields an `AuthToken` —
-   * a signed, time-bound proof of key ownership — instead of a homeserver session.
-   *
-   * Used to authenticate the user to external Pubky-verified services (e.g. the
-   * Marketplace Transaction Service, which verifies the token bytes with `pubky-common`).
-   * The capability set is empty on purpose: the token proves identity only and grants
-   * no homeserver access.
-   *
-   * @returns The authorization URL to show the signer, a lazy `awaitToken`, and a cancel
-   */
-  /**
-   * @param capabilities Optional capability string shown verbatim on the
-   * signer. Empty (the default) requests a plain sign-in token; a scoped
-   * string (e.g. the Paykit claim scope) yields a token carrying exactly
-   * those capabilities, which some verifiers require and check exactly.
-   */
-  static generateAuthTokenFlow(capabilities: Capabilities = ''): TGenerateAuthTokenFlowResult {
-    try {
-      const pubkySdk = this.getPubkySdk();
-      const flow = pubkySdk.startCookieAuthFlow(capabilities, AuthFlowKind.signin(), getDefaultHttpRelay());
-      const authorizationUrl = flow.authorizationUrl;
-      let live = flow;
-      let freed = false;
-      const waiting = new AbortController();
-      const startedAt = Date.now();
-      const free = () => {
-        if (freed) return;
-        freed = true;
-        waiting.abort();
-        try {
-          live.free();
-        } catch {
-          // Ignore double-free or already-finalized WASM objects.
-        }
-      };
-      const awaitToken = async () => {
-        try {
-          for (let resumes = 0; ; ) {
-            try {
-              return await live.awaitToken();
-            } catch (error) {
-              // The SDK gives up on a flow once the page's network drops in the background (the user is
-              // approving in Pubky Ring), and it never polls that flow again. Reconnect to the same relay
-              // channel when the page is visible again: an approval made meanwhile is still there.
-              if (freed || !isTransientPollError(error) || ++resumes > AUTH_POLL_MAX_RESUMES) throw error;
-              await waitUntilVisible(waiting.signal);
-              // Past the relay's retention the approval is gone: end the flow instead of waiting on an empty channel.
-              if (freed || Date.now() - startedAt > AUTH_RELAY_RETENTION_MS) throw error;
-              live = pubkySdk.resumeCookieAuthFlow(authorizationUrl);
-            }
-          }
-        } finally {
-          free();
-        }
-      };
-      return { authorizationUrl, awaitToken, cancelAuthFlow: free };
-    } catch (error) {
-      return handleError({ error, additionalContext: { relay: getDefaultHttpRelay() } });
-    }
   }
 
   /**
@@ -994,24 +871,6 @@ export class HomeserverService {
   }
 
   /**
-   * Generates the SDK signup grant URL for the configured homeserver.
-   * @param inviteCode InviteCode to the homeserver
-   * @param caps - The capabilities to use
-   * @returns The authentication URL and approval promise
-   */
-  static async generateSignupAuthUrl({
-    inviteCode,
-    caps: _caps,
-  }: TGenerateSignupAuthUrlParams): Promise<TGenerateAuthUrlResult> {
-    return this.startGrantAuthFlow(
-      () => AuthFlowKind.signup(PublicKey.from(getHomeserver()), inviteCode),
-      'generateSignupAuthUrl',
-      undefined,
-      false,
-    );
-  }
-
-  /**
    * Logs out a user from the homeserver
    * @param session - The authenticated Session to sign out
    * @returns Void
@@ -1167,9 +1026,10 @@ export class HomeserverService {
     logUrl,
     tolerateUnreachable = false,
     maxBytes,
+    publicRead = false,
   }: THomeserverGetJsonIfFoundParams): Promise<THomeserverJsonIfFound<T>> {
     const contextUrl = logUrl ?? url;
-    const owned = this.resolveOwnedSessionPath(url);
+    const owned = publicRead ? null : this.resolveOwnedSessionPath(url);
     const load = owned
       ? () => owned.session.storage.get(toSdkPath(owned.path))
       : () => {
@@ -1418,51 +1278,6 @@ export class HomeserverService {
   }
 
   /**
-   * Generates a signup token for dev/test environments.
-   * Calls the server-side API route to keep admin credentials secure.
-   *
-   * @security Admin credentials are never exposed to the client.
-   * The actual token generation happens server-side via /api/dev/signup-token.
-   */
-  static async generateSignupToken() {
-    // Allow in development or when Cypress is running (for E2E tests in production builds)
-    const isCypressRunning = typeof window !== 'undefined' && 'Cypress' in window;
-    const isProduction = process.env.NODE_ENV === 'production';
-
-    if (isProduction && !isCypressRunning) {
-      throw Err.validation(
-        ValidationErrorCode.INVALID_INPUT,
-        'generateSignupToken is only available in non-production environments.',
-        {
-          service: ErrorService.Homeserver,
-          operation: 'generateSignupToken',
-          context: { isProduction, isCypressRunning },
-        },
-      );
-    }
-
-    // Call server-side API route to generate token (keeps admin credentials secure)
-    const tokenUrl = withBasePath('/api/dev/signup-token');
-    const response = await fetch(tokenUrl, {
-      method: 'GET',
-    });
-
-    if (!response.ok) {
-      throw httpResponseToError(response, ErrorService.Homeserver, 'generateSignupToken', tokenUrl);
-    }
-
-    const data = await response.json();
-    if (!data.token) {
-      throw Err.server(ServerErrorCode.UNKNOWN_ERROR, 'No token received from server', {
-        service: ErrorService.Homeserver,
-        operation: 'generateSignupToken',
-      });
-    }
-
-    return data.token;
-  }
-
-  /**
    * Subscribe to homeserver `/events-stream` for a user's pub directory subtree (SDK SSE wrapper).
    * Used for mute-list sync; callers own {@link ReadableStreamDefaultReader} lifecycle.
    */
@@ -1493,11 +1308,14 @@ export class HomeserverService {
    * Subscribe to one homeserver's `/events-stream` for several of its users at
    * once (max 50), filtered to the given path prefixes (a trailing `/` means a
    * subtree). Public paths need no session. Callers own the reader lifecycle.
+   * `latestOnly` reads just the newest matching event and closes, instead of
+   * replaying history and staying open.
    */
   static async subscribeHomeserverEventStream(params: {
     homeserver: TPubkyModel;
     users: Array<[TPubkyModel, string | null]>;
     pathPrefixes: string[];
+    latestOnly?: boolean;
   }): Promise<ReadableStream<THomeserverResourceEvent>> {
     try {
       const pubkySdk = this.getPubkySdk();
@@ -1505,7 +1323,8 @@ export class HomeserverService {
       for (const prefix of params.pathPrefixes) {
         builder = builder.path(prefix);
       }
-      const stream = (await builder.live().subscribe()) as ReadableStream<HomeserverSdkUserEvent>;
+      builder = params.latestOnly ? builder.reverse().limit(1) : builder.live();
+      const stream = (await builder.subscribe()) as ReadableStream<HomeserverSdkUserEvent>;
       return this.normalizeUserEventStream(stream);
     } catch (error) {
       return handleError({

@@ -5,8 +5,8 @@ export { MarketplaceCheckout as default } from '@/templates/Marketplace/Marketpl
 
 export function generateMetadata() {
   return gatedMarketplaceMetadata(
-    'Checkout | Pubky Marketplace',
-    'Pay for items in your Pubky Marketplace cart.',
+    'Checkout | Pubky Market',
+    'Pay for items in your Pubky Market cart.',
     MARKETPLACE_ROUTES.CHECKOUT,
   );
 }

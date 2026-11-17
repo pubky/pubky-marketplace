@@ -1,10 +1,13 @@
+import { getSiteName } from '@/config/metadata';
 import { Metadata } from '@/molecules/Metadata/Metadata';
 
-export const metadata = Metadata({
-  title: 'Page Not Found - Pubky App',
-  description: 'The page you are looking for does not exist.',
-  robots: false,
-});
+export function generateMetadata() {
+  return Metadata({
+    title: `Page Not Found - ${getSiteName()}`,
+    description: 'The page you are looking for does not exist.',
+    robots: false,
+  });
+}
 
 export default function NotFound() {
   return (

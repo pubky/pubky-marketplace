@@ -178,6 +178,6 @@ export interface EntityOps<T extends string> {
   requiresViewerId: boolean;
   /** Find stale entities by IDs */
   findStaleByIds: (ids: T[]) => Promise<T[]>;
-  /** Force refresh entities by IDs */
-  forceRefresh: (ids: T[], viewerId: Pubky | null) => Promise<void>;
+  /** Force refresh entities by IDs; nothing is saved once `signal` (the viewer's auth scope) aborts */
+  forceRefresh: (ids: T[], viewerId: Pubky | null, signal: AbortSignal) => Promise<void>;
 }

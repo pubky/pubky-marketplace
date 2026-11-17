@@ -31,7 +31,7 @@ FIAT_VERIFIER_URL=https://fiat.staging.shop.example   # only if deployed
 
 The Shop at `pubky.app/shop` uses the Paykit and Locks instances it shares with Pubky App: one Paykit process and one Postgres, one Lock Server. For that install, `PAYKIT_URL` and `LOCKS_URL` are the shared instances, `SHOP_ORIGINS` is the App origin (`https://pubky.app` or `https://staging.pubky.app`, no `/shop`) with `SHOP_PATH=/shop/marketplace`, and the shared Paykit config must list the Lock Server key and the marketplace service key under `[signed_services] trusted_public_keys` and the App origin under `[setup] allowed_origins`. See [Shop embedding](shop-embedding.md) for the full list of settings.
 
-At `pubky.app/shop` the App owns `/shop` and frames the Shop build mounted at `/shop-embed`, so `SHOP_PATH` (`/shop/marketplace`) is the App's page and the Shop's own HTML, runtime config, `llms.txt` and framing headers live under `SHOP_EMBED_PATH=/shop-embed`. Set `SHOP_EMBED_PATH` and the Shop checks run against both: the wrapper must load, and the framed build must load, allow a same-origin frame, and publish `shopPublicPath=/shop` so share links and canonical URLs point at the App. Leave it unset for a Shop served directly (a Vercel test instance, or `shop.pubky.app`); nothing changes there. Add `SERVICE_PUBLIC_APP_ORIGIN` (the service's `PUBLIC_APP_ORIGIN`) to check the PayPal hand-off: the buyer returns to `{value}/marketplace/orders` after paying or cancelling, so it must be `https://pubky.app/shop`, not the `/shop-embed` build and not the bare origin.
+At `pubky.app/shop` the App owns `/shop` and frames the Shop build mounted at `/shop-embed`, so `SHOP_PATH` (`/shop/marketplace`) is the App's page and the Shop's own HTML, runtime config, `llms.txt` and framing headers live under `SHOP_EMBED_PATH=/shop-embed`. Set `SHOP_EMBED_PATH` and the Shop checks run against both: the wrapper must load, and the framed build must load, allow a same-origin frame, and publish `shopPublicPath=/shop` so share links and canonical URLs point at the App. Leave it unset for a Shop served directly (a test instance, or `shop.pubky.app`); nothing changes there. Add `SERVICE_PUBLIC_APP_ORIGIN` (the service's `PUBLIC_APP_ORIGIN`) to check the PayPal hand-off: the buyer returns to `{value}/marketplace/orders` after paying or cancelling, so it must be `https://pubky.app/shop`, not the `/shop-embed` build and not the bare origin.
 
 Then add, as they become available:
 
@@ -141,14 +141,14 @@ Exit code 0 means no FAIL; `--strict` also fails on WARN. `report.md` in the out
 
 ## 7. Sample run
 
-Production on Railway, 6 October 2026 (read-only, excerpt). The stack declares `LOCKS_SHARED_FROM=staging`: before launch, one Lock Server in the staging project serves both Shops, and its fiat gateway sends Locks-gated Bitcoin to the staging (regtest) Paykit. Seller-direct Bitcoin checkout uses the production Paykit.
+Production before launch, 6 October 2026 (read-only, excerpt). The stack declares `LOCKS_SHARED_FROM=staging`: before launch, one Lock Server in the staging project serves both Shops, and its fiat gateway sends Locks-gated Bitcoin to the staging (regtest) Paykit. Seller-direct Bitcoin checkout uses the production Paykit.
 
 ```text
 == wiring
 PASS  wiring.paykit-trusts-locks             Paykit trusts the Lock Server key — 2 trusted key(s), Locks pubkyrqrnn1d…
 PASS  wiring.paykit-setup-origins            Paykit setup allows the Shop origins — 1 origin(s)
 PASS  wiring.locks-paykit-reachable          Locks [paykit] server_url answers (from inside its network) — LOCKS_PAYKIT_REACH_CMD exit 0
-WARN  wiring.fiat-paykit-url                 fiat verifier forwards Bitcoin to this Paykit — Locks-gated Bitcoin goes to http://paykit-server.railway.internal:3001, not this stack’s Paykit https://paykit-shop.pubky.app (declared: Lock Server shared from staging)
+WARN  wiring.fiat-paykit-url                 fiat verifier forwards Bitcoin to this Paykit — Locks-gated Bitcoin goes to http://paykit-server.internal:3001, not this stack’s Paykit https://paykit-shop.pubky.app (declared: Lock Server shared from staging)
       fix: accepted only as a pre-launch exception: Locks-gated purchases settle on staging’s Paykit, while seller-direct Bitcoin checkout uses https://paykit-shop.pubky.app; a production install points Locks at its own Paykit
 == db
 PASS  db.service.migrations                  marketplace service migrations match the source exactly — 51 applied of 51

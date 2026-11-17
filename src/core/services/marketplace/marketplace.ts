@@ -2,6 +2,7 @@ import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { z } from 'zod';
 import { getCommerceAdapterMode, getMarketplaceUrl, isDurableCommerceMode } from '@/config/commerce';
+import type { MarketplaceReviewAttestationPending } from '@/libs/commerce/attestation';
 import type {
   MarketplaceDigitalDeliveryCapability,
   MarketplaceOrderDeliveryEmail,
@@ -260,6 +261,36 @@ export class MarketplaceGatewayService {
   }
 
   /**
+   * The caller's own purchase attestation for an order they reviewed; none
+   * outside the durable service, `{ status: "pending", releaseAt }` while a
+   * double-blind window withholds it.
+   */
+  static async getReviewAttestation(
+    actor: string,
+    orderId: string,
+  ): Promise<unknown | MarketplaceReviewAttestationPending | null> {
+    if (isDurableCommerceMode(getCommerceAdapterMode())) {
+      return await MarketplaceTransactionService.getReviewAttestation(actor, orderId);
+    }
+    return null;
+  }
+
+  /**
+   * The caller's purchase attestations for an order they reviewed, one per
+   * listing; none outside the durable service, `{ status: "pending",
+   * releaseAt }` while a double-blind window withholds them.
+   */
+  static async getReviewAttestations(
+    actor: string,
+    orderId: string,
+  ): Promise<unknown[] | MarketplaceReviewAttestationPending | null> {
+    if (isDurableCommerceMode(getCommerceAdapterMode())) {
+      return await MarketplaceTransactionService.getReviewAttestations(actor, orderId);
+    }
+    return null;
+  }
+
+  /**
    * The durable service's deterministic receipt attestation for the
    * portable order-receipt document. Null in sandbox mode — the sandbox has
    * no attestor and no receipts worth exporting.
@@ -421,15 +452,18 @@ export class MarketplaceGatewayService {
     return parsed.data;
   }
 
-  static async getOrders(actor: string): Promise<MarketplaceParticipantOrder[]> {
+  static async getOrders(
+    actor: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<MarketplaceParticipantOrder[]> {
     if (isDurableCommerceMode(getCommerceAdapterMode())) {
-      return await MarketplaceTransactionService.getOrders(actor);
+      return await MarketplaceTransactionService.getOrders(actor, options);
     }
     this.assertSandbox();
     const url = `${getMarketplaceUrl()}/v1/orders`;
     const response = await safeFetch(
       url,
-      { method: 'GET', headers: { 'x-pubky-actor': actor } },
+      { method: 'GET', headers: { 'x-pubky-actor': actor }, ...(options.signal ? { signal: options.signal } : {}) },
       ErrorService.Marketplace,
       'getOrders',
     );
@@ -496,9 +530,13 @@ export class MarketplaceGatewayService {
   }
 
   /** One order projection by id — durable service only (used to source a fresh `expected_revision`). */
-  static async getOrder(actor: string, orderId: string): Promise<MarketplaceOrder | null> {
+  static async getOrder(
+    actor: string,
+    orderId: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<MarketplaceOrder | null> {
     this.assertDurableServiceOnly('getOrder');
-    return await MarketplaceTransactionService.getOrder(actor, orderId);
+    return await MarketplaceTransactionService.getOrder(actor, orderId, options);
   }
 
   /**
@@ -597,6 +635,19 @@ export class MarketplaceGatewayService {
     return health.usdtPayments?.available === true;
   }
 
+  /**
+   * Who marks orders paid on the durable service (`/health`
+   * `payment_confirmation`): `seller` when only the seller's confirmation pays
+   * an order, `automatic` when matching money does. Null outside the durable
+   * service and on a service that predates the switch, which pays
+   * automatically.
+   */
+  static async getPaymentConfirmationMode(): Promise<'seller' | 'automatic' | null> {
+    if (!isDurableCommerceMode(getCommerceAdapterMode())) return null;
+    const health = await MarketplaceTransactionService.getHealth();
+    return health.paymentConfirmation ?? null;
+  }
+
   /** The Paykit rail's state from the service's `/health`; unknown outside the durable service. */
   static async getPaykitRailStatus(): Promise<PaykitRailStatus> {
     if (!isDurableCommerceMode(getCommerceAdapterMode())) return 'unknown';
@@ -653,14 +704,25 @@ export class MarketplaceGatewayService {
     return await MarketplaceTransactionService.markFiatPaid(actor, orderId, transactionRef);
   }
 
-  static async confirmFiatReceived(actor: string, orderId: string): Promise<MarketplaceOrder> {
+  static async confirmFiatReceived(
+    actor: string,
+    orderId: string,
+    releaseDigital = false,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<MarketplaceOrder> {
     this.assertDurableServiceOnly('confirmFiatReceived');
-    return await MarketplaceTransactionService.confirmFiatReceived(actor, orderId);
+    return await MarketplaceTransactionService.confirmFiatReceived(actor, orderId, releaseDigital, options);
   }
 
-  static async confirmBitcoinPayment(actor: string, orderId: string, reason?: string) {
+  static async confirmBitcoinPayment(
+    actor: string,
+    orderId: string,
+    reason?: string,
+    releaseDigital = false,
+    options: { signal?: AbortSignal } = {},
+  ) {
     this.assertDurableServiceOnly('confirmBitcoinPayment');
-    return await MarketplaceTransactionService.confirmBitcoinPayment(actor, orderId, reason);
+    return await MarketplaceTransactionService.confirmBitcoinPayment(actor, orderId, reason, releaseDigital, options);
   }
 
   static async resolveBitcoinPayment(

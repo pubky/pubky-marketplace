@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { getTagDayPalette } from '@/libs/utils/tagPalette';
 import { PostTag } from './PostTag';
 
 describe('PostTag', () => {
@@ -89,36 +90,32 @@ describe('PostTag', () => {
     expect(tag).toBeInTheDocument();
     expect(container.firstChild).toBeTruthy();
   });
-});
 
-describe('PostTag - Snapshots', () => {
-  it('matches snapshot with default state', () => {
-    const { container } = render(<PostTag label="bitcoin" />);
-    expect(container.firstChild).toMatchSnapshot();
+  it('sets the night wash and the pastel day chip for the tag colour', () => {
+    render(<PostTag label="bitcoin" color="#123456" />);
+    const tag = screen.getByRole('button');
+    const day = getTagDayPalette('#123456');
+
+    expect(tag).toHaveClass('tag-palette', 'text-white', '[.light_&]:text-(--tag-label)');
+    expect(tag.style.backgroundImage).toBe('var(--tag-fill)');
+    expect(tag.style.getPropertyValue('--tag-night-fill')).toBe(
+      'linear-gradient(90deg, rgba(5, 5, 10, 0.7) 0%, rgba(5, 5, 10, 0.7) 100%), linear-gradient(90deg, #123456 0%, #123456 100%)',
+    );
+    expect(tag.style.getPropertyValue('--tag-night-edge')).toBe('#123456');
+    expect(tag.style.getPropertyValue('--tag-day-fill')).toBe(
+      `linear-gradient(90deg, ${day.background} 0%, ${day.background} 100%)`,
+    );
+    expect(tag.style.getPropertyValue('--tag-day-edge')).toBe('#123456');
+    expect(tag.style.getPropertyValue('--tag-day-label')).toBe(day.label);
   });
 
-  it('matches snapshot when selected', () => {
-    const { container } = render(<PostTag label="bitcoin" selected />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
+  it('draws the selected ring and border in the edge colour', () => {
+    const { container } = render(<PostTag label="bitcoin" color="#123456" selected />);
+    const tag = screen.getByRole('button');
 
-  it('matches snapshot with counter', () => {
-    const { container } = render(<PostTag label="bitcoin" count={16} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with close button', () => {
-    const { container } = render(<PostTag label="bitcoin" showClose />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with all features', () => {
-    const { container } = render(<PostTag label="bitcoin" count={16} showClose selected />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom color', () => {
-    const { container } = render(<PostTag label="bitcoin" color="#FF0000" />);
-    expect(container.firstChild).toMatchSnapshot();
+    expect(tag).toHaveAttribute('aria-pressed', 'true');
+    expect(tag.style.boxShadow).toBe('inset 0 0 0 1px var(--tag-edge)');
+    const overlay = container.querySelector<HTMLElement>('.border-solid.absolute');
+    expect(overlay?.style.borderColor).toBe('var(--tag-edge)');
   });
 });

@@ -2,21 +2,13 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UseDialogKeyboardOrchestratorResult } from '@/hooks/useDialogKeyboardOrchestrator/useDialogKeyboardOrchestrator.types';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from './Dialog';
+import { Dialog, DialogContent } from './Dialog';
 
 const mockUseDialogKeyboardOrchestrator = vi.hoisted(() =>
   vi.fn<() => UseDialogKeyboardOrchestratorResult>(() => ({
-    isKeyboardVisible: false,
     spacerHeight: 0,
     contentStyle: undefined,
+    layerStyle: undefined,
   })),
 );
 
@@ -26,9 +18,9 @@ vi.mock('@/hooks/useDialogKeyboardOrchestrator/useDialogKeyboardOrchestrator', (
 
 beforeEach(() => {
   mockUseDialogKeyboardOrchestrator.mockReturnValue({
-    isKeyboardVisible: false,
     spacerHeight: 0,
     contentStyle: undefined,
+    layerStyle: undefined,
   });
 });
 
@@ -75,9 +67,9 @@ describe('Dialog', () => {
 
   it('does not apply keyboard orchestrator styles by default', () => {
     mockUseDialogKeyboardOrchestrator.mockReturnValue({
-      isKeyboardVisible: true,
       spacerHeight: 120,
       contentStyle: { scrollPaddingBottom: '144px' },
+      layerStyle: { top: '40px', bottom: 'auto', height: '420px' },
     });
 
     render(
@@ -92,13 +84,14 @@ describe('Dialog', () => {
     expect(dialogContent).not.toHaveClass('will-change-transform');
     expect(dialogContent).not.toHaveStyle({ scrollPaddingBottom: '144px' });
     expect(document.querySelector('[data-slot="dialog-keyboard-spacer"]')).not.toBeInTheDocument();
+    expect(dialogContent.parentElement).not.toHaveStyle({ height: '420px' });
   });
 
   it('applies keyboard spacer and scroll padding when keyboard is visible', () => {
     mockUseDialogKeyboardOrchestrator.mockReturnValue({
-      isKeyboardVisible: true,
       spacerHeight: 120,
       contentStyle: { scrollPaddingBottom: '144px' },
+      layerStyle: { top: '40px', bottom: 'auto', height: '420px' },
     });
 
     render(
@@ -118,6 +111,26 @@ describe('Dialog', () => {
     expect(spacer).toBeInTheDocument();
     expect(spacer).toHaveAttribute('aria-hidden', 'true');
     expect(spacer).toHaveStyle({ height: '120px' });
+  });
+
+  it('fits the dialog layer to the visible area above the keyboard', () => {
+    mockUseDialogKeyboardOrchestrator.mockReturnValue({
+      spacerHeight: 0,
+      contentStyle: { maxHeight: '372px' },
+      layerStyle: { top: '40px', bottom: 'auto', height: '420px' },
+    });
+
+    render(
+      <Dialog open={true}>
+        <DialogContent avoidKeyboard centered>
+          <div>Dialog Content</div>
+        </DialogContent>
+      </Dialog>,
+    );
+
+    const dialogContent = screen.getByTestId('dialog-content');
+    expect(dialogContent).toHaveStyle({ maxHeight: '372px' });
+    expect(dialogContent.parentElement).toHaveStyle({ top: '40px', height: '420px' });
   });
 
   it('uses the mobile bottom-drawer treatment by default', () => {
@@ -166,154 +179,5 @@ describe('Dialog', () => {
     expect(dialogContent.parentElement).toHaveClass('items-center');
     expect(dialogContent).toHaveClass('m-6', 'sm:m-4', 'data-[state=open]:zoom-in-95');
     expect(dialogContent).not.toHaveClass('rounded-xl', 'bg-background');
-  });
-});
-
-describe('Dialog - Snapshots', () => {
-  it('matches snapshot for Dialog with default props', () => {
-    const { container } = render(
-      <Dialog>
-        <div>Dialog Content</div>
-      </Dialog>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for DialogTrigger with default props', () => {
-    const { container } = render(
-      <Dialog>
-        <DialogTrigger>Open Dialog</DialogTrigger>
-      </Dialog>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for DialogTrigger with asChild', () => {
-    const { container } = render(
-      <Dialog>
-        <DialogTrigger asChild>
-          <button>Open Dialog</button>
-        </DialogTrigger>
-      </Dialog>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for DialogContent with default props', () => {
-    render(
-      <Dialog open={true}>
-        <DialogContent>
-          <div>Dialog Content</div>
-        </DialogContent>
-      </Dialog>,
-    );
-    const dialogContent = screen.getByTestId('dialog-content');
-    expect(dialogContent.parentElement).toMatchSnapshot();
-  });
-
-  it('matches snapshot for DialogContent with close button', () => {
-    render(
-      <Dialog open={true}>
-        <DialogContent showCloseButton={true}>
-          <div>Dialog Content</div>
-        </DialogContent>
-      </Dialog>,
-    );
-    const dialogContent = screen.getByTestId('dialog-content');
-    expect(dialogContent.parentElement).toMatchSnapshot();
-  });
-
-  it('matches snapshot for DialogContent without close button', () => {
-    render(
-      <Dialog open={true}>
-        <DialogContent showCloseButton={false}>
-          <div>Dialog Content</div>
-        </DialogContent>
-      </Dialog>,
-    );
-    const dialogContent = screen.getByTestId('dialog-content');
-    expect(dialogContent.parentElement).toMatchSnapshot();
-  });
-
-  it('matches snapshot for DialogContent with overrideDefaults', () => {
-    render(
-      <Dialog open={true}>
-        <DialogContent overrideDefaults={true}>
-          <DialogHeader>
-            <DialogTitle>Dialog Title</DialogTitle>
-          </DialogHeader>
-          <div>Dialog Content</div>
-        </DialogContent>
-      </Dialog>,
-    );
-    const dialogContent = screen.getByTestId('dialog-content');
-    expect(dialogContent.parentElement).toMatchSnapshot();
-  });
-
-  it('matches snapshot for DialogContent without overrideDefaults', () => {
-    render(
-      <Dialog open={true}>
-        <DialogContent overrideDefaults={false}>
-          <DialogHeader>
-            <DialogTitle>Dialog Title</DialogTitle>
-          </DialogHeader>
-          <div>Dialog Content</div>
-        </DialogContent>
-      </Dialog>,
-    );
-    const dialogContent = screen.getByTestId('dialog-content');
-    expect(dialogContent.parentElement).toMatchSnapshot();
-  });
-
-  it('matches snapshot for DialogHeader', () => {
-    render(
-      <Dialog open={true}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Dialog Title</DialogTitle>
-            <DialogDescription>Dialog Description</DialogDescription>
-          </DialogHeader>
-        </DialogContent>
-      </Dialog>,
-    );
-    const dialogHeader = screen.getByTestId('dialog-header');
-    expect(dialogHeader).toMatchSnapshot();
-  });
-
-  it('matches snapshot for DialogFooter', () => {
-    render(
-      <Dialog open={true}>
-        <DialogContent>
-          <DialogFooter>
-            <button>Cancel</button>
-            <button>OK</button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>,
-    );
-    const dialogContent = screen.getByTestId('dialog-content');
-    const footer = dialogContent.querySelector('[data-slot="dialog-footer"]');
-    expect(footer).toMatchSnapshot();
-  });
-
-  it('matches snapshot for complete dialog structure', () => {
-    render(
-      <Dialog open={true}>
-        <DialogTrigger>Open Dialog</DialogTrigger>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Dialog Title</DialogTitle>
-            <DialogDescription>Dialog Description</DialogDescription>
-          </DialogHeader>
-          <div>Dialog body content</div>
-          <DialogFooter>
-            <button>Cancel</button>
-            <button>OK</button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>,
-    );
-    const dialogContent = screen.getByTestId('dialog-content');
-    expect(dialogContent.parentElement).toMatchSnapshot();
   });
 });

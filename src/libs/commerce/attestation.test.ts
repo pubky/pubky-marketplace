@@ -3,10 +3,15 @@ import { listingUriBuilder, PubkySpecsBuilder } from 'pubky-app-specs';
 import { describe, expect, it } from 'vitest';
 import {
   extractReviewAttestation,
+  extractReviewAttestations,
   marketplaceAttestationSchema,
+  readReviewAttestationPending,
+  readReviewResultPending,
+  reviewAttestationIssuedAt,
   verifyOwnReviewAttestation,
 } from '@/libs/commerce/attestation';
 import { commerceReviewRecordSchema } from '@/libs/commerce/marketplace-records';
+import { purchaseAttestationJwsFixture } from '@/test/fixtures/commerce/trusted-attestors';
 
 const REVIEWER = 'b'.repeat(52);
 const SELLER = 's'.repeat(52);
@@ -139,6 +144,41 @@ describe('marketplace purchase attestation', () => {
     expect(extractReviewAttestation({ kind: 'review', attestation: { jws: 'x' } })).toBeNull();
   });
 
+  it('extracts every per-listing attestation of an item result in order and skips malformed entries', () => {
+    const boots = issueAttestation();
+    const belt = issueAttestation({ listing: listingUriBuilder(SELLER, 'belt') });
+    const claims = (iss: string, listing: string) => ({
+      v: 1,
+      iss,
+      sub: REVIEWER,
+      cpk: SELLER,
+      role: 'buyer_reviewing_seller',
+      listing,
+      orderRef: 'ab'.repeat(32),
+      completedOn: '2026-08-21',
+      priceDecade: 'USD:2',
+      iat: 1,
+    });
+
+    const extracted = extractReviewAttestations({
+      attestations: [
+        { listingId: LISTING_ID, jws: boots.jws, claims: claims(boots.iss, listingUriBuilder(SELLER, LISTING_ID)) },
+        { listingId: 'belt', jws: belt.jws, claims: claims(belt.iss, listingUriBuilder(SELLER, 'belt')) },
+        { jws: 'x' },
+      ],
+    });
+
+    expect(extracted.map(({ listingId }) => listingId)).toEqual([LISTING_ID, 'belt']);
+    expect(extracted[0].claims.priceDecade).toBe('USD:2');
+    expect(extractReviewAttestations({ kind: 'review' })).toEqual([]);
+  });
+
+  it('keeps price_decade in the pinned claims so a signed item attestation verifies', () => {
+    const { jws, iss } = issueAttestation({ price_decade: 'USD:2' });
+
+    expect(verifyOwnReviewAttestation(publishedRecord(jws))).toBe(iss);
+  });
+
   it('verifies a genuinely signed attestation against the record offline', () => {
     const { jws, iss } = issueAttestation();
     const record = publishedRecord(jws);
@@ -154,5 +194,52 @@ describe('marketplace purchase attestation', () => {
     // Binding mismatch: the attestation covers a different listing.
     const otherListing = issueAttestation({ listing: listingUriBuilder(SELLER, 'other_listing') });
     expect(verifyOwnReviewAttestation(publishedRecord(otherListing.jws))).toBeNull();
+  });
+});
+
+describe('reviewAttestationIssuedAt', () => {
+  it("reads the attestation's iat as the issuance instant", () => {
+    const iat = Date.UTC(2026, 9, 12, 14, 30) / 1000;
+    const record = { eligibilityAttestation: purchaseAttestationJwsFixture({ iss: 'o'.repeat(52), iat }) };
+
+    expect(reviewAttestationIssuedAt(record)).toEqual(new Date('2026-10-12T14:30:00Z'));
+  });
+
+  it('is null when the embedded attestation does not parse', () => {
+    expect(reviewAttestationIssuedAt({ eligibilityAttestation: 'not.a.jws' })).toBeNull();
+  });
+});
+
+describe('readReviewAttestationPending', () => {
+  it('reads the withheld answer of the attestation routes', () => {
+    expect(readReviewAttestationPending({ status: 'pending', releaseAt: '2026-11-01T00:00:00.000Z' })).toEqual({
+      status: 'pending',
+      releaseAt: '2026-11-01T00:00:00.000Z',
+    });
+  });
+
+  it('does not read an issued attestation, a missing release date or other statuses as pending', () => {
+    expect(readReviewAttestationPending({ status: 'issued', releaseAt: '2026-11-01T00:00:00.000Z' })).toBeNull();
+    expect(readReviewAttestationPending({ status: 'pending' })).toBeNull();
+    expect(readReviewAttestationPending(null)).toBeNull();
+    expect(readReviewAttestationPending({ attestation: 'x.y.z' })).toBeNull();
+  });
+});
+
+describe('readReviewResultPending', () => {
+  it('reads a withheld command result with its release date', () => {
+    expect(readReviewResultPending({ attestationStatus: 'pending', releaseAt: '2026-11-01T00:00:00.000Z' })).toEqual({
+      releaseAt: '2026-11-01T00:00:00.000Z',
+    });
+  });
+
+  it('keeps a withheld result without a usable release date pending', () => {
+    expect(readReviewResultPending({ attestationStatus: 'pending' })).toEqual({ releaseAt: null });
+    expect(readReviewResultPending({ attestationStatus: 'pending', releaseAt: 5 })).toEqual({ releaseAt: null });
+  });
+
+  it('reads a result without the status, as from a service without the window, as released', () => {
+    expect(readReviewResultPending({ attestation: 'x.y.z' })).toBeNull();
+    expect(readReviewResultPending({ attestationStatus: 'issued' })).toBeNull();
   });
 });

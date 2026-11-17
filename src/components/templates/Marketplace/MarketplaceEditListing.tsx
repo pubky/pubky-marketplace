@@ -1,17 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, PencilLine, Store } from 'lucide-react';
-import { getMarketplaceListingEditRoute, getMarketplaceListingRoute } from '@/app/routes';
+import { ArrowLeft, PencilLine, Store, Trash2 } from 'lucide-react';
+import { getMarketplaceListingEditRoute, getMarketplaceListingRoute, MARKETPLACE_ROUTES } from '@/app/routes';
 import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
+import { useDeleteMarketplaceListings } from '@/hooks/useDeleteMarketplaceListings/useDeleteMarketplaceListings';
 import { useEditMarketplaceListing } from '@/hooks/useEditMarketplaceListing/useEditMarketplaceListing';
+import { useListingStoreSync } from '@/hooks/useListingStoreSync/useListingStoreSync';
+import type { ConnectorSyncGroup } from '@/libs/commerce/connectors';
 import { ListingPublishGuardNotice } from '@/molecules/Marketplace/ListingPublishGuardNotice';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
+import { MarketplaceListingDeleteDialog } from '@/organisms/Marketplace/MarketplaceListingDeleteDialog';
 import { MarketplaceListingForm } from '@/organisms/Marketplace/MarketplaceListingForm';
 import { MarketplaceSkeleton } from './Marketplace.skeleton';
 
@@ -22,16 +26,81 @@ export interface MarketplaceEditListingProps {
 
 export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEditListingProps) {
   const router = useRouter();
-  const editing = useEditMarketplaceListing(sellerPubky, listingId);
+  const storeSync = useListingStoreSync(listingId);
+  const editing = useEditMarketplaceListing(sellerPubky, listingId, {
+    follows: storeSync.follows,
+    storeSyncReady: storeSync.ready,
+  });
   const [isSaving, setIsSaving] = useState(false);
+  const savingRef = useRef(false);
+  const reconciled = useRef<Record<ConnectorSyncGroup, boolean>>({ content: false, price: false, variants: false });
   const listingRoute = getMarketplaceListingRoute(sellerPubky, listingId);
+  const followsContent = storeSync.follows.content;
+  const followsPrice = storeSync.follows.price;
+  const followsVariants = storeSync.follows.variants;
+  const editingReady = editing.status === 'ready';
+  const resetFollowedGroup = editing.resetFollowedGroup;
+  useEffect(() => {
+    if (!editingReady) return;
+    const follows = { content: followsContent, price: followsPrice, variants: followsVariants };
+    for (const group of ['content', 'price', 'variants'] as const) {
+      if (!follows[group]) {
+        reconciled.current[group] = false;
+      } else if (!reconciled.current[group]) {
+        reconciled.current[group] = true;
+        resetFollowedGroup(group);
+      }
+    }
+    // A group that has just become followed, by the first lookup finishing or by the switch, has its fields put
+    // back to the published values. `resetFollowedGroup` is a render-local closure over the form and the
+    // record, so only the follow flags and whether the editor has loaded decide when this runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingReady, followsContent, followsPrice, followsVariants]);
+  const deleting = useDeleteMarketplaceListings({ onDeleted: () => router.push(MARKETPLACE_ROUTES.DASHBOARD) });
+  const deleteSection = editing.ownedListing && (
+    <section
+      aria-label="Delete this listing"
+      className="flex flex-wrap items-center justify-between gap-4 rounded-md border border-destructive/40 p-6"
+      data-testid="edit-listing-delete"
+    >
+      <div className="min-w-0 flex-1">
+        <Heading level={2} size="md">
+          Delete this listing
+        </Heading>
+        <Typography as="p" className="mt-1 text-sm text-muted-foreground">
+          Removes it from your homeserver for good. To stop sales but keep it, unlist it from the listing page instead.
+        </Typography>
+      </div>
+      <Button
+        variant="secondary"
+        className="rounded-full text-destructive"
+        disabled={isSaving}
+        onClick={() => {
+          const record = editing.ownedListing;
+          if (!record) return;
+          void deleting.request([
+            { ownerPubky: record.ownerPubky, listingId: record.listingId, title: record.title, record },
+          ]);
+        }}
+      >
+        <Trash2 className="size-4" aria-hidden="true" />
+        Delete listing
+      </Button>
+      <MarketplaceListingDeleteDialog controller={deleting} />
+    </section>
+  );
 
   const persistListing = async (options?: { silent?: boolean }) => {
+    if (deleting.open) return false;
+    // A save and a follow switch never overlap: the switch changes which fields a save may write.
+    if (savingRef.current || storeSync.isToggling()) return false;
+    savingRef.current = true;
     setIsSaving(true);
     try {
       const savedId = await editing.submit(options);
       return Boolean(savedId);
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   };
@@ -40,12 +109,7 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
 
   if (editing.status !== 'ready') {
     return (
-      <ContentLayout
-        showLeftSidebar={false}
-        showRightSidebar={false}
-        showLeftMobileButton={false}
-        showRightMobileButton={false}
-      >
+      <MarketplaceContentLayout>
         <Container overrideDefaults className="w-full">
           {editing.status === 'loading' ? (
             <MarketplaceSkeleton count={1} />
@@ -71,22 +135,18 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
                   Back to listing
                 </Link>
               </Button>
+              {editing.status === 'unsupported' && deleteSection && (
+                <div className="mt-8 w-full max-w-xl text-left">{deleteSection}</div>
+              )}
             </Container>
           )}
         </Container>
-      </ContentLayout>
+      </MarketplaceContentLayout>
     );
   }
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      disableMainContentOverflow
-      className="pb-28 lg:pb-16"
-    >
+    <MarketplaceContentLayout disableMainContentOverflow className="pb-28 lg:pb-16">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <Link
           href={listingRoute}
@@ -108,6 +168,27 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
           </Typography>
         </div>
 
+        {storeSync.failed && (
+          <div
+            role="alert"
+            className="flex flex-col gap-3 rounded-md border border-destructive/40 p-4 text-sm sm:flex-row sm:items-center sm:justify-between"
+            data-testid="edit-listing-store-sync-failed"
+          >
+            <span>
+              Saving is paused: your store connection could not be checked, and this listing may follow your store.
+            </span>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="w-fit rounded-full"
+              onClick={storeSync.retry}
+            >
+              Try again
+            </Button>
+          </div>
+        )}
+
         {editing.publishBlocked && (
           <ListingPublishGuardNotice
             reason={editing.publishBlocked}
@@ -126,8 +207,20 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
           listingId={listingId}
           mode="edit"
           saleTermsLocked={editing.saleTermsLocked}
+          storeSync={
+            storeSync.syncs.length > 0
+              ? {
+                  syncs: storeSync.syncs,
+                  saving: storeSync.saving,
+                  onToggle: (connectionId, group) => {
+                    if (savingRef.current) return;
+                    void storeSync.toggleOverride(connectionId, group);
+                  },
+                }
+              : null
+          }
           publishBlocked={editing.publishBlocked}
-          publishGuardReady={editing.publishGuardReady}
+          publishGuardReady={editing.publishGuardReady && storeSync.ready}
           returnTo={getMarketplaceListingEditRoute(sellerPubky, listingId)}
         />
         <Button asChild variant="ghost" className="rounded-full">
@@ -135,7 +228,8 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
             Cancel and go back
           </Link>
         </Button>
+        {deleteSection}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }

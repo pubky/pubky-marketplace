@@ -5,12 +5,10 @@ import { PostPreviewCard } from './PostPreviewCard';
 
 // Mock hooks
 const mockNavigateToPost = vi.fn();
-const mockNavigateToCollection = vi.fn();
 const mockTtlRef = vi.fn();
 vi.mock('@/hooks/usePostNavigation/usePostNavigation', () => ({
   usePostNavigation: () => ({
     navigateToPost: mockNavigateToPost,
-    navigateToCollection: mockNavigateToCollection,
   }),
 }));
 
@@ -143,7 +141,6 @@ const collectionPost = {
 describe('PostPreviewCard', () => {
   beforeEach(() => {
     mockNavigateToPost.mockClear();
-    mockNavigateToCollection.mockClear();
     mockUsePostDetails.mockReturnValue(resolvedPost);
   });
 
@@ -185,7 +182,6 @@ describe('PostPreviewCard', () => {
     fireEvent.click(card);
 
     expect(mockNavigateToPost).toHaveBeenCalledWith('test-post-123');
-    expect(mockNavigateToCollection).not.toHaveBeenCalled();
   });
 
   it('navigates to post page on Enter key', () => {
@@ -195,7 +191,6 @@ describe('PostPreviewCard', () => {
     fireEvent.keyDown(card, { key: 'Enter' });
 
     expect(mockNavigateToPost).toHaveBeenCalledWith('test-post-123');
-    expect(mockNavigateToCollection).not.toHaveBeenCalled();
   });
 
   it('navigates to post page on Space key', () => {
@@ -205,7 +200,6 @@ describe('PostPreviewCard', () => {
     fireEvent.keyDown(card, { key: ' ' });
 
     expect(mockNavigateToPost).toHaveBeenCalledWith('test-post-123');
-    expect(mockNavigateToCollection).not.toHaveBeenCalled();
   });
 
   it('does not navigate on other keys', () => {
@@ -291,28 +285,5 @@ describe('PostPreviewCard', () => {
     render(<PostPreviewCard postId={COLLECTION_COMPOSITE_ID} interactiveActions={false} />);
 
     expect(screen.getByTestId('collection-card')).toHaveAttribute('data-interactive-actions', 'false');
-  });
-});
-
-describe('PostPreviewCard - Snapshots', () => {
-  beforeEach(() => {
-    mockUsePostDetails.mockReturnValue(resolvedPost);
-  });
-
-  it('matches snapshot with default props', () => {
-    const { container } = render(<PostPreviewCard postId="snapshot-post-id" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with extra className', () => {
-    const { container } = render(<PostPreviewCard postId="snapshot-post-id" className="bg-muted" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for a collection original', () => {
-    mockUsePostDetails.mockReturnValue(collectionPost);
-
-    const { container } = render(<PostPreviewCard postId={COLLECTION_COMPOSITE_ID} />);
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

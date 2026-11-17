@@ -11,53 +11,35 @@ describe('Badge', () => {
   });
 });
 
-describe('Badge - Snapshots', () => {
-  it('matches snapshot with default props', () => {
-    const { container } = render(<Badge>Default Badge</Badge>);
-    expect(container.firstChild).toMatchSnapshot();
+describe('Badge - Rendering', () => {
+  it('applies the default variant classes by default', () => {
+    render(<Badge>Default Badge</Badge>);
+    const badge = screen.getByText('Default Badge');
+    expect(badge).toHaveAttribute('data-slot', 'badge');
+    expect(badge).toHaveClass('bg-primary', 'text-primary-foreground');
   });
 
-  it('matches snapshot for default variant', () => {
-    const { container } = render(<Badge variant="default">Default</Badge>);
-    expect(container.firstChild).toMatchSnapshot();
+  it.each([
+    ['default', ['bg-primary', 'text-primary-foreground']],
+    ['secondary', ['bg-secondary', 'text-secondary-foreground']],
+    ['destructive', ['bg-destructive/60', 'text-white']],
+    ['outline', ['text-foreground', 'bg-background']],
+  ] as const)('sets data-variant="%s" with its variant classes', (variant, classes) => {
+    render(<Badge variant={variant}>{variant}</Badge>);
+    const badge = screen.getByText(variant);
+    expect(badge).toHaveAttribute('data-variant', variant);
+    expect(badge).toHaveClass(...classes);
   });
 
-  it('matches snapshot for secondary variant', () => {
-    const { container } = render(<Badge variant="secondary">Secondary</Badge>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for destructive variant', () => {
-    const { container } = render(<Badge variant="destructive">Destructive</Badge>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for outline variant', () => {
-    const { container } = render(<Badge variant="outline">Outline</Badge>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom className', () => {
-    const { container } = render(<Badge className="custom-badge">Custom</Badge>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with complex children', () => {
-    const { container } = render(
-      <Badge>
-        <span>Complex Content</span>
-      </Badge>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for asChild prop', () => {
-    const { container } = render(
+  it('renders as a child element when asChild is set', () => {
+    render(
       <Badge asChild>
         <a href="/test">Link Badge</a>
       </Badge>,
     );
-    expect(container.firstChild).toMatchSnapshot();
+    const link = screen.getByRole('link', { name: 'Link Badge' });
+    expect(link).toHaveAttribute('href', '/test');
+    expect(link).toHaveAttribute('data-slot', 'badge');
   });
 
   it('forwards ref correctly', () => {

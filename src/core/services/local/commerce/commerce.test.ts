@@ -506,37 +506,6 @@ describe('LocalCommerceService', () => {
     expect(await CommerceSyncJobModel.table.count()).toBe(0);
   });
 
-  it('atomically persists matching public terms and transaction projection', async () => {
-    const listing = createCommerceListingFixture();
-    const projection = createCommerceProjectionFixture();
-
-    await LocalCommerceService.upsertListingAndProjection(listing, 'synced', projection);
-
-    const storedListing = await LocalCommerceService.getListing(projection.id);
-    const storedProjection = await LocalCommerceService.getListingProjection(projection.id);
-
-    expect(storedListing?.revision).toBe(1);
-    expect(storedProjection).toMatchObject({
-      listing_revision: 1,
-      server_revision: 3,
-      state: 'available',
-    });
-  });
-
-  it('rejects mismatched projections before writing either record', async () => {
-    const listing = createCommerceListingFixture();
-    const projection = createCommerceProjectionFixture({ listing_revision: 2 });
-
-    await expect(LocalCommerceService.upsertListingAndProjection(listing, 'synced', projection)).rejects.toMatchObject({
-      name: 'AppError',
-      code: 'INVALID_INPUT',
-      category: 'validation',
-    });
-
-    expect(await CommerceListingModel.table.count()).toBe(0);
-    expect(await CommerceListingProjectionModel.table.count()).toBe(0);
-  });
-
   it('keeps listing drafts account-scoped and preserves their creation timestamp', async () => {
     await LocalCommerceService.upsertDraft({
       ownerId: COMMERCE_FIXTURE_SELLER,
@@ -835,6 +804,31 @@ describe('LocalCommerceService', () => {
 
     await LocalCommerceService.deleteSavedSearch('search-1');
     expect(await LocalCommerceService.getSavedSearches(COMMERCE_FIXTURE_BUYER)).toEqual([]);
+  });
+
+  it('replays a search saved with the removed Recommended sort as Newest', async () => {
+    await CommerceSavedSearchModel.table.put({
+      id: 'legacy-search',
+      owner_id: COMMERCE_FIXTURE_BUYER,
+      name: 'Old search',
+      params: {
+        query: 'boots',
+        categoryId: null,
+        saleFormat: 'all',
+        conditions: [],
+        minimumPriceMinor: null,
+        maximumPriceMinor: null,
+        sort: 'recommended',
+      } as never,
+      watermark_updated_at: 1_000,
+      latest_match_updated_at: 1_000,
+      new_count: 0,
+      last_checked_at: null,
+      created_at: 100,
+    });
+
+    const [search] = await LocalCommerceService.getSavedSearches(COMMERCE_FIXTURE_BUYER);
+    expect(search?.params.sort).toBe('newest');
   });
 
   describe('delivery address book', () => {

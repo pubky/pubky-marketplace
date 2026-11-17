@@ -31,5 +31,3 @@ export const tagApi = {
     });
   },
 };
-
-export type TagApiEndpoint = keyof typeof tagApi;

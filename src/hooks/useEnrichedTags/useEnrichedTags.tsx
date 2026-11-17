@@ -49,5 +49,5 @@ export function useEnrichedTags(tags: TagWithAvatars[]): UseEnrichedTagsResult {
     }),
   }));
 
-  return { enrichedTags, isLoading };
+  return { enrichedTags };
 }

@@ -16,7 +16,7 @@ vi.mock('@/stores/auth/auth.store', () => ({
 const connection = connectionFixture({
   id: 'c1',
   provider: 'shopify',
-  domain: 'john.myshopify.com',
+  domain: 'demo.myshopify.com',
   status: 'connected',
   scopes: [],
 });
@@ -94,7 +94,7 @@ describe('MarketplaceConnectorListingLinks', () => {
     render(<MarketplaceConnectorListingLinks connection={connection} />);
     const card = screen.getByTestId('listing-links');
     expect(card).toHaveAttribute('id', listingLinksAnchorId('c1'));
-    expect(card).toHaveTextContent('1 listing is not linked to john.myshopify.com');
+    expect(card).toHaveTextContent('1 listing is not linked to demo.myshopify.com');
     expect(card).toHaveTextContent('Orders for it are not sent to your Shopify store');
     const row = screen.getByTestId('listing-link-row-my-tee');
     expect(row).toHaveTextContent('My tee');

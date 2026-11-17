@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BUYER_COUNTRY_PROMPT } from '@/libs/commerce/eu-region';
@@ -226,5 +226,31 @@ describe('MarketplaceOfferDialog', () => {
 
     expect(await screen.findByLabelText(BUYER_COUNTRY_PROMPT)).toHaveValue('');
     expect(screen.getByRole('button', { name: 'Send offer' })).toBeDisabled();
+  });
+
+  it('takes a typed country when the buyer presses Send offer with the field still focused, as on iPhone', async () => {
+    process.env[PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled] = 'true';
+    resetRuntimeConfigForTests();
+    const user = userEvent.setup();
+    render(
+      <MarketplaceOfferDialog
+        aggregateId="listing:x"
+        expectedRevision={1}
+        priceAsset={USD_ASSET}
+        onAccepted={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Make offer' }));
+    const field = await screen.findByLabelText(BUYER_COUNTRY_PROMPT);
+    await user.type(field, 'CH');
+    const send = screen.getByRole('button', { name: 'Send offer' });
+    expect(send).toBeDisabled();
+    expect(useBuyerCountryStore.getState().country).toBeNull();
+
+    fireEvent.pointerDown(send);
+    expect(field).toHaveFocus();
+    expect(useBuyerCountryStore.getState().country).toBe('CH');
+    expect(send).toBeEnabled();
   });
 });

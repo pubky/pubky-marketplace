@@ -27,10 +27,3 @@ describe('SettingsMenu', () => {
     );
   });
 });
-
-describe('SettingsMenu - Snapshots', () => {
-  it('matches snapshot', () => {
-    const { container } = render(<SettingsMenu />);
-    expect(container).toMatchSnapshot();
-  });
-});

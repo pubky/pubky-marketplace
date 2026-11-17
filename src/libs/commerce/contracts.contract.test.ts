@@ -13,8 +13,10 @@ const ARTIFACT_HASHES = {
   'contracts/samples/projections.json': 'b610e9ed474e02ac89a398804bcb71669d04f3559469d54e7404c50a8d7f8035',
   // Service c37481c plus only the `paypal_refund` / `paypal_reversal_cancelled`
   // transitions of pubky-marketplace-service `cursor/paypal-refund-ipn-95c1`
-  // (4ba877cd). A full re-vendor also brings the offer `converted` state.
-  'contracts/state-machines.json': '04f41c9fe35e12e181b39d216586c533964b7717310aa1b4aeefc1b5fa6d3077',
+  // (4ba877cd), and the two `return.cancel` edges and command of
+  // pubky-marketplace-service#177. A full re-vendor also brings the offer
+  // `converted` state.
+  'contracts/state-machines.json': '38afb0d86d61596adea333b367d7069f591f40cd49a777110cff3e369e06c84f',
 } as const;
 
 describe('vendored marketplace contracts', () => {

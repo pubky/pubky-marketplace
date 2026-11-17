@@ -30,7 +30,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 
@@ -105,6 +105,9 @@ describe('useMarketplaceShopSettings', () => {
     act(() => {
       result.current.form.setValue('name', 'Satoshi Vintage');
       result.current.form.setValue('bio', 'Independent circular fashion.');
+      result.current.form.setValue('countryCode', 'ch');
+      result.current.form.setValue('shippingPolicy', 'Ships within a week.');
+      result.current.form.setValue('returnPolicy', 'Returns within 14 days.');
       result.current.form.setValue('sellerStatus', 'private');
     });
 
@@ -119,13 +122,70 @@ describe('useMarketplaceShopSettings', () => {
         name: 'Satoshi Vintage',
         avatarUrl: undefined,
         bannerUrl: undefined,
-        shippingPolicy: expect.any(String),
-        returnPolicy: expect.any(String),
+        location: { countryCode: 'CH', region: undefined },
+        shippingPolicy: 'Ships within a week.',
+        returnPolicy: 'Returns within 14 days.',
         vacationMode: false,
       }),
     );
     expect(CommerceController.commitCreateMedia).not.toHaveBeenCalled();
     expect(result.current.hasShop).toBe(true);
+  });
+
+  it('publishes an alias such as UK as its ISO code, so the region policy and the service see GB', async () => {
+    const { result } = renderHook(() => useMarketplaceShopSettings());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => {
+      result.current.form.setValue('name', 'Satoshi Vintage');
+      result.current.form.setValue('countryCode', 'uk');
+      result.current.form.setValue('shippingPolicy', 'Ships within a week.');
+      result.current.form.setValue('returnPolicy', 'Returns within 14 days.');
+      result.current.form.setValue('sellerStatus', 'private');
+    });
+    await act(() => result.current.submit());
+
+    expect(CommerceController.commitUpsertShop).toHaveBeenCalledWith(
+      expect.objectContaining({ location: { countryCode: 'GB', region: undefined } }),
+    );
+  });
+
+  it('refuses a country that is two letters but not a country, and publishes nothing', async () => {
+    const { result } = renderHook(() => useMarketplaceShopSettings());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => {
+      result.current.form.setValue('name', 'Satoshi Vintage');
+      result.current.form.setValue('countryCode', 'ZZ');
+      result.current.form.setValue('shippingPolicy', 'Ships within a week.');
+      result.current.form.setValue('returnPolicy', 'Returns within 14 days.');
+      result.current.form.setValue('sellerStatus', 'private');
+    });
+    const succeeded = await act(() => result.current.submit());
+
+    expect(succeeded).toBe(false);
+    expect(CommerceController.commitUpsertShop).not.toHaveBeenCalled();
+    expect(result.current.form.getFieldState('countryCode').error?.message).toBe(
+      '"ZZ" is not a country code. Use a two-letter code like CH or US.',
+    );
+  });
+
+  it('refuses to publish a first shop until the seller has chosen a country and written the policies', async () => {
+    const { result } = renderHook(() => useMarketplaceShopSettings());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.form.getValues()).toMatchObject({ countryCode: '', shippingPolicy: '', returnPolicy: '' });
+
+    act(() => {
+      result.current.form.setValue('name', 'Satoshi Vintage');
+      result.current.form.setValue('sellerStatus', 'private');
+    });
+    const succeeded = await act(() => result.current.submit());
+
+    expect(succeeded).toBe(false);
+    expect(CommerceController.commitUpsertShop).not.toHaveBeenCalled();
+    expect(result.current.form.getFieldState('countryCode').error?.message).toBe('Country is required.');
+    expect(result.current.form.getFieldState('shippingPolicy').error?.message).toBe('Shipping policy is required.');
+    expect(result.current.form.getFieldState('returnPolicy').error?.message).toBe('Return policy is required.');
   });
 
   it('edits the published shop record network-first instead of restarting at revision 1', async () => {
@@ -370,6 +430,9 @@ describe('useMarketplaceShopSettings', () => {
 
     act(() => {
       result.current.form.setValue('name', 'Satoshi Vintage');
+      result.current.form.setValue('countryCode', 'ch');
+      result.current.form.setValue('shippingPolicy', 'Ships within a week.');
+      result.current.form.setValue('returnPolicy', 'Returns within 14 days.');
       result.current.form.setValue('sellerStatus', 'private');
       result.current.avatar.onInputChange(changeEvent(imageFile('avatar.png', [1, 2, 3])));
       result.current.banner.onInputChange(changeEvent(imageFile('banner.png', [4, 5, 6])));
@@ -432,6 +495,82 @@ describe('useMarketplaceShopSettings', () => {
     );
   });
 
+  describe('unsaved edits', () => {
+    async function loadPublishedShop() {
+      vi.mocked(CommerceController.refreshShop).mockResolvedValue({
+        ...publishedShop,
+        avatarUrl: AVATAR_MEDIA_URL,
+        bannerUrl: BANNER_MEDIA_URL,
+      });
+      const hook = renderHook(() => useMarketplaceShopSettings());
+      await waitFor(() => expect(hook.result.current.hasShop).toBe(true));
+      return hook;
+    }
+
+    it('is clean after the published shop loads, and while nothing has been typed', async () => {
+      const { result } = await loadPublishedShop();
+      expect(result.current.isDirty).toBe(false);
+    });
+
+    it('is clean for a new shop until the seller types, then dirty', async () => {
+      const { result } = renderHook(() => useMarketplaceShopSettings());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(result.current.isDirty).toBe(false);
+
+      act(() => result.current.form.setValue('name', 'Satoshi Vintage', { shouldDirty: true }));
+
+      expect(result.current.isDirty).toBe(true);
+    });
+
+    it('is dirty for a field edit and clean again once it is saved', async () => {
+      const { result } = await loadPublishedShop();
+
+      act(() => result.current.form.setValue('bio', 'A new description.', { shouldDirty: true }));
+      expect(result.current.isDirty).toBe(true);
+
+      await act(() => result.current.submit());
+
+      expect(CommerceController.commitUpsertShop).toHaveBeenCalledOnce();
+      expect(result.current.isDirty).toBe(false);
+    });
+
+    it('stays dirty when the save fails, so leaving still asks', async () => {
+      const { result } = await loadPublishedShop();
+      vi.mocked(CommerceController.commitUpsertShop).mockRejectedValueOnce(new Error('offline'));
+
+      act(() => result.current.form.setValue('bio', 'A new description.', { shouldDirty: true }));
+      await act(() => result.current.submit());
+
+      expect(result.current.isDirty).toBe(true);
+    });
+
+    it('is dirty while a picked image or a removed image waits to be saved, and clean after the save', async () => {
+      const { result } = await loadPublishedShop();
+
+      act(() => result.current.avatar.onInputChange(changeEvent(imageFile('avatar.png'))));
+      expect(result.current.isDirty).toBe(true);
+      await act(() => result.current.submit());
+      expect(result.current.isDirty).toBe(false);
+
+      act(() => result.current.banner.remove());
+      expect(result.current.isDirty).toBe(true);
+      await act(() => result.current.submit());
+      expect(result.current.isDirty).toBe(false);
+    });
+
+    it('stays dirty when the image uploaded but the shop record did not save', async () => {
+      const { result } = await loadPublishedShop();
+      vi.mocked(CommerceController.commitUpsertShop).mockRejectedValueOnce(new Error('offline'));
+      vi.mocked(CommerceController.commitCreateMedia).mockResolvedValueOnce(BANNER_MEDIA_URL);
+
+      act(() => result.current.avatar.onInputChange(changeEvent(imageFile('avatar.png'))));
+      await act(() => result.current.submit());
+
+      expect(CommerceController.commitCreateMedia).toHaveBeenCalledOnce();
+      expect(result.current.isDirty).toBe(true);
+    });
+  });
+
   it('rejects non-image and oversized files without staging them', async () => {
     const { result } = renderHook(() => useMarketplaceShopSettings());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -452,7 +591,7 @@ describe('useMarketplaceShopSettings', () => {
   });
 
   it('maps thrown sentinel image-upload failures to static copy', async () => {
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     const sentinel = 'SENTINEL_SERVER_TEXT_shop_settings';
     vi.mocked(CommerceController.commitCreateMedia).mockRejectedValue({
       name: 'AppError',
@@ -467,6 +606,9 @@ describe('useMarketplaceShopSettings', () => {
 
     act(() => {
       result.current.form.setValue('name', 'Satoshi Vintage');
+      result.current.form.setValue('countryCode', 'ch');
+      result.current.form.setValue('shippingPolicy', 'Ships within a week.');
+      result.current.form.setValue('returnPolicy', 'Returns within 14 days.');
       result.current.form.setValue('sellerStatus', 'private');
       result.current.avatar.onInputChange(changeEvent(imageFile('avatar.png')));
     });

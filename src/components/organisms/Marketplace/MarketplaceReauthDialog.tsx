@@ -11,7 +11,7 @@ import { Logger } from '@/libs/logger/logger';
 import { getPassportSignInEnabled } from '@/libs/runtime-config/runtime-config';
 import { MarketplaceApprovalDisclosure } from '@/molecules/MarketplaceApprovalDisclosure/MarketplaceApprovalDisclosure';
 import { QrCodeSlot } from '@/molecules/QrCodeSlot/QrCodeSlot';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { signInApprovalDisclosure } from '@/services/marketplace/marketplace-session-grant';
 import { MarketplaceSessionConnectDialog } from './MarketplaceSessionConnectDialog';
 
@@ -178,7 +178,7 @@ function HomeserverStepUpDialog({
           <div className="grid justify-items-center gap-4">
             <button
               type="button"
-              className="group relative flex size-48 cursor-pointer items-center justify-center rounded-md bg-foreground p-2"
+              className="group relative flex size-48 cursor-pointer items-center justify-center rounded-md bg-foreground p-2 [.light_&]:bg-white"
               onClick={() => void copyUrl()}
               disabled={!reauth.authorizationUrl}
               aria-label="Copy authorization link"

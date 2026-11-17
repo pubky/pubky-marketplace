@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { marketplaceListingProjectionSchema } from '@/core/services/marketplace/marketplace-projections';
 import { serviceListingProjectionWire as serviceListingSample } from '@/test/fixtures/commerce/listing-projection.wire';
 import {
+  awaitsSellerRelease,
   bindOrderDigitalLine,
   classifyDeliveryEmailChangeRefusal,
   classifyDigitalCheckoutRefusal,
   classifyDigitalDeliverRefusal,
   classifyDigitalDeliverySetupRefusal,
   classifyDigitalReadRefusal,
+  classifyDigitalReleaseRefusal,
   DELIVERY_EMAIL_CHANGE_COPY,
   DELIVERY_EMAIL_MAX_CHARS,
   DIGITAL_CHECKOUT_COPY,
@@ -30,10 +32,12 @@ import {
   digitalOrderManualChannels,
   digitalPaymentTakenBack,
   formatDigitalFileSize,
+  hasInstantDigitalLines,
   isDigitalDeliveryLink,
   isDigitalOrderEnded,
   isInstantDigitalDeliveryKind,
   isWellFormedDeliveryEmail,
+  type MarketplaceDigitalDeliveryKind,
   marketplaceListingDigitalDeliveryFieldSchema,
   marketplaceOrderDeliveryEmailSchema,
   marketplaceOrderDigitalDeliverySchema,
@@ -43,6 +47,8 @@ import {
 } from './digital';
 import { marketplaceHealthSchema } from './pickup';
 import { toCamelCaseWire } from './wire-casing';
+
+const PAID = { state: 'paid' } as const;
 
 describe('digital delivery listing projection (§7 input inventory)', () => {
   it('parses the file facts the service projects (model.rs digital_delivery_projection)', () => {
@@ -603,20 +609,93 @@ describe('seller delivery evidence (§3 "Seller\u2019s orders")', () => {
 
   it('writes the instant line, then each manual mark', () => {
     const at = '2026-09-26T13:02:00.000Z';
-    expect(digitalEvidenceLines(none, [{ digitalKind: 'file' }])).toEqual(['Delivered automatically · not opened yet']);
-    expect(digitalEvidenceLines({ ...none, firstOpenedAt: at, openCount: 1 }, [{ digitalKind: 'text' }])).toEqual([
+    expect(digitalEvidenceLines(none, [{ digitalKind: 'file' }], {})).toEqual([
+      'Delivered automatically · not opened yet',
+    ]);
+    expect(digitalEvidenceLines({ ...none, firstOpenedAt: at, openCount: 1 }, [{ digitalKind: 'text' }], {})).toEqual([
       expect.stringMatching(/^Delivered automatically · first opened Sep 26, \d\d:\d\d · opened 1 time$/),
     ]);
     expect(
-      digitalEvidenceLines({ ...none, emailedAt: at, messageDeliveredAt: at }, [
-        { digitalKind: 'email' },
-        { digitalKind: 'message' },
-      ]),
+      digitalEvidenceLines(
+        { ...none, emailedAt: at, messageDeliveredAt: at },
+        [{ digitalKind: 'email' }, { digitalKind: 'message' }],
+        {},
+      ),
     ).toEqual([
       expect.stringMatching(/^Marked emailed Sep 26, \d\d:\d\d$/),
       expect.stringMatching(/^Marked delivered Sep 26, \d\d:\d\d$/),
     ]);
-    expect(digitalEvidenceLines(none, [{ digitalKind: 'email' }])).toEqual([]);
+    expect(digitalEvidenceLines(none, [{ digitalKind: 'email' }], {})).toEqual([]);
+  });
+
+  it('reports a seller-mode delivery only when the service stamped one, whatever the order state', () => {
+    const unreleased = { digitalRelease: 'seller' as const, digitalReleasedAt: null };
+    // Ended before the release: no delivery was ever stamped.
+    expect(digitalEvidenceLines(none, [{ digitalKind: 'file' }], unreleased)).toEqual([]);
+    // Delivered by a service binary from before the release existed, and
+    // possibly refunded or closed since: the stamp stays.
+    const delivered = { ...none, deliveredAt: '2026-09-26T13:01:00.000Z' };
+    expect(digitalEvidenceLines(delivered, [{ digitalKind: 'file' }], unreleased)).toEqual([
+      'Delivered automatically · not opened yet',
+    ]);
+  });
+
+  it('reports nothing for a purchase that waits for the seller, then the seller’s release', () => {
+    const at = '2026-09-26T13:02:00.000Z';
+    expect(digitalEvidenceLines(none, [{ digitalKind: 'file' }], { digitalRelease: 'seller' })).toEqual([]);
+    expect(
+      digitalEvidenceLines(none, [{ digitalKind: 'file' }], {
+        ...PAID,
+        digitalRelease: 'seller',
+        digitalReleasedAt: at,
+      }),
+    ).toEqual([expect.stringMatching(/^Released by you Sep 26, \d\d:\d\d · not opened yet$/)]);
+    expect(
+      digitalEvidenceLines(none, [{ digitalKind: 'file' }], {
+        ...PAID,
+        digitalRelease: 'payment',
+        digitalReleasedAt: at,
+      }),
+    ).toEqual(['Delivered automatically · not opened yet']);
+  });
+});
+
+describe('seller release (DIGITAL_RELEASE)', () => {
+  it('waits only for an order frozen as seller-released and not released yet', () => {
+    expect(awaitsSellerRelease({ ...PAID, digitalRelease: 'seller', digitalReleasedAt: null })).toBe(true);
+    expect(awaitsSellerRelease({ state: 'cancel_requested', digitalRelease: 'seller', digitalReleasedAt: null })).toBe(
+      true,
+    );
+    expect(awaitsSellerRelease({ ...PAID, digitalRelease: 'seller', digitalReleasedAt: '2026-10-28T09:00:00Z' })).toBe(
+      false,
+    );
+    expect(awaitsSellerRelease({ ...PAID, digitalRelease: 'payment', digitalReleasedAt: null })).toBe(false);
+    expect(awaitsSellerRelease(PAID)).toBe(false);
+  });
+
+  it('reads an order delivered without a release stamp as released, as the service does', () => {
+    for (const state of ['delivered', 'completed']) {
+      expect(awaitsSellerRelease({ state, digitalRelease: 'seller', digitalReleasedAt: null })).toBe(false);
+    }
+  });
+
+  it('knows which digital orders carry a line opened on the order page', () => {
+    const line = (digitalKind: MarketplaceDigitalDeliveryKind) => ({ digitalKind });
+    expect(hasInstantDigitalLines({ fulfillment: 'digital', lines: [line('email'), line('file')] })).toBe(true);
+    expect(hasInstantDigitalLines({ fulfillment: 'digital', lines: [line('email'), line('message')] })).toBe(false);
+    expect(hasInstantDigitalLines({ fulfillment: 'shipping', lines: [line('text')] })).toBe(false);
+  });
+
+  it.each([
+    [{ code: 'INVALID_STATE', reason: 'not_awaiting_release' }, 'paid', 'not_awaiting'],
+    [{ code: 'INVALID_STATE', reason: 'payment_reversed' }, 'paid', 'taken_back'],
+    [{ code: 'INVALID_STATE', reason: 'payment_refunded' }, 'paid', 'taken_back'],
+    [{ code: 'INVALID_STATE' }, 'cancel_requested', 'cancel_requested'],
+    [{ code: 'UNAUTHORIZED' }, 'paid', 'not_seller'],
+    [{ code: 'REVISION_CONFLICT' }, 'paid', 'changed'],
+    [{ code: 'INTERNAL' }, 'paid', null],
+  ] as const)('classifies a refused release %o on a %s order as %s', (error, state, expected) => {
+    expect(classifyDigitalReleaseRefusal(error, state)).toBe(expected);
   });
 });
 

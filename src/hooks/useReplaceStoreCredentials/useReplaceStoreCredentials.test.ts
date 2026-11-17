@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { connectorRefusal } from '@/test-utils/connector-errors';
 import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { useReplaceStoreCredentials } from './useReplaceStoreCredentials';
@@ -11,7 +11,7 @@ vi.mock('@/controllers/connectors/connectors', () => ({
   ConnectorsController: { commitReplaceCredentials: vi.fn() },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 const CONNECTION = { id: 'c1', provider: 'woocommerce' as const };
 

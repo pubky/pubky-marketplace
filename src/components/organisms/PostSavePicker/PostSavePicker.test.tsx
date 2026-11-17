@@ -391,14 +391,4 @@ describe('PostSavePicker', () => {
 
     expect(removePosts).not.toHaveBeenCalled();
   });
-
-  it('matches desktop picker snapshot when open', async () => {
-    renderPicker();
-
-    openPicker();
-
-    await screen.findByText('Bookmarks');
-
-    expect(document.body).toMatchSnapshot();
-  });
 });

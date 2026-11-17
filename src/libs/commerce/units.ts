@@ -53,11 +53,6 @@ export function weightUnitLabel(system: MeasurementSystem): string {
   return system === 'imperial' ? 'oz' : 'g';
 }
 
-/** Buyer-facing dimension, e.g. `35.0 cm` / `13.8 in`. */
-export function formatDimension(millimeters: number, system: MeasurementSystem): string {
-  return `${dimensionInputFromMillimeters(millimeters, system)} ${dimensionUnitLabel(system)}`;
-}
-
 /**
  * Buyer-facing weight with a sensible unit step: grams under a kilogram and
  * kilograms above (metric); ounces under a pound and pounds above (imperial).

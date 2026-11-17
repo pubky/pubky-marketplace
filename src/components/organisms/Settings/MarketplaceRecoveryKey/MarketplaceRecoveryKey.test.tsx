@@ -22,7 +22,7 @@ describe('MarketplaceRecoveryKey', () => {
   it('asks for confirmation before downloading the recovery key', async () => {
     render(<MarketplaceRecoveryKey />);
 
-    expect(screen.getByText('Marketplace data')).toBeInTheDocument();
+    expect(screen.getByText('Market data')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Export recovery key' }));
     expect(hook.exportKey).not.toHaveBeenCalled();
     expect(

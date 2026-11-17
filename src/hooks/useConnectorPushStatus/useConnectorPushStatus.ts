@@ -11,7 +11,7 @@ import {
   isConnectorsUnavailableError,
   pushNeedsAction,
 } from '@/libs/commerce/connectors';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
@@ -145,13 +145,11 @@ export function useConnectorPushStatus() {
 
   return {
     visible: (overview?.connections.length ?? 0) > 0 || (overview?.alerts.length ?? 0) > 0,
-    connections: overview?.connections ?? [],
     pushes: overview?.pushes ?? [],
     needsAttention,
     alerts: alertsWithoutPush,
     retryingOrderId,
     retry,
     dismissAlert,
-    refresh: async () => load(),
   };
 }

@@ -25,10 +25,20 @@ const slot = {
   remove: vi.fn(),
 };
 
-function Harness({ sellerStatus }: { sellerStatus: MarketplaceShopSettingsData['sellerStatus'] }) {
+function Harness({
+  sellerStatus,
+  seed = {
+    countryCode: 'CH',
+    shippingPolicy: 'Ships within a week.',
+    returnPolicy: 'Returns within 14 days.',
+  },
+}: {
+  sellerStatus: MarketplaceShopSettingsData['sellerStatus'];
+  seed?: Partial<MarketplaceShopSettingsData>;
+}) {
   const form = useForm<MarketplaceShopSettingsData>({
     resolver: zodResolver(marketplaceShopSettingsSchema),
-    defaultValues: { ...marketplaceShopSettingsDefaults, name: 'Quiet Shop', sellerStatus },
+    defaultValues: { ...marketplaceShopSettingsDefaults, name: 'Quiet Shop', ...seed, sellerStatus },
   });
   const settings = asOpaque<MarketplaceShopSettings>({
     isLoading: false,
@@ -70,5 +80,42 @@ describe('MarketplaceShopSettingsForm declaration', () => {
     await user.click(screen.getByRole('button', { name: 'Save storefront' }));
 
     expect(screen.queryByText(/Choose whether you sell as a private individual/)).not.toBeInTheDocument();
+  });
+
+  it('asks for a country and both policies on a new shop instead of publishing suggestions', async () => {
+    const user = userEvent.setup();
+    render(<Harness sellerStatus="private" seed={{}} />);
+
+    expect(screen.getByLabelText('Country')).toHaveValue('');
+    expect(screen.getByLabelText('Country')).toHaveAttribute('placeholder', 'Two-letter code');
+    expect(screen.getByLabelText('Shipping policy')).toHaveValue('');
+    expect(screen.getByLabelText('Shipping policy')).toHaveAttribute(
+      'placeholder',
+      'e.g. Ships within three business days.',
+    );
+    expect(screen.getByLabelText('Return policy')).toHaveValue('');
+    expect(screen.getByLabelText('Return policy')).toHaveAttribute(
+      'placeholder',
+      'e.g. Returns accepted within 30 days unless marked final sale.',
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Save storefront' }));
+
+    expect(await screen.findByText('Country is required.')).toBeInTheDocument();
+    expect(screen.getByText('Shipping policy is required.')).toBeInTheDocument();
+    expect(screen.getByText('Return policy is required.')).toBeInTheDocument();
+  });
+
+  it('saves once the seller has typed a country and the policies', async () => {
+    const user = userEvent.setup();
+    render(<Harness sellerStatus="private" seed={{}} />);
+
+    await user.type(screen.getByLabelText('Country'), 'ch');
+    await user.type(screen.getByLabelText('Shipping policy'), 'Ships within a week.');
+    await user.type(screen.getByLabelText('Return policy'), 'Returns within 14 days.');
+    await user.click(screen.getByRole('button', { name: 'Save storefront' }));
+
+    expect(screen.queryByText('Country is required.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Shipping policy is required.')).not.toBeInTheDocument();
   });
 });

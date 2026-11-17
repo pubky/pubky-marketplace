@@ -8,11 +8,11 @@ const SEARCH_SUGGESTIONS_MAX_HEIGHT = 300;
 
 /**
  * Search bar closed state style (pill shape)
- * - Gradient background matching Figma design
+ * - Gradient from theme tokens so light and dark both stay readable
  * - Backdrop blur for glass effect
  */
 export const SEARCH_CLOSED_STYLE = {
-  background: 'linear-gradient(180deg, #07040a 0%, #1b1820 100%)',
+  background: 'linear-gradient(180deg, var(--search-closed-from) 0%, var(--search-closed-to) 100%)',
   backdropFilter: 'blur(20px)',
 } as const;
 
@@ -31,8 +31,8 @@ export const SEARCH_INPUT_EXPANDED_STYLE = {
  * - Drop shadow for depth
  */
 export const SEARCH_EXPANDED_STYLE = {
-  background: 'linear-gradient(180deg, var(--background) 0%, rgba(5, 5, 10, 0.50) 100%)',
+  background: 'linear-gradient(180deg, var(--background) 0%, var(--search-expanded-fade, rgba(5, 5, 10, 0.50)) 100%)',
   backdropFilter: 'blur(25px)',
-  boxShadow: '0px 50px 100px rgba(0, 0, 0, 1)',
+  boxShadow: '0px 50px 100px var(--search-expanded-shadow)',
   maxHeight: `${SEARCH_SUGGESTIONS_MAX_HEIGHT}px`,
 } as const;

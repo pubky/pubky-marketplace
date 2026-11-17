@@ -17,7 +17,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 const read = (current: MarketplaceSellerDigitalDelivery['current']) => ({
   listingAggregateId: 'listing:x_guide_01',

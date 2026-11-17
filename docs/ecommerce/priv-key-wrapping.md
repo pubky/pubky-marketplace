@@ -49,8 +49,8 @@ alone while Ring and Bitkit, which cannot answer `e` yet, keep the bare grant.
 A homeserver without scoped-key support rejects any grant containing `e` after
 the user approved it, and `/info` does not advertise the capability, so the
 operator lists a homeserver once it runs a release that has it. Signers that
-predate `e` cannot parse the link. While the gate is open, the Bitkit option
-offers "Sign in without them" beside its QR code: the same grant without `e`
+predate `e` cannot parse the link. While the gate is open, the sign-in page
+offers "Sign in without them" beside its one Ring and Bitkit QR code: the same grant without `e`
 and without a signed approval, the separate sign-in without keys. With the gate
 closed, which is the default, the Shop's requests are byte for byte what they
 were before.

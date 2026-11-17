@@ -1,0 +1,1 @@
+Protect staging Sentry error quota with configurable error sampling and a bounded per-minute limit for repeated IO-deadline timeouts, separating Nexus endpoint templates and preserving preview and unrelated timeout reporting. Show the effective error sample rate in diagnostics.

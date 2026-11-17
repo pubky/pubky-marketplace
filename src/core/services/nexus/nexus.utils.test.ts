@@ -4,9 +4,17 @@ import { ClientErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { HttpMethod } from '@/libs/http/http.types';
 import { PARSE_JSON_WITH_BODY_EXCERPT, parseResponseOrThrow } from '@/libs/http/response.utils';
+import { Logger } from '@/libs/logger/logger';
 import { mockResponse } from '@/test-utils/dom';
 import { asOpaque } from '@/test-utils/type-assertions';
-import { buildCdnUrl, buildNexusUrl, buildUrlWithQuery, createFetchOptions, queryNexus } from './nexus.utils';
+import {
+  buildCdnUrl,
+  buildNexusUrl,
+  buildUrlWithQuery,
+  createFetchOptions,
+  fetchNexusIfFound,
+  queryNexus,
+} from './nexus.utils';
 
 describe('nexus.utils', () => {
   describe('buildNexusUrl', () => {
@@ -190,6 +198,50 @@ describe('nexus.utils', () => {
       });
 
       await expect(queryNexus({ url: errorUrl })).rejects.toMatchObject({
+        category: ErrorCategory.Client,
+        code: ClientErrorCode.BAD_REQUEST,
+      });
+    });
+  });
+
+  describe('fetchNexusIfFound', () => {
+    const mockFetch = vi.fn();
+    const response = (overrides: Partial<Response> = {}) => ({
+      ok: true,
+      status: 200,
+      statusText: '',
+      headers: new Headers(),
+      text: vi.fn().mockResolvedValue(''),
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      global.fetch = mockFetch;
+    });
+
+    it('reads the JSON answer in one attempt', async () => {
+      const url = 'https://example.com/api/found';
+      mockFetch.mockResolvedValueOnce(response({ text: vi.fn().mockResolvedValue('{"id":"1"}') }));
+
+      await expect(fetchNexusIfFound<{ id: string }>({ url })).resolves.toEqual({ id: '1' });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch).toHaveBeenCalledWith(url, expect.objectContaining({ method: 'GET' }));
+    });
+
+    it('answers null for a 404, once, without building or logging an error', async () => {
+      const logged = vi.spyOn(Logger, 'error');
+      mockFetch.mockResolvedValue(response({ ok: false, status: 404 }));
+
+      await expect(fetchNexusIfFound({ url: 'https://example.com/api/missing' })).resolves.toBeNull();
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(logged).not.toHaveBeenCalled();
+    });
+
+    it('still throws every other failure', async () => {
+      mockFetch.mockResolvedValueOnce(response({ ok: false, status: 400, statusText: 'Bad Request' }));
+
+      await expect(fetchNexusIfFound({ url: 'https://example.com/api/bad' })).rejects.toMatchObject({
         category: ErrorCategory.Client,
         code: ClientErrorCode.BAD_REQUEST,
       });

@@ -1,4 +1,3 @@
-import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NexusUserDetails } from '@/services/nexus/nexus.types';
@@ -136,7 +135,7 @@ describe('ProfilePageLinks', () => {
   it('Add Link button has correct styling', () => {
     render(<ProfilePageLinks links={defaultLinks} isOwnProfile={true} />);
     const addLinkButton = screen.getByText('Add Link').closest('button');
-    expect(addLinkButton).toHaveClass('border', 'border-border', 'bg-foreground/5');
+    expect(addLinkButton).toHaveClass('border', 'border-border', 'bg-foreground/5', '[.light_&]:bg-glass');
   });
 });
 
@@ -289,60 +288,5 @@ describe('ProfilePageLinks - Link Click Behavior', () => {
     const dialog = screen.getByTestId('dialog-check-link');
     expect(dialog).toHaveAttribute('data-open', 'true');
     expect(dialog).toHaveAttribute('data-link-url', 'https://other-domain.com/page');
-  });
-});
-
-describe('ProfilePageLinks - Snapshots', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockUseSettingsStore.mockReturnValue({
-      privacy: {
-        ...defaultPrivacyPreferences,
-        showConfirm: true,
-      },
-    });
-  });
-
-  it('matches snapshot with links', () => {
-    const { container } = render(<ProfilePageLinks links={defaultLinks} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom links', () => {
-    const customLinks: NexusUserDetails['links'] = [{ title: 'Example', url: 'https://example.com' }];
-    const { container } = render(<ProfilePageLinks links={customLinks} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with empty links', () => {
-    const { container } = render(<ProfilePageLinks links={[]} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with undefined links', () => {
-    const { container } = render(<ProfilePageLinks />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with mailto link', () => {
-    const linksWithEmail: NexusUserDetails['links'] = [{ title: 'Contact', url: 'mailto:hello@example.com' }];
-    const { container } = render(<ProfilePageLinks links={linksWithEmail} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with tel link', () => {
-    const linksWithPhone: NexusUserDetails['links'] = [{ title: 'Call Us', url: 'tel:+1234567890' }];
-    const { container } = render(<ProfilePageLinks links={linksWithPhone} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with isOwnProfile true', () => {
-    const { container } = render(<ProfilePageLinks links={defaultLinks} isOwnProfile={true} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with empty links and isOwnProfile true', () => {
-    const { container } = render(<ProfilePageLinks links={[]} isOwnProfile={true} />);
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

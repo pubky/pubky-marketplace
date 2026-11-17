@@ -55,7 +55,7 @@ export function useProfileConnections(type: ConnectionType, userId?: Pubky): Use
   const [skip, setSkip] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
 
   // Refs for stable callbacks
@@ -290,14 +290,6 @@ export function useProfileConnections(type: ConnectionType, userId?: Pubky): Use
   }, []);
 
   /**
-   * Refresh function - clears state and fetches from beginning
-   */
-  const refresh = useCallback(async () => {
-    clearState();
-    await fetchStreamSlice(true);
-  }, [clearState, fetchStreamSlice]);
-
-  /**
    * Load more function - fetches next page
    */
   const loadMore = useCallback(async () => {
@@ -317,9 +309,7 @@ export function useProfileConnections(type: ConnectionType, userId?: Pubky): Use
     count: connections.length,
     isLoading,
     isLoadingMore,
-    error,
     hasMore,
     loadMore,
-    refresh,
   };
 }

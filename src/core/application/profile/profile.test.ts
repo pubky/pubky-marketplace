@@ -83,13 +83,30 @@ describe('ProfileApplication', () => {
 
       const requestSpy = vi.spyOn(HomeserverService, 'request').mockResolvedValue(undefined);
 
-      await ProfileApplication.commitCreate({ profile, url, pubky });
+      await ProfileApplication.commitCreate({ profile, url, pubky, isCurrent: () => true });
 
       expect(profile.toJson).toHaveBeenCalledTimes(1);
       expect(requestSpy).toHaveBeenCalledWith({ method: HttpMethod.PUT, url, bodyJson: profileJson });
       expect(NexusBootstrapService.ingest).toHaveBeenCalledWith(pubky);
       expect(mockAuthState.setCurrentUserPubky).toHaveBeenCalledWith(pubky);
       expect(mockAuthState.setHasProfile).toHaveBeenCalledWith(true);
+    });
+
+    it('leaves auth state alone when the identity changed while the write was in flight', async () => {
+      const profile = asOpaque<PubkyAppUser>({ toJson: vi.fn(() => ({ name: 'Alice' })) });
+      const url = 'pubky://user/pub/pubky.app/user';
+      const pubky = 'test-pubky' as Pubky;
+      let current = true;
+      vi.spyOn(HomeserverService, 'request').mockImplementation(async () => {
+        current = false;
+      });
+
+      await ProfileApplication.commitCreate({ profile, url, pubky, isCurrent: () => current });
+
+      // The profile was written for the submitting identity, so Nexus still learns about it.
+      expect(NexusBootstrapService.ingest).toHaveBeenCalledWith(pubky);
+      expect(mockAuthState.setCurrentUserPubky).not.toHaveBeenCalled();
+      expect(mockAuthState.setHasProfile).not.toHaveBeenCalled();
     });
 
     it('rethrows on failure without resetting auth state', async () => {
@@ -100,7 +117,9 @@ describe('ProfileApplication', () => {
 
       vi.spyOn(HomeserverService, 'request').mockRejectedValue(new Error('create failed'));
 
-      await expect(ProfileApplication.commitCreate({ profile, url, pubky })).rejects.toThrow('create failed');
+      await expect(ProfileApplication.commitCreate({ profile, url, pubky, isCurrent: () => true })).rejects.toThrow(
+        'create failed',
+      );
 
       // Auth state should not be modified on error (see TODO in profile.ts)
       expect(mockAuthState.setHasProfile).not.toHaveBeenCalled();

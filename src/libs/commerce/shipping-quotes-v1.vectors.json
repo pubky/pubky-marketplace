@@ -1,0 +1,1324 @@
+{
+  "description": "Shipping quote vectors for quote_shipping, quote_all_shipping_rates and legacy_shipping_option. Expected values are computed by gen_shipping_quotes.py from the pricing rules in SPEC.md. Errors carry the stable service code.",
+  "currency": "USD",
+  "exponent": 2,
+  "zoneSets": {
+    "main": {
+      "zones": [
+        {
+          "zoneId": "us",
+          "name": "United States",
+          "countries": ["US"],
+          "rates": [
+            {
+              "pricing": "per_item",
+              "rateId": "std",
+              "label": "Standard",
+              "estimatedMinDays": 4,
+              "estimatedMaxDays": 8,
+              "firstMinor": 479,
+              "additionalMinor": 240
+            },
+            {
+              "pricing": "flat",
+              "rateId": "exp",
+              "label": "Express",
+              "estimatedMinDays": 2,
+              "estimatedMaxDays": 4,
+              "amountMinor": 1499
+            }
+          ]
+        },
+        {
+          "zoneId": "eu",
+          "name": "Europe",
+          "countries": ["DE", "PT", "FR"],
+          "rates": [
+            {
+              "pricing": "per_item",
+              "rateId": "std",
+              "label": "Standard",
+              "estimatedMinDays": 6,
+              "estimatedMaxDays": 12,
+              "firstMinor": 899,
+              "additionalMinor": 450
+            }
+          ]
+        },
+        {
+          "zoneId": "row",
+          "name": "Rest of world",
+          "countries": [],
+          "restOfWorld": true,
+          "rates": [
+            {
+              "pricing": "free",
+              "rateId": "free",
+              "label": "Free",
+              "estimatedMinDays": 10,
+              "estimatedMaxDays": 20
+            }
+          ]
+        }
+      ],
+      "excludedCountries": ["FR", "RU"]
+    },
+    "big": {
+      "zones": [
+        {
+          "zoneId": "big",
+          "name": "Big",
+          "countries": ["US"],
+          "rates": [
+            {
+              "pricing": "per_item",
+              "rateId": "std",
+              "label": "Standard",
+              "estimatedMinDays": 1,
+              "estimatedMaxDays": 2,
+              "firstMinor": 9007199254740986,
+              "additionalMinor": 3
+            },
+            {
+              "pricing": "per_item",
+              "rateId": "huge",
+              "label": "Huge",
+              "estimatedMinDays": 1,
+              "estimatedMaxDays": 2,
+              "firstMinor": 0,
+              "additionalMinor": 9007199254740991
+            }
+          ]
+        }
+      ],
+      "excludedCountries": []
+    }
+  },
+  "quotes": [
+    {
+      "zones": "main",
+      "destination": "US",
+      "rateId": "std",
+      "units": 1,
+      "expected": {
+        "zoneId": "us",
+        "rateId": "std",
+        "label": "Standard",
+        "amountMinor": 479,
+        "estimatedMinDays": 4,
+        "estimatedMaxDays": 8
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "US",
+      "rateId": "std",
+      "units": 2,
+      "expected": {
+        "zoneId": "us",
+        "rateId": "std",
+        "label": "Standard",
+        "amountMinor": 719,
+        "estimatedMinDays": 4,
+        "estimatedMaxDays": 8
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "US",
+      "rateId": "std",
+      "units": 5,
+      "expected": {
+        "zoneId": "us",
+        "rateId": "std",
+        "label": "Standard",
+        "amountMinor": 1439,
+        "estimatedMinDays": 4,
+        "estimatedMaxDays": 8
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "US",
+      "rateId": "exp",
+      "units": 1,
+      "expected": {
+        "zoneId": "us",
+        "rateId": "exp",
+        "label": "Express",
+        "amountMinor": 1499,
+        "estimatedMinDays": 2,
+        "estimatedMaxDays": 4
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "US",
+      "rateId": "exp",
+      "units": 2,
+      "expected": {
+        "zoneId": "us",
+        "rateId": "exp",
+        "label": "Express",
+        "amountMinor": 1499,
+        "estimatedMinDays": 2,
+        "estimatedMaxDays": 4
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "US",
+      "rateId": "exp",
+      "units": 5,
+      "expected": {
+        "zoneId": "us",
+        "rateId": "exp",
+        "label": "Express",
+        "amountMinor": 1499,
+        "estimatedMinDays": 2,
+        "estimatedMaxDays": 4
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "US",
+      "rateId": "free",
+      "units": 1,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "US",
+      "rateId": "free",
+      "units": 2,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "US",
+      "rateId": "free",
+      "units": 5,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "US",
+      "rateId": "missing",
+      "units": 1,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "US",
+      "rateId": "missing",
+      "units": 2,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "US",
+      "rateId": "missing",
+      "units": 5,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "DE",
+      "rateId": "std",
+      "units": 1,
+      "expected": {
+        "zoneId": "eu",
+        "rateId": "std",
+        "label": "Standard",
+        "amountMinor": 899,
+        "estimatedMinDays": 6,
+        "estimatedMaxDays": 12
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "DE",
+      "rateId": "std",
+      "units": 2,
+      "expected": {
+        "zoneId": "eu",
+        "rateId": "std",
+        "label": "Standard",
+        "amountMinor": 1349,
+        "estimatedMinDays": 6,
+        "estimatedMaxDays": 12
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "DE",
+      "rateId": "std",
+      "units": 5,
+      "expected": {
+        "zoneId": "eu",
+        "rateId": "std",
+        "label": "Standard",
+        "amountMinor": 2699,
+        "estimatedMinDays": 6,
+        "estimatedMaxDays": 12
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "DE",
+      "rateId": "exp",
+      "units": 1,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "DE",
+      "rateId": "exp",
+      "units": 2,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "DE",
+      "rateId": "exp",
+      "units": 5,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "DE",
+      "rateId": "free",
+      "units": 1,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "DE",
+      "rateId": "free",
+      "units": 2,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "DE",
+      "rateId": "free",
+      "units": 5,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "DE",
+      "rateId": "missing",
+      "units": 1,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "DE",
+      "rateId": "missing",
+      "units": 2,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "DE",
+      "rateId": "missing",
+      "units": 5,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "PT",
+      "rateId": "std",
+      "units": 1,
+      "expected": {
+        "zoneId": "eu",
+        "rateId": "std",
+        "label": "Standard",
+        "amountMinor": 899,
+        "estimatedMinDays": 6,
+        "estimatedMaxDays": 12
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "PT",
+      "rateId": "std",
+      "units": 2,
+      "expected": {
+        "zoneId": "eu",
+        "rateId": "std",
+        "label": "Standard",
+        "amountMinor": 1349,
+        "estimatedMinDays": 6,
+        "estimatedMaxDays": 12
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "PT",
+      "rateId": "std",
+      "units": 5,
+      "expected": {
+        "zoneId": "eu",
+        "rateId": "std",
+        "label": "Standard",
+        "amountMinor": 2699,
+        "estimatedMinDays": 6,
+        "estimatedMaxDays": 12
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "PT",
+      "rateId": "exp",
+      "units": 1,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "PT",
+      "rateId": "exp",
+      "units": 2,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "PT",
+      "rateId": "exp",
+      "units": 5,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "PT",
+      "rateId": "free",
+      "units": 1,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "PT",
+      "rateId": "free",
+      "units": 2,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "PT",
+      "rateId": "free",
+      "units": 5,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "PT",
+      "rateId": "missing",
+      "units": 1,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "PT",
+      "rateId": "missing",
+      "units": 2,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "PT",
+      "rateId": "missing",
+      "units": 5,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "FR",
+      "rateId": "std",
+      "units": 1,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "FR",
+      "rateId": "std",
+      "units": 2,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "FR",
+      "rateId": "std",
+      "units": 5,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "FR",
+      "rateId": "exp",
+      "units": 1,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "FR",
+      "rateId": "exp",
+      "units": 2,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "FR",
+      "rateId": "exp",
+      "units": 5,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "FR",
+      "rateId": "free",
+      "units": 1,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "FR",
+      "rateId": "free",
+      "units": 2,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "FR",
+      "rateId": "free",
+      "units": 5,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "FR",
+      "rateId": "missing",
+      "units": 1,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "FR",
+      "rateId": "missing",
+      "units": 2,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "FR",
+      "rateId": "missing",
+      "units": 5,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "RU",
+      "rateId": "std",
+      "units": 1,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "RU",
+      "rateId": "std",
+      "units": 2,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "RU",
+      "rateId": "std",
+      "units": 5,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "RU",
+      "rateId": "exp",
+      "units": 1,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "RU",
+      "rateId": "exp",
+      "units": 2,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "RU",
+      "rateId": "exp",
+      "units": 5,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "RU",
+      "rateId": "free",
+      "units": 1,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "RU",
+      "rateId": "free",
+      "units": 2,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "RU",
+      "rateId": "free",
+      "units": 5,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "RU",
+      "rateId": "missing",
+      "units": 1,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "RU",
+      "rateId": "missing",
+      "units": 2,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "RU",
+      "rateId": "missing",
+      "units": 5,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "BR",
+      "rateId": "std",
+      "units": 1,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "BR",
+      "rateId": "std",
+      "units": 2,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "BR",
+      "rateId": "std",
+      "units": 5,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "BR",
+      "rateId": "exp",
+      "units": 1,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "BR",
+      "rateId": "exp",
+      "units": 2,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "BR",
+      "rateId": "exp",
+      "units": 5,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "BR",
+      "rateId": "free",
+      "units": 1,
+      "expected": {
+        "zoneId": "row",
+        "rateId": "free",
+        "label": "Free",
+        "amountMinor": 0,
+        "estimatedMinDays": 10,
+        "estimatedMaxDays": 20
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "BR",
+      "rateId": "free",
+      "units": 2,
+      "expected": {
+        "zoneId": "row",
+        "rateId": "free",
+        "label": "Free",
+        "amountMinor": 0,
+        "estimatedMinDays": 10,
+        "estimatedMaxDays": 20
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "BR",
+      "rateId": "free",
+      "units": 5,
+      "expected": {
+        "zoneId": "row",
+        "rateId": "free",
+        "label": "Free",
+        "amountMinor": 0,
+        "estimatedMinDays": 10,
+        "estimatedMaxDays": 20
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "BR",
+      "rateId": "missing",
+      "units": 1,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "BR",
+      "rateId": "missing",
+      "units": 2,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "BR",
+      "rateId": "missing",
+      "units": 5,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "JP",
+      "rateId": "std",
+      "units": 1,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "JP",
+      "rateId": "std",
+      "units": 2,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "JP",
+      "rateId": "std",
+      "units": 5,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "JP",
+      "rateId": "exp",
+      "units": 1,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "JP",
+      "rateId": "exp",
+      "units": 2,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "JP",
+      "rateId": "exp",
+      "units": 5,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "JP",
+      "rateId": "free",
+      "units": 1,
+      "expected": {
+        "zoneId": "row",
+        "rateId": "free",
+        "label": "Free",
+        "amountMinor": 0,
+        "estimatedMinDays": 10,
+        "estimatedMaxDays": 20
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "JP",
+      "rateId": "free",
+      "units": 2,
+      "expected": {
+        "zoneId": "row",
+        "rateId": "free",
+        "label": "Free",
+        "amountMinor": 0,
+        "estimatedMinDays": 10,
+        "estimatedMaxDays": 20
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "JP",
+      "rateId": "free",
+      "units": 5,
+      "expected": {
+        "zoneId": "row",
+        "rateId": "free",
+        "label": "Free",
+        "amountMinor": 0,
+        "estimatedMinDays": 10,
+        "estimatedMaxDays": 20
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "JP",
+      "rateId": "missing",
+      "units": 1,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "JP",
+      "rateId": "missing",
+      "units": 2,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "JP",
+      "rateId": "missing",
+      "units": 5,
+      "expected": {
+        "error": "UNKNOWN_SHIPPING_RATE"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "us",
+      "rateId": "std",
+      "units": 1,
+      "expected": {
+        "error": "INVALID_DESTINATION"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "USA",
+      "rateId": "std",
+      "units": 1,
+      "expected": {
+        "error": "INVALID_DESTINATION"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "",
+      "rateId": "std",
+      "units": 1,
+      "expected": {
+        "error": "INVALID_DESTINATION"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "U1",
+      "rateId": "std",
+      "units": 1,
+      "expected": {
+        "error": "INVALID_DESTINATION"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "US",
+      "rateId": "std",
+      "units": 0,
+      "expected": {
+        "error": "INVALID_QUANTITY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "US",
+      "rateId": "std",
+      "units": -1,
+      "expected": {
+        "error": "INVALID_QUANTITY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "US",
+      "rateId": "std",
+      "units": 1000001,
+      "expected": {
+        "error": "INVALID_QUANTITY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "US",
+      "rateId": "std",
+      "units": 1000000,
+      "expected": {
+        "zoneId": "us",
+        "rateId": "std",
+        "label": "Standard",
+        "amountMinor": 240000239,
+        "estimatedMinDays": 4,
+        "estimatedMaxDays": 8
+      }
+    },
+    {
+      "zones": "big",
+      "destination": "US",
+      "rateId": "std",
+      "units": 1,
+      "expected": {
+        "zoneId": "big",
+        "rateId": "std",
+        "label": "Standard",
+        "amountMinor": 9007199254740986,
+        "estimatedMinDays": 1,
+        "estimatedMaxDays": 2
+      }
+    },
+    {
+      "zones": "big",
+      "destination": "US",
+      "rateId": "std",
+      "units": 2,
+      "expected": {
+        "zoneId": "big",
+        "rateId": "std",
+        "label": "Standard",
+        "amountMinor": 9007199254740989,
+        "estimatedMinDays": 1,
+        "estimatedMaxDays": 2
+      }
+    },
+    {
+      "zones": "big",
+      "destination": "US",
+      "rateId": "std",
+      "units": 3,
+      "expected": {
+        "error": "SHIPPING_OVERFLOW"
+      }
+    },
+    {
+      "zones": "big",
+      "destination": "US",
+      "rateId": "std",
+      "units": 1000000,
+      "expected": {
+        "error": "SHIPPING_OVERFLOW"
+      }
+    },
+    {
+      "zones": "big",
+      "destination": "US",
+      "rateId": "huge",
+      "units": 1,
+      "expected": {
+        "zoneId": "big",
+        "rateId": "huge",
+        "label": "Huge",
+        "amountMinor": 0,
+        "estimatedMinDays": 1,
+        "estimatedMaxDays": 2
+      }
+    },
+    {
+      "zones": "big",
+      "destination": "US",
+      "rateId": "huge",
+      "units": 2,
+      "expected": {
+        "zoneId": "big",
+        "rateId": "huge",
+        "label": "Huge",
+        "amountMinor": 9007199254740991,
+        "estimatedMinDays": 1,
+        "estimatedMaxDays": 2
+      }
+    },
+    {
+      "zones": "big",
+      "destination": "US",
+      "rateId": "huge",
+      "units": 3,
+      "expected": {
+        "error": "SHIPPING_OVERFLOW"
+      }
+    },
+    {
+      "zones": "big",
+      "destination": "US",
+      "rateId": "huge",
+      "units": 1000000,
+      "expected": {
+        "error": "SHIPPING_OVERFLOW"
+      }
+    }
+  ],
+  "allRates": [
+    {
+      "zones": "main",
+      "destination": "US",
+      "units": 1,
+      "expected": {
+        "quotes": [
+          {
+            "zoneId": "us",
+            "rateId": "std",
+            "label": "Standard",
+            "amountMinor": 479,
+            "estimatedMinDays": 4,
+            "estimatedMaxDays": 8
+          },
+          {
+            "zoneId": "us",
+            "rateId": "exp",
+            "label": "Express",
+            "amountMinor": 1499,
+            "estimatedMinDays": 2,
+            "estimatedMaxDays": 4
+          }
+        ]
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "US",
+      "units": 3,
+      "expected": {
+        "quotes": [
+          {
+            "zoneId": "us",
+            "rateId": "std",
+            "label": "Standard",
+            "amountMinor": 959,
+            "estimatedMinDays": 4,
+            "estimatedMaxDays": 8
+          },
+          {
+            "zoneId": "us",
+            "rateId": "exp",
+            "label": "Express",
+            "amountMinor": 1499,
+            "estimatedMinDays": 2,
+            "estimatedMaxDays": 4
+          }
+        ]
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "DE",
+      "units": 2,
+      "expected": {
+        "quotes": [
+          {
+            "zoneId": "eu",
+            "rateId": "std",
+            "label": "Standard",
+            "amountMinor": 1349,
+            "estimatedMinDays": 6,
+            "estimatedMaxDays": 12
+          }
+        ]
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "BR",
+      "units": 4,
+      "expected": {
+        "quotes": [
+          {
+            "zoneId": "row",
+            "rateId": "free",
+            "label": "Free",
+            "amountMinor": 0,
+            "estimatedMinDays": 10,
+            "estimatedMaxDays": 20
+          }
+        ]
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "FR",
+      "units": 1,
+      "expected": {
+        "error": "SHIPPING_UNAVAILABLE_TO_COUNTRY"
+      }
+    },
+    {
+      "zones": "main",
+      "destination": "JP",
+      "units": 1000000,
+      "expected": {
+        "quotes": [
+          {
+            "zoneId": "row",
+            "rateId": "free",
+            "label": "Free",
+            "amountMinor": 0,
+            "estimatedMinDays": 10,
+            "estimatedMaxDays": 20
+          }
+        ]
+      }
+    }
+  ],
+  "legacy": [
+    {
+      "zones": [
+        {
+          "zoneId": "us",
+          "name": "United States",
+          "countries": ["US"],
+          "rates": [
+            {
+              "pricing": "per_item",
+              "rateId": "std",
+              "label": "Standard",
+              "estimatedMinDays": 4,
+              "estimatedMaxDays": 8,
+              "firstMinor": 479,
+              "additionalMinor": 240
+            },
+            {
+              "pricing": "flat",
+              "rateId": "exp",
+              "label": "Express",
+              "estimatedMinDays": 2,
+              "estimatedMaxDays": 4,
+              "amountMinor": 1499
+            }
+          ]
+        },
+        {
+          "zoneId": "eu",
+          "name": "Europe",
+          "countries": ["DE", "PT", "FR"],
+          "rates": [
+            {
+              "pricing": "per_item",
+              "rateId": "std",
+              "label": "Standard",
+              "estimatedMinDays": 6,
+              "estimatedMaxDays": 12,
+              "firstMinor": 899,
+              "additionalMinor": 450
+            }
+          ]
+        },
+        {
+          "zoneId": "row",
+          "name": "Rest of world",
+          "countries": [],
+          "restOfWorld": true,
+          "rates": [
+            {
+              "pricing": "free",
+              "rateId": "free",
+              "label": "Free",
+              "estimatedMinDays": 10,
+              "estimatedMaxDays": 20
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "pricing": "flat",
+        "id": "legacy",
+        "label": "Shipping",
+        "estimatedMinDays": 2,
+        "estimatedMaxDays": 20,
+        "price": {
+          "amountMinor": 899,
+          "currency": "USD",
+          "exponent": 2
+        }
+      }
+    },
+    {
+      "zones": [
+        {
+          "zoneId": "all",
+          "name": "All",
+          "countries": [],
+          "restOfWorld": true,
+          "rates": [
+            {
+              "pricing": "free",
+              "rateId": "free",
+              "label": "Free",
+              "estimatedMinDays": 3,
+              "estimatedMaxDays": 9
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "pricing": "free",
+        "id": "legacy",
+        "label": "Shipping",
+        "estimatedMinDays": 3,
+        "estimatedMaxDays": 9
+      }
+    }
+  ]
+}

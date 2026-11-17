@@ -141,7 +141,6 @@ export function useMentionAutocomplete({
     isOpen,
     selectedIndex,
     setSelectedIndex,
-    close,
     handleKeyDown,
   };
 }

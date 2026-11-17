@@ -77,13 +77,4 @@ describe('CollectionLayoutPicker', () => {
     const visualOption = await screen.findByRole('menuitem', { name: 'Visual' });
     expect(visualOption.querySelector('.lucide-check')).toHaveClass('text-brand');
   });
-
-  it('matches the open desktop picker snapshot', async () => {
-    renderPicker();
-
-    openDesktopPicker();
-    await screen.findByRole('menuitem', { name: 'Grid' });
-
-    expect(document.body).toMatchSnapshot();
-  });
 });

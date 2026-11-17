@@ -12,6 +12,7 @@ import type {
   ConnectorProvider,
   VariantMode,
 } from '@/libs/commerce/connectors';
+import { mapStoreCategory } from './connector-category';
 import { htmlToPlainText } from './import-html-text';
 import type { ImportLoss, ImportLossReport } from './import-loss-report';
 import {
@@ -121,21 +122,33 @@ export function connectorStoreCurrency(products: readonly ConnectorCatalogProduc
   return null;
 }
 
-function optionsOf(product: ConnectorCatalogProduct, variant: ConnectorCatalogVariant): Record<string, string> {
+/**
+ * The option choices a store variant becomes on a listing variant (`Size: M`). A Shopify product with no
+ * options has one variant titled "Default Title", which carries none.
+ */
+export function storeVariantOptions(
+  variantCount: number,
+  optionValues: readonly { readonly name: string; readonly value: string }[],
+): Record<string, string> {
   const isShopifyDefault =
-    product.variants.length === 1 &&
-    variant.optionValues.length === 1 &&
-    variant.optionValues[0]?.name === 'Title' &&
-    variant.optionValues[0]?.value === 'Default Title';
+    variantCount === 1 &&
+    optionValues.length === 1 &&
+    optionValues[0]?.name === 'Title' &&
+    optionValues[0]?.value === 'Default Title';
   if (isShopifyDefault) return {};
   const options: Record<string, string> = {};
-  for (const { name, value } of variant.optionValues) {
+  for (const { name, value } of optionValues) {
     if (name.trim() !== '' && value.trim() !== '') options[name.trim()] = value.trim();
   }
   return options;
 }
 
-function imagesOf(urls: readonly string[], label: string, losses: ImportLoss[]): readonly SourceImage[] {
+function optionsOf(product: ConnectorCatalogProduct, variant: ConnectorCatalogVariant): Record<string, string> {
+  return storeVariantOptions(product.variants.length, variant.optionValues);
+}
+
+/** The photo links a listing can use, each once and as a normalised secure address; `invalid` counts the rest. */
+export function secureImageUrls(urls: readonly string[]): { readonly valid: string[]; readonly invalid: number } {
   const seen = new Set<string>();
   const valid: string[] = [];
   let invalid = 0;
@@ -155,6 +168,11 @@ function imagesOf(urls: readonly string[], label: string, losses: ImportLoss[]):
       valid.push(parsed.href);
     }
   }
+  return { valid, invalid };
+}
+
+function imagesOf(urls: readonly string[], label: string, losses: ImportLoss[]): readonly SourceImage[] {
+  const { valid, invalid } = secureImageUrls(urls);
   if (invalid > 0) {
     losses.push(
       loss(
@@ -195,7 +213,20 @@ function imagesOf(urls: readonly string[], label: string, losses: ImportLoss[]):
   return kept.map((url) => ({ url, alt: label }));
 }
 
-/** The title of a split listing: the product and the variant's own choice ("Socks bundle, Size M"), kept inside the title limit. */
+/**
+ * The title of a split listing: the product and the variant's own choice ("Socks bundle, Size M"), kept inside
+ * the title limit. A choice that is empty or Shopify's "Default Title" leaves the product title as it is.
+ */
+export function splitListingTitle(productTitle: string, choice: string): string {
+  const isDefault = choice === 'Default Title' || choice === '';
+  if (isDefault) return productTitle;
+  const suffix = `, ${choice}`;
+  const room = COMMERCE_LISTING_TITLE_MAX_CHARS - suffix.length;
+  return room >= COMMERCE_LISTING_TITLE_MIN_CHARS
+    ? `${productTitle.length > room ? `${productTitle.slice(0, room - 1).trimEnd()}…` : productTitle}${suffix}`
+    : productTitle;
+}
+
 function splitTitle(product: ConnectorCatalogProduct, variant: ConnectorCatalogVariant): string {
   const choice =
     variant.optionValues
@@ -204,13 +235,7 @@ function splitTitle(product: ConnectorCatalogProduct, variant: ConnectorCatalogV
       .join(' / ') ||
     variant.title?.trim() ||
     '';
-  const isDefault = choice === 'Default Title' || choice === '';
-  if (isDefault) return product.title;
-  const suffix = `, ${choice}`;
-  const room = COMMERCE_LISTING_TITLE_MAX_CHARS - suffix.length;
-  return room >= COMMERCE_LISTING_TITLE_MIN_CHARS
-    ? `${product.title.length > room ? `${product.title.slice(0, room - 1).trimEnd()}…` : product.title}${suffix}`
-    : product.title;
+  return splitListingTitle(product.title, choice);
 }
 
 export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): ConnectorCatalogRows {
@@ -223,6 +248,7 @@ export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): Connector
   const labels = new Map<string, string>();
   const usedListingIds = new Set<string>();
   const linksOfListing = new Map<string, ConnectorImportLink[]>();
+  const categoryOfListing = new Map<string, string>();
   let listingsRead = 0;
 
   /** One Pubky listing from the given variants of a store product. */
@@ -297,6 +323,8 @@ export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): Connector
     const description = htmlToPlainText(product.description ?? '');
     const recordUri = `pubky://${sellerPubky}/pub/pubky.app/marketplace/v1/listings/${listingId}`;
     const usedVariantIds = new Set<string>();
+    const categoryId = mapStoreCategory({ categories: product.categories ?? [], title: product.title }).categoryId;
+    categoryOfListing.set(listingId, categoryId);
     let unknownStock = 0;
     let unknownStockQuantity = 0;
     let madeToOrder = 0;
@@ -340,7 +368,7 @@ export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): Connector
         title,
         description,
         taxonomy: {},
-        category: '',
+        category: categoryId,
         condition: settings.condition,
         tags: [],
         amountMinor: listingPrice,
@@ -454,15 +482,33 @@ export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): Connector
 
   const imported = kept.size;
   if (imported > 0) {
+    const uncategorized = [...kept].filter((listingId) => !categoryOfListing.get(listingId)).length;
+    const categorized = imported - uncategorized;
+    if (categorized > 0) {
+      losses.push(
+        loss(
+          'category_mapped',
+          'changed',
+          'Categories',
+          "Your store's category was matched to the nearest Pubky category. Check it in the listing.",
+          undefined,
+          categorized,
+        ),
+      );
+    }
+    if (uncategorized > 0) {
+      losses.push(
+        loss(
+          'category_absent',
+          'changed',
+          'Categories',
+          "No Pubky category matched your store's category, so the listing is uncategorized. Choose one in the listing.",
+          undefined,
+          uncategorized,
+        ),
+      );
+    }
     losses.push(
-      loss(
-        'category_absent',
-        'changed',
-        'Categories',
-        'Your store catalog has no Pubky category, so listings are uncategorized.',
-        undefined,
-        imported,
-      ),
       loss(
         'condition_defaulted',
         'changed',

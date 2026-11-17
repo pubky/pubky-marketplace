@@ -4,7 +4,7 @@ Companion to [`fiat-rails-design.md`](fiat-rails-design.md) (the ratified design
 [`fiat-rails-plan.md`](fiat-rails-plan.md) (the phased plan). This document records what
 Phase 1 actually built, deployed, and proved on staging, with the observed values.
 Everything here happened on 2026-08-21 against the deployed staging stack
-(Railway project `pubky-marketplace-staging`, identities on the official staging
+(the staging project, identities on the official staging
 homeserver `ufibwbmed6jeq9k4p583go95wofakh9fwpp4k734trq79pd9u1uy`, Bitcoin regtest only,
 Stripe test mode only).
 
@@ -53,17 +53,17 @@ re-mint after expiry, reversal suppression, and webhook signature/dedup handling
 
 ## What was deployed
 
-| Item                                         | Value                                                                                                 |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Railway service                              | `fiat-verifier` in the existing `pubky-marketplace-staging` project                                   |
-| Public domain (Stripe webhooks need one)     | `https://fiat-verifier-production.up.railway.app`                                                     |
-| Private endpoint (Lock Server-facing)        | `http://fiat-verifier.railway.internal:3002`                                                          |
-| Database                                     | new Railway Postgres in the same project (service `Postgres-sa-c`), referenced as `FIAT_DATABASE_URL` |
-| Stripe                                       | **disabled** (no test key available at deploy time) — fail-closed by design                           |
-| Settlement delay / synthesized confirmations | 300s / 1 (Lock Server `minimum_confirmations` is 1)                                                   |
+| Item                                         | Value                                                                                         |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Service                                      | `fiat-verifier` in the existing staging project                                               |
+| Public domain (Stripe webhooks need one)     | `<fiat-verifier URL>`                                                                         |
+| Private endpoint (Lock Server-facing)        | `<fiat-verifier private URL>`                                                                 |
+| Database                                     | new Postgres in the same project (service `Postgres-sa-c`), referenced as `FIAT_DATABASE_URL` |
+| Stripe                                       | **disabled** (no test key available at deploy time) — fail-closed by design                   |
+| Settlement delay / synthesized confirmations | 300s / 1 (Lock Server `minimum_confirmations` is 1)                                           |
 
 **The cutover is done.** The staging Lock Server's `LOCKS_PAYKIT_SERVER_URL` now points
-at `http://fiat-verifier.railway.internal:3002` (was `http://paykit-server.railway.internal:3001`).
+at `<fiat-verifier private URL>` (was `<Paykit private URL>`).
 Rollback is that one env var set back plus a redeploy.
 
 ## Proof 1: BTC purchase through the gateway, after cutover
@@ -80,7 +80,7 @@ gateway, run with the `pubky/pubky-payment-rails` verification driver:
 | Bundle id                                                     | `J7827Z902XWG7ES2RK2E979FTC`, submitted 13:05:07Z → task `pending`                                                                                                                                                                                                 |
 | Gateway dispatch log                                          | `dispatch: BTC criterion, proxying invoice to paykit-server` (bundle above)                                                                                                                                                                                        |
 | Private Payment Request (received by `paykit-reader-mainnet`) | id `5c47bf21-ea43-419c-8627-20504f8f56e4`, address `bcrt1qgsf9s0dz2au4aa80gtuc4hph7c35tudxjpddhy`, ₿15,000 (15000 base units, wire field `amount_sats`)                                                                                                            |
-| On-chain regtest payment (Railway bitcoind miner wallet)      | txid `31b1425b46ea6d7d0e1cbb7540e4a211157f9c07450a2078f2741251673dcf4a`                                                                                                                                                                                            |
+| On-chain regtest payment (bitcoind miner wallet)              | txid `31b1425b46ea6d7d0e1cbb7540e4a211157f9c07450a2078f2741251673dcf4a`                                                                                                                                                                                            |
 | Status polled via gateway                                     | `{"status":"confirmed","confirmations":2,"amount_matched":true}`                                                                                                                                                                                                   |
 | Locks lifecycle                                               | `completed` at 13:07:11.588997Z (~2m04s submit→complete, one confirmation cycle)                                                                                                                                                                                   |
 | Credential + guarded read                                     | both 200; bytes `deployed rails guarded bytes railsstaging-1787301246` (exact match)                                                                                                                                                                               |
@@ -112,9 +112,9 @@ test-mode key exists on the build machine (no `stripe` CLI, nothing in the secre
 stores). To run the live proof:
 
 1. Provide a **test-mode** secret key (`sk_test_…`) → set `STRIPE_SECRET_KEY` on the
-   `fiat-verifier` Railway service.
+   `fiat-verifier` service.
 2. The webhook signing secret is then self-provisioned: `POST /v1/webhook_endpoints`
-   with that key against `https://fiat-verifier-production.up.railway.app/webhooks/stripe`
+   with that key against `<fiat-verifier URL>/webhooks/stripe`
    returns the `whsec_…` secret → set `STRIPE_WEBHOOK_SECRET` (runbook in the service
    README). Redeploy; `/health` reports both flags.
 3. Re-run: driver `proof` on the USD lock → `checkout <bundleId>` → complete the hosted
@@ -138,7 +138,7 @@ test account, staging-only by declaration), automated chargeback→reversal hand
 ## Update 2026-08-22: Stripe proven live; PayPal built and deployed fail-closed
 
 **The Stripe live proof landed.** With a real test-mode key on the `fiat-verifier`
-Railway service (webhook self-provisioned per the runbook above), the full purchase
+service (webhook self-provisioned per the runbook above), the full purchase
 ran on the deployed stack: USD lock → proof bundle → gateway invoice → hosted
 Checkout paid with the `4242` test card in a real browser → webhook `detected`
 (amount matched) → 300s settlement → `confirmed` → `completed` → access credential →
@@ -163,7 +163,7 @@ is a 409 — switching would strand a still-payable session the gateway no longe
 observes). The design §7 `Locks · PayPal` badge case is now reachable.
 
 **Update, same day: the live PayPal sandbox proof landed.** With sandbox
-credentials and a self-provisioned webhook on the Railway service (`/health`
+credentials and a self-provisioned webhook on the service (`/health`
 reports both processors enabled), the full purchase ran on the deployed stack:
 proof bundle → gateway invoice bound to PayPal → hosted approval page paid via
 guest card checkout → `detected` (amount matched) → 300s settlement →

@@ -138,6 +138,8 @@ function makeCorrelation(registered: boolean) {
 }
 
 const HOLD_DEADLINE = '2026-08-20T21:15:00.000Z';
+// The Paykit window before the hold (its deadline plus the 60 s margin).
+const ORDER_CREATED_AT = '2026-08-20T20:46:00.000Z';
 const ACTIVATED_REQUEST_DEADLINE = '2026-08-20T21:07:00.000Z';
 
 function Harness({ children }: { children: React.ReactNode }) {
@@ -777,6 +779,20 @@ describe('Marketplace payment status card — visual regression', () => {
     view.locks.enabled = true;
   });
 
+  it('renders a checkout the buyer cancelled at mobile viewport', async () => {
+    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
+    const screen = await renderCard('expired', 'transaction-service', {
+      adapter: 'paykit',
+      deployEnv: 'staging',
+      orderState: 'cancelled',
+      orderOverrides: { cancellationReason: 'Changed my mind', paymentMethod: 'bitcoin' },
+      viewport: VRT_VIEWPORT_MOBILE,
+    });
+    await expect.element(screen.getByTestId('buyer-cancelled-note')).toBeVisible();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-buyer-cancelled-mobile');
+    view.locks.enabled = true;
+  });
+
   it('renders elapsed unpaid copy at desktop viewport', async () => {
     view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
     const screen = await renderCard('expired', 'transaction-service', {
@@ -839,6 +855,7 @@ function projectionBody(scene: keyof typeof projectionSamples): Record<string, u
 describe('Marketplace payment status card — USDT orders', () => {
   const usdt = (overrides: Record<string, unknown> = {}) => ({
     ...USDT_ORDER_FIELDS,
+    createdAt: ORDER_CREATED_AT,
     holdExpiresAt: HOLD_DEADLINE,
     ...overrides,
   });
@@ -869,7 +886,7 @@ describe('Marketplace payment status card — USDT orders', () => {
     await expect.element(screen.getByText('Pay exactly 137.000000 USDT')).toBeInTheDocument();
     await expect
       .element(screen.getByTestId('usdt-accept-by'))
-      .toHaveTextContent('Approve in Bitkit by Aug 20, 2026, 9:15 PM.');
+      .toHaveTextContent('Approve in Bitkit by Aug 20, 2026, 9:00 PM.');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-usdt-awaiting-desktop');
   });
 
@@ -942,6 +959,7 @@ describe('Marketplace payment status card — USDT orders', () => {
     paymentMethod: 'paykit',
     paymentAsset: null,
     acceptedAssets: ['BTC', 'USDT'],
+    createdAt: ORDER_CREATED_AT,
     holdExpiresAt: HOLD_DEADLINE,
     paykitDeliveryState: 'delivered',
     ...overrides,
@@ -956,7 +974,7 @@ describe('Marketplace payment status card — USDT orders', () => {
     await expect.element(screen.getByText('Pay in Bitkit (Bitcoin or USDT)')).toBeInTheDocument();
     await expect
       .element(screen.getByTestId('paykit-accept-by'))
-      .toHaveTextContent('Approve in Bitkit by Aug 20, 2026, 9:15 PM.');
+      .toHaveTextContent('Approve in Bitkit by Aug 20, 2026, 9:00 PM.');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-paykit-awaiting-desktop');
   });
 
@@ -1088,5 +1106,140 @@ describe('Marketplace payment status card — USDT orders', () => {
       );
       view.locks.enabled = true;
     });
+  });
+});
+
+describe('Marketplace payment status card — seller-confirmed payment', () => {
+  const PAYPAL_URL = 'https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=seller%40example.com';
+  // Seen ten minutes before the frozen clock, so the seller window has about 23 hours 50 minutes left.
+  const SEEN_AT = new Date(VRT_FROZEN_NOW_MS - 10 * MINUTE_MS).toISOString();
+  const SELLER_WINDOW_END = new Date(VRT_FROZEN_NOW_MS - 10 * MINUTE_MS + 24 * HOUR_MS).toISOString();
+
+  it('tells the buyer PayPal reported their payment and the seller confirms it', async () => {
+    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
+    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+      deployEnv: 'production',
+      currentUserPubky: (await fixtures).buyer,
+      orderOverrides: {
+        paymentMethod: 'paypal',
+        fiatCheckoutUrl: PAYPAL_URL,
+        paymentConfirmation: 'seller',
+        gatewayPaymentSeenAt: SEEN_AT,
+        fiatTransactionRef: '7XP31449AB123456C',
+        holdExpiresAt: SELLER_WINDOW_END,
+        holdSource: 'bind',
+      },
+    });
+    await expect.element(screen.getByText('PayPal reported your payment')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Continue to PayPal/ }).elements()).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Confirm payment received' }).elements()).toHaveLength(0);
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-paypal-seen-buyer-desktop');
+    view.locks.enabled = true;
+  });
+
+  it('asks the seller to confirm the payment PayPal reported', async () => {
+    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
+    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+      deployEnv: 'production',
+      isBuyer: false,
+      orderOverrides: {
+        paymentMethod: 'paypal',
+        fiatCheckoutUrl: PAYPAL_URL,
+        paymentConfirmation: 'seller',
+        gatewayPaymentSeenAt: SEEN_AT,
+        fiatTransactionRef: '7XP31449AB123456C',
+        holdExpiresAt: SELLER_WINDOW_END,
+      },
+    });
+    await expect.element(screen.getByRole('button', { name: 'Confirm payment received' })).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-paypal-seen-seller-desktop');
+    view.locks.enabled = true;
+  });
+
+  it('tells a seller-confirmed seller what happens before PayPal reports the payment', async () => {
+    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
+    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+      deployEnv: 'production',
+      isBuyer: false,
+      orderOverrides: { paymentMethod: 'paypal', fiatCheckoutUrl: PAYPAL_URL, paymentConfirmation: 'seller' },
+    });
+    await expect.element(screen.getByTestId('seller-paypal-awaiting')).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'payment-status-paypal-seller-confirms-awaiting-desktop',
+    );
+    view.locks.enabled = true;
+  });
+
+  it('lets the seller still confirm a PayPal payment the checkout expired on', async () => {
+    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
+    const screen = await renderCard('expired', 'transaction-service', {
+      deployEnv: 'production',
+      isBuyer: false,
+      orderState: 'cancelled',
+      orderOverrides: {
+        paymentMethod: 'paypal',
+        fiatCheckoutUrl: PAYPAL_URL,
+        paymentConfirmation: 'seller',
+        gatewayPaymentSeenAt: SEEN_AT,
+        fiatTransactionRef: '7XP31449AB123456C',
+        receiptId: null,
+        cancellationReason: 'payment window elapsed',
+      },
+    });
+    await expect.element(screen.getByTestId('paypal-seen-expired-seller')).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'payment-status-paypal-seen-expired-seller-desktop',
+    );
+    view.locks.enabled = true;
+  });
+
+  const usdtWaiting = {
+    ...USDT_ORDER_FIELDS,
+    paymentMethod: 'paykit',
+    acceptedAssets: ['BTC', 'USDT'],
+    paymentFinality: 'pending',
+    paymentConfirmation: 'seller',
+    paykitRequestState: 'awaiting_seller_confirmation',
+    paykitSellerConfirmationEnteredAt: SEEN_AT,
+    paykitSellerConfirmationDeadline: SELLER_WINDOW_END,
+    holdExpiresAt: SELLER_WINDOW_END,
+  };
+
+  it('tells the buyer their USDT payment waits for the seller', async () => {
+    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+      adapter: 'paykit',
+      deployEnv: 'production',
+      paykitServerApi: 'upstream',
+      currentUserPubky: (await fixtures).buyer,
+      orderOverrides: usdtWaiting,
+    });
+    await expect.element(screen.getByTestId('usdt-phase-copy')).toBeInTheDocument();
+    expect(screen.getByTestId('usdt-payment-awaiting').elements()).toHaveLength(0);
+    await expect.element(screen.getByTestId('usdt-seller-confirms-by')).toHaveTextContent(/^Seller confirms by /);
+    expect(screen.getByTestId('seller-bitcoin-confirm-prompt').elements()).toHaveLength(0);
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-usdt-seen-buyer-desktop');
+  });
+
+  it('asks the seller to confirm a USDT payment that waits for them', async () => {
+    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+      adapter: 'paykit',
+      deployEnv: 'production',
+      paykitServerApi: 'upstream',
+      isBuyer: false,
+      orderOverrides: {
+        ...usdtWaiting,
+        paykitObservation: {
+          txid: USDT_RESOLVE_TX_HASH,
+          asset: 'USDT',
+          observedUnits: 137_000_000,
+          confirmations: 3,
+          amountMatched: true,
+          disappeared: false,
+          observedAt: SEEN_AT,
+        },
+      },
+    });
+    await expect.element(screen.getByTestId('seller-bitcoin-confirm-prompt')).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-usdt-seen-seller-desktop');
   });
 });

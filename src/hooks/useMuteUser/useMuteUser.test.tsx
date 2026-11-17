@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HttpMethod } from '@/libs/http/http.types';
 import { useMuteUser } from './useMuteUser';
@@ -36,7 +36,7 @@ describe('useMuteUser', () => {
     mockUseAuthStore.mockReturnValue({ currentUserPubky: 'current-user' });
   });
 
-  it('sets error when user not authenticated', async () => {
+  it('does not mute when user is not authenticated', async () => {
     mockUseAuthStore.mockReturnValue({ currentUserPubky: null });
 
     const { result } = renderHook(() => useMuteUser());
@@ -45,18 +45,16 @@ describe('useMuteUser', () => {
       await result.current.toggleMute('user-1', false);
     });
 
-    expect(result.current.error).toBe('User not authenticated');
     expect(mockCommitMute).not.toHaveBeenCalled();
   });
 
-  it('sets error when muting self', async () => {
+  it('does not mute self', async () => {
     const { result } = renderHook(() => useMuteUser());
 
     await act(async () => {
       await result.current.toggleMute('current-user', false);
     });
 
-    expect(result.current.error).toBe('Cannot mute yourself');
     expect(mockCommitMute).not.toHaveBeenCalled();
   });
 
@@ -80,7 +78,7 @@ describe('useMuteUser', () => {
     expect(mockCommitMute).toHaveBeenCalledWith(HttpMethod.DELETE, { muter: 'current-user', mutee: 'user-1' });
   });
 
-  it('sets error and rethrows on failure', async () => {
+  it('rethrows on failure and clears loading state', async () => {
     const error = new Error('boom');
     mockCommitMute.mockRejectedValue(error);
     mockIsAppError.mockReturnValue(true);
@@ -88,15 +86,9 @@ describe('useMuteUser', () => {
     const { result } = renderHook(() => useMuteUser());
 
     await act(async () => {
-      try {
-        await result.current.toggleMute('user-1', false);
-      } catch {
-        // swallow to allow state update assertions
-      }
+      await expect(result.current.toggleMute('user-1', false)).rejects.toBe(error);
     });
 
-    await waitFor(() => {
-      expect(result.current.error).toBe('boom');
-    });
+    expect(result.current.isLoading).toBe(false);
   });
 });

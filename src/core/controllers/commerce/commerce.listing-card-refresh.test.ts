@@ -117,10 +117,4 @@ describe('CommerceController listing card refresh', () => {
       expect(refreshCount(id)).toBe(0);
     });
   });
-
-  it('refreshListingCards bumps the named listings', () => {
-    CommerceController.refreshListingCards([BOOTS, `${ORDER_FIXTURE_SELLER}:hat`]);
-    expect(refreshCount(BOOTS)).toBe(1);
-    expect(refreshCount(`${ORDER_FIXTURE_SELLER}:hat`)).toBe(1);
-  });
 });

@@ -9,7 +9,7 @@ import {
   marketplaceFailureMessage,
 } from '@/libs/commerce/failure-messages';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import type {
   MarketplaceNotificationEntry,
   MarketplaceNotificationPreferences,

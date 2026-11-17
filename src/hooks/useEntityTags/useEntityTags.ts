@@ -91,8 +91,6 @@ export function useEntityTags(
 
   return {
     tags,
-    count: activeResult.count,
-    isLoading: activeResult.isLoading,
     isViewerTagger,
     handleTagToggle,
     handleTagAdd: activeResult.handleTagAdd,

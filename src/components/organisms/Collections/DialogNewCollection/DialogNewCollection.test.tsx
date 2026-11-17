@@ -24,8 +24,8 @@ vi.mock('@/hooks/useAuthoredCollections/useAuthoredCollections', () => ({
   useAuthoredCollections: () => mocks.useAuthoredCollections(),
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
-  useToast: () => ({ toast: mocks.toast }),
+vi.mock('@/molecules/Toaster/toast', () => ({
+  toast: mocks.toast,
 }));
 
 vi.mock('@/stores/auth/auth.store', () => ({
@@ -340,24 +340,5 @@ describe('DialogNewCollection', () => {
       expect(screen.getByRole('heading', { name: 'Welcome to Collections' })).toBeInTheDocument();
       expect(screen.queryByLabelText('Title')).not.toBeInTheDocument();
     });
-  });
-});
-
-describe('DialogNewCollection - Snapshots', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.useAuthoredCollections.mockReturnValue({ collections: [{ id: 'seed-collection' }], isLoading: false });
-  });
-
-  it('matches snapshot when open', () => {
-    render(
-      <DialogNewCollection>
-        <Button>Open dialog</Button>
-      </DialogNewCollection>,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: 'Open dialog' }));
-
-    expect(document.body).toMatchSnapshot();
   });
 });

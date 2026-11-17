@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { Help } from './Help';
@@ -34,12 +33,5 @@ describe('Help', () => {
   it('renders Support section', () => {
     render(<Help />);
     expect(screen.getByText('Support')).toBeInTheDocument();
-  });
-});
-
-describe('Help - Snapshots', () => {
-  it('matches snapshot with default props', () => {
-    const { container } = render(<Help />);
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

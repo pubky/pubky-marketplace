@@ -23,17 +23,49 @@ describe('persisted store keys', () => {
   it("moves an existing Shop user's keys into the namespace before any store can hydrate", async () => {
     window.localStorage.setItem('auth-store', AUTH);
     window.localStorage.setItem('settings-storage', '{"state":{}}');
-    window.localStorage.setItem('onboarding-storage', '{"state":{}}');
 
     await import('./persistedKeys');
 
     expect(window.localStorage.getItem('shop-auth-store')).toBe(AUTH);
     expect(window.localStorage.getItem('shop-settings-storage')).toBe('{"state":{}}');
-    expect(window.localStorage.getItem('shop-onboarding-storage')).toBe('{"state":{}}');
     expect(window.localStorage.getItem('auth-store')).toBeNull();
     expect(window.localStorage.getItem('settings-storage')).toBeNull();
-    expect(window.localStorage.getItem('onboarding-storage')).toBeNull();
     expect(window.localStorage.getItem(LOCAL_STORAGE_MIGRATION_MARKER_KEY)).not.toBeNull();
+  });
+
+  it('removes the record retired Shop signup left behind once it holds no key', async () => {
+    window.localStorage.setItem(
+      'shop-onboarding-storage',
+      '{"state":{"secretKey":null,"mnemonic":null,"showWelcomeDialog":false,"inviteCode":""},"version":0}',
+    );
+
+    await import('./persistedKeys');
+
+    expect(window.localStorage.getItem('shop-onboarding-storage')).toBeNull();
+  });
+
+  it.each([
+    ['a secret key', '{"state":{"secretKey":"aa","mnemonic":null},"version":0}'],
+    ['a recovery phrase', '{"state":{"secretKey":null,"mnemonic":"words"},"version":0}'],
+    ['an unreadable value', 'not-json'],
+    ['an unknown shape', '{"version":0}'],
+  ])('keeps the retired signup record when it holds %s', async (_label, record) => {
+    window.localStorage.setItem('shop-onboarding-storage', record);
+
+    await import('./persistedKeys');
+
+    expect(window.localStorage.getItem('shop-onboarding-storage')).toBe(record);
+  });
+
+  it("never moves or deletes the un-prefixed onboarding record, which may be the App's", async () => {
+    window.localStorage.setItem('auth-store', AUTH);
+    window.localStorage.setItem('onboarding-storage', 'app-onboarding');
+
+    await import('./persistedKeys');
+
+    expect(window.localStorage.getItem('shop-auth-store')).toBe(AUTH);
+    expect(window.localStorage.getItem('onboarding-storage')).toBe('app-onboarding');
+    expect(window.localStorage.getItem('shop-onboarding-storage')).toBeNull();
   });
 
   it('hydrates the auth store from the migrated key', async () => {

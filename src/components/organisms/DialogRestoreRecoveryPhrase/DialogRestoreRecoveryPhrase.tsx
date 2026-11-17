@@ -17,7 +17,7 @@ import {
 import { AuthController } from '@/controllers/auth/auth';
 import { useEnterSubmit } from '@/hooks/useEnterSubmit/useEnterSubmit';
 import { getWrongEnvironmentHomeserverMessage, isWrongEnvironmentHomeserverError } from '@/libs/error/error.utils';
-import { useToast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { WordSlot } from '@/molecules/WordSlot/WordSlot';
 
 interface DialogRestoreRecoveryPhraseProps {
@@ -28,7 +28,6 @@ export function DialogRestoreRecoveryPhrase({ onRestore }: DialogRestoreRecovery
   const [isRestoring, setIsRestoring] = useState(false);
   const [errors, setErrors] = useState<boolean[]>(Array(12).fill(false));
   const [touched, setTouched] = useState<boolean[]>(Array(12).fill(false));
-  const { toast } = useToast();
   const handleRestore = async () => {
     // Guard against double-submit race condition
     if (isRestoring) return;
@@ -221,11 +220,11 @@ function RestoreForm({
 
         {errors.some((error, index) => error && touched[index]) && (
           <Container className="rounded-lg border border-red-500/20 bg-red-500/10 p-4">
-            <div className="flex items-center gap-2 text-red-500">
+            <div className="flex items-center gap-2 text-error-foreground">
               <AlertCircle className="h-4 w-4" />
               <span className="text-sm font-medium">{'Invalid words detected'}</span>
             </div>
-            <p className="mt-1 text-sm text-red-500/80">
+            <p className="mt-1 text-sm text-red-500/80 [.light_&]:text-error-foreground">
               {'Please check that all words are valid and contain only lowercase letters.'}
             </p>
           </Container>

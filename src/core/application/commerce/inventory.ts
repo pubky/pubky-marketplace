@@ -4,9 +4,6 @@ import { effectiveListingState } from '@/libs/commerce/auction-phase';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { isUnlimitedStock } from '@/libs/commerce/unlimited-stock';
-import { ClientErrorCode } from '@/libs/error/error.codes';
-import { Err } from '@/libs/error/error.factories';
-import { ErrorService } from '@/libs/error/error.types';
 import {
   type InventoryBearer,
   MarketplaceInventorySessionService,
@@ -317,10 +314,6 @@ export class CommerceInventoryApplication {
     return MarketplaceInventorySessionService.onSessionEnded(listener);
   }
 
-  static beginInventorySessionFlow(expectedPubky: string) {
-    return MarketplaceInventorySessionService.beginInventorySessionFlow(expectedPubky);
-  }
-
   static async loadBoard(sellerPubky: string): Promise<InventoryBoardLoad> {
     if (!isDurableCommerceMode(getCommerceAdapterMode())) {
       return { status: 'durable-unavailable' };
@@ -562,14 +555,5 @@ export class CommerceInventoryApplication {
       return { status: 'grant-needed' };
     }
     return { status: 'error', message: error.message };
-  }
-
-  static requireDurable(): void {
-    if (!isDurableCommerceMode(getCommerceAdapterMode())) {
-      throw Err.client(ClientErrorCode.BAD_REQUEST, 'Inventory Studio requires the durable transaction service.', {
-        service: ErrorService.Marketplace,
-        operation: 'inventory',
-      });
-    }
   }
 }

@@ -24,7 +24,7 @@ export function EmbeddedLegalFooter() {
       className="m-auto flex w-full max-w-(--container-max-width) flex-col gap-1 px-6 pt-2 pb-8 xl:px-0"
     >
       <FooterLinks>
-        {`Pubky Shop is provided by ${LEGAL_ENTITY_NAME} · `}
+        {`Pubky Market is provided by ${LEGAL_ENTITY_NAME} · `}
         <DialogTerms />
         {' · '}
         <DialogPrivacy />

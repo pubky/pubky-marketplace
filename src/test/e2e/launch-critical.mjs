@@ -4,7 +4,7 @@
  *
  * Node fetch cannot catch Window.fetch "Illegal invocation". Every journey
  * here drives real Chromium against `next start`. The required gate reads a
- * committed Nexus fixture (via LAUNCH_E2E_NEXUS_URL), never live 7108.
+ * committed Nexus fixture (via LAUNCH_E2E_NEXUS_URL), never a live Nexus.
  *
  * Inventory: signed-in seller board is the required Chromium canary
  * (LAUNCH_E2E_REQUIRE_SELLER_BOARD defaults on). Guest Join remains the
@@ -14,7 +14,7 @@
  * persistence with fixture PKARR, homeserver, BFF and marketplace responses.
  * It cannot prove live staging integration; the optional live mode below can.
  *
- * The page origin is 127.0.0.1. staging-api.pubky.app does not send CORS
+ * The page origin is 127.0.0.1. The live service does not send CORS
  * headers for that origin, so the session mint retries for 60s and the board
  * never mounts. The gate forwards that one host through Node after the page
  * calls fetch. An unbound Window.fetch still throws in the page, before any
@@ -38,7 +38,6 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 const FIXTURE_PATH = path.join(ROOT, 'src/test/e2e/fixtures/launch-critical.json');
 const CANONICAL_LISTING_PATH = path.join(ROOT, 'src/test/e2e/fixtures/nexus/canonical-listing.json');
 const SHOP_FIXTURE_PATH = path.join(ROOT, 'src/test/e2e/fixtures/nexus/shop.json');
-const DEFAULT_IDENTITIES_FILE = '/Users/johncarvalho/work/.staging-drop-identities.json';
 
 const TARGET = launchTarget(process.env.LAUNCH_E2E_BASE_URL);
 const BASE_URL = TARGET.baseUrl;
@@ -46,13 +45,12 @@ const routeOf = (url) => TARGET.routeOf(new URL(url).pathname);
 const MODE = process.env.LAUNCH_E2E_MODE ?? 'live';
 if (!['synthetic', 'live'].includes(MODE)) throw new Error('LAUNCH_E2E_MODE must be synthetic or live');
 const SYNTHETIC = MODE === 'synthetic';
-const SERVICE_URL =
-  process.env.LAUNCH_E2E_SERVICE_URL ??
-  (SYNTHETIC ? 'https://launch-marketplace.test' : 'https://staging-api.pubky.app');
+const SERVICE_URL = process.env.LAUNCH_E2E_SERVICE_URL ?? (SYNTHETIC ? 'https://launch-marketplace.test' : '');
+if (!SERVICE_URL) throw new Error('set LAUNCH_E2E_SERVICE_URL: live mode has no default target');
 const NEXUS_URL = (process.env.LAUNCH_E2E_NEXUS_URL ?? '').replace(/\/$/, '');
 const ALLOW_LIVE_NEXUS = process.env.LAUNCH_E2E_ALLOW_LIVE_NEXUS === '1';
 const REQUIRE_SELLER_BOARD = process.env.LAUNCH_E2E_REQUIRE_SELLER_BOARD !== '0';
-const SHOP_GRANT = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw';
+const SHOP_GRANT = '/pub/pubky.app/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw';
 const MARKETPLACE_GRANT = '/pub/pubky.app/marketplace-service/v1/:rw,/priv/pubky.app/:rw';
 const PREVIOUS_MARKETPLACE_GRANT = '/pub/pubky.app/marketplace-service/v1/:rw';
 let syntheticFixture;
@@ -77,8 +75,9 @@ function assertNotLiveNexus(url) {
   if (!url) {
     throw new Error('LAUNCH_E2E_NEXUS_URL is required; the required gate must point at the fixture stub');
   }
-  if (/railway\.app|:7108\b|7108\.up\.railway/.test(url)) {
-    throw new Error(`required gate must not read live nexusd (${url})`);
+  const { hostname } = new URL(url);
+  if (!['127.0.0.1', 'localhost', '[::1]'].includes(hostname)) {
+    throw new Error(`required gate must read the loopback fixture stub, not a live Nexus (${url})`);
   }
 }
 
@@ -91,8 +90,8 @@ function hexToBytes(hex) {
 async function loadSellerSecretHex() {
   const fromEnv = process.env.LAUNCH_E2E_SELLER_SECRET_HEX?.trim() ?? '';
   if (/^[0-9a-fA-F]{64}$/.test(fromEnv)) return fromEnv;
-  const identitiesFile = process.env.MARKETPLACE_STAGING_DROP_IDENTITIES_FILE || DEFAULT_IDENTITIES_FILE;
-  if (!existsSync(identitiesFile)) return null;
+  const identitiesFile = process.env.MARKETPLACE_STAGING_DROP_IDENTITIES_FILE;
+  if (!identitiesFile || !existsSync(identitiesFile)) return null;
   const saved = JSON.parse(await readFile(identitiesFile, 'utf8'));
   const secret = saved.seller ?? saved.buyerA ?? null;
   return typeof secret === 'string' && /^[0-9a-fA-F]{64}$/.test(secret) ? secret : null;
@@ -109,7 +108,7 @@ async function expectVisible(page, locator, name, timeout = 20_000) {
   }
 }
 
-async function closeJoinDialog(page) {
+async function closeSignInDialog(page) {
   await page.keyboard.press('Escape').catch(() => undefined);
   const close = page.locator('[data-testid="dialog-close"]');
   if (await close.count()) {
@@ -129,9 +128,34 @@ async function gotoAndSettle(page, pathname) {
   return response;
 }
 
-async function waitForJoinPubky(page) {
-  const heading = page.getByRole('heading', { name: 'Join Pubky' });
-  return expectVisible(page, heading, 'join-pubky-dialog', 20_000);
+async function waitForSignIn(page) {
+  const heading = page.getByRole('heading', { name: 'Sign in to Pubky' });
+  return expectVisible(page, heading, 'sign-in-dialog', 20_000);
+}
+
+async function setStoredTheme(page, theme) {
+  // Mirrors pubky-app saving `pubky-theme` from another browsing context on the origin.
+  await page.evaluate((value) => {
+    const oldValue = window.localStorage.getItem('pubky-theme');
+    if (value === null) window.localStorage.removeItem('pubky-theme');
+    else window.localStorage.setItem('pubky-theme', value);
+    window.dispatchEvent(
+      new StorageEvent('storage', { key: 'pubky-theme', oldValue, newValue: value, storageArea: window.localStorage }),
+    );
+  }, theme);
+  await page.waitForFunction(
+    (dark) => document.documentElement.classList.contains('light') !== dark,
+    theme !== 'light',
+  );
+  // Colour transitions would otherwise be audited half way between the two themes.
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((animation) => animation instanceof CSSTransition)
+        .map((animation) => animation.finished.catch(() => undefined)),
+    ),
+  );
 }
 
 async function runAxe(page, pageId) {
@@ -223,9 +247,9 @@ async function exerciseListingCheckout(page) {
   const buy = page.getByRole('button', { name: 'Buy', exact: true });
   if (await buy.count()) {
     await buy.first().click();
-    await waitForJoinPubky(page);
-    record('checkout:payment-step', true, 'Buy → Join Pubky');
-    await closeJoinDialog(page);
+    await waitForSignIn(page);
+    record('checkout:payment-step', true, 'Buy → Sign in to Pubky');
+    await closeSignInDialog(page);
   } else {
     const unavailable = await page.getByRole('heading', { name: 'Listing unavailable' }).count();
     record(
@@ -305,11 +329,11 @@ async function exerciseCartCheckoutBesidePendingOrder(page, canonicalListing, sh
   assert('checkout:cart-after-resume', afterResume === 'cart', `${afterResume} at ${page.url()}`);
 }
 
-async function readOffersSurface(page) {
+async function readOffersSurface(page, expected) {
   const gone = page.getByText('This offer is no longer available.');
   const empty = page.getByRole('heading', { name: 'No offers yet' });
-  await gone
-    .or(empty)
+  const target = expected === 'linked-offer-gone' ? gone : empty;
+  await target
     .first()
     .waitFor({ state: 'visible', timeout: 30_000 })
     .catch(() => undefined);
@@ -321,7 +345,7 @@ async function readOffersSurface(page) {
 /** #292: an old `#offer-<id>` Activity link is honoured once, not on every later visit to Offers. */
 async function exerciseLegacyOfferLinkOnce(page) {
   await gotoAndSettle(page, '/marketplace/offers#offer-018f47d2-6a27-7c23-b51e-000000000292');
-  const linked = await readOffersSurface(page);
+  const linked = await readOffersSurface(page, 'linked-offer-gone');
   assert('offers:legacy-link-opened', linked === 'linked-offer-gone', `${linked} at ${page.url()}`);
   await page.waitForURL((url) => url.searchParams.has('offer') && url.hash === '', { timeout: 20_000 });
   await page.getByTestId('marketplace-section-nav').getByRole('link', { name: /^Cart/ }).click();
@@ -331,26 +355,19 @@ async function exerciseLegacyOfferLinkOnce(page) {
     .getByRole('link', { name: /^Offers/ })
     .click();
   await page.waitForURL((url) => TARGET.routeOf(url.pathname) === '/marketplace/offers', { timeout: 20_000 });
-  const later = await readOffersSurface(page);
+  const later = await readOffersSurface(page, 'offers');
   assert('offers:legacy-link-not-sticky', later === 'offers', `${later} at ${page.url()}`);
 }
 
 /**
- * Ring grant QR only. `qr-auth-url` stays the slot id. The URL is not read
- * from the DOM: the copy button is what a person uses, and the slot must not
- * carry the relay secret in an attribute. Side-by-side sign-in puts the
- * Bitkit QR in the same card, so this prefers `sign-in-ring-option` and
- * validates the Shop's `pubkyauth://signin_grant`. Service grants are copied from the
- * open dialog, not from this locator.
+ * The sign-in QR, one for Pubky Ring and Bitkit. `qr-auth-url` stays the slot
+ * id. The URL is not read from the DOM: the copy button is what a person uses,
+ * and the slot must not carry the relay secret in an attribute. It is the
+ * Shop's `pubkyauth://signin_grant`. Service grants are copied from the open
+ * dialog, not from this locator.
  */
 async function ringSignInAuthSlot(page, timeout) {
-  const qr = '[data-testid="qr-auth-url"]';
-  // Side-by-side sign-in keeps both QRs inside sign-in-qr-card. A card-wide
-  // .first() copies Bitkit when that QR attaches first. Wait for the Ring
-  // option, or for the Ring-only card that has no Bitkit option.
-  const slot = page.locator(
-    `[data-testid="sign-in-ring-option"] ${qr}, [data-testid="sign-in-qr-card"]:not(:has([data-testid="sign-in-bitkit-option"])) ${qr}`,
-  );
+  const slot = page.locator('[data-testid="sign-in-qr-card"] [data-testid="qr-auth-url"]');
   await slot.first().waitFor({ state: 'attached', timeout });
   return slot.first();
 }
@@ -384,7 +401,7 @@ async function waitForAuthUrl(page, timeout = 25_000) {
     parsed.searchParams.get('cid') !== 'shop.pubky.app' ||
     caps !== SHOP_GRANT.split(',').sort().join(',')
   ) {
-    throw new Error('Ring QR did not request the Shop client grant and exact required scopes');
+    throw new Error('Sign-in QR did not request the Shop client grant and exact required scopes');
   }
   return url;
 }
@@ -420,7 +437,8 @@ async function waitForAuthStore(page, timeout = 90_000) {
           state.currentUserPubky &&
           typeof state.grantSessionRecordId === 'string' &&
           state.grantSessionRecordId.length > 0 &&
-          state.grantSigner === 'ring' &&
+          // A QR scan does not identify the approving app.
+          state.grantSigner === 'unknown' &&
           state.sessionExport === null &&
           state.hasProfile === true,
         );
@@ -440,7 +458,7 @@ async function waitForAuthStore(page, timeout = 90_000) {
  */
 async function signInSeller(page, secretHex) {
   try {
-    await closeJoinDialog(page);
+    await closeSignInDialog(page);
     await gotoAndSettle(page, '/sign-in');
     const authorizationUrl = await waitForStableAuthUrl(page);
     try {
@@ -516,11 +534,10 @@ async function signInSeller(page, secretHex) {
 
 async function installStagingServiceProxy(page) {
   const service = new URL(SERVICE_URL);
-  if (service.host !== 'staging-api.pubky.app') {
-    throw new Error(`launch-e2e only forwards staging-api.pubky.app (got ${service.host})`);
-  }
-  if (/railway\.app|:7108\b/.test(SERVICE_URL)) {
-    throw new Error(`launch-e2e must not forward live nexusd (${SERVICE_URL})`);
+  const allowed = process.env.LAUNCH_E2E_ALLOWED_SERVICE_URL?.trim();
+  if (!allowed) throw new Error('set LAUNCH_E2E_ALLOWED_SERVICE_URL: the one service URL a live run may forward to');
+  if (service.origin !== new URL(allowed).origin) {
+    throw new Error(`launch-e2e only forwards ${new URL(allowed).host} (got ${service.host})`);
   }
   await page.route(`${service.origin}/**`, async (route) => {
     const request = route.request();
@@ -728,7 +745,7 @@ async function collectBoardSignals(page, pageErrors, errorOffset) {
   const studio = page.locator('[data-testid="inventory-studio"]');
   await Promise.race([
     studio.waitFor({ state: 'attached', timeout: 15_000 }),
-    page.getByRole('heading', { name: 'Join Pubky' }).waitFor({ state: 'visible', timeout: 15_000 }),
+    page.getByRole('heading', { name: 'Sign in to Pubky' }).waitFor({ state: 'visible', timeout: 15_000 }),
     page.locator('nextjs-portal, [data-nextjs-dialog]').waitFor({ state: 'attached', timeout: 15_000 }),
   ]).catch(() => undefined);
 
@@ -758,7 +775,7 @@ async function collectBoardSignals(page, pageErrors, errorOffset) {
     redirectedHome: routeOf(page.url()) === '/marketplace',
     onInventory: routeOf(page.url()) === '/marketplace/dashboard/inventory',
     joinVisible: await page
-      .getByRole('heading', { name: 'Join Pubky' })
+      .getByRole('heading', { name: 'Sign in to Pubky' })
       .isVisible()
       .catch(() => false),
     boardMounted: (await studio.count()) > 0,
@@ -807,10 +824,10 @@ async function probeInventoryGuest(page, pageErrors) {
       'inventory:board-route',
       true,
       guestGate
-        ? 'guest Join Pubky gate (board is auth-only; no throw)'
+        ? 'guest Sign in to Pubky gate (board is auth-only; no throw)'
         : `guest board status=${signals.status || 'missing'} (no throw)`,
     );
-    await closeJoinDialog(page);
+    await closeSignInDialog(page);
     return;
   }
 
@@ -1045,6 +1062,7 @@ async function main() {
       serviceUrl: SERVICE_URL,
       nexusUrl: NEXUS_URL,
       root: ROOT,
+      clientRegion: process.env.LAUNCH_E2E_CLIENT_REGION?.trim().toUpperCase() || null,
     });
   } else {
     await installStagingServiceProxy(page);
@@ -1072,12 +1090,16 @@ async function main() {
     const joinButton = page.getByTestId('header-explore-join-button');
     if (await expectVisible(page, joinButton, 'sign-in:header-join')) {
       await joinButton.click();
-      await waitForJoinPubky(page);
-      await closeJoinDialog(page);
+      await waitForSignIn(page);
+      await closeSignInDialog(page);
     }
 
     await expectVisible(page, page.getByText(fixture.listingTitle, { exact: false }), 'catalog:fixture-title');
     await runAxe(page, 'catalog');
+    // An unset `pubky-theme` paints dark, so audit the light Shop through the live sync too.
+    await setStoredTheme(page, 'light');
+    await runAxe(page, 'catalog-light');
+    await setStoredTheme(page, null);
 
     await gotoAndSettle(page, '/marketplace/drops');
     const dropsHeading = page.getByRole('heading', { level: 1, name: 'Drops' });
@@ -1105,20 +1127,20 @@ async function main() {
       .waitForURL((url) => TARGET.routeOf(url.pathname) === '/marketplace', { timeout: 20_000 })
       .catch(() => undefined);
     assert('cart:guest-redirect', routeOf(page.url()) === '/marketplace', page.url());
-    await waitForJoinPubky(page);
+    await waitForSignIn(page);
     const placeOrder = await page.getByRole('button', { name: /Place .* order/i }).count();
     assert('cart:no-sandbox-checkout', placeOrder === 0, 'guest cannot place an order');
-    await closeJoinDialog(page);
+    await closeSignInDialog(page);
 
     await gotoAndSettle(page, fixture.pages[3].path);
     await page
       .waitForURL((url) => TARGET.routeOf(url.pathname) === '/marketplace', { timeout: 20_000 })
       .catch(() => undefined);
     assert('compose:guest-redirect', routeOf(page.url()) === '/marketplace', page.url());
-    await waitForJoinPubky(page);
+    await waitForSignIn(page);
     const studio = await page.locator('[data-surface="seller-studio"]').count();
-    assert('compose:no-seller-studio', studio === 0, 'composer stays behind Join Pubky');
-    await closeJoinDialog(page);
+    assert('compose:no-seller-studio', studio === 0, 'composer stays behind Sign in to Pubky');
+    await closeSignInDialog(page);
 
     if (REQUIRE_SELLER_BOARD) {
       const secretHex = syntheticFixture?.sellerSecretHex ?? (await loadSellerSecretHex());

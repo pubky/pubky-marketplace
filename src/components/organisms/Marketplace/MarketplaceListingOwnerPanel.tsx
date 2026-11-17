@@ -7,20 +7,19 @@ import { getMarketplaceListingEditRoute, getMarketplaceListingRoute, MARKETPLACE
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/atoms/Dialog/Dialog';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { withPublicPath } from '@/config/base-path';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { evaluateListingActivationGuards } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing';
+import { useDeleteMarketplaceListings } from '@/hooks/useDeleteMarketplaceListings/useDeleteMarketplaceListings';
 import type { AuctionPhase } from '@/libs/commerce/auction-phase';
+import {
+  AUCTION_UNLIST_BLOCKED_NOTE,
+  auctionDeleteBlockedNote,
+  bidsBlockingDelete,
+} from '@/libs/commerce/auction-removal';
+import { LISTING_DELETE_COPY } from '@/libs/commerce/listing-delete';
 import { LISTING_PUBLISH_BLOCK_COPY, listingPublishBlockToast } from '@/libs/commerce/listing-publish-guards';
 import { commerceListingProjectionIsStale, type CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { AuthErrorCode } from '@/libs/error/error.codes';
@@ -30,7 +29,8 @@ import {
   type CommerceListingRegistrationStatus,
   isListingRegistrationPending,
 } from '@/models/commerce/commerce.schema';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
+import { MarketplaceListingDeleteDialog } from '@/organisms/Marketplace/MarketplaceListingDeleteDialog';
 import type { MarketplaceListingProjection } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
@@ -111,9 +111,14 @@ export function MarketplaceListingOwnerPanel({
   // A page opened in a fresh tab renders from the persisted pubky before the homeserver session is restored;
   // a delete sent in that window fails with "Authenticated writes must target an owned path".
   const hasHomeserverSession = useAuthStore((state) => state.session !== null);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const deleting = useDeleteMarketplaceListings({
+    onDeleted: () => router.push(MARKETPLACE_ROUTES.DASHBOARD),
+  });
   const canToggleVisibility = record.sale.format === 'fixed_price' && ['active', 'paused'].includes(record.state);
   const displayState = record.state === 'active' && auctionPhase === 'ended' ? 'ended' : record.state;
+  // Bids on an auction that has not ended are what the seller's terms were accepted for: no deleting it
+  // from under them. The service's own count is the authority; an auction nobody has bid on can go.
+  const blockingBids = bidsBlockingDelete(projection?.auction, auctionPhase === 'ended');
 
   const setListingState = async (state: 'active' | 'paused') => {
     setIsMutating(true);
@@ -167,24 +172,6 @@ export function MarketplaceListingOwnerPanel({
         listing: `${record.ownerPubky}:${record.listingId}`,
         error,
       });
-    }
-  };
-
-  const deleteListing = async () => {
-    if (!hasHomeserverSession) return;
-    setIsMutating(true);
-    try {
-      await CommerceController.commitDeleteListing(record.ownerPubky, record.listingId);
-      toast({ title: 'Listing deleted', description: 'The owner-signed record was removed from your homeserver.' });
-      router.push(MARKETPLACE_ROUTES.DASHBOARD);
-    } catch (error) {
-      Logger.error('Failed to delete a marketplace listing', {
-        listing: `${record.ownerPubky}:${record.listingId}`,
-        error,
-      });
-      toast({ variant: 'error', description: 'Could not delete this listing.' });
-      setIsMutating(false);
-      setConfirmingDelete(false);
     }
   };
 
@@ -267,15 +254,18 @@ export function MarketplaceListingOwnerPanel({
               Link
             </Button>
             <Button
-              size="icon"
+              size="sm"
               variant="secondary"
-              className="size-8 rounded-full"
-              aria-label="Delete"
-              title="Delete"
-              disabled={isMutating || !hasHomeserverSession}
-              onClick={() => setConfirmingDelete(true)}
+              className="rounded-full text-destructive"
+              disabled={isMutating || !hasHomeserverSession || blockingBids > 0}
+              onClick={() =>
+                void deleting.request([
+                  { ownerPubky: record.ownerPubky, listingId: record.listingId, title: record.title, record },
+                ])
+              }
             >
               <Trash2 className="size-4" aria-hidden="true" />
+              Delete
             </Button>
           </div>
           {!hasHomeserverSession && (
@@ -284,46 +274,23 @@ export function MarketplaceListingOwnerPanel({
               className="text-xs text-muted-foreground"
               data-testid="listing-delete-waiting-for-session"
             >
-              Delete is available once your session is restored.
+              {LISTING_DELETE_COPY.needsSession}
             </Typography>
           )}
           {record.sale.format === 'auction' && displayState === 'active' && (
             <Typography as="p" className="text-xs text-muted-foreground" data-testid="listing-auction-unlist-note">
-              Auctions cannot be unlisted: published auction terms stay live until the auction ends.
+              {AUCTION_UNLIST_BLOCKED_NOTE}
+            </Typography>
+          )}
+          {blockingBids > 0 && (
+            <Typography as="p" className="text-xs text-muted-foreground" data-testid="listing-auction-delete-note">
+              {auctionDeleteBlockedNote(blockingBids)}
             </Typography>
           )}
         </div>
       </CardContent>
 
-      <Dialog open={confirmingDelete} onOpenChange={(next) => !isMutating && setConfirmingDelete(next)}>
-        <DialogContent className="border-border bg-popover">
-          <DialogHeader>
-            <DialogTitle>Delete this listing?</DialogTitle>
-            <DialogDescription>
-              This removes the owner-signed record and its photos from your homeserver. Buyers will no longer be able to
-              open it. This cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="secondary"
-              className="rounded-full"
-              disabled={isMutating}
-              onClick={() => setConfirmingDelete(false)}
-            >
-              Keep listing
-            </Button>
-            <Button
-              variant="destructive"
-              className="rounded-full"
-              disabled={isMutating || !hasHomeserverSession}
-              onClick={() => void deleteListing()}
-            >
-              {isMutating ? 'Deleting…' : 'Delete listing'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <MarketplaceListingDeleteDialog controller={deleting} />
     </Card>
   );
 }

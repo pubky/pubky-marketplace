@@ -11,10 +11,6 @@ export interface UseEntityTagsOptions {
 export interface UseEntityTagsResult {
   /** Array of tags with relationship and avatar data */
   tags: TagWithAvatars[];
-  /** Total count of tags */
-  count: number;
-  /** Whether initial loading is in progress */
-  isLoading: boolean;
   /** Whether the viewer is a tagger for a specific tag */
   isViewerTagger: (tag: TagWithAvatars) => boolean;
   /** Toggle tag (add/remove current user as tagger) */

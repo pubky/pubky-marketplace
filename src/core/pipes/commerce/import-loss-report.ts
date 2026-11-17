@@ -113,6 +113,7 @@ const LOSS_LABELS: Readonly<Record<string, string>> = {
   encoding_fallback: 'File encoding',
   attribute_dropped: 'Attributes not used as options',
   category_absent: 'Category missing',
+  category_mapped: 'Category matched',
   html_body: 'HTML removed',
   market_price_list: 'Market prices',
   metafield: 'Metafields',

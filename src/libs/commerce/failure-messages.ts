@@ -1,6 +1,13 @@
 import { CHECKOUT_HOLD_COPY } from '@/libs/commerce/checkout-hold';
-import { DIGITAL_REGION_MESSAGE, EU_UNAVAILABLE_MESSAGE, SELLER_LIMIT_MESSAGE } from '@/libs/commerce/eu-region';
+import { DIGITAL_REGION_MESSAGE, REGION_UNAVAILABLE_MESSAGE, SELLER_LIMIT_MESSAGE } from '@/libs/commerce/eu-region';
 import { PAYKIT_OUTAGE_COPY } from '@/libs/commerce/paykit-rail';
+import {
+  BUYING_FROM_BLOCKED_SHOP_MESSAGE,
+  COMMERCE_BLOCKED_MESSAGE,
+  COMMERCE_UNKNOWN_REGION_MESSAGE,
+  SELLING_BLOCKED_COUNTRY_MESSAGE,
+  SELLING_BLOCKED_MESSAGE,
+} from '@/libs/commerce/region-modes';
 import { SHIPPO_FAILURE_REASONS } from '@/libs/commerce/shipping';
 import { isAppError } from '@/libs/error/error';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
@@ -22,6 +29,14 @@ export const MARKETPLACE_FAILURE_MESSAGES = {
   bidUnauthorized: 'You cannot bid on your own auction.',
   bidStale: 'The auction changed since you loaded it. Reload the latest price and try again.',
   bidClosed: 'This auction is no longer open for bidding.',
+  bidNotOpen: "This auction isn't taking bids right now. Reload the page to see whether it has started or ended.",
+  bidNotRegistered:
+    "The marketplace doesn't have this auction registered, so it can't take bids. The seller may still need to set it up, or may have removed it.",
+  bidServiceProblem:
+    "This auction can't take bids right now because of a problem on the marketplace's side. Try again, and let the seller know if it keeps happening.",
+  bidRejectedAsSent: "The marketplace couldn't accept this bid as sent. Reload the page and try again.",
+  bidSellerUnreachable: "We couldn't reach the seller's shop to check this listing. Try again in a moment.",
+  bidModerated: "This listing was removed by moderation, so it can't take bids.",
   message: 'Could not send this message.',
   notifications: 'Could not update commerce notifications.',
   order: 'Could not update this order.',
@@ -64,13 +79,13 @@ export const MARKETPLACE_FAILURE_MESSAGES = {
   messagingStart: 'Could not start marketplace messaging.',
   messagingStorage: 'Messaging paused: storage protection unavailable',
   sandboxPayment: 'Could not advance the sandbox payment.',
-  offersUnavailable: 'Marketplace offers are unavailable.',
+  offersUnavailable: 'Market offers are unavailable.',
   notificationsUnavailable: 'Commerce notifications are unavailable.',
   notificationsReadUnavailable: 'The durable marketplace service does not store read state yet.',
   notificationsReadFailed: 'Could not mark commerce notifications read.',
   notificationPreferencesUnavailable: 'The durable marketplace service does not store notification preferences yet.',
   notificationPreferencesFailed: 'Could not update commerce notification preferences.',
-  ordersUnavailable: 'Marketplace orders are unavailable.',
+  ordersUnavailable: 'Market orders are unavailable.',
   unavailable: 'The marketplace service is temporarily unavailable.',
   shopSettings: 'Could not save shop settings.',
   savedSearch: 'Could not save this search.',
@@ -96,6 +111,8 @@ const CODE_MESSAGES: ReadonlyMap<string, string> = new Map([
   ['flow_expired', MARKETPLACE_FAILURE_MESSAGES.sessionTimeout],
   ['flow_binding_missing', APPROVAL_OTHER_TAB],
   ['flow_binding_denied', APPROVAL_OTHER_TAB],
+  ['COMMERCE_UNAVAILABLE_IN_REGION', COMMERCE_BLOCKED_MESSAGE],
+  ['SELLER_UNAVAILABLE_IN_REGION', SELLING_BLOCKED_MESSAGE],
 ]);
 
 const DROP_REFUSAL_MESSAGES: ReadonlyMap<string, string> = new Map([
@@ -262,6 +279,13 @@ export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, str
     'Too little time is left on this auction win to pay with Bitcoin. Choose another payment method, or message the seller.',
   ],
   ['bitcoin_unavailable', 'Bitcoin payments are not available for this seller.'],
+  ['buyer_region_blocked', COMMERCE_BLOCKED_MESSAGE],
+  ['buyer_ip_blocked', COMMERCE_BLOCKED_MESSAGE],
+  ['buyer_region_unknown', COMMERCE_UNKNOWN_REGION_MESSAGE],
+  ['seller_region_blocked', BUYING_FROM_BLOCKED_SHOP_MESSAGE],
+  ['seller_ip_blocked', SELLING_BLOCKED_MESSAGE],
+  ['COMMERCE_UNAVAILABLE_IN_REGION', COMMERCE_BLOCKED_MESSAGE],
+  ['SELLER_UNAVAILABLE_IN_REGION', SELLING_BLOCKED_MESSAGE],
   [
     'buyer_usdt_wallet_required',
     "Your wallet doesn't support USDT yet. Pay with a Bitkit version that supports USDT, or choose another payment method.",
@@ -312,6 +336,7 @@ export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, str
   ['paykit_unavailable', PAYKIT_OUTAGE_COPY.title],
   ['payment_method_already_bound', 'A payment method is already bound to this checkout.'],
   ['payment_not_awaiting', 'The payment is no longer awaiting a method.'],
+  ['payment_taken_back', 'PayPal reports this payment refunded or reversed, so it can’t be confirmed as received.'],
   ['payments_disabled', 'Payments are disabled on this marketplace.'],
   ['REVISION_CONFLICT', MARKETPLACE_FAILURE_MESSAGES.paymentChanged],
   ['revision_conflict', MARKETPLACE_FAILURE_MESSAGES.paymentChanged],
@@ -421,12 +446,26 @@ export function marketplacePaymentMethodFailureMessage(error: unknown, fallback:
   return marketplaceFailureMessage(marketplaceErrorCode(error), fallback, error);
 }
 
+/**
+ * `auction.place_bid` refusals by service `error.code` (`handlers/auction.rs`
+ * and the executor's gates). `AUCTION_CLOSED` covers both before the start and
+ * after the end on server time, so its copy names neither.
+ */
+const BID_CODE_MESSAGES: ReadonlyMap<string, string> = new Map([
+  ['BID_TOO_LOW', MARKETPLACE_FAILURE_MESSAGES.bidTooLow],
+  ['UNAUTHORIZED', MARKETPLACE_FAILURE_MESSAGES.bidUnauthorized],
+  ['REVISION_CONFLICT', MARKETPLACE_FAILURE_MESSAGES.bidStale],
+  ['INVALID_STATE', MARKETPLACE_FAILURE_MESSAGES.bidClosed],
+  ['AUCTION_CLOSED', MARKETPLACE_FAILURE_MESSAGES.bidNotOpen],
+  ['NOT_FOUND', MARKETPLACE_FAILURE_MESSAGES.bidNotRegistered],
+  ['INVARIANT_VIOLATION', MARKETPLACE_FAILURE_MESSAGES.bidServiceProblem],
+  ['INVALID_COMMAND', MARKETPLACE_FAILURE_MESSAGES.bidRejectedAsSent],
+  ['UPSTREAM_UNAVAILABLE', MARKETPLACE_FAILURE_MESSAGES.bidSellerUnreachable],
+  ['LISTING_MODERATED', MARKETPLACE_FAILURE_MESSAGES.bidModerated],
+]);
+
 export function marketplaceBidFailureMessage(code: MarketplaceFailureCode): string {
-  if (code === 'BID_TOO_LOW') return MARKETPLACE_FAILURE_MESSAGES.bidTooLow;
-  if (code === 'UNAUTHORIZED') return MARKETPLACE_FAILURE_MESSAGES.bidUnauthorized;
-  if (code === 'REVISION_CONFLICT') return MARKETPLACE_FAILURE_MESSAGES.bidStale;
-  if (code === 'INVALID_STATE') return MARKETPLACE_FAILURE_MESSAGES.bidClosed;
-  return MARKETPLACE_FAILURE_MESSAGES.bid;
+  return (code && BID_CODE_MESSAGES.get(code)) || MARKETPLACE_FAILURE_MESSAGES.bid;
 }
 
 export function marketplaceOfferCheckoutFailureMessage(code: MarketplaceFailureCode): string {
@@ -439,6 +478,8 @@ export function marketplaceOfferCheckoutFailureMessage(code: MarketplaceFailureC
   if (code === 'AWARD_LISTING_CHANGED') return 'The listing snapshot does not match the offer terms.';
   if (code === 'AWARD_HOLD_MISSING') return 'The inventory reserved for this accepted offer is no longer held.';
   if (code === 'INVALID_STATE') return 'Only an accepted offer can enter offer checkout.';
+  if (code === 'COMMERCE_UNAVAILABLE_IN_REGION') return COMMERCE_BLOCKED_MESSAGE;
+  if (code === 'SELLER_UNAVAILABLE_IN_REGION') return SELLING_BLOCKED_MESSAGE;
   return MARKETPLACE_FAILURE_MESSAGES.checkout;
 }
 
@@ -485,14 +526,31 @@ const LISTING_NOT_ACTIVE_REASON_MESSAGES: ReadonlyMap<string, string> = new Map(
 ]);
 
 /**
- * Copy for the service's regional refusals (legal launch plan C3, C3b, C4), or null for any other
- * failure: a seller who does not sell to the EU, a private seller who must re-confirm, a seller at
- * the annual limit, and digital items for EU and UK buyers.
+ * Copy for the service's regional refusals (legal launch plan C3, C3b, C4 and the blocked regions), or
+ * null for any other failure: a seller who does not sell to the EU or UK, a private seller who must
+ * re-confirm, a seller at the annual limit, digital items for EU and UK buyers, and commerce blocked
+ * for a buyer's or a seller's region. A shop in a blocked country is refused with one reason whoever asks,
+ * so the copy follows the `audience`: the seller is told selling isn't available from the country, the
+ * buyer that buying from the shop isn't.
  */
-export function marketplaceRegionRefusalMessage(error: { code?: unknown; reason?: unknown }): string | null {
+export function marketplaceRegionRefusalMessage(
+  error: { code?: unknown; reason?: unknown },
+  audience: 'buyer' | 'seller' = 'buyer',
+): string | null {
   switch (error.code) {
+    case 'COMMERCE_UNAVAILABLE_IN_REGION':
+      return error.reason === 'buyer_region_unknown' ? COMMERCE_UNKNOWN_REGION_MESSAGE : COMMERCE_BLOCKED_MESSAGE;
     case 'SELLER_UNAVAILABLE_IN_REGION':
-      return error.reason === 'private_seller_reconfirmation_required' ? SELLER_LIMIT_MESSAGE : EU_UNAVAILABLE_MESSAGE;
+      switch (error.reason) {
+        case 'private_seller_reconfirmation_required':
+          return SELLER_LIMIT_MESSAGE;
+        case 'seller_region_blocked':
+          return audience === 'seller' ? SELLING_BLOCKED_COUNTRY_MESSAGE : BUYING_FROM_BLOCKED_SHOP_MESSAGE;
+        case 'seller_ip_blocked':
+          return SELLING_BLOCKED_MESSAGE;
+        default:
+          return REGION_UNAVAILABLE_MESSAGE;
+      }
     case 'SELLER_ANNUAL_LIMIT_REACHED':
       return SELLER_LIMIT_MESSAGE;
     case 'DIGITAL_UNAVAILABLE_IN_REGION':
@@ -511,4 +569,30 @@ export function marketplaceListingNotActiveMessage(error: { code?: unknown; reas
     (typeof error.reason === 'string' ? LISTING_NOT_ACTIVE_REASON_MESSAGES.get(error.reason) : undefined) ??
     LISTING_NOT_FOR_SALE
   );
+}
+
+/** Shown when the seller changed a shipping profile between the buyer's quote and Pay. */
+export const SHIPPING_CHANGED_MESSAGE =
+  'The seller changed their shipping prices while you were checking out. Review the new shipping rates and pay again.';
+
+/**
+ * Service refusals about where and at what price an order ships: a destination no zone serves, a seller's
+ * shipping terms that cannot be read, a profile changed since the quote, and a destination the seller's
+ * shop does not ship to. `null` for any other refusal.
+ */
+export function marketplaceShippingRefusalMessage(error: {
+  code?: unknown;
+  reason?: unknown;
+  message?: unknown;
+}): string | null {
+  switch (error.code) {
+    case 'SHIPPING_CHANGED':
+      return SHIPPING_CHANGED_MESSAGE;
+    case 'SHIPPING_UNAVAILABLE_TO_COUNTRY':
+      return 'A seller in your cart does not ship to that country. Choose another address or remove their items.';
+    case 'SHIPPING_UNAVAILABLE':
+      return 'A seller’s shipping prices could not be read or applied right now. Nothing was reserved. Try again in a moment.';
+    default:
+      return null;
+  }
 }

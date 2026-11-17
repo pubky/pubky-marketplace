@@ -7,11 +7,8 @@ import { GET } from './route';
 const indexLine = (body: string) => body.split('\n').find((line) => line.startsWith('INDEX = '));
 
 // The guide as it was served from public/llms.txt, with its fixed INDEX host.
-const STATIC_GUIDE = readFileSync(
-  path.join(process.cwd(), 'src/test/fixtures/agent-guide/llms-static-95a0.txt'),
-  'utf8',
-);
-const STATIC_INDEX_LINE = 'INDEX = https://nexusd-production-95a0.up.railway.app';
+const STATIC_GUIDE = readFileSync(path.join(process.cwd(), 'src/test/fixtures/agent-guide/llms-static.txt'), 'utf8');
+const STATIC_INDEX_LINE = 'INDEX = https://nexus.example.test';
 // Keep the historical fixture intact; list intentional wording changes separately.
 const GUIDE_COPY_CHANGES = [
   ["What's for sale under 20,000 sats?", "What's for sale under ₿20,000?"],

@@ -36,7 +36,7 @@ type MarketplaceSectionItem = {
 
 const getItems = (socialLinkOut: boolean): readonly MarketplaceSectionItem[] => [
   {
-    label: 'Marketplace',
+    label: 'Market',
     href: APP_ROUTES.MARKETPLACE,
     icon: Store,
     activePrefixes: [
@@ -91,14 +91,21 @@ export function MarketplaceSectionNav({
   const { scrollRef, onScroll, onInteract, showSwipeHint } = useMarketplaceNavSwipeHint(pathname);
 
   return (
-    <div className={cn('relative mb-6 w-full min-w-0', className)} data-surface="marketplace-section-nav">
+    <div
+      className={cn(
+        'sticky top-(--marketplace-subnav-top) z-(--z-sticky-subnav) mb-6 w-full min-w-0 bg-background',
+        "after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-linear-to-b after:from-background/80 after:to-transparent after:content-['']",
+        className,
+      )}
+      data-surface="marketplace-section-nav"
+    >
       <nav
         ref={scrollRef}
         onScroll={onScroll}
         onPointerDown={onInteract}
         onWheel={onInteract}
         onKeyDown={onInteract}
-        aria-label="Marketplace sections"
+        aria-label="Market sections"
         data-testid="marketplace-section-nav"
         className="w-full min-w-0 overflow-x-auto sm:overflow-visible"
       >
@@ -143,8 +150,8 @@ export function MarketplaceSectionNav({
                   }
                 }}
                 className={cn(
-                  'relative inline-flex min-h-12 flex-1 shrink-0 items-center justify-center gap-2 border-b px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors hover:text-white',
-                  active ? 'border-white text-white' : 'border-border text-muted-foreground',
+                  'relative inline-flex min-h-12 flex-1 shrink-0 items-center justify-center gap-2 border-b px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors hover:text-foreground-strong',
+                  active ? 'border-foreground-strong text-foreground-strong' : 'border-border text-muted-foreground',
                 )}
               >
                 <Icon className="size-5 shrink-0" aria-hidden="true" />
@@ -157,7 +164,7 @@ export function MarketplaceSectionNav({
                     variant="secondary"
                   >
                     <Typography
-                      className={cn('font-semibold text-primary-foreground', count > 21 && 'text-xs')}
+                      className={cn('font-semibold text-bright-fill-foreground', count > 21 && 'text-xs')}
                       size="xs"
                     >
                       {count > 21 ? '21+' : count}

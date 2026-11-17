@@ -1,8 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CommerceApplication } from '@/application/commerce/commerce';
 import { MarketplaceGetPaidSettings } from '@/organisms/Marketplace/MarketplaceGetPaidSettings';
 import { MARKETPLACE_SESSION_STORAGE_KEY, MarketplaceSessionService } from '@/services/marketplace/marketplace-session';
+import { MARKETPLACE_SESSION_GRANT } from '@/services/marketplace/marketplace-session-grant';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { CommerceController } from './commerce';
@@ -29,16 +29,6 @@ vi.mock('@/config/commerce', async () => {
   };
 });
 
-vi.mock('@/services/homeserver/homeserver', () => ({
-  HomeserverService: {
-    generateAuthTokenFlow: () => ({
-      authorizationUrl: 'pubkyauth:///?relay=http%3A%2F%2Flocalhost%2Finbox&secret=s',
-      awaitToken: vi.fn(),
-      cancelAuthFlow: vi.fn(),
-    }),
-  },
-}));
-
 vi.mock('@/hooks/useMarketplaceSellerPaymentConfig/useMarketplaceSellerPaymentConfig', () => ({
   useMarketplaceSellerPaymentConfig: () => ({
     config: null,
@@ -60,17 +50,12 @@ function DropSessionProbe() {
   return <p>{marketplaceSession !== null ? 'drop-has-session' : 'drop-no-session'}</p>;
 }
 
-function sessionResponse(expiresAt: string, token: string): Response {
-  return new Response(JSON.stringify({ token, pubky: PUBKY, capabilities: '', expires_at: expiresAt }), {
-    status: 201,
-    headers: { 'content-type': 'application/json' },
-  });
-}
-
-async function establishIntoStore(expiresAt: string, token: string) {
-  vi.mocked(fetch).mockResolvedValueOnce(sessionResponse(expiresAt, token));
-  const info = await MarketplaceSessionService.establishWithAuthToken(new Uint8Array([1]), PUBKY);
-  useCommerceStore.getState().setMarketplaceSession(info);
+function establishIntoStore(expiresAt: string, token: string) {
+  const info = MarketplaceSessionService.establishClaimedGrantSession(
+    { token, pubky: PUBKY, capabilities: MARKETPLACE_SESSION_GRANT, expiresAt },
+    PUBKY,
+  );
+  CommerceController.writeMarketplaceSessionStore(info);
   return info;
 }
 
@@ -156,43 +141,24 @@ describe('CommerceController marketplace session-ended binding', () => {
     expect(window.localStorage.getItem(MARKETPLACE_SESSION_STORAGE_KEY)).toBeNull();
   });
 
-  it('keeps a connect that finishes after a clear and never resurrects the cleared session', async () => {
+  it('keeps a newer grant approval after a clear and never resurrects the cleared session', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-08-20T12:00:00.000Z'));
-    const cleared = await establishIntoStore('2026-08-20T13:00:00.000Z', SESSION_TOKENS.old);
+    const cleared = establishIntoStore('2026-08-20T13:00:00.000Z', SESSION_TOKENS.old);
 
-    vi.spyOn(CommerceApplication, 'beginMarketplaceSessionFlow').mockReturnValue({
-      authorizationUrl: 'pubkyauth:///?caps=test',
-      awaitSession: async () => {
-        vi.setSystemTime(new Date('2026-08-20T12:59:31.000Z'));
-        expect(MarketplaceSessionService.getActiveSession()).toBeNull();
-        await flushSessionEnded();
-        expect(useCommerceStore.getState().marketplaceSession).toBeNull();
-        vi.setSystemTime(new Date('2026-08-20T13:00:00.000Z'));
-        vi.mocked(fetch).mockResolvedValueOnce(sessionResponse('2026-08-20T15:00:00.000Z', SESSION_TOKENS.next));
-        return await MarketplaceSessionService.establishWithAuthToken(new Uint8Array([9]), PUBKY);
-      },
-      cancel: vi.fn(),
-    });
-
-    const session = await CommerceController.beginMarketplaceSessionConnect().awaitSession();
+    vi.setSystemTime(new Date('2026-08-20T12:59:31.000Z'));
+    expect(MarketplaceSessionService.getActiveSession()).toBeNull();
     await flushSessionEnded();
+    expect(useCommerceStore.getState().marketplaceSession).toBeNull();
 
+    vi.setSystemTime(new Date('2026-08-20T13:00:00.000Z'));
+    const session = establishIntoStore('2026-08-20T15:00:00.000Z', SESSION_TOKENS.next);
+    await flushSessionEnded();
     expect(session.issuedAt).not.toBe(cleared.issuedAt);
     expect(useCommerceStore.getState().marketplaceSession).toEqual(session);
     expect(MarketplaceSessionService.getActiveSession()).toMatchObject({ token: SESSION_TOKENS.next });
 
-    vi.spyOn(CommerceApplication, 'beginMarketplaceSessionFlow').mockReturnValue({
-      authorizationUrl: 'pubkyauth:///?caps=stale',
-      awaitSession: async () => ({
-        pubky: PUBKY,
-        capabilities: '',
-        expiresAt: cleared.expiresAt,
-        issuedAt: cleared.issuedAt,
-      }),
-      cancel: vi.fn(),
-    });
-    await CommerceController.beginMarketplaceSessionConnect().awaitSession();
+    CommerceController.writeMarketplaceSessionStore(cleared);
     expect(useCommerceStore.getState().marketplaceSession).toEqual(session);
     expect(useCommerceStore.getState().marketplaceSession?.issuedAt).not.toBe(cleared.issuedAt);
   });

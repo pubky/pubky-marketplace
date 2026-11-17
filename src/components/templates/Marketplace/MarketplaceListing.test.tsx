@@ -1,11 +1,11 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CommerceSellerReputationOverview } from '@/application/commerce/commerce';
 import { CAPABILITIES } from '@/config/app';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { CHECKOUT_HOLD_COPY } from '@/libs/commerce/checkout-hold';
 import { getMarketplaceOfferCheckoutRoute } from '@/libs/commerce/checkout-phase';
+import type { CommerceReputationSnippet } from '@/models/commerce/commerce.schema';
 import type { MarketplaceOffer } from '@/services/marketplace/marketplace';
 import type { GrantSigner } from '@/stores/auth/auth.types';
 import {
@@ -26,8 +26,8 @@ const publicAvailabilityRead = vi.hoisted(() => vi.fn());
 const paymentBadgesRead = vi.hoisted(() => vi.fn());
 const projectionRefresh = vi.hoisted(() => vi.fn());
 const confirmRemovedCalls = vi.hoisted(() => vi.fn());
-const sellerReputation = vi.hoisted((): { value: CommerceSellerReputationOverview | { status: 'loading' } } => ({
-  value: { status: 'new_seller' as const },
+const listingRating = vi.hoisted((): { value: CommerceReputationSnippet | null | 'unavailable' | undefined } => ({
+  value: null,
 }));
 const authState = vi.hoisted(() => ({
   currentUserPubky: 'b'.repeat(52) as string | null,
@@ -57,6 +57,12 @@ const view = vi.hoisted(() => ({
   hasFullHomeserverGrant: true,
   orders: [] as Array<{ order: ReturnType<typeof createOrderFixture> }>,
   offers: [] as MarketplaceOffer[],
+  addressCountry: '',
+  shippingProfile: null as unknown,
+}));
+
+vi.mock('@/hooks/useDefaultAddressCountry/useDefaultAddressCountry', () => ({
+  useDefaultAddressCountry: () => view.addressCountry,
 }));
 
 vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({ useMarketplaceCartCount: () => 0 }));
@@ -87,7 +93,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getListing: () => view.listing,
     getShop: () => view.shop,
-    getOrFetchShop: () => Promise.resolve(null),
+    refreshShopOrGetCached: () => Promise.resolve(null),
     getOrFetchListing: () => (view.fetchFailure === null ? Promise.resolve(null) : Promise.reject(view.fetchFailure)),
     isListingConfirmedRemoved: (_seller: string, _listing: string, fetchError: unknown) => {
       confirmRemovedCalls(fetchError);
@@ -97,6 +103,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     },
     getPublicListingAvailability: publicAvailabilityRead,
     fetchSellerPaymentBadges: paymentBadgesRead,
+    fetchShippingProfile: () => Promise.resolve(view.shippingProfile),
     hasFullHomeserverGrant: () => view.hasFullHomeserverGrant,
     canRegisterListings: () => false,
     ensureListingRegistered: vi.fn(async () => {}),
@@ -187,7 +194,8 @@ vi.mock('@/hooks/useMarketplaceProjection/useMarketplaceProjection', () => ({
 }));
 
 vi.mock('@/hooks/useMarketplaceReviews/useMarketplaceReviews', () => ({
-  useSellerReputation: () => sellerReputation.value,
+  useListingRating: () => listingRating.value,
+  useMarketplaceReviews: () => ({ filterSummary: null }),
 }));
 
 vi.mock('@/hooks/useMeasurementSystem/useMeasurementSystem', () => ({
@@ -202,8 +210,8 @@ vi.mock('@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl', async () => {
   return await import('@/test/mocks/marketplace-media-hooks');
 });
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 
 vi.mock('@/organisms/Marketplace/MarketplaceCommunityTags', () => ({
@@ -235,6 +243,8 @@ describe('MarketplaceListing', () => {
     view.shop = toCommerceShopModel(createCommerceShopFixture());
     view.projection = createListingProjectionFixture();
     view.projectionError = null;
+    view.addressCountry = '';
+    view.shippingProfile = null;
     view.listingRemoved = false;
     view.fetchFailure = null;
     view.confirmedRemoved = false;
@@ -262,7 +272,7 @@ describe('MarketplaceListing', () => {
     view.orders = [];
     view.offers = [];
     sessionState.pubky = null;
-    sellerReputation.value = { status: 'new_seller' };
+    listingRating.value = null;
     cartAdd.mockClear();
     projectionRefresh.mockClear();
     authState.currentUserPubky = 'b'.repeat(52);
@@ -412,6 +422,189 @@ describe('MarketplaceListing', () => {
     expect(screen.getByTestId('marketplace-listing-ships-to')).toHaveTextContent(
       'Ships to: Switzerland and Liechtenstein',
     );
+  });
+
+  describe('zone-priced shipping', () => {
+    const zones = [
+      {
+        zoneId: 'eu',
+        name: 'Europe',
+        countries: ['DE', 'FR', 'PT'],
+        rates: [
+          {
+            pricing: 'per_item' as const,
+            rateId: 'std',
+            label: 'Standard',
+            estimatedMinDays: 6,
+            estimatedMaxDays: 12,
+            firstMinor: 899,
+            additionalMinor: 450,
+          },
+        ],
+      },
+    ];
+    const zoned = (overrides: Record<string, unknown> = {}) =>
+      toCommerceListingModel(createCommerceListingFixture({ shippingZones: zones, ...overrides }));
+
+    it('shows the rate to the buyer’s country with its delivery estimate', () => {
+      view.listing = zoned();
+      view.addressCountry = 'DE';
+      renderListing();
+      expect(
+        screen.getByText('One item to Germany: Standard $8.99, 6-12 days. Final shipping is set at checkout.'),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/Shipping: calculated/)).not.toBeInTheDocument();
+    });
+
+    it('lists where it ships when the buyer’s country is unknown, and says so when the country is not served', () => {
+      view.listing = zoned();
+      view.addressCountry = '';
+      renderListing();
+      expect(screen.getByText('Ships to: Germany, France, and Portugal')).toBeInTheDocument();
+      cleanup();
+
+      view.addressCountry = 'BR';
+      renderListing();
+      expect(screen.getByText('Does not ship to Brazil. Ships to: Germany, France, and Portugal')).toBeInTheDocument();
+    });
+
+    it('does not quote a country the shop itself does not ship to', () => {
+      view.shop = toCommerceShopModel(createCommerceShopFixture({ shipsToCountries: ['DE'] }));
+      view.listing = zoned();
+      view.addressCountry = 'FR';
+      renderListing();
+      expect(screen.getByText('Does not ship to France. Ships to: Germany')).toBeInTheDocument();
+      expect(screen.queryByText(/One item to France/)).not.toBeInTheDocument();
+    });
+
+    it('says it ships nowhere when every country is excluded or outside the shop list', () => {
+      view.shop = toCommerceShopModel(createCommerceShopFixture({ shipsToCountries: ['BR'] }));
+      view.listing = zoned();
+      view.addressCountry = '';
+      renderListing();
+      expect(screen.getByText('Does not ship to any country')).toBeInTheDocument();
+    });
+
+    it('reads a shared profile for the price', async () => {
+      view.listing = toCommerceListingModel(createCommerceListingFixture({ shippingProfileId: 'worldwide' }));
+      view.shippingProfile = {
+        sha256: 'a'.repeat(64),
+        record: {
+          profileId: 'worldwide',
+          name: 'Worldwide',
+          currency: 'USD',
+          exponent: 2,
+          excludedCountries: [],
+          zones,
+        },
+      };
+      view.addressCountry = 'FR';
+      renderListing();
+      expect(
+        await screen.findByText('One item to France: Standard $8.99, 6-12 days. Final shipping is set at checkout.'),
+      ).toBeInTheDocument();
+    });
+
+    it('prices a buyer whose address says UK against a GB zone', () => {
+      view.listing = zoned({
+        shippingZones: [{ ...zones[0]!, countries: ['GB'] }],
+      });
+      view.addressCountry = 'uk';
+      renderListing();
+      expect(
+        screen.getByText('One item to United Kingdom: Standard $8.99, 6-12 days. Final shipping is set at checkout.'),
+      ).toBeInTheDocument();
+    });
+
+    it('prices no rate from a profile whose currency differs from the item', async () => {
+      view.listing = toCommerceListingModel(createCommerceListingFixture({ shippingProfileId: 'worldwide' }));
+      view.shippingProfile = {
+        sha256: 'a'.repeat(64),
+        record: {
+          profileId: 'worldwide',
+          name: 'Worldwide',
+          currency: 'EUR',
+          exponent: 2,
+          excludedCountries: [],
+          zones,
+        },
+      };
+      view.addressCountry = 'FR';
+      renderListing();
+      expect(await screen.findByText(/rates use a different currency than the item/)).toBeInTheDocument();
+      expect(screen.queryByText(/to France/)).not.toBeInTheDocument();
+    });
+
+    it('offers no bidding on an auction priced by zones', () => {
+      const auction = {
+        format: 'auction' as const,
+        startingPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+        minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
+        startsAt: new Date(Date.now() - 60_000).toISOString(),
+        endsAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+        antiSnipingWindowSeconds: 300,
+        antiSnipingExtensionSeconds: 300,
+      };
+      view.listing = toCommerceListingModel(createCommerceListingFixture({ sale: auction }));
+      renderListing();
+      expect(screen.getByRole('button', { name: 'Place a bid' })).toBeInTheDocument();
+      cleanup();
+
+      view.listing = zoned({ sale: auction });
+      renderListing();
+      expect(screen.getByTestId('zone-priced-auction-notice')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Place a bid' })).not.toBeInTheDocument();
+    });
+
+    it('shows only the listing’s own destinations, not the shop’s wider list', () => {
+      view.shop = toCommerceShopModel(createCommerceShopFixture({ shipsToCountries: ['DE', 'IT'] }));
+      view.listing = zoned();
+      view.addressCountry = '';
+      renderListing();
+      expect(screen.getByText('Ships to: Germany')).toBeInTheDocument();
+      expect(screen.queryByTestId('marketplace-listing-ships-to')).not.toBeInTheDocument();
+    });
+
+    it('quotes nothing under a shop restriction that names no usable country', () => {
+      view.shop = toCommerceShopModel(createCommerceShopFixture({ shipsToCountries: ['CHE'] }));
+      view.listing = zoned();
+      view.addressCountry = 'DE';
+      renderListing();
+      expect(screen.queryByText(/One item to Germany/)).not.toBeInTheDocument();
+      expect(screen.getByText(/Does not ship to/)).toBeInTheDocument();
+    });
+
+    it('does not say offers buy the shipped version on a zone-priced listing that delivers digitally', () => {
+      const sale = {
+        format: 'fixed_price' as const,
+        unitPrice: { amountMinor: 12_500, currency: 'USD', exponent: 2 },
+        acceptsOffers: true,
+      };
+      view.listing = zoned({ sale, fulfillmentMethods: ['physical', 'shipping', 'digital'] });
+      view.projection = createListingProjectionFixture({
+        fulfillmentMethods: ['shipping', 'digital'],
+        digitalDelivery: { kind: 'email' },
+      });
+      renderListing();
+      expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
+      expect(screen.queryByTestId('marketplace-listing-digital-offer-note')).not.toBeInTheDocument();
+    });
+
+    it('offers no Make offer on a zone-priced listing that accepts offers', () => {
+      const sale = {
+        format: 'fixed_price' as const,
+        unitPrice: { amountMinor: 12_500, currency: 'USD', exponent: 2 },
+        acceptsOffers: true,
+      };
+      view.listing = toCommerceListingModel(createCommerceListingFixture({ sale }));
+      renderListing();
+      expect(screen.getByRole('button', { name: /Make offer/ })).toBeInTheDocument();
+      cleanup();
+
+      view.listing = zoned({ sale });
+      renderListing();
+      expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
+    });
   });
 
   it("badges the seller's accepted payment methods", async () => {
@@ -703,27 +896,55 @@ describe('MarketplaceListing', () => {
     expect(screen.queryByText('Shop opened Aug 2026')).not.toBeInTheDocument();
   });
 
-  it('renders the seller rating aggregate when reputation is present', () => {
-    sellerReputation.value = {
-      status: 'rated',
-      summary: {
-        count: 12,
-        verifiedCount: 9,
-        avg: 4.7,
-        histogram: [0, 0, 1, 2, 9],
-        responseCount: 3,
-        editedLateCount: 0,
-        attestors: {},
-        lastReviewedAt: '2026-08-20T12:00:00.000Z',
+  it("renders this product's own rating, not the seller's", () => {
+    listingRating.value = { avg: 4.7, count: 12, verifiedCount: 9 };
+
+    renderListing();
+
+    expect(screen.getByRole('img', { name: 'Rated 4.7 out of 5 from 12 reviews' })).toBeInTheDocument();
+    expect(screen.getByTitle('12 reviews')).toBeInTheDocument();
+    expect(screen.queryByText('No rating yet')).not.toBeInTheDocument();
+  });
+
+  it("counts this product's rating from the index's exact scoped figure", () => {
+    listingRating.value = {
+      avg: 3.1,
+      count: 12,
+      verifiedCount: 9,
+      scoped: {
+        orders: 4,
+        buyers: 3,
+        sumBuyerMeans: 13.8,
+        weightedSum: 18,
+        weightTotal: 4,
+        histogram: [0, 0, 0, 2, 2],
+        firstIat: Date.parse('2026-08-01T00:00:00Z') / 1000,
+        lastIat: Date.parse('2026-08-10T00:00:00Z') / 1000,
+        sellerBuyers: null,
+        sumSellerBuyerMeans: null,
       },
     };
 
     renderListing();
 
-    expect(
-      screen.getByRole('img', { name: 'Rated 4.7 out of 5 from 12 reviews, 9 verified purchases' }),
-    ).toBeInTheDocument();
-    expect(screen.getByTitle('12 reviews')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Rated 4.6 out of 5 from 3 buyers, 4 orders' })).toBeInTheDocument();
+    expect(screen.queryByTitle('12 reviews')).not.toBeInTheDocument();
+  });
+
+  it('shows no rating while the product rating is loading', () => {
+    listingRating.value = undefined;
+
+    renderListing();
+
+    expect(screen.queryByTestId('marketplace-listing-rating')).not.toBeInTheDocument();
+  });
+
+  it('makes no rating claim when the index did not answer', () => {
+    listingRating.value = 'unavailable';
+
+    renderListing();
+
+    expect(screen.queryByTestId('marketplace-listing-rating')).not.toBeInTheDocument();
     expect(screen.queryByText('No rating yet')).not.toBeInTheDocument();
   });
 
@@ -1398,7 +1619,7 @@ describe('MarketplaceListing', () => {
     expect(screen.getByRole('button', { name: 'Authorize with Pubky Ring' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Authorize with Pubky Ring' }));
-    expect(screen.queryByText('Sign in to Pubky Shop.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Sign in to Pubky Market.')).not.toBeInTheDocument();
     expect(screen.queryByText(/permission list/i)).not.toBeInTheDocument();
     expect(screen.queryByText(CAPABILITIES)).not.toBeInTheDocument();
     expect(screen.queryByText(/first Shop-scoped approval/i)).not.toBeInTheDocument();

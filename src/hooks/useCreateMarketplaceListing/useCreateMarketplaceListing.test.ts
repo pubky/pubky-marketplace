@@ -9,11 +9,13 @@ import {
 } from '@/libs/commerce/listing-drafts';
 import { commerceListingRecordSchema } from '@/libs/commerce/marketplace-records';
 import type { CommerceListingDraftModelSchema } from '@/models/commerce/commerce.schema';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
+import { asOpaque } from '@/test-utils/type-assertions';
 import {
   buildListingVariants,
   normalizeDraftForm,
+  resolveListingShipping,
   seedDraftFormFromListing,
   useCreateMarketplaceListing,
 } from './useCreateMarketplaceListing';
@@ -128,10 +130,11 @@ vi.mock('@/controllers/commerce/commerce', () => ({
       paypalAvailable: false,
     })),
     getMyDeliveryKeyStatus: vi.fn(),
+    fetchShippingProfile: vi.fn(),
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 
@@ -160,6 +163,28 @@ describe('useCreateMarketplaceListing', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('publishes a typed UK country as its ISO code GB', async () => {
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    act(() => {
+      result.current.form.setValue('title', 'Vintage leather boots');
+      result.current.form.setValue('description', 'Well cared for boots with light wear.');
+      result.current.form.setValue('categoryId', 'fashion-men-footwear-boots');
+      result.current.form.setValue('attrSize', 'US 9');
+      result.current.form.setValue('price', '125.00');
+      result.current.form.setValue('fulfillment', 'pickup');
+      result.current.form.setValue('countryCode', 'uk');
+    });
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(CommerceController.commitUpsertListing).toHaveBeenCalledOnce();
+    expect(vi.mocked(CommerceController.commitUpsertListing).mock.calls[0][0]).toMatchObject({
+      location: { countryCode: 'GB', region: undefined },
+    });
   });
 
   it('uploads every prepared photo and publishes a schema-valid owner listing in media order', async () => {
@@ -671,6 +696,7 @@ describe('useCreateMarketplaceListing', () => {
       result.current.form.setValue('attrSize', 'US 9');
       result.current.form.setValue('price', '125.00');
       result.current.form.setValue('fulfillment', 'pickup');
+      result.current.form.setValue('countryCode', 'US');
     });
 
     await act(() => result.current.submit());
@@ -1166,3 +1192,28 @@ describe('normalizeDraftForm', () => {
 function fixtureSellerPubky(): string {
   return createCommerceListingFixture().ownerPubky;
 }
+
+describe('resolveListingShipping', () => {
+  const profileData = () =>
+    asOpaque<Parameters<typeof resolveListingShipping>[1]>({
+      fulfillment: 'shipping',
+      shippingMode: 'profile',
+      shippingProfileId: 'worldwide',
+      currency: 'USD',
+    });
+
+  it.each([
+    ['the network fails', () => Promise.reject(new Error('offline'))],
+    [
+      'the profile is malformed or too large',
+      () => Promise.reject(new TypeError('The shipping profile is too large.')),
+    ],
+    ['the profile is missing', () => Promise.resolve(null)],
+  ])('refuses the save with the could-not-be-read message when %s', async (_name, read) => {
+    vi.mocked(CommerceController.fetchShippingProfile).mockImplementationOnce(read);
+
+    const result = await resolveListingShipping(OWNER, profileData());
+
+    expect(result).toMatchObject({ ok: false, reason: 'profile-missing' });
+  });
+});

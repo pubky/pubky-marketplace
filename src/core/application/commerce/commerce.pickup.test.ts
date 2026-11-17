@@ -269,6 +269,30 @@ describe('CommerceApplication local pickup (Wave 7)', () => {
       expect(payload.deliveryAddress).toBeUndefined();
     });
 
+    it('carries the destination and the shipping choices in the command, and omits both when absent', async () => {
+      const execute = vi.spyOn(MarketplaceGatewayService, 'execute').mockResolvedValue(okResponse as never);
+      const choice = { sellerPubky: SELLER, profileId: 'worldwide', rateId: 'std', profileSha256: 'ab'.repeat(32) };
+
+      await CommerceApplication.commitCreateMarketplaceCheckout(BUYER, {
+        lines: [lineA],
+        fulfillmentChoiceBySeller: {},
+        deliveryAddress: address,
+        deliveryKeys: keysFor([SELLER, sellerKey]),
+        destinationCountry: 'US',
+        shippingChoices: [choice],
+      });
+      await CommerceApplication.commitCreateMarketplaceCheckout(BUYER, {
+        lines: [lineA],
+        fulfillmentChoiceBySeller: {},
+        deliveryAddress: address,
+        deliveryKeys: keysFor([SELLER, sellerKey]),
+      });
+
+      expect(execute.mock.calls[0][1].payload).toMatchObject({ destinationCountry: 'US', shippingChoices: [choice] });
+      expect(execute.mock.calls[1][1].payload).not.toHaveProperty('destinationCountry');
+      expect(execute.mock.calls[1][1].payload).not.toHaveProperty('shippingChoices');
+    });
+
     it('defaults unchosen groups to shipping and seals the address to the shipped seller only', async () => {
       const execute = vi.spyOn(MarketplaceGatewayService, 'execute').mockResolvedValue(okResponse as never);
 
@@ -338,7 +362,7 @@ describe('CommerceApplication local pickup (Wave 7)', () => {
           connectorShares: {
             sellerPubky: string;
             shopDomain: string;
-            consentVersion: number;
+            consentVersion: string;
             keyId: string;
             envelope: string;
           }[];
@@ -353,8 +377,8 @@ describe('CommerceApplication local pickup (Wave 7)', () => {
           consentVersion: CONNECTOR_SHARE_CONSENT_VERSION,
           keyId: STORE_KEY_ID,
         });
-        expect(share.consentVersion).toBe(2);
-        expect(Number.isInteger(share.consentVersion)).toBe(true);
+        expect(share.consentVersion).toBe(CONNECTOR_SHARE_CONSENT_VERSION);
+        expect(typeof share.consentVersion).toBe('string');
         expect(share.envelope).not.toBe(payload.deliveryAddressEnvelopes[0]?.envelope);
 
         expect(payload).not.toHaveProperty('deliveryAddress');

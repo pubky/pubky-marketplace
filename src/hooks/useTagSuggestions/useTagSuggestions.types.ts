@@ -12,6 +12,4 @@ export interface UseTagSuggestionsParams {
 export interface UseTagSuggestionsResult {
   /** Array of suggested tag labels */
   suggestions: string[];
-  /** Whether a search is in progress */
-  isLoading: boolean;
 }

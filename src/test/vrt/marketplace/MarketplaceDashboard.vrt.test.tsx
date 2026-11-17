@@ -92,13 +92,30 @@ const view = vi.hoisted(() => ({
   metrics: {} as unknown,
   actionNeeded: {} as unknown,
   isLoading: false,
+  search: '',
   shop: null as unknown,
   unfinishedDrafts: [] as Array<{ listingId: string; title: string; updatedAt: number; ageLabel: string }>,
+  selling: {
+    active: false,
+    checking: false,
+    blocked: false,
+    held: false,
+    source: null,
+    message: null,
+    sellingMessage: null,
+    info: null,
+  } as unknown,
 }));
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   usePathname: () => '/marketplace/dashboard',
+  useSearchParams: () => new URLSearchParams(view.search),
+}));
+
+// The browser build has no region policy; a scene sets what the policy would say.
+vi.mock('@/hooks/useSellingAvailability/useSellingAvailability', () => ({
+  useSellingAvailability: () => view.selling,
 }));
 
 vi.mock('@/hooks/useSellerPaymentMethodGate/useSellerPaymentMethodGate', () => ({
@@ -144,34 +161,99 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', () => ({
-  useMarketplaceSellerDashboard: () => ({
-    listings: view.listings,
-    sellerOrders: [],
-    offers: [],
-    isLoading: view.isLoading,
-    needsSession: false,
-    sessionError: null,
-    metrics: view.metrics,
-    actionNeeded: view.actionNeeded,
-    updateListingState: vi.fn(async () => false),
-    duplicateListing: vi.fn(async () => false),
-    hasUnsavedListingDraft: vi.fn(async () => null),
-    unfinishedDrafts: view.unfinishedDrafts,
-    discardListingDraft: vi.fn(async () => undefined),
-    resumeListingDraft: vi.fn(),
-    exportCsv: async () => new TextEncoder().encode('record_uri,seller_pubky\r\n'),
-  }),
-}));
+vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', async () => {
+  const { formatListingStock } = await vi.importActual<typeof import('@/libs/commerce/unlimited-stock')>(
+    '@/libs/commerce/unlimited-stock',
+  );
+  const { dashboardTableMock } = await import('@/test/mocks/dashboard-table');
+  return {
+    useMarketplaceSellerDashboard: () => ({
+      listings: view.listings,
+      ...dashboardTableMock(view.listings, Date.parse('2026-09-21T12:00:00.000Z')),
+      sellerOrders: [],
+      offers: [],
+      isLoading: view.isLoading,
+      needsSession: false,
+      sessionError: null,
+      metrics: view.metrics,
+      actionNeeded: view.actionNeeded,
+      updateListingState: vi.fn(async () => false),
+      duplicateListing: vi.fn(async () => false),
+      hasUnsavedListingDraft: vi.fn(async () => null),
+      unfinishedDrafts: view.unfinishedDrafts,
+      discardListingDraft: vi.fn(async () => undefined),
+      resumeListingDraft: vi.fn(),
+      canOfferRegistration: () => true,
+      listingStockLabel: (listing: {
+        record: Parameters<typeof formatListingStock>[0];
+        purchasableQuantity?: number | null;
+      }) => formatListingStock(listing.record, listing.purchasableQuantity ?? null),
+      exportCsv: async () => new TextEncoder().encode('record_uri,seller_pubky\r\n'),
+    }),
+  };
+});
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main className="w-full py-6">{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => (
+    <main className="w-full py-6">{children}</main>
+  ),
 }));
 
 describe('Marketplace seller dashboard — visual regression', () => {
   beforeEach(() => {
     view.unfinishedDrafts = [];
+    view.search = '';
+    view.selling = {
+      active: false,
+      checking: false,
+      blocked: false,
+      held: false,
+      source: null,
+      message: null,
+      sellingMessage: null,
+      info: null,
+    };
   });
+
+  // A seller in a blocked region keeps the studio, read-only: selling is off, orders and the storefront stay.
+  it.each([
+    { name: 'desktop', viewport: VRT_VIEWPORT_DESKTOP },
+    { name: 'mobile', viewport: VRT_VIEWPORT_MOBILE },
+  ])(
+    'renders the read-only studio of a seller whose shop country is blocked at $name viewport',
+    async ({ name, viewport }) => {
+      const { listings, populatedMetrics, populatedActionNeeded, shop } = await fixtures;
+      const { evaluateCommerceAvailability } = await import('@/libs/commerce/commerce-availability');
+      const { createRegionPolicy, parseRegionModes } = await import('@/libs/commerce/region-modes');
+      const parsed = parseRegionModes('EU=blocked,GB=blocked,US=blocked');
+      if (!parsed.ok) throw new Error(parsed.error);
+      view.selling = evaluateCommerceAvailability(createRegionPolicy(parsed.entries), {
+        declaredCountry: 'GB',
+        declaredIs: 'shop',
+        client: { status: 'ready', country: 'CH' },
+      });
+      view.listings = listings;
+      view.metrics = populatedMetrics;
+      view.actionNeeded = populatedActionNeeded;
+      view.isLoading = false;
+      view.shop = shop;
+
+      const screen = await renderForVRT(<MarketplaceDashboard />, { viewport });
+      await vi.waitFor(() => {
+        const text = screen.container.textContent ?? '';
+        if (
+          !text.includes('Your shop country is United Kingdom') ||
+          !text.includes("If that isn't where you sell from")
+        ) {
+          throw new Error('The selling notice has not rendered yet.');
+        }
+      });
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+        `dashboard-region-blocked-${name}`,
+        VRT_DENSE_CHROME_SCREENSHOT,
+      );
+    },
+  );
 
   it('renders populated metrics and inventory with row actions at desktop viewport', async () => {
     const { listings, populatedMetrics, populatedActionNeeded, shop } = await fixtures;
@@ -200,6 +282,26 @@ describe('Marketplace seller dashboard — visual regression', () => {
     const screen = await renderForVRT(<MarketplaceDashboard />, { viewport: VRT_VIEWPORT_MOBILE });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       'dashboard-populated-mobile',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it.each([
+    { name: 'filtered', search: 'sort=title&stock=in', viewport: VRT_VIEWPORT_DESKTOP },
+    { name: 'no-match', search: 'q=zzz', viewport: VRT_VIEWPORT_DESKTOP },
+    { name: 'no-match-mobile', search: 'q=zzz', viewport: VRT_VIEWPORT_MOBILE },
+  ])('renders the listing table with the $name filters at $viewport.width px', async ({ name, search, viewport }) => {
+    const { listings, populatedMetrics, populatedActionNeeded, shop } = await fixtures;
+    view.listings = listings;
+    view.metrics = populatedMetrics;
+    view.actionNeeded = populatedActionNeeded;
+    view.isLoading = false;
+    view.shop = shop;
+    view.search = search;
+
+    const screen = await renderForVRT(<MarketplaceDashboard />, { viewport });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      `dashboard-listing-filters-${name}`,
       VRT_DENSE_CHROME_SCREENSHOT,
     );
   });

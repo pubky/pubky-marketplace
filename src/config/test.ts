@@ -2,8 +2,9 @@ import '@testing-library/jest-dom';
 import '@testing-library/jest-dom/vitest';
 import 'fake-indexeddb/auto';
 import { cleanup } from '@testing-library/react';
-import { expect, vi } from 'vitest';
+import { vi } from 'vitest';
 import { afterAll, afterEach, beforeAll, beforeEach } from 'vitest';
+import { TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
 
 // =============================================================================
 // IMPORTANT: Set environment variables BEFORE importing any app code
@@ -17,9 +18,6 @@ process.env.NEXT_PUBLIC_DB_VERSION = '1';
 process.env.NEXT_PUBLIC_DEBUG_MODE = 'false';
 process.env.PUBKY_RUNTIME_NEXUS_URL = 'https://nexus.staging.pubky.app';
 process.env.PUBKY_RUNTIME_CDN_URL = 'https://nexus.staging.pubky.app/static';
-// Server-side only admin credentials (not exposed to client)
-process.env.HOMESERVER_ADMIN_URL = 'http://localhost:6288/generate_signup_token';
-process.env.HOMESERVER_ADMIN_PASSWORD = 'admin';
 process.env.PUBKY_RUNTIME_TESTNET = 'true';
 process.env.PUBKY_RUNTIME_PKARR_RELAYS = '["http://localhost:8080"]';
 process.env.PUBKY_RUNTIME_HOMESERVER = 'test-homeserver-key';
@@ -32,6 +30,7 @@ process.env.PUBKY_RUNTIME_MODERATED_TAGS = '["nudity"]';
 process.env.PUBKY_RUNTIME_EXCHANGE_RATE_API = 'https://api1.blocktank.to/api/fx/rates/btc';
 process.env.PUBKY_RUNTIME_HOMEGATE_URL = 'https://localhost:5000/';
 process.env.PUBKY_RUNTIME_DEFAULT_HTTP_RELAY = 'http://localhost:15412/inbox/';
+process.env.PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS = JSON.stringify([TEST_TRUSTED_ATTESTOR]);
 process.env.NEXT_PUBLIC_APP_VERSION = '0.0.0-test';
 
 // Chatwoot configuration (required for feedback feature)
@@ -45,11 +44,14 @@ process.env.SUPPORT_ACCOUNT_ID = '123';
 
 const { db } = await import('@/database/franky/franky');
 
-// Global snapshot serializer to normalize Radix UI generated IDs
-// This ensures snapshot tests are consistent across test runs
-// See: https://github.com/pubky/pubky-app/issues/1101
-const { radixIdSerializer } = await import('@/libs/utils/utils');
-expect.addSnapshotSerializer(radixIdSerializer);
+// Load @/config/posts before any test file registers a partial
+// `vi.mock('pubky-app-specs')` factory: the real module must already be in the
+// registry or those mocks strip exports such as `getValidMimeTypes` that
+// @/config/posts needs at import time. (Previously this happened as a side
+// effect of importing @/libs/utils/utils for the snapshot serializer.)
+await import('@/config/posts');
+
+const { resetAttestorKeyWindows } = await import('@/libs/commerce/attestor-key-windows');
 
 // Polyfill IntersectionObserver for jsdom
 class MockIntersectionObserver implements IntersectionObserver {
@@ -67,10 +69,7 @@ class MockIntersectionObserver implements IntersectionObserver {
 
 // Polyfill ResizeObserver for jsdom
 class MockResizeObserver implements ResizeObserver {
-  constructor(callback: ResizeObserverCallback) {
-    this.callback = callback;
-  }
-  private callback: ResizeObserverCallback;
+  constructor(_callback: ResizeObserverCallback) {}
   observe(): void {}
   unobserve(): void {}
   disconnect(): void {}
@@ -148,6 +147,7 @@ vi.mock('next/font/google', () => ({
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  resetAttestorKeyWindows();
 });
 
 beforeAll(async () => {

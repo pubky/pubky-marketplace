@@ -10,9 +10,36 @@ import { MarketplaceOrderActions } from '@/organisms/Marketplace/MarketplaceOrde
 // seller journeys submit, so each one needs a rendered baseline of its open
 // state — the order timelines only baseline the resulting card states.
 const fixtures = vi.hoisted(async () => {
-  const { createOrderFixture, createUsdtOrderFixture } = await import('@/test/fixtures/commerce/orders');
+  const { createOrderFixture, createUsdtOrderFixture, ORDER_FIXTURE_BUYER, ORDER_FIXTURE_SELLER } =
+    await import('@/test/fixtures/commerce/orders');
   const { REFUND_FIXTURE_ADDRESS } = await import('@/test/fixtures/commerce/usdt-refund.wire');
+  const { VRT_FROZEN_NOW_MS, HOUR_MS } = await import('@/test-utils/vrt.clock');
+  const listings = [
+    { id: 'boots', title: 'Handmade leather boots' },
+    { id: 'belt', title: 'Braided leather belt' },
+    { id: 'wallet', title: 'Slim leather wallet' },
+  ];
+  const threeItemLines = listings.map(({ id, title }) => ({
+    ...createOrderFixture('completed').lines[0],
+    listingAggregateId: `listing:${ORDER_FIXTURE_SELLER}_${id}`,
+    title,
+  }));
   return {
+    threeItemOrder: createOrderFixture('completed', { lines: threeItemLines, reviews: [] }),
+    threeItemReviewedOrder: createOrderFixture('completed', {
+      lines: threeItemLines,
+      reviews: listings.slice(0, 2).map(({ id }, index) => ({
+        id: `018f47d2-6a27-7c23-a62f-00000000070${index}`,
+        reviewerPubky: ORDER_FIXTURE_BUYER,
+        subjectPubky: ORDER_FIXTURE_SELLER,
+        listingAggregateId: `listing:${ORDER_FIXTURE_SELLER}_${id}`,
+        rating: index === 0 ? 5 : 3,
+        text: index === 0 ? 'Sturdy and comfortable.' : '',
+        shipping: 4,
+        communication: 5,
+        createdAt: new Date(VRT_FROZEN_NOW_MS - HOUR_MS).toISOString(),
+      })),
+    }),
     usdtRefundOrder: createUsdtOrderFixture('return_received', {
       refundDestination: {
         address: REFUND_FIXTURE_ADDRESS,
@@ -89,6 +116,58 @@ describe('Marketplace order action dialogs — visual regression', () => {
     );
     await openDialog(screen.getByRole('button', { name: 'Leave review' }));
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('dialog-order-review-open-desktop');
+  });
+
+  it('renders the per-item review form of a three-item order at desktop viewport', async () => {
+    const { threeItemOrder } = await fixtures;
+
+    const screen = await renderForVRT(
+      <ActionsHarness>
+        <MarketplaceOrderActions order={threeItemOrder} isBuyer canEditReview actOnOrder={async () => false} />
+      </ActionsHarness>,
+      { viewport: VRT_VIEWPORT_DESKTOP },
+    );
+    await openDialog(screen.getByRole('button', { name: 'Leave review' }));
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('dialog-order-review-items-desktop');
+  });
+
+  it('renders the per-item review form of a three-item order at mobile viewport', async () => {
+    const { threeItemOrder } = await fixtures;
+
+    const screen = await renderForVRT(
+      <ActionsHarness>
+        <MarketplaceOrderActions order={threeItemOrder} isBuyer canEditReview actOnOrder={async () => false} />
+      </ActionsHarness>,
+      { viewport: VRT_VIEWPORT_MOBILE },
+    );
+    await openDialog(screen.getByRole('button', { name: 'Leave review' }));
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('dialog-order-review-items-mobile');
+  });
+
+  it('renders the edit form of reviewed items with the seller ratings at desktop viewport', async () => {
+    const { threeItemReviewedOrder } = await fixtures;
+
+    const screen = await renderForVRT(
+      <ActionsHarness>
+        <MarketplaceOrderActions order={threeItemReviewedOrder} isBuyer canEditReview actOnOrder={async () => false} />
+      </ActionsHarness>,
+      { viewport: VRT_VIEWPORT_DESKTOP },
+    );
+    await openDialog(screen.getByRole('button', { name: 'Edit review' }));
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('dialog-order-review-edit-items-desktop');
+  });
+
+  it('renders the review-more-items form with the seller ratings kept at desktop viewport', async () => {
+    const { threeItemReviewedOrder } = await fixtures;
+
+    const screen = await renderForVRT(
+      <ActionsHarness>
+        <MarketplaceOrderActions order={threeItemReviewedOrder} isBuyer canEditReview actOnOrder={async () => false} />
+      </ActionsHarness>,
+      { viewport: VRT_VIEWPORT_DESKTOP },
+    );
+    await openDialog(screen.getByRole('button', { name: 'Review more items' }));
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('dialog-order-review-more-items-desktop');
   });
 
   it('renders the open shipment tracking dialog at desktop viewport', async () => {

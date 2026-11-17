@@ -11,7 +11,6 @@ import type {
   HostSessionSnapshot,
   TLoginWithEncryptedFileParams,
   TLoginWithMnemonicParams,
-  TSignUpParams,
 } from '@/controllers/auth/auth.types';
 import { broadcastSignedOut, bumpAuthEpoch, readAuthEpoch, subscribeSignedOut } from '@/controllers/auth/auth-epoch';
 import { withAuthFinalizationLock } from '@/controllers/auth/auth-finalization-lock';
@@ -22,6 +21,7 @@ import {
   shouldAbortIdentityPersist,
   shouldSkipDestructiveCleanup,
 } from '@/controllers/auth/auth-identity-guard';
+import { captureAuthScope, endAuthScope } from '@/controllers/auth/auth-scope';
 import { isGrantKeyCleanupPending } from '@/controllers/auth/grant-key-cleanup';
 import { ChatController } from '@/controllers/chat/chat';
 import { CommerceController } from '@/controllers/commerce/commerce';
@@ -29,6 +29,7 @@ import { NotificationCoordinator } from '@/coordinators/notifications/notificati
 import { StreamCoordinator } from '@/coordinators/streams/stream';
 import { TtlCoordinator } from '@/coordinators/ttl/ttl';
 import { clearDatabase, clearPrivateData } from '@/database/franky/franky.helpers';
+import { clearPubkyLocalStorage } from '@/libs/auth/clear-pubky-local-storage';
 import { readHostIdentity, writeHostIdentity } from '@/libs/auth/host-identity';
 import { HOSTED_SIGN_IN_MESSAGE } from '@/libs/auth/sign-in-error-copy';
 import { AppError } from '@/libs/error/error';
@@ -63,18 +64,24 @@ import {
 } from '@/stores/auth/auth.persisted';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import type { GrantSigner } from '@/stores/auth/auth.types';
+import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { useHomeStore } from '@/stores/home/home.store';
 import { useHotStore } from '@/stores/hot/hot.store';
 import { useLocalFilesStore } from '@/stores/localFiles/localFiles.store';
 import { useMigrationStore } from '@/stores/migration/migration.store';
 import { useNotificationStore } from '@/stores/notification/notification.store';
-import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
-import { AUTH_PERSIST_KEY, ONBOARDING_PERSIST_KEY } from '@/stores/persistedKeys';
+import { AUTH_PERSIST_KEY } from '@/stores/persistedKeys';
 import { useSearchStore } from '@/stores/search/search.store';
 import { useSettingsStore } from '@/stores/settings/settings.store';
 import type { SettingsState } from '@/stores/settings/settings.types';
 import { useSignInStore } from '@/stores/signIn/signIn.store';
+
+/** Forgets the buyer country in memory and removes its persisted copy from the device. */
+function resetBuyerCountry(): void {
+  useBuyerCountryStore.getState().reset();
+  useBuyerCountryStore.persist.clearStorage();
+}
 
 export class AuthController {
   private constructor() {} // Prevent instantiation
@@ -85,10 +92,6 @@ export class AuthController {
   private static hostTransition: Promise<HostSessionApplyStatus> = Promise.resolve('signed-out');
   private static hostReadAbort = new AbortController();
 
-  static isHostSessionMode(): boolean {
-    return this.hostMode;
-  }
-
   static setHostSessionMode(enabled: boolean): void {
     if (enabled === this.hostMode) return;
     this.hostMode = enabled;
@@ -97,6 +100,7 @@ export class AuthController {
     this.hostVersion++;
     this.hostSnapshotKey = null;
     this.logoutGeneration++;
+    endAuthScope();
     this.cancelAllAuthFlows();
     BootstrapApplication.cancelModerationFollow();
     useAuthStore.getState().setSession(null);
@@ -124,6 +128,7 @@ export class AuthController {
     const signal = this.hostReadAbort.signal;
     const version = ++this.hostVersion;
     this.logoutGeneration++;
+    if (snapshot.status === 'signed-out' || snapshot.pubky !== useAuthStore.getState().currentUserPubky) endAuthScope();
     this.cancelAllAuthFlows();
     BootstrapApplication.cancelModerationFollow();
     // Fence homeserver requests immediately; private cleanup is serialized below.
@@ -300,11 +305,11 @@ export class AuthController {
   }
 
   /**
-   * The Bitkit grant QR and the Pubky Passport button live beside the Ring QR
-   * on /sign-in, so each grant signer has its own slot: starting one never
-   * cancels another. A new flow for the same signer replaces its old one. All
-   * are cancelled when any sign-in completes, on local-state cleanup, and on
-   * cross-tab sign-out.
+   * The Pubky Passport button lives beside the Ring and Bitkit QR on /sign-in
+   * (one shared QR, held in the `ring` slot), so each grant signer has its own
+   * slot: starting one never cancels another. A new flow for the same signer
+   * replaces its old one. All are cancelled when any sign-in completes, on
+   * local-state cleanup, and on cross-tab sign-out.
    */
   private static activeGrantFlows = new Map<GrantSigner, { token: symbol; cancel: (() => void) | null }>();
 
@@ -331,6 +336,8 @@ export class AuthController {
   private static sessionFlowGeneration = new WeakMap<Session, number>();
   /** The signer whose grant ceremony produced a session, saved with its grant record. */
   private static grantSignerBySession = new WeakMap<Session, GrantSigner>();
+  /** The phone signer the user opened for the current sign-in QR, if any. */
+  private static signInSignerHint: 'ring' | 'bitkit' | null = null;
 
   /**
    * Single-run guard for cleanupLocalState: concurrent Controller invocations
@@ -522,9 +529,7 @@ export class AuthController {
           if (hasDiscoveredProfile) {
             // Bootstrap writes private data. A later account switch/logout
             // must clear those writes after it finishes, never before them.
-            await withAuthFinalizationLock(async () => {
-              if (isCurrent()) await this.hydrateMeImAlive({ pubky, isCurrent });
-            });
+            await this.hydrateInScope(pubky, isCurrent);
           }
           if (!isCurrent()) return { status: 'signed-out' };
           useAuthStore.getState().setHasProfile(hasDiscoveredProfile);
@@ -577,10 +582,8 @@ export class AuthController {
   }
 
   /**
-   * Gets a homeserver service instance using the secret key from the onboarding store.
-   * @param params - The authentication parameters
-   * @param params.keypair - The cryptographic keypair for the user
-   * @returns Configured homeserver service instance
+   * Signs in an existing account with the explicitly supplied recovery keypair.
+   * Returns whether the resulting session was accepted for the current auth lifetime.
    */
   private static async signIn({ keypair }: TKeypairParams): Promise<boolean> {
     this.assertStandaloneMode();
@@ -609,6 +612,23 @@ export class AuthController {
   }
 
   /**
+   * Hydrates under the auth finalization lock and the current auth scope. A
+   * sign-out or identity change that begins meanwhile stops it before its next
+   * write, without an error.
+   */
+  private static async hydrateInScope(pubky: Pubky, isCurrent: () => boolean): Promise<void> {
+    await withAuthFinalizationLock(async () => {
+      const scope = captureAuthScope();
+      const isHydrating = () => !scope.aborted && isCurrent();
+      try {
+        if (isHydrating()) await this.hydrateMeImAlive({ pubky, isCurrent: isHydrating, signal: scope });
+      } catch (error) {
+        if (!scope.aborted) throw error;
+      }
+    });
+  }
+
+  /**
    * Bootstrap data to initialize the application snapshot.
    * @param params - Object containing session and pubky data from authentication
    * @param params.session - The user session data
@@ -617,9 +637,11 @@ export class AuthController {
   private static async hydrateMeImAlive({
     pubky,
     isCurrent = () => useAuthStore.getState().currentUserPubky === pubky && Boolean(useAuthStore.getState().session),
+    signal,
   }: {
     pubky: Pubky;
     isCurrent?: () => boolean;
+    signal?: AbortSignal;
   }) {
     const signInStore = useSignInStore.getState();
     const {
@@ -645,21 +667,24 @@ export class AuthController {
     const localSettings = SettingsNormalizer.extractState(useSettingsStore.getState());
 
     // Sync settings from homeserver before bootstrap; errors are logged and fall back to local settings.
-    const remoteSettings = await this.syncSettings(pubky, localSettings);
+    const remoteSettings = await this.syncSettings(pubky, localSettings, signal);
 
     // Resolve final preferences: remote settings win if available, otherwise use local
     if (!isCurrent()) return;
     const preferences = (remoteSettings ?? localSettings).notifications;
     const allowedTypes = NotificationNormalizer.toEnabledTypes(preferences);
 
-    const notification = await BootstrapApplication.initialize({ pubky, lastReadUrl: url, allowedTypes }, onProgress);
+    const notification = await BootstrapApplication.initialize(
+      { pubky, lastReadUrl: url, allowedTypes, signal },
+      onProgress,
+    );
     if (!isCurrent()) return;
     useNotificationStore.getState().setState(notification);
 
     // Pull the private cross-device watchlist and merge it into local state.
     // Fire-and-forget: sign-in must not block on it, and a failed round
     // leaves the outbox job pending to heal on the next marketplace visit.
-    void CommerceController.syncWatchlist().catch((error) => {
+    void CommerceController.syncWatchlist({ signal }).catch((error) => {
       Logger.warn('Watchlist sync after bootstrap failed; it will retry on the next marketplace visit', { error });
     });
 
@@ -740,7 +765,7 @@ export class AuthController {
    * Session initialization shared by all sign-in flows; assumes the environment
    * guard already passed for this session.
    */
-  private static async completeAuthenticatedSession({ session }: THomeserverSessionResult, knownProfile?: boolean) {
+  private static async completeAuthenticatedSession({ session }: THomeserverSessionResult) {
     // Checked and claimed with no await in between: of two approvals that both
     // reach here, the first bumps the generation (cancelAllAuthFlows below)
     // and the second is discarded before it can touch any store.
@@ -852,14 +877,12 @@ export class AuthController {
       // the new grant. Its active reference is protected throughout retries.
       await this.settlePendingGrantKeyCleanup();
       if (!isCurrent()) throw createCanceledError();
-      const isSignedUp = knownProfile ?? (await AuthApplication.userIsSignedUp({ pubky }));
+      const isSignedUp = await AuthApplication.userIsSignedUp({ pubky });
       if (!isCurrent()) throw createCanceledError();
       signInStore.setProfileChecked(true); // Step 2 complete (40%)
 
       if (isSignedUp) {
-        await withAuthFinalizationLock(async () => {
-          if (isCurrent()) await this.hydrateMeImAlive({ pubky, isCurrent });
-        });
+        await this.hydrateInScope(pubky, isCurrent);
       }
 
       // Update hasProfile after bootstrap completes - triggers redirect via useAuthStatus
@@ -873,28 +896,6 @@ export class AuthController {
       }
       throw error;
     }
-  }
-
-  /**
-   * Signs up a new user with the homeserver using the provided secret key and signup token.
-   * @param params - Object containing secret key and signup token for registration
-   * @param params.secretKey - The secret key for the user
-   * @param params.signupToken - Invitation code for user registration
-   */
-  static async signUp({ secretKey, signupToken }: TSignUpParams) {
-    this.assertStandaloneMode();
-    const generationAtStart = this.authFlowGeneration;
-    const epochAtStart = readAuthEpoch();
-    const captured = this.captureAuthIdentity();
-    if (!(await this.takeLocalStateForCapturedIdentity(captured))) throw createCanceledError();
-    const keypair = Identity.keypairFromSecretKey(secretKey);
-    const result = await AuthApplication.signUp({ keypair, signupToken });
-    this.sessionFlowGeneration.set(result.session, generationAtStart);
-    this.grantEpochAtStart.set(result.session, epochAtStart);
-    this.grantSignerBySession.set(result.session, 'local-key');
-    // A newly created account has no profile yet. Do not make retaining its
-    // recovery key depend on a second profile lookup or social bootstrap.
-    await this.completeAuthenticatedSession(result, false);
   }
 
   /**
@@ -1001,6 +1002,7 @@ export class AuthController {
       }
       const prepare = async () => {
         if ([captured?.pubky, currentPubky, persistedPubky].some((pubky) => pubky && pubky !== newPubky)) {
+          endAuthScope();
           await clearDatabase();
           useMigrationStore.getState().reset();
           // Reset before bootstrap can upload local fallback preferences for
@@ -1012,6 +1014,10 @@ export class AuthController {
           useHotStore.getState().reset();
           useLocalFilesStore.getState().reset();
           useCommerceStore.getState().reset();
+          resetBuyerCountry();
+          for (const departed of new Set([captured?.pubky, currentPubky, persistedPubky])) {
+            if (departed && departed !== newPubky) clearPubkyLocalStorage(departed);
+          }
         }
         // Identity replacement is committed only after the new grant is saved.
         if (persistedPubky && persistedPubky !== newPubky) clearPersistedAuthIdentity();
@@ -1090,6 +1096,8 @@ export class AuthController {
     preservePrivateData: boolean;
     keepServicePubky: Pubky | null;
   }) {
+    // Nothing started for the departing identity may write after this wipe.
+    endAuthScope();
     BootstrapApplication.cancelModerationFollow();
     // Capture pubky before resetting auth store; used to scope marker cleanup.
     const pubky = useAuthStore.getState().currentUserPubky;
@@ -1136,28 +1144,24 @@ export class AuthController {
 
       this.cancelAllAuthFlows();
 
-      // Cancel and clear all query clients (nexus, homegate, exchangerate, and any future ones)
+      // Cancel and clear all query clients (nexus, exchangerate, and any future ones)
       clearAllQueryClients();
 
       // Reset all Zustand stores.
-      useOnboardingStore.getState().reset();
-      // reset() rewrites the onboarding persist blob with nulled secrets; remove
-      // the key outright so no onboarding residue (secret key, mnemonic, invite
-      // code) survives at rest on a shared device.
-      try {
-        globalThis.localStorage?.removeItem(ONBOARDING_PERSIST_KEY);
-      } catch {
-        // Storage unavailable (private mode) — nothing could have persisted.
-      }
       useAuthStore.getState().reset();
       useSignInStore.getState().reset();
       useLocalFilesStore.getState().reset();
       useCommerceStore.getState().reset();
+      // The buyer country is personal data of the signing-out account: gone from memory and from the device.
+      resetBuyerCountry();
       useHomeStore.getState().reset();
       useHotStore.getState().reset();
       useSearchStore.getState().reset();
       useNotificationStore.getState().reset();
       useSettingsStore.getState().reset();
+      // Entries keyed by the leaving pubky (orders checkpoint, own drops, feature-discovery flags). An
+      // account that stays signed in keeps them.
+      if (pubky && !preserveServiceSessions && !keepServicePubky) clearPubkyLocalStorage(pubky);
 
       // The only step that differs between a full sign-out wipe and the
       // no-identity restore path: the latter keeps the public browse cache.
@@ -1181,25 +1185,37 @@ export class AuthController {
   }
 
   /**
-   * Generates an authentication URL for external authentication flows.
-   * @returns Promise resolving to the generated authentication URL
+   * The one Shop sign-in grant (`pubkyauth://signin_grant`) that Pubky Ring and
+   * Bitkit both approve, shown as a single QR. The approved homeserver grant is
+   * saved to BrowserSessionStore before it becomes active.
+   *
+   * A QR does not say which app scanned it, so the session is recorded with the
+   * signer the user chose on this device through {@link noteSignInSigner} (the
+   * mobile Authorize buttons) and otherwise as `unknown`. Later marketplace
+   * approvals preselect Pubky Ring for `unknown`, the same link works in Bitkit,
+   * and the USDT copy stays neutral.
+   *
+   * @param options.withPrivKeys Omitted: follows the deploy's scoped-key switch.
+   *   `false` is the separate sign-in without keys for signers that cannot share them.
    */
-  static async getAuthUrl(): Promise<TGenerateAuthUrlResult> {
-    return this.beginGrantCeremony(() => AuthApplication.generateGrantAuthUrl(), 'ring');
-  }
-
-  /**
-   * Bitkit has its own grant QR slot beside Ring. The approved homeserver
-   * grant is saved to BrowserSessionStore before it becomes active.
-   */
-  static async getGrantAuthUrl(options?: { withPrivKeys?: boolean }): Promise<TGenerateAuthUrlResult> {
-    return await this.beginGrantCeremony(
+  static async getAuthUrl(options?: { withPrivKeys?: boolean }): Promise<TGenerateAuthUrlResult> {
+    this.signInSignerHint = null;
+    return this.beginGrantCeremony(
       () =>
         options === undefined
           ? AuthApplication.generateGrantAuthUrl()
           : AuthApplication.generateGrantAuthUrl(undefined, options),
-      'bitkit',
+      'ring',
+      () => this.signInSignerHint ?? 'unknown',
     );
+  }
+
+  /**
+   * Records which phone signer the user opened for the sign-in grant on this
+   * device. The latest choice wins; a new {@link getAuthUrl} clears it.
+   */
+  static noteSignInSigner(signer: 'ring' | 'bitkit'): void {
+    this.signInSignerHint = signer;
   }
 
   /**
@@ -1223,6 +1239,7 @@ export class AuthController {
   private static async beginGrantCeremony(
     generate: () => Promise<TGenerateAuthUrlResult>,
     signer: GrantSigner,
+    recordedSigner: () => GrantSigner = () => signer,
   ): Promise<TGenerateAuthUrlResult> {
     this.assertStandaloneMode();
     // Retry only retired Shop records and abandoned Shop flow keys.
@@ -1267,7 +1284,7 @@ export class AuthController {
           throw error;
         }
         this.grantEpochAtStart.set(session, epochAtStart);
-        this.grantSignerBySession.set(session, signer);
+        this.grantSignerBySession.set(session, recordedSigner());
         return session;
       });
 
@@ -1376,15 +1393,6 @@ export class AuthController {
   }
 
   /**
-   * Generates a signup grant URL for Pubky Ring authorization.
-   * @param inviteCode - The invite code for signup
-   * @returns Promise resolving to the generated signup authentication URL
-   */
-  static async getSignupAuthUrl(inviteCode: string): Promise<TGenerateAuthUrlResult> {
-    return this.beginGrantCeremony(() => AuthApplication.generateSignupAuthUrl(inviteCode), 'ring');
-  }
-
-  /**
    * Logs out the current user from both the homeserver and local application state.
    */
   static async logout() {
@@ -1395,6 +1403,7 @@ export class AuthController {
     // Bump before any await so an in-flight restore (sharing the Application
     // singleton promise) can tell its restored-branch result is stale.
     this.logoutGeneration += 1;
+    endAuthScope();
     this.cancelAllAuthFlows();
     BootstrapApplication.cancelModerationFollow();
     // Captured before any await: a concurrent different-account sign-in must
@@ -1591,6 +1600,7 @@ export class AuthController {
     const { session, grantSessionRecordId } = useAuthStore.getState();
     if (session && !AuthApplication.isGrantSession(session)) return;
     if (!session && !grantSessionRecordId && !useAuthStore.getState().currentUserPubky) return;
+    endAuthScope();
     const captured = this.captureAuthIdentity();
     const capturedRecordIds = this.captureLogoutRecords(captured.pubky, grantSessionRecordId);
     useAuthStore.getState().setSession(null);
@@ -1637,13 +1647,26 @@ export class AuthController {
     const pubky = authStore.selectCurrentUserPubky();
     const session = authStore.session;
     const generation = this.logoutGeneration;
+    const scope = captureAuthScope();
     const isCurrent = () =>
-      generation === this.logoutGeneration && useAuthStore.getState().session === session && Boolean(session);
+      !scope.aborted &&
+      generation === this.logoutGeneration &&
+      useAuthStore.getState().session === session &&
+      Boolean(session);
     // Wait 5 seconds before bootstrap to let Nexus index the user
     Logger.info(`Waiting 5 seconds to index ${pubky} profile.json in Nexus before bootstrap...`);
     await sleep(5000);
     if (!isCurrent()) return;
-    await this.hydrateMeImAlive({ pubky, isCurrent });
+    try {
+      // Bootstrap writes private data. A sign-out takes this lock before its
+      // wipe, so anything written before the scope ended is cleared after it.
+      await withAuthFinalizationLock(async () => {
+        if (isCurrent()) await this.hydrateMeImAlive({ pubky, isCurrent, signal: scope });
+      });
+    } catch (error) {
+      if (scope.aborted) return;
+      throw error;
+    }
     if (!isCurrent()) return;
     authStore.setHasProfile(true);
   }
@@ -1653,29 +1676,16 @@ export class AuthController {
    * Returns remote settings if newer, null otherwise.
    * All failures are treated as non-blocking and fall back to local settings.
    */
-  private static async syncSettings(pubky: Pubky, localSettings: SettingsState): Promise<SettingsState | null> {
+  private static async syncSettings(
+    pubky: Pubky,
+    localSettings: SettingsState,
+    signal?: AbortSignal,
+  ): Promise<SettingsState | null> {
     try {
-      return await SettingsApplication.initializeSettings(pubky, localSettings);
+      return await SettingsApplication.initializeSettings(pubky, localSettings, signal);
     } catch (error) {
       Logger.error('Failed to initialize settings during bootstrap', { error, pubky });
       return null;
     }
-  }
-
-  /**
-   * Generates a signup token for user registration. This is just for testing environments
-   * @returns Promise resolving to the generated signup token
-   */
-  static async generateSignupToken() {
-    return await AuthApplication.generateSignupToken();
-  }
-
-  /**
-   * Verifies an invite code (signup token) against the homeserver before applying it.
-   * @param inviteCode - The invite code to verify
-   * @returns `'valid'`, `'used'`, or `'invalid'` depending on the homeserver response
-   */
-  static async verifySignupToken(inviteCode: string) {
-    return await AuthApplication.verifySignupToken(inviteCode);
   }
 }

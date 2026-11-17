@@ -5,8 +5,8 @@ export { MarketplaceOrders as default } from '@/templates/Marketplace/Marketplac
 
 export function generateMetadata() {
   return gatedMarketplaceMetadata(
-    'Orders | Pubky Marketplace',
-    'Track your Pubky Marketplace purchases and sales.',
+    'Orders | Pubky Market',
+    'Track your Pubky Market purchases and sales.',
     MARKETPLACE_ROUTES.ORDERS,
   );
 }

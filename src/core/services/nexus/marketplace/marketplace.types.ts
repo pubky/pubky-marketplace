@@ -35,15 +35,53 @@ export type NexusListingState = 'active' | 'paused' | 'ended' | 'removed';
  * verified and labeled-unverified alike (ratified D5). Absence of the whole
  * object means "no indexed reviews", the explicit New-seller state — never
  * to be rendered as 0.0.
+ *
+ * `buckets` and `unverified_count` carry the counting rules v2 figures
+ * (index release IX2); older indexes omit both.
  */
 export type NexusReputationSnippet = {
   avg: number;
   count: number;
   verified_count: number;
+  buckets?: Record<string, NexusReputationBucket>;
+  unverified_count?: number;
+};
+
+/**
+ * The counting rules v2 figures of one set of counted reviews: one
+ * attestor's verified reviews of a scope that carry an attestation `iat`,
+ * are not superseded and are not excluded by moderation (a trust bucket), or
+ * the exact figure over `attestors=` windows. `orders` counts distinct
+ * `(attestor, order_ref)`; `histogram[0]` holds 1-star counts. The
+ * `seller_*` fields appear only on the buyer-reviewing-seller subject scope.
+ */
+export type NexusReputationBucket = {
+  orders: number;
+  buyers: number;
+  sum_buyer_means: number;
+  weighted_sum: number;
+  weight_total: number;
+  histogram: [number, number, number, number, number];
+  first_iat: number | null;
+  last_iat: number | null;
+  seller_buyers?: number;
+  sum_seller_buyer_means?: number;
 };
 
 /** Review direction as serialized by pubky-app-specs. */
 export type NexusReviewRole = 'buyer_reviewing_seller' | 'seller_reviewing_buyer';
+
+/**
+ * How the index's moderation treats a review. `text_hidden`: the moderator
+ * hid the text and the review still counts. `excluded`: the review is fraud
+ * and leaves every aggregate. `reason` is the moderator's label.
+ */
+export type NexusReviewModerationState = 'text_hidden' | 'excluded';
+
+export type NexusReviewModeration = {
+  state: NexusReviewModerationState;
+  reason: string;
+};
 
 /**
  * One indexed marketplace review as served inside `GET v0/shop/{seller}/reviews`
@@ -72,11 +110,23 @@ export type NexusReviewDetails = {
   verified: boolean;
   attestor_id: string | null;
   order_ref: string | null;
+  /**
+   * The attestation's `iat` (seconds) and price weight (1–5); `null` when
+   * the review is unverified. Indexes before IX2 omit both.
+   */
+  iat?: number | null;
+  price_weight?: number | null;
   edited_late: boolean;
   created_at: string;
   updated_at: string;
   revision: number;
   indexed_at: number;
+  /**
+   * `null` when the review is not moderated; `text` is `""` whenever it is
+   * set. Indexes older than review moderation omit the field, which means
+   * the same as `null`.
+   */
+  moderation?: NexusReviewModeration | null;
 };
 
 /**
@@ -103,6 +153,54 @@ export type NexusReviewView = {
 };
 
 /**
+ * The order of a review list (index release IX4): `newest` is newest indexed
+ * first (the default), `value` the highest `price_weight` first, then the
+ * rating in either direction; ties go newest first.
+ */
+export type NexusReviewSort = 'newest' | 'value' | 'rating_desc' | 'rating_asc';
+
+/** The viewer's follow reach a review stream keeps reviewers from (IX4). */
+export type NexusReviewReach = 'following' | 'friends' | 'wot';
+
+/**
+ * The reviewer filters of a review stream (IX4), shared by the seller and
+ * listing streams. `reach` and `tagged_by_viewer` need `viewer_id` (the index
+ * answers 400 without it); `depth` (1 to 3, default 2) needs `reach=wot`;
+ * `tagged_by_viewer` takes 1 to 5 comma-separated labels and combines with
+ * `reach` (both must hold). `attestors` is `<pubky>:<from>:<until>,…` and
+ * filters the list itself to reviews those windows cover.
+ */
+export type NexusReviewFilterParams = {
+  viewer_id?: string;
+  reach?: NexusReviewReach;
+  depth?: number;
+  tagged_by_viewer?: string;
+  attestors?: string;
+};
+
+/**
+ * What an index served over every match of a filtered or sorted review
+ * stream, under counting rules v2 (IX4). The seller-scope fields come with
+ * the seller stream only. The Shop's sort does not read it: header figures
+ * stay the counted figures of the whole scope. A reviewer filter does: the
+ * header then shows these figures.
+ */
+export type NexusReviewsMatched = {
+  buyers: number;
+  orders: number;
+  avg: number | null;
+  seller_buyers?: number;
+  seller_avg?: number | null;
+};
+
+/**
+ * A review stream answer: a bare list while the request carries no filter or
+ * sort parameter (and always from an index before IX4), the `{reviews,
+ * matched}` envelope once one is present.
+ */
+export type NexusReviewStream = NexusReviewView[] | { reviews: NexusReviewView[]; matched: NexusReviewsMatched };
+
+/**
  * The full reputation aggregate from `GET v0/shop/{seller}/reputation`.
  * `histogram[0]` holds 1-star counts. `attestors` breaks verified counts
  * down per attestor pubky so consumers can apply their own trust list.
@@ -121,6 +219,10 @@ export type NexusReputationSummary = {
   edited_late_count: number;
   attestors: Record<string, number>;
   last_reviewed_at: string | null;
+  buckets?: Record<string, NexusReputationBucket>;
+  unverified_count?: number;
+  /** The exact figure over the request's `attestors=` windows; present only with the parameter. */
+  scoped?: NexusReputationBucket;
 };
 
 export type NexusListingCondition = 'new' | 'like_new' | 'excellent' | 'good' | 'fair' | 'for_parts';
@@ -196,6 +298,12 @@ export type NexusListingDetails = {
   reputation?: NexusReputationSnippet;
   /** Listing-scoped reputation (buyer reviews of this listing). Same absence semantics. */
   listing_reputation?: NexusReputationSnippet;
+  /**
+   * Single-listing projection only, with `attestors=`: the exact figures of
+   * the seller's and of this listing's counted reviews inside the windows.
+   */
+  scoped_reputation?: NexusReputationBucket;
+  scoped_listing_reputation?: NexusReputationBucket;
 };
 
 /**
@@ -232,6 +340,8 @@ export type TListingStreamParams = {
 export type TListingDetailsParams = {
   seller_id: string;
   listing_id: string;
+  /** Trusted attestor windows (`attestorWindowsParam`); adds the `scoped_*` figures. */
+  attestors?: string;
 };
 
 /**
@@ -269,12 +379,19 @@ export type TShopReviewsParams = {
   role?: NexusReviewRole;
   skip?: number;
   limit?: number;
-};
+  sort?: NexusReviewSort;
+} & NexusReviewFilterParams;
 
 /** Path/query params for `GET v0/shop/{seller_id}/reputation`. */
 export type TShopReputationParams = {
   seller_id: string;
   role?: NexusReviewRole;
+  /**
+   * `<pubky>:<from>:<until>,…` (seconds over the attestation `iat`, either
+   * end may be empty, at most 20 entries; empty is a 400). Adds `scoped`.
+   * Indexes before IX2 ignore it.
+   */
+  attestors?: string;
 };
 
 /** Path/query params for `GET v0/listing/{seller_id}/{listing_id}/reviews`. */
@@ -283,4 +400,62 @@ export type TListingReviewsParams = {
   listing_id: string;
   skip?: number;
   limit?: number;
+  sort?: NexusReviewSort;
+} & NexusReviewFilterParams;
+
+/** The kinds of outcome an attestor records against an attested order. */
+export type NexusAttestorOutcomeKind = 'refunded' | 'returned';
+
+/**
+ * An attestor's profile as `GET v0/marketplace/attestor/{attestor_id}/profile`
+ * serves it (index release IX5). `record` is the profile exactly as
+ * published, `proof` included, and verifies offline against the profile URI of
+ * `attestor_id`. `key_windows` is the index's reading of the record's `keys`
+ * (whole seconds, rounded up); the Shop narrows trust from the verified
+ * `record`, never from this derived field.
+ */
+export type NexusAttestorProfile = {
+  attestor_id: string;
+  uri: string;
+  key_windows: {
+    pubky: string;
+    valid_from: number;
+    valid_until: number | null;
+    compromised_from: number | null;
+  }[];
+  record: unknown;
+  indexed_at: number;
 };
+
+/**
+ * One attestor annotation of an attested order, as an entry of
+ * `GET v0/marketplace/attestor/{attestor_id}/annotations`. `record` is the
+ * annotation exactly as published and verifies offline; the Shop reads the
+ * outcomes from it rather than from the derived `outcomes`.
+ */
+export type NexusAttestorAnnotation = {
+  attestor_id: string;
+  order_ref: string;
+  uri: string;
+  outcomes: { kind: NexusAttestorOutcomeKind; on: string }[];
+  revision: number;
+  record: unknown;
+  indexed_at: number;
+};
+
+/** Path params for `GET v0/marketplace/attestor/{attestor_id}/profile`. */
+export type TAttestorProfileParams = {
+  attestor_id: string;
+};
+
+/**
+ * Path/query params for `GET v0/marketplace/attestor/{attestor_id}/annotations`:
+ * at most 100 order refs per request, answered as an array aligned with them.
+ */
+export type TAttestorAnnotationsParams = {
+  attestor_id: string;
+  order_refs: readonly string[];
+};
+
+/** Path params excluded from attestor endpoint query strings. */
+export const MARKETPLACE_ATTESTOR_PATH_PARAMS = ['attestor_id'];

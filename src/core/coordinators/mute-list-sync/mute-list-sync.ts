@@ -1,4 +1,4 @@
-import { AUTH_ROUTES } from '@/app/routes';
+import { ACCOUNT_ROUTES, AUTH_ROUTES } from '@/app/routes';
 import {
   MUTE_SYNC_CURSOR_STORAGE_PREFIX,
   MUTE_SYNC_DEBOUNCE_MS,
@@ -10,6 +10,7 @@ import { routeToRegex } from '@/coordinators/base/coordinators.utils';
 import { Logger } from '@/libs/logger/logger';
 import { getNotificationRespectPageVisibility } from '@/libs/runtime-config/runtime-config';
 import type { Pubky } from '@/models/models.types';
+import { signInOrProfileChanged } from '@/stores/auth/auth.change';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 type PendingMuteRefresh = {
@@ -22,7 +23,7 @@ type PendingMuteRefresh = {
  *
  * Policy (aligned with {@link NotificationCoordinator}):
  * - Requires authenticated session with profile and current {@link Pubky}.
- * - Disabled on onboarding / sign-in / logout routes.
+ * - Disabled on account maintenance / sign-in / logout routes.
  * - Uses runtime notification visibility config: when true, pauses the SDK stream while the tab is hidden.
  * - Route updates from the app shell (`CoordinatorsManager`) only re-open the homeserver SSE when crossing disabled vs allowed
  *   routes (or on first pathname); moving between allowed routes keeps the existing stream to avoid churn.
@@ -33,7 +34,7 @@ export class MuteListSyncCoordinator {
   private static instance: MuteListSyncCoordinator | null = null;
 
   private readonly disabledRoutes = [
-    routeToRegex('/onboarding'),
+    routeToRegex(ACCOUNT_ROUTES.COMPLETE_PROFILE),
     routeToRegex(AUTH_ROUTES.LOGOUT),
     routeToRegex(AUTH_ROUTES.SIGN_IN),
   ];
@@ -110,11 +111,7 @@ export class MuteListSyncCoordinator {
 
   private setupListeners(): void {
     this.authStoreUnsubscribe = useAuthStore.subscribe((state, prevState) => {
-      const isAuthenticated = state.selectIsAuthenticated();
-      const wasAuthenticated = prevState.selectIsAuthenticated();
-      const profileChanged = state.hasProfile !== prevState.hasProfile;
-      const userChanged = state.currentUserPubky !== prevState.currentUserPubky;
-      if (isAuthenticated !== wasAuthenticated || profileChanged || userChanged) {
+      if (signInOrProfileChanged(state, prevState) || state.currentUserPubky !== prevState.currentUserPubky) {
         this.evaluateStreaming();
       }
     });
@@ -169,7 +166,7 @@ export class MuteListSyncCoordinator {
     });
   }
 
-  /** True for onboarding and auth routes where the mute event stream must not run. */
+  /** True for account maintenance and auth routes where the mute event stream must not run. */
   private isRouteStreamDisabled(route: string): boolean {
     return this.disabledRoutes.some((pattern) => pattern.test(route));
   }

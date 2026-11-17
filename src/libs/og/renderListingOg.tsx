@@ -111,7 +111,7 @@ export async function renderListingOg({
                 color: OG_TOKENS.mutedForeground,
               }}
             >
-              PUBKY MARKETPLACE
+              PUBKY MARKET
             </div>
             <div
               style={{

@@ -12,11 +12,19 @@ export class TtlController {
     return await TtlApplication.findStaleUsersByIds(params);
   }
 
-  static async forceRefreshPostsByIds(params: { postIds: string[]; viewerId: Pubky }): Promise<void> {
+  static async forceRefreshPostsByIds(params: {
+    postIds: string[];
+    viewerId: Pubky;
+    signal?: AbortSignal;
+  }): Promise<void> {
     return await TtlApplication.forceRefreshPostsByIds(params);
   }
 
-  static async forceRefreshUsersByIds(params: { userIds: Pubky[]; viewerId?: Pubky }): Promise<void> {
+  static async forceRefreshUsersByIds(params: {
+    userIds: Pubky[];
+    viewerId?: Pubky;
+    signal?: AbortSignal;
+  }): Promise<void> {
     return await TtlApplication.forceRefreshUsersByIds(params);
   }
 }

@@ -67,11 +67,6 @@ describe('LocalStreamUsersService', () => {
     expect(result!.stream).toEqual(expectedUserIds);
   };
 
-  const verifyStreamDoesNotExist = async (customStreamId?: string) => {
-    const result = await UserStreamModel.findById(customStreamId || streamId);
-    expect(result).toBeNull();
-  };
-
   const verifyUserPersisted = async (userId: Pubky, expectedName: string) => {
     const details = await UserDetailsModel.findById(userId);
     expect(details).toBeTruthy();
@@ -191,25 +186,6 @@ describe('LocalStreamUsersService', () => {
 
       expect(result).toBeTruthy();
       expect(result!.stream).toEqual(userIds);
-    });
-  });
-
-  describe('deleteById', () => {
-    it('should delete an existing stream', async () => {
-      const userIds: Pubky[] = ['follower-1', 'follower-2'];
-
-      await createStream(userIds);
-      await verifyStream(userIds);
-
-      await LocalStreamUsersService.deleteById(streamId);
-
-      await verifyStreamDoesNotExist();
-    });
-
-    it('should not throw error when deleting non-existent stream', async () => {
-      await expect(LocalStreamUsersService.deleteById(NON_EXISTENT_STREAM_ID)).resolves.not.toThrow();
-
-      await verifyStreamDoesNotExist(NON_EXISTENT_STREAM_ID);
     });
   });
 

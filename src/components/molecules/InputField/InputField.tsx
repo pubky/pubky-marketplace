@@ -45,6 +45,7 @@ interface InputFieldProps {
   'aria-activedescendant'?: string;
   'aria-autocomplete'?: 'none' | 'inline' | 'list' | 'both';
   'aria-haspopup'?: React.AriaAttributes['aria-haspopup'];
+  'aria-required'?: boolean;
 }
 export function InputField({
   id,
@@ -82,13 +83,14 @@ export function InputField({
   'aria-activedescendant': ariaActiveDescendant,
   'aria-autocomplete': ariaAutocomplete,
   'aria-haspopup': ariaHasPopup,
+  'aria-required': ariaRequired,
 }: InputFieldProps) {
   const resolvedLoadingText = loadingText ?? 'Loading...';
   const containerClasses = variant === 'dashed' && FORM_FIELD_SURFACE_CLASSES;
   const statusClasses = {
     default: '',
     success: 'border-brand text-brand',
-    error: 'border-red-500 text-red-500',
+    error: 'border-red-500 text-error-foreground',
   };
   const sizeClasses = {
     sm: 'h-10 text-sm',
@@ -98,8 +100,8 @@ export function InputField({
   const messageClasses = {
     default: 'text-muted-foreground',
     info: 'text-blue-500',
-    alert: 'text-yellow-500',
-    error: 'text-red-500',
+    alert: 'text-yellow-500 [.light_&]:text-yellow-700',
+    error: 'text-error-foreground',
     success: 'text-brand',
   } as const;
   return (
@@ -131,7 +133,7 @@ export function InputField({
           id={id}
           name={name}
           type={type}
-          className={cn('w-full border-none !bg-transparent', inputClassName)}
+          className={cn('w-full border-none !bg-transparent [.light_&]:shadow-none', inputClassName)}
           value={loading ? resolvedLoadingText : value}
           placeholder={placeholder}
           disabled={disabled || loading}
@@ -150,6 +152,7 @@ export function InputField({
           aria-activedescendant={ariaActiveDescendant}
           aria-autocomplete={ariaAutocomplete}
           aria-haspopup={ariaHasPopup}
+          aria-required={ariaRequired}
           aria-invalid={status === 'error'}
           aria-describedby={message && id ? `${id}-message` : undefined}
           data-cy={dataCy}

@@ -1,4 +1,3 @@
-import { Logger } from '@/libs/logger/logger';
 import { HotTagsModel } from '@/models/hot/hot';
 import type { NexusHotTag } from '@/services/nexus/nexus.types';
 
@@ -27,21 +26,5 @@ export class LocalHotService {
    */
   static async findById(id: string): Promise<HotTagsModel | null> {
     return await HotTagsModel.findById(id);
-  }
-
-  /**
-   * Delete hot tags from cache
-   * @param id - Composite ID to delete
-   */
-  static async deleteById(id: string): Promise<void> {
-    await HotTagsModel.deleteById(id);
-  }
-
-  /**
-   * Clear all cached hot tags
-   */
-  static async clear(): Promise<void> {
-    await HotTagsModel.clear();
-    Logger.info('Cleared all hot tags from cache');
   }
 }

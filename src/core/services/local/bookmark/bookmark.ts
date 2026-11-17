@@ -104,15 +104,6 @@ export class LocalBookmarkService {
   }
 
   /**
-   * Get all bookmarked post IDs (unordered).
-   *
-   * @returns Array of bookmarked post IDs
-   */
-  static async getAllBookmarks(): Promise<string[]> {
-    return await BookmarkModel.findAll();
-  }
-
-  /**
    * Get all bookmarked post IDs sorted by `created_at` descending
    * (most recently bookmarked first).
    *

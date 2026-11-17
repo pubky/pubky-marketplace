@@ -79,7 +79,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
   const marketplaceAttention = useMarketplaceNavAttention();
   const accountUnread = unreadNotifications + unreadMessages;
   const localAvatarUrl = useLocalFilesStore((state) => state.profile);
-  const { isKeyboardVisible, keyboardOffset } = useKeyboardOffset();
+  const { isKeyboardVisible } = useKeyboardOffset();
   const { markCollectionsNavSeen } = useCollectionsNavDiscovery();
   const isEmbedded = useIsEmbedded();
 
@@ -99,7 +99,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
             href: APP_ROUTES.MARKETPLACE,
             activePrefix: APP_ROUTES.MARKETPLACE,
             icon: Store,
-            label: socialHostUrl ? 'Shop' : 'Marketplace',
+            label: socialHostUrl ? 'Shop' : 'Market',
           },
         ]
       : [];
@@ -134,7 +134,8 @@ export function MobileFooter({ className }: MobileFooterProps) {
     : socialNavItems;
   // Hide footer for guests only on non-explore routes. Core explore and dynamic public
   // routes (/home, /post/..., /profile/...) use the public explore footer.
-  if (isEmbedded || (!isAuthenticated && !isPublicExploreRoute)) {
+  // While typing the nav would float on the keyboard and take the space the input needs.
+  if (isEmbedded || isKeyboardVisible || (!isAuthenticated && !isPublicExploreRoute)) {
     return null;
   }
 
@@ -142,17 +143,10 @@ export function MobileFooter({ className }: MobileFooterProps) {
     <Container
       overrideDefaults
       className={cn(
-        'fixed bottom-0 z-40 w-full overflow-x-auto bg-gradient-to-t from-background via-background/95 to-transparent px-3 py-4 transition-transform duration-75 lg:hidden',
+        'fixed bottom-0 z-40 w-full overflow-x-auto bg-gradient-to-t from-background via-background/95 to-transparent px-3 py-4 lg:hidden',
         socialHostUrl && 'px-1 min-[360px]:px-3',
         className,
       )}
-      style={
-        isKeyboardVisible && keyboardOffset > 0
-          ? {
-              transform: `translateY(-${keyboardOffset}px)`,
-            }
-          : undefined
-      }
     >
       <Container
         overrideDefaults
@@ -192,7 +186,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
                   ? 'flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full p-2 transition-all sm:p-3'
                   : 'rounded-full p-3 transition-all',
                 itemBadgeCount > 0 && 'relative inline-flex',
-                itemIsActive ? 'bg-secondary' : 'border border-border bg-white/5 backdrop-blur-sm hover:bg-white/10',
+                itemIsActive ? 'bg-secondary' : 'border border-border bg-glass backdrop-blur-sm hover:bg-glass-hover',
               )}
             >
               <Icon className="h-6 w-6" />
@@ -203,7 +197,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
                   variant="secondary"
                 >
                   <Typography
-                    className={cn('font-semibold text-primary-foreground', itemBadgeCount > 21 && 'text-xs')}
+                    className={cn('font-semibold text-bright-fill-foreground', itemBadgeCount > 21 && 'text-xs')}
                     size="xs"
                   >
                     {itemBadgeCount > 21 ? '21+' : itemBadgeCount}
@@ -255,7 +249,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
                     variant="secondary"
                   >
                     <Typography
-                      className={cn('font-semibold text-primary-foreground', accountUnread > 21 && 'text-xs')}
+                      className={cn('font-semibold text-bright-fill-foreground', accountUnread > 21 && 'text-xs')}
                       size="xs"
                     >
                       {accountUnread > 21 ? '21+' : accountUnread}
@@ -308,7 +302,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
             variant="secondary"
             size="icon"
             className={cn(
-              'items-center justify-center border bg-white/5',
+              'items-center justify-center border bg-glass',
               socialHostUrl ? 'size-11 shrink-0 sm:size-12' : 'size-12',
             )}
             aria-label="Join Pubky"

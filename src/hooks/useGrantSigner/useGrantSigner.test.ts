@@ -15,7 +15,7 @@ describe('readGrantSigner', () => {
     expect(readGrantSigner({ session: { grant: {} }, grantSigner: null })).toBe('host');
   });
 
-  it.each(['ring', 'bitkit', 'passport', 'local-key', 'host'] as const)(
+  it.each(['ring', 'bitkit', 'passport', 'local-key', 'host', 'unknown'] as const)(
     'preserves the recorded %s signer',
     (signer) => {
       expect(readGrantSigner({ session: { grant: {} }, grantSigner: signer })).toBe(signer);

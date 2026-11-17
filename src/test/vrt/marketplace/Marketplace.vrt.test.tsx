@@ -164,8 +164,10 @@ vi.mock('@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl', async () => {
   return createMarketplaceMediaHooks(() => null);
 });
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main className="w-full py-6">{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => (
+    <main className="w-full py-6">{children}</main>
+  ),
 }));
 
 describe('Marketplace — visual regression', () => {
@@ -197,6 +199,24 @@ describe('Marketplace — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('marketplace-mobile');
   });
 
+  it('renders the sandbox catalog in light mode at desktop viewport', async () => {
+    const screen = await renderForVRT(<Marketplace />, {
+      viewport: VRT_VIEWPORT_DESKTOP,
+      disableHover: true,
+      theme: 'light',
+    });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('marketplace-light-desktop');
+  });
+
+  it('renders the sandbox catalog in light mode at mobile viewport', async () => {
+    const screen = await renderForVRT(<Marketplace />, {
+      viewport: VRT_VIEWPORT_MOBILE,
+      disableHover: true,
+      theme: 'light',
+    });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('marketplace-light-mobile');
+  });
+
   it('renders the catalog filtered to PayPal sellers at desktop viewport', async () => {
     const { listings } = await fixtures;
     const { useCommerceStore } = await import('@/stores/commerce/commerce.store');
@@ -226,6 +246,10 @@ describe('Marketplace — visual regression', () => {
     );
 
     const screen = await renderForVRT(<Marketplace />, { viewport: VRT_VIEWPORT_MOBILE, disableHover: true });
+    // Phones fold the dropdown filters behind the Filters toggle, which counts the active one.
+    await expect.element(screen.getByTestId('marketplace-filters-toggle')).toHaveAccessibleName('Filters, 1 active');
+    // disableHover lays a pointer shield over the page, so click through the DOM.
+    (screen.getByTestId('marketplace-filters-toggle').element() as HTMLElement).click();
     await expect.element(screen.getByRole('combobox', { name: 'Payment method' })).toHaveTextContent('Bitcoin');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('marketplace-payment-filter-bitcoin-mobile');
   });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { CheckCircle, Circle, Key, Loader2, RefreshCw } from 'lucide-react';
 import { BasePathImage as Image } from '@/atoms/BasePathImage/BasePathImage';
 import { Button } from '@/atoms/Button/Button';
@@ -22,13 +22,12 @@ import { PageTitle } from '@/molecules/Page/Page';
 import { PassportSignInButton } from '@/molecules/PassportSignInButton/PassportSignInButton';
 import { QrCodeSlot } from '@/molecules/QrCodeSlot/QrCodeSlot';
 import {
+  SIGN_IN_SIGNER_COPY,
   SIGNER_AUTH_COPY,
   SignerAuthOption,
   SignerAuthorizeButton,
 } from '@/molecules/SignerAuthOption/SignerAuthOption';
-import { SignerToggle } from '@/molecules/SignerToggle/SignerToggle';
-import { toast } from '@/molecules/Toaster/use-toast';
-import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
+import { toast } from '@/molecules/Toaster/toast';
 import { useSignInStore } from '@/stores/signIn/signIn.store';
 import type { SignInState } from '@/stores/signIn/signIn.types';
 
@@ -119,32 +118,17 @@ type TSignerAuth = ReturnType<typeof useMobileAuth>;
 
 const SIGNERS = SIGNER_AUTH_COPY.signIn;
 
-const SignInQrOption = ({ signer, auth }: { signer: keyof typeof SIGNERS; auth: TSignerAuth }) => (
-  <SignerAuthOption
-    copy={SIGNERS[signer]}
-    auth={auth}
-    onCopied={() => copyWithToast(auth.copyAuthUrl)}
-    testId={`sign-in-${signer}-option`}
-    qrOnly
-  />
-);
-
-const SignInAuthorizeButton = ({ signer, auth }: { signer: keyof typeof SIGNERS; auth: TSignerAuth }) => (
-  <SignerAuthorizeButton
-    copy={SIGNERS[signer]}
-    auth={auth}
-    testId={signer === 'ring' ? 'button' : 'sign-in-grant-button'}
-    authorizeLabel="Authorize"
-  />
-);
-
-/** Keep both existing approval flows alive while displaying the selected signer. */
-const SignInBothSigners = ({ ring }: { ring: TSignerAuth }) => {
-  const [withoutKeys, setWithoutKeys] = useState(false);
-  const bitkit = useMobileAuth(withoutKeys ? { type: 'grant', withPrivKeys: false } : { type: 'grant' });
-  const [signer, setSigner] = useState<keyof typeof SIGNERS>('ring');
-  const offersWithoutKeys = signer === 'bitkit' && !withoutKeys && isPrivKeysRequested();
-  const auth = signer === 'ring' ? ring : bitkit;
+/** One QR for Pubky Ring and Bitkit; each mobile button opens its own app. */
+const SignInBothSigners = ({
+  auth,
+  withoutKeys,
+  onWithoutKeys,
+}: {
+  auth: TSignerAuth;
+  withoutKeys: boolean;
+  onWithoutKeys: () => void;
+}) => {
+  const offersWithoutKeys = !withoutKeys && isPrivKeysRequested();
   return (
     <Container size="container">
       <SignInHeader signer="both" />
@@ -161,24 +145,40 @@ const SignInBothSigners = ({ ring }: { ring: TSignerAuth }) => {
               Sovereign &amp; Secure
             </Typography>
             <Typography className="text-secondary-foreground opacity-80">
-              <span className="hidden md:inline">Scan with your preferred keychain.</span>
-              <span className="md:hidden">Authorize with your keychain.</span>
+              <span className="hidden md:inline">{SIGN_IN_SIGNER_COPY.hint}</span>
+              <span className="md:hidden">Authorize with Pubky Ring or Bitkit.</span>
             </Typography>
           </div>
           <div className="flex flex-col items-start gap-4">
-            <SignerToggle value={signer} onValueChange={setSigner} label="Sign-in app" />
             <div className="hidden w-full md:block">
-              <SignInQrOption signer={signer} auth={auth} />
+              <SignerAuthOption
+                copy={SIGN_IN_SIGNER_COPY}
+                auth={auth}
+                onCopied={() => copyWithToast(auth.copyAuthUrl)}
+                testId="sign-in-qr"
+                qrOnly
+              />
             </div>
-            <div className="w-full md:hidden">
-              <SignInAuthorizeButton signer={signer} auth={auth} />
+            <div className="flex w-full flex-col gap-3 md:hidden">
+              <SignerAuthorizeButton
+                copy={SIGNERS.ring}
+                auth={{ ...auth, isOpeningRing: auth.openingSigner === 'ring' }}
+                testId="button"
+                onAuthorize={() => auth.authorizeWith('ring')}
+              />
+              <SignerAuthorizeButton
+                copy={SIGNERS.bitkit}
+                auth={{ ...auth, isOpeningRing: auth.openingSigner === 'bitkit' }}
+                testId="sign-in-grant-button"
+                onAuthorize={() => auth.authorizeWith('bitkit')}
+              />
             </div>
             {offersWithoutKeys && (
               <Button
                 type="button"
                 variant="link"
                 className="h-auto border-none p-0 text-left text-sm whitespace-normal shadow-none"
-                onClick={() => setWithoutKeys(true)}
+                onClick={onWithoutKeys}
                 data-testid="sign-in-without-keys-button"
               >
                 Your signer can&apos;t share private-data keys? Sign in without them.
@@ -205,14 +205,11 @@ const SignInBothSigners = ({ ring }: { ring: TSignerAuth }) => {
 };
 
 export const SignInContent = () => {
-  const ringAuth = useMobileAuth();
-  const { url, isLoading, isExpired, fetchUrl, copyAuthUrl, isOpeningRing, onAuthorizeClick } = ringAuth;
+  const [withoutKeys, setWithoutKeys] = useState(false);
+  const auth = useMobileAuth(withoutKeys ? { withPrivKeys: false } : {});
+  const { url, isLoading, isExpired, fetchUrl, copyAuthUrl, isOpeningRing, onAuthorizeClick } = auth;
   const authUrlResolved = useSignInStore((state) => state.authUrlResolved);
   const isGrantSignInAvailable = useGrantSignInAvailable();
-  useEffect(() => {
-    // Clear onboarding storage when sign-in flow begins to prevent backup reminders from showing for existing users
-    useOnboardingStore.getState().reset();
-  }, []);
   const handleQRClick = async () => {
     if (!url) return;
     await copyWithToast(copyAuthUrl);
@@ -240,7 +237,7 @@ export const SignInContent = () => {
   const signInQrButton = (
     <button
       type="button"
-      className="group relative flex size-48 cursor-pointer items-center justify-center rounded-md bg-foreground p-2"
+      className="group relative flex size-48 cursor-pointer items-center justify-center rounded-md bg-foreground p-2 [.light_&]:bg-white"
       onClick={isExpired ? fetchUrl : handleQRClick}
       disabled={isLoading || (!url && !isExpired)}
       aria-label={isExpired ? 'Reload sign-in QR code' : 'Copy authentication link'}
@@ -268,7 +265,7 @@ export const SignInContent = () => {
     );
   }
   if (isGrantSignInAvailable) {
-    return <SignInBothSigners ring={ringAuth} />;
+    return <SignInBothSigners auth={auth} withoutKeys={withoutKeys} onWithoutKeys={() => setWithoutKeys(true)} />;
   }
   return (
     <>
@@ -296,7 +293,13 @@ export const SignInContent = () => {
         <SignInHeader />
         <ContentCard layout="column">
           <Container className="flex-col items-center justify-center gap-6">
-            <Image src="/images/logo-pubky-ring.svg" alt="Pubky Ring" width={137} height={30} />
+            <Image
+              src="/images/logo-pubky-ring.svg"
+              alt="Pubky Ring"
+              width={137}
+              height={30}
+              className="[.light_&]:invert"
+            />
             <Button
               className="w-full"
               size="lg"

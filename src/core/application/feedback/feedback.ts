@@ -5,7 +5,7 @@ import { ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
 import { ChatwootService } from '@/services/chatwoot/chatwoot';
 import { CHATWOOT_FEEDBACK_MESSAGE_PREFIX, CHATWOOT_INBOX_IDS } from '@/services/chatwoot/chatwoot.constants';
-import { buildChatwootEmail, extractSourceId } from '@/services/chatwoot/chatwoot.utils';
+import { buildChatwootEmail, buildClaimedReporterLines, extractSourceId } from '@/services/chatwoot/chatwoot.utils';
 import type { TFeedbackSubmitInput } from './feedback.types';
 
 /**
@@ -14,7 +14,7 @@ import type { TFeedbackSubmitInput } from './feedback.types';
  * Orchestrates feedback submission workflow:
  * 1. Builds email from pubky
  * 2. Determines inbox ID for feedback
- * 3. Formats message with feedback prefix
+ * 3. Formats message with feedback prefix and the submitter's claimed pubky and name
  * 4. Calls Chatwoot service to create contact and conversation
  * 5. Logs errors for observability
  *
@@ -24,13 +24,15 @@ export class FeedbackApplication {
   private constructor() {}
 
   /**
-   * Format the full message content with feedback prefix
+   * Format the full message content: feedback prefix, claimed reporter lines, comment
    *
+   * @param pubky - Submitter's claimed public key
+   * @param name - Submitter's claimed display name
    * @param comment - User's feedback comment
    * @returns Full formatted message content
    */
-  private static formatMessageContent(comment: string): string {
-    return `${CHATWOOT_FEEDBACK_MESSAGE_PREFIX}\n\n${comment}`;
+  private static formatMessageContent(pubky: string, name: string, comment: string): string {
+    return `${CHATWOOT_FEEDBACK_MESSAGE_PREFIX}\n\n${buildClaimedReporterLines(pubky, name)}\n\n${comment}`;
   }
 
   /**
@@ -55,11 +57,11 @@ export class FeedbackApplication {
       // Get inbox ID for feedback
       const inboxId = CHATWOOT_INBOX_IDS.FEEDBACK;
 
-      // Format message with prefix
-      const content = this.formatMessageContent(comment);
+      // Format message with prefix and claimed reporter lines
+      const content = this.formatMessageContent(pubky, name, comment);
 
-      // Create or find contact in Chatwoot
-      const contact = await ChatwootService.createOrFindContact(email, name, inboxId);
+      // Create or find contact in Chatwoot; a new contact is named by the pubky, an existing one keeps its name
+      const contact = await ChatwootService.createOrFindContact(email, pubky, inboxId);
 
       // Extract source ID (validates inbox associations)
       const sourceId = extractSourceId(contact, email);

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { marketplaceAddressFormSchema } from '@/hooks/useMarketplaceAddressBook/useMarketplaceAddressBook.types';
 import { marketplaceCheckoutSchema } from '@/hooks/useMarketplaceCheckout/useMarketplaceCheckout.types';
+import { postalCountryRule } from './postal-address';
 import {
   addressCountryFromLocales,
   browserAddressCountry,
@@ -8,7 +9,6 @@ import {
   canonicalizeRegion,
   commerceDeliveryAddressValueSchema,
   filterSubdivisions,
-  isRegionRequired,
   postalErrorMessage,
   regionErrorMessage,
   regionLabelForCountry,
@@ -42,17 +42,17 @@ describe('canonicalCountryCode', () => {
 
 describe('postal country table', () => {
   it('requires a labelled subdivision for US/CA/AU/BR/IN/MX and not for GB/DE/NL/FR/JP', () => {
-    expect(isRegionRequired('US')).toBe(true);
-    expect(isRegionRequired('CA')).toBe(true);
-    expect(isRegionRequired('AU')).toBe(true);
-    expect(isRegionRequired('BR')).toBe(true);
-    expect(isRegionRequired('IN')).toBe(true);
-    expect(isRegionRequired('MX')).toBe(true);
-    expect(isRegionRequired('GB')).toBe(false);
-    expect(isRegionRequired('DE')).toBe(false);
-    expect(isRegionRequired('NL')).toBe(false);
-    expect(isRegionRequired('FR')).toBe(false);
-    expect(isRegionRequired('JP')).toBe(false);
+    expect(postalCountryRule('US').regionRequired).toBe(true);
+    expect(postalCountryRule('CA').regionRequired).toBe(true);
+    expect(postalCountryRule('AU').regionRequired).toBe(true);
+    expect(postalCountryRule('BR').regionRequired).toBe(true);
+    expect(postalCountryRule('IN').regionRequired).toBe(true);
+    expect(postalCountryRule('MX').regionRequired).toBe(true);
+    expect(postalCountryRule('GB').regionRequired).toBe(false);
+    expect(postalCountryRule('DE').regionRequired).toBe(false);
+    expect(postalCountryRule('NL').regionRequired).toBe(false);
+    expect(postalCountryRule('FR').regionRequired).toBe(false);
+    expect(postalCountryRule('JP').regionRequired).toBe(false);
     expect(regionLabelForCountry('US')).toBe('State');
     expect(regionLabelForCountry('CA')).toBe('Province');
     expect(regionLabelForCountry('AU')).toBe('State');

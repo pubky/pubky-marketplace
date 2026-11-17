@@ -4,11 +4,8 @@ import { renderForVRT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
 
 const dialogFixtures = [
   ['restore-encrypted-file', 'Restore with encrypted file', 'max-w-full gap-6 overflow-hidden p-8'],
-  ['backup-phrase', 'Backup recovery phrase', 'max-w-sm md:max-w-2xl'],
   ['crop-image', 'Cropped image', 'max-w-xl gap-6 rounded-2xl border-border bg-popover p-8 sm:p-6'],
-  ['backup', 'Back up your pubky', 'max-w-sm p-6 md:max-w-xl md:p-8'],
   ['packing-slip', 'Packing slip', 'max-w-2xl border-border bg-popover'],
-  ['backup-export', 'Export backup', 'max-w-md'],
   ['add-link', 'Add link', 'w-xl max-w-xl'],
   ['emoji-picker', 'Emoji picker', 'max-w-sm overflow-hidden p-0 outline-none sm:p-0'],
 ] as const;

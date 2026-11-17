@@ -10,8 +10,8 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { isDurableCommerceMode } from '@/config/commerce';
 import type { DropStreamBucket, NexusDropStreamEntry } from '@/hooks/useMarketplaceDrops/drops-stream';
 import { useMarketplaceDrops } from '@/hooks/useMarketplaceDrops/useMarketplaceDrops';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DropCard } from '@/organisms/Marketplace/DropCard';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 
 const SECTION_TITLES: Record<DropStreamBucket, string> = {
   upcoming: 'Upcoming',
@@ -35,13 +35,7 @@ export function MarketplaceDrops() {
   const totalCount = SECTION_ORDER.reduce((count, bucket) => count + buckets[bucket].length, 0);
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      className="pb-28 lg:pb-16"
-    >
+    <MarketplaceContentLayout className="pb-28 lg:pb-16">
       <Container overrideDefaults data-surface="marketplace-drops" className="flex w-full flex-col gap-6">
         <Link
           href={APP_ROUTES.MARKETPLACE}
@@ -49,7 +43,7 @@ export function MarketplaceDrops() {
           className="inline-flex w-fit items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
-          Marketplace
+          Market
         </Link>
         <div>
           <Heading level={1} size="xl" className="text-4xl sm:text-6xl">
@@ -73,7 +67,10 @@ export function MarketplaceDrops() {
             <Skeleton className="h-64 rounded-xl" />
           </div>
         ) : error ? (
-          <div role="alert" className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-amber-200">
+          <div
+            role="alert"
+            className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-notice-foreground"
+          >
             {error}
           </div>
         ) : !isIndexed ? (
@@ -92,7 +89,7 @@ export function MarketplaceDrops() {
           SECTION_ORDER.map((bucket) => <DropSection key={bucket} bucket={bucket} entries={buckets[bucket]} />)
         )}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }
 

@@ -219,13 +219,6 @@ export function useNotifications(): UseNotificationsResult {
   }, []);
 
   /**
-   * Check if a notification is unread
-   */
-  const isNotificationUnread = useCallback((n: FlatNotification) => {
-    return n.timestamp > lastReadRef.current;
-  }, []);
-
-  /**
    * List of unread notifications
    */
   const unreadNotifications = useMemo(() => {
@@ -297,8 +290,6 @@ export function useNotifications(): UseNotificationsResult {
   return {
     notifications,
     unreadNotifications,
-    count: notifications.length,
-    unreadCount: unreadNotifications.length,
     isLoading,
     isLoadingMore,
     hasMore,
@@ -306,6 +297,5 @@ export function useNotifications(): UseNotificationsResult {
     loadMore,
     refresh,
     markAllAsRead,
-    isNotificationUnread,
   };
 }

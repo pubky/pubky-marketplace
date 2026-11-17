@@ -101,6 +101,9 @@ export class MarketplaceNotificationNormalizer {
       case 'payment_confirmed':
       case 'bitcoin_manual_review':
       case 'bitcoin_payment_seen':
+      case 'usdt_payment_seen':
+      case 'paypal_payment_seen':
+      case 'digital_released':
       case 'bitcoin_prepare_voided':
       case 'order_cancelled':
       case 'order_cancelled_terms_change':
@@ -113,6 +116,8 @@ export class MarketplaceNotificationNormalizer {
       case 'refund_recorded':
       case 'refund_destination_confirmed':
       case 'review_received':
+      case 'review_waiting':
+      case 'review_released':
       case 'pickup_details_updated':
       case 'pickup_details_cleared':
       case 'pickup_ready':
@@ -121,6 +126,10 @@ export class MarketplaceNotificationNormalizer {
         return MARKETPLACE_ROUTES.ORDERS;
       case 'drop_sold_out':
         return MARKETPLACE_ROUTES.SELL_DROPS;
+      // The statement of reasons is shown in full on the Marketplace
+      // notifications page, never in the general feed.
+      case 'moderation_decision':
+        return MARKETPLACE_ROUTES.NOTIFICATIONS;
     }
   }
 }

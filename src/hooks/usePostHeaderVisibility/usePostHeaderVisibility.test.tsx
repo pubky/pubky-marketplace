@@ -44,11 +44,8 @@ describe('usePostHeaderVisibility', () => {
     });
     mockUseRepostInfo.mockReturnValue({
       isRepost: false,
-      repostAuthorId: null,
       isCurrentUserRepost: false,
       originalPostId: null,
-      isLoading: false,
-      hasError: false,
     });
 
     const { result } = renderHook(() => usePostHeaderVisibility('user:post-1'));
@@ -64,11 +61,8 @@ describe('usePostHeaderVisibility', () => {
     });
     mockUseRepostInfo.mockReturnValue({
       isRepost: true,
-      repostAuthorId: 'me',
       isCurrentUserRepost: true,
       originalPostId: 'orig',
-      isLoading: false,
-      hasError: false,
     });
 
     const { result } = renderHook(() => usePostHeaderVisibility('me:repost-1'));
@@ -84,11 +78,8 @@ describe('usePostHeaderVisibility', () => {
     });
     mockUseRepostInfo.mockReturnValue({
       isRepost: true,
-      repostAuthorId: 'me',
       isCurrentUserRepost: true,
       originalPostId: 'orig',
-      isLoading: false,
-      hasError: false,
     });
 
     const { result } = renderHook(() => usePostHeaderVisibility('me:quote-repost-1'));
@@ -114,11 +105,8 @@ describe('usePostHeaderVisibility', () => {
     });
     mockUseRepostInfo.mockReturnValue({
       isRepost: true,
-      repostAuthorId: 'me',
       isCurrentUserRepost: true,
       originalPostId: 'orig',
-      isLoading: false,
-      hasError: false,
     });
 
     const { result } = renderHook(() => usePostHeaderVisibility('me:repost-with-attachments-1'));
@@ -144,11 +132,8 @@ describe('usePostHeaderVisibility', () => {
     });
     mockUseRepostInfo.mockReturnValue({
       isRepost: true,
-      repostAuthorId: 'me',
       isCurrentUserRepost: true,
       originalPostId: 'orig',
-      isLoading: false,
-      hasError: false,
     });
 
     const { result } = renderHook(() => usePostHeaderVisibility('me:whitespace-repost-1'));
@@ -164,11 +149,8 @@ describe('usePostHeaderVisibility', () => {
     });
     mockUseRepostInfo.mockReturnValue({
       isRepost: true,
-      repostAuthorId: 'other-user',
       isCurrentUserRepost: false,
       originalPostId: 'orig',
-      isLoading: false,
-      hasError: false,
     });
 
     const { result } = renderHook(() => usePostHeaderVisibility('other-user:repost-1'));
@@ -184,11 +166,8 @@ describe('usePostHeaderVisibility', () => {
     });
     mockUseRepostInfo.mockReturnValue({
       isRepost: true,
-      repostAuthorId: 'me',
       isCurrentUserRepost: true,
       originalPostId: 'orig',
-      isLoading: false,
-      hasError: false,
     });
 
     const { result } = renderHook(() => usePostHeaderVisibility('me:loading-repost-1'));
@@ -205,11 +184,8 @@ describe('usePostHeaderVisibility', () => {
     });
     mockUseRepostInfo.mockReturnValue({
       isRepost: true,
-      repostAuthorId: 'me',
       isCurrentUserRepost: true,
       originalPostId: 'orig',
-      isLoading: false,
-      hasError: false,
     });
 
     const { result } = renderHook(() => usePostHeaderVisibility('me:null-repost-1'));

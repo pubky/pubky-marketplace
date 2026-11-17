@@ -29,7 +29,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 vi.mock('@/libs/error/error.utils', () => ({
   isMarketplaceSessionRequiredError: () => errorState.sessionRequired,
 }));
@@ -216,7 +216,7 @@ describe('useMarketplaceOfferCheckout', () => {
         code: 'DESTINATION_COUNTRY',
       });
     });
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith({
       variant: 'error',
       description: 'This seller ships only to Switzerland. Choose pickup if offered.',
@@ -269,7 +269,7 @@ describe('useMarketplaceOfferCheckout', () => {
       await expect(result.current.submit(offer, address)).resolves.toEqual({ ok: false, code });
     });
 
-    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { toast } = await import('@/molecules/Toaster/toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith({ variant: 'error', description });
     expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain('server text must not escape');
   });

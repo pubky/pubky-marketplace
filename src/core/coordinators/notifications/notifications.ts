@@ -1,4 +1,4 @@
-import { AUTH_ROUTES } from '@/app/routes';
+import { ACCOUNT_ROUTES, AUTH_ROUTES } from '@/app/routes';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { NotificationController } from '@/controllers/notification/notification';
 import { Coordinator } from '@/coordinators/base/coordinator';
@@ -27,7 +27,11 @@ export class NotificationCoordinator extends Coordinator<NotificationCoordinator
 
   // Extended configuration
   private notificationConfig: Required<Pick<NotificationCoordinatorConfig, 'disabledRoutes'>> = {
-    disabledRoutes: [routeToRegex('/onboarding'), routeToRegex(AUTH_ROUTES.LOGOUT), routeToRegex(AUTH_ROUTES.SIGN_IN)],
+    disabledRoutes: [
+      routeToRegex(ACCOUNT_ROUTES.COMPLETE_PROFILE),
+      routeToRegex(AUTH_ROUTES.LOGOUT),
+      routeToRegex(AUTH_ROUTES.SIGN_IN),
+    ],
   };
 
   private constructor() {

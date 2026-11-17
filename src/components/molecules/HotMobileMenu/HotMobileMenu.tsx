@@ -30,14 +30,5 @@ export function HotMobileMenu({ activeSection, onSectionChange }: HotMobileMenuP
     onSelect: () => onSectionChange(item.section),
   }));
 
-  return (
-    <MobileTabBar
-      items={items}
-      showLabels
-      position="sticky"
-      headerTop="compact"
-      className="-mx-6"
-      data-testid="hot-mobile-menu"
-    />
-  );
+  return <MobileTabBar items={items} showLabels position="sticky" className="-mx-6" data-testid="hot-mobile-menu" />;
 }

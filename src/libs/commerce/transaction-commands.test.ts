@@ -4,8 +4,6 @@ import {
   REFUND_FIXTURE_ADDRESS,
 } from '@/test/fixtures/commerce/usdt-refund.wire';
 import {
-  asDigitalDeliveryCommandResult,
-  asPickupDetailsCommandResult,
   clearDigitalDeliveryCommandSchema,
   clearPickupDetailsCommandSchema,
   compositeListingIdFromAggregateId,
@@ -22,13 +20,17 @@ import {
   marketplaceCommandSchema,
   markReadyForPickupCommandSchema,
   offerCheckoutCommandSchema,
+  orderCommandPayloadIssues,
+  recordExternalRefundCommandSchema,
   registerListingCommandSchema,
   setDeliveryEmailCommandSchema,
   setDigitalDeliveryCommandSchema,
   setPickupDetailsCommandSchema,
   shipOrderCommandSchema,
+  shippingChoiceSchema,
   updateOrderTrackingCommandSchema,
   updateReviewCommandSchema,
+  withdrawReviewCommandSchema,
 } from './transaction-commands';
 import { toCamelCaseWire, toSnakeCaseWire } from './wire-casing';
 
@@ -84,6 +86,228 @@ describe.each([
 
   it('rejects a non-uuid order id', () => {
     expect(schema.safeParse(reviewCommand(kind, { orderId: 'not-a-uuid' })).success).toBe(false);
+  });
+});
+
+describe.each([
+  ['review.create', createReviewCommandSchema],
+  ['review.update', updateReviewCommandSchema],
+] as const)('%s per-item terms', (kind, schema) => {
+  const itemsPayload = (payload: Record<string, unknown> = {}) => ({
+    orderId: ORDER_ID,
+    items: [
+      { listingId: 'boots', rating: 5, text: 'Great boots.' },
+      { listingId: 'belt', rating: 3, text: '' },
+    ],
+    ...payload,
+  });
+  const command = (payload: Record<string, unknown> = {}) => ({
+    ...reviewCommand(kind),
+    payload: itemsPayload(payload),
+  });
+
+  it('accepts one entry per listing with optional text and optional seller ratings', () => {
+    const parsed = schema.parse(command({ seller: { shipping: 4, communication: 5 }, allowAmountBand: true }));
+
+    expect(parsed.payload).toEqual(itemsPayload({ seller: { shipping: 4, communication: 5 }, allowAmountBand: true }));
+  });
+
+  it('defaults an omitted item text to empty and trims it', () => {
+    const parsed = schema.parse(
+      command({
+        items: [
+          { listingId: 'boots', rating: 5 },
+          { listingId: 'belt', rating: 4, text: '  Fine.  ' },
+        ],
+      }),
+    );
+
+    expect(parsed.payload).toMatchObject({
+      items: [
+        { listingId: 'boots', rating: 5, text: '' },
+        { listingId: 'belt', rating: 4, text: 'Fine.' },
+      ],
+    });
+  });
+
+  it('sends items and seller ratings in the service snake_case', () => {
+    const wire = toSnakeCaseWire(schema.parse(command({ seller: { shipping: 4, communication: 5 } }))) as {
+      payload: Record<string, unknown>;
+    };
+
+    expect(wire.payload).toEqual({
+      order_id: ORDER_ID,
+      items: [
+        { listing_id: 'boots', rating: 5, text: 'Great boots.' },
+        { listing_id: 'belt', rating: 3, text: '' },
+      ],
+      seller: { shipping: 4, communication: 5 },
+    });
+  });
+
+  it.each([
+    ['no items', { items: [] }],
+    ['an out-of-range item rating', { items: [{ listingId: 'boots', rating: 6, text: '' }] }],
+    [
+      'a repeated listing',
+      {
+        items: [
+          { listingId: 'boots', rating: 5 },
+          { listingId: 'boots', rating: 4 },
+        ],
+      },
+    ],
+    ['item text over 5,000 characters', { items: [{ listingId: 'boots', rating: 5, text: 'a'.repeat(5_001) }] }],
+    ['an unknown item field', { items: [{ listingId: 'boots', rating: 5, text: '', note: 'x' }] }],
+    ['a seller rating without communication', { seller: { shipping: 4 } }],
+    ['a seller rating without shipping', { seller: { communication: 4 } }],
+    ['an out-of-range seller rating', { seller: { shipping: 0, communication: 5 } }],
+    ['a v1 rating mixed with items', { rating: 5, text: 'Mixed.' }],
+    [
+      'more than 50 items',
+      { items: Array.from({ length: 51 }, (_, index) => ({ listingId: `l${index}`, rating: 5 })) },
+    ],
+  ])('rejects %s', (_label, payload) => {
+    expect(schema.safeParse(command(payload)).success).toBe(false);
+  });
+});
+
+describe('review.withdraw command contract', () => {
+  const withdraw = (payload: Record<string, unknown> = {}) => ({
+    ...reviewCommand('review.update'),
+    kind: 'review.withdraw' as const,
+    payload: { orderId: ORDER_ID, ...payload },
+  });
+
+  it('accepts the order alone, or one item of it', () => {
+    expect(withdrawReviewCommandSchema.parse(withdraw()).payload).toEqual({ orderId: ORDER_ID });
+    expect(withdrawReviewCommandSchema.parse(withdraw({ listingId: 'boots' })).payload).toEqual({
+      orderId: ORDER_ID,
+      listingId: 'boots',
+    });
+  });
+
+  it('is a member of the marketplace command union and goes out in snake_case', () => {
+    const parsed = marketplaceCommandSchema.parse(withdraw({ listingId: 'boots' }));
+    expect(parsed.kind).toBe('review.withdraw');
+    expect(toSnakeCaseWire(parsed)).toMatchObject({ payload: { order_id: ORDER_ID, listing_id: 'boots' } });
+  });
+
+  it('rejects a payload carrying review terms, an empty listing id or a non-uuid order id', () => {
+    expect(withdrawReviewCommandSchema.safeParse(withdraw({ rating: 4 })).success).toBe(false);
+    expect(withdrawReviewCommandSchema.safeParse(withdraw({ listingId: '' })).success).toBe(false);
+    expect(withdrawReviewCommandSchema.safeParse(withdraw({ orderId: 'not-a-uuid' })).success).toBe(false);
+  });
+});
+
+describe('refund.record_external command contract', () => {
+  const refund = (payload: Record<string, unknown> = {}) => ({
+    ...reviewCommand('review.update'),
+    kind: 'refund.record_external' as const,
+    payload: { orderId: ORDER_ID, amountMinor: 100, transactionId: 'REFUND-REF-0001', ...payload },
+  });
+
+  it.each(['order', 'sat', 'usdt0'])('takes the %s unit and sends it as amount_unit', (amountUnit) => {
+    const parsed = marketplaceCommandSchema.parse(refund({ amountUnit }));
+    expect(toSnakeCaseWire(parsed)).toMatchObject({ payload: { amount_minor: 100, amount_unit: amountUnit } });
+  });
+
+  it('takes a refund without a unit, as a service before the cap expects', () => {
+    expect(recordExternalRefundCommandSchema.parse(refund()).payload).toEqual({
+      orderId: ORDER_ID,
+      amountMinor: 100,
+      transactionId: 'REFUND-REF-0001',
+    });
+  });
+
+  it('refuses a unit the service does not know, and any other field', () => {
+    expect(recordExternalRefundCommandSchema.safeParse(refund({ amountUnit: 'cents' })).success).toBe(false);
+    expect(recordExternalRefundCommandSchema.safeParse(refund({ currency: 'USD' })).success).toBe(false);
+  });
+});
+
+describe('orderCommandPayloadIssues', () => {
+  it('takes a payload the command contract takes', () => {
+    expect(
+      orderCommandPayloadIssues('refund.record_external', ORDER_ID, {
+        amountMinor: 100,
+        transactionId: 'REFUND-REF-0001',
+        amountUnit: 'order',
+      }),
+    ).toBeNull();
+    expect(
+      orderCommandPayloadIssues('return.request', ORDER_ID, { reason: 'Too small', requestedAmountMinor: 1 }),
+    ).toBeNull();
+  });
+
+  it('names the paths the contract refuses', () => {
+    expect(
+      orderCommandPayloadIssues('refund.record_external', ORDER_ID, {
+        amountMinor: 100,
+        transactionId: 'REFUND-REF-0001',
+        amountUnit: 'cents',
+      }),
+    ).toEqual(['payload.amountUnit']);
+    expect(orderCommandPayloadIssues('order.cancel_request', 'not-a-uuid', { reason: 'r'.repeat(501) })).toEqual([
+      'payload.orderId',
+      'payload.reason',
+    ]);
+  });
+
+  it('refuses a kind the contract does not have', () => {
+    expect(orderCommandPayloadIssues('refund.unknown', ORDER_ID, {})).toEqual(['kind']);
+  });
+
+  describe('text limits count code points, like the service', () => {
+    const EMOJI = '\u{1F600}';
+
+    it.each([
+      ['order.cancel_request', 'reason', 500, {}],
+      ['return.request', 'reason', 1_000, { requestedAmountMinor: 1 }],
+    ])('%s takes %s of exactly %i emoji and refuses one more', (kind, field, max, rest) => {
+      expect(orderCommandPayloadIssues(kind, ORDER_ID, { ...rest, [field]: EMOJI.repeat(max) })).toBeNull();
+      expect(orderCommandPayloadIssues(kind, ORDER_ID, { ...rest, [field]: EMOJI.repeat(max + 1) })).toEqual([
+        `payload.${field}`,
+      ]);
+    });
+
+    it('trims before counting', () => {
+      expect(
+        orderCommandPayloadIssues('order.cancel_request', ORDER_ID, { reason: `  ${EMOJI.repeat(500)}  ` }),
+      ).toBeNull();
+    });
+
+    it('counts the shipping carrier and tracking number in code points', () => {
+      expect(
+        orderCommandPayloadIssues('fulfillment.ship', ORDER_ID, {
+          carrier: EMOJI.repeat(100),
+          trackingNumber: EMOJI.repeat(200),
+        }),
+      ).toBeNull();
+      expect(
+        orderCommandPayloadIssues('fulfillment.ship', ORDER_ID, {
+          carrier: EMOJI.repeat(101),
+          trackingNumber: EMOJI.repeat(201),
+        }),
+      ).toEqual(['payload.carrier', 'payload.trackingNumber']);
+    });
+
+    it('counts refund evidence by code points: eight emoji meet the minimum of eight', () => {
+      expect(
+        orderCommandPayloadIssues('refund.record_external', ORDER_ID, {
+          amountMinor: 100,
+          transactionId: EMOJI.repeat(8),
+          amountUnit: 'order',
+        }),
+      ).toBeNull();
+      expect(
+        orderCommandPayloadIssues('refund.record_external', ORDER_ID, {
+          amountMinor: 100,
+          transactionId: EMOJI.repeat(7),
+          amountUnit: 'order',
+        }),
+      ).toEqual(['payload.transactionId']);
+    });
   });
 });
 
@@ -386,54 +610,6 @@ describe('fulfillment.mark_ready / fulfillment.confirm_pickup command contracts'
     ['fulfillment.confirm_pickup', confirmPickupCommandSchema],
   ] as const)('%s rejects a non-uuid order id', (kind, schema) => {
     expect(schema.safeParse(pickupCommand(kind, { orderId: 'nope' }, `order:${ORDER_ID}`)).success).toBe(false);
-  });
-});
-
-describe('pickup_details command result narrowing', () => {
-  const response = {
-    ok: true as const,
-    version: 1 as const,
-    commandId: '018f47d2-6a27-7c23-a62f-000000000731',
-    aggregateId: LISTING_AGGREGATE_ID,
-    revision: 3,
-    eventIds: ['018f47d2-6a27-7c23-a62f-000000000732'],
-  };
-
-  it('narrows the set result to the new details version', () => {
-    const result = asPickupDetailsCommandResult({
-      ...response,
-      result: {
-        kind: 'pickup_details',
-        listingAggregateId: LISTING_AGGREGATE_ID,
-        version: 3,
-        updatedAt: '2026-08-19T22:00:00.000Z',
-      },
-    });
-    expect(result).toMatchObject({ kind: 'pickup_details', version: 3, listingAggregateId: LISTING_AGGREGATE_ID });
-  });
-
-  it('narrows the clear result with the surviving version and the cleared flag', () => {
-    const result = asPickupDetailsCommandResult({
-      ...response,
-      result: {
-        kind: 'pickup_details',
-        listingAggregateId: LISTING_AGGREGATE_ID,
-        version: 4,
-        cleared: true,
-        updatedAt: '2026-08-19T22:05:00.000Z',
-      },
-    });
-    expect(result).toMatchObject({ version: 4, cleared: true });
-  });
-
-  it('returns null for a refusal or another command kind', () => {
-    expect(
-      asPickupDetailsCommandResult({
-        ok: false,
-        error: { code: 'INVALID_STATE', message: 'The listing does not publish pickup.' },
-      }),
-    ).toBeNull();
-    expect(asPickupDetailsCommandResult({ ...response, result: { kind: 'order', state: 'paid' } })).toBeNull();
   });
 });
 
@@ -779,7 +955,7 @@ describe('digital_delivery.set / .clear command contract (digital delivery desig
     ).toBe(true);
   });
 
-  it('parses and narrows the service result (handlers/digital.rs)', () => {
+  it('parses the service result (handlers/digital.rs)', () => {
     const response = marketplaceCommandResponseSchema.parse({
       ok: true,
       version: 1,
@@ -796,8 +972,10 @@ describe('digital_delivery.set / .clear command contract (digital delivery desig
         updatedAt: '2026-09-25T10:00:00.000Z',
       },
     });
-    expect(asDigitalDeliveryCommandResult(response)).toMatchObject({ version: 3, deliveryKind: 'file' });
-    expect(asPickupDetailsCommandResult(response)).toBeNull();
+    expect(response).toMatchObject({
+      ok: true,
+      result: { kind: 'digital_delivery', version: 3, deliveryKind: 'file' },
+    });
   });
 });
 
@@ -1032,7 +1210,7 @@ describe('sealed delivery address fields', () => {
     const share = {
       sellerPubky: SELLER,
       shopDomain: 'dezentralshop.ch',
-      consentVersion: 1,
+      consentVersion: '1',
       keyId: 'connector-key-1',
       envelope: ENVELOPE,
     };
@@ -1058,7 +1236,10 @@ describe('sealed delivery address fields', () => {
     it('refuses two shares for one seller, a bad consent version and an envelope of the wrong size', () => {
       for (const connectorShares of [
         [share, share],
-        [{ ...share, consentVersion: 0 }],
+        [{ ...share, consentVersion: 1 }],
+        [{ ...share, consentVersion: '' }],
+        [{ ...share, consentVersion: 'has space' }],
+        [{ ...share, consentVersion: 'v'.repeat(33) }],
         [{ ...share, envelope: 'A'.repeat(100) }],
         [{ ...share, address: 'x' }],
       ]) {
@@ -1078,7 +1259,7 @@ describe('sealed delivery address fields', () => {
         {
           seller_pubky: SELLER,
           shop_domain: 'dezentralshop.ch',
-          consent_version: 1,
+          consent_version: '1',
           key_id: 'connector-key-1',
           envelope: ENVELOPE,
         },
@@ -1242,5 +1423,85 @@ describe('compositeListingIdFromAggregateId', () => {
     ['an empty string', ''],
   ])('returns null for %s', (_name, aggregateId) => {
     expect(compositeListingIdFromAggregateId(aggregateId)).toBeNull();
+  });
+});
+
+describe('checkout.create destination and shipping choices', () => {
+  const SHA = 'ab'.repeat(32);
+  const profileChoice = { sellerPubky: SELLER, profileId: 'worldwide', rateId: 'std', profileSha256: SHA };
+  const inlineChoice = { sellerPubky: SELLER, listingAggregateId: LISTING_AGGREGATE_ID, rateId: 'std' };
+
+  function checkout(payload: Record<string, unknown> = {}) {
+    return {
+      version: 1,
+      commandId: '018f47d2-6a27-7c23-a62f-000000000735',
+      aggregateId: 'checkout:018f47d2-6a27-7c23-a62f-000000000735',
+      expectedRevision: 0,
+      issuedAt: '2026-11-05T10:00:00.000Z',
+      kind: 'checkout.create',
+      payload: {
+        lines: [{ listingAggregateId: LISTING_AGGREGATE_ID, expectedRevision: 1, quantity: 1 }],
+        deliveryAddress: {
+          name: 'Alice Buyer',
+          line1: '1 Market Street',
+          line2: '',
+          city: 'Berlin',
+          region: '',
+          postalCode: '10115',
+          countryCode: 'DE',
+        },
+        ...payload,
+      },
+    };
+  }
+
+  it('accepts a destination with a profile choice and an inline choice', () => {
+    const parsed = createMarketplaceCheckoutCommandSchema.parse(
+      checkout({ destinationCountry: 'DE', shippingChoices: [profileChoice, inlineChoice] }),
+    );
+    expect(parsed.payload.destinationCountry).toBe('DE');
+    expect(parsed.payload.shippingChoices).toHaveLength(2);
+  });
+
+  it('keeps a checkout without either field valid', () => {
+    expect(createMarketplaceCheckoutCommandSchema.safeParse(checkout()).success).toBe(true);
+  });
+
+  it.each([
+    ['both a profile and a listing', { ...profileChoice, listingAggregateId: LISTING_AGGREGATE_ID }],
+    ['neither a profile nor a listing', { sellerPubky: SELLER, rateId: 'std' }],
+    ['a profile without a digest', { sellerPubky: SELLER, profileId: 'worldwide', rateId: 'std' }],
+    ['an inline choice with a digest', { ...inlineChoice, profileSha256: SHA }],
+    ['an uppercase digest', { ...profileChoice, profileSha256: SHA.toUpperCase() }],
+    ['a short digest', { ...profileChoice, profileSha256: SHA.slice(2) }],
+    ['an unknown member', { ...profileChoice, extra: 1 }],
+  ])('rejects a choice with %s', (_name, choice) => {
+    expect(shippingChoiceSchema.safeParse(choice).success).toBe(false);
+    expect(createMarketplaceCheckoutCommandSchema.safeParse(checkout({ shippingChoices: [choice] })).success).toBe(
+      false,
+    );
+  });
+
+  it('rejects an empty choice list, more than fifty choices and a malformed destination', () => {
+    expect(createMarketplaceCheckoutCommandSchema.safeParse(checkout({ shippingChoices: [] })).success).toBe(false);
+    expect(
+      createMarketplaceCheckoutCommandSchema.safeParse(checkout({ shippingChoices: Array(51).fill(profileChoice) }))
+        .success,
+    ).toBe(false);
+    expect(createMarketplaceCheckoutCommandSchema.safeParse(checkout({ destinationCountry: 'Germany' })).success).toBe(
+      false,
+    );
+  });
+
+  it('puts the destination and choices on the wire in the service’s snake_case', () => {
+    const parsed = createMarketplaceCheckoutCommandSchema.parse(
+      checkout({ destinationCountry: 'DE', shippingChoices: [profileChoice, inlineChoice] }),
+    );
+    const wire = toSnakeCaseWire(parsed) as { payload: Record<string, unknown> };
+    expect(wire.payload.destination_country).toBe('DE');
+    expect(wire.payload.shipping_choices).toEqual([
+      { seller_pubky: SELLER, profile_id: 'worldwide', rate_id: 'std', profile_sha256: SHA },
+      { seller_pubky: SELLER, listing_aggregate_id: LISTING_AGGREGATE_ID, rate_id: 'std' },
+    ]);
   });
 });

@@ -3,6 +3,42 @@ import { formatDateTime } from '@/libs/utils/dateTime';
 
 export const PAYMENT_WINDOW_ELAPSED_REASON = 'payment window elapsed';
 
+/** The reasons the service cancels an unpaid checkout on its own, never the buyer (workers.rs). */
+export const SYSTEM_LAPSE_REASONS: ReadonlySet<string> = new Set([
+  PAYMENT_WINDOW_ELAPSED_REASON,
+  'checkout idle elapsed',
+]);
+
+/**
+ * Every cancellation reason the service writes itself rather than taking from
+ * the buyer: the lapses above, a seller closing a payment after manual review,
+ * and a payment it had to refuse (`bitcoin_review.rs`, `workers.rs`).
+ */
+export const SERVICE_CANCEL_REASONS: ReadonlySet<string> = new Set([
+  ...SYSTEM_LAPSE_REASONS,
+  'closed after manual review',
+  'digital delivery unavailable at payment',
+  'seller annual limit reached',
+]);
+
+/**
+ * Whether an unpaid order was cancelled other than by a lapse the service
+ * applied (Pay by, an idle checkout): the badge then reads "Order cancelled".
+ * An order with no reason keeps reading as an elapsed window (#359).
+ */
+export function isCancelledNotLapsed(order: { state: string; cancellationReason?: string | null }): boolean {
+  return (
+    order.state === 'cancelled' &&
+    Boolean(order.cancellationReason) &&
+    !SYSTEM_LAPSE_REASONS.has(order.cancellationReason ?? '')
+  );
+}
+
+/** Whether the buyer cancelled the order: a reason they gave, not one the service wrote. */
+export function isBuyerCancelledUnpaid(order: { state: string; cancellationReason?: string | null }): boolean {
+  return isCancelledNotLapsed(order) && !SERVICE_CANCEL_REASONS.has(order.cancellationReason ?? '');
+}
+
 export const UNBOUND_BACK_CANCEL_REASON = 'Released hold before choosing a payment method.';
 
 export const CHECKOUT_HOLD_COPY = {
@@ -13,6 +49,9 @@ export const CHECKOUT_HOLD_COPY = {
   heldWhileAnotherPays: 'Held while another buyer pays',
   holdOwnerCheckPrompt: 'Is this your hold? Approve purchases to check.',
   expiredNoLateMoney: 'Payment window elapsed. The item is available again.',
+  cancelledByBuyer:
+    'You cancelled this checkout before paying. A payment that still arrives is reconciled manually, never silently applied or discarded.',
+  cancelledByBuyerSeller: 'The buyer cancelled this checkout before paying.',
   pendingBitcoinPaymentBuyer:
     'If a payment is still pending in Bitkit, another wallet or another device, let it finish or resolve it before you order again.',
   lateCompleteBuyer:
@@ -41,6 +80,7 @@ export function formatHoldDeadline(holdExpiresAt: string | null | undefined): st
 }
 
 type PayByOrder = {
+  createdAt?: string | null;
   holdExpiresAt?: string | null;
   paykitExpiresAt?: string | null;
   paykitRequestState?: string | null;
@@ -62,16 +102,49 @@ export function buyerPayByDeadline(order: PayByOrder): string | null {
   return order.holdExpiresAt ?? null;
 }
 
-export const APPROVE_IN_BITKIT_FALLBACK_COPY = 'Approve in Bitkit before the payment window ends.';
+export const APPROVE_IN_BITKIT_FALLBACK_COPY =
+  'Approve in Bitkit soon: Bitkit expires a request you have not approved before the payment window ends.';
 
 /**
- * How long the buyer has to approve the request in Bitkit: the same deadline
- * the order's "Pay by" line shows, so the two never disagree. The order carries
- * no accept-by of its own and no window length is stated, so nothing here can
- * drift from the service's Paykit window.
+ * The midpoint stays at or after activation only while the buyer bound the
+ * request within one payment window of creating the order, so the span from
+ * creation to the deadline is at most two windows. Past twice the Shop's
+ * 30-minute Bitcoin window (`BITCOIN_PAYMENT_WINDOW_SECONDS`), the request was
+ * bound late (a re-bind, a long hold) and the line names no time.
  */
+const MAX_TIMED_APPROVAL_SPAN_MS = 60 * 60 * 1000;
+
+/** The margin an upstream hold runs past its Paykit deadline (pubky-marketplace-service #150). */
+const HOLD_SKEW_MARGIN_MS = 60 * 1000;
+
+/**
+ * The latest instant the buyer can approve the request in Bitkit, or null when
+ * the Shop cannot tell. Bitkit expires a request the buyer has not approved at
+ * its `proposal_expires_at`, which paykit-server sets at activation to at most
+ * half the payment window, well before Pay by (issue #358). The order carries
+ * only the payment deadline (or its hold, less the hold's 60 s margin), so this takes the
+ * midpoint of order creation and that deadline: activation never precedes
+ * creation, so it is not later than the wallet's own. An auction order is
+ * created at close and may activate much later, so it gets no time, as does
+ * any order bound long after creation. Replace with the request's own
+ * `proposal_expires_at` once the service projects it.
+ */
+export function approveInBitkitDeadline(order: PayByOrder): string | null {
+  if (order.auctionAggregateId) return null;
+  const created = order.createdAt ? new Date(order.createdAt).getTime() : NaN;
+  // The service ends an upstream hold 60 s after the request's deadline.
+  const deadline = order.paykitExpiresAt
+    ? new Date(order.paykitExpiresAt).getTime()
+    : order.holdExpiresAt
+      ? new Date(order.holdExpiresAt).getTime() - HOLD_SKEW_MARGIN_MS
+      : NaN;
+  if (!Number.isFinite(created) || !Number.isFinite(deadline) || deadline <= created) return null;
+  if (deadline - created > MAX_TIMED_APPROVAL_SPAN_MS) return null;
+  return new Date(created + (deadline - created) / 2).toISOString();
+}
+
 export function approveInBitkitCopy(order: PayByOrder): string {
-  const deadline = formatOrderInstant(buyerPayByDeadline(order));
+  const deadline = formatOrderInstant(approveInBitkitDeadline(order));
   return deadline ? `Approve in Bitkit by ${deadline}.` : APPROVE_IN_BITKIT_FALLBACK_COPY;
 }
 

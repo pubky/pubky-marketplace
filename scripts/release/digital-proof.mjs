@@ -177,12 +177,25 @@ export function redactSensitive(text, email) {
   return redactEmail(text, email).replace(/\b([13-9a-km-uw-z]{8})[13-9a-km-uw-z]{44}\b/g, '$1…');
 }
 
-// The stack the hold-smoke and rehearsals run against. Anything else is production for this script's purposes.
-export const STAGING_TARGET = {
-  origins: ['https://pubky-marketplace-staging.vercel.app'],
-  services: ['https://staging-api.pubky.app'],
-  nexus: ['https://nexusd-staging-production.up.railway.app'],
-};
+// The stack the hold-smoke and rehearsals run against is explicit configuration: comma lists of the staging origins,
+// service URLs and Nexus URLs in PROOF_STAGING_ORIGINS, PROOF_STAGING_SERVICES and PROOF_STAGING_NEXUS. Anything
+// else, including every target when a list is unset or empty, is production for this script's purposes.
+const originList = (raw) =>
+  String(raw ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => originOf(item))
+    .filter(Boolean);
+
+/** @param {Record<string, string | undefined>} [env] */
+export function stagingTarget(env = process.env) {
+  return {
+    origins: originList(env.PROOF_STAGING_ORIGINS),
+    services: originList(env.PROOF_STAGING_SERVICES),
+    nexus: originList(env.PROOF_STAGING_NEXUS),
+  };
+}
 
 const originOf = (raw) => {
   try {
@@ -192,26 +205,37 @@ const originOf = (raw) => {
   }
 };
 
-export function isStagingTarget({ origin, service, nexus }) {
+/** @param {Record<string, string | undefined>} [env] */
+export function isStagingTarget({ origin, service, nexus }, env = process.env) {
+  const staging = stagingTarget(env);
   return (
-    STAGING_TARGET.origins.includes(originOf(origin)) &&
-    STAGING_TARGET.services.includes(originOf(service)) &&
-    STAGING_TARGET.nexus.includes(originOf(nexus))
+    staging.origins.includes(originOf(origin)) &&
+    staging.services.includes(originOf(service)) &&
+    staging.nexus.includes(originOf(nexus))
   );
 }
 
 // A run that touches anything but staging needs PROOF_ALLOW_PRODUCTION=1, set on purpose by the person who
 // authorized it. Returns the refusal message, or null when the run may go ahead.
 export function targetRefusal(target, env = {}) {
-  if (env.PROOF_ALLOW_PRODUCTION === '1' || isStagingTarget(target)) return null;
+  const unset = [
+    ['PROOF_ORIGIN', target.origin],
+    ['PROOF_SERVICE', target.service],
+    ['PROOF_NEXUS', target.nexus],
+  ]
+    .filter(([, url]) => !url)
+    .map(([name]) => name);
+  if (unset.length) return `refusing to run: set ${unset.join(', ')}; the proof scripts have no default target`;
+  if (env.PROOF_ALLOW_PRODUCTION === '1' || isStagingTarget(target, env)) return null;
+  const staging = stagingTarget(env);
   const wrong = [
-    ['PROOF_ORIGIN', target.origin, STAGING_TARGET.origins],
-    ['PROOF_SERVICE', target.service, STAGING_TARGET.services],
-    ['PROOF_NEXUS', target.nexus, STAGING_TARGET.nexus],
+    ['PROOF_ORIGIN', target.origin, staging.origins],
+    ['PROOF_SERVICE', target.service, staging.services],
+    ['PROOF_NEXUS', target.nexus, staging.nexus],
   ]
     .filter(([, url, allowed]) => !allowed.includes(originOf(url)))
     .map(([name, url]) => `${name}=${originOf(url) ?? 'invalid'}`);
-  return `refusing to run: ${wrong.join(', ')} is not the staging stack. Point PROOF_ORIGIN, PROOF_SERVICE and PROOF_NEXUS at staging, or set PROOF_ALLOW_PRODUCTION=1 to run against production on purpose`;
+  return `refusing to run: ${wrong.join(', ')} is not the staging stack. List the staging stack in PROOF_STAGING_ORIGINS, PROOF_STAGING_SERVICES and PROOF_STAGING_NEXUS and point PROOF_ORIGIN, PROOF_SERVICE and PROOF_NEXUS at it, or set PROOF_ALLOW_PRODUCTION=1 to run against production on purpose`;
 }
 
 export const extractDpl = (html) => (String(html ?? '').match(/dpl_[A-Za-z0-9]+/) || [])[0] ?? null;
@@ -221,6 +245,49 @@ export function deploymentRefusal({ found, expected }) {
   if (!expected) return 'set EXPECTED_DPL to the dpl_… id now aliased to the origin';
   if (found !== expected) return `the origin is serving ${found ?? 'no deployment id'}, not EXPECTED_DPL ${expected}`;
   return null;
+}
+
+const COMMIT_SHA = /^[0-9a-f]{7,40}$/;
+
+// `GET /api/build` answers `{"commit":"<12-char SHA>"}`, or `unknown` when the build has no hex SHA.
+export function parseBuildCommit(body) {
+  try {
+    const commit = JSON.parse(String(body ?? '')).commit;
+    return typeof commit === 'string' && COMMIT_SHA.test(commit.toLowerCase()) ? commit.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+// The build reports a short SHA and the expectation may be longer or shorter: they match when one is a prefix of the other.
+export function commitMatches(found, expected) {
+  const a = String(found ?? '').toLowerCase();
+  const b = String(expected ?? '').toLowerCase();
+  return COMMIT_SHA.test(a) && COMMIT_SHA.test(b) && (a.startsWith(b) || b.startsWith(a));
+}
+
+export const MISSING_EXPECTATION =
+  'set EXPECTED_DPL (a Vercel dpl_… deployment id now aliased to the origin) or EXPECTED_COMMIT (the git commit the origin must report at /api/build)';
+
+// One of EXPECTED_DPL and EXPECTED_COMMIT must be set; when both are, the origin must satisfy both.
+export function deploymentIdentityRefusal({ dpl, commit }, env = {}) {
+  const expectedDpl = String(env.EXPECTED_DPL ?? '').trim();
+  const expectedCommit = String(env.EXPECTED_COMMIT ?? '')
+    .trim()
+    .toLowerCase();
+  if (!expectedDpl && !expectedCommit) return MISSING_EXPECTATION;
+  if (expectedCommit && !COMMIT_SHA.test(expectedCommit)) {
+    return 'EXPECTED_COMMIT must be a git commit SHA of 7 to 40 hex characters';
+  }
+  const problems = [];
+  if (expectedDpl) {
+    const refusal = deploymentRefusal({ found: dpl, expected: expectedDpl });
+    if (refusal) problems.push(refusal);
+  }
+  if (expectedCommit && !commitMatches(commit, expectedCommit)) {
+    problems.push(`the origin reports ${commit ?? 'no commit'} at /api/build, not EXPECTED_COMMIT ${expectedCommit}`);
+  }
+  return problems.length ? problems.join('; ') : null;
 }
 
 // The email kind is the one flow that types and shows the tester mailbox, so its screenshots are not saved unless

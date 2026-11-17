@@ -14,6 +14,7 @@ vi.mock('facehash', () => ({
       {onRenderMouth?.()}
     </div>
   ),
+  stringHash: () => 0,
 }));
 
 vi.mock('@/hooks/useMutedUsers/useMutedUsers', () => ({
@@ -38,7 +39,7 @@ vi.mock('@/molecules/FacehashAvatar/FacehashAvatar', () => {
   };
 });
 
-vi.mock('@/molecules/Toaster/use-toast', () => {
+vi.mock('@/molecules/Toaster/toast', () => {
   return {
     toast: vi.fn(),
   };
@@ -132,44 +133,5 @@ describe('MutedUsersList', () => {
       expect(toggleMute).toHaveBeenCalledWith('user-1', true);
       expect(toggleMute).toHaveBeenCalledWith('user-2', true);
     });
-  });
-});
-
-describe('MutedUsersList - Snapshots', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockUseMutedUsers.mockReturnValue({
-      mutedUserIds: [],
-      mutedUserIdSet: new Set(),
-      isMuted: vi.fn(() => false),
-      isLoading: false,
-    });
-    mockUseBulkUserAvatars.mockReturnValue({
-      usersMap: new Map(),
-      isLoading: false,
-    });
-    mockUseMuteUser.mockReturnValue({
-      toggleMute: vi.fn(),
-      isLoading: false,
-      isUserLoading: vi.fn(() => false),
-      error: null,
-    });
-  });
-
-  it('matches snapshot - empty state', () => {
-    const { container } = render(<MutedUsersList />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot - with muted users', () => {
-    mockUseMutedUsers.mockReturnValue({
-      mutedUserIds: ['user-1', 'user-2', 'user-3'],
-      mutedUserIdSet: new Set(['user-1', 'user-2', 'user-3']),
-      isMuted: vi.fn(() => true),
-      isLoading: false,
-    });
-
-    const { container } = render(<MutedUsersList />);
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

@@ -84,7 +84,7 @@ describe('MarketplaceSectionNav', () => {
     render(<MarketplaceSectionNav />);
 
     expect(screen.getByRole('link', { name: 'Offers' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('link', { name: 'Marketplace' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('link', { name: 'Market' })).not.toHaveAttribute('aria-current');
     expect(screen.getByTestId('marketplace-section-nav-cart-badge')).toHaveTextContent('3');
     expect(screen.getByTestId('marketplace-section-nav-activity-badge')).toHaveTextContent('21+');
   });
@@ -181,6 +181,21 @@ describe('MarketplaceSectionNav', () => {
     expect(screen.getByRole('link', { name: /Activity/ })).toBeVisible();
     expect(screen.getByRole('link', { name: 'My shop' })).toBeVisible();
     expect(screen.getByTestId('marketplace-section-nav-activity-badge')).toHaveTextContent('12');
+  });
+
+  it('pins itself under the page chrome so the sections stay reachable while scrolling', () => {
+    render(<MarketplaceSectionNav />);
+
+    const root = document.querySelector('[data-surface="marketplace-section-nav"]');
+    expect(root).toHaveClass('sticky', 'top-(--marketplace-subnav-top)', 'z-(--z-sticky-subnav)', 'bg-background');
+  });
+
+  it('lets a page keep its own spacing around the pinned bar', () => {
+    render(<MarketplaceSectionNav className="mb-0 after:h-16" />);
+
+    const root = document.querySelector('[data-surface="marketplace-section-nav"]');
+    expect(root).toHaveClass('sticky', 'mb-0', 'after:h-16');
+    expect(root).not.toHaveClass('mb-6', 'after:h-6');
   });
 
   it('delegates guarded home navigation without requiring an app router', () => {

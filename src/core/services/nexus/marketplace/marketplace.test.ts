@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS } from '@/config/commerce';
 import { getNexusUrl } from '@/config/nexus';
-import { queryNexus } from '@/services/nexus/nexus.utils';
+import { fetchNexusIfFound, queryNexus } from '@/services/nexus/nexus.utils';
 import { createNexusListingDetailsFixture } from '@/test/fixtures/commerce/commerce';
 import { NexusMarketplaceService } from './marketplace';
 import { marketplaceApi } from './marketplace.api';
@@ -10,6 +11,7 @@ vi.mock('@/services/nexus/nexus.utils', async (importOriginal) => {
   return {
     ...actual,
     queryNexus: vi.fn(),
+    fetchNexusIfFound: vi.fn(),
   };
 });
 
@@ -27,6 +29,7 @@ vi.mock('@/config/nexus', async (importOriginal) => {
 });
 
 const mockQueryNexus = vi.mocked(queryNexus);
+const mockFetchNexus = vi.mocked(fetchNexusIfFound);
 
 describe('Marketplace API', () => {
   afterEach(() => {
@@ -80,6 +83,133 @@ describe('Marketplace API', () => {
     expect(url).toBe(`${getNexusUrl()}/v0/stream/listings?state=active`);
     expect(url).not.toContain('sale_format=');
     expect(url).not.toContain('condition=');
+  });
+});
+
+describe('Marketplace API review streams', () => {
+  const SELLER = 's'.repeat(52);
+
+  it.each(['value', 'rating_desc', 'rating_asc'] as const)('sends sort=%s on both review streams', (sort) => {
+    expect(marketplaceApi.shopReviews({ seller_id: SELLER, skip: 10, limit: 10, sort })).toBe(
+      `${getNexusUrl()}/v0/shop/${SELLER}/reviews?skip=10&limit=10&sort=${sort}`,
+    );
+    expect(marketplaceApi.listingReviews({ seller_id: SELLER, listing_id: 'boots_01', limit: 10, sort })).toBe(
+      `${getNexusUrl()}/v0/listing/${SELLER}/boots_01/reviews?limit=10&sort=${sort}`,
+    );
+  });
+
+  it('sends no sort parameter without a sort, which keeps the bare list every index serves', () => {
+    expect(marketplaceApi.shopReviews({ seller_id: SELLER, skip: 0, limit: 10, sort: undefined })).toBe(
+      `${getNexusUrl()}/v0/shop/${SELLER}/reviews?skip=0&limit=10`,
+    );
+    expect(marketplaceApi.listingReviews({ seller_id: SELLER, listing_id: 'boots_01', skip: 0 })).not.toContain('sort');
+  });
+});
+
+describe('Marketplace API review filters', () => {
+  const SELLER = 's'.repeat(52);
+  const VIEWER = 'v'.repeat(52);
+
+  it('sends the viewer and reach with the depth and trusted windows on both review streams', () => {
+    const filter = { viewer_id: VIEWER, reach: 'wot', depth: 2, attestors: 'w:1:' } as const;
+    const query = `limit=10&viewer_id=${VIEWER}&reach=wot&depth=2&attestors=${encodeURIComponent('w:1:')}`;
+
+    expect(marketplaceApi.shopReviews({ seller_id: SELLER, limit: 10, ...filter })).toBe(
+      `${getNexusUrl()}/v0/shop/${SELLER}/reviews?${query}`,
+    );
+    expect(marketplaceApi.listingReviews({ seller_id: SELLER, listing_id: 'boots_01', limit: 10, ...filter })).toBe(
+      `${getNexusUrl()}/v0/listing/${SELLER}/boots_01/reviews?${query}`,
+    );
+  });
+
+  it('sends the tag labels as one comma-joined parameter next to a sort', () => {
+    const url = marketplaceApi.shopReviews({
+      seller_id: SELLER,
+      sort: 'value',
+      viewer_id: VIEWER,
+      tagged_by_viewer: 'trusted,fast',
+    });
+
+    const params = new URL(url).searchParams;
+    expect(params.get('tagged_by_viewer')).toBe('trusted,fast');
+    expect(params.get('sort')).toBe('value');
+    expect(params.get('viewer_id')).toBe(VIEWER);
+    expect(params.has('reach')).toBe(false);
+  });
+
+  it('sends no filter parameter by default', () => {
+    for (const url of [
+      marketplaceApi.shopReviews({ seller_id: SELLER, skip: 0, limit: 10 }),
+      marketplaceApi.listingReviews({ seller_id: SELLER, listing_id: 'boots_01', skip: 0, limit: 10 }),
+    ]) {
+      for (const key of ['viewer_id', 'reach', 'depth', 'tagged_by_viewer', 'attestors']) {
+        expect(url).not.toContain(key);
+      }
+    }
+  });
+});
+
+describe('Marketplace API attestor routes', () => {
+  const ATTESTOR = 'w'.repeat(52);
+
+  it('builds the attestor profile URL on the marketplace index', () => {
+    expect(marketplaceApi.attestorProfile({ attestor_id: ATTESTOR })).toBe(
+      `${getNexusUrl()}/v0/marketplace/attestor/${ATTESTOR}/profile`,
+    );
+  });
+
+  it('builds the annotations URL with the order refs as one comma-separated parameter (the comma percent-encoded)', () => {
+    const refs = ['a'.repeat(64), 'b'.repeat(64)];
+
+    expect(marketplaceApi.attestorAnnotations({ attestor_id: ATTESTOR, order_refs: refs })).toBe(
+      `${getNexusUrl()}/v0/marketplace/attestor/${ATTESTOR}/annotations?order_refs=${refs[0]}%2C${refs[1]}`,
+    );
+  });
+
+  it('routes attestor URLs through the marketplace Nexus override when one is configured', () => {
+    nexusConfigOverride.marketplaceNexusUrl = 'https://marketplace-nexus.example.com';
+
+    expect(marketplaceApi.attestorProfile({ attestor_id: ATTESTOR })).toBe(
+      `https://marketplace-nexus.example.com/v0/marketplace/attestor/${ATTESTOR}/profile`,
+    );
+    nexusConfigOverride.marketplaceNexusUrl = null;
+  });
+});
+
+describe('NexusMarketplaceService attestor reads', () => {
+  const ATTESTOR = 'w'.repeat(52);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('reads the profile in one bounded attempt, answering null for a missing route, without the retrying query', async () => {
+    mockFetchNexus.mockResolvedValue({ attestor_id: ATTESTOR });
+
+    await NexusMarketplaceService.fetchAttestorProfile({ attestor_id: ATTESTOR });
+
+    expect(mockFetchNexus).toHaveBeenCalledWith({
+      url: marketplaceApi.attestorProfile({ attestor_id: ATTESTOR }),
+      timeoutMs: MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS,
+      ioEndpoint: 'v0/marketplace/attestor/:attestor_id/profile',
+    });
+    expect(mockQueryNexus).not.toHaveBeenCalled();
+  });
+
+  it('reads the annotations in one bounded attempt and returns the aligned answer unchanged', async () => {
+    const answer = [null, null];
+    mockFetchNexus.mockResolvedValue(answer);
+    const order_refs = ['a'.repeat(64), 'b'.repeat(64)];
+
+    await expect(NexusMarketplaceService.fetchAttestorAnnotations({ attestor_id: ATTESTOR, order_refs })).resolves.toBe(
+      answer,
+    );
+    expect(mockFetchNexus).toHaveBeenCalledWith({
+      url: marketplaceApi.attestorAnnotations({ attestor_id: ATTESTOR, order_refs }),
+      timeoutMs: MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS,
+      ioEndpoint: 'v0/marketplace/attestor/:attestor_id/annotations',
+    });
+    expect(mockQueryNexus).not.toHaveBeenCalled();
   });
 });
 

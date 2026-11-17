@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "kind": "connector_sync",
+  "connection_id": "f58fb1dd-89d3-4559-932c-3fee0ebd3247",
+  "groups": [
+    {
+      "field_group": "content",
+      "direction": "from_store",
+      "default": "from_store"
+    },
+    {
+      "field_group": "price",
+      "direction": "from_store",
+      "default": "from_store"
+    },
+    {
+      "field_group": "variants",
+      "direction": "from_store",
+      "default": "from_store"
+    }
+  ],
+  "overrides": [
+    {
+      "listing_id": "mug_01",
+      "field_group": "price",
+      "direction": "off"
+    }
+  ]
+}

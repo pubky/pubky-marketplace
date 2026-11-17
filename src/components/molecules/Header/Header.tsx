@@ -25,7 +25,6 @@ import { cn } from '@/libs/utils/utils';
 import { AvatarWithFallback } from '@/organisms/AvatarWithFallback/AvatarWithFallback';
 import { SearchInput } from '@/organisms/SearchInput/SearchInput';
 import { useAuthStore } from '@/stores/auth/auth.store';
-import { ProgressSteps } from '../ProgressSteps/ProgressSteps';
 
 export interface HeaderContainerProps {
   children: React.ReactNode;
@@ -68,9 +67,6 @@ export const HeaderTitle = ({ currentTitle }: { currentTitle: string }) => {
       </Heading>
     </Container>
   );
-};
-export const HeaderOnboarding = ({ currentStep }: { currentStep: number }) => {
-  return <ProgressSteps currentStep={currentStep} totalSteps={5} />;
 };
 export function HeaderSocialLinks({ ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
@@ -116,7 +112,7 @@ const isMarketplaceNavEnabled = () => getCommerceAdapterMode() !== 'unavailable'
 const marketplaceNavItem: NavigationItemConfig = {
   href: APP_ROUTES.MARKETPLACE,
   icon: Store,
-  label: 'Marketplace',
+  label: 'Market',
   dataCy: 'header-marketplace-btn',
   activePrefix: APP_ROUTES.MARKETPLACE,
 };
@@ -219,8 +215,8 @@ const NavigationButton = ({
       data-cy={href ? undefined : dataCy}
       className={cn(
         'h-12 w-12 backdrop-blur-md',
-        isActive ? '' : 'border bg-white/5',
-        showNew && 'border-brand bg-white/5 text-brand hover:bg-brand/10',
+        isActive ? '' : 'border bg-glass',
+        showNew && 'border-brand bg-glass text-brand hover:bg-brand/10',
       )}
       variant="secondary"
       size="icon"
@@ -239,7 +235,10 @@ const NavigationButton = ({
           className="absolute -right-1 -bottom-1 h-5 w-5 rounded-full bg-brand shadow-sm"
           variant="secondary"
         >
-          <Typography className={cn('font-semibold text-primary-foreground', badgeCount > 21 && 'text-xs')} size="xs">
+          <Typography
+            className={cn('font-semibold text-bright-fill-foreground', badgeCount > 21 && 'text-xs')}
+            size="xs"
+          >
             {badgeCount > 21 ? '21+' : badgeCount}
           </Typography>
         </Badge>
@@ -341,7 +340,10 @@ export function HeaderNavigationButtons({
             className="absolute right-0 bottom-0 h-5 w-5 rounded-full bg-brand shadow-sm"
             variant="secondary"
           >
-            <Typography className={cn('font-semibold text-primary-foreground', counter > 21 && 'text-xs')} size="xs">
+            <Typography
+              className={cn('font-semibold text-bright-fill-foreground', counter > 21 && 'text-xs')}
+              size="xs"
+            >
               {counterString}
             </Typography>
           </Badge>
@@ -388,7 +390,7 @@ export function HeaderExploreNavigationButtons({
       <Button
         variant="secondary"
         size="icon"
-        className="h-12 w-12 border bg-white/5"
+        className="h-12 w-12 border bg-glass"
         onClick={() => setShowSignInDialog(true)}
         aria-label="Join Pubky"
         data-testid="header-explore-join-button"

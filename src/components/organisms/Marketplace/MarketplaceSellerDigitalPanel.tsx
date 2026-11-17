@@ -5,7 +5,12 @@ import { Heading } from '@/atoms/Heading/Heading';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useSellerDigitalDelivery } from '@/hooks/useSellerDigitalDelivery/useSellerDigitalDelivery';
-import { DIGITAL_SELLER_COPY, digitalPaymentTakenBack, isDigitalOrderEnded } from '@/libs/commerce/digital';
+import {
+  DIGITAL_RELEASE_REFUSAL_COPY,
+  DIGITAL_SELLER_COPY,
+  digitalPaymentTakenBack,
+  isDigitalOrderEnded,
+} from '@/libs/commerce/digital';
 import { SETTINGS_SECTION_CONTENT_CLASSNAME } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 
@@ -25,7 +30,14 @@ export function MarketplaceSellerDigitalPanel({
   const delivery = useSellerDigitalDelivery(order, onChanged);
   const { email, evidence } = delivery;
   const evidenceLines = evidence.status === 'ready' ? evidence.lines : [];
-  if (delivery.channels.length === 0 && evidence.status !== 'failed' && evidenceLines.length === 0) return null;
+  if (
+    delivery.channels.length === 0 &&
+    !delivery.awaitsRelease &&
+    evidence.status !== 'failed' &&
+    evidenceLines.length === 0
+  ) {
+    return null;
+  }
   const paid = order.state === 'paid';
   const takenBack = digitalPaymentTakenBack(order);
   const canShowEmail =
@@ -68,6 +80,11 @@ export function MarketplaceSellerDigitalPanel({
           {takenBack === 'payment_reversed' ? DIGITAL_SELLER_COPY.emailReversed : DIGITAL_SELLER_COPY.emailRefunded}
         </Typography>
       )}
+      {delivery.awaitsRelease && (
+        <Typography as="p" className="text-sm text-muted-foreground" data-testid="seller-digital-release-pending">
+          {takenBack === null ? DIGITAL_SELLER_COPY.releasePending : DIGITAL_RELEASE_REFUSAL_COPY.taken_back}
+        </Typography>
+      )}
       {email.status === 'loading' && <Skeleton className="h-5 w-64" aria-label="Loading the buyer's email" />}
       {email.status === 'shown' && (
         <div className="grid gap-2">
@@ -90,6 +107,11 @@ export function MarketplaceSellerDigitalPanel({
         </Typography>
       )}
       <div className="flex flex-wrap gap-2">
+        {delivery.awaitsRelease && takenBack === null && (
+          <Button size="sm" className="rounded-full" disabled={delivery.acting} onClick={() => void delivery.release()}>
+            {DIGITAL_SELLER_COPY.release}
+          </Button>
+        )}
         {canShowEmail &&
           (email.status === 'shown' ? (
             <Button size="sm" variant="secondary" className="rounded-full" onClick={delivery.hideEmail}>

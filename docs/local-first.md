@@ -1,6 +1,6 @@
 # Local-First Patterns
 
-Rules for implementing local-first patterns. Based on ADR-0001, ADR-0011.
+Rules for implementing local-first cache-backed flows. Based on ADR-0001, ADR-0011. Commerce transactions retain their service-owned authority and reconciliation contracts; see [ADR 0019](adr/0019-marketplace-transaction-authority.md). Do not reinterpret an authoritative transaction as an optimistic cache write.
 
 ## Consistency Model
 
@@ -138,30 +138,43 @@ const posts = useLiveQuery(async () => {
 }, [id]);
 ```
 
-### Pattern: Fetch in useEffect, Read in useLiveQuery
+### Pattern: `useLocalFirstQuery` (fetch when missing, read live)
+
+For an ordinary local-first read with a network fallback, use `useLocalFirstQuery` from
+`@/hooks/useLocalFirstQuery/useLocalFirstQuery`. It keeps the network effect outside Dexie's live query.
+Do not copy a hand-written `useEffect` + `useLiveQuery` pair when this helper covers the contract.
 
 ```typescript
 // Real: src/hooks/usePostDetails/usePostDetails.tsx
-function usePostDetails(compositeId: string | null | undefined) {
-  useEffect(() => {
-    if (!compositeId) return;
-    PostController.getOrFetchDetails({ compositeId }).catch((error) => {
-      Logger.error('[usePostDetails] Failed to fetch post details:', { compositeId, error });
-    });
-  }, [compositeId]);
+export function usePostDetails(compositeId: string | null | undefined, options?: UsePostDetailsOptions) {
+  const enabled = isLocalFirstQueryEnabled(compositeId, options?.enabled);
 
-  const postDetails = useLiveQuery(
-    async () => {
-      if (!compositeId) return null;
-      return await PostController.getDetails({ compositeId });
-    },
-    [compositeId],
-    undefined,
-  );
+  const { data, isLoading } = useLocalFirstQuery<EnrichedPostDetails>({
+    queryFn: () => PostController.getDetails({ compositeId: compositeId! }),
+    fetchFn: () => PostController.fetch({ compositeId: compositeId! }),
+    deps: [compositeId, enabled],
+    enabled,
+  });
 
-  return { postDetails, isLoading: postDetails === undefined };
+  return { postDetails: data, isLoading };
 }
 ```
+
+- `queryFn` runs inside `useLiveQuery`: it must be a pure local read, normally through a `get*` controller method.
+- `fetchFn` runs outside that context, through a controller which fetches and persists the result to Dexie. The live query observes the write.
+- `fetchFn` runs only after the local read returns `null`. A non-null cache hit is not refreshed by this hook; freshness belongs to the TTL/refresh flow. An empty array or a tombstone is also a cache hit, so choose the entity's missing-data representation deliberately.
+- Include every identity and viewer dependency used by the callbacks in `deps`. When disabled, the helper short-circuits local reads to `null` and does not start a fetch.
+- `isLoading` covers the initial unresolved local read and an in-flight cache-miss fetch. The helper logs read/fetch failures and returns no error field; a settled `null` is not proof that the server returned 404. Keep the consumer's existing missing/error behavior when changing this path.
+- Effect cleanup stops an earlier fetch from updating its loading state, but does not abort that request or its persistence. Session/account guards still belong in the controller/service flow. Do not assume switching dependencies cancels IO or resets every previously exposed value; preserve identity checks in consumers.
+
+`rg -l useLocalFirstQuery src/hooks --glob '!*.test.*'` lists consumers. Older hooks still contain manual pairs; treat them as existing code to assess when touched, not the default pattern for new local-first reads. Specialized pagination, subscription and reconciliation flows may need their existing dedicated hooks; do not force them into a null-only fallback.
+
+### Read and refresh checks
+
+- A cached row can be stale without being missing. Fix freshness in the refresh path instead of adding a second fetching mechanism to a component.
+- Multiple mounted hook instances can initiate separate cache-miss fetches. Reuse the owning query and pass data down where appropriate.
+- A background response can race a local write. Preserve the relevant TTL updates, session checks and reconciliation guards; a refresh must not silently undo the user's pending action.
+- Do not put TanStack Query, retry logic or network calls inside `useLiveQuery`.
 
 ## Persistence Order
 
@@ -223,4 +236,6 @@ When adding controller methods:
 - [ ] Do write operations write to IndexedDB first?
 - [ ] Is UI updated immediately (optimistic)?
 - [ ] Does background sync handle failures gracefully?
-- [ ] Is `useLiveQuery` used only for local reads?
+- [ ] Is `useLiveQuery` used only for local reads, with ordinary local-first fallbacks using `useLocalFirstQuery`?
+- [ ] Are cache hits, tombstones, settled misses and fetch failures handled without changing visible behavior?
+- [ ] Are session/account changes and refresh-versus-local-write races covered?

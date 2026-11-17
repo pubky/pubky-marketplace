@@ -8,9 +8,11 @@ import {
   commerceShippingOptionSchema,
   commerceVariantSchema,
 } from '@/libs/commerce/marketplace-records';
+import { countryFieldError, publishedCountryCode } from '@/libs/commerce/ships-to';
 import { listingStockRefusal } from '@/libs/commerce/unlimited-stock';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import { PHOTO_REQUIRED_MESSAGE } from '@/pipes/commerce/import-publish-failure';
+import { SHIPPING_PROFILE_ID_FIELD } from '@/pipes/commerce/import-settings';
 
 type ImportJsonPrimitive = string | number | boolean | null;
 export type ImportJsonValue = ImportJsonPrimitive | ImportJsonValue[] | { [key: string]: ImportJsonValue };
@@ -148,17 +150,24 @@ function mapShipping(row: CanonicalImportRow): CommerceListingRecord['shippingOp
   return row.shippingOptions.map((option) => commerceShippingOptionSchema.parse(option));
 }
 
+/** The ISO code an imported country is published as (UK becomes GB); a code that names no country is refused. */
+function importedCountryCode(value: string): string {
+  const refusal = countryFieldError(value);
+  if (refusal) throw new Error(refusal);
+  return publishedCountryCode(value);
+}
+
 function mapLocation(row: CanonicalImportRow): CommerceListingRecord['location'] {
   const fromJson = asObject(parseJsonField(row.extraFields.location_json));
   if (fromJson && typeof fromJson.countryCode === 'string') {
     return {
-      countryCode: fromJson.countryCode,
+      countryCode: importedCountryCode(fromJson.countryCode),
       ...(typeof fromJson.region === 'string' ? { region: fromJson.region } : {}),
     };
   }
   const country = row.extraFields.country_code;
-  if (typeof country === 'string' && country.length === 2) {
-    return { countryCode: country.toUpperCase() };
+  if (typeof country === 'string' && country.trim() !== '') {
+    return { countryCode: importedCountryCode(country) };
   }
   throw new Error('A country_code extra field is required when record_json is absent.');
 }
@@ -245,13 +254,20 @@ function overlayVariants(
  * edited publishes the edit. The revision advances only when a column changed
  * the record, which keeps an unedited re-import a no-op.
  */
-function fromRecordJson(rows: readonly CanonicalImportRow[], ownerPubky: string): CommerceListingRecord | null {
+function fromRecordJson(
+  rows: readonly CanonicalImportRow[],
+  ownerPubky: string,
+  trustedProfileId: string | null,
+): CommerceListingRecord | null {
   const first = rows[0];
   const parsed = parseJsonField(first.extraFields.record_json);
   const object = asObject(parsed);
   if (!object) return null;
+  // A file never names the profile a listing is priced by: it keeps the one the stored listing already has, or none.
+  const { shippingProfileId: fileProfileId, ...withoutProfile } = object;
   const base = commerceListingRecordSchema.parse({
-    ...object,
+    ...withoutProfile,
+    ...(trustedProfileId !== null && fileProfileId === trustedProfileId ? { shippingProfileId: trustedProfileId } : {}),
     ownerPubky: typeof object.ownerPubky === 'string' ? object.ownerPubky : ownerPubky,
     listingId: typeof object.listingId === 'string' ? object.listingId : first.listingId,
   });
@@ -272,6 +288,7 @@ function fromRecordJson(rows: readonly CanonicalImportRow[], ownerPubky: string)
     sale: overlaySale(base.sale, first),
     shippingOptions,
     returnPolicy: asObject(first.returnPolicy) ? mapReturnPolicy(first.returnPolicy) : base.returnPolicy,
+    location: { ...base.location, countryCode: importedCountryCode(base.location.countryCode) },
   });
   if (stableJson(overlaid) === stableJson(base)) return base;
   return commerceListingRecordSchema.parse({
@@ -288,13 +305,17 @@ function publishable(record: CommerceListingRecord): ListingMapResult {
 }
 
 /** Map one listing's canonical rows (variants) to a Shop `CommerceListingRecord`. */
-export function mapCanonicalRowsToListing(rows: readonly CanonicalImportRow[], ownerPubky: string): ListingMapResult {
+export function mapCanonicalRowsToListing(
+  rows: readonly CanonicalImportRow[],
+  ownerPubky: string,
+  trustedProfileId: string | null = null,
+): ListingMapResult {
   if (rows.length === 0) {
     return { ok: false, message: 'No rows to map.' };
   }
   try {
     const first = rows[0];
-    const fromJson = fromRecordJson(rows, ownerPubky);
+    const fromJson = fromRecordJson(rows, ownerPubky, trustedProfileId);
     if (fromJson) {
       return publishable(fromJson);
     }
@@ -322,6 +343,9 @@ export function mapCanonicalRowsToListing(rows: readonly CanonicalImportRow[], o
       fulfillmentMethods: ['physical'],
       ...(shippingOptions.length > 0
         ? {
+            ...(first.extraFields[SHIPPING_PROFILE_ID_FIELD]
+              ? { shippingProfileId: first.extraFields[SHIPPING_PROFILE_ID_FIELD] }
+              : {}),
             package: parseJsonField(first.extraFields.package_json) ?? {
               weightGrams: 500,
               lengthMillimeters: 200,

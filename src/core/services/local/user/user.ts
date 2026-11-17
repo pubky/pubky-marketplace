@@ -3,7 +3,6 @@ import type { TPubkyListParams } from '@/controllers/user/user.type';
 import { getTtlUserMs } from '@/libs/runtime-config/runtime-config';
 import type { Pubky } from '@/models/models.types';
 import { UserCountsModel } from '@/models/user/counts/userCounts';
-import type { TUserCountsParams } from '@/models/user/counts/userCounts.types';
 import { UserDetailsModel } from '@/models/user/details/userDetails';
 import { UserRelationshipsModel } from '@/models/user/relationships/userRelationships';
 import type { UserRelationshipsModelSchema } from '@/models/user/relationships/userRelationships.schema';
@@ -50,30 +49,6 @@ export class LocalUserService {
    */
   static async readCounts({ userId }: TReadProfileParams): Promise<UserCountsModel | null> {
     return await UserCountsModel.findById(userId);
-  }
-
-  /**
-   * Upserts user counts into local database.
-   * Creates a new record if it doesn't exist, or replaces it if it does.
-   * @param params - Parameters containing user ID
-   * @param userCounts - The user counts to upsert
-   * @returns Promise resolving to void
-   */
-  static async upsertCounts(params: TReadProfileParams, userCounts: NexusUserCounts): Promise<void> {
-    // Use proper upsert (put) to create the record if it doesn't exist
-    await UserCountsModel.upsert({
-      id: params.userId,
-      ...userCounts,
-    });
-  }
-
-  /**
-   * Updates user counts in local database by applying count changes.
-   * @param params - Parameters containing user ID and count changes
-   * @returns Promise resolving to void
-   */
-  static async updateCounts(params: TUserCountsParams): Promise<void> {
-    await UserCountsModel.updateCounts(params);
   }
 
   /**

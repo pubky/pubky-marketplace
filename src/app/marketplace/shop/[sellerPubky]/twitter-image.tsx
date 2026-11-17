@@ -6,5 +6,5 @@ export { default } from './opengraph-image';
 
 export const size = OG_SIZE;
 export const contentType = OG_CONTENT_TYPE;
-export const alt = 'Pubky Marketplace shop preview';
+export const alt = 'Pubky Market shop preview';
 export const dynamic = 'force-dynamic';

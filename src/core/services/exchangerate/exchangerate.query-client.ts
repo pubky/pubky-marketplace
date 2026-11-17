@@ -4,10 +4,10 @@ import { createQueryClient } from '@/libs/query-client/query-client.factory';
 /**
  * Exchange Rate API Query Client
  *
- * Used for caching exchange rate responses from the BlockTank API: the BTC/USD
- * rate (30 minutes by default) and the `BTC<CCY>` tickers behind indicative
- * price hints (refetched after 5 minutes). None of it needs real-time
- * precision for display purposes.
+ * Used for caching exchange rate responses from the BlockTank API: the
+ * `BTC<CCY>` tickers behind indicative price hints (refetched after 5 minutes;
+ * a query that sets no `staleTime` gets the 30-minute default). None of it
+ * needs real-time precision for display purposes.
  */
 export const exchangerateQueryClient = createQueryClient({
   retry: {

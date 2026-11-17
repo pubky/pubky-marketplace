@@ -9,8 +9,12 @@ export async function POST(request: NextRequest) {
     const paired = await pairSession(request, request.headers.get('authorization'));
     const response = new NextResponse(null, { status: 204 });
     response.headers.set('cache-control', 'no-store, private');
-    response.cookies.set(SESSION_COOKIE, paired.cookie, { ...grantCookieOptions, maxAge: paired.maxAge });
-    response.cookies.delete(FLOW_COOKIE);
+    // A pairing that lost a race to a concurrent one for the same user sets no
+    // cookie: the winner's response sets the only cookie that has a bridge.
+    if (paired) {
+      response.cookies.set(SESSION_COOKIE, paired.cookie, { ...grantCookieOptions, maxAge: paired.maxAge });
+      response.cookies.delete(FLOW_COOKIE);
+    }
     return response;
   } catch (error) {
     return grantError(error);

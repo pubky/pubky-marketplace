@@ -11,15 +11,6 @@ export const PAYMENT_METHOD_STATUS_LABELS: Record<PaymentMethodStatus, string> =
   needs_attention: 'Needs attention',
 };
 
-/** A method counts as ready for selling only when its pill is Connected or Email saved. */
-export function isReadyPaymentMethodStatus(status: PaymentMethodStatus): boolean {
-  return status === 'connected' || status === 'email_saved';
-}
-
-export function countReadyPaymentMethods(statuses: readonly PaymentMethodStatus[]): number {
-  return statuses.filter(isReadyPaymentMethodStatus).length;
-}
-
 export function derivePaypalStatus(config: SellerPaymentConfigOwnView | null): PaymentMethodStatus {
   return config?.paypalMerchantEmail ? 'email_saved' : 'not_set_up';
 }
@@ -79,9 +70,4 @@ export function deriveUsdtStatus(readiness: UsdtSellerReadiness): PaymentMethodS
   if (readiness === 'ready') return 'connected';
   if (readiness === 'unavailable') return 'needs_attention';
   return 'not_set_up';
-}
-
-export function atLeastOneMethodSentence(readyCount: number): string {
-  if (readyCount === 0) return 'Add a payment method to start selling.';
-  return `${readyCount} payment ${readyCount === 1 ? 'method' : 'methods'} set up.`;
 }

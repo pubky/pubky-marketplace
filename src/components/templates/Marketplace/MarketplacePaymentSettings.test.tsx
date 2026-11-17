@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { setSocialHost } from '@/test-utils/social-host';
@@ -40,22 +40,20 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     fetchUsdtPaymentsAvailable: vi.fn(),
     getMyPaymentConfig: vi.fn(),
     putMyPaymentConfig: vi.fn(),
-    beginMarketplaceSessionConnect: vi.fn(),
     hasFullHomeserverGrant: vi.fn(() => false),
   },
 }));
 
 vi.mock('@/organisms/Marketplace/MarketplaceSectionNav', () => ({
-  MarketplaceSectionNav: () => <nav aria-label="Marketplace sections" />,
+  MarketplaceSectionNav: () => <nav aria-label="Market sections" />,
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
-  useToast: () => ({ toast: vi.fn() }),
 }));
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 
 const mockedController = vi.mocked(CommerceController);
@@ -809,7 +807,7 @@ describe('MarketplacePaymentSettings', () => {
         }),
       ),
     );
-    expect(screen.getByRole('alert')).toHaveTextContent('Bitkit setup failed. Try again.');
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Bitkit setup failed. Try again.'));
   });
 
   it('closes the setup dialog when the viewer identity is cleared', async () => {
@@ -874,7 +872,7 @@ describe('MarketplacePaymentSettings', () => {
     });
     act(() => window.dispatchEvent(message));
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Bitkit setup failed. Try again.');
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Bitkit setup failed. Try again.'));
     expect(screen.queryByTitle('Connect Bitkit')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     const secondIframe = screen.getByTitle('Connect Bitkit') as HTMLIFrameElement;
@@ -899,7 +897,7 @@ describe('MarketplacePaymentSettings', () => {
     );
 
     const dialog = screen.getByTestId('dialog-content');
-    expect(screen.getByRole('alert')).toHaveTextContent('Bitkit setup failed. Try again.');
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Bitkit setup failed. Try again.'));
     expect(within(dialog).queryByTitle('Connect Bitkit')).not.toBeInTheDocument();
     expect(dialog.querySelector('iframe, img, canvas')).toBeNull();
     const placeholder = screen.getByTestId('paykit-setup-qr-expired');

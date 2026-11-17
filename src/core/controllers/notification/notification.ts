@@ -1,11 +1,12 @@
 import { NotificationApplication } from '@/application/notification/notification';
 import type { TGetOrFetchNotificationsResponse } from '@/application/notification/notification.types';
 import { NEXUS_NOTIFICATIONS_LIMIT } from '@/config/nexus';
+import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import type { TGetNotificationsParams } from '@/controllers/notification/notification.types';
 import type { TReadProfileParams } from '@/controllers/profile/profile.types';
 import { isAppError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
-import { type FlatNotification, NotificationType } from '@/models/notification/notification.types';
+import { NotificationType } from '@/models/notification/notification.types';
 import { LastReadNormalizer } from '@/pipes/lastRead/lastRead.normalizer';
 import { NotificationNormalizer } from '@/pipes/notification/notification.normalizer';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -24,6 +25,7 @@ export class NotificationController {
    * @returns Promise resolving when notifications are updated
    */
   static async fetchNotifications({ userId }: TReadProfileParams) {
+    const signal = captureAuthScope();
     const notificationStore = useNotificationStore.getState();
     const lastPolledTimestamp = notificationStore.selectLastPolledTimestamp();
     const lastRead = notificationStore.selectLastRead();
@@ -35,8 +37,10 @@ export class NotificationController {
       lastPolledTimestamp,
       lastRead,
       allowedTypes,
+      signal,
     });
 
+    signal.throwIfAborted();
     notificationStore.setUnread(unread);
 
     const currentCursor = notificationStore.selectLastPolledTimestamp();
@@ -110,20 +114,5 @@ export class NotificationController {
       limit,
       allowedTypes: shouldFilterByPreferences ? allowedTypes : undefined,
     });
-  }
-
-  /**
-   * Retrieves all notifications from the local database without preference filtering.
-   * Currently unused since filtered-notification was introduced, but kept for future use.
-   *
-   * @returns Promise resolving to all notifications ordered by timestamp descending
-   */
-  static async getAllFromCache(): Promise<FlatNotification[]> {
-    return await NotificationApplication.getAllFromCache();
-  }
-
-  static getNotificationsCountsNow(): number {
-    const notificationStore = useNotificationStore.getState();
-    return notificationStore.selectUnread();
   }
 }

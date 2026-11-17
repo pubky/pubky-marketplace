@@ -47,5 +47,3 @@ export const searchApi = {
     });
   },
 };
-
-export type SearchApiEndpoint = keyof typeof searchApi;

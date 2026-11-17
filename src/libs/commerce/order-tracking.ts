@@ -1,3 +1,4 @@
+import { NO_CARRIER_CHOICE } from '@/libs/commerce/carrier-choice';
 import {
   buildCarrierTrackingUrl,
   getCarrierById,
@@ -53,13 +54,14 @@ export function trackingFormValuesFor(shipment: ShipmentLike | null | undefined)
   carrier: string;
   trackingNumber: string;
 } {
-  const carrierName = shipment?.carrier.trim() ?? '';
+  if (!shipment) return { carrierChoice: NO_CARRIER_CHOICE, carrier: '', trackingNumber: '' };
+  const carrierName = shipment.carrier.trim();
   const known = carrierName ? resolveCarrierByName(carrierName) : null;
-  if (known) return { carrierChoice: known.id, carrier: '', trackingNumber: shipment?.trackingNumber ?? '' };
+  if (known) return { carrierChoice: known.id, carrier: '', trackingNumber: shipment.trackingNumber };
   return {
     carrierChoice: OTHER_CARRIER_ID,
     carrier: carrierName && carrierName !== UNKNOWN_CARRIER_NAME ? carrierName : '',
-    trackingNumber: shipment?.trackingNumber ?? '',
+    trackingNumber: shipment.trackingNumber,
   };
 }
 

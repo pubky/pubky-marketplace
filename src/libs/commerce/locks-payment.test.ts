@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buyerVisiblePaymentStatus, lockPolicyCreator, locksCheckoutRoute, toBareLockResource } from './locks-payment';
+import {
+  buyerVisiblePaymentStatus,
+  lockMatchesPreparedTerms,
+  lockPolicyCreator,
+  locksCheckoutRoute,
+  preparedLockResourceHash,
+  toBareLockResource,
+} from './locks-payment';
 import { locksBareLockResourceSchema } from './transaction-commands';
 
 const CREATOR = 'y'.repeat(52);
@@ -62,5 +69,47 @@ describe('locksCheckoutRoute', () => {
     expect(locksCheckoutRoute('locks-paykit', 'upstream', [locked, plain])).toBe('mixed');
     expect(locksCheckoutRoute('locks-paykit', 'upstream', [plain])).toBe('method');
     expect(locksCheckoutRoute('locks-paykit', 'upstream', [])).toBe('method');
+  });
+});
+
+describe('preparedLockResourceHash', () => {
+  // BLAKE3 of the canonical bare resource, computed with the Rust `blake3` crate the service uses.
+  const SERVICE_HASH = '3ef3c3e6614806ff38519648c8936b39691ef58121b02a9107eacb5bbf134e1e';
+
+  it('equals the hash the service keeps for the same lock, whichever form the listing spells it in', () => {
+    expect(preparedLockResourceHash(`pubky://${CREATOR}/pub/locks.app/${LOCK_ID}.json`)).toBe(SERVICE_HASH);
+    expect(preparedLockResourceHash(`pubky://${CREATOR}/pub/locks.app/${LOCK_ID.toLowerCase()}.json`)).toBe(
+      SERVICE_HASH,
+    );
+  });
+
+  it('keeps the lock prefix as published, so the other prefix is another lock', () => {
+    const other = preparedLockResourceHash(`pubky://${CREATOR}/pub/app.locks/${LOCK_ID}.json`);
+    expect(other).toMatch(/^[a-f0-9]{64}$/);
+    expect(other).not.toBe(SERVICE_HASH);
+  });
+
+  it('is null for a URI that is not a Locks policy URI', () => {
+    expect(preparedLockResourceHash('')).toBeNull();
+    expect(preparedLockResourceHash(`https://${CREATOR}/pub/locks.app/${LOCK_ID}.json`)).toBeNull();
+  });
+});
+
+describe('lockMatchesPreparedTerms', () => {
+  const prepared = {
+    lockResourceHash: '3ef3c3e6614806ff38519648c8936b39691ef58121b02a9107eacb5bbf134e1e',
+    criterionId: 'paykit',
+  };
+  const lock = { policyUri: `pubky://${CREATOR}/pub/locks.app/${LOCK_ID}.json`, criterionId: 'paykit' };
+
+  it('matches the lock the payment was prepared against', () => {
+    expect(lockMatchesPreparedTerms(prepared, lock)).toBe(true);
+  });
+
+  it('does not match a newer lock or another criterion of the same listing', () => {
+    const newerLock = `pubky://${CREATOR}/pub/locks.app/${LOCK_ID.replace(/.$/, 'E')}.json`;
+    expect(lockMatchesPreparedTerms(prepared, { ...lock, policyUri: newerLock })).toBe(false);
+    expect(lockMatchesPreparedTerms(prepared, { ...lock, criterionId: 'other' })).toBe(false);
+    expect(lockMatchesPreparedTerms(prepared, { ...lock, policyUri: 'not a policy uri' })).toBe(false);
   });
 });

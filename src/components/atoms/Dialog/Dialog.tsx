@@ -80,7 +80,11 @@ function DialogContent({
 }) {
   const closeRef = React.useRef<HTMLButtonElement>(null);
   const contentRef = React.useRef<HTMLDivElement>(null);
-  const { contentStyle: keyboardContentStyle, spacerHeight } = useDialogKeyboardOrchestrator(contentRef, {
+  const {
+    contentStyle: keyboardContentStyle,
+    layerStyle,
+    spacerHeight,
+  } = useDialogKeyboardOrchestrator(contentRef, {
     enabled: avoidKeyboard,
   });
   const contentStyle = avoidKeyboard ? { ...style, ...keyboardContentStyle } : style;
@@ -93,6 +97,7 @@ function DialogContent({
           'fixed inset-0 z-50 flex justify-center',
           centered ? 'items-center' : 'items-end sm:items-center',
         )}
+        style={avoidKeyboard ? layerStyle : undefined}
       >
         <DialogPrimitive.Content
           ref={contentRef}

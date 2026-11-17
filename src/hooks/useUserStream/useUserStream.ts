@@ -270,14 +270,6 @@ export function useUserStream({
     await fetchStreamSlice(false);
   }, [paginated, isLoadingMore, hasMore, fetchStreamSlice]);
 
-  const refetch = useCallback(async () => {
-    if (paginated) {
-      setUserIds([]);
-      setHasMore(true);
-    }
-    await fetchStreamSlice(true);
-  }, [paginated, fetchStreamSlice]);
-
   // Initial fetch on mount or when streamId changes
   useEffect(() => {
     void fetchStreamSlice(true);
@@ -319,12 +311,10 @@ export function useUserStream({
 
   return {
     users,
-    userIds,
     isLoading: isLoading || isHydrating,
     isLoadingMore,
     hasMore,
     error,
     loadMore,
-    refetch,
   };
 }

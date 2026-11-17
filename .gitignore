@@ -68,7 +68,10 @@ public/sw.js.map
 /.cursor/hooks
 
 # Claude
-.claude
+# Shared Claude adapters and skills are versioned; local settings stay private.
+/.claude/*
+!/.claude/rules/
+!/.claude/skills/
 
 # AI generated reviews
 .ai-reviews/

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
@@ -9,6 +9,7 @@ import {
   isLinkedOfferMissing,
   loadOfferListings,
   MarketplaceOffers,
+  OFFER_LISTING_RETRY_MS,
   offerIsOpen,
   OfferListingSummary,
   offerStateLabel,
@@ -65,8 +66,8 @@ vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({ useM
 vi.mock('@/hooks/useMarketplaceActivityUnread/useMarketplaceActivityUnread', () => ({
   useMarketplaceActivityUnread: () => 0,
 }));
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 
 const seller = 's'.repeat(52);
@@ -127,6 +128,48 @@ describe('Marketplace offers UX', () => {
     expect(screen.getByRole('img', { name: 'Vintage boots thumbnail' })).toBeInTheDocument();
   });
 
+  it("keeps an offer's listing and thumbnail on screen across offers polls", async () => {
+    const listing = asInvalid<CommerceListingRecord>({
+      title: 'Vintage boots',
+      media: [{ id: 'm1', type: 'image', url: 'https://example.com/boots.jpg', altText: 'Boots' }],
+    });
+    getManyListings.mockResolvedValue(new Map([[`${seller}:boots`, { record: listing }]]));
+    offerView.offers = [offer];
+    const view = render(<MarketplaceOffers />);
+    await screen.findByRole('img', { name: 'Vintage boots thumbnail' });
+    getManyListings.mockClear();
+
+    // A poll returns the same offers as new objects.
+    offerView.offers = [{ ...offer }];
+    view.rerender(<MarketplaceOffers />);
+
+    expect(screen.getByRole('img', { name: 'Vintage boots thumbnail' })).toBeInTheDocument();
+    expect(screen.queryByText('Loading listing…')).toBeNull();
+    expect(getManyListings).not.toHaveBeenCalled();
+  });
+
+  it("retries an offer's listing that failed to load, without the offers changing", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const listing = asInvalid<CommerceListingRecord>({ title: 'Healed boots', media: [] });
+      getManyListings.mockResolvedValue(new Map());
+      getOrFetchListing.mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce(listing);
+      offerView.offers = [offer];
+      render(<MarketplaceOffers />);
+      expect(await screen.findByText('Listing details unavailable')).toBeInTheDocument();
+
+      await act(() => vi.advanceTimersByTimeAsync(OFFER_LISTING_RETRY_MS));
+
+      expect(await screen.findByText('Healed boots')).toBeInTheDocument();
+      expect(getOrFetchListing).toHaveBeenCalledTimes(2);
+      // Loaded now: no further retries.
+      await act(() => vi.advanceTimersByTimeAsync(OFFER_LISTING_RETRY_MS * 2));
+      expect(getOrFetchListing).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('uses local listings without fetching', async () => {
     const listing = asInvalid<CommerceListingRecord>({ title: 'Local boots', media: [] });
     getManyListings.mockResolvedValue(new Map([[`${seller}:boots`, { record: listing }]]));
@@ -181,6 +224,31 @@ describe('Marketplace offers UX', () => {
       expect(window.location.search).toBe('');
       expect(screen.queryByText('This offer is no longer available.')).toBeNull();
     });
+  });
+
+  it('says an old #offer-<id> link is gone without first showing the empty list', async () => {
+    offerView.offers = [];
+    window.history.replaceState(null, '', '/marketplace/offers#offer-gone-before-read');
+    let emptyShown = false;
+    // The callback runs after the commit; an empty state shown and replaced by then is in a record's removed nodes.
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of [...record.addedNodes, ...record.removedNodes]) {
+          if (node.textContent?.includes('No offers yet')) emptyShown = true;
+        }
+      }
+      if (document.body.textContent?.includes('No offers yet')) emptyShown = true;
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    try {
+      render(<MarketplaceOffers />);
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('This offer is no longer available.'));
+      expect(window.location.search).toBe('?offer=gone-before-read');
+      expect(emptyShown).toBe(false);
+    } finally {
+      observer.disconnect();
+      window.history.replaceState(null, '', '/');
+    }
   });
 
   it('shows the missing-offer fallback only for a loaded, unmatched anchor', () => {

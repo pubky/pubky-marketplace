@@ -106,16 +106,8 @@ export function usePostParticipants(
     });
   }, [participantIds, usersMap]);
 
-  // Extract author from participants
-  const author = useMemo(() => {
-    if (!authorId) return null;
-    return participants.find((p) => p.id === authorId) ?? null;
-  }, [participants, authorId]);
-
   return {
     participants,
-    author,
     isLoading: isLoadingUsers,
-    error: null,
   };
 }

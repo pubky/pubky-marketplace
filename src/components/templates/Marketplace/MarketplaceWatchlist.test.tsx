@@ -79,8 +79,8 @@ vi.mock('@/hooks/useRelativeTime/useRelativeTime', () => ({
   useRelativeTime: () => ({ formatRelativeTime: () => relativeTime.value }),
 }));
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 
 function watchlistEntry(): MarketplaceWatchlistEntry {

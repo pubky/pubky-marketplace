@@ -27,7 +27,6 @@ type ComposerHeightAnimationResult = {
   /** CSS transition for non-framer peers (QuickReply connector); none while resting. */
   heightTransitionStyle: CSSProperties;
   onHeightAnimationComplete: () => void;
-  isAnimatingHeight: boolean;
 };
 
 /**
@@ -126,6 +125,5 @@ export function useComposerHeightAnimation({
     heightTransition,
     heightTransitionStyle,
     onHeightAnimationComplete,
-    isAnimatingHeight,
   };
 }

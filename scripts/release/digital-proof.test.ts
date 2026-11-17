@@ -8,7 +8,9 @@ import {
 } from '@/libs/commerce/digital';
 import {
   BITCOIN_WINDOW_MINUTES,
+  commitMatches,
   DELIVERABLES_PREFIX,
+  deploymentIdentityRefusal,
   deploymentRefusal,
   describePlan,
   DIGITAL_KINDS,
@@ -24,8 +26,10 @@ import {
   listingTitle,
   makeFixtureFile,
   minPriceCents,
+  MISSING_EXPECTATION,
   newDeliverablePaths,
   parseBtcUsdRate,
+  parseBuildCommit,
   parseKinds,
   parsePayTimeoutMinutes,
   parsePositiveMinutes,
@@ -37,7 +41,6 @@ import {
   redactSensitive,
   screenshotPolicy,
   sha256Hex,
-  STAGING_TARGET,
   targetRefusal,
 } from './digital-proof.mjs';
 
@@ -243,53 +246,75 @@ describe('redaction of keys and the mailbox', () => {
 });
 
 describe('the staging guard', () => {
+  const configured = {
+    PROOF_STAGING_ORIGINS: 'https://staging.shop.example.test',
+    PROOF_STAGING_SERVICES: 'https://api.staging.shop.example.test',
+    PROOF_STAGING_NEXUS: 'https://nexus.staging.shop.example.test',
+  };
   const staging = {
-    origin: STAGING_TARGET.origins[0],
-    service: STAGING_TARGET.services[0],
-    nexus: STAGING_TARGET.nexus[0],
+    origin: 'https://staging.shop.example.test',
+    service: 'https://api.staging.shop.example.test',
+    nexus: 'https://nexus.staging.shop.example.test',
   };
   const production = {
-    origin: 'https://shop.pubky.app',
-    service: 'https://marketplace-service-production-ce23.up.railway.app',
-    nexus: 'https://nexusd-production-7108.up.railway.app',
+    origin: 'https://shop.example.test',
+    service: 'https://api.shop.example.test',
+    nexus: 'https://nexus.shop.example.test',
   };
 
-  it('lets the staging stack through, with or without a mount path or trailing slash', () => {
-    expect(isStagingTarget(staging)).toBe(true);
-    expect(targetRefusal(staging, {})).toBeNull();
-    expect(targetRefusal({ ...staging, origin: `${staging.origin}/` }, {})).toBeNull();
+  it('lets the configured staging stack through, with or without a mount path or trailing slash', () => {
+    expect(isStagingTarget(staging, configured)).toBe(true);
+    expect(targetRefusal(staging, configured)).toBeNull();
+    expect(targetRefusal({ ...staging, origin: `${staging.origin}/` }, configured)).toBeNull();
+    expect(targetRefusal({ ...staging, origin: `${staging.origin}/shop-embed` }, configured)).toBeNull();
   });
 
-  it('refuses the production defaults and names every variable that is wrong', () => {
-    const message = targetRefusal(production, {});
-    expect(message).toContain('PROOF_ORIGIN=https://shop.pubky.app');
-    expect(message).toContain('PROOF_SERVICE=https://marketplace-service-production-ce23.up.railway.app');
-    expect(message).toContain('PROOF_NEXUS=https://nexusd-production-7108.up.railway.app');
+  it('refuses anything not configured as staging and names every variable that is wrong', () => {
+    const message = targetRefusal(production, configured);
+    expect(message).toContain('PROOF_ORIGIN=https://shop.example.test');
+    expect(message).toContain('PROOF_SERVICE=https://api.shop.example.test');
+    expect(message).toContain('PROOF_NEXUS=https://nexus.shop.example.test');
     expect(message).toContain('PROOF_ALLOW_PRODUCTION=1');
   });
 
+  it('refuses every target when the staging stack is not configured', () => {
+    expect(isStagingTarget(staging, {})).toBe(false);
+    expect(targetRefusal(staging, {})).toContain('is not the staging stack');
+    expect(targetRefusal(staging, { ...configured, PROOF_STAGING_NEXUS: ' , ' })).toContain('PROOF_NEXUS=');
+    expect(targetRefusal(staging, { ...configured, PROOF_STAGING_ORIGINS: 'not a url' })).toContain('PROOF_ORIGIN=');
+  });
+
+  it('refuses a run with no target at all, even with the production override', () => {
+    expect(targetRefusal({ origin: '', service: '', nexus: '' }, configured)).toContain(
+      'set PROOF_ORIGIN, PROOF_SERVICE, PROOF_NEXUS',
+    );
+    expect(targetRefusal({ ...staging, nexus: undefined }, { ...configured, PROOF_ALLOW_PRODUCTION: '1' })).toContain(
+      'set PROOF_NEXUS',
+    );
+  });
+
   it('refuses a stack that is only partly staging', () => {
-    expect(targetRefusal({ ...staging, service: production.service }, {})).toContain('PROOF_SERVICE=');
-    expect(targetRefusal({ ...staging, nexus: production.nexus }, {})).toContain('PROOF_NEXUS=');
-    expect(targetRefusal({ ...staging, origin: production.origin }, {})).toContain('PROOF_ORIGIN=');
-    expect(targetRefusal({ ...staging, nexus: production.nexus }, {})).not.toContain('PROOF_ORIGIN=');
+    expect(targetRefusal({ ...staging, service: production.service }, configured)).toContain('PROOF_SERVICE=');
+    expect(targetRefusal({ ...staging, nexus: production.nexus }, configured)).toContain('PROOF_NEXUS=');
+    expect(targetRefusal({ ...staging, origin: production.origin }, configured)).toContain('PROOF_ORIGIN=');
+    expect(targetRefusal({ ...staging, nexus: production.nexus }, configured)).not.toContain('PROOF_ORIGIN=');
   });
 
   it('refuses hosts that only look like staging', () => {
     for (const origin of [
-      'https://pubky-marketplace-staging.vercel.app.evil.example',
-      'http://pubky-marketplace-staging.vercel.app',
-      'https://evil.example/https://pubky-marketplace-staging.vercel.app',
+      'https://staging.shop.example.test.evil.example',
+      'http://staging.shop.example.test',
+      'https://evil.example/https://staging.shop.example.test',
       'not a url',
     ]) {
-      expect(targetRefusal({ ...staging, origin }, {})).toContain('PROOF_ORIGIN=');
+      expect(targetRefusal({ ...staging, origin }, configured)).toContain('PROOF_ORIGIN=');
     }
   });
 
   it('is overridden only by PROOF_ALLOW_PRODUCTION=1 exactly', () => {
-    expect(targetRefusal(production, { PROOF_ALLOW_PRODUCTION: '1' })).toBeNull();
+    expect(targetRefusal(production, { ...configured, PROOF_ALLOW_PRODUCTION: '1' })).toBeNull();
     for (const value of ['', '0', 'true', 'yes', ' 1']) {
-      expect(targetRefusal(production, { PROOF_ALLOW_PRODUCTION: value })).not.toBeNull();
+      expect(targetRefusal(production, { ...configured, PROOF_ALLOW_PRODUCTION: value })).not.toBeNull();
     }
   });
 });
@@ -326,5 +351,67 @@ describe('screenshots and the tester mailbox', () => {
     expect(screenshotPolicy({ kind: 'email', email: 'a@b.c', optIn: true }).mask).toBe(true);
     expect(screenshotPolicy({ kind: 'file', email: 'a@b.c', optIn: false }).mask).toBe(true);
     expect(screenshotPolicy({ kind: 'file', email: '', optIn: false }).mask).toBe(false);
+  });
+});
+
+describe('the commit-based deployment check', () => {
+  it('reads the commit from the build response and nothing else', () => {
+    expect(parseBuildCommit('{"commit":"ABCDEF012345"}')).toBe('abcdef012345');
+    for (const body of ['{"commit":"unknown"}', '{"commit":123}', '{}', 'not json', '', undefined]) {
+      expect(parseBuildCommit(body)).toBeNull();
+    }
+  });
+
+  it('matches a short build SHA against a short or full expectation', () => {
+    const full = 'abcdef0123456789abcdef0123456789abcdef01';
+    expect(commitMatches('abcdef012345', full)).toBe(true);
+    expect(commitMatches('abcdef012345', 'abcdef0')).toBe(true);
+    expect(commitMatches('abcdef012345', 'abcdef012345')).toBe(true);
+    expect(commitMatches('abcdef012345', `${full.slice(0, 11)}f${full.slice(12)}`)).toBe(false);
+    expect(commitMatches('abcdef012345', 'abcdef')).toBe(false);
+    expect(commitMatches(null, full)).toBe(false);
+    expect(commitMatches('abcdef012345', 'zzzzzzz')).toBe(false);
+  });
+
+  it('requires one of EXPECTED_DPL and EXPECTED_COMMIT', () => {
+    expect(deploymentIdentityRefusal({ dpl: 'dpl_A', commit: 'abcdef012345' }, {})).toBe(MISSING_EXPECTATION);
+    expect(
+      deploymentIdentityRefusal({ dpl: 'dpl_A', commit: 'abcdef012345' }, { EXPECTED_DPL: ' ', EXPECTED_COMMIT: '' }),
+    ).toBe(MISSING_EXPECTATION);
+  });
+
+  it('passes on either expectation alone and on both together', () => {
+    expect(deploymentIdentityRefusal({ dpl: 'dpl_A', commit: null }, { EXPECTED_DPL: 'dpl_A' })).toBeNull();
+    expect(deploymentIdentityRefusal({ dpl: null, commit: 'abcdef012345' }, { EXPECTED_COMMIT: 'abcdef0' })).toBeNull();
+    expect(
+      deploymentIdentityRefusal(
+        { dpl: 'dpl_A', commit: 'abcdef012345' },
+        { EXPECTED_DPL: 'dpl_A', EXPECTED_COMMIT: 'abcdef012345' },
+      ),
+    ).toBeNull();
+  });
+
+  it('refuses a wrong or missing identity, and a malformed EXPECTED_COMMIT', () => {
+    expect(deploymentIdentityRefusal({ dpl: null, commit: 'abcdef012345' }, { EXPECTED_COMMIT: '1234567' })).toContain(
+      'reports abcdef012345 at /api/build, not EXPECTED_COMMIT 1234567',
+    );
+    expect(deploymentIdentityRefusal({ dpl: null, commit: null }, { EXPECTED_COMMIT: 'abcdef0' })).toContain(
+      'no commit',
+    );
+    expect(
+      deploymentIdentityRefusal(
+        { dpl: 'dpl_B', commit: 'abcdef012345' },
+        { EXPECTED_DPL: 'dpl_A', EXPECTED_COMMIT: 'abcdef0' },
+      ),
+    ).toContain('dpl_B');
+    expect(
+      deploymentIdentityRefusal(
+        { dpl: 'dpl_A', commit: 'abcdef012345' },
+        { EXPECTED_DPL: 'dpl_A', EXPECTED_COMMIT: '1234567' },
+      ),
+    ).toContain('EXPECTED_COMMIT 1234567');
+    expect(deploymentIdentityRefusal({ dpl: null, commit: 'abcdef012345' }, { EXPECTED_COMMIT: 'main' })).toContain(
+      '7 to 40 hex',
+    );
   });
 });

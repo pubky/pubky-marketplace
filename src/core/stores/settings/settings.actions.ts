@@ -29,10 +29,6 @@ export const createSettingsActions = (set: ZustandSet<SettingsStore>): SettingsA
     );
   },
 
-  setAllNotifications: (preferences) => {
-    set(withTimestamp({ notifications: preferences }), false, SettingsActionTypes.SET_ALL_NOTIFICATIONS);
-  },
-
   // Privacy actions
   setShowConfirm: (showConfirm) => {
     set(
@@ -144,37 +140,6 @@ export const createSettingsActions = (set: ZustandSet<SettingsStore>): SettingsA
       false,
       SettingsActionTypes.SET_NEVER_SHOW_POSTS,
     );
-  },
-
-  // Muted users actions
-  addMutedUser: (userId) => {
-    set(
-      (state) =>
-        withTimestamp({
-          muted: state.muted.includes(userId) ? state.muted : [...state.muted, userId],
-        }),
-      false,
-      SettingsActionTypes.ADD_MUTED_USER,
-    );
-  },
-
-  removeMutedUser: (userId) => {
-    set(
-      (state) =>
-        withTimestamp({
-          muted: state.muted.filter((id) => id !== userId),
-        }),
-      false,
-      SettingsActionTypes.REMOVE_MUTED_USER,
-    );
-  },
-
-  setMutedUsers: (userIds) => {
-    set(withTimestamp({ muted: userIds }), false, SettingsActionTypes.SET_MUTED_USERS);
-  },
-
-  clearMutedUsers: () => {
-    set(withTimestamp({ muted: [] }), false, SettingsActionTypes.CLEAR_MUTED_USERS);
   },
 
   // General actions

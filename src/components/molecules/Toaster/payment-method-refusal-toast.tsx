@@ -1,12 +1,11 @@
 'use client';
 
-import { ToastAction } from '@/atoms/Toast/Toast';
 import {
   isReaderWalletSetupNeeded,
   marketplacePaymentMethodFailureMessage,
   READER_WALLET_SETUP_COPY,
 } from '@/libs/commerce/failure-messages';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 
 /** Long enough to finish wallet setup on the phone and come back to try again. */
 export const READER_WALLET_SETUP_TOAST_MS = 60_000;
@@ -32,15 +31,15 @@ export function showPaymentMethodRefusalToast({
       variant: 'error',
       title: READER_WALLET_SETUP_COPY.title,
       description: READER_WALLET_SETUP_COPY.description,
-      duration: READER_WALLET_SETUP_TOAST_MS,
+      durationMs: READER_WALLET_SETUP_TOAST_MS,
       dismissButton: true,
       ...(onRetry
         ? {
-            action: (
-              <ToastAction altText={READER_WALLET_SETUP_COPY.retry} onClick={onRetry}>
-                {READER_WALLET_SETUP_COPY.retry}
-              </ToastAction>
-            ),
+            action: {
+              label: READER_WALLET_SETUP_COPY.retry,
+              altText: READER_WALLET_SETUP_COPY.retry,
+              onClick: onRetry,
+            },
           }
         : {}),
     });

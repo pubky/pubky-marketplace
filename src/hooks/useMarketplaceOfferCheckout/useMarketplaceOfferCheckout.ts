@@ -10,12 +10,13 @@ import {
   isPaykitUnavailableRefusal,
   MARKETPLACE_FAILURE_MESSAGES,
   marketplaceOfferCheckoutFailureMessage,
+  marketplaceRegionRefusalMessage,
 } from '@/libs/commerce/failure-messages';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import { buildMarketplaceOrderAggregateId } from '@/libs/commerce/transaction-commands';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import { showPaymentMethodRefusalToast } from '@/molecules/Toaster/payment-method-refusal-toast';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import type { MarketplaceOffer, MarketplaceOfferAward, MarketplaceOrder } from '@/services/marketplace/marketplace';
 
 type DeliveryAddress = {
@@ -123,7 +124,9 @@ export function useMarketplaceOfferCheckout(onCompleted?: () => Promise<void> | 
         if (!response.ok) {
           toast({
             variant: 'error',
-            description: marketplaceOfferCheckoutFailureMessage(response.error.code),
+            description:
+              marketplaceRegionRefusalMessage(response.error) ??
+              marketplaceOfferCheckoutFailureMessage(response.error.code),
           });
           return { ok: false, code: response.error.code };
         }

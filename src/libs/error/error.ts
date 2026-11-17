@@ -39,10 +39,10 @@ export class AppError extends Error {
   /** WHICH specific error — enables precise handling (NOT_FOUND → empty state, CONFLICT → merge dialog) */
   readonly code?: ErrorCode;
 
-  /** WHERE it happened (service) — for logging, filtering, debugging ("all Homegate errors") */
+  /** WHERE it happened (service) — for logging, filtering, debugging ("all Homeserver errors") */
   readonly service?: ErrorService;
 
-  /** WHERE it happened (operation) — traces exact code path ("readDetails", "verifySmsCode") */
+  /** WHERE it happened (operation) — traces exact code path ("readDetails", "request") */
   readonly operation?: string;
 
   /** EXTRA data — generic bag for variable context (endpoint, table, statusCode, retryAfter, etc.) */

@@ -9,7 +9,7 @@ const toggleShopFollow = vi.hoisted(() => vi.fn());
 
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
-    getOrFetchShop: vi.fn(async () => ({ name: 'Analog Sound Co.' })),
+    refreshShopOrGetCached: vi.fn(async () => ({ name: 'Analog Sound Co.' })),
   },
 }));
 
@@ -70,8 +70,8 @@ vi.mock('@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl', async () => {
   return createMarketplaceMediaHooks(() => null);
 });
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 
 describe('MarketplaceDrop', () => {

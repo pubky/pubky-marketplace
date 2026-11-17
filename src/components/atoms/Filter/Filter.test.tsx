@@ -6,7 +6,7 @@ const MockIcon = ({ className }: { className?: string }) => <svg data-testid="mo
 
 describe('Filter Components', () => {
   describe('FilterRoot', () => {
-    it('renders with default props', () => {
+    it('renders with the filter-root slot and default classes', () => {
       render(
         <FilterRoot>
           <div>Test content</div>
@@ -14,41 +14,53 @@ describe('Filter Components', () => {
       );
 
       const root = screen.getByTestId('filter-root');
-      expect(root).toBeInTheDocument();
-      expect(root).toMatchSnapshot();
+      expect(root).toHaveAttribute('data-slot', 'filter-root');
+      expect(root).toHaveTextContent('Test content');
+      expect(root).toHaveClass('m-0', 'min-w-0', 'gap-2', 'bg-background', 'p-0');
     });
 
-    it('applies custom className', () => {
+    it('merges a custom className', () => {
       render(
         <FilterRoot className="custom-class">
           <div>Test content</div>
         </FilterRoot>,
       );
 
-      const root = screen.getByTestId('filter-root');
-      expect(root).toMatchSnapshot();
+      expect(screen.getByTestId('filter-root')).toHaveClass('bg-background', 'custom-class');
     });
   });
 
   describe('FilterHeader', () => {
-    it('renders with title', () => {
+    it('renders the title as an h2 heading with muted styling', () => {
       render(<FilterHeader title="Test Filter" />);
 
-      expect(screen.getByText('Test Filter')).toBeInTheDocument();
-      const heading = screen.getByText('Test Filter');
-      expect(heading).toMatchSnapshot();
+      const heading = screen.getByTestId('heading-2');
+      expect(heading.tagName).toBe('H2');
+      expect(heading).toHaveTextContent('Test Filter');
+      expect(heading).toHaveClass('font-light', 'text-muted-foreground');
     });
 
-    it('applies custom className', () => {
+    it('renders the subtitle when provided', () => {
+      render(<FilterHeader title="Test Filter" subtitle="Test subtitle" />);
+
+      expect(screen.getByText('Test subtitle')).toBeInTheDocument();
+    });
+
+    it('omits the subtitle when not provided', () => {
+      render(<FilterHeader title="Test Filter" />);
+
+      expect(screen.queryByText('Test subtitle')).not.toBeInTheDocument();
+    });
+
+    it('merges a custom className onto the heading', () => {
       render(<FilterHeader title="Test Filter" className="custom-header" />);
 
-      const heading = screen.getByText('Test Filter');
-      expect(heading).toMatchSnapshot();
+      expect(screen.getByTestId('heading-2')).toHaveClass('font-light', 'custom-header');
     });
   });
 
   describe('FilterList', () => {
-    it('renders with default props', () => {
+    it('renders children with the filter-list slot', () => {
       render(
         <FilterList>
           <div>Item 1</div>
@@ -57,24 +69,23 @@ describe('Filter Components', () => {
       );
 
       const list = screen.getByTestId('filter-list');
-      expect(list).toBeInTheDocument();
-      expect(list).toMatchSnapshot();
+      expect(list).toHaveAttribute('data-slot', 'filter-list');
+      expect(list.children).toHaveLength(2);
     });
 
-    it('applies custom className', () => {
+    it('passes through a custom className', () => {
       render(
         <FilterList className="custom-list">
           <div>Item 1</div>
         </FilterList>,
       );
 
-      const list = screen.getByTestId('filter-list');
-      expect(list).toMatchSnapshot();
+      expect(screen.getByTestId('filter-list')).toHaveClass('custom-list');
     });
   });
 
   describe('FilterItem', () => {
-    it('renders with default props', () => {
+    it('renders as a button with the filter-item slot', () => {
       render(
         <FilterItem>
           <span>Test Item</span>
@@ -82,12 +93,25 @@ describe('Filter Components', () => {
       );
 
       const item = screen.getByTestId('filter-item');
-      expect(item).toBeInTheDocument();
-      expect(item).toMatchSnapshot();
-      expect(item).toHaveAttribute('data-selected', 'false');
+      expect(item.tagName).toBe('BUTTON');
+      expect(item).toHaveAttribute('type', 'button');
+      expect(item).toHaveAttribute('data-slot', 'filter-item');
     });
 
-    it('renders as selected', () => {
+    it('renders unselected by default', () => {
+      render(
+        <FilterItem>
+          <span>Test Item</span>
+        </FilterItem>,
+      );
+
+      const item = screen.getByTestId('filter-item');
+      expect(item).toHaveAttribute('data-selected', 'false');
+      expect(item).toHaveAttribute('aria-pressed', 'false');
+      expect(item).toHaveClass('text-muted-foreground');
+    });
+
+    it('sets data-selected, aria-pressed and the selected class when selected', () => {
       render(
         <FilterItem isSelected={true}>
           <span>Selected Item</span>
@@ -95,22 +119,28 @@ describe('Filter Components', () => {
       );
 
       const item = screen.getByTestId('filter-item');
-      expect(item).toMatchSnapshot();
       expect(item).toHaveAttribute('data-selected', 'true');
       expect(item).toHaveAttribute('aria-pressed', 'true');
+      expect(item).toHaveClass('text-foreground');
     });
 
-    it('renders as unselected', () => {
-      render(
+    it('updates aria-pressed when the selection changes', () => {
+      const { rerender } = render(
         <FilterItem isSelected={false}>
-          <span>Unselected Item</span>
+          <span>Test Item</span>
         </FilterItem>,
       );
 
       const item = screen.getByTestId('filter-item');
-      expect(item).toMatchSnapshot();
-      expect(item).toHaveAttribute('data-selected', 'false');
       expect(item).toHaveAttribute('aria-pressed', 'false');
+
+      rerender(
+        <FilterItem isSelected={true}>
+          <span>Test Item</span>
+        </FilterItem>,
+      );
+
+      expect(item).toHaveAttribute('aria-pressed', 'true');
     });
 
     it('calls onClick when clicked', () => {
@@ -121,55 +151,19 @@ describe('Filter Components', () => {
         </FilterItem>,
       );
 
-      const item = screen.getByTestId('filter-item');
-      fireEvent.click(item);
+      fireEvent.click(screen.getByTestId('filter-item'));
 
       expect(mockOnClick).toHaveBeenCalledTimes(1);
     });
 
-    it('applies custom className', () => {
+    it('merges a custom className', () => {
       render(
         <FilterItem className="custom-item">
           <span>Test Item</span>
         </FilterItem>,
       );
 
-      const item = screen.getByTestId('filter-item');
-      expect(item).toMatchSnapshot();
-    });
-
-    it('renders as a button element for accessibility', () => {
-      render(
-        <FilterItem>
-          <span>Test Item</span>
-        </FilterItem>,
-      );
-
-      const item = screen.getByTestId('filter-item');
-      expect(item.tagName).toBe('BUTTON');
-      expect(item).toHaveAttribute('type', 'button');
-    });
-
-    it('has proper ARIA attributes for screen readers', () => {
-      const { rerender } = render(
-        <FilterItem isSelected={false}>
-          <span>Test Item</span>
-        </FilterItem>,
-      );
-
-      const item = screen.getByTestId('filter-item');
-
-      // When unselected
-      expect(item).toHaveAttribute('aria-pressed', 'false');
-
-      // When selected
-      rerender(
-        <FilterItem isSelected={true}>
-          <span>Test Item</span>
-        </FilterItem>,
-      );
-
-      expect(item).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByTestId('filter-item')).toHaveClass('font-medium', 'custom-item');
     });
 
     it('supports keyboard interaction when focused', () => {
@@ -191,34 +185,30 @@ describe('Filter Components', () => {
   });
 
   describe('FilterItemIcon', () => {
-    it('renders with icon', () => {
+    it('renders the icon with the default size classes', () => {
       render(<FilterItemIcon icon={MockIcon} />);
 
-      const icon = screen.getByTestId('mock-icon');
-      expect(icon).toBeInTheDocument();
-      expect(icon).toMatchSnapshot();
+      expect(screen.getByTestId('mock-icon')).toHaveClass('h-5', 'w-5');
     });
 
-    it('applies custom className', () => {
+    it('merges a custom className', () => {
       render(<FilterItemIcon icon={MockIcon} className="custom-icon" />);
 
-      const icon = screen.getByTestId('mock-icon');
-      expect(icon).toMatchSnapshot();
+      expect(screen.getByTestId('mock-icon')).toHaveClass('h-5', 'w-5', 'custom-icon');
     });
   });
 
   describe('FilterItemLabel', () => {
-    it('renders with children', () => {
+    it('renders children in a span', () => {
       render(<FilterItemLabel>Test Label</FilterItemLabel>);
 
-      expect(screen.getByText('Test Label')).toBeInTheDocument();
+      expect(screen.getByText('Test Label').tagName).toBe('SPAN');
     });
 
-    it('applies custom className', () => {
+    it('passes through a custom className', () => {
       render(<FilterItemLabel className="custom-label">Test Label</FilterItemLabel>);
 
-      const label = screen.getByText('Test Label');
-      expect(label).toMatchSnapshot();
+      expect(screen.getByText('Test Label')).toHaveClass('custom-label');
     });
   });
 });

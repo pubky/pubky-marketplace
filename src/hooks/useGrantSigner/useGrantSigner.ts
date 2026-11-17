@@ -1,6 +1,5 @@
 'use client';
 
-import { getPassportSignInEnabled } from '@/libs/runtime-config/runtime-config';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import type { GrantSigner } from '@/stores/auth/auth.types';
 
@@ -19,13 +18,4 @@ export function readGrantSigner(state: {
  */
 export function useGrantSigner(): GrantSigner | null {
   return useAuthStore(readGrantSigner);
-}
-
-/**
- * A Passport sign-in while the deploy switched Passport off
- * (`PUBKY_RUNTIME_PASSPORT_SIGN_IN=false`): no Passport approval may start, so
- * its purchase approval is refused like a grant sign-in with the grant flow off.
- */
-export function isPassportApprovalRefused(): boolean {
-  return readGrantSigner(useAuthStore.getState()) === 'passport' && !getPassportSignInEnabled();
 }

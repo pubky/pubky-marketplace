@@ -56,7 +56,7 @@ vi.mock('@/hooks/useIndicativeBtcRate/useIndicativeBtcRate', () => ({
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     ...createMarketplaceVrtCommerceController(),
-    getOrFetchShop: vi.fn(async () => ({ name: 'Analog Sound Co.' })),
+    refreshShopOrGetCached: vi.fn(async () => ({ name: 'Analog Sound Co.' })),
     getOrFetchListing: vi.fn(async (_seller: string, listingId: string) => ({
       ownerPubky: VRT_SELLER,
       listingId,
@@ -95,8 +95,10 @@ vi.mock('@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl', async () => {
   return createMarketplaceMediaHooks(() => null);
 });
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main className="w-full py-6">{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => (
+    <main className="w-full py-6">{children}</main>
+  ),
 }));
 
 const STARTS_AT = new Date(VRT_FROZEN_NOW_MS + 2 * HOUR_MS).toISOString();

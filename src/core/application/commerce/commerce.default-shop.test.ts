@@ -3,6 +3,7 @@ import { db } from '@/database/franky/franky';
 import type { CommerceShopRecord } from '@/libs/commerce/marketplace-records';
 import { CommerceShopModel, CommerceSyncJobModel } from '@/models/commerce/commerce.models';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
+import { DEFAULT_SHOP_COUNTRY_CODE } from '@/pipes/commerce/default-shop';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
 import { LocalCommerceService } from '@/services/local/commerce/commerce';
 import {
@@ -97,6 +98,41 @@ describe('CommerceApplication default storefront', () => {
       await CommerceApplication.commitCreateDefaultShop({ ownerPubky: SELLER, profile: PROFILE });
 
       expect(written()[0].location).toEqual({ countryCode: 'CA' });
+    });
+
+    it('publishes a cached listing saved with UK as GB', async () => {
+      vi.mocked(LocalCommerceService.getListingsBySeller).mockResolvedValue([
+        { record: createCommerceListingFixture({ location: { countryCode: 'UK', region: 'London' } }) },
+      ] as Awaited<ReturnType<typeof LocalCommerceService.getListingsBySeller>>);
+
+      await CommerceApplication.commitCreateDefaultShop({ ownerPubky: SELLER, profile: PROFILE });
+
+      expect(written()[0].location).toEqual({ countryCode: 'GB', region: 'London' });
+    });
+
+    it('skips codes that name no country and takes the first real one', async () => {
+      vi.mocked(LocalCommerceService.getListingsBySeller).mockResolvedValue([
+        { record: createCommerceListingFixture({ location: { countryCode: 'ZZ' } }) },
+        { record: createCommerceListingFixture({ listingId: 'boots_02', location: { countryCode: 'CH' } }) },
+      ] as Awaited<ReturnType<typeof LocalCommerceService.getListingsBySeller>>);
+
+      await CommerceApplication.commitCreateDefaultShop({
+        ownerPubky: SELLER,
+        profile: PROFILE,
+        location: { countryCode: 'XX' },
+      });
+
+      expect(written()[0].location).toEqual({ countryCode: 'CH' });
+    });
+
+    it('falls back to the default country when no listing names a real one', async () => {
+      vi.mocked(LocalCommerceService.getListingsBySeller).mockResolvedValue([
+        { record: createCommerceListingFixture({ location: { countryCode: 'ZZ' } }) },
+      ] as Awaited<ReturnType<typeof LocalCommerceService.getListingsBySeller>>);
+
+      await CommerceApplication.commitCreateDefaultShop({ ownerPubky: SELLER, profile: PROFILE });
+
+      expect(written()[0].location).toEqual({ countryCode: DEFAULT_SHOP_COUNTRY_CODE });
     });
 
     it('never overwrites a local shop that appeared before the write', async () => {

@@ -1,7 +1,7 @@
-import { act, render, renderHook, screen } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useCommerceFavorite } from './useCommerceFavorite';
 
 const state = vi.hoisted(() => ({
@@ -37,7 +37,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 
@@ -58,11 +58,9 @@ describe('useCommerceFavorite', () => {
       expect.objectContaining({ title: 'Added to your watchlist', action: expect.anything() }),
     );
     const action = vi.mocked(toast).mock.calls[0]?.[0]?.action;
-    expect(action).toBeDefined();
-    render(action);
-    await act(async () => {
-      screen.getByRole('button', { name: 'Watchlist' }).click();
-    });
+    expect(action).toEqual({ label: 'Watchlist', altText: 'Open watchlist', onClick: expect.any(Function) });
+    expect(routerPush).not.toHaveBeenCalled();
+    await act(() => action?.onClick());
     expect(routerPush).toHaveBeenCalledWith('/marketplace/watchlist');
 
     state.favorite = true;

@@ -44,22 +44,4 @@ export class PostRelationshipsModel
       });
     }
   }
-
-  /**
-   * Get the parent post ID for a given post ID
-   * @param postId - The ID of the post to get the parent post ID for
-   * @returns The parent post ID or undefined if not found
-   */
-  static async getParentPostId(postId: string): Promise<string | null | undefined> {
-    try {
-      return (await this.table.where('replied').equals(postId).first())?.replied;
-    } catch (error) {
-      throw Err.database(DatabaseErrorCode.QUERY_FAILED, 'Failed to get parent post ID', {
-        service: ErrorService.Local,
-        operation: 'getParentPostId',
-        context: { table: this.table.name, postId },
-        cause: error,
-      });
-    }
-  }
 }

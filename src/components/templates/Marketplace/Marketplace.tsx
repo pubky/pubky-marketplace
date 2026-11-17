@@ -17,8 +17,8 @@ import { SEARCH_CLOSED_STYLE } from '@/config/search';
 import { useMarketplaceCatalog } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog';
 import {
   DROP_DISPLAY_BUCKET_ORDER,
-  interleaveInTurn,
   type MarketplaceCatalogItem,
+  orderNewestFirst,
 } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { useMarketplaceDrops } from '@/hooks/useMarketplaceDrops/useMarketplaceDrops';
 import { useMarketplacePaymentFilterOptions } from '@/hooks/useMarketplacePaymentFilterOptions/useMarketplacePaymentFilterOptions';
@@ -26,12 +26,13 @@ import { useMarketplacePromoDismissal } from '@/hooks/useMarketplacePromoDismiss
 import { useMarketplaceSellingAccess } from '@/hooks/useMarketplaceSellingAccess/useMarketplaceSellingAccess';
 import { useMarketplaceWatchDetection } from '@/hooks/useMarketplaceWatchDetection/useMarketplaceWatchDetection';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
+import { useSellingAvailability } from '@/hooks/useSellingAvailability/useSellingAvailability';
 import type { CommerceShopRecord } from '@/libs/commerce/marketplace-records';
 import { paymentFilterUnavailableCopy } from '@/libs/commerce/payment-method-filter';
 import { removeMarketplacePromoPrepaintStyle } from '@/libs/commerce/promo-prepaint';
 import { cn } from '@/libs/utils/utils';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DropCard } from '@/organisms/Marketplace/DropCard';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceFilters } from '@/organisms/Marketplace/MarketplaceFilters';
 import { MarketplaceListingCard } from '@/organisms/Marketplace/MarketplaceListingCard';
 import { MarketplaceSavedSearches } from '@/organisms/Marketplace/MarketplaceSavedSearches';
@@ -53,6 +54,7 @@ export function Marketplace({
   const router = useRouter();
   const { requireAuth } = useRequireAuth();
   const sellingAccess = useMarketplaceSellingAccess();
+  const selling = useSellingAvailability();
   const [showSellingApproval, setShowSellingApproval] = useState(false);
   const query = useCommerceStore((state) => state.query);
   const setQuery = useCommerceStore((state) => state.setQuery);
@@ -88,14 +90,17 @@ export function Marketplace({
   );
   const catalogListingCards = saleFormat === 'drops' ? [] : listingCards;
   const catalogCards: Array<(typeof listingCards)[number] | (typeof dropCards)[number]> = [];
-  if (sort === 'recommended' && saleFormat === 'all') {
-    const groups: Array<readonly (typeof catalogCards)[number][]> = [
-      listingCards.filter(({ listing }) => listing.saleFormat === 'fixed_price'),
-      listingCards.filter(({ listing }) => listing.saleFormat === 'auction'),
-      dropCards,
-    ];
-    // Stable round-robin keeps each type visible and retains its existing rank.
-    catalogCards.push(...interleaveInTurn(groups));
+  if (sort === 'newest' && saleFormat === 'all') {
+    catalogCards.push(
+      ...orderNewestFirst(
+        listingCards.map((card) => ({ card, at: card.listing.updatedAt })),
+        dropCards.map((card) => ({
+          card,
+          at: Date.parse(card.entry.starts_at) || 0,
+          upcoming: card.bucket === 'upcoming',
+        })),
+      ),
+    );
   } else {
     catalogCards.push(...dropCards, ...catalogListingCards);
   }
@@ -144,23 +149,20 @@ export function Marketplace({
   };
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
+    <MarketplaceContentLayout
       hasGradientBackground={false}
       className="marketplace-surface pb-28 lg:pb-16"
       classNameWrapperContent="overflow-visible lg:overflow-visible"
     >
       <Container overrideDefaults className="flex w-full flex-col gap-6">
-        <div className="sticky top-24 z-(--z-sticky-subnav) bg-background after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-16 after:bg-linear-to-b after:from-background/80 after:to-transparent after:content-[''] lg:top-(--header-offset-main)">
-          <MarketplaceSectionNav className="mb-0" onNavigate={(href) => requireAuth(() => router.push(href))} />
-        </div>
+        <MarketplaceSectionNav
+          className="mb-0 after:h-16"
+          onNavigate={(href) => requireAuth(() => router.push(href))}
+        />
         {renderPromo && (
           <section
             data-marketplace-promo=""
-            aria-label="Marketplace promo"
+            aria-label="Market promo"
             className={cn(
               'marketplace-promo-enter relative overflow-hidden rounded-md bg-card p-6 sm:p-10',
               isPromoDismissing && 'marketplace-promo-exit',
@@ -169,7 +171,7 @@ export function Marketplace({
             <Button
               variant="ghost"
               size="icon"
-              aria-label="Dismiss marketplace promo"
+              aria-label="Dismiss market promo"
               onClick={dismissMarketplacePromo}
               className="absolute top-2 right-2 z-10 size-8 text-muted-foreground hover:text-foreground sm:top-3 sm:right-3 sm:size-10"
             >
@@ -182,7 +184,7 @@ export function Marketplace({
                   size="xl"
                   className="relative pr-8 text-3xl leading-tight sm:text-4xl lg:pr-0 lg:text-5xl"
                 >
-                  <span className="text-white">Find something rare.</span>{' '}
+                  <span className="text-foreground-strong">Find something rare.</span>{' '}
                   <span className="text-brand">Trade freely.</span>
                 </Heading>
                 <div className="relative mt-6 hidden w-full gap-6 sm:grid sm:grid-cols-3">
@@ -236,7 +238,7 @@ export function Marketplace({
                 style={SEARCH_CLOSED_STYLE}
               >
                 <Input
-                  aria-label="Filter marketplace"
+                  aria-label="Filter market"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search"
@@ -252,25 +254,30 @@ export function Marketplace({
               </div>
             }
             sellControl={
-              <Button
-                size="sm"
-                className="ml-auto rounded-full text-xs font-bold"
-                onClick={() =>
-                  requireAuth(() => {
-                    if (sellingAccess.checkAccess()) router.push(MARKETPLACE_ROUTES.SELL);
-                    else setShowSellingApproval(true);
-                  })
-                }
-              >
-                <Store className="size-4" />
-                Sell an item
-              </Button>
+              selling.held ? undefined : (
+                <Button
+                  size="sm"
+                  className="ml-auto rounded-full text-xs font-bold"
+                  onClick={() =>
+                    requireAuth(() => {
+                      if (sellingAccess.checkAccess()) router.push(MARKETPLACE_ROUTES.SELL);
+                      else setShowSellingApproval(true);
+                    })
+                  }
+                >
+                  <Store className="size-4" />
+                  Sell an item
+                </Button>
+              )
             }
           />
 
           {adapterMode === 'unavailable' && (
-            <div role="status" className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-amber-200">
-              Marketplace transactions are unavailable in this deployment. Public browsing remains read-only.
+            <div
+              role="status"
+              className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-notice-foreground"
+            >
+              Market transactions are unavailable in this deployment. Public browsing remains read-only.
             </div>
           )}
 
@@ -357,7 +364,7 @@ export function Marketplace({
           }}
         />
       )}
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }
 

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 export function useCommerceShopFollow(sellerPubky: string) {

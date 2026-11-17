@@ -22,6 +22,8 @@ import {
   commerceReviewRecordSchema,
   type CommerceReviewResponseRecord,
   commerceReviewResponseRecordSchema,
+  type CommerceShippingProfileRecord,
+  commerceShippingProfileRecordSchema,
   type CommerceShopRecord,
   commerceShopRecordSchema,
   type CommerceWatchlistRecord,
@@ -33,7 +35,6 @@ import { canonicalizePostalCode, canonicalizeRegion, refinePostalAddressFields }
 import { type MarketplaceCommand, marketplaceCommandSchema } from '@/libs/commerce/transaction-commands';
 import type { CommerceJsonValue, CommerceMoney } from '@/libs/commerce/transaction-contracts';
 import {
-  commerceAggregateIdSchema,
   commerceEntityIdSchema,
   commercePubkySchema,
   commerceTimestampSchema,
@@ -45,11 +46,13 @@ import type {
   CommerceCatalogAuctionTerms,
   CommerceCatalogEntryModelSchema,
   CommerceIndexedReview,
+  CommerceReputationBucket,
   CommerceReputationSnippet,
   CommerceReputationSummary,
+  CommerceReviewMatch,
   CommerceSavedSearchParams,
 } from '@/models/commerce/commerce.schema';
-import type { NexusListingDetails } from '@/services/nexus/marketplace/marketplace.types';
+import type { NexusListingDetails, NexusReputationBucket } from '@/services/nexus/marketplace/marketplace.types';
 
 const MARKETPLACE_BASE_PATH = '/pub/pubky.app/marketplace/v1';
 
@@ -125,10 +128,42 @@ const NEXUS_AUCTION_TERM_FIELDS = [
  * scopes without any indexed review — both parse to `undefined` and
  * normalize to `null` (honest absence, never a fabricated 0.0).
  */
+const nexusCountSchema = z.number().int().nonnegative();
+
+/**
+ * One counting rules v2 bucket (index release IX2). `seller_*` appear only
+ * on the seller scope; both or neither.
+ */
+const nexusReputationBucketSchema = z
+  .object({
+    orders: nexusCountSchema,
+    buyers: nexusCountSchema,
+    sum_buyer_means: z.number().nonnegative(),
+    weighted_sum: z.number().nonnegative(),
+    weight_total: nexusCountSchema,
+    histogram: z.tuple([nexusCountSchema, nexusCountSchema, nexusCountSchema, nexusCountSchema, nexusCountSchema]),
+    first_iat: z.number().int().nullable(),
+    last_iat: z.number().int().nullable(),
+    seller_buyers: nexusCountSchema.optional(),
+    sum_seller_buyer_means: z.number().nonnegative().optional(),
+  })
+  .refine((bucket) => (bucket.seller_buyers === undefined) === (bucket.sum_seller_buyer_means === undefined), {
+    message: 'seller_buyers and sum_seller_buyer_means come together',
+    path: ['seller_buyers'],
+  });
+
+const nexusReputationBucketsSchema = z.record(z.string(), nexusReputationBucketSchema);
+
+const nexusScopedListingReputationSchema = z.object({
+  scoped_listing_reputation: nexusReputationBucketSchema.optional(),
+});
+
 const nexusReputationSnippetSchema = z.object({
   avg: z.number().min(0).max(5),
-  count: z.number().int().nonnegative(),
-  verified_count: z.number().int().nonnegative(),
+  count: nexusCountSchema,
+  verified_count: nexusCountSchema,
+  buckets: nexusReputationBucketsSchema.optional(),
+  unverified_count: nexusCountSchema.optional(),
 });
 
 /**
@@ -216,6 +251,19 @@ const nexusListingStreamSchema = z.array(nexusListingDetailsSchema);
 const nexusReviewRoleSchema = z.enum(['buyer_reviewing_seller', 'seller_reviewing_buyer']);
 
 /**
+ * Review moderation as the index serves it. Indexes older than review
+ * moderation send no field; that reads as null (not moderated).
+ */
+const nexusReviewModerationSchema = z
+  .object({
+    state: z.enum(['text_hidden', 'excluded']),
+    reason: z.string(),
+  })
+  .nullable()
+  .optional()
+  .transform((moderation) => moderation ?? null);
+
+/**
  * Wire schema for one indexed review inside a Nexus review-stream entry.
  * `verified === true` requires `attestor_id` to name the signer — an entry
  * claiming verification without naming who verified is rejected as
@@ -233,10 +281,20 @@ const nexusReviewDetailsSchema = z
     text: z.string(),
     verified: z.boolean(),
     attestor_id: commercePubkySchema.nullable(),
+    // The attested order's salted hash (the key of the attestor's annotations); null for an unattested review.
+    order_ref: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .nullable()
+      .optional(),
+    // Absent before index release IX2; null when the review is unverified.
+    iat: z.number().int().positive().nullable().optional(),
+    price_weight: z.number().int().min(1).max(5).nullable().optional(),
     edited_late: z.boolean(),
     created_at: commerceTimestampSchema,
     updated_at: commerceTimestampSchema,
     revision: z.number().int().positive(),
+    moderation: nexusReviewModerationSchema,
   })
   .superRefine((review, context) => {
     if (review.verified && review.attestor_id === null) {
@@ -257,12 +315,40 @@ const nexusReviewResponseDetailsSchema = z.object({
   revision: z.number().int().positive(),
 });
 
-const nexusReviewStreamSchema = z.array(
+const nexusReviewEntriesSchema = z.array(
   z.object({
     review: nexusReviewDetailsSchema,
     response: nexusReviewResponseDetailsSchema.nullable(),
   }),
 );
+
+/**
+ * What an index served over every counted match of a filtered or sorted
+ * stream (IX4). Read only for a reviewer filter, whose header shows it, and
+ * read apart from the reviews: a malformed `matched` costs the figures, never
+ * the list.
+ */
+const nexusReviewMatchedSchema = z.object({
+  buyers: nexusCountSchema,
+  orders: nexusCountSchema,
+  avg: z.number().min(0).max(5).nullable(),
+  seller_buyers: nexusCountSchema.optional(),
+  seller_avg: z.number().min(0).max(5).nullable().optional(),
+});
+
+/**
+ * A review stream is a bare list until a filter or sort parameter is sent
+ * (and always from an index before IX4), then the `{reviews, matched}`
+ * envelope.
+ */
+const nexusReviewStreamSchema = z.union([
+  nexusReviewEntriesSchema.transform((reviews) => ({ reviews, envelope: false, matched: undefined })),
+  z
+    .object({ reviews: nexusReviewEntriesSchema, matched: z.unknown().optional() })
+    .transform(({ reviews, matched }) => ({ reviews, envelope: true, matched })),
+]);
+
+const nexusAttestorRecordEntrySchema = z.object({ record: z.record(z.string(), z.unknown()) });
 
 const nexusReputationSummarySchema = z.object({
   count: z.number().int().nonnegative(),
@@ -279,6 +365,9 @@ const nexusReputationSummarySchema = z.object({
   edited_late_count: z.number().int().nonnegative(),
   attestors: z.record(z.string(), z.number().int().nonnegative()),
   last_reviewed_at: z.string().nullable(),
+  buckets: nexusReputationBucketsSchema.optional(),
+  unverified_count: nexusCountSchema.optional(),
+  scoped: nexusReputationBucketSchema.optional(),
 });
 
 /** The catalog filter state a saved search persists — mirrors the commerce store's filter fields. */
@@ -289,7 +378,10 @@ const commerceSavedSearchParamsSchema: z.ZodType<CommerceSavedSearchParams> = z.
   conditions: z.array(z.enum(['new', 'like_new', 'excellent', 'good', 'fair', 'for_parts'])).max(6),
   minimumPriceMinor: z.number().int().nonnegative().nullable(),
   maximumPriceMinor: z.number().int().nonnegative().nullable(),
-  sort: z.enum(['recommended', 'newest', 'price_low', 'price_high', 'ending_soon']),
+  sort: z.preprocess(
+    (value) => (value === 'recommended' ? 'newest' : value),
+    z.enum(['newest', 'price_low', 'price_high', 'ending_soon']),
+  ),
 });
 
 export class CommerceRecordNormalizer {
@@ -297,6 +389,10 @@ export class CommerceRecordNormalizer {
 
   static shop(input: unknown): CommerceShopRecord {
     return this.parse(commerceShopRecordSchema, input, 'shop');
+  }
+
+  static shippingProfile(input: unknown): CommerceShippingProfileRecord {
+    return this.parse(commerceShippingProfileRecordSchema, input, 'shippingProfile');
   }
 
   static listing(input: unknown): CommerceListingRecord {
@@ -402,34 +498,72 @@ export class CommerceRecordNormalizer {
     return this.toCatalogEntry(this.parse(nexusListingDetailsSchema, input, 'nexusListingDetails'));
   }
 
+  /**
+   * The exact listing figure a `v0/listing/{seller}/{listing}` payload carries
+   * when the request named attestor windows; undefined from an index without
+   * trust buckets.
+   */
+  static nexusScopedListingReputation(input: unknown): CommerceReputationBucket | undefined {
+    const { scoped_listing_reputation: scoped } = this.parse(
+      nexusScopedListingReputationSchema,
+      input,
+      'nexusScopedListingReputation',
+    );
+    return scoped === undefined ? undefined : this.toReputationBucket(scoped);
+  }
+
   static savedSearchParams(input: unknown): CommerceSavedSearchParams {
     return this.parse(commerceSavedSearchParamsSchema, input, 'savedSearchParams');
   }
 
   /**
-   * Validates a Nexus review-stream payload (`v0/shop/{seller}/reviews` or
-   * `v0/listing/{seller}/{listing}/reviews`) and normalizes it into the
-   * camelCase review views the marketplace surfaces render. The `verified`
-   * flag is passed through as the cryptographic fact Nexus recorded at
-   * ingest; attestor TRUST is applied at display time, not here.
+   * Normalizes review entries for either answer shape, also telling which one the
+   * index served: `envelope` is true only for the `{reviews, matched}` form,
+   * which an index answers when it honoured a sort or filter parameter, and
+   * carrying its `matched` figures (null for a bare list or a malformed
+   * `matched`).
    */
-  static nexusReviewStream(input: unknown): CommerceIndexedReview[] {
-    const entries = this.parse(nexusReviewStreamSchema, input, 'nexusReviewStream');
-    return entries.map(({ review, response }) => ({
+  static nexusReviewPage(input: unknown): {
+    reviews: CommerceIndexedReview[];
+    envelope: boolean;
+    matched: CommerceReviewMatch | null;
+  } {
+    const {
+      reviews: entries,
+      envelope,
+      matched: rawMatched,
+    } = this.parse(nexusReviewStreamSchema, input, 'nexusReviewStream');
+    const parsedMatched = nexusReviewMatchedSchema.safeParse(rawMatched);
+    const matched: CommerceReviewMatch | null = parsedMatched.success
+      ? {
+          buyers: parsedMatched.data.buyers,
+          orders: parsedMatched.data.orders,
+          avg: parsedMatched.data.avg,
+          ...(parsedMatched.data.seller_buyers !== undefined && { sellerBuyers: parsedMatched.data.seller_buyers }),
+          ...(parsedMatched.data.seller_avg !== undefined && { sellerAvg: parsedMatched.data.seller_avg }),
+        }
+      : null;
+    const reviews: CommerceIndexedReview[] = entries.map(({ review, response }) => ({
       reviewId: review.review_id,
+      uri: this.reviewUri(review.reviewer_id, review.review_id),
       reviewerId: review.reviewer_id,
       subjectId: review.subject_id,
       listingOwnerId: review.listing_owner_id,
       listingId: review.listing_id,
       role: review.role,
       ratingOverall: review.rating_overall,
-      text: review.text,
+      // A moderated review never shows its text, even if an index sent some.
+      text: review.moderation === null ? review.text : '',
       verified: review.verified,
       attestorId: review.attestor_id,
+      ...(review.order_ref !== undefined && { orderRef: review.order_ref }),
+      ...(review.iat !== undefined && { iat: review.iat }),
+      ...(review.price_weight !== undefined && { priceWeight: review.price_weight }),
       editedLate: review.edited_late,
       createdAt: review.created_at,
       updatedAt: review.updated_at,
       revision: review.revision,
+      moderation: review.moderation,
       response:
         response === null
           ? null
@@ -441,6 +575,30 @@ export class CommerceRecordNormalizer {
               revision: response.revision,
             },
     }));
+    return { reviews, envelope, matched };
+  }
+
+  /**
+   * The served `record` of an attestor profile answer, or null when the
+   * payload carries none. The record is not read here: the application
+   * verifies its proof before it uses any member.
+   */
+  static nexusAttestorProfileRecord(input: unknown): Record<string, unknown> | null {
+    const parsed = nexusAttestorRecordEntrySchema.safeParse(input);
+    return parsed.success ? parsed.data.record : null;
+  }
+
+  /**
+   * The served `record` of each entry of an attestor annotations answer, in
+   * the index's order, with null for an entry without one (no annotation, or
+   * a malformed entry); null when the answer is not an array at all.
+   */
+  static nexusAttestorAnnotationRecords(input: unknown): (Record<string, unknown> | null)[] | null {
+    if (!Array.isArray(input)) return null;
+    return input.map((entry: unknown) => {
+      const parsed = nexusAttestorRecordEntrySchema.safeParse(entry);
+      return parsed.success ? parsed.data.record : null;
+    });
   }
 
   /** Validates a Nexus `v0/shop/{seller}/reputation` payload. */
@@ -455,6 +613,9 @@ export class CommerceRecordNormalizer {
       editedLateCount: summary.edited_late_count,
       attestors: summary.attestors,
       lastReviewedAt: summary.last_reviewed_at,
+      ...(summary.buckets !== undefined && { buckets: this.toReputationBuckets(summary.buckets) }),
+      ...(summary.unverified_count !== undefined && { unverifiedCount: summary.unverified_count }),
+      ...(summary.scoped !== undefined && { scoped: this.toReputationBucket(summary.scoped) }),
     };
   }
 
@@ -488,7 +649,36 @@ export class CommerceRecordNormalizer {
   // as nothing or "New seller", never as zeros.
   private static toReputationSnippet(snippet: NexusListingDetails['reputation']): CommerceReputationSnippet | null {
     if (!snippet) return null;
-    return { avg: snippet.avg, count: snippet.count, verifiedCount: snippet.verified_count };
+    return {
+      avg: snippet.avg,
+      count: snippet.count,
+      verifiedCount: snippet.verified_count,
+      ...(snippet.buckets !== undefined && { buckets: this.toReputationBuckets(snippet.buckets) }),
+      ...(snippet.unverified_count !== undefined && { unverifiedCount: snippet.unverified_count }),
+    };
+  }
+
+  private static toReputationBuckets(
+    buckets: Record<string, NexusReputationBucket>,
+  ): Record<string, CommerceReputationBucket> {
+    return Object.fromEntries(
+      Object.entries(buckets).map(([attestorId, bucket]) => [attestorId, this.toReputationBucket(bucket)]),
+    );
+  }
+
+  private static toReputationBucket(bucket: NexusReputationBucket): CommerceReputationBucket {
+    return {
+      orders: bucket.orders,
+      buyers: bucket.buyers,
+      sumBuyerMeans: bucket.sum_buyer_means,
+      weightedSum: bucket.weighted_sum,
+      weightTotal: bucket.weight_total,
+      histogram: bucket.histogram,
+      firstIat: bucket.first_iat,
+      lastIat: bucket.last_iat,
+      sellerBuyers: bucket.seller_buyers ?? null,
+      sumSellerBuyerMeans: bucket.sum_seller_buyer_means ?? null,
+    };
   }
 
   /**
@@ -519,10 +709,6 @@ export class CommerceRecordNormalizer {
           : this.toCatalogMoney(listing, listing.auction_buy_now_price_minor),
       minimumIncrement: this.toCatalogMoney(listing, auction_minimum_increment_minor),
     };
-  }
-
-  static aggregateId(input: unknown): string {
-    return this.parse(commerceAggregateIdSchema, input, 'aggregateId');
   }
 
   static lockResource(input: unknown): string {

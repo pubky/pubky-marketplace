@@ -94,7 +94,6 @@ describe('useOwnDrops', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     expect(CommerceController.getOwnDrop).not.toHaveBeenCalled();
-    expect(result.current.isDurable).toBe(false);
     expect(result.current.rows[0]).toMatchObject({ dropId: 'drop1', projection: { status: 'unavailable' } });
   });
 

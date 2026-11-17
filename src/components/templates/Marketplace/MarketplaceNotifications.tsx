@@ -24,8 +24,10 @@ import { returnActivityTitles } from '@/libs/commerce/return-activity-titles';
 import { Logger } from '@/libs/logger/logger';
 import { formatDateTime } from '@/libs/utils/dateTime';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
+import { MarketplaceModerationDecisionCard } from '@/organisms/Marketplace/MarketplaceModerationDecisionCard';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
+import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
 import {
   getWatchAlertDetail,
   getWatchAlertHeadline,
@@ -110,13 +112,7 @@ export function MarketplaceNotifications() {
   };
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      className="pb-28"
-    >
+    <MarketplaceContentLayout disableMainContentOverflow className="pb-28">
       <Container overrideDefaults className="flex w-full flex-col gap-6" data-surface="marketplace-transaction-history">
         <MarketplaceSectionNav />
         <div className="flex flex-wrap items-end justify-between gap-4">
@@ -190,10 +186,13 @@ export function MarketplaceNotifications() {
         {isLoading ? (
           <Skeleton className="h-32 w-full" />
         ) : needsSession && error ? (
+          // A missing or expired marketplace session is not an empty history:
+          // the list loads once the session is approved again.
           <MarketplaceEmptyState
             icon={Bell}
-            title="No commerce updates"
-            description="Updates about your marketplace activity will appear here."
+            title="Approve the marketplace to see your updates"
+            description="Your order and payment updates show here after one approval."
+            action={<MarketplaceSessionConnectDialog triggerLabel="Approve" />}
           />
         ) : error ? (
           <div role="alert" className="rounded-md border border-destructive/40 p-4">
@@ -203,7 +202,7 @@ export function MarketplaceNotifications() {
           <div className="flex flex-col gap-3">
             {integrityGapCount > 0 && (
               <div role="status" className="rounded-md border border-amber-500/40 p-4 text-sm">
-                {integrityGapCount} unrecognized marketplace event{integrityGapCount === 1 ? '' : 's'} — history may be
+                {integrityGapCount} unrecognized market event{integrityGapCount === 1 ? '' : 's'} — history may be
                 incomplete.
               </div>
             )}
@@ -212,6 +211,12 @@ export function MarketplaceNotifications() {
                 <KnownOrGapActivityRow
                   key={`unrecognized:${notification.type}:${notification.createdAt}:${notification.id}`}
                   type={notification.type}
+                  createdAt={notification.createdAt}
+                />
+              ) : notification.type === 'moderation_decision' ? (
+                <MarketplaceModerationDecisionCard
+                  key={notification.id}
+                  decision={notification.moderationDecision}
                   createdAt={notification.createdAt}
                 />
               ) : (
@@ -236,7 +241,7 @@ export function MarketplaceNotifications() {
           />
         )}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }
 
@@ -250,7 +255,7 @@ function KnownOrGapActivityRow({ type, createdAt }: { type: string; createdAt: s
             <Bell className="size-5" />
           </div>
           <Typography as="p" className="font-semibold">
-            Unrecognized marketplace event
+            Unrecognized market event
           </Typography>
           <Typography as="span" className="ml-auto text-xs text-muted-foreground">
             Integrity notice

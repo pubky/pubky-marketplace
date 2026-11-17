@@ -3,7 +3,6 @@ import type {
   TEnsureModerationFollowParams,
   TEnsureSellerFollowParams,
   TUserApplicationFollowParams,
-  TUserCountsOrFetchResult,
 } from '@/application/user/user.types';
 import { getModerationId } from '@/config/moderation';
 import type { TReadProfileParams } from '@/controllers/profile/profile.types';
@@ -24,20 +23,17 @@ import { LocalProfileService } from '@/services/local/profile/profile';
 import { LocalStreamUsersService } from '@/services/local/stream/users/users';
 import { LocalUserTagService } from '@/services/local/tag/user/tag.user';
 import { LocalUserService } from '@/services/local/user/user';
-import type {
-  NexusTag,
-  NexusTaggers,
-  NexusUserCounts,
-  NexusUserDetails,
-  NexusUserRelationship,
-} from '@/services/nexus/nexus.types';
+import type { NexusTag, NexusUserCounts, NexusUserDetails, NexusUserRelationship } from '@/services/nexus/nexus.types';
 import { NexusUserStreamService } from '@/services/nexus/stream/users/userStream';
 import { NexusUserService } from '@/services/nexus/user/user';
-import type { TUserTaggersParams, TUserTagsParams } from '@/services/nexus/user/user.types';
+import type { TUserTagsParams } from '@/services/nexus/user/user.types';
 
 export class UserApplication {
-  /** Per account and seller, settled or in-flight auto-follows of this session; failures are dropped to allow a retry. */
-  private static sellerAutoFollowSession = new Map<string, Promise<void>>();
+  /**
+   * Per account and seller, settled or in-flight auto-follows of this session. Failed and cancelled
+   * attempts are dropped, so the next trigger tries again.
+   */
+  private static sellerAutoFollowSession = new Map<string, { attempt: Promise<void>; signal?: AbortSignal }>();
 
   private static sellerAutoFollowMarkerUrl(follower: Pubky, seller: Pubky): string {
     return `${baseUriBuilder(follower)}migrations/seller-auto-follow/v1/${seller}.json`;
@@ -102,44 +98,8 @@ export class UserApplication {
   }
 
   /**
-   * Retrieves a full user entity (details, counts, relationships, tags, TTL, moderation) from local database.
-   * If not found locally, fetches from Nexus batch endpoint and persists everything via stream persistence.
-   *
-   * Preferred over `getOrFetchDetails` / `getOrFetchCounts` when the caller needs the full entity cached.
-   *
-   * @param params - Parameters containing user ID
-   * @returns Promise resolving to user details or null if not found
-   */
-  static async getOrFetch({ userId }: TReadProfileParams): Promise<NexusUserDetails | null> {
-    // 1. Check local cache first
-    const localDetails = await LocalUserService.readDetails({ userId });
-    if (localDetails) {
-      return localDetails;
-    }
-
-    // 2. Fetch full user from Nexus batch endpoint
-    try {
-      const users = await NexusUserStreamService.fetchByIds({ user_ids: [userId] });
-
-      if (!users || users.length === 0) {
-        Logger.warn('User not found on Nexus', { userId });
-        return null;
-      }
-
-      // 3. Persist full user entity (details, counts, relationships, tags, TTL, moderation)
-      await LocalStreamUsersService.persistUsers(users);
-    } catch (error) {
-      Logger.warn('Failed to fetch user from Nexus', { userId, error });
-      return null;
-    }
-
-    // 4. Return from local cache (now populated)
-    return await LocalUserService.readDetails({ userId });
-  }
-
-  /**
    * Fetches a full user entity from Nexus batch endpoint and persists locally (network-only, no local read).
-   * Use instead of `getOrFetch` when the caller already knows the user is not cached
+   * Use when the caller already knows the user is not cached
    * (e.g. `useLocalFirstQuery` hook where `useLiveQuery` handles the local read).
    *
    * @param params - Parameters containing user ID
@@ -174,30 +134,8 @@ export class UserApplication {
   }
 
   /**
-   * Retrieves user counts from local database. If not found, fetches from Nexus API and persists to local database.
-   * @param params - Parameters containing user ID
-   * @returns Cached row (includes `id`) or Nexus payload or null if unavailable
-   */
-  static async getOrFetchCounts({ userId }: TReadProfileParams): Promise<TUserCountsOrFetchResult | null> {
-    const userCounts = await LocalUserService.readCounts({ userId });
-    if (userCounts) {
-      return userCounts;
-    }
-
-    try {
-      const nexusUserCounts = await NexusUserService.counts({ user_id: userId });
-      await LocalProfileService.upsertCounts(userId, nexusUserCounts);
-      return nexusUserCounts;
-    } catch (error) {
-      // Return null if user counts cannot be fetched (e.g., user not indexed yet)
-      Logger.warn('Failed to fetch user counts from Nexus', { userId, error });
-      return null;
-    }
-  }
-
-  /**
    * Fetches user counts from Nexus and persists to local database (network-only, no local read).
-   * Use instead of `getOrFetchCounts` when the caller already knows counts are not cached
+   * Use when the caller already knows counts are not cached
    * (e.g. `useLocalFirstQuery` hook where `useLiveQuery` handles the local read).
    * @param params - Parameters containing user ID
    * @returns Promise resolving to user counts or null if fetch fails
@@ -358,17 +296,34 @@ export class UserApplication {
     if (follower === followee || signal?.aborted) return;
 
     const sessionKey = `${follower}:${followee}`;
-    const inSession = this.sellerAutoFollowSession.get(sessionKey);
-    if (inSession) return await inSession;
+    const forget = (entry: { attempt: Promise<void> }) => {
+      if (this.sellerAutoFollowSession.get(sessionKey) === entry) this.sellerAutoFollowSession.delete(sessionKey);
+    };
 
-    const attempt = this.runEnsureSellerFollow({ follower, seller: followee, signal });
-    this.sellerAutoFollowSession.set(sessionKey, attempt);
+    const inSession = this.sellerAutoFollowSession.get(sessionKey);
+    if (inSession) {
+      const failure = await inSession.attempt.then(
+        () => null,
+        (error: unknown) => ({ error }),
+      );
+      if (!inSession.signal?.aborted || signal?.aborted) {
+        if (failure) throw failure.error;
+        return;
+      }
+      // The shared attempt stopped when its own scope ended, so it may have done nothing.
+      forget(inSession);
+      return await this.ensureSellerFollow({ follower, seller: followee, signal });
+    }
+
+    const entry = { attempt: this.runEnsureSellerFollow({ follower, seller: followee, signal }), signal };
+    this.sellerAutoFollowSession.set(sessionKey, entry);
     try {
-      await attempt;
+      await entry.attempt;
     } catch (error) {
-      this.sellerAutoFollowSession.delete(sessionKey);
+      forget(entry);
       throw error;
     }
+    if (signal?.aborted) forget(entry);
   }
 
   /** Writes the marker that stops the Shop from ever following this seller again for the buyer. */
@@ -402,15 +357,6 @@ export class UserApplication {
 
     if (signal?.aborted) return;
     await this.recordSellerAutoFollow(follower, seller);
-  }
-
-  /**
-   * Retrieves taggers for a specific tag label on a user from the nexus service.
-   * @param params - Parameters containing user ID, label, and pagination options
-   * @returns Promise resolving to an array of users who tagged the user with the specified label
-   */
-  static async fetchTaggers(params: TUserTaggersParams): Promise<NexusTaggers[]> {
-    return await NexusUserService.taggers(params);
   }
 
   /**

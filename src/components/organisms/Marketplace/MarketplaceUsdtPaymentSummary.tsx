@@ -5,6 +5,7 @@ import {
   usdtAmountLabel,
   usdtPaidAsLine,
   usdtPhaseCopy,
+  usdtReceivedLine,
   usdtSettlementPhase,
 } from '@/libs/commerce/usdt-buyer-status';
 import { cn } from '@/libs/utils/utils';
@@ -32,7 +33,9 @@ export function MarketplaceUsdtPaymentSummary({
   const phase = usdtSettlementPhase(order, payment);
   if (phase === null) return null;
   const amount = usdtAmountLabel(order);
-  const paidAs = usdtPaidAsLine(order);
+  // Money never applied to the order is shown as what arrived, never as the quote.
+  const unapplied = phase === 'review' || phase === 'abandoned' || phase === 'refunded';
+  const paidAs = unapplied ? usdtReceivedLine(order) : usdtPaidAsLine(order);
   const copy = usdtPhaseCopy(order, payment, isBuyer);
   const awaiting = phase === 'awaiting';
   // The buyer's awaiting sentence rides the status card's progress line; review copy rides its review paragraph.

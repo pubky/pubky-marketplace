@@ -40,8 +40,3 @@ export const LAYOUT_DIMENSIONS = {
    */
   SIDEBAR_BOTTOM_OFFSET: 48,
 } as const;
-
-/**
- * Type for the LAYOUT_DIMENSIONS object values
- */
-export type LayoutDimensionValue = (typeof LAYOUT_DIMENSIONS)[keyof typeof LAYOUT_DIMENSIONS];

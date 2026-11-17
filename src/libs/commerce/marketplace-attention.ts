@@ -18,6 +18,8 @@ const ACTION_ACTIVITY_TYPES = new Set<MarketplaceNotification['type']>([
   'payment_refund_required',
   'bitcoin_manual_review',
   'bitcoin_payment_seen',
+  'usdt_payment_seen',
+  'paypal_payment_seen',
   'payment_reversal_cancelled',
 ]);
 
@@ -33,6 +35,8 @@ const ORDER_ACTION_TYPES = new Set<MarketplaceNotification['type']>([
   'payment_refund_required',
   'bitcoin_manual_review',
   'bitcoin_payment_seen',
+  'usdt_payment_seen',
+  'paypal_payment_seen',
   'payment_reversal_cancelled',
 ]);
 
@@ -42,10 +46,15 @@ export function isMarketplaceActionActivity(type: MarketplaceNotification['type'
 
 const ORDERS_SEEN_PREFIX = 'pubky.marketplace.ordersSeen.';
 
+/** The `localStorage` key of one account's orders checkpoint. */
+export function ordersSeenStorageKey(pubky: string): string {
+  return `${ORDERS_SEEN_PREFIX}${pubky}`;
+}
+
 export const MARKETPLACE_ORDERS_SEEN_EVENT = 'marketplace-orders-seen';
 
 export function readOrdersSeenAt(pubky: string, storage: Pick<Storage, 'getItem'>): number {
-  const raw = storage.getItem(`${ORDERS_SEEN_PREFIX}${pubky}`);
+  const raw = storage.getItem(ordersSeenStorageKey(pubky));
   if (!raw) return 0;
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
@@ -55,7 +64,7 @@ export function readOrdersSeenAt(pubky: string, storage: Pick<Storage, 'getItem'
 export function writeOrdersSeenAt(pubky: string, at: number, storage: Pick<Storage, 'getItem' | 'setItem'>): boolean {
   const current = readOrdersSeenAt(pubky, storage);
   if (!(at > current)) return false;
-  storage.setItem(`${ORDERS_SEEN_PREFIX}${pubky}`, String(at));
+  storage.setItem(ordersSeenStorageKey(pubky), String(at));
   return true;
 }
 
@@ -135,9 +144,9 @@ export function offerNeedsCurrentUser(
 
 export function marketplaceNavAccessibleName(cartCount: number, attentionCount: number): string {
   const attention = attentionCount === 1 ? '1 needs attention' : `${attentionCount} need attention`;
-  if (cartCount <= 0) return `Marketplace, ${attention}`;
+  if (cartCount <= 0) return `Market, ${attention}`;
   const cart = cartCount === 1 ? '1 item in cart' : `${cartCount} items in cart`;
-  return `Marketplace, ${cart}, ${attention}`;
+  return `Market, ${cart}, ${attention}`;
 }
 
 /** The subject key an order contributes to the combined marketplace badge. */

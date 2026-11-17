@@ -89,7 +89,7 @@ describe('useNestedReplies', () => {
     });
 
     expect(getOrFetchSpy).toHaveBeenCalledTimes(2);
-    expect(result.current.showAll).toBe(true);
+    expect(result.current.isExpandingAll).toBe(false);
     expect(result.current.hasMoreReplies).toBe(false);
   });
 
@@ -117,7 +117,7 @@ describe('useNestedReplies', () => {
     });
 
     expect(getOrFetchSpy).toHaveBeenCalled();
-    expect(result.current.showAll).toBe(true);
+    expect(result.current.isExpandingAll).toBe(false);
     expect(result.current.hasMoreReplies).toBe(false);
   });
 });

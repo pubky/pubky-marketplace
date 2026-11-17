@@ -162,7 +162,7 @@ async function loadProjection(
   }
 }
 
-async function cacheProjection(projection: MarketplaceListingProjection): Promise<void> {
+export async function cacheProjection(projection: MarketplaceListingProjection): Promise<void> {
   const aggregate = projection.aggregateId.slice('listing:'.length);
   if (aggregate.length < 54 || aggregate[52] !== '_') return;
   const sellerPubky = aggregate.slice(0, 52);

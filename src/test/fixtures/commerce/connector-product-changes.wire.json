@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "kind": "connector_product_changes",
+  "connection_id": "f58fb1dd-89d3-4559-932c-3fee0ebd3247",
+  "changes": [
+    {
+      "id": "fc32e7bd-0b8f-430d-9366-44075aac1255",
+      "provider_product_id": "gid://shopify/Product/9001",
+      "field_group": "content",
+      "base": {
+        "title": "Trail Boots",
+        "image_urls": ["https://cdn.shopify.com/s/files/boots-1.jpg"],
+        "description": "Waterproof leather boots."
+      },
+      "proposed": {
+        "title": "Trail Boots II",
+        "image_urls": ["https://cdn.shopify.com/s/files/boots-1.jpg"],
+        "description": "Waterproof now."
+      },
+      "proposed_hash": "3268be4890e851034915bd407fb9b0bfe3d0014c6edbf63cec47ba6d157a5ed8",
+      "detected_at": "2026-08-19T22:00:00.000Z",
+      "updated_at": "2026-08-19T22:00:00.000Z",
+      "listings": [
+        {
+          "listing_id": "boots_01",
+          "direction": "from_store",
+          "variants": [
+            {
+              "variant_id": "",
+              "provider_variant_id": "gid://shopify/ProductVariant/50001"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "61ee5464-ab10-44c4-b099-54524ac0d8a1",
+      "provider_product_id": "gid://shopify/Product/9001",
+      "field_group": "price",
+      "base": {
+        "variants": [
+          {
+            "currency": "USD",
+            "exponent": 2,
+            "amount_minor": 12500,
+            "provider_variant_id": "gid://shopify/ProductVariant/50001"
+          },
+          {
+            "currency": "USD",
+            "exponent": 2,
+            "amount_minor": 12500,
+            "provider_variant_id": "gid://shopify/ProductVariant/50002"
+          },
+          {
+            "currency": "USD",
+            "exponent": 2,
+            "amount_minor": 12999,
+            "provider_variant_id": "gid://shopify/ProductVariant/50003"
+          }
+        ]
+      },
+      "proposed": {
+        "variants": [
+          {
+            "currency": "USD",
+            "exponent": 2,
+            "amount_minor": 13000,
+            "provider_variant_id": "gid://shopify/ProductVariant/50001"
+          },
+          {
+            "currency": "USD",
+            "exponent": 2,
+            "amount_minor": 12500,
+            "provider_variant_id": "gid://shopify/ProductVariant/50002"
+          },
+          {
+            "currency": "USD",
+            "exponent": 2,
+            "amount_minor": 12999,
+            "provider_variant_id": "gid://shopify/ProductVariant/50003"
+          }
+        ]
+      },
+      "proposed_hash": "bde1cf166843dc2fda11be6050d9d47eddb0635c163266d0a6f6fa58c5ab8131",
+      "detected_at": "2026-08-19T22:00:00.000Z",
+      "updated_at": "2026-08-19T22:00:00.000Z",
+      "listings": [
+        {
+          "listing_id": "boots_01",
+          "direction": "from_store",
+          "variants": [
+            {
+              "variant_id": "",
+              "provider_variant_id": "gid://shopify/ProductVariant/50001"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ef02805b-ae76-4c9e-bd23-a5c7efc653c3",
+      "provider_product_id": "gid://shopify/Product/9002",
+      "field_group": "status",
+      "base": {
+        "available": true
+      },
+      "proposed": {
+        "available": false
+      },
+      "proposed_hash": "9c9729d235cfd4897778afaf5651db6b7e91ca68f8c5d052d66de5e09734d668",
+      "detected_at": "2026-08-19T22:00:00.000Z",
+      "updated_at": "2026-08-19T22:00:00.000Z",
+      "listings": [
+        {
+          "listing_id": "mug_01",
+          "direction": "always",
+          "variants": [
+            {
+              "variant_id": "",
+              "provider_variant_id": "gid://shopify/ProductVariant/50010"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

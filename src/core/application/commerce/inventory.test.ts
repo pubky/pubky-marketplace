@@ -21,7 +21,7 @@ vi.mock('@/config/commerce', async () => {
   return {
     ...actual,
     getCommerceAdapterMode: () => 'transaction-service',
-    getMarketplaceUrl: () => 'https://staging-api.pubky.app',
+    getMarketplaceUrl: () => 'https://marketplace-service.example.test',
     isDurableCommerceMode: () => true,
   };
 });

@@ -43,14 +43,12 @@ describe('useTagSuggestions', () => {
     const { result } = renderHook(() => useTagSuggestions({ query: '' }));
 
     expect(result.current.suggestions).toEqual([]);
-    expect(result.current.isLoading).toBe(false);
   });
 
   it('returns empty suggestions when query is less than minimum length', () => {
     const { result } = renderHook(() => useTagSuggestions({ query: 'ab' }));
 
     expect(result.current.suggestions).toEqual([]);
-    expect(result.current.isLoading).toBe(false);
   });
 
   it('fetches tag suggestions when query has minimum length', async () => {
@@ -118,7 +116,6 @@ describe('useTagSuggestions', () => {
     });
 
     expect(result.current.suggestions).toEqual([]);
-    expect(result.current.isLoading).toBe(false);
   });
 
   it('clears suggestions when query becomes empty', async () => {
@@ -179,7 +176,7 @@ describe('useTagSuggestions', () => {
     expect(result.current.suggestions).toEqual(['bitstamp']);
   });
 
-  it('sets loading state while fetching', async () => {
+  it('keeps suggestions empty until the request resolves', async () => {
     // Create a promise that we can control
     let resolvePromise: (value: string[]) => void;
     const controlledPromise = new Promise<string[]>((resolve) => {
@@ -189,8 +186,9 @@ describe('useTagSuggestions', () => {
 
     const { result } = renderHook(() => useTagSuggestions({ query: 'bit' }));
 
-    // Should be loading
-    expect(result.current.isLoading).toBe(true);
+    // No result should appear before the pending request resolves.
+    expect(result.current.suggestions).toEqual([]);
+    expect(mockGetTagsByPrefix).toHaveBeenCalled();
 
     // Resolve the promise
     await act(async () => {
@@ -199,7 +197,6 @@ describe('useTagSuggestions', () => {
       await Promise.resolve();
     });
 
-    expect(result.current.isLoading).toBe(false);
     expect(result.current.suggestions).toEqual(['bitcoin']);
   });
 

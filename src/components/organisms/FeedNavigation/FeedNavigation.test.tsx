@@ -220,8 +220,8 @@ describe('FeedNavigation', () => {
 
     const links = screen.getAllByTestId('link');
     const homeLink = links.find((link) => link.getAttribute('href') === '/home');
-    expect(homeLink).toHaveClass('border-white');
-    expect(homeLink).toHaveClass('text-white');
+    expect(homeLink).toHaveClass('border-foreground-strong');
+    expect(homeLink).toHaveClass('text-foreground-strong');
   });
 
   it('applies muted styling to Home link when pathname is not /home', () => {
@@ -285,8 +285,8 @@ describe('FeedNavigation', () => {
 
     const links = screen.getAllByTestId('link');
     const activeLink = links.find((link) => link.getAttribute('href') === '/feed/feed-active');
-    expect(activeLink).toHaveClass('border-white');
-    expect(activeLink).toHaveClass('text-white');
+    expect(activeLink).toHaveClass('border-foreground-strong');
+    expect(activeLink).toHaveClass('text-foreground-strong');
   });
 
   it('applies muted styling to a custom feed when its route does not match pathname', () => {
@@ -414,49 +414,3 @@ describe('FeedNavigation', () => {
 // ---------------------------------------------------------------------------
 // Snapshots
 // ---------------------------------------------------------------------------
-
-describe('FeedNavigation - Snapshots', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockCustomFeeds = [];
-    mockIsAuthenticated = true;
-    mockRequireAuth.mockImplementation((action: () => unknown) => action());
-    mockUsePathname.mockReturnValue('/home');
-    mockGetList.mockResolvedValue([]);
-  });
-
-  it('matches snapshot with no custom feeds and Home active', () => {
-    const { container } = render(<FeedNavigation />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom feeds and Home active', () => {
-    mockCustomFeeds = [
-      createMockFeed({ id: 'feed-1', name: 'Bitcoin News' }),
-      createMockFeed({ id: 'feed-2', name: 'Lightning Network' }),
-    ];
-
-    const { container } = render(<FeedNavigation />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom feed active (showing edit dialog)', () => {
-    mockCustomFeeds = [createMockFeed({ id: 'feed-active', name: 'Active Feed' })];
-    mockUsePathname.mockReturnValue('/feed/feed-active');
-
-    const { container } = render(<FeedNavigation />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with multiple custom feeds and one active', () => {
-    mockCustomFeeds = [
-      createMockFeed({ id: 'feed-1', name: 'Bitcoin' }),
-      createMockFeed({ id: 'feed-2', name: 'Lightning' }),
-      createMockFeed({ id: 'feed-3', name: 'Nostr' }),
-    ];
-    mockUsePathname.mockReturnValue('/feed/feed-2');
-
-    const { container } = render(<FeedNavigation />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-});

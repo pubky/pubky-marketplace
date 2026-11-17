@@ -27,7 +27,7 @@ import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { isSentryInitialized } from '@/libs/observability/sentry';
 import { getSentryDiagnostics } from '@/libs/observability/sentry-test-harness';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 
 type ServerTriggerType = 'unhandled' | 'factory';
 type RequestState = 'idle' | 'loading' | 'ok' | 'error';
@@ -241,6 +241,7 @@ export function SentryTestHarness() {
           <DiagnosticRow label="Release" value={diagnostics.release} />
           <DiagnosticRow label="DSN" value={describeDsn(diagnostics.dsn)} tone={diagnostics.dsn ? 'default' : 'warn'} />
           <DiagnosticRow label="Traces sample rate" value={String(diagnostics.tracesSampleRate)} />
+          <DiagnosticRow label="Error sample rate" value={String(diagnostics.sampleRate)} />
         </CardContent>
       </Card>
 

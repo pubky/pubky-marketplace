@@ -3,122 +3,79 @@ import { describe, expect, it } from 'vitest';
 import { List } from './List';
 
 describe('List', () => {
-  it('renders with default props', () => {
-    render(<List>Default List</List>);
-    const list = screen.getByText('Default List');
-    expect(list).toBeInTheDocument();
-  });
-});
-
-describe('List - Snapshots', () => {
-  it('matches snapshot with default props', () => {
-    const { container } = render(
+  it('renders a <ul> with the default classes by default', () => {
+    render(
       <List>
         <li>Item 1</li>
-        <li>Item 2</li>
       </List>,
     );
-    expect(container.firstChild).toMatchSnapshot();
+    const list = screen.getByTestId('list');
+    expect(list.tagName).toBe('UL');
+    expect(list).toHaveClass('ml-6', 'text-base', 'font-normal', 'text-muted-foreground', 'list-disc');
   });
 
-  it('matches snapshot for ul element', () => {
-    const { container } = render(
-      <List as="ul">
-        <li>Unordered item</li>
+  it.each([
+    ['ul', 'UL'],
+    ['ol', 'OL'],
+  ] as const)('renders as <%s> when as="%s"', (as, tagName) => {
+    render(
+      <List as={as}>
+        <li>Item</li>
       </List>,
     );
-    expect(container.firstChild).toMatchSnapshot();
+    expect(screen.getByTestId('list').tagName).toBe(tagName);
   });
 
-  it('matches snapshot for ol element', () => {
-    const { container } = render(
-      <List as="ol">
-        <li>Ordered item</li>
+  it.each([
+    ['default', 'list-disc'],
+    ['decimal', 'list-decimal'],
+    ['none', 'list-none'],
+  ] as const)('applies variant="%s" as the %s class', (variant, variantClass) => {
+    render(
+      <List variant={variant}>
+        <li>Item</li>
       </List>,
     );
-    expect(container.firstChild).toMatchSnapshot();
+    expect(screen.getByTestId('list')).toHaveClass(variantClass);
   });
 
-  it('matches snapshot for default variant', () => {
-    const { container } = render(
-      <List variant="default">
-        <li>Default item</li>
-      </List>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for decimal variant', () => {
-    const { container } = render(
-      <List variant="decimal">
-        <li>Decimal item</li>
-      </List>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for none variant', () => {
-    const { container } = render(
-      <List variant="none">
-        <li>None item</li>
-      </List>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom className', () => {
-    const { container } = render(
+  it('merges a custom className with the default classes', () => {
+    render(
       <List className="custom-list-class">
-        <li>Custom class item</li>
+        <li>Item</li>
       </List>,
     );
-    expect(container.firstChild).toMatchSnapshot();
+    expect(screen.getByTestId('list')).toHaveClass('ml-6', 'list-disc', 'custom-list-class');
   });
 
-  it('matches snapshot with custom data-testid', () => {
-    const { container } = render(
+  it('passes through a custom data-testid', () => {
+    render(
       <List data-testid="custom-list">
-        <li>Custom test ID item</li>
+        <li>Item</li>
       </List>,
     );
-    expect(container.firstChild).toMatchSnapshot();
+    expect(screen.getByTestId('custom-list')).toBeInTheDocument();
   });
 
-  it('matches snapshot with single item', () => {
-    const { container } = render(
-      <List>
-        <li>Single item</li>
+  it('passes through html attributes', () => {
+    render(
+      <List id="test-list" aria-label="Test list">
+        <li>Item</li>
       </List>,
     );
-    expect(container.firstChild).toMatchSnapshot();
+    const list = screen.getByTestId('list');
+    expect(list).toHaveAttribute('id', 'test-list');
+    expect(list).toHaveAttribute('aria-label', 'Test list');
   });
 
-  it('matches snapshot with multiple items', () => {
-    const { container } = render(
+  it('renders multiple items', () => {
+    render(
       <List>
         <li>First item</li>
         <li>Second item</li>
         <li>Third item</li>
       </List>,
     );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with id prop', () => {
-    const { container } = render(
-      <List id="test-list">
-        <li>Item with ID</li>
-      </List>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with aria-label prop', () => {
-    const { container } = render(
-      <List aria-label="Test list">
-        <li>Item with aria-label</li>
-      </List>,
-    );
-    expect(container.firstChild).toMatchSnapshot();
+    expect(screen.getByTestId('list').children).toHaveLength(3);
   });
 });

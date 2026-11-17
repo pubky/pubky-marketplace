@@ -2,9 +2,13 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import { orderAmountEntry } from '@/libs/commerce/bitcoin-payment-code';
+import { orderRefundEntry, orderReturnEntry } from '@/libs/commerce/bitcoin-payment-code';
+import { buyerSellerRatings, reviewListingAggregateId, reviewsOfReviewer } from '@/libs/commerce/order-reviews';
 import { resolveTrackingCarrierName } from '@/libs/commerce/order-tracking';
+import { orderCommandPayloadIssues } from '@/libs/commerce/transaction-commands';
 import { isUsdtRefundOrder, normalizeArbitrumTxHash } from '@/libs/commerce/usdt-refund';
+import { Logger } from '@/libs/logger/logger';
+import { toast } from '@/molecules/Toaster/toast';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import {
   formatOrderMajor,
@@ -12,7 +16,9 @@ import {
   type MarketplaceOrderActionData,
   marketplaceOrderActionDefaults,
   marketplaceOrderActionSchemaFor,
+  ORDER_COMMAND_UNSENDABLE_COPY,
   paypalRefundedMinor,
+  type ReviewItemDraft,
 } from './useMarketplaceOrderAction.types';
 
 export function useMarketplaceOrderAction(
@@ -20,11 +26,18 @@ export function useMarketplaceOrderAction(
   actOnOrder: (order: MarketplaceOrder, kind: string, payload: Record<string, unknown>) => Promise<boolean>,
 ) {
   const refundedMinor = paypalRefundedMinor(order);
-  const entry = orderAmountEntry(order);
+  const refundEntry = orderRefundEntry(order);
+  const returnEntry = orderReturnEntry(order);
   const isUsdt = isUsdtRefundOrder(order);
-  const rail = isUsdt ? 'usdt' : order.paymentMethod === 'paypal' ? 'paypal' : 'other';
+  const rail = isUsdt
+    ? 'usdt'
+    : order.paymentMethod === 'paypal'
+      ? 'paypal'
+      : order.refundCap?.unit === 'sat'
+        ? 'bitcoin'
+        : 'other';
   const form = useForm<MarketplaceOrderActionData>({
-    resolver: zodResolver(marketplaceOrderActionSchemaFor(entry, refundedMinor, rail)),
+    resolver: zodResolver(marketplaceOrderActionSchemaFor(refundEntry, refundedMinor, rail)),
     defaultValues: marketplaceOrderActionDefaults,
     mode: 'onChange',
   });
@@ -39,12 +52,23 @@ export function useMarketplaceOrderAction(
       amount:
         action === 'refund'
           ? formatOrderMajor({
-              amountMinor: Math.max(0, entry.amountMinor - refundedMinor),
-              exponent: entry.exponent,
+              amountMinor: Math.max(0, refundEntry.amountMinor - refundedMinor),
+              exponent: refundEntry.exponent,
             })
-          : formatOrderMajor(entry),
+          : formatOrderMajor(returnEntry),
       ...overrides,
     });
+  };
+
+  // A payload the Shop's own command contract refuses never leaves the
+  // client, and `actOnOrder` would only toast a generic failure: the dialog
+  // says so itself.
+  const send = async (kind: string, payload: Record<string, unknown>) => {
+    const issues = orderCommandPayloadIssues(kind, order.id, payload);
+    if (!issues) return await actOnOrder(order, kind, payload);
+    Logger.error('[useMarketplaceOrderAction] The Shop refused its own order command', { kind, issues });
+    form.setError('root', { message: ORDER_COMMAND_UNSENDABLE_COPY });
+    return false;
   };
 
   const submit = async (): Promise<boolean> => {
@@ -52,7 +76,7 @@ export function useMarketplaceOrderAction(
     await form.handleSubmit(async (data) => {
       switch (data.action) {
         case 'cancel':
-          succeeded = await actOnOrder(order, 'order.cancel_request', { reason: data.reason });
+          succeeded = await send('order.cancel_request', { reason: data.reason });
           break;
         case 'ship':
           // The service's `carrier` field is a structured free string; the
@@ -62,47 +86,98 @@ export function useMarketplaceOrderAction(
           // `Other` when none was given. The tracking number is optional: a
           // blank one is left out and added later with
           // `fulfillment.update_tracking`.
-          succeeded = await actOnOrder(order, 'fulfillment.ship', {
+          succeeded = await send('fulfillment.ship', {
             carrier: resolveTrackingCarrierName(data.carrierChoice, data.carrier),
             ...(data.trackingNumber ? { trackingNumber: data.trackingNumber } : {}),
           });
           break;
         case 'return':
-          succeeded = await actOnOrder(order, 'return.request', {
+          succeeded = await send('return.request', {
             reason: data.reason,
-            requestedAmountMinor: majorToMinor(data.amount, entry.exponent),
+            requestedAmountMinor: majorToMinor(data.amount, returnEntry.exponent),
           });
           break;
         case 'refund':
           // The record replaces PayPal's running sum, so it carries the
           // recorded total, never below what PayPal already refunded.
-          succeeded = await actOnOrder(order, 'refund.record_external', {
-            amountMinor: refundedMinor + majorToMinor(data.amount, entry.exponent),
+          succeeded = await send('refund.record_external', {
+            amountMinor: refundedMinor + majorToMinor(data.amount, refundEntry.exponent),
             transactionId: isUsdt ? normalizeArbitrumTxHash(data.transactionId) : data.transactionId,
+            // Named only from the cap the service projected: one that predates
+            // the unit refuses a payload field it does not know.
+            ...(order.refundCap ? { amountUnit: order.refundCap.unit } : {}),
           });
           break;
         case 'review':
-          succeeded = await actOnOrder(order, 'review.create', {
+          if (data.reviewItems.length > 0) {
+            succeeded = await send('review.create', {
+              items: reviewItemTerms(data.reviewItems),
+              ...sellerRatingTerms(data),
+              // D2 both-sides consent: this is only half the gate — the
+              // service includes a band only when the seller also consented.
+              allowAmountBand: data.allowAmountBand,
+            });
+            break;
+          }
+          succeeded = await send('review.create', {
             rating: Number(data.rating),
             text: data.text,
-            // D2 both-sides consent: this is only half the gate — the
-            // service includes a band only when the seller also consented.
             allowAmountBand: data.allowAmountBand,
           });
           break;
-        case 'review_edit':
+        case 'review_edit': {
           // Durable service only (24h edit window). `actOnOrder` sources
           // `expected_revision` from the loaded order. A revision conflict
           // re-reads the order and succeeds when that review is already there.
-          succeeded = await actOnOrder(order, 'review.update', {
-            rating: Number(data.rating),
-            text: data.text,
+          if (data.reviewItems.length === 0) {
+            succeeded = await send('review.update', {
+              rating: Number(data.rating),
+              text: data.text,
+            });
+            break;
+          }
+          // Only the listings whose stars or text changed are sent, so an
+          // edit revises only those records. The service takes seller
+          // ratings with at least one item, so a seller-only change sends the
+          // first, unchanged.
+          const own = reviewsOfReviewer(order, order.buyerPubky);
+          const changed = data.reviewItems.filter((item) => {
+            const current = own.find(
+              (review) => reviewListingAggregateId(order, review) === `listing:${order.sellerPubky}_${item.listingId}`,
+            );
+            return current === undefined || current.rating !== Number(item.rating) || current.text !== item.text;
+          });
+          const rated = buyerSellerRatings(order);
+          const seller = sellerRatingTerms(data);
+          const sellerChanged =
+            seller.seller !== undefined &&
+            (rated?.shipping !== seller.seller.shipping || rated?.communication !== seller.seller.communication);
+          if (changed.length === 0 && !sellerChanged) {
+            toast({ variant: 'info', description: 'Nothing changed in your review.' });
+            succeeded = true;
+            break;
+          }
+          succeeded = await send('review.update', {
+            items: reviewItemTerms(changed.length > 0 ? changed : data.reviewItems.slice(0, 1)),
+            ...(sellerChanged ? seller : {}),
           });
           break;
+        }
       }
     })();
     return succeeded;
   };
 
   return { form, setAction, submit };
+}
+
+function reviewItemTerms(items: ReviewItemDraft[]) {
+  return items.map(({ listingId, rating, text }) => ({ listingId, rating: Number(rating), text }));
+}
+
+/** The seller ratings of a review form: both or neither (the schema refuses one alone). */
+function sellerRatingTerms(data: MarketplaceOrderActionData) {
+  return data.sellerShipping === ''
+    ? {}
+    : { seller: { shipping: Number(data.sellerShipping), communication: Number(data.sellerCommunication) } };
 }

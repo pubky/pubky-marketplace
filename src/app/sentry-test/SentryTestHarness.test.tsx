@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { setBasePath } from '@/test-utils/base-path';
 import { SentryTestHarness } from './SentryTestHarness';
 
@@ -12,9 +12,10 @@ vi.mock('@/libs/observability/sentry-test-harness', () => ({
     release: 'shop-test',
     dsn: 'https://public@example.com/1',
     tracesSampleRate: 0,
+    sampleRate: 0.1,
   }),
 }));
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 describe('SentryTestHarness server capture', () => {
   const fetchMock = vi.fn<typeof fetch>();
@@ -28,6 +29,12 @@ describe('SentryTestHarness server capture', () => {
   afterEach(() => {
     setBasePath('');
     vi.unstubAllGlobals();
+  });
+
+  it('shows the resolved error sampling separately from trace sampling', () => {
+    render(<SentryTestHarness />);
+    expect(screen.getByText('Error sample rate').parentElement).toHaveTextContent('0.1');
+    expect(screen.getByText('Traces sample rate').parentElement).toHaveTextContent('0');
   });
 
   it.each([

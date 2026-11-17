@@ -1,6 +1,6 @@
 # Shop v0.6.50
 
-Notes for the GitHub release `shop-v0.6.50`. The release lane adds the header (date, exact commit, Vercel deployment id and URL, rollback target) and the proof result when it tags, per [`release.md`](../release.md#tag-and-release-notes). The user-facing bullets are the changelog fragments added or changed since `shop-v0.6.49` (`changelog.d/next/digital-paypal-reversal.fixed.md`, `paykit-refusals.changed.md`, `locks-invoice-admission.fixed.md`, `152.added.md`, `154.added.md`), reworded for readers.
+Notes for the GitHub release `shop-v0.6.50`. The release lane adds the header (date, exact commit, deployment id and URL, rollback target) and the proof result when it tags, per [`release.md`](../release.md#tag-and-release-notes). The user-facing bullets are the changelog fragments added or changed since `shop-v0.6.49` (`changelog.d/next/digital-paypal-reversal.fixed.md`, `paykit-refusals.changed.md`, `locks-invoice-admission.fixed.md`, `152.added.md`, `154.added.md`), reworded for readers.
 
 Range: `shop-v0.6.49..master`. Pull requests: #142, #143, #144, #145, #153, #154 and the USDT foundations #146, #149, #150, #151 and #157. #141 already shipped in v0.6.49: it merged into #135's branch before that tag.
 
@@ -33,8 +33,8 @@ Range: `shop-v0.6.49..master`. Pull requests: #142, #143, #144, #145, #153, #154
 - **Shop config: none required.** Two new runtime keys, both left unset:
   - `PUBKY_RUNTIME_USDT_PAYMENTS_ENABLED`: unset resolves to `false`, and a strict deployed parse succeeds without it.
   - `PUBKY_RUNTIME_PAYKIT_SERVER_API`: unset resolves to `fork`. `upstream` also needs `PUBKY_RUNTIME_PAYKIT_SETUP_CREATOR_PARAM=false` and waits for the service cutover.
-  - No Vercel variable changes.
-- **Build:** deploy with `--build-env SHOP_VERSION=shop-v0.6.50` so `/version.json` reports the release (a Vercel build has no git tags). A CLI deploy also passes `GIT_SHA=<commit>` for the commit field. Docker images need the `GIT_SHA` and `SHOP_VERSION` build args.
+  - No hosting variable changes.
+- **Build:** set `SHOP_VERSION=shop-v0.6.50` at build time so `/version.json` reports the release (a CI build has no git tags), and `GIT_SHA=<commit>` for the commit field. Docker images need the `GIT_SHA` and `SHOP_VERSION` build args.
 - **Dependencies:** the build installs `@synonymdev/locks-sdk@0.1.0-rc10` from npm and no longer needs `vendor/locks-sdk-wasm`. `npm ci` must reach the npm registry.
 - **marketplace-service:** run an image built from `main` at or after #98 alongside this Shop: #98 lets the service accept `/pub/app.locks/` lock paths, and #88 withholds a reversed or refunded digital read on the service side. Neither is in the `301fd570` image. The digital reversal and refund copy shows only after the service also withholds the read (#88). The Shop renders it from fields the service already returns, so the Shop is safe on today's service. The USDT service flag must never be turned on before this Shop is deployed: an older Shop rejects an unknown `payment_method`.
 - No database migration, no local database (Dexie) version change, no stored session change.

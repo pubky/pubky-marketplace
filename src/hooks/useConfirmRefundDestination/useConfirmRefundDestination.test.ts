@@ -1,11 +1,11 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { createUsdtOrderFixture } from '@/test/fixtures/commerce/orders';
 import { REFUND_FIXTURE_ADDRESS, REFUND_FIXTURE_OTHER_ADDRESS } from '@/test/fixtures/commerce/usdt-refund.wire';
 import { useConfirmRefundDestination } from './useConfirmRefundDestination';
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 beforeEach(() => {
   vi.mocked(toast).mockClear();

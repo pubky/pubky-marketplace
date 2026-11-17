@@ -5,7 +5,7 @@ import type { NexusTag, NexusTaggers } from '@/services/nexus/nexus.types';
 import { queryNexus } from '@/services/nexus/nexus.utils';
 import { NexusPostService } from '@/services/nexus/post/post';
 import { postApi } from './post.api';
-import { type TPostBase, type TPostTaggersParams, type TPostTagsParams, type TPostViewParams } from './post.types';
+import { type TPostBase, type TPostTaggersParams, type TPostTagsParams } from './post.types';
 
 vi.mock('@/services/nexus/nexus.utils', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/nexus/nexus.utils')>();
@@ -21,76 +21,6 @@ const pubky = 'qr3xqyz3e5cyf9npgxc5zfp15ehhcis6gqsxob4une7bwwazekry';
 const postId = 'test-post-123';
 
 describe('Post API', () => {
-  describe('postApi.view', () => {
-    it('should generate correct view URL with basic parameters', () => {
-      const params: TPostViewParams = {
-        author_id: pubky,
-        post_id: postId,
-      };
-
-      const result = postApi.view(params);
-      expect(result).toBe(`${getNexusUrl()}/v0/post/${pubky}/${postId}`);
-    });
-
-    it('should generate correct view URL with viewer_id', () => {
-      const params: TPostViewParams = {
-        author_id: pubky,
-        post_id: postId,
-        viewer_id: `${pubky}-viewer`,
-      };
-
-      const result = postApi.view(params);
-      expect(result).toBe(`${getNexusUrl()}/v0/post/${pubky}/${postId}?viewer_id=${pubky}-viewer`);
-    });
-
-    it('should generate correct view URL with tag pagination parameters', () => {
-      const params: TPostViewParams = {
-        author_id: pubky,
-        post_id: postId,
-        limit_tags: 10,
-        limit_taggers: 5,
-      };
-
-      const result = postApi.view(params);
-      expect(result).toBe(`${getNexusUrl()}/v0/post/${pubky}/${postId}?limit_tags=10&limit_taggers=5`);
-    });
-  });
-
-  describe('postApi.bookmarks', () => {
-    it('should generate correct bookmarks URL with basic parameters', () => {
-      const params: TPostBase = {
-        author_id: pubky,
-        post_id: postId,
-      };
-
-      const result = postApi.bookmarks(params);
-      expect(result).toBe(`${getNexusUrl()}/v0/post/${pubky}/${postId}/bookmarks`);
-    });
-
-    it('should generate correct bookmarks URL with viewer_id', () => {
-      const params: TPostBase = {
-        author_id: pubky,
-        post_id: postId,
-        viewer_id: `${pubky}-viewer`,
-      };
-
-      const result = postApi.bookmarks(params);
-      expect(result).toBe(`${getNexusUrl()}/v0/post/${pubky}/${postId}/bookmarks?viewer_id=${pubky}-viewer`);
-    });
-  });
-
-  describe('postApi.counts', () => {
-    it('should generate correct counts URL', () => {
-      const params: TPostBase = {
-        author_id: pubky,
-        post_id: postId,
-      };
-
-      const result = postApi.counts(params);
-      expect(result).toBe(`${getNexusUrl()}/v0/post/${pubky}/${postId}/counts`);
-    });
-  });
-
   describe('postApi.details', () => {
     it('should generate correct details URL', () => {
       const params: TPostBase = {
@@ -178,26 +108,26 @@ describe('Post API', () => {
   });
 
   describe('Path segment encoding for special characters', () => {
-    describe('postApi.view', () => {
+    describe('postApi.tags', () => {
       it('should encode spaces in author_id', () => {
-        const result = postApi.view({ author_id: 'author id', post_id: postId });
+        const result = postApi.tags({ author_id: 'author id', post_id: postId });
         expect(result).toContain('/post/author%20id/');
         expect(result).not.toContain('/post/author id/');
       });
 
       it('should encode hash (#) in post_id', () => {
-        const result = postApi.view({ author_id: pubky, post_id: 'post#123' });
+        const result = postApi.tags({ author_id: pubky, post_id: 'post#123' });
         expect(result).toContain('/post/' + pubky + '/post%23123');
       });
 
       it('should encode forward slash (/) in post_id', () => {
-        const result = postApi.view({ author_id: pubky, post_id: 'post/123' });
+        const result = postApi.tags({ author_id: pubky, post_id: 'post/123' });
         expect(result).toContain('/post/' + pubky + '/post%2F123');
         expect(result).not.toContain('/post/' + pubky + '/post/123');
       });
 
       it('should encode percent (%) in post_id', () => {
-        const result = postApi.view({ author_id: pubky, post_id: '100%complete' });
+        const result = postApi.tags({ author_id: pubky, post_id: '100%complete' });
         expect(result).toContain('/post/' + pubky + '/100%25complete');
       });
     });
@@ -220,22 +150,9 @@ describe('Post API', () => {
       });
 
       it('should encode multiple special characters', () => {
-        const result = postApi.view({ author_id: 'author/id', post_id: 'post#id' });
+        const result = postApi.taggers({ author_id: 'author/id', post_id: 'post#id', label: 'test-label' });
         expect(result).toContain('/post/author%2Fid/post%23id');
       });
-    });
-  });
-
-  describe('PostApiEndpoint type', () => {
-    it('should have exactly 6 endpoints', () => {
-      const endpointKeys = Object.keys(postApi);
-      expect(endpointKeys).toHaveLength(6);
-      expect(endpointKeys).toContain('view');
-      expect(endpointKeys).toContain('bookmarks');
-      expect(endpointKeys).toContain('counts');
-      expect(endpointKeys).toContain('details');
-      expect(endpointKeys).toContain('taggers');
-      expect(endpointKeys).toContain('tags');
     });
   });
 });

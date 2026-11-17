@@ -2,20 +2,25 @@
 
 import { type ChangeEvent, type RefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { COMMERCE_CONTRACT_VERSION } from '@/config/commerce';
 import { IMAGE_MAX_RAW_SIZE } from '@/config/images';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { useClientRegion } from '@/hooks/useClientRegion/useClientRegion';
 import { useMarketplaceMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
+import { evaluateShopCountryChange } from '@/libs/commerce/commerce-availability';
 import {
   MARKETPLACE_FAILURE_MESSAGES,
   marketplaceErrorCode,
   marketplaceFailureMessage,
 } from '@/libs/commerce/failure-messages';
 import type { CommerceShopRecord } from '@/libs/commerce/marketplace-records';
+import { SELLING_BLOCKED_COUNTRY_MESSAGE } from '@/libs/commerce/region-modes';
+import { isAssignedCountryCode, publishedCountryCode } from '@/libs/commerce/ships-to';
 import { hasHttpStatus, HOMESERVER_WRITE_SCOPE_REMEDY, isHomeserverWriteScopeError } from '@/libs/error/error.utils';
 import { stripImageMetadata } from '@/libs/image/stripImageMetadata';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { getRegionPolicy } from '@/libs/runtime-config/runtime-config';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import {
   type MarketplaceShopSettingsData,
@@ -39,6 +44,10 @@ export function sellerStatusConfirmedAtToPublish(input: {
   if (input.status !== 'private') return undefined;
   if (input.confirmed || input.previousStatus !== 'private') return input.now;
   return input.previousConfirmedAt;
+}
+
+function normalizeCountryCode(code: string | null | undefined): string {
+  return publishedCountryCode(code ?? '');
 }
 
 export type ShopImageSlotError = 'invalid-type' | 'too-large';
@@ -69,6 +78,12 @@ interface ShopImageSlotInternal {
   slot: ShopImageSlot;
   /** Hydrates the slot from the published record (undefined clears it). */
   setExisting: (url: string | undefined) => void;
+  /** Loads the slot from the saved record and remembers that image as the saved one. */
+  hydrate: (url: string | undefined) => void;
+  /** The shop record with this image (or none) was saved: it is now what unsaved edits are measured against. */
+  markSaved: (url: string | undefined) => void;
+  /** A picked file, or a removal, is waiting to be saved. */
+  isDirty: boolean;
   /**
    * Returns the marketplace media URI to publish in the shop record: uploads
    * a picked file (sanitized, content-addressed on the owner's homeserver),
@@ -82,6 +97,7 @@ function useShopImageSlot(maxSize: number): ShopImageSlotInternal {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [state, setState] = useState<ShopImageSlotState>({ kind: 'empty' });
   const [error, setError] = useState<ShopImageSlotError | null>(null);
+  const [savedUrl, setSavedUrl] = useState<string | undefined>(undefined);
   const existingPreviewUrl = useMarketplaceMediaUrl(state.kind === 'existing' ? state.url : null);
   const stateRef = useRef(state);
 
@@ -132,6 +148,17 @@ function useShopImageSlot(maxSize: number): ShopImageSlotInternal {
     [replaceState],
   );
 
+  const hydrate = useCallback(
+    (url: string | undefined) => {
+      setExisting(url);
+      setSavedUrl(url);
+    },
+    [setExisting],
+  );
+
+  const isDirty =
+    state.kind === 'pending' || (state.kind === 'existing' ? state.url !== savedUrl : savedUrl !== undefined);
+
   const resolveForPublish = async (): Promise<string | undefined> => {
     const current = stateRef.current;
     if (current.kind === 'empty') return undefined;
@@ -158,6 +185,9 @@ function useShopImageSlot(maxSize: number): ShopImageSlotInternal {
       remove,
     },
     setExisting,
+    hydrate,
+    markSaved: setSavedUrl,
+    isDirty,
     resolveForPublish,
   };
 }
@@ -181,8 +211,8 @@ export function useMarketplaceShopSettings() {
     defaultValues: marketplaceShopSettingsDefaults,
     mode: 'onChange',
   });
-  const setAvatarExisting = avatar.setExisting;
-  const setBannerExisting = banner.setExisting;
+  const hydrateAvatar = avatar.hydrate;
+  const hydrateBanner = banner.hydrate;
 
   useEffect(() => {
     if (!currentUserPubky) return;
@@ -207,8 +237,8 @@ export function useMarketplaceShopSettings() {
       setExistingRecord(record);
       setRevision(record.revision);
       setCreatedAt(record.createdAt);
-      setAvatarExisting(record.avatarUrl);
-      setBannerExisting(record.bannerUrl);
+      hydrateAvatar(record.avatarUrl);
+      hydrateBanner(record.bannerUrl);
       form.reset({
         name: record.name,
         bio: record.bio,
@@ -233,13 +263,32 @@ export function useMarketplaceShopSettings() {
     return () => {
       active = false;
     };
-  }, [currentUserPubky, form, setAvatarExisting, setBannerExisting, loadAttempt]);
+  }, [currentUserPubky, form, hydrateAvatar, hydrateBanner, loadAttempt]);
+
+  const countryCode = useWatch({ control: form.control, name: 'countryCode' });
+  const countryBlocked = getRegionPolicy().modeOf(countryCode) === 'blocked';
+  const client = useClientRegion();
+  const countryChange = evaluateShopCountryChange(getRegionPolicy(), client);
+  const savedCountry = normalizeCountryCode(existingRecord?.location.countryCode);
+  // A shop that already has a country keeps it while the visitor can't be shown to be outside the block. A saved
+  // code that names no country (the field once took any two letters) counts as none: the field would refuse it,
+  // so locking it would leave the seller unable to save anything.
+  const countryLockedMessage =
+    isAssignedCountryCode(savedCountry) && countryChange.status !== 'open' ? countryChange.message : null;
 
   const submit = async () => {
     if (!currentUserPubky || isLoading || loadError || isSaving) return false;
     let succeeded = false;
     setIsSaving(true);
     await form.handleSubmit(async (data) => {
+      if (getRegionPolicy().modeOf(data.countryCode) === 'blocked') {
+        form.setError('countryCode', { type: 'region', message: SELLING_BLOCKED_COUNTRY_MESSAGE });
+        return;
+      }
+      if (countryLockedMessage !== null && normalizeCountryCode(data.countryCode) !== savedCountry) {
+        form.setError('countryCode', { type: 'region', message: countryLockedMessage });
+        return;
+      }
       const now = new Date().toISOString();
       const isFirstSave = revision === 0;
 
@@ -286,7 +335,7 @@ export function useMarketplaceShopSettings() {
           updatedAt: now,
           name: data.name,
           bio: data.bio,
-          location: { countryCode: data.countryCode.toUpperCase(), region: data.region || undefined },
+          location: { countryCode: publishedCountryCode(data.countryCode), region: data.region || undefined },
           avatarUrl,
           bannerUrl,
           shippingPolicy: data.shippingPolicy,
@@ -310,6 +359,9 @@ export function useMarketplaceShopSettings() {
         });
         setRevision((current) => current + 1);
         setCreatedAt((current) => current ?? now);
+        avatar.markSaved(avatarUrl);
+        banner.markSaved(bannerUrl);
+        form.reset(data);
         succeeded = true;
         toast(
           isFirstSave
@@ -332,8 +384,16 @@ export function useMarketplaceShopSettings() {
     reload: () => setLoadAttempt((attempt) => attempt + 1),
     /** True while images upload and the record publishes; the form disables its controls. */
     isSaving,
+    /** The seller has edits (form fields, a picked or removed image) that are not saved yet. */
+    isDirty: form.formState.isDirty || avatar.isDirty || banner.isDirty,
     /** True once an owner-signed shop record exists (locally cached or just saved). */
     hasShop: revision > 0,
+    /** The country typed in the form is in a blocked region, so selling from it is refused. */
+    countryBlocked,
+    /** The shop country can't be changed from where the visitor is (or is still being checked). */
+    countryLocked: countryLockedMessage !== null,
+    /** Why the country is locked, or null. */
+    countryLockedMessage,
     avatar: avatar.slot,
     banner: banner.slot,
     submit,

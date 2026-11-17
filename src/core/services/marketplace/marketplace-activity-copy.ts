@@ -1,3 +1,4 @@
+import { REVIEW_NOTIFICATION_COPY } from '@/config/commerce-copy';
 import type { MarketplaceNotification } from '@/services/marketplace/marketplace';
 
 /**
@@ -13,6 +14,13 @@ import type { MarketplaceNotification } from '@/services/marketplace/marketplace
  * `seller_response_overdue` is one of those reasons, not its own type.
  * `refund_destination_confirmed` is from pubky/pubky-marketplace-service#94
  * (`refund.confirm_destination`, USDT orders only, recipient: the seller).
+ * `review_waiting` and `review_released` are from pubky/pubky-marketplace-service#186
+ * (double-blind reviews behind `REVIEW_BLIND_WINDOW_DAYS`). `usdt_payment_seen`
+ * and `paypal_payment_seen` are the seller-confirmed payment notices
+ * (`PAYMENT_CONFIRMATION=seller`); `digital_released` is the buyer's notice
+ * of a seller's release (`DIGITAL_RELEASE=seller`). `moderation_decision` is
+ * from pubky/pubky-marketplace-service#206 (`moderation-decision-admin`,
+ * recipient: the owner of the restricted listing, shop or review).
  *
  * Shop-only types (`message_received`, `order_cancelled_terms_change`) are
  * mapped too, but they are not in this list because that service revision
@@ -24,6 +32,7 @@ export const SERVICE_NOTIFICATION_TYPES = [
   'bitcoin_manual_review',
   'bitcoin_payment_seen',
   'bitcoin_prepare_voided',
+  'digital_released',
   'drop_sold_out',
   'fiat_payment_reported',
   'offer_accepted',
@@ -41,6 +50,7 @@ export const SERVICE_NOTIFICATION_TYPES = [
   'payment_method_bound',
   'payment_refund_required',
   'payment_reversal_cancelled',
+  'paypal_payment_seen',
   'pickup_details_cleared',
   'pickup_details_updated',
   'pickup_ready',
@@ -48,20 +58,18 @@ export const SERVICE_NOTIFICATION_TYPES = [
   'refund_recorded',
   'return_updated',
   'review_received',
+  'review_released',
+  'review_waiting',
   'tracking_updated',
+  'usdt_payment_seen',
+  'moderation_decision',
 ] as const;
 
 export type ServiceNotificationType = (typeof SERVICE_NOTIFICATION_TYPES)[number];
 
-const SERVICE_NOTIFICATION_TYPE_SET: ReadonlySet<string> = new Set(SERVICE_NOTIFICATION_TYPES);
-
-export function isServiceNotificationType(type: string): type is ServiceNotificationType {
-  return SERVICE_NOTIFICATION_TYPE_SET.has(type);
-}
-
 /** Plain activity-row titles. One sentence of what happened, no diagnostics. */
 export const MARKETPLACE_ACTIVITY_LABELS = {
-  message_received: 'New marketplace message',
+  message_received: 'New market message',
   offer_received: 'New offer received',
   offer_countered: 'Offer countered',
   offer_accepted: 'Offer accepted',
@@ -75,6 +83,9 @@ export const MARKETPLACE_ACTIVITY_LABELS = {
   payment_confirmed: 'Payment confirmed',
   bitcoin_manual_review: 'Bitcoin payment needs a decision',
   bitcoin_payment_seen: 'A Bitcoin payment is waiting for your confirmation',
+  usdt_payment_seen: 'A USDT payment is waiting for your confirmation',
+  paypal_payment_seen: 'PayPal reported a payment waiting for your confirmation',
+  digital_released: 'Your purchase is ready to open',
   bitcoin_prepare_voided: 'Bitcoin payment expired',
   order_cancelled: 'Order cancelled',
   order_cancelled_terms_change: 'Order cancelled — pickup terms changed',
@@ -87,12 +98,15 @@ export const MARKETPLACE_ACTIVITY_LABELS = {
   refund_recorded: 'Refund recorded',
   refund_destination_confirmed: 'The buyer confirmed a USDT refund address',
   review_received: 'New review received',
+  review_waiting: REVIEW_NOTIFICATION_COPY.waiting.label,
+  review_released: REVIEW_NOTIFICATION_COPY.released.label,
   pickup_details_updated: 'Pickup details updated',
   pickup_details_cleared: 'Pickup details removed',
   pickup_ready: 'Order ready for pickup',
   payment_refund_required: 'Payment requires a refund',
   drop_sold_out: 'Drop sold out',
   payment_reversal_cancelled: 'Disputed payment restored',
+  moderation_decision: 'Moderation decision',
 } as const satisfies Record<MarketplaceNotification['type'], string>;
 
 /** One plain sentence per `review_reason` on `bitcoin_manual_review`, plus the feed's "<actor> <action>". */
@@ -121,9 +135,19 @@ export const BITCOIN_REVIEW_REASON_COPY = {
 
 export type BitcoinNotificationReviewReason = keyof typeof BITCOIN_REVIEW_REASON_COPY;
 
-const BITCOIN_PAYMENT_SEEN_COPY = {
-  label: MARKETPLACE_ACTIVITY_LABELS.bitcoin_payment_seen,
-  action: 'saw a Bitcoin payment waiting for your confirmation',
+const PAYMENT_SEEN_COPY = {
+  bitcoin_payment_seen: {
+    label: MARKETPLACE_ACTIVITY_LABELS.bitcoin_payment_seen,
+    action: 'saw a Bitcoin payment waiting for your confirmation',
+  },
+  usdt_payment_seen: {
+    label: MARKETPLACE_ACTIVITY_LABELS.usdt_payment_seen,
+    action: 'saw a USDT payment waiting for your confirmation',
+  },
+  paypal_payment_seen: {
+    label: MARKETPLACE_ACTIVITY_LABELS.paypal_payment_seen,
+    action: 'reported a PayPal payment waiting for your confirmation',
+  },
 } as const;
 
 export function bitcoinReviewReason(value: string | null | undefined): BitcoinNotificationReviewReason | null {
@@ -138,7 +162,9 @@ export function bitcoinNotificationCopy(notification: {
   type: string;
   reviewReason?: string | null;
 }): { label: string; action: string } | null {
-  if (notification.type === 'bitcoin_payment_seen') return BITCOIN_PAYMENT_SEEN_COPY;
+  if (Object.hasOwn(PAYMENT_SEEN_COPY, notification.type)) {
+    return PAYMENT_SEEN_COPY[notification.type as keyof typeof PAYMENT_SEEN_COPY];
+  }
   const reason = notification.type === 'bitcoin_manual_review' ? bitcoinReviewReason(notification.reviewReason) : null;
   return reason ? BITCOIN_REVIEW_REASON_COPY[reason] : null;
 }

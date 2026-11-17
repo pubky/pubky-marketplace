@@ -22,16 +22,20 @@
 // revocation is verified. The Shop publishes a default storefront (shop.json) for a Paykit-enabled
 // seller that opens payment settings; a storefront either seat did not have before the run is deleted
 // and verified gone from the homeserver and Nexus. Nothing else is written: the cart is local (Dexie) and is emptied.
-// Env: PROOF_EVIDENCE and EXPECTED_DPL (required), seats (see seats.mjs), PROOF_ORIGIN (with the mount path when
-// the Shop is embedded, e.g. https://pubky.app/shop-embed), PROOF_SERVICE, PROOF_RELAY, PROOF_CLIENT_ID (the
+// Env: PROOF_EVIDENCE, one of EXPECTED_DPL (a Vercel dpl_… id) or EXPECTED_COMMIT (the commit GET /api/build must report;
+// both are checked when both are set) (required), seats (see seats.mjs), PROOF_ORIGIN (with the mount path when
+// the Shop is embedded, e.g. https://pubky.app/shop-embed), PROOF_SERVICE (required), PROOF_CLIENT_ID (the
 // grant client id the Shop's QRs carry; default shop.pubky.app), PROOF_PAYPAL_LISTING_URL (optional listing path
-// for step 4), PROOF_BITCOIN_LISTING_URL (optional listing path for step 9), PROOF_NEXUS (listing discovery and
-// storefront cleanup; default -7108, or the staging index when PROOF_SERVICE is staging-api), PROOF_GS1=1 (step 1
+// for step 4), PROOF_BUYER_COUNTRY (answers the "Country you live in" prompt when the region flags are on), PROOF_BITCOIN_LISTING_URL (optional listing path for step 9), PROOF_NEXUS (required: listing discovery and
+// storefront cleanup), PROOF_GS1=1 (step 1
 // also checks that sign-in minted the marketplace session from the grant), PROOF_STEPS (optional subset, e.g. 1,2,9).
 // Runbook: docs/ecommerce/release.md.
 // Output: 8-char pubky prefixes only; auth URLs, exports and bearers never print.
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { mintMarketplaceGrantSessionForSigner } from '../lib/marketplace-grant-session.mjs';
+import { servedDeployment } from './deployment-check.mjs';
+import { MISSING_EXPECTATION } from './digital-proof.mjs';
 import {
   evidenceDir,
   loadBuyerSeat,
@@ -39,21 +43,20 @@ import {
   prefix,
   proofTarget,
   repoRequire,
+  requireProofEnv,
   seatSource,
   shopCapabilities,
 } from './seats.mjs';
 import { removeRunStorefront, storefrontExists } from './storefront-cleanup.mjs';
 
 const { chromium } = repoRequire('playwright');
-const { AuthFlowKind, Pubky, SigninGrantDeepLink } = repoRequire('@synonymdev/pubky');
+const { Pubky, SigninGrantDeepLink } = repoRequire('@synonymdev/pubky');
 
 const { origin: ORIGIN, basePath: BASE_PATH, at } = proofTarget();
 const signInPath = `${BASE_PATH}/sign-in`;
 const EVIDENCE = evidenceDir();
-const EXPECTED_DPL = process.env.EXPECTED_DPL ?? '';
-if (!EXPECTED_DPL) throw new Error('set EXPECTED_DPL to the dpl_… id now aliased to the origin');
-const SERVICE = process.env.PROOF_SERVICE ?? 'https://marketplace-service-production-ce23.up.railway.app';
-const RELAY = process.env.PROOF_RELAY ?? 'https://httprelay.pubky.app/inbox';
+if (!process.env.EXPECTED_DPL?.trim() && !process.env.EXPECTED_COMMIT?.trim()) throw new Error(MISSING_EXPECTATION);
+const SERVICE = requireProofEnv('PROOF_SERVICE');
 const CAPABILITIES = shopCapabilities();
 const CLIENT_ID = process.env.PROOF_CLIENT_ID ?? 'shop.pubky.app';
 const FORBIDDEN_COPY = /hasn't set up a payment method|do not share a payment method/i;
@@ -171,7 +174,14 @@ const signedInAs = (page, key, timeout = 180_000) =>
 // (v0.6.51, storage namespace); every read below takes the new key first.
 // Up to v0.6.48 /sign-in shows the Ring and Bitkit QRs side by side. From #135 (v0.6.49) it shows one
 // QR with a "Sign-in app" toggle (Pubky Ring | Bitkit); each copy button renders only for its signer.
+// The next release shows one QR both apps approve, labelled "Copy authentication link", with no toggle.
 const SIGNER_OF_LABEL = { 'Copy authentication link': 'Pubky Ring', 'Copy Bitkit authentication link': 'Bitkit' };
+async function labelOnPage(page, label) {
+  if (label !== 'Copy Bitkit authentication link') return label;
+  const hasBitkitQr = (await page.getByRole('button', { name: label }).count()) > 0;
+  const hasToggle = (await page.getByRole('group', { name: 'Sign-in app' }).count()) > 0;
+  return hasBitkitQr || hasToggle ? label : 'Copy authentication link';
+}
 async function showSigner(page, label) {
   const toggle = page.getByRole('group', { name: 'Sign-in app' }).first();
   if (!(await toggle.count())) return;
@@ -185,7 +195,8 @@ async function showSigner(page, label) {
     return;
   await toggle.getByRole('radio', { name: SIGNER_OF_LABEL[label] }).first().click();
 }
-async function qrLive(page, label) {
+async function qrLive(page, requestedLabel) {
+  const label = await labelOnPage(page, requestedLabel);
   await showSigner(page, label);
   await page.waitForFunction(
     (value) => {
@@ -209,8 +220,9 @@ async function bothQrsLive(page) {
   return ring && bitkit;
 }
 
-async function copyQrUrl(page, label) {
-  await qrLive(page, label);
+async function copyQrUrl(page, requestedLabel) {
+  await qrLive(page, requestedLabel);
+  const label = await labelOnPage(page, requestedLabel);
   await page.evaluate(() => navigator.clipboard.writeText(''));
   await page.getByRole('button', { name: label }).first().click();
   const handle = await page.waitForFunction(
@@ -281,6 +293,23 @@ async function emptyCart(page) {
   return await page.getByRole('button', { name: /^Remove / }).count();
 }
 
+// With the EU fence or the digital hold on, the Shop disables "Buy" until the buyer says which country they live in
+// ("Country you live in", remembered on the device; the field commits on Enter or blur, #385). PROOF_BUYER_COUNTRY (two letters, unset by default) answers it.
+async function declareBuyerCountry(page) {
+  const country = process.env.PROOF_BUYER_COUNTRY ?? '';
+  if (!country) return;
+  const field = page.getByTestId('buyer-country-field').locator('input').first();
+  const shown = await field
+    .waitFor({ state: 'visible', timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!shown) return;
+  if ((await field.inputValue().catch(() => '')) === country) return;
+  await field.fill(country);
+  await field.press('Enter');
+  await page.waitForTimeout(500);
+}
+
 // Listing CTAs: "Add to cart" / "Approve to buy" up to v0.6.48; one "Buy" button from #135 (v0.6.49).
 const BUY_LABEL = /^(Add to cart|Buy)$/;
 const LISTING_CTA =
@@ -288,6 +317,7 @@ const LISTING_CTA =
 // From #135 the "Buy" button renders at once and stays disabled until availability loads (earlier
 // builds showed "Checking availability…" instead), so wait for an enabled purchase button.
 async function waitForEnabledPurchase(page, timeout = 30_000) {
+  await declareBuyerCountry(page);
   await page
     .waitForFunction(
       () =>
@@ -303,12 +333,8 @@ async function waitForEnabledPurchase(page, timeout = 30_000) {
 // Step 4 candidates when no PROOF_PAYPAL_LISTING_URL is set: active fixed-price listings on the
 // marketplace Nexus whose seller's public payment-config offers PayPal, test titles first, never a
 // listing of either proof seat. Read-only: nothing is published or changed for the proof.
-// Each environment has its own index: -7108 follows the production homeserver only (16 Oct 2026).
-const NEXUS =
-  process.env.PROOF_NEXUS ??
-  (SERVICE === 'https://staging-api.pubky.app'
-    ? 'https://nexusd-staging-production.up.railway.app'
-    : 'https://nexusd-production-7108.up.railway.app');
+// Each environment has its own index: PROOF_NEXUS must be the one that follows the homeserver the seats live on.
+const NEXUS = requireProofEnv('PROOF_NEXUS');
 async function discoverPaypalListings(excludeOwners) {
   const items = await (await fetch(`${NEXUS}/v0/stream/listings?limit=100`)).json().catch(() => []);
   const rows = (Array.isArray(items) ? items : []).filter(
@@ -660,18 +686,13 @@ async function ringSignIn(page, keypair) {
 }
 
 async function mintAuditBearer(client, keypair) {
-  const flow = client.startCookieAuthFlow(CAPABILITIES, AuthFlowKind.signin(), RELAY);
-  const tokenPromise = flow.awaitToken();
-  await client.signer(keypair).approveAuthRequest(flow.authorizationUrl);
-  const authToken = await tokenPromise;
-  const response = await fetch(`${SERVICE}/v1/auth/sessions`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/octet-stream' },
-    body: authToken.toBytes(),
+  const minted = await mintMarketplaceGrantSessionForSigner({
+    client,
+    keypair,
+    clientId: CLIENT_ID,
+    serviceUrl: SERVICE,
   });
-  const body = await response.json().catch(() => ({}));
-  if (response.status !== 201) throw new Error(`audit mint HTTP ${response.status}`);
-  return { bearer: body.token, sessionId: body.session_id };
+  return { bearer: minted.token, sessionId: minted.sessionId };
 }
 const listSessions = async (bearer) => {
   const response = await fetch(`${SERVICE}/v1/auth/sessions`, { headers: { authorization: `Bearer ${bearer}` } });
@@ -738,10 +759,10 @@ for (const keypair of [seat, buyerSeat]) {
 }
 const browser = await chromium.launch({ headless: true });
 try {
-  const html = await (await fetch(at('/marketplace'))).text();
-  const dpl = (html.match(/dpl_[A-Za-z0-9]+/) || [])[0] || null;
-  summary.dpl = dpl;
-  check('0', 'production serves the expected deployment', !EXPECTED_DPL || dpl === EXPECTED_DPL, `${dpl}`);
+  const deployment = await servedDeployment({ pageUrl: at('/marketplace'), buildUrl: at('/api/build') });
+  summary.dpl = deployment.dpl;
+  summary.commit = deployment.commit;
+  check('0', 'the origin serves the expected deployment', !deployment.refusal, deployment.refusal ?? deployment.found);
 
   // Journey A: Ring (steps 1, 5, 6) on one browser session.
   if (runs('1')) {

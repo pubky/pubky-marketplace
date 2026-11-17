@@ -133,7 +133,6 @@ describe('useSearchAutocomplete', () => {
 
     expect(result.current.tags).toEqual([]);
     expect(result.current.users).toEqual([]);
-    expect(result.current.isLoading).toBe(false);
   });
 
   it('returns empty arrays when disabled', () => {
@@ -141,13 +140,13 @@ describe('useSearchAutocomplete', () => {
 
     expect(result.current.tags).toEqual([]);
     expect(result.current.users).toEqual([]);
-    expect(result.current.isLoading).toBe(false);
   });
 
-  it('sets loading state when query is provided', async () => {
+  it('keeps results empty before the debounced request starts', async () => {
     const { result } = renderHook(() => useSearchAutocomplete({ query: 'tech' }));
 
-    expect(result.current.isLoading).toBe(true);
+    expect(result.current.tags).toEqual([]);
+    expect(result.current.users).toEqual([]);
   });
 
   it('fetches tags and users after debounce', async () => {

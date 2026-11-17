@@ -542,6 +542,26 @@
           ]
         },
         {
+          "from": "return_requested",
+          "to": "delivered",
+          "via": [
+            {
+              "trigger": "command",
+              "name": "return.cancel"
+            }
+          ]
+        },
+        {
+          "from": "return_requested",
+          "to": "completed",
+          "via": [
+            {
+              "trigger": "command",
+              "name": "return.cancel"
+            }
+          ]
+        },
+        {
           "from": "return_approved",
           "to": "return_received",
           "via": [
@@ -781,6 +801,7 @@
         "fulfillment.confirm_pickup",
         "return.request",
         "return.approve",
+        "return.cancel",
         "return.receive",
         "refund.record_external",
         "review.create",

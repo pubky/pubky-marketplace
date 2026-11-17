@@ -201,6 +201,9 @@ describe('MarketplaceNotificationNormalizer.toDeepLink', () => {
     payment_confirmed: MARKETPLACE_ROUTES.ORDERS,
     bitcoin_manual_review: MARKETPLACE_ROUTES.ORDERS,
     bitcoin_payment_seen: MARKETPLACE_ROUTES.ORDERS,
+    usdt_payment_seen: MARKETPLACE_ROUTES.ORDERS,
+    paypal_payment_seen: MARKETPLACE_ROUTES.ORDERS,
+    digital_released: MARKETPLACE_ROUTES.ORDERS,
     bitcoin_prepare_voided: MARKETPLACE_ROUTES.ORDERS,
     order_cancelled: MARKETPLACE_ROUTES.ORDERS,
     order_cancelled_terms_change: MARKETPLACE_ROUTES.ORDERS,
@@ -213,12 +216,15 @@ describe('MarketplaceNotificationNormalizer.toDeepLink', () => {
     refund_recorded: MARKETPLACE_ROUTES.ORDERS,
     refund_destination_confirmed: MARKETPLACE_ROUTES.ORDERS,
     review_received: MARKETPLACE_ROUTES.ORDERS,
+    review_waiting: MARKETPLACE_ROUTES.ORDERS,
+    review_released: MARKETPLACE_ROUTES.ORDERS,
     pickup_details_updated: MARKETPLACE_ROUTES.ORDERS,
     pickup_details_cleared: MARKETPLACE_ROUTES.ORDERS,
     pickup_ready: MARKETPLACE_ROUTES.ORDERS,
     payment_refund_required: MARKETPLACE_ROUTES.ORDERS,
     drop_sold_out: MARKETPLACE_ROUTES.SELL_DROPS,
     payment_reversal_cancelled: MARKETPLACE_ROUTES.ORDERS,
+    moderation_decision: MARKETPLACE_ROUTES.NOTIFICATIONS,
   };
 
   it.each(NOTIFICATION_TYPES)('routes %s to its marketplace surface', (type) => {

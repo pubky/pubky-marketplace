@@ -28,13 +28,19 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode, isDurableCommerceMode, isTransactionalCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useCommerceFavorite } from '@/hooks/useCommerceFavorite/useCommerceFavorite';
+import { useDefaultAddressCountry } from '@/hooks/useDefaultAddressCountry/useDefaultAddressCountry';
+import {
+  type ListingShippingPreviewState,
+  useListingShippingPreview,
+} from '@/hooks/useListingShippingPreview/useListingShippingPreview';
+import { useLiveSellerShop } from '@/hooks/useLiveSellerShop/useLiveSellerShop';
 import { useMarketplaceCart } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import { useMarketplaceMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
 import { useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplaceOrders';
 import { useMarketplaceProjection } from '@/hooks/useMarketplaceProjection/useMarketplaceProjection';
 import { useMarketplacePublicAvailability } from '@/hooks/useMarketplacePublicAvailability/useMarketplacePublicAvailability';
-import { useSellerReputation } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
+import { useListingRating, useMarketplaceReviews } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
 import { useMeasurementSystem } from '@/hooks/useMeasurementSystem/useMeasurementSystem';
 import { useRegionAvailability } from '@/hooks/useRegionAvailability/useRegionAvailability';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
@@ -69,7 +75,12 @@ import {
   commerceVariantUnitPrice,
 } from '@/libs/commerce/marketplace-records';
 import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
-import { formatShipsToCountries, shopShipsToCountries } from '@/libs/commerce/ships-to';
+import {
+  countryDisplayName,
+  formatShipsToCountries,
+  shopShipsToCountries,
+  shopShipsToRestriction,
+} from '@/libs/commerce/ships-to';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { formatPackageDimensions, formatWeight } from '@/libs/commerce/units';
 import { RegionAvailabilityNotice } from '@/molecules/Marketplace/RegionAvailabilityNotice';
@@ -77,13 +88,15 @@ import { SellerSaleTerms } from '@/molecules/Marketplace/SellerSaleTerms';
 import { SellerStatusBadge } from '@/molecules/Marketplace/SellerStatusBadge';
 import { MarketplaceFulfillmentBadge } from '@/molecules/MarketplaceFulfillmentBadge/MarketplaceFulfillmentBadge';
 import { MarketplacePaymentMethodBadges } from '@/molecules/MarketplacePaymentMethodBadges/MarketplacePaymentMethodBadges';
+import { MarketplaceReviewFilterRating } from '@/molecules/MarketplaceReviewFilterRating/MarketplaceReviewFilterRating';
 import { MarketplaceSellerIdentity } from '@/molecules/MarketplaceSellerIdentity/MarketplaceSellerIdentity';
+import { MarketplaceSnippetRating } from '@/molecules/MarketplaceSnippetRating/MarketplaceSnippetRating';
 import { ChatEntryButton } from '@/organisms/Chat/ChatEntryButton';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DialogReportPost } from '@/organisms/DialogReportPost/DialogReportPost';
 import { MarketplaceAuctionPanel } from '@/organisms/Marketplace/MarketplaceAuctionPanel';
 import { MarketplaceBidDialog } from '@/organisms/Marketplace/MarketplaceBidDialog';
 import { MarketplaceCommunityTags } from '@/organisms/Marketplace/MarketplaceCommunityTags';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceDigitalDeliveryNotice } from '@/organisms/Marketplace/MarketplaceDigitalDeliveryNotice';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import { MarketplaceListingOwnerPanel } from '@/organisms/Marketplace/MarketplaceListingOwnerPanel';
@@ -127,7 +140,9 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const negotiation = useMarketplaceProjection(sellerPubky, listingId);
   const publicStock = useMarketplacePublicAvailability(sellerPubky, listingId, negotiation.needsSession);
   const soldOutVariants = listingSoldOutVariantIds(negotiation.projection ?? publicStock);
-  const sellerReputation = useSellerReputation(sellerPubky);
+  const listingRating = useListingRating(sellerPubky, listingId);
+  // One list for the review section and the rating line under the title, so a reviewer chip changes both.
+  const reviews = useMarketplaceReviews({ sellerPubky, listingId });
   const paymentBadges = useSellerPaymentBadges(sellerPubky);
   const cart = useMarketplaceCart();
   const orders = useMarketplaceOrders();
@@ -143,9 +158,6 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     }
     let active = true;
     setIsFetchSettled(false);
-    // Best-effort: a direct visit may not have the seller's shop cached, and
-    // it carries the shop name, vacation notice and destination countries.
-    void CommerceController.getOrFetchShop(sellerPubky).catch(() => undefined);
     CommerceController.getOrFetchListing(sellerPubky, listingId)
       .catch(async (fetchError: unknown) => {
         let confirmedRemoved = false;
@@ -167,6 +179,11 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
       active = false;
     };
   }, [adapterMode, listingId, sellerPubky]);
+
+  // Best-effort: a direct visit may not have the seller's shop cached, and it carries the shop
+  // name, vacation notice and destination countries. A seller's later change (seller type,
+  // country) repaints the shop below and lifts or sets the EU fence.
+  useLiveSellerShop(sellerPubky, { enabled: adapterMode !== 'sandbox' });
 
   const listing = useLiveQuery(() => CommerceController.getListing(sellerPubky, listingId), [sellerPubky, listingId]);
   const madeToOrderVariants = madeToOrderVariantIds(
@@ -191,7 +208,18 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     digital: publishedMethods.includes('digital') && !publishedMethods.some((m) => m === 'shipping' || m === 'pickup'),
     isOwner,
   });
-  const regionBlocked = region.refusal !== null || region.needsCountry;
+  const regionRefused = region.refusal !== null || region.needsCountry;
+  const regionBlocked = regionRefused || region.commerce.held;
+  const defaultAddressCountry = useDefaultAddressCountry();
+  const listedSale = listing?.record.sale;
+  const listedPrice = listedSale?.format === 'fixed_price' ? listedSale.unitPrice : listedSale?.startingPrice;
+  const shopRestriction = shopShipsToRestriction(shop?.record);
+  const zoneShipping = useListingShippingPreview(
+    listing?.record,
+    region.buyerCountry ?? (defaultAddressCountry === '' ? null : defaultAddressCountry),
+    listedPrice ? { currency: listedPrice.currency, exponent: listedPrice.exponent } : null,
+    shopRestriction === undefined ? 'unusable' : shopRestriction,
+  );
   const declaration = shop ? sellerDeclaration(shop.record) : 'unknown';
 
   useEffect(() => {
@@ -225,29 +253,17 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
 
   if (listing === undefined || shop === undefined || (!listing && !isFetchSettled && !error)) {
     return (
-      <ContentLayout
-        className="marketplace-surface font-medium"
-        showLeftSidebar={false}
-        showRightSidebar={false}
-        showLeftMobileButton={false}
-        showRightMobileButton={false}
-      >
+      <MarketplaceContentLayout className="marketplace-surface font-medium">
         <Container overrideDefaults className="w-full">
           <MarketplaceListingDetailSkeleton />
         </Container>
-      </ContentLayout>
+      </MarketplaceContentLayout>
     );
   }
 
   if (!listing || error) {
     return (
-      <ContentLayout
-        className="marketplace-surface font-medium"
-        showLeftSidebar={false}
-        showRightSidebar={false}
-        showLeftMobileButton={false}
-        showRightMobileButton={false}
-      >
+      <MarketplaceContentLayout className="marketplace-surface font-medium">
         <Container className="min-h-96 items-center justify-center px-6 text-center">
           <Store className="mb-4 size-12 text-muted-foreground" />
           <Heading level={1} size="lg">
@@ -260,11 +276,11 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
           </Typography>
           <Button asChild className="mt-6 rounded-full">
             <Link href={APP_ROUTES.MARKETPLACE} overrideDefaults>
-              Back to marketplace
+              Back to market
             </Link>
           </Button>
         </Container>
-      </ContentLayout>
+      </MarketplaceContentLayout>
     );
   }
 
@@ -282,9 +298,15 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   // with neither takes no offers.
   const offersPhysical = shipsItem || methods.includes('pickup');
   const offersDigitalOnly = offersDigital && !offersPhysical;
-  const shippingCopy = formatListingShipping(record, methods);
+  const shippingCopy =
+    shipsItem && zoneShipping.status !== 'none'
+      ? formatZoneShipping(zoneShipping, price)
+      : formatListingShipping(record, methods);
   const hasFreeShipping = shippingCopy === 'Shipping: free';
-  const flatShipping = shipsItem ? record.shippingOptions.find((option) => option.pricing === 'flat') : undefined;
+  const flatShipping =
+    shipsItem && zoneShipping.status === 'none'
+      ? record.shippingOptions.find((option) => option.pricing === 'flat')
+      : undefined;
   const shippingBadge =
     hasFreeShipping || flatShipping?.price.amountMinor === 0
       ? 'Shipping: Free'
@@ -360,19 +382,13 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   };
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
+    <MarketplaceContentLayout
       hasGradientBackground={false}
       className="marketplace-surface pb-28 font-medium lg:pb-16"
       classNameWrapperContent="overflow-visible lg:overflow-visible"
     >
       <Container overrideDefaults className="flex w-full flex-col gap-6">
-        <div className="sticky top-24 z-(--z-sticky-subnav) bg-background after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-16 after:bg-linear-to-b after:from-background/80 after:to-transparent after:content-[''] lg:top-(--header-offset-main)">
-          <MarketplaceSectionNav className="mb-0" />
-        </div>
+        <MarketplaceSectionNav className="mb-0 after:h-16" />
         <div className="flex w-full items-center justify-between gap-2">
           <Link
             href={APP_ROUTES.MARKETPLACE}
@@ -418,7 +434,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
             {stateNotice && (
               <div
                 role="status"
-                className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200"
+                className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-notice-foreground"
               >
                 {stateNotice}
               </div>
@@ -446,7 +462,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                   </Badge>
                 )}
                 {shop?.record.vacationMode && (
-                  <Badge variant="outline" className="border-amber-500/50 bg-amber-500/10 text-amber-300">
+                  <Badge variant="outline" className="border-amber-500/50 bg-amber-500/10 text-warning-foreground">
                     <PlaneTakeoff className="mr-1 size-3" />
                     Seller on vacation
                   </Badge>
@@ -456,6 +472,19 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
               <Heading level={1} size="xl" className="text-3xl leading-none sm:text-5xl sm:leading-none">
                 {record.title}
               </Heading>
+              {listingRating !== undefined && listingRating !== 'unavailable' && (
+                <div className="mt-2" data-testid="marketplace-listing-rating">
+                  {reviews.filterSummary !== null ? (
+                    <MarketplaceReviewFilterRating summary={reviews.filterSummary} />
+                  ) : listingRating !== null && listingRating.count > 0 ? (
+                    <MarketplaceSnippetRating snippet={listingRating} emptyClassName="text-sm text-muted-foreground" />
+                  ) : (
+                    <Typography as="p" className="text-sm text-muted-foreground">
+                      No rating yet
+                    </Typography>
+                  )}
+                </div>
+              )}
               <Typography as="p" className="mt-1 text-3xl font-bold text-brand">
                 {record.sale.format === 'auction'
                   ? negotiation.projection?.auction?.bidCount
@@ -475,7 +504,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                   {shippingCopy}
                 </Typography>
               )}
-              {shipsItem && shipsToCountries && (
+              {shipsItem && shipsToCountries && zoneShipping.status === 'none' && (
                 <Typography
                   as="p"
                   className="mt-1 text-sm text-muted-foreground"
@@ -521,8 +550,12 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
             )}
 
             <div className="flex flex-wrap items-center gap-2" data-surface="marketplace-listing-purchase">
-              {record.sale.format === 'auction' ? (
-                <div className="[&_[data-slot=button]]:border-brand [&_[data-slot=button]]:bg-brand [&_[data-slot=button]]:text-background [&_[data-slot=button]:hover]:bg-brand/90">
+              {record.sale.format === 'auction' && zoneShipping.status !== 'none' ? (
+                <Typography as="p" className="text-sm text-muted-foreground" data-testid="zone-priced-auction-notice">
+                  Shipping on this auction is priced by destination, which this Shop cannot collect when bidding yet.
+                </Typography>
+              ) : record.sale.format === 'auction' ? (
+                <div className="[&_[data-slot=button]]:border-brand [&_[data-slot=button]]:bg-brand [&_[data-slot=button]]:text-brand-foreground [&_[data-slot=button]:hover]:bg-brand/90">
                   <MarketplaceBidDialog
                     aggregateId={aggregateId}
                     projection={negotiation.projection}
@@ -532,11 +565,12 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                     onSessionRequired={revealSessionRequired}
                     onAccepted={negotiation.refresh}
                     auctionPhase={auctionPhase ?? undefined}
+                    regionHeld={region.commerce.held}
                   />
                 </div>
               ) : (
                 <>
-                  {viewerHoldOrder ? (
+                  {viewerHoldOrder && !region.commerce.held ? (
                     <Button asChild size="default" className="w-fit rounded-full">
                       <Link
                         href={getMarketplaceCheckoutRoute(viewerHoldOrder.orderId)}
@@ -546,7 +580,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                         Buy
                       </Link>
                     </Button>
-                  ) : viewerOfferHold ? (
+                  ) : viewerOfferHold && !region.commerce.held ? (
                     <Button asChild size="default" className="w-fit rounded-full">
                       <Link
                         href={getMarketplaceOfferCheckoutRoute(viewerOfferHold.offerId)}
@@ -619,25 +653,28 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                       onSessionRequired={revealSessionRequired}
                       onAccepted={negotiation.refresh}
                       isOwner={isOwner}
-                      holdDisabled={projectionIsReserved || publicHold || regionBlocked}
+                      regionHeld={region.commerce.held}
+                      holdDisabled={projectionIsReserved || publicHold || regionRefused}
                       holdLabel={
                         viewerHoldOrder ? CHECKOUT_HOLD_COPY.heldForYouCta : CHECKOUT_HOLD_COPY.heldWhileAnotherPays
                       }
                     />
                   )}
-                  {record.sale.acceptsOffers && offersDigital && (
-                    <Typography
-                      as="p"
-                      className="w-full text-sm text-muted-foreground"
-                      data-testid="marketplace-listing-digital-offer-note"
-                    >
-                      {offersDigitalOnly
-                        ? DIGITAL_DELIVERY_COPY.offersUnavailable
-                        : shipsItem
-                          ? DIGITAL_DELIVERY_COPY.offersBuyShipped
-                          : DIGITAL_DELIVERY_COPY.offersBuyPickup}
-                    </Typography>
-                  )}
+                  {record.sale.acceptsOffers &&
+                    offersDigital &&
+                    (offersDigitalOnly || commerceListingTakesOffers(record)) && (
+                      <Typography
+                        as="p"
+                        className="w-full text-sm text-muted-foreground"
+                        data-testid="marketplace-listing-digital-offer-note"
+                      >
+                        {offersDigitalOnly
+                          ? DIGITAL_DELIVERY_COPY.offersUnavailable
+                          : shipsItem
+                            ? DIGITAL_DELIVERY_COPY.offersBuyShipped
+                            : DIGITAL_DELIVERY_COPY.offersBuyPickup}
+                      </Typography>
+                    )}
                 </>
               )}
               <Button
@@ -674,13 +711,19 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
               />
             )}
             {isTransactionalCommerceMode(adapterMode) && negotiation.error && !negotiation.needsSession && (
-              <Typography as="p" role="alert" className="text-center text-sm text-amber-300">
+              <Typography as="p" role="alert" className="text-center text-sm text-warning-foreground">
                 {auctionPhase === 'ended' && negotiation.error === MARKETPLACE_FAILURE_MESSAGES.claimListingUnavailable
                   ? MARKETPLACE_FAILURE_MESSAGES.bidClosed
                   : negotiation.error}
               </Typography>
             )}
-            {!isOwner && <RegionAvailabilityNotice region={region} testIdPrefix="marketplace-listing" />}
+            {!isOwner && (
+              <RegionAvailabilityNotice
+                region={region}
+                testIdPrefix="marketplace-listing"
+                blocked={region.blockedNotice}
+              />
+            )}
             <Card className="rounded-md p-0">
               <CardContent className="flex flex-col gap-3 p-6">
                 <div className="min-w-0 flex-1 sm:min-w-[12rem]">
@@ -690,9 +733,8 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                     displayName={sellerDisplayName}
                     avatarUrl={shopAvatarUrl}
                     avatarAlt={`${shop?.record.name ?? 'Shop'} avatar`}
-                    reputation={sellerReputation}
                   />
-                  <div className="mt-2 grid gap-2">
+                  <div className="mt-2 flex items-center gap-2">
                     <SellerStatusBadge declaration={declaration} />
                     <SellerSaleTerms declaration={declaration} />
                   </div>
@@ -814,7 +856,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                   variant="info-card"
                   target={{ kind: TagKind.LISTING, sellerPubky: record.ownerPubky, listingId: record.listingId }}
                 />
-                <MarketplaceReviewsSection sellerPubky={record.ownerPubky} listingId={record.listingId} infoCard />
+                <MarketplaceReviewsSection reviews={reviews} listingId={record.listingId} infoCard />
               </div>
             </section>
           </div>
@@ -823,8 +865,45 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
           </div>
         </div>
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
+}
+
+function formatZoneShipping(
+  state: Exclude<ListingShippingPreviewState, { status: 'none' }>,
+  asset: { currency: string; exponent: number },
+): string {
+  if (state.status === 'loading') return 'Shipping: loading prices';
+  if (state.status === 'unreadable') return 'Shipping: prices could not be loaded';
+  if (state.status === 'asset-mismatch') return 'Shipping: the seller’s rates use a different currency than the item';
+  const { destination, countries } = state.preview;
+  if (destination) {
+    const name = countryDisplayName(destination.country);
+    if (destination.quotes === null) {
+      return countries === null || countries.length === 0
+        ? `Does not ship to ${name}`
+        : `Does not ship to ${name}. Ships to: ${formatShipsToCountries(countries)}`;
+    }
+    return `One item to ${name}: ${destination.quotes
+      .map((quote) => {
+        const days =
+          quote.estimatedMinDays === quote.estimatedMaxDays
+            ? `${quote.estimatedMinDays} days`
+            : `${quote.estimatedMinDays}-${quote.estimatedMaxDays} days`;
+        const price =
+          quote.amountMinor === 0
+            ? 'free'
+            : formatCommerceMoney({
+                amountMinor: quote.amountMinor,
+                currency: asset.currency,
+                exponent: asset.exponent,
+              });
+        return `${quote.label} ${price}, ${days}`;
+      })
+      .join(' · ')}. Final shipping is set at checkout.`;
+  }
+  if (countries === null) return 'Shipping: price depends on your country';
+  return countries.length === 0 ? 'Does not ship to any country' : `Ships to: ${formatShipsToCountries(countries)}`;
 }
 
 function formatListingShipping(

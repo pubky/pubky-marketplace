@@ -1,7 +1,7 @@
 import { Link, Mail, Music, Phone } from 'lucide-react';
 import { describe, expect, it } from 'vitest';
 import { Facebook, Github, Gitlab, Instagram, Linkedin, Slack, Telegram, Twitch, XTwitter, Youtube } from '@/icons';
-import { getIconFromUrl, getLabelFromUrl } from './urlToIcon';
+import { getIconFromUrl } from './urlToIcon';
 
 describe('getIconFromUrl', () => {
   describe('Social Media', () => {
@@ -146,42 +146,5 @@ describe('getIconFromUrl', () => {
       const icon = getIconFromUrl('');
       expect(icon).toBe(Link);
     });
-  });
-});
-
-describe('getLabelFromUrl', () => {
-  it('should extract domain without www', () => {
-    const label = getLabelFromUrl('https://www.github.com');
-    expect(label).toBe('github.com');
-  });
-
-  it('should include path for meaningful paths', () => {
-    const label = getLabelFromUrl('https://github.com/user/repo');
-    expect(label).toBe('github.com/user/repo');
-  });
-
-  it('should not include trailing slash', () => {
-    const label = getLabelFromUrl('https://github.com/');
-    expect(label).toBe('github.com');
-  });
-
-  it('should handle mailto: URLs', () => {
-    const label = getLabelFromUrl('mailto:test@example.com');
-    expect(label).toBe('test@example.com');
-  });
-
-  it('should handle tel: URLs', () => {
-    const label = getLabelFromUrl('tel:+1234567890');
-    expect(label).toBe('+1234567890');
-  });
-
-  it('should return original string for invalid URLs', () => {
-    const label = getLabelFromUrl('not-a-valid-url');
-    expect(label).toBe('not-a-valid-url');
-  });
-
-  it('should handle URLs with query parameters', () => {
-    const label = getLabelFromUrl('https://youtube.com/watch?v=123');
-    expect(label).toBe('youtube.com/watch');
   });
 });

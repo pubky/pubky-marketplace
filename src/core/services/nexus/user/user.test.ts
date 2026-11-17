@@ -9,7 +9,6 @@ import { userApi } from './user.api';
 import {
   TUserPaginationParams,
   TUserRelationshipParams,
-  TUserTaggersParams,
   TUserTagsParams,
   TUserViewParams,
   USER_PATH_PARAMS,
@@ -114,17 +113,6 @@ describe('User API', () => {
       );
     });
 
-    it('should generate correct URL for taggers endpoint', () => {
-      const params: TUserTaggersParams = {
-        user_id: testUserId,
-        label: 'test-tag',
-        skip: 0,
-        limit: 10,
-      };
-
-      expect(userApi.taggers(params)).toBe(`${getNexusUrl()}/v0/user/${testUserId}/taggers/test-tag?skip=0&limit=10`);
-    });
-
     it('should generate correct URL for tags endpoint', () => {
       const params: TUserTagsParams = {
         user_id: testUserId,
@@ -136,10 +124,10 @@ describe('User API', () => {
     });
   });
 
-  describe('UserApiEndpoint type', () => {
-    it('should have exactly 10 endpoints', () => {
+  describe('userApi endpoint contract', () => {
+    it('should have exactly 9 endpoints', () => {
       const endpointKeys = Object.keys(userApi);
-      expect(endpointKeys).toHaveLength(10);
+      expect(endpointKeys).toHaveLength(9);
       expect(endpointKeys).toContain('view');
       expect(endpointKeys).toContain('counts');
       expect(endpointKeys).toContain('details');
@@ -148,7 +136,6 @@ describe('User API', () => {
       expect(endpointKeys).toContain('friends');
       expect(endpointKeys).toContain('notifications');
       expect(endpointKeys).toContain('relationship');
-      expect(endpointKeys).toContain('taggers');
       expect(endpointKeys).toContain('tags');
     });
   });
@@ -178,24 +165,6 @@ describe('NexusUserService', () => {
       expect(result).toEqual(mockTags);
       expect(queryNexusSpy).toHaveBeenCalledWith({
         url: `${getNexusUrl()}/v0/user/${testUserId}/tags?skip_tags=5&limit_tags=20`,
-      });
-    });
-  });
-
-  describe('taggers', () => {
-    it('should construct correct URL with encoded label', async () => {
-      const queryNexusSpy = mockQueryNexus.mockResolvedValue([]);
-
-      await NexusUserService.taggers({
-        user_id: testUserId,
-        label: 'rust & wasm',
-        skip: 10,
-        limit: 5,
-      });
-
-      // Verify label is URL-encoded (& becomes %26)
-      expect(queryNexusSpy).toHaveBeenCalledWith({
-        url: expect.stringMatching(/\/taggers\/rust%20%26%20wasm\?skip=10&limit=5$/),
       });
     });
   });

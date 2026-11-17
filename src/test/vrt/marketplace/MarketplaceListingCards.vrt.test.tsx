@@ -139,7 +139,7 @@ const fixtures = vi.hoisted(async () => {
 
   const fixedPrice = catalogItemFromCatalogEntry(
     createCommerceCatalogEntryFixture({
-      reputation: { avg: 4.8, count: 23, verifiedCount: 19 },
+      listing_reputation: { avg: 4.8, count: 23, verifiedCount: 19 },
     }),
   );
 
@@ -177,7 +177,7 @@ const fixtures = vi.hoisted(async () => {
       seller_id: 'r'.repeat(52),
       listing_id: 'reserved_boots',
       title: 'Handmade leather boots',
-      reputation: { avg: 4.8, count: 23, verifiedCount: 19 },
+      listing_reputation: { avg: 4.8, count: 23, verifiedCount: 19 },
     }),
   );
 

@@ -3,12 +3,10 @@
 // label. Use it as <SVC>_RUNNING_COMMIT_CMD.
 //
 //   node running-commit.mjs image <registry/name@sha256:…>
-//   node running-commit.mjs railway <project-id> <environment-id> <service-name-or-id>
 //
 // Public registries (ghcr.io, Docker Hub) need no login. For a private registry set
 // REGISTRY_BASIC=<user>:<password-or-token> (Artifact Registry: oauth2accesstoken:$(gcloud auth print-access-token)).
 // Nothing but the commit is printed on success.
-import { execFileSync } from 'node:child_process';
 import { parseBearerChallenge, parseImageRef } from './lib.mjs';
 
 const MANIFEST_TYPES = [
@@ -65,24 +63,12 @@ async function imageRevision(ref) {
   return revision;
 }
 
-function railwayImage(project, environment, service) {
-  const run = (argv) => JSON.parse(execFileSync('railway', argv, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
-  const status = run(['service', 'status', '--json', '-p', project, '-e', environment, '-s', service]);
-  if (status.stopped) throw new Error(`Railway service ${service} is stopped`);
-  const deployments = run(['deployment', 'list', '--json', '-p', project, '-e', environment, '-s', service]);
-  const live = deployments.find((d) => d.id === status.deploymentId);
-  const image = live?.meta?.image;
-  if (!image) throw new Error(`Railway deployment ${status.deploymentId} has no image (source build?)`);
-  return image;
-}
-
 const [mode, ...rest] = process.argv.slice(2);
 try {
   let image;
   if (mode === 'image' && rest.length === 1) image = rest[0];
-  else if (mode === 'railway' && rest.length === 3) image = railwayImage(...rest);
   else {
-    console.error('usage: running-commit.mjs image <ref> | railway <project> <environment> <service>');
+    console.error('usage: running-commit.mjs image <ref>');
     process.exit(2);
   }
   console.log(await imageRevision(image));

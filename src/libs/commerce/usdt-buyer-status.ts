@@ -8,7 +8,8 @@ import type { PaymentFinality } from './usdt-settlement-contract';
 
 /**
  * Buyer and seller copy for a USDT order (docs/ecommerce/usdt-payments.md).
- * USDT is paid at verified inclusion; physical fulfilment waits for Arbitrum
+ * USDT is paid at verified inclusion, or at the seller's confirmation on a
+ * seller-confirmed order (`seen` until then); physical fulfilment waits for Arbitrum
  * to finalize. This table is rail-keyed on purpose: the Bitcoin tables in
  * `bitcoin-buyer-status.ts` keep their exact strings and nothing here is a
  * substitution of them.
@@ -24,32 +25,49 @@ export const USDT_FUNDS_HINT =
 
 /** Shown before and while a buyer pays in USDT for goods the seller has to ship or hand over. */
 export const USDT_FINALITY_EXPECTATION_COPY =
-  'The seller ships once Arbitrum finalizes your payment, usually within minutes.';
+  'The seller ships once Arbitrum finalizes your payment, usually in about 15–20 minutes.';
 
 /** The same expectation before the buyer has chosen an asset: it applies only if they pay in USDT. */
 export const PAYKIT_USDT_FINALITY_EXPECTATION_COPY =
-  'If you pay in USDT, the seller ships once Arbitrum finalizes your payment, usually within minutes.';
+  'If you pay in USDT, the seller ships once Arbitrum finalizes your payment, usually in about 15–20 minutes.';
 
 /** A multi-seller USDT cart sends one Paykit request per seller. */
 export const USDT_MULTI_SELLER_COPY = "You'll approve one request per seller in Bitkit.";
 
 /** Seller-facing refusal and disabled-action copy for ship, mark ready and pickup. */
 export const PAYMENT_NOT_FINAL_COPY =
-  "Wait to ship: this USDT payment isn't final on Arbitrum yet. This usually takes a few minutes.";
+  "Wait to ship: this USDT payment isn't final on Arbitrum yet. This usually takes about 15–20 minutes.";
 
 export const USDT_AMOUNT_MISMATCH_COPY = 'The USDT amount does not match. The seller is reviewing it.';
 
 type UsdtStatusOrder = {
+  state?: string;
   paymentMethod?: string | null;
   paymentAsset?: string | null;
   paymentAmountMinor?: number | null;
   paymentFinality?: PaymentFinality | null;
+  paykitRequestState?: string | null;
   total?: CommerceMoney;
+  externalRefund?: unknown;
+  refundDestination?: unknown;
+  paykitObservation?: { asset?: string | null; observedUnits?: number | string | null } | null;
 };
 
-type UsdtStatusPayment = { state?: string | null; reviewReason?: string | null } | null;
+type UsdtStatusPayment = {
+  state?: string | null;
+  reviewReason?: string | null;
+  resolutionOutcome?: string | null;
+} | null;
 
-export type UsdtSettlementPhase = 'awaiting' | 'received' | 'final' | 'rechecking' | 'review';
+export type UsdtSettlementPhase =
+  | 'awaiting'
+  | 'seen'
+  | 'received'
+  | 'final'
+  | 'rechecking'
+  | 'review'
+  | 'abandoned'
+  | 'refunded';
 
 /**
  * Shipped and pickup lines wait for Arbitrum finality before the seller acts;
@@ -65,15 +83,23 @@ export function isUsdtOrder(order: { paymentMethod?: string | null; paymentAsset
 }
 
 /**
- * Where a USDT order sits. `received` is paid at verified inclusion with
+ * Where a USDT order sits. `seen` is a transfer that arrived on a
+ * seller-confirmed order and waits for the seller; `received` is paid with
  * finality not yet reported (an absent value fails closed, the same as
- * `pending`); `rechecking` is a reorged payment that stays paid but not final.
- * Null for any order that is not a USDT order.
+ * `pending`); `rechecking` is a reorged payment that stays paid but not final;
+ * `abandoned` is a payment that arrived but whose review ended `abandoned`, so
+ * it was never applied and is owed back, and `refunded` is that payment once
+ * the seller recorded its refund. Null for any order that is not a USDT order.
  */
 export function usdtSettlementPhase(order: UsdtStatusOrder, payment: UsdtStatusPayment): UsdtSettlementPhase | null {
   if (!isUsdtOrder(order)) return null;
   if (payment?.state === 'manual_review') return 'review';
-  if (payment?.state !== 'confirmed') return 'awaiting';
+  if (payment?.state === 'expired' && payment.resolutionOutcome === 'abandoned') {
+    return order.externalRefund || order.state === 'refunded_external' ? 'refunded' : 'abandoned';
+  }
+  if (payment?.state !== 'confirmed') {
+    return order.paykitRequestState === 'awaiting_seller_confirmation' ? 'seen' : 'awaiting';
+  }
   if (order.paymentFinality === 'final') return 'final';
   if (order.paymentFinality === 'reverted') return 'rechecking';
   return 'received';
@@ -91,17 +117,33 @@ export function isUsdtFulfilmentBlocked(order: UsdtStatusOrder): boolean {
 
 export const USDT_BUYER_PHASE_COPY: Record<Exclude<UsdtSettlementPhase, 'review'>, string> = {
   awaiting: 'Waiting for your USDT payment',
+  seen: 'USDT payment received. The seller confirms it, then your order is paid.',
   received: 'USDT payment received. The seller ships once Arbitrum finalizes it.',
   final: 'USDT payment confirmed',
   rechecking: "Your payment is being re-checked on Arbitrum. You don't need to do anything yet.",
+  abandoned:
+    'Your USDT payment was received but not applied to the order. Confirm a refund address so the seller can return it.',
+  refunded: 'Your USDT payment was not applied to the order, and the seller recorded its refund to your address.',
 };
 
 export const USDT_SELLER_PHASE_COPY: Record<Exclude<UsdtSettlementPhase, 'review'>, string> = {
   awaiting: "Waiting for the buyer's USDT payment",
+  seen: "The buyer's USDT payment arrived. Check it in Bitkit, then confirm it below to mark the order paid.",
   received: "Payment received. Don't ship yet: Arbitrum hasn't finalized it. Shipping unlocks on its own.",
   final: 'Payment final. You can ship.',
   rechecking: "The buyer's payment is being re-checked on Arbitrum. Don't ship.",
+  abandoned:
+    "The buyer's USDT payment was received but not applied to the order. Return it to the refund address they confirm, then record the refund.",
+  refunded: "The buyer's USDT payment was not applied to the order, and you recorded its refund.",
 };
+
+/** The `abandoned` sentence once the buyer has confirmed where the refund goes. */
+export const USDT_ABANDONED_ADDRESS_CONFIRMED_COPY = {
+  buyer:
+    'Your USDT payment was received but not applied to the order. The seller returns it to the refund address you confirmed.',
+  seller:
+    "The buyer's USDT payment was received but not applied to the order. Return it to the refund address they confirmed, then record the refund.",
+} as const;
 
 /**
  * What the seller does while a reorged payment is re-checked. Plan §2.5: money
@@ -122,10 +164,13 @@ export const USDT_SELLER_REVIEW_COPY = {
 
 export const USDT_PHASE_BADGE_LABEL: Record<UsdtSettlementPhase, string> = {
   awaiting: 'Awaiting payment',
+  seen: 'Payment seen',
   received: 'Payment received',
   final: 'Payment confirmed',
   rechecking: 'Payment being re-checked',
   review: 'Under manual review',
+  abandoned: 'Refund due',
+  refunded: 'Refunded',
 };
 
 /** One sentence for the order's USDT phase, for the viewing party. Null when the order is not USDT. */
@@ -133,6 +178,9 @@ export function usdtPhaseCopy(order: UsdtStatusOrder, payment: UsdtStatusPayment
   const phase = usdtSettlementPhase(order, payment);
   if (phase === null) return null;
   if (phase === 'review') return isBuyer ? usdtBuyerReviewCopy(payment) : null;
+  if (phase === 'abandoned' && order.refundDestination) {
+    return USDT_ABANDONED_ADDRESS_CONFIRMED_COPY[isBuyer ? 'buyer' : 'seller'];
+  }
   return (isBuyer ? USDT_BUYER_PHASE_COPY : USDT_SELLER_PHASE_COPY)[phase];
 }
 
@@ -168,6 +216,19 @@ export function usdtPaidAsLine(order: UsdtStatusOrder): string | null {
   const minor = order.paymentAmountMinor;
   if (minor === null || minor === undefined || !isUsdtOrder(order) || !order.total) return null;
   return `${formatCommerceMoney(order.total)}, paid as ${formatUsdt(minor, { grouped: true })}`;
+}
+
+/**
+ * What a USDT payment that was never applied actually sent (in review,
+ * abandoned or refunded): the observed amount, which an amount mismatch makes
+ * differ from the quote. Null when the observation carries none, rather than
+ * repeating the quote as if it had been paid.
+ */
+export function usdtReceivedLine(order: UsdtStatusOrder): string | null {
+  const observation = order.paykitObservation;
+  if (!isUsdtOrder(order) || observation?.asset !== 'USDT' || observation.observedUnits == null) return null;
+  const units = Number(observation.observedUnits);
+  return Number.isSafeInteger(units) && units >= 0 ? `${formatUsdt(units, { grouped: true })} received` : null;
 }
 
 const USDT_MILLIONTHS_PER_CENT = 10 ** (USDT_EXPONENT - 2);

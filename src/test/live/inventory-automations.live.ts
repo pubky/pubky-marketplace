@@ -1,6 +1,14 @@
 import 'fake-indexeddb/auto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { withCleanup } from '../../../scripts/lib/with-cleanup.mjs';
+import {
+  createPublicOnlyGrantSession,
+  establishMarketplaceGrantSession,
+  mintInventoryOnlyGrantSession,
+  restoreInventoryGrantSession,
+  revokeOwnedHomeserverGrant,
+} from './marketplace-grant-session';
 
 /**
  * LIVE STAGING PROOF for Inventory Studio W3: list sessions, add/rotate/delete
@@ -15,8 +23,10 @@ import { beforeAll, describe, expect, it } from 'vitest';
  *   npm run test:marketplace:inventory
  */
 
-const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? 'https://staging-api.pubky.app';
-const NEXUS_URL = process.env.MARKETPLACE_NEXUS_URL ?? 'https://nexusd-production-7108.up.railway.app';
+const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? '';
+if (!SERVICE_URL) throw new Error('set MARKETPLACE_SERVICE_URL: the live suites have no default service');
+const NEXUS_URL = process.env.MARKETPLACE_NEXUS_URL ?? '';
+if (!NEXUS_URL) throw new Error('set MARKETPLACE_NEXUS_URL: the live suites have no default Nexus');
 const PROOF_DIR = process.env.INVENTORY_AUTOMATIONS_PROOF_DIR ?? '/Volumes/t7/vibes-dev/.evidence/studio-w3/live';
 const WEBHOOK_SINK = process.env.INVENTORY_WEBHOOK_SINK_URL ?? 'https://httpbin.org/post';
 
@@ -100,22 +110,22 @@ describe('inventory automations staging proof', () => {
     if (!signedIn?.session) return;
     useAuthStore.setState({ session: signedIn.session, currentUserPubky: sellerPubky });
 
-    if (!MarketplaceSessionService.getActiveSession()) {
-      const identityFlow = MarketplaceSessionService.beginSessionFlow();
-      expect(new URL(identityFlow.authorizationUrl).searchParams.get('caps')).toBe(MARKETPLACE_SESSION_GRANT);
-      await new sdk.Pubky().signer(keypair).approveAuthRequest(identityFlow.authorizationUrl);
-      await identityFlow.awaitSession();
-    }
+    const purchaseInfo = await establishMarketplaceGrantSession({ session: signedIn.session, pubky: sellerPubky });
+    expect(purchaseInfo.capabilities).toBe(MARKETPLACE_SESSION_GRANT);
     expect(MarketplaceSessionService.getActiveSession()?.pubky).toBe(sellerPubky);
 
-    if (!MarketplaceInventorySessionService.getActiveSession()) {
-      const inventoryFlow = MarketplaceInventorySessionService.beginInventorySessionFlow(sellerPubky);
-      expect(new URL(inventoryFlow.authorizationUrl).searchParams.get('caps')).toBe(INVENTORY_GRANT);
-      await new sdk.Pubky().signer(keypair).approveAuthRequest(inventoryFlow.authorizationUrl);
-      const inventoryInfo = await inventoryFlow.awaitSession();
-      expect(inventoryInfo.capabilities).toBe(INVENTORY_GRANT);
-      expect(inventoryInfo.capabilities).not.toBe('/:rw');
-    }
+    // A distinct public-only grant preserves the inventory-revocation isolation proof.
+    const inventoryGrant = await createPublicOnlyGrantSession(keypair);
+    await withCleanup(
+      async () => {
+        const minted = await mintInventoryOnlyGrantSession(inventoryGrant, sellerPubky);
+        const inventoryInfo = await restoreInventoryGrantSession(minted);
+        expect(inventoryInfo?.capabilities).toBe(INVENTORY_GRANT);
+        expect(MarketplaceInventorySessionService.getCoveringBearer(sellerPubky)?.source).toBe('inventory');
+        expect(minted.token !== MarketplaceSessionService.getActiveSession()?.token).toBe(true);
+      },
+      () => revokeOwnedHomeserverGrant(inventoryGrant),
+    );
 
     await db.initialize();
     mkdirSync(PROOF_DIR, { recursive: true });
@@ -171,7 +181,7 @@ describe('inventory automations staging proof', () => {
     if (!inventory) return;
     const inventoryToken = inventory.token;
     const identityToken = MarketplaceSessionService.getActiveSession()?.token;
-    expect(identityToken, 'identity session must remain for checkout').toBeTruthy();
+    expect(Boolean(identityToken), 'identity session must remain for checkout').toBe(true);
     const inventoryRow =
       listed.status === 'ready' ? listed.sessions.find((row) => row.kind === 'inventory') : undefined;
     const revokeId = inventory.sessionId ?? inventoryRow?.id;
@@ -181,7 +191,7 @@ describe('inventory automations staging proof', () => {
     const revoked = await CommerceInventoryAutomationsApplication.revoke(sellerPubky, revokeId, 'inventory');
     expect(revoked).toEqual({ status: 'revoked', id: revokeId });
     expect(MarketplaceInventorySessionService.getActiveSession()).toBeNull();
-    expect(MarketplaceSessionService.getActiveSession()?.token).toBe(identityToken);
+    expect(MarketplaceSessionService.getActiveSession()?.token === identityToken).toBe(true);
 
     const deadClient = MarketplaceShopClientService.createInventoryClient(inventoryToken);
     const deadList = await MarketplaceShopClientService.listSessions(deadClient);

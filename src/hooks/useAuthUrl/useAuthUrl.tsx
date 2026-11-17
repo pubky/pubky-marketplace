@@ -14,7 +14,7 @@ import {
 } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
 import { copyToClipboard } from '@/libs/utils/utils';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { AUTH_FLOW_CANCELED_ERROR_NAME } from '@/services/homeserver/error.utils';
 import type { UseAuthUrlOptions, UseAuthUrlReturn } from './useAuthUrl.types';
 
@@ -32,15 +32,13 @@ const isAuthFlowCanceled = (error: unknown): boolean =>
   (error as { name?: unknown }).name === AUTH_FLOW_CANCELED_ERROR_NAME;
 
 /**
- * Manages the authentication URL lifecycle for Pubky Ring authorization.
- * @param options - Configuration for auth URL generation (autoFetch, type, inviteCode for signup)
+ * Manages the authentication URL lifecycle for Pubky Ring and Bitkit authorization.
+ * @param options - Configuration for auth URL generation (autoFetch and scoped encryption keys)
  * @returns URL state, loading/expired flags, and fetch/copy actions
  */
 export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
   const autoFetch = options.autoFetch ?? true;
-  const type = options.type ?? 'signin';
-  const inviteCode = options.type === 'signup' ? options.inviteCode : '';
-  const withPrivKeys = options.type === 'grant' ? options.withPrivKeys : undefined;
+  const withPrivKeys = options.withPrivKeys;
 
   const [url, setUrl] = useState('');
   const [isLoading, setIsLoading] = useState(autoFetch);
@@ -55,13 +53,9 @@ export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
     try {
       // Request auth URL from controller
       const { authorizationUrl, awaitApproval } =
-        type === 'signup'
-          ? await AuthController.getSignupAuthUrl(inviteCode)
-          : type === 'grant'
-            ? await (withPrivKeys === undefined
-                ? AuthController.getGrantAuthUrl()
-                : AuthController.getGrantAuthUrl({ withPrivKeys }))
-            : await AuthController.getAuthUrl();
+        withPrivKeys === undefined
+          ? await AuthController.getAuthUrl()
+          : await AuthController.getAuthUrl({ withPrivKeys });
 
       awaitApproval
         .then(async (session: Session) => {
@@ -124,7 +118,7 @@ export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
         setIsLoading(false);
       }
     }
-  }, [type, inviteCode, withPrivKeys]);
+  }, [withPrivKeys]);
 
   const copyAuthUrl = useCallback(async (): Promise<void> => {
     if (!url) return;

@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { capabilitiesMatchFullGrant } from '@/libs/auth/capabilities';
 import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
 import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
+import {
+  LEGACY_SHOP_SIGN_IN_GRANT,
+  PREVIOUS_SHOP_SIGN_IN_GRANT,
+} from '@/services/marketplace/marketplace-session-grant';
 import ringCookie from '@/test/fixtures/auth/ring-cookie-signin.pubky-common-0.11.json';
 import {
   CAPABILITIES,
@@ -75,7 +79,8 @@ describe('capabilitiesMatchFullGrant', () => {
   });
 
   it('refuses missing permissions but accepts additional scopes', () => {
-    expect(capabilitiesMatchFullGrant(full.slice(0, 2))).toBe(false);
+    expect(capabilitiesMatchFullGrant(full.slice(1))).toBe(false);
+    expect(capabilitiesMatchFullGrant(full.filter((entry) => entry !== '/priv/pubky.app/:rw'))).toBe(false);
     expect(capabilitiesMatchFullGrant([...full, '/extra/:rw'])).toBe(true);
   });
 
@@ -88,10 +93,23 @@ describe('capabilitiesMatchFullGrant', () => {
     expect(capabilitiesMatchFullGrant(['/pub/pubky.app/:rw', '/pub/chat/v0/:rw', '/priv/chat/v0/:rw'])).toBe(false);
   });
 
+  it('keeps grants approved before the Shop stopped asking for /pub/paykit/:rw', () => {
+    expect(capabilitiesMatchFullGrant(PREVIOUS_SHOP_SIGN_IN_GRANT.split(','))).toBe(true);
+    expect(capabilitiesMatchFullGrant([...PREVIOUS_SHOP_SIGN_IN_GRANT.split(','), PRIV_KEYS_SCOPE])).toBe(true);
+    expect(capabilitiesMatchFullGrant(LEGACY_SHOP_SIGN_IN_GRANT.split(','))).toBe(true);
+  });
+
   it('requests exactly the agreed Shop and Chat v0 permissions for new approvals', () => {
-    expect(CAPABILITIES).toBe(
-      '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw',
-    );
+    expect(CORE_CAPABILITIES).toBe('/pub/pubky.app/:rw,/priv/pubky.app/:rw');
+    expect(CAPABILITIES).toBe('/pub/pubky.app/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw');
+  });
+
+  it.each([
+    ['CORE_CAPABILITIES', CORE_CAPABILITIES],
+    ['CAPABILITIES', CAPABILITIES],
+    ['KEYED_CAPABILITIES', KEYED_CAPABILITIES],
+  ])('%s asks for nothing under /pub/paykit/, which the Shop only reads', (_name, capabilities) => {
+    expect(capabilities.split(',').filter((entry) => entry.startsWith('/pub/paykit'))).toEqual([]);
   });
 });
 

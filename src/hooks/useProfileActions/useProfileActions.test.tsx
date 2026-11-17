@@ -1,10 +1,9 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProfileController } from '@/controllers/profile/profile';
-import { ErrorMessages } from '@/libs/error/error.messages';
 import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useProfileActions } from './useProfileActions';
 
@@ -16,7 +15,7 @@ vi.mock('next/navigation', () => ({
   }),
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
 }));
 
@@ -46,7 +45,7 @@ describe('useProfileActions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(Logger, 'error').mockImplementation(() => {});
-    vi.mocked(toast).mockImplementation(() => ({ id: '1', dismiss: vi.fn(), update: vi.fn() }));
+    vi.mocked(toast).mockImplementation(() => ({ dismiss: vi.fn() }));
     useAuthStore.setState({ currentUserPubky: null });
   });
 
@@ -194,7 +193,7 @@ describe('useProfileActions', () => {
       expect(Logger.error).toHaveBeenCalledWith('Failed to logout:', expect.any(Error));
       expect(toast).toHaveBeenCalledWith({
         variant: 'error',
-        description: ErrorMessages.LOGOUT_FAILED,
+        description: 'Could not log out. Try again.',
       });
       expect(mockPush).not.toHaveBeenCalled();
     });

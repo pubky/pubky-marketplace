@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   escapeForInlineScript,
+  getClientRegionHeader,
   getCommerceAdapterMode,
   getCommercePollIntervalMs,
-  getDigitalRegionBlockEnabled,
   getEuFenceEnabled,
   getLocksUrl,
   getMarketplaceNexusUrl,
@@ -14,12 +14,15 @@ import {
   getPaykitSetupUrl,
   getPrivEncryptionKeysEnabled,
   getPrivEncryptionKeysHomeservers,
+  getRegionPolicy,
   getRuntimeConfig,
   getSentryDsn,
   getSentryEnvironment,
   getSentryReplaysOnErrorSampleRate,
   getSentryReplaysSessionSampleRate,
+  getSentrySampleRate,
   getSentryTracesSampleRate,
+  getStoreSyncEnabled,
   getUsdtPaymentsEnabled,
   readClientConfig,
   readServerConfig,
@@ -48,6 +51,7 @@ const RUNTIME_ENV_VALUES: Partial<Record<keyof RuntimeConfig, string>> = {
   deployEnv: 'production',
   sentryDsn: 'https://abc123@o123.ingest.runtime.example.com/456',
   sentryEnvironment: 'staging',
+  sentrySampleRate: '0.2',
   sentryTracesSampleRate: '0.5',
   sentryReplaysSessionSampleRate: '0.25',
   sentryReplaysOnErrorSampleRate: '1',
@@ -145,6 +149,7 @@ describe('runtime-config resolver', () => {
       expect(config.testnet).toBe(false);
       expect(config.sentryDsn).toBe('https://abc123@o123.ingest.runtime.example.com/456');
       expect(config.sentryEnvironment).toBe('staging');
+      expect(config.sentrySampleRate).toBe(0.2);
       expect(config.sentryTracesSampleRate).toBe(0.5);
       expect(getMarketplaceUrl()).toBe('https://marketplace.runtime.example.com');
       expect(getLocksUrl()).toBe('https://locks.runtime.example.com');
@@ -158,6 +163,7 @@ describe('runtime-config resolver', () => {
       const config = readServerConfig();
       expect(config.sentryDsn).toBeUndefined();
       expect(config.sentryEnvironment).toBeUndefined();
+      expect(config.sentrySampleRate).toBeUndefined();
       expect(config.sentryTracesSampleRate).toBe(SENTRY_RUNTIME_DEFAULTS.sentryTracesSampleRate);
       expect(config.sentryReplaysSessionSampleRate).toBe(SENTRY_RUNTIME_DEFAULTS.sentryReplaysSessionSampleRate);
       expect(config.sentryReplaysOnErrorSampleRate).toBe(SENTRY_RUNTIME_DEFAULTS.sentryReplaysOnErrorSampleRate);
@@ -169,6 +175,22 @@ describe('runtime-config resolver', () => {
       const config = readServerConfig();
       expect(config.nexusUrl).toBe('https://nexus.runtime.example.com');
       expect(config.sentryEnvironment).toBe('staging');
+      expect(config.sentrySampleRate).toBe(0.2);
+    });
+
+    it.each(['-0.1', '1.1', 'NaN', 'nope'])('rejects an invalid error sample rate: %s', (rate) => {
+      setAllRuntimeEnv();
+      process.env[PUBKY_RUNTIME_ENV_NAMES.sentrySampleRate] = rate;
+      expect(() => readServerConfig()).toThrow();
+    });
+
+    it.each(['0', '1'])('preserves the error sample rate boundary %s through server-to-browser injection', (rate) => {
+      setAllRuntimeEnv();
+      process.env[PUBKY_RUNTIME_ENV_NAMES.sentrySampleRate] = rate;
+      const server = readServerConfig();
+      window[RUNTIME_CONFIG_WINDOW_KEY] = JSON.parse(JSON.stringify(server));
+      expect(getSentrySampleRate()).toBe(Number(rate));
+      expect(serializeRuntimeConfig()).toContain(`"sentrySampleRate":${rate}`);
     });
 
     it('throws on partial PUBKY_RUNTIME_* config in deployed/required mode', () => {
@@ -265,21 +287,45 @@ describe('runtime-config resolver', () => {
       expect(readServerConfig().usdtPaymentsEnabled).toBe(false);
     });
 
+    it('keeps the Shopify product sync off by default and takes the PUBKY_RUNTIME_STORE_SYNC_ENABLED switch', () => {
+      expect(PUBKY_RUNTIME_ENV_NAMES.storeSyncEnabled).toBe('PUBKY_RUNTIME_STORE_SYNC_ENABLED');
+      expect(getStoreSyncEnabled()).toBe(false);
+
+      resetRuntimeConfigForTests();
+      process.env[PUBKY_RUNTIME_ENV_NAMES.storeSyncEnabled] = 'true';
+      expect(getStoreSyncEnabled()).toBe(true);
+
+      resetRuntimeConfigForTests();
+      process.env[PUBKY_RUNTIME_ENV_NAMES.storeSyncEnabled] = 'false';
+      expect(getStoreSyncEnabled()).toBe(false);
+    });
+
+    it('fails loudly on a malformed store sync switch', () => {
+      process.env[PUBKY_RUNTIME_ENV_NAMES.storeSyncEnabled] = 'maybe';
+      expect(() => readServerConfig()).toThrow();
+    });
+
+    it('strict deployed parse succeeds with the store sync switch unset and resolves it off', () => {
+      simulateDeployedEnv();
+      setAllRuntimeEnv();
+      expect(readServerConfig().storeSyncEnabled).toBe(false);
+    });
+
     it('keeps the EU fence and the digital hold off by default, each on its own switch', () => {
       expect(PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled).toBe('PUBKY_RUNTIME_EU_FENCE_ENABLED');
       expect(PUBKY_RUNTIME_ENV_NAMES.digitalRegionBlockEnabled).toBe('PUBKY_RUNTIME_DIGITAL_REGION_BLOCK_ENABLED');
       expect(getEuFenceEnabled()).toBe(false);
-      expect(getDigitalRegionBlockEnabled()).toBe(false);
+      expect(getRegionPolicy().digitalHoldActive).toBe(false);
 
       resetRuntimeConfigForTests();
       process.env[PUBKY_RUNTIME_ENV_NAMES.digitalRegionBlockEnabled] = 'true';
-      expect(getDigitalRegionBlockEnabled()).toBe(true);
+      expect(getRegionPolicy().digitalHoldActive).toBe(true);
       expect(getEuFenceEnabled()).toBe(false);
 
       resetRuntimeConfigForTests();
       process.env[PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled] = 'true';
       expect(getEuFenceEnabled()).toBe(true);
-      expect(getDigitalRegionBlockEnabled()).toBe(true);
+      expect(getRegionPolicy().digitalHoldActive).toBe(true);
     });
 
     it('fails loudly on a malformed region switch and resolves both off in a strict deployed parse', () => {
@@ -290,6 +336,117 @@ describe('runtime-config resolver', () => {
       setAllRuntimeEnv();
       expect(readServerConfig().euFenceEnabled).toBe(false);
       expect(readServerConfig().digitalRegionBlockEnabled).toBe(false);
+    });
+
+    describe('region modes', () => {
+      const setModes = (value: string | undefined) => {
+        resetRuntimeConfigForTests();
+        if (value === undefined) delete process.env[PUBKY_RUNTIME_ENV_NAMES.regionModes];
+        else process.env[PUBKY_RUNTIME_ENV_NAMES.regionModes] = value;
+      };
+
+      it('names the settings after the service ones', () => {
+        expect(PUBKY_RUNTIME_ENV_NAMES.regionModes).toBe('PUBKY_RUNTIME_REGION_MODES');
+        expect(PUBKY_RUNTIME_ENV_NAMES.clientRegionHeader).toBe('PUBKY_RUNTIME_CLIENT_REGION_HEADER');
+      });
+
+      it('leaves every region open while the setting and both flags are unset', () => {
+        expect(readServerConfig().regionModes).toBeUndefined();
+        const policy = getRegionPolicy();
+        expect(policy.allOpen).toBe(true);
+        expect(policy.usesClientRegion).toBe(false);
+      });
+
+      it('derives the EU and GB as nuanced from the older flags while the setting is unset', () => {
+        process.env[PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled] = 'true';
+        const policy = getRegionPolicy();
+        expect(policy.modeOf('DE')).toBe('nuanced');
+        expect(policy.modeOf('GB')).toBe('nuanced');
+        expect(policy.modeOf('US')).toBe('open');
+        expect(policy).toMatchObject({ fenceActive: true, digitalHoldActive: false, hasBlocked: false });
+      });
+
+      it('lets the setting win over the older flags', () => {
+        process.env[PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled] = 'true';
+        process.env[PUBKY_RUNTIME_ENV_NAMES.digitalRegionBlockEnabled] = 'true';
+        setModes('EU=blocked,GB=blocked,US=blocked');
+        const policy = getRegionPolicy();
+        expect(policy.modeOf('DE')).toBe('blocked');
+        expect(policy.modeOf('US')).toBe('blocked');
+        expect(policy.hasNuanced).toBe(false);
+        expect(getEuFenceEnabled()).toBe(false);
+        expect(getRegionPolicy().digitalHoldActive).toBe(false);
+      });
+
+      it('opens everything with none, even with the older flags on', () => {
+        process.env[PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled] = 'true';
+        setModes('none');
+        expect(getRegionPolicy().allOpen).toBe(true);
+      });
+
+      it('resolves the canonical spelling and treats a blank value as unset', () => {
+        setModes(' eu = Blocked ,us=BLOCKED ');
+        expect(readServerConfig().regionModes).toBe('EU=blocked,US=blocked');
+        setModes('   ');
+        expect(readServerConfig().regionModes).toBeUndefined();
+      });
+
+      it('memoizes the policy per resolved config', () => {
+        setModes('US=blocked');
+        const first = getRegionPolicy();
+        expect(getRegionPolicy()).toBe(first);
+        setModes('US=open');
+        expect(getRegionPolicy()).not.toBe(first);
+      });
+
+      it.each(['EU', 'EU=closed', 'USA=blocked', 'UK=blocked', 'EU=blocked,', 'none,US=blocked'])(
+        'fails loudly on the malformed value %j',
+        (value) => {
+          setModes(value);
+          expect(() => readServerConfig()).toThrow();
+        },
+      );
+
+      it('fails the strict deployed parse on a malformed value and accepts a good one', () => {
+        simulateDeployedEnv();
+        setAllRuntimeEnv();
+        process.env[PUBKY_RUNTIME_ENV_NAMES.regionModes] = 'EU=blocked';
+        expect(readServerConfig().regionModes).toBe('EU=blocked');
+        process.env[PUBKY_RUNTIME_ENV_NAMES.regionModes] = 'EU=nope';
+        expect(() => readServerConfig()).toThrow();
+      });
+
+      it('rejects a malformed injected value in the browser config', () => {
+        const injected = { ...JSON.parse(JSON.stringify(readServerConfig())), regionModes: 'EU=nope' };
+        window[RUNTIME_CONFIG_WINDOW_KEY] = injected;
+        expect(() => readClientConfig()).toThrow();
+      });
+
+      it('carries the setting to the browser through the injected config', () => {
+        setModes('EU=blocked,US=blocked');
+        const script = serializeRuntimeConfig();
+        const injected: unknown = JSON.parse(script.slice(script.indexOf('(') + 1, script.lastIndexOf(')')));
+        resetRuntimeConfigForTests();
+        window[RUNTIME_CONFIG_WINDOW_KEY] = injected;
+        expect(getRegionPolicy().modeOf('DE')).toBe('blocked');
+      });
+
+      it('reads the visitor country from x-client-region unless the deploy names another header', () => {
+        expect(APP_RUNTIME_DEFAULTS.clientRegionHeader).toBe('x-client-region');
+        expect(getClientRegionHeader()).toBe('x-client-region');
+        resetRuntimeConfigForTests();
+        process.env[PUBKY_RUNTIME_ENV_NAMES.clientRegionHeader] = ' X-Vercel-IP-Country ';
+        expect(getClientRegionHeader()).toBe('x-vercel-ip-country');
+      });
+
+      it.each(['x client region', 'x_client_region', '-x', 'x-', 'x--y', 'x:y'])(
+        'rejects the header name %j',
+        (value) => {
+          resetRuntimeConfigForTests();
+          process.env[PUBKY_RUNTIME_ENV_NAMES.clientRegionHeader] = value;
+          expect(() => readServerConfig()).toThrow();
+        },
+      );
     });
 
     it('does not request scoped encryption keys unless the deploy opts in', () => {
@@ -317,6 +474,87 @@ describe('runtime-config resolver', () => {
         process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeysHomeservers] = value;
         expect(() => readServerConfig(), value).toThrow();
       }
+    });
+
+    describe('marketplace trusted attestors', () => {
+      const ATTESTOR = 'wj3drgzdpnf54rxf5d8qd3dqne14j8umgczgrdp95w77zuxmxfu9';
+
+      it('defaults to no runtime entries', () => {
+        expect(readServerConfig().marketplaceTrustedAttestors).toEqual([]);
+        simulateDeployedEnv();
+        setAllRuntimeEnv();
+        expect(readServerConfig().marketplaceTrustedAttestors).toEqual([]);
+      });
+
+      it('parses a JSON array of entries in the strict deployed parse', () => {
+        simulateDeployedEnv();
+        setAllRuntimeEnv();
+        const entries = [
+          { pubky: ATTESTOR, label: 'Pubky Market', validFrom: '2026-10-12', validUntil: '2026-12-01T09:30:00+01:00' },
+          { pubky: 'y'.repeat(52), label: 'Second operator', validFrom: '2026-08-21T00:00:00Z' },
+        ];
+        process.env[PUBKY_RUNTIME_ENV_NAMES.marketplaceTrustedAttestors] = JSON.stringify(entries);
+
+        expect(readServerConfig().marketplaceTrustedAttestors).toEqual(entries);
+        expect(PUBKY_RUNTIME_ENV_NAMES.marketplaceTrustedAttestors).toBe('PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS');
+      });
+
+      it('treats a blank value as no runtime entries', () => {
+        process.env[PUBKY_RUNTIME_ENV_NAMES.marketplaceTrustedAttestors] = '   ';
+        expect(readServerConfig().marketplaceTrustedAttestors).toEqual([]);
+      });
+
+      it.each([
+        ['not JSON', 'not json'],
+        ['an object instead of an array', JSON.stringify({ pubky: ATTESTOR, label: 'x', validFrom: '2026-10-12' })],
+        ['a bare pubky string', JSON.stringify([ATTESTOR])],
+        [
+          'a pubky that is not z-base-32',
+          JSON.stringify([{ pubky: 'l'.repeat(52), label: 'x', validFrom: '2026-10-12' }]),
+        ],
+        ['a missing label', JSON.stringify([{ pubky: ATTESTOR, validFrom: '2026-10-12' }])],
+        ['a blank label', JSON.stringify([{ pubky: ATTESTOR, label: ' ', validFrom: '2026-10-12' }])],
+        ['a missing validFrom', JSON.stringify([{ pubky: ATTESTOR, label: 'x' }])],
+        ['a date that is not ISO', JSON.stringify([{ pubky: ATTESTOR, label: 'x', validFrom: '12/10/2026' }])],
+        [
+          'a datetime without an offset',
+          JSON.stringify([{ pubky: ATTESTOR, label: 'x', validFrom: '2026-10-12T00:00:00' }]),
+        ],
+        [
+          'a misspelt window key',
+          JSON.stringify([{ pubky: ATTESTOR, label: 'x', validFrom: '2026-10-12', valid_until: '2026-11-01' }]),
+        ],
+        [
+          'validUntil equal to validFrom',
+          JSON.stringify([
+            { pubky: ATTESTOR, label: 'x', validFrom: '2026-10-12', validUntil: '2026-10-12T00:00:00Z' },
+          ]),
+        ],
+        [
+          'validUntil before validFrom',
+          JSON.stringify([{ pubky: ATTESTOR, label: 'x', validFrom: '2026-10-12', validUntil: '2026-10-01' }]),
+        ],
+      ])('fails loudly on %s', (_case, value) => {
+        process.env[PUBKY_RUNTIME_ENV_NAMES.marketplaceTrustedAttestors] = value;
+        expect(() => readServerConfig()).toThrow();
+
+        resetRuntimeConfigForTests();
+        simulateDeployedEnv();
+        setAllRuntimeEnv();
+        expect(() => readServerConfig()).toThrow(/Runtime config is incomplete or invalid/);
+      });
+
+      it('round-trips through the injected browser config', () => {
+        const entry = { pubky: ATTESTOR, label: 'Pubky Market', validFrom: '2026-10-12' };
+        window[RUNTIME_CONFIG_WINDOW_KEY] = { ...NETWORK_RUNTIME_DEFAULTS, marketplaceTrustedAttestors: [entry] };
+        expect(readClientConfig().marketplaceTrustedAttestors).toEqual([entry]);
+
+        window[RUNTIME_CONFIG_WINDOW_KEY] = {
+          ...NETWORK_RUNTIME_DEFAULTS,
+          marketplaceTrustedAttestors: [{ ...entry, validUntil: '2026-10-01' }],
+        };
+        expect(() => readClientConfig()).toThrow();
+      });
     });
 
     it('strict deployed parse succeeds with the scoped-keys values unset', () => {
@@ -498,6 +736,7 @@ describe('runtime-config resolver', () => {
       const serialized = serializeRuntimeConfig();
       expect(serialized).not.toContain('sentryDsn');
       expect(serialized).not.toContain('sentryEnvironment');
+      expect(serialized).not.toContain('sentrySampleRate');
       // Defaulted rates are always present so the client never re-derives them.
       expect(serialized).toContain('sentryTracesSampleRate');
     });
@@ -509,6 +748,7 @@ describe('runtime-config resolver', () => {
         ...NETWORK_RUNTIME_DEFAULTS,
         sentryDsn: 'https://abc123@o123.ingest.injected.example.com/456',
         sentryEnvironment: 'preview',
+        sentrySampleRate: 0.2,
         sentryTracesSampleRate: 0.5,
         sentryReplaysSessionSampleRate: 0.25,
         sentryReplaysOnErrorSampleRate: 0.75,
@@ -516,6 +756,7 @@ describe('runtime-config resolver', () => {
 
       expect(getSentryDsn()).toBe('https://abc123@o123.ingest.injected.example.com/456');
       expect(getSentryEnvironment()).toBe('preview');
+      expect(getSentrySampleRate()).toBe(0.2);
       expect(getSentryTracesSampleRate()).toBe(0.5);
       expect(getSentryReplaysSessionSampleRate()).toBe(0.25);
       expect(getSentryReplaysOnErrorSampleRate()).toBe(0.75);
@@ -526,6 +767,7 @@ describe('runtime-config resolver', () => {
 
       expect(getSentryDsn()).toBeUndefined();
       expect(getSentryEnvironment()).toBeUndefined();
+      expect(getSentrySampleRate()).toBeUndefined();
       expect(getSentryTracesSampleRate()).toBe(SENTRY_RUNTIME_DEFAULTS.sentryTracesSampleRate);
       expect(getSentryReplaysSessionSampleRate()).toBe(SENTRY_RUNTIME_DEFAULTS.sentryReplaysSessionSampleRate);
       expect(getSentryReplaysOnErrorSampleRate()).toBe(SENTRY_RUNTIME_DEFAULTS.sentryReplaysOnErrorSampleRate);

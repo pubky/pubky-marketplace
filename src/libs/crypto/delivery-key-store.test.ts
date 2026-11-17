@@ -9,12 +9,12 @@ import {
   getDeliveryKeyPin,
   getDeliveryPrivateKey,
   getDeviceRecord,
-  listDeliveryKeys,
   putDeliveryKeyPin,
   putDeviceRecord,
   resetDeliveryKeyStoreForTests,
   storeDeliveryKey,
 } from './delivery-key-store';
+import { readStoredDeliveryKeyRows } from './delivery-key-store.test-utils';
 
 const OWNER = 'o'.repeat(52);
 const OTHER_OWNER = 'p'.repeat(52);
@@ -49,10 +49,15 @@ describe('delivery key store', () => {
     dropDeliveryKeyStoreCacheForTests();
 
     expect((await getCurrentDeliveryKey(OWNER))?.keyId).toBe(second.keyId);
-    expect((await listDeliveryKeys(OWNER)).map((key) => [key.keyId, key.current])).toEqual([
-      [second.keyId, true],
-      [first.keyId, false],
-    ]);
+    const storedRows = await readStoredDeliveryKeyRows(OWNER);
+    expect(storedRows).toHaveLength(2);
+    expect(storedRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ keyId: second.keyId, current: true }),
+        expect.objectContaining({ keyId: first.keyId, current: false }),
+      ]),
+    );
+
     expect(await getDeliveryPrivateKey(OWNER, first.keyId)).toEqual(first.privateKey);
     expect(await getDeliveryPrivateKey(OWNER, second.keyId)).toEqual(second.privateKey);
   });
@@ -61,7 +66,7 @@ describe('delivery key store', () => {
     const pair = fakePair();
     await storeDeliveryKey(OWNER, pair, new Date());
     expect(await getCurrentDeliveryKey(OTHER_OWNER)).toBeNull();
-    expect(await listDeliveryKeys(OTHER_OWNER)).toEqual([]);
+    expect(await readStoredDeliveryKeyRows(OTHER_OWNER)).toEqual([]);
     expect(await getDeliveryPrivateKey(OTHER_OWNER, pair.keyId)).toBeNull();
   });
 

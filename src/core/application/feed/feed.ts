@@ -141,7 +141,7 @@ export class FeedApplication {
    * Fetch all feeds from the homeserver and persist them locally.
    * Used during bootstrap to hydrate the local feed cache.
    */
-  static async fetchFeeds(userId: Pubky): Promise<FeedModelSchema[]> {
+  static async fetchFeeds(userId: Pubky, signal?: AbortSignal): Promise<FeedModelSchema[]> {
     const feedsDirectory = `${baseUriBuilder(userId)}feeds/`;
     const feedUris = await HomeserverService.list({ baseDirectory: feedsDirectory });
 
@@ -177,6 +177,7 @@ export class FeedApplication {
     }
 
     if (validFeeds.length === 0) return [];
+    signal?.throwIfAborted();
     return LocalFeedService.createOrUpdateMany(validFeeds);
   }
 

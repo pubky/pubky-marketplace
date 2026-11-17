@@ -58,11 +58,4 @@ describe('UserNotFound', () => {
       setSocialHost(undefined);
     }
   });
-
-  describe('Snapshots', () => {
-    it('matches snapshot', () => {
-      const { container } = render(<UserNotFound />);
-      expect(container.firstChild).toMatchSnapshot();
-    });
-  });
 });

@@ -14,7 +14,6 @@ import {
   commerceCategoryLabel,
   commerceCategoryPathLabels,
   type CommerceTaxonomyNode,
-  isCommerceCategoryLeaf,
   resolveCommerceCategory,
 } from './taxonomy';
 
@@ -191,13 +190,6 @@ describe('taxonomy v2 config integrity', () => {
     expect(commerceCategoryPathLabels('from-another-taxonomy')).toEqual(['From another taxonomy']);
     expect(commerceAttributeLabel('graded-by')).toBe('Graded by');
     expect(commerceAttributeFieldsFor('from-another-taxonomy')).toEqual([]);
-  });
-
-  it('exposes leaf checks the studio picker relies on', () => {
-    expect(isCommerceCategoryLeaf('fashion-men-footwear-boots')).toBe(true);
-    expect(isCommerceCategoryLeaf('fashion-men')).toBe(false);
-    expect(isCommerceCategoryLeaf('fashion')).toBe(false);
-    expect(isCommerceCategoryLeaf('not-a-category')).toBe(false);
   });
 });
 

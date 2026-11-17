@@ -1,6 +1,5 @@
 'use client';
 
-import { useRef, useState } from 'react';
 import type { TImportImageMedia } from '@/application/import-image/import-image-upload';
 import {
   IMPORT_IMAGE_BATCH_MAX_WAIT_SECONDS,
@@ -158,42 +157,4 @@ function sleep(ms: number, signal?: AbortSignal): Promise<boolean> {
 
 function failed(url: string, reason: NonNullable<TImportImageResultRow['reason']>): TImportImageResult {
   return { url, status: 'failed', reason };
-}
-
-export function useImportImageUpload(ownerPubky: string | null) {
-  const [progress, setProgress] = useState<TImportImageProgress | null>(null);
-  const [results, setResults] = useState<TImportImageResult[]>([]);
-  const [running, setRunning] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
-
-  const run = async (
-    urls: string[],
-    altText?: TImportImageRunParams['altText'],
-  ): Promise<TImportImageRunResult | null> => {
-    if (!ownerPubky || running) return null;
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setRunning(true);
-    setResults([]);
-    setProgress({ done: 0, total: new Set(urls.map((url) => url.trim())).size, url: null });
-    try {
-      const outcome = await uploadImportImages({
-        ownerPubky,
-        urls,
-        altText,
-        signal: controller.signal,
-        onProgress: setProgress,
-      });
-      setResults(outcome.results);
-      return outcome;
-    } finally {
-      abortRef.current = null;
-      setRunning(false);
-    }
-  };
-
-  const cancel = () => abortRef.current?.abort();
-
-  return { run, cancel, running, progress, results };
 }

@@ -2,15 +2,19 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import {
   evaluateListingActivationGuards,
   seedDraftFormFromListing,
 } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing';
+import { useListingSources } from '@/hooks/useListingSources/useListingSources';
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
 import { useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplaceOrders';
+import { cacheProjection } from '@/hooks/useMarketplaceProjection/useMarketplaceProjection';
 import { useMeasurementSystem } from '@/hooks/useMeasurementSystem/useMeasurementSystem';
 import { isAuctionSaleEnded } from '@/libs/commerce/auction-phase';
+import { isLiveAuction } from '@/libs/commerce/auction-removal';
 import {
   contentfulListingDrafts,
   formatListingDraftAge,
@@ -20,13 +24,29 @@ import {
   markListingDraftResumeId,
 } from '@/libs/commerce/listing-drafts';
 import { listingPublishBlockToast } from '@/libs/commerce/listing-publish-guards';
+import { toListingTableRow } from '@/libs/commerce/listing-table';
 import { sumMoneyByAsset } from '@/libs/commerce/pricing';
-import { countableStockQuantity, isUnlimitedStock, UNLIMITED_STOCK_LABEL } from '@/libs/commerce/unlimited-stock';
-import { toast } from '@/molecules/Toaster/use-toast';
+import {
+  countableStockQuantity,
+  formatListingStock,
+  isUnlimitedStock,
+  UNLIMITED_STOCK_LABEL,
+} from '@/libs/commerce/unlimited-stock';
+import { isListingRegistrationPending } from '@/models/commerce/commerce.schema';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
 const REVENUE_ORDER_STATES = ['paid', 'processing', 'shipped', 'delivered', 'completed'] as const;
+
+/** Shown in place of a listing's stock, and the stock total, while the service has not yet answered for it. */
+const STOCK_UNKNOWN_LABEL = '—';
+
+const REGISTER_CONCURRENCY = 4;
+
+const PROJECTION_READ_CONCURRENCY = 6;
+
+type LocalListing = Awaited<ReturnType<typeof CommerceController.getListingsBySeller>>[number];
 
 export function useMarketplaceSellerDashboard() {
   const [nowMs, setNowMs] = useState(0);
@@ -35,8 +55,10 @@ export function useMarketplaceSellerDashboard() {
   const catalogRefreshGeneration = useRef(0);
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const measurementSystem = useMeasurementSystem();
+  // Async on purpose: Dexie only follows reads past an `await` (the cached projections behind each row's
+  // stock) when the querier is itself an async function, so a cached answer from the service re-renders.
   const localListings = useLiveQuery(
-    () => (currentUserPubky ? CommerceController.getListingsBySeller(currentUserPubky) : []),
+    async () => (currentUserPubky ? await CommerceController.getListingsBySeller(currentUserPubky) : []),
     [currentUserPubky],
   );
   useEffect(() => {
@@ -62,6 +84,75 @@ export function useMarketplaceSellerDashboard() {
   const offers = useMarketplaceOffers();
   const sellerOrders = orders.orders.filter(({ order }) => order.sellerPubky === currentUserPubky);
   const sellerOffers = offers.offers.filter(({ sellerPubky }) => sellerPubky === currentUserPubky);
+  // The Inventory column shows the service's count, which moves with each
+  // sale; the cached projection is only refreshed where a listing is opened.
+  // It is read again whenever a seller order moves, the session changes, or a listing arrives or changes revision.
+  const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
+  const stockRefreshed = useRef<string | null>(null);
+  // Listings the service said it holds no projection for. A projection it does hold is cached instead, and the
+  // listings query reads it from there.
+  const [unregisteredIds, setUnregisteredIds] = useState<ReadonlySet<string>>(new Set());
+  // A read that failed (offline, a session the service had not yet accepted) is tried again when the tab
+  // regains focus, instead of leaving the dashboard on the record's own numbers until a reload.
+  const [stockRetry, setStockRetry] = useState(0);
+  const stockReadFailed = useRef(false);
+  useEffect(() => {
+    const retry = () => {
+      if (stockReadFailed.current) setStockRetry((attempt) => attempt + 1);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') retry();
+    };
+    window.addEventListener('focus', retry);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', retry);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, []);
+  const stockKey = [
+    currentUserPubky,
+    marketplaceSession?.issuedAt,
+    stockRetry,
+    ...(localListings ?? []).map((listing) => `${listing.id}:${listing.revision}`),
+    ...sellerOrders.map(({ order }) => `${order.id}:${order.revision}:${order.state}`),
+  ].join('|');
+  useEffect(() => {
+    if (!currentUserPubky || !marketplaceSession || catalogFetchState !== 'settled') return;
+    if (!isDurableCommerceMode(getCommerceAdapterMode())) return;
+    if (stockRefreshed.current === stockKey) return;
+    stockRefreshed.current = stockKey;
+    const sellerPubky = currentUserPubky;
+    stockReadFailed.current = false;
+    void (async () => {
+      const listings = await CommerceController.getListingsBySeller(sellerPubky);
+      let next = 0;
+      // A few reads at a time: one after another, a few hundred listings left the Checkout filter and the stock
+      // column filling in for minutes.
+      const worker = async () => {
+        while (next < listings.length) {
+          const listing = listings[next++];
+          try {
+            const projection = await CommerceController.getMarketplaceListingProjection(
+              sellerPubky,
+              listing.listing_id,
+            );
+            if (projection) await cacheProjection(projection);
+            setUnregisteredIds((ids) => {
+              if (ids.has(listing.id) === !projection) return ids;
+              const updated = new Set(ids);
+              if (projection) updated.delete(listing.id);
+              else updated.add(listing.id);
+              return updated;
+            });
+          } catch {
+            stockReadFailed.current = true;
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(PROJECTION_READ_CONCURRENCY, listings.length) }, worker));
+    })();
+  }, [currentUserPubky, marketplaceSession, catalogFetchState, stockKey]);
   const activeListings = (localListings ?? []).filter(
     (listing) => listing.state === 'active' && !isAuctionSaleEnded(listing.record.sale, nowMs),
   );
@@ -75,20 +166,36 @@ export function useMarketplaceSellerDashboard() {
   const offersAwaitingReply = sellerOffers.filter(
     ({ state, offeredBy }) => (state === 'pending' || state === 'countered') && offeredBy !== currentUserPubky,
   ).length;
+  const durable = isDurableCommerceMode(getCommerceAdapterMode());
+  // Whether the service has told this dashboard about the listing: a projection the listings query has read from
+  // the cache (never earlier, so the row can't show the record's own count in between), or an answer that it
+  // holds none.
+  const serviceAnswered = (listing: { id: string; registeredWithService: boolean }) =>
+    !durable || listing.registeredWithService || unregisteredIds.has(listing.id);
+  // Offered only once the service said it holds no projection: before that the dashboard does not know.
+  const canOfferRegistration = (listing: { id: string }) => !durable || unregisteredIds.has(listing.id);
+  const hasUnlimitedStock = (listing: LocalListing) =>
+    listing.record.variants.some((variant) => isUnlimitedStock(listing.record, variant.quantity));
+  // Unlimited stock is the record's own setting; a finite count is the service's, so it waits for an answer.
+  const isStockKnown = (listing: LocalListing) => hasUnlimitedStock(listing) || serviceAnswered(listing);
+  const listingStockLabel = (listing: LocalListing) =>
+    isStockKnown(listing) ? formatListingStock(listing.record, listing.purchasableQuantity) : STOCK_UNKNOWN_LABEL;
+  const stockKnown = activeListings.every(isStockKnown);
   const finiteInventory = activeListings.reduce((total, listing) => {
     const record = listing.record;
-    const unlimited = record.variants.some((variant) => isUnlimitedStock(record, variant.quantity));
-    if (unlimited) return total + countableStockQuantity(record);
+    if (hasUnlimitedStock(listing)) return total + countableStockQuantity(record);
     return (
       total +
       (listing.purchasableQuantity ??
         record.variants.reduce((sum, variant) => sum + (variant.enabled ? variant.quantity : 0), 0))
     );
   }, 0);
-  const unlimitedActive = activeListings.some((listing) =>
-    listing.record.variants.some((variant) => isUnlimitedStock(listing.record, variant.quantity)),
-  );
-  const totalInventory = finiteInventory === 0 && unlimitedActive ? UNLIMITED_STOCK_LABEL : finiteInventory;
+  const unlimitedActive = activeListings.some(hasUnlimitedStock);
+  const totalInventory = !stockKnown
+    ? STOCK_UNKNOWN_LABEL
+    : finiteInventory === 0 && unlimitedActive
+      ? UNLIMITED_STOCK_LABEL
+      : finiteInventory;
   // One revenue figure per pricing asset: minor units of different assets
   // (USD cents, bitcoin base units) are never summed into one false number.
   const revenueOrders = sellerOrders.filter(({ order }) =>
@@ -97,7 +204,11 @@ export function useMarketplaceSellerDashboard() {
   const revenue = sumMoneyByAsset(revenueOrders.map(({ order }) => ({ money: order.total, quantity: 1 })));
 
   const updateListingState = async (listingIds: string[], state: 'active' | 'paused') => {
-    const selected = (localListings ?? []).filter(({ id }) => listingIds.includes(id));
+    // Pausing pulls the terms bidders acted on, which the listing page refuses for a live auction too.
+    const selected = (localListings ?? []).filter(
+      ({ id, record }) => listingIds.includes(id) && !(state === 'paused' && isLiveAuction(record, Date.now())),
+    );
+    if (selected.length === 0) return false;
     if (state === 'active') {
       // Read at call time: the dashboard calls this straight from the session
       // dialog's onConnected, before a re-render would refresh a selector value.
@@ -128,6 +239,66 @@ export function useMarketplaceSellerDashboard() {
       toast({ variant: 'error', description: 'Could not update selected listings.' });
       return false;
     }
+  };
+
+  const listingSources = useListingSources();
+  // The row's Register for checkout button and the Checkout filter both ask this: offered only once the service
+  // said it holds no projection for a listing the seller published.
+  const needsRegistration = (listing: LocalListing) =>
+    isListingRegistrationPending(listing) && !listing.registeredWithService && canOfferRegistration(listing);
+  const tableRows = (localListings ?? []).map((listing) =>
+    toListingTableRow(listing, {
+      nowMs,
+      needsRegistration,
+      stockKnown: isStockKnown,
+      sourcesOf: listingSources.sourcesOf,
+    }),
+  );
+  const [registering, setRegistering] = useState<{ done: number; total: number } | null>(null);
+  const registeringNow = useRef(false);
+
+  /**
+   * Registers every selected listing the service does not hold yet, a few at a time, through the same call as the
+   * row button. One summary toast, with the titles that failed; listings that did not need it are left alone.
+   */
+  const registerListings = async (listingIds: string[]) => {
+    const targets = (localListings ?? []).filter(
+      (listing) => listingIds.includes(listing.id) && needsRegistration(listing),
+    );
+    if (targets.length === 0 || registeringNow.current) return { registered: 0, failed: [] as string[] };
+    registeringNow.current = true;
+    setRegistering({ done: 0, total: targets.length });
+    const failed: string[] = [];
+    let next = 0;
+    let done = 0;
+    const worker = async () => {
+      while (next < targets.length) {
+        const listing = targets[next++];
+        const ok = await CommerceController.ensureListingRegistered(listing.record).catch(() => false);
+        if (!ok) failed.push(listing.record.title);
+        done += 1;
+        setRegistering({ done, total: targets.length });
+      }
+    };
+    try {
+      await Promise.all(Array.from({ length: Math.min(REGISTER_CONCURRENCY, targets.length) }, worker));
+    } finally {
+      registeringNow.current = false;
+      setRegistering(null);
+    }
+    const registered = targets.length - failed.length;
+    if (failed.length === 0) {
+      toast({ title: `${registered} ${registered === 1 ? 'listing' : 'listings'} registered for checkout` });
+    } else {
+      const shown = failed.slice(0, 3).join(', ');
+      const more = failed.length > 3 ? ` and ${failed.length - 3} more` : '';
+      toast({
+        variant: 'error',
+        title: `Registered ${registered} of ${targets.length} for checkout`,
+        description: `Could not register ${shown}${more}. Select them again to retry.`,
+      });
+    }
+    return { registered, failed };
   };
 
   const retryListingRegistration = async (listingId: string): Promise<boolean> => {
@@ -221,18 +392,12 @@ export function useMarketplaceSellerDashboard() {
 
   return {
     listings: localListings ?? [],
-    sellerOrders,
-    offers: sellerOffers,
     isLoading:
       localListings === undefined ||
       (localListings.length === 0 && (catalogFetchState === 'idle' || catalogFetchState === 'loading')) ||
       orders.isLoading ||
       offers.isLoading,
     error: catalogFetchState === 'error' ? 'Could not load your listings.' : null,
-    // Orders and offers ride the same durable session, so either flag means
-    // the dashboard's remote-backed numbers are missing until reconnect.
-    needsSession: orders.needsSession || offers.needsSession,
-    sessionError: (orders.needsSession ? orders.error : null) ?? (offers.needsSession ? offers.error : null),
     metrics: {
       activeListings: activeListings.length,
       totalInventory,
@@ -253,6 +418,13 @@ export function useMarketplaceSellerDashboard() {
     },
     updateListingState,
     retryListingRegistration,
+    canOfferRegistration,
+    needsRegistration,
+    registerListings,
+    registering,
+    tableRows,
+    sourcesReady: listingSources.ready,
+    listingStockLabel,
     duplicateListing,
     hasUnsavedListingDraft,
     unfinishedDrafts,

@@ -264,41 +264,6 @@ describe('FeedController', () => {
     });
   });
 
-  describe('fetchFeeds', () => {
-    it('should pass userId from auth store to application layer', async () => {
-      const fetchSpy = vi.spyOn(FeedApplication, 'fetchFeeds');
-
-      await FeedController.fetchFeeds();
-
-      expect(fetchSpy).toHaveBeenCalledWith(testData.userPubky);
-    });
-
-    it('should return persisted feeds from application layer', async () => {
-      const feeds = [createMockFeedSchema({ id: 'feed-1' }), createMockFeedSchema({ id: 'feed-2' })];
-      vi.spyOn(FeedApplication, 'fetchFeeds').mockResolvedValue(feeds);
-
-      const result = await FeedController.fetchFeeds();
-
-      expect(result).toHaveLength(2);
-      expect(result[0].id).toBe('feed-1');
-      expect(result[1].id).toBe('feed-2');
-    });
-
-    it('should return empty array when no feeds on homeserver', async () => {
-      vi.spyOn(FeedApplication, 'fetchFeeds').mockResolvedValue([]);
-
-      const result = await FeedController.fetchFeeds();
-
-      expect(result).toEqual([]);
-    });
-
-    it('should propagate errors from application layer', async () => {
-      vi.spyOn(FeedApplication, 'fetchFeeds').mockRejectedValue(new Error('Network error'));
-
-      await expect(FeedController.fetchFeeds()).rejects.toThrow('Network error');
-    });
-  });
-
   describe('list', () => {
     it('should return all feeds sorted', async () => {
       const feeds = [

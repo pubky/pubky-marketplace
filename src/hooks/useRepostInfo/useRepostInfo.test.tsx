@@ -71,14 +71,12 @@ describe('useRepostInfo', () => {
     mockBuildCompositeIdFromPubkyUri.mockReturnValue('original-author:original-post');
   });
 
-  it('returns isLoading true when relationships are undefined', () => {
+  it('does not identify a repost before relationships are available', () => {
     setMockRelationships(undefined);
 
     const { result } = renderHook(() => useRepostInfo(mockPostId));
 
-    expect(result.current.isLoading).toBe(true);
     expect(result.current.isRepost).toBe(false);
-    expect(result.current.repostAuthorId).toBe(null);
   });
 
   it('returns isRepost false when post is not a repost', () => {
@@ -86,9 +84,7 @@ describe('useRepostInfo', () => {
 
     const { result } = renderHook(() => useRepostInfo(mockPostId));
 
-    expect(result.current.isLoading).toBe(false);
     expect(result.current.isRepost).toBe(false);
-    expect(result.current.repostAuthorId).toBe(null);
     expect(result.current.isCurrentUserRepost).toBe(false);
     expect(result.current.originalPostId).toBe(null);
   });
@@ -98,19 +94,16 @@ describe('useRepostInfo', () => {
 
     const { result } = renderHook(() => useRepostInfo(mockPostId));
 
-    expect(result.current.isLoading).toBe(false);
     expect(result.current.isRepost).toBe(true);
-    expect(result.current.repostAuthorId).toBe('author');
     expect(result.current.originalPostId).toBe('original-author:original-post');
   });
 
-  it('returns repostAuthorId correctly from postId', () => {
+  it('compares the parsed repost author with the current user', () => {
     const repostPostId = 'repost-author:repost-post';
     setMockRelationships({ id: repostPostId, reposted: mockRepostedUri, replied: null, mentioned: [] });
 
     const { result } = renderHook(() => useRepostInfo(repostPostId));
-
-    expect(result.current.repostAuthorId).toBe('repost-author');
+    expect(result.current.isCurrentUserRepost).toBe(false);
   });
 
   it('returns isCurrentUserRepost true when current user reposted', () => {
@@ -120,7 +113,6 @@ describe('useRepostInfo', () => {
     const { result } = renderHook(() => useRepostInfo(currentUserPostId));
 
     expect(result.current.isCurrentUserRepost).toBe(true);
-    expect(result.current.repostAuthorId).toBe(mockCurrentUserPubky);
   });
 
   it('returns isCurrentUserRepost false when different user reposted', () => {
@@ -130,7 +122,6 @@ describe('useRepostInfo', () => {
     const { result } = renderHook(() => useRepostInfo(otherUserPostId));
 
     expect(result.current.isCurrentUserRepost).toBe(false);
-    expect(result.current.repostAuthorId).toBe('other-user');
   });
 
   it('returns originalPostId null when relationships.reposted is null', () => {
@@ -152,20 +143,19 @@ describe('useRepostInfo', () => {
   });
 
   it('handles postId with multiple colons correctly', () => {
-    const complexPostId = 'author:post:with:colons';
+    const complexPostId = `${mockCurrentUserPubky}:post:with:colons`;
     setMockRelationships({ id: complexPostId, reposted: mockRepostedUri, replied: null, mentioned: [] });
 
     const { result } = renderHook(() => useRepostInfo(complexPostId));
 
-    // Should extract author as first part before first colon
-    expect(result.current.repostAuthorId).toBe('author');
+    // Compare only the author before the first colon.
+    expect(result.current.isCurrentUserRepost).toBe(true);
   });
 
-  it('returns isLoading false when relationships are loaded', () => {
+  it('returns no original post for a loaded non-repost', () => {
     setMockRelationships({ id: mockPostId, reposted: null, replied: null, mentioned: [] });
 
     const { result } = renderHook(() => useRepostInfo(mockPostId));
-
-    expect(result.current.isLoading).toBe(false);
+    expect(result.current.originalPostId).toBeNull();
   });
 });

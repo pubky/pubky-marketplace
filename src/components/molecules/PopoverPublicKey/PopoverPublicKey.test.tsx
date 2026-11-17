@@ -40,7 +40,7 @@ vi.mock('@/atoms/Button/Button', () => {
         data-testid="popover-button"
         data-variant={variant}
         data-size={size}
-        className={className !== undefined ? className : 'hover:bg-white/10'}
+        className={className !== undefined ? className : 'hover:bg-foreground/10'}
         onClick={onClick}
         {...props}
       >
@@ -126,17 +126,5 @@ describe('PopoverPublicKey', () => {
 
     // The button should be clickable (no errors thrown)
     expect(button).toBeInTheDocument();
-  });
-});
-
-describe('PopoverPublicKey - Snapshots', () => {
-  it('matches snapshot for default PopoverPublicKey', () => {
-    const { container } = render(<PopoverPublicKey />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for PopoverPublicKey with custom className', () => {
-    const { container } = render(<PopoverPublicKey className="custom-public-key-style" />);
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

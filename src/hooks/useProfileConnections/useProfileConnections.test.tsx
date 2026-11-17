@@ -137,7 +137,6 @@ describe('useProfileConnections', () => {
     });
 
     expect(typeof result.current.loadMore).toBe('function');
-    expect(typeof result.current.refresh).toBe('function');
   });
 
   it('has correct initial state', async () => {
@@ -148,7 +147,6 @@ describe('useProfileConnections', () => {
     });
 
     expect(result.current.isLoadingMore).toBe(false);
-    expect(result.current.error).toBe(null);
     expect(result.current.hasMore).toBe(false); // No results means no more
   });
 

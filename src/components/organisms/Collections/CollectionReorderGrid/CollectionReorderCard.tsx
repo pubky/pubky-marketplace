@@ -35,7 +35,7 @@ function ReorderListingCell({ listingRef }: { listingRef: ListingUriRef }) {
     <Card className="min-w-0 flex-1 flex-col items-center justify-center gap-2 rounded-md py-6">
       <PackageX className="size-6 text-muted-foreground" />
       <Typography as="p" overrideDefaults className="text-sm text-muted-foreground">
-        Marketplace listing
+        Market listing
       </Typography>
     </Card>
   );

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { setSocialHost } from '@/test-utils/social-host';
 import {
+  ACCOUNT_ROUTES,
   APP_ROUTES,
   AUTH_ROUTES,
   AUTHENTICATED_ROUTES,
@@ -19,8 +20,6 @@ import {
   isDynamicPublicRoute,
   isLogoLandingRoute,
   isNavItemActive,
-  isPostRoute,
-  isPublicExploreRoute,
   LOGO_LANDING_ROUTES,
   MARKETPLACE_ROUTES,
   matchesAllowedRoute,
@@ -28,7 +27,6 @@ import {
   matchMarketplaceShopRoute,
   matchPostRoute,
   matchSingleCollectionRoute,
-  ONBOARDING_ROUTES,
   PROFILE_ROUTES,
   PUBLIC_ROUTES,
   SETTINGS_ROUTES,
@@ -37,8 +35,8 @@ import {
 
 describe('isDynamicPublicRoute', () => {
   describe('invite routes', () => {
-    it('returns true for invite code route', () => {
-      expect(isDynamicPublicRoute('/invite/abcdefghijkl')).toBe(true);
+    it('keeps retired invite code routes out of dynamic public access', () => {
+      expect(isDynamicPublicRoute('/invite/abcdefghijkl')).toBe(false);
     });
 
     it('returns false for base invite route', () => {
@@ -287,11 +285,11 @@ describe('matchesAllowedRoute', () => {
 
   it('keeps prefix matching for non-explore allowed routes when explore prefix restriction is enabled', () => {
     expect(
-      matchesAllowedRoute('/onboarding/profile', ONBOARDING_ROUTES.PROFILE, { restrictExploreSubRoutes: true }),
+      matchesAllowedRoute('/complete-profile', ACCOUNT_ROUTES.COMPLETE_PROFILE, { restrictExploreSubRoutes: true }),
     ).toBe(true);
-    expect(matchesAllowedRoute('/onboarding', ONBOARDING_ROUTES.INSTALL, { restrictExploreSubRoutes: true })).toBe(
-      false,
-    );
+    expect(
+      matchesAllowedRoute('/onboarding', ACCOUNT_ROUTES.COMPLETE_PROFILE, { restrictExploreSubRoutes: true }),
+    ).toBe(false);
   });
 });
 
@@ -495,19 +493,6 @@ describe('getUserProfileUrl', () => {
   });
 });
 
-describe('isPostRoute', () => {
-  it('returns true for single post pages', () => {
-    const pubky = 'o1gg96ewuojmopcjbz8895478wdtxtzzber7aezq6ror5a91j7dy';
-    expect(isPostRoute(`/post/${pubky}/0034BBBDFK83G`)).toBe(true);
-  });
-
-  it('returns false for non-post paths', () => {
-    expect(isPostRoute('/post')).toBe(false);
-    expect(isPostRoute('/post/user-only')).toBe(false);
-    expect(isPostRoute('/home')).toBe(false);
-  });
-});
-
 describe('isCoreExploreRoute', () => {
   it('returns true for core logged-out explore routes', () => {
     expect(isCoreExploreRoute('/home')).toBe(true);
@@ -529,30 +514,6 @@ describe('isCoreExploreRoute', () => {
   });
 });
 
-describe('isPublicExploreRoute', () => {
-  it('returns true for core explore routes and dynamic post/profile/collection pages', () => {
-    const pubky = 'o1gg96ewuojmopcjbz8895478wdtxtzzber7aezq6ror5a91j7dy';
-
-    expect(isPublicExploreRoute('/home')).toBe(true);
-    expect(isPublicExploreRoute('/hot')).toBe(true);
-    expect(isPublicExploreRoute('/search')).toBe(true);
-    expect(isPublicExploreRoute('/collections')).toBe(true);
-    expect(isPublicExploreRoute(`/post/${pubky}/0034BBBDFK83G`)).toBe(true);
-    expect(isPublicExploreRoute(`/profile/${pubky}`)).toBe(true);
-    expect(isPublicExploreRoute(`/collections/${pubky}/0034BBBDFK83G`)).toBe(true);
-  });
-
-  it('returns false for protected routes', () => {
-    expect(isPublicExploreRoute('/bookmarks')).toBe(false);
-    expect(isPublicExploreRoute('/collections/bookmarks')).toBe(false);
-    expect(isPublicExploreRoute('/feed/custom-feed')).toBe(false);
-    expect(isPublicExploreRoute('/settings/account')).toBe(false);
-    expect(isPublicExploreRoute('/profile/posts')).toBe(false);
-    expect(isPublicExploreRoute('/share')).toBe(false);
-    expect(isPublicExploreRoute('/who-to-follow')).toBe(false);
-  });
-});
-
 describe('isLogoLandingRoute', () => {
   it('returns true for all logo landing routes', () => {
     for (const route of LOGO_LANDING_ROUTES) {
@@ -561,7 +522,7 @@ describe('isLogoLandingRoute', () => {
   });
 
   it('returns true for every onboarding route', () => {
-    for (const route of Object.values(ONBOARDING_ROUTES)) {
+    for (const route of Object.values(ACCOUNT_ROUTES)) {
       expect(isLogoLandingRoute(route)).toBe(true);
     }
   });

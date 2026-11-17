@@ -10,6 +10,8 @@ export interface ControlledInputFieldProps<T extends FieldValues> {
   label?: string;
   /** Optional hint text displayed after the label */
   labelHint?: ReactNode;
+  /** Marks the label "Required" (publishing needs the field); no native `required`, so drafts still save */
+  markRequired?: boolean;
   /** Placeholder text for the input */
   placeholder?: string;
   /** Maximum character length */

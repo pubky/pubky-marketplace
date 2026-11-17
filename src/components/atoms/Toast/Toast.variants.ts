@@ -4,7 +4,7 @@ import type { ComponentType } from 'react';
 import { ToastErrorIcon, ToastInfoIcon, ToastSuccessIcon, ToastWarningIcon } from './Toast.icons';
 
 export type ToastVariant = 'default' | 'error' | 'warning' | 'info';
-export type ToastIconComponent = ComponentType<LucideProps>;
+type ToastIconComponent = ComponentType<LucideProps>;
 
 export const toastVariants = cva(
   [
@@ -41,7 +41,7 @@ export const toastIconVariants = cva('size-5 shrink-0', {
     variant: {
       default: 'text-brand',
       error: 'text-destructive',
-      warning: 'text-yellow-500',
+      warning: 'text-yellow-500 [.light_&]:text-yellow-700',
       info: 'text-muted-foreground',
     },
   },

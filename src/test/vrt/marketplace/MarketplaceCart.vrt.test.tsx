@@ -188,8 +188,10 @@ vi.mock('@/hooks/useMarketplaceOffers/useMarketplaceOffers', () => ({
   useMarketplaceOffers: () => ({ offers: view.offers, isLoading: false, error: null, needsSession: false }),
 }));
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main className="w-full py-6">{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => (
+    <main className="w-full py-6">{children}</main>
+  ),
 }));
 
 vi.mock('@/hooks/useMarketplaceSellerSummary/useMarketplaceSellerSummary', () => ({
@@ -287,6 +289,24 @@ describe('Marketplace cart — visual regression', () => {
 
     await renderForVRT(<MarketplaceCart />, { viewport: VRT_VIEWPORT_MOBILE });
     await captureCart('cart-single-seller-mobile');
+  });
+
+  it('renders a single-seller cart in light mode at desktop viewport', async () => {
+    const { singleSeller } = await fixtures;
+    view.items = singleSeller;
+    view.isLoading = false;
+
+    await renderForVRT(<MarketplaceCart />, { viewport: VRT_VIEWPORT_DESKTOP, theme: 'light' });
+    await captureCart('cart-single-seller-light-desktop');
+  });
+
+  it('renders a single-seller cart in light mode at mobile viewport', async () => {
+    const { singleSeller } = await fixtures;
+    view.items = singleSeller;
+    view.isLoading = false;
+
+    await renderForVRT(<MarketplaceCart />, { viewport: VRT_VIEWPORT_MOBILE, theme: 'light' });
+    await captureCart('cart-single-seller-light-mobile');
   });
 
   it('renders a Locks digital cart with no shipping at desktop viewport', async () => {
@@ -431,6 +451,14 @@ describe('Marketplace cart — visual regression', () => {
 
     await renderForVRT(<MarketplaceCart />, { viewport: VRT_VIEWPORT_DESKTOP });
     await captureCart('cart-empty-desktop');
+  });
+
+  it('renders the empty cart in light mode at desktop viewport', async () => {
+    view.items = [];
+    view.isLoading = false;
+
+    await renderForVRT(<MarketplaceCart />, { viewport: VRT_VIEWPORT_DESKTOP, theme: 'light' });
+    await captureCart('cart-empty-light-desktop');
   });
 
   it('renders the loading state at desktop viewport', async () => {

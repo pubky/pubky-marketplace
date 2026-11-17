@@ -1,4 +1,4 @@
-import type { AuthToken, Capabilities, PublicKey, Session } from '@synonymdev/pubky';
+import type { PublicKey, Session } from '@synonymdev/pubky';
 import type { TKeypairParams } from '@/application/auth/auth.types';
 import { HttpMethod } from '@/libs/http/http.types';
 
@@ -15,9 +15,6 @@ export type THomeserverPublicKeyParams = {
   publicKey: PublicKey;
 };
 
-/** Homeserver signup token verification outcome from GET /signup_tokens/<token>. */
-export type TSignupTokenVerificationStatus = 'valid' | 'used' | 'invalid';
-
 export type THomeserverSessionResult = {
   session: Session;
 };
@@ -33,12 +30,6 @@ export type TGrantAuthUrlOptions = {
   withPrivKeys?: boolean;
   /** The Pubky Passport sign-in, whose scoped-key default has its own runtime switch. */
   signer?: 'passport';
-};
-
-export type TGenerateAuthTokenFlowResult = {
-  authorizationUrl: string;
-  awaitToken: () => Promise<AuthToken>;
-  cancelAuthFlow: () => void;
 };
 
 export type THomeserverRestoreSessionParams = {
@@ -74,11 +65,6 @@ export type PrivPath<T extends string = string> = `/priv/${T}`;
  */
 export type OwnedPath<T extends string = string> = PubPath<T> | PrivPath<T>;
 
-export type TGenerateSignupAuthUrlParams = {
-  inviteCode: string;
-  caps?: Capabilities;
-};
-
 export type THomeserverFetchParams = {
   url: string;
   options?: FetchOptions;
@@ -109,6 +95,12 @@ export type THomeserverGetJsonIfFoundParams = {
    * unreachability both mean "not now".
    */
   tolerateUnreachable?: boolean;
+  /**
+   * Read through public storage even when the path is the signed-in user's
+   * own: `/pub/` is public, so a check that only reads does not need the
+   * session, which may have been removed from the browser (#353).
+   */
+  publicRead?: boolean;
 };
 
 /** A GET that may find nothing: `json` is the parsed body, `undefined` for an empty or non-JSON one. */

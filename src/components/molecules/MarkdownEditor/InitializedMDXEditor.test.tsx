@@ -152,6 +152,11 @@ vi.mock('@/molecules/EmojiPickerDialog/EmojiPickerDialog', () => {
   };
 });
 
+let mockResolvedTheme: 'dark' | 'light' = 'dark';
+vi.mock('@/hooks/useResolvedTheme/useResolvedTheme', () => ({
+  useResolvedTheme: () => mockResolvedTheme,
+}));
+
 // Mock useEmojiInsert hook
 const mockHandleMarkdownEmojiSelect = vi.fn();
 vi.mock('@/hooks/useEmojiInsert/useEmojiInsert', () => ({
@@ -288,6 +293,22 @@ describe('InitializedMDXEditor', () => {
       expect(contentEditableClass).toContain('prose');
       expect(contentEditableClass).toContain('prose-neutral');
       expect(contentEditableClass).toContain('prose-invert');
+    });
+
+    it('drops the dark editor theme and inverted prose when the page is light', () => {
+      mockResolvedTheme = 'light';
+      try {
+        render(<InitializedMDXEditor editorRef={null} markdown="" />);
+
+        const editor = screen.getByTestId('mdx-editor');
+        expect(editor).not.toHaveClass('dark-theme');
+        expect(editor).toHaveClass('cursor-auto');
+        const contentEditableClass = editor.getAttribute('data-content-editable-class');
+        expect(contentEditableClass).toContain('prose-neutral');
+        expect(contentEditableClass).not.toContain('prose-invert');
+      } finally {
+        mockResolvedTheme = 'dark';
+      }
     });
 
     it('configures plugins correctly', () => {
@@ -838,7 +859,7 @@ describe('InitializedMDXEditor', () => {
       const warning = screen.getByTestId('max-length-warning');
       expect(warning).toBeInTheDocument();
       expect(warning).toHaveClass('bg-red-500/15');
-      expect(warning).toHaveClass('text-red-500');
+      expect(warning).toHaveClass('text-error-foreground');
       expect(screen.getByText("You've reached the maximum character limit.")).toBeInTheDocument();
     });
 
@@ -918,76 +939,5 @@ describe('InitializedMDXEditor', () => {
       expect(warning).toBeInTheDocument();
       expect(warning).toHaveClass('bg-red-500/15');
     });
-  });
-});
-
-describe('InitializedMDXEditor - Snapshots', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    toolbarContentsRenderer = null;
-    capturedOnEmojiSelect = null;
-    capturedOnChange = null;
-    mockHandleMarkdownEmojiSelect.mockClear();
-  });
-
-  it('matches snapshot with default props', () => {
-    const { container } = render(<InitializedMDXEditor editorRef={null} markdown="" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with markdown content', () => {
-    const { container } = render(<InitializedMDXEditor editorRef={null} markdown="# Test Content" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with emoji picker open', () => {
-    const { container } = render(<InitializedMDXEditor editorRef={null} markdown="" />);
-
-    const emojiButton = screen.getByTestId('button-with-tooltip-emoji');
-    fireEvent.click(emojiButton);
-
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom className', () => {
-    const { container } = render(<InitializedMDXEditor editorRef={null} markdown="" className="custom-editor-class" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with approaching max length warning', () => {
-    const { container } = render(<InitializedMDXEditor editorRef={null} markdown="" />);
-
-    // Trigger approaching warning
-    act(() => {
-      capturedOnChange?.('a'.repeat(MOCK_MAX_LENGTH - 50));
-    });
-
-    expect(container).toMatchSnapshot();
-  });
-
-  it('matches snapshot with reached max length warning', () => {
-    const { container } = render(<InitializedMDXEditor editorRef={null} markdown="" />);
-
-    // Trigger reached warning
-    act(() => {
-      capturedOnChange?.('a'.repeat(MOCK_MAX_LENGTH));
-    });
-
-    expect(container).toMatchSnapshot();
-  });
-
-  it('matches snapshot in markdown mode', () => {
-    const mockRef = createMockEditorRef();
-    const { container } = render(<InitializedMDXEditor editorRef={mockRef} markdown="" />);
-
-    // Switch to markdown mode
-    fireEvent.click(screen.getByTestId('button-with-tooltip-markdown'));
-
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with readOnly prop', () => {
-    const { container } = render(<InitializedMDXEditor editorRef={null} markdown="" readOnly />);
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

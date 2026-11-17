@@ -1,6 +1,5 @@
 'use client';
 
-import * as React from 'react';
 import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Typography } from '@/atoms/Typography/Typography';

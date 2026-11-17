@@ -4,7 +4,7 @@ import type { ListingLinkResult } from '@/application/connectors/connectors';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import type { ConnectorCatalogProduct } from '@/libs/commerce/connectors';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { connectorRefusal } from '@/test-utils/connector-errors';
 import { connectionFixture } from '@/test-utils/connector-fixtures';
@@ -24,12 +24,12 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: { getListingsBySeller: vi.fn() },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 const connection = connectionFixture({
   id: 'c1',
   provider: 'shopify',
-  domain: 'john.myshopify.com',
+  domain: 'demo.myshopify.com',
   status: 'connected',
   scopes: [],
 });

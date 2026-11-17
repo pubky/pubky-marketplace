@@ -17,7 +17,6 @@ import { pendingOwnedGrants } from '@/services/homeserver/owned-grant-storage';
 import { clearPersistedAuthIdentity } from '@/stores/auth/auth.persisted';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
-import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
 import { AUTH_PERSIST_KEY } from '@/stores/persistedKeys';
 import { useSearchStore } from '@/stores/search/search.store';
 import { useSettingsStore } from '@/stores/settings/settings.store';
@@ -35,7 +34,6 @@ let remove: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   resetGrantTest();
-  useOnboardingStore.setState({ hasHydrated: true });
   // Real application/service cleanup and persistence bookkeeping, with an SDK record-store boundary double.
   for (const method of [
     'saveGrantSession',
@@ -393,7 +391,7 @@ it.each(['alice', 'bob'])('preserves settings only when replacing with the same 
   await approve(old);
   await AuthController.initializeAuthenticatedSession({ session: old });
   useSettingsStore.getState().setHideSearch(true);
-  useSettingsStore.getState().setMutedUsers(['muted-by-alice']);
+  useSettingsStore.setState({ muted: ['muted-by-alice'] });
   useSearchStore.getState().addTag('alice-private-search');
   vi.mocked(AuthApplication.userIsSignedUp).mockResolvedValue(true);
   vi.mocked(SettingsApplication.initializeSettings).mockClear();
@@ -406,7 +404,12 @@ it.each(['alice', 'bob'])('preserves settings only when replacing with the same 
   expect(useSearchStore.getState().recentTags.map((entry) => entry.tag)).toEqual(
     pubky === 'alice' ? ['alice-private-search'] : [],
   );
-  if (pubky === 'bob') expect(SettingsApplication.initializeSettings).toHaveBeenCalledWith('bob', settingsInitialState);
+  if (pubky === 'bob')
+    expect(SettingsApplication.initializeSettings).toHaveBeenCalledWith(
+      'bob',
+      settingsInitialState,
+      expect.any(AbortSignal),
+    );
   useSettingsStore.getState().reset();
   useSearchStore.getState().reset();
 });

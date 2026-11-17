@@ -1,0 +1,1 @@
+Reviews attested by Pubky Market's production transaction service read "Verified purchase · Pubky Market" in every deployment without extra configuration; a staging deployment lists its own attestor in `PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS`.

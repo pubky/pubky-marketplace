@@ -2,7 +2,6 @@ import type { Session } from '@synonymdev/pubky';
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthApplication } from '@/application/auth/auth';
-import { ChatApplication } from '@/application/chat/chat';
 import { CAPABILITIES, CORE_CAPABILITIES } from '@/config/app';
 import { AuthController } from '@/controllers/auth/auth';
 import { resetGrantTest } from '@/controllers/auth/auth.grant-test-utils';
@@ -24,7 +23,6 @@ vi.mock('@/libs/query-client/query-client.factory', async (original) => ({
   clearAllQueryClients: vi.fn(),
 }));
 vi.mock('@/libs/shop-session/bridge', () => ({ requestShopHostAction: vi.fn().mockReturnValue(true) }));
-vi.mock('@/libs/utils/utils', async (original) => ({ ...(await original<object>()), clearCookies: vi.fn() }));
 vi.mock('@/services/marketplace/marketplace-grant-client', async (original) => ({
   ...(await original<object>()),
   clearMarketplaceBffSessionConfirmed: vi.fn().mockResolvedValue(undefined),
@@ -113,7 +111,7 @@ describe('chat on an App-owned host session', () => {
 
     await expect(ChatController.getOrFetchIdentity()).resolves.toBe('ready');
     expect(useChatStore.getState().identityState).toBe('ready');
-    const identity = await ChatApplication.getIdentity(ALICE);
+    const identity = await LocalChatService.getIdentity(ALICE);
     expect(identity?.published).toBe(true);
     expect(homeserver.files.get(chatPrivateKeyUrl(ALICE))).toMatchObject({ v: 0, alg: 'x25519', kid: identity?.kid });
     expect(homeserver.files.get(chatPublicKeyUrl(ALICE))).toMatchObject({ kid: identity?.kid });

@@ -5,7 +5,11 @@ import { MarketplaceNotifications } from './MarketplaceNotifications';
 
 const authStoreState = vi.hoisted(() => ({ session: {} as unknown, currentUserPubky: null as string | null }));
 const markAllSeen = vi.hoisted(() => vi.fn(async () => {}));
-const marketplaceView = vi.hoisted(() => ({ notifications: [] as unknown[] }));
+const marketplaceView = vi.hoisted(() => ({
+  notifications: [] as unknown[],
+  error: null as string | null,
+  needsSession: false,
+}));
 const ordersView = vi.hoisted(() => ({
   orders: [] as {
     order: {
@@ -42,8 +46,8 @@ vi.mock('@/hooks/useMarketplaceNotifications/useMarketplaceNotifications', () =>
     preferences: null,
     unreadCount: 0,
     isLoading: false,
-    error: null,
-    needsSession: false,
+    error: marketplaceView.error,
+    needsSession: marketplaceView.needsSession,
     canMarkRead: false,
     markAllRead: vi.fn(),
     updatePreferences: vi.fn(),
@@ -58,8 +62,11 @@ vi.mock('@/hooks/useMarketplaceWatchDetection/useMarketplaceWatchDetection', () 
   useMarketplaceWatchDetection: () => {},
 }));
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+}));
+vi.mock('@/organisms/Marketplace/MarketplaceSessionConnectDialog', () => ({
+  MarketplaceSessionConnectDialog: ({ triggerLabel }: { triggerLabel: string }) => <button>{triggerLabel}</button>,
 }));
 vi.mock('@/organisms/Marketplace/MarketplaceSectionNav', () => ({
   MarketplaceSectionNav: () => <nav data-testid="marketplace-section-nav" />,
@@ -71,6 +78,8 @@ describe('MarketplaceNotifications', () => {
     authStoreState.session = {};
     authStoreState.currentUserPubky = null;
     marketplaceView.notifications = [];
+    marketplaceView.error = null;
+    marketplaceView.needsSession = false;
     ordersView.orders = [];
     ordersView.isLoading = false;
   });
@@ -89,6 +98,25 @@ describe('MarketplaceNotifications', () => {
 
     expect(markAllSeen).not.toHaveBeenCalled();
     expect(CommerceController.markActivityRead).not.toHaveBeenCalled();
+  });
+
+  it('asks to approve the marketplace instead of saying there are no updates', () => {
+    marketplaceView.error = 'Approve the marketplace to continue.';
+    marketplaceView.needsSession = true;
+
+    render(<MarketplaceNotifications />);
+
+    expect(screen.getByRole('heading', { name: 'Approve the marketplace to see your updates' })).toBeInTheDocument();
+    expect(screen.getByText('Your order and payment updates show here after one approval.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(screen.queryByText('No commerce updates')).not.toBeInTheDocument();
+  });
+
+  it('says there are no updates when the list loads empty', () => {
+    render(<MarketplaceNotifications />);
+
+    expect(screen.getByText('No commerce updates')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
   });
 
   it('renders system actors and quarantined rows without failing the history list', () => {
@@ -119,6 +147,47 @@ describe('MarketplaceNotifications', () => {
     expect(queryByText(/not available yet/)).not.toBeInTheDocument();
   });
 
+  it('shows a moderation decision as its statement of reasons, not as a link row', () => {
+    marketplaceView.notifications = [
+      {
+        id: '00000000-0000-4000-8000-000000000941',
+        recipientPubky: 'y'.repeat(52),
+        actorPubky: 'system',
+        type: 'moderation_decision',
+        aggregateId: 'moderation_decision:6f1c2b8e-1d2a-4c3b-9e8f-0a1b2c3d4e5f',
+        createdAt: '2026-11-04T12:00:05.000Z',
+        readAt: null,
+        moderationDecision: {
+          id: '6f1c2b8e-1d2a-4c3b-9e8f-0a1b2c3d4e5f',
+          restriction: 'review_excluded',
+          targetUri: `pubky://${'y'.repeat(52)}/pub/pubky.app/marketplace/v1/reviews/r1`,
+          territorialScope: 'Every region where Pubky Market is offered',
+          endsAt: null,
+          decidedAt: '2026-11-04T12:00:00.000Z',
+          basis: 'own_initiative',
+          facts: 'The review was posted by the seller about their own listing.',
+          automatedDetection: false,
+          automatedDecision: false,
+          automatedMeans: null,
+          ground: 'terms',
+          groundReference: 'Pubky Terms of Service, Reviews',
+          explanation: 'Reviews must come from a buyer of the listing.',
+        },
+      },
+    ];
+
+    const { getByTestId, getByText, queryByText } = render(<MarketplaceNotifications />);
+
+    expect(getByTestId('moderation-decision-card')).toBeInTheDocument();
+    expect(getByText('We hid your review and left it out of every rating.')).toBeInTheDocument();
+    expect(getByText('The review was posted by the seller about their own listing.')).toBeInTheDocument();
+    expect(getByTestId('moderation-decision-appeal')).toHaveAttribute(
+      'href',
+      'mailto:report@synonym.to?subject=Appeal%206f1c2b8e-1d2a-4c3b-9e8f-0a1b2c3d4e5f',
+    );
+    expect(queryByText('From System')).not.toBeInTheDocument();
+  });
+
   it('keeps the incomplete-history banner for a type the Shop has no copy for', () => {
     marketplaceView.notifications = [
       {
@@ -133,8 +202,8 @@ describe('MarketplaceNotifications', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent(/history may be incomplete/);
     expect(screen.getByText('Integrity notice')).toBeInTheDocument();
-    expect(screen.getByText('Unrecognized marketplace event')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Unrecognized marketplace event' })).not.toBeInTheDocument();
+    expect(screen.getByText('Unrecognized market event')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Unrecognized market event' })).not.toBeInTheDocument();
   });
 
   it('links a new offer activity row to its offer anchor', () => {
@@ -190,7 +259,7 @@ describe('MarketplaceNotifications', () => {
       'href',
       `/marketplace/orders?order=${orderId}`,
     );
-    expect(screen.getByRole('link', { name: 'New marketplace message' })).toHaveAttribute('href', '/messages');
+    expect(screen.getByRole('link', { name: 'New market message' })).toHaveAttribute('href', '/messages');
   });
 
   it('titles a digital delivery as a purchase, and a shipped one as before', () => {
@@ -307,7 +376,7 @@ describe('MarketplaceNotifications', () => {
 
     expect(titles()).toEqual(['Disputed payment restored', 'Refund recorded', 'Refund recorded']);
     expect(screen.queryByText(/history may be incomplete/)).not.toBeInTheDocument();
-    expect(screen.queryByText('Unrecognized marketplace event')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unrecognized market event')).not.toBeInTheDocument();
   });
 
   it('shows a refund amount only when the row itself carries one', () => {
@@ -409,7 +478,7 @@ describe('MarketplaceNotifications', () => {
       `/marketplace/orders?order=${orderId}`,
     );
     expect(screen.queryByText(/history may be incomplete/)).not.toBeInTheDocument();
-    expect(screen.queryByText('Unrecognized marketplace event')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unrecognized market event')).not.toBeInTheDocument();
   });
 
   it('shows each seller Bitcoin notice as its own sentence and links it to the order', () => {
@@ -449,7 +518,7 @@ describe('MarketplaceNotifications', () => {
     for (const sentence of sentences) {
       expect(screen.getByRole('link', { name: sentence })).toHaveAttribute('href', orderHref);
     }
-    expect(screen.getByText('Unrecognized marketplace event')).toBeInTheDocument();
-    expect(screen.getByText(/1 unrecognized marketplace event/)).toBeInTheDocument();
+    expect(screen.getByText('Unrecognized market event')).toBeInTheDocument();
+    expect(screen.getByText(/1 unrecognized market event/)).toBeInTheDocument();
   });
 });

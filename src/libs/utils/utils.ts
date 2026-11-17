@@ -1,11 +1,10 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import type { SnapshotSerializer } from 'vitest';
 import { DEFAULT_DISPLAY_PUBLIC_KEY_LENGTH, TAG_MAX_LENGTH } from '@/config/posts';
 import { parseCompositeId } from '@/models/models.utils';
 import type { PostInputVariant } from '@/organisms/PostInput/PostInput.types';
 import { getSafeExternalUrl } from './safeExternalUrl';
-import { RADIX_ID_REGEX, RADIX_ID_TEST_REGEX, TAG_BANNED_CHARS } from './utils.constants';
+import { TAG_BANNED_CHARS } from './utils.constants';
 import type {
   CopyToClipboardProps,
   ExtractInitialsProps,
@@ -229,40 +228,6 @@ export function extractInitials({ name, maxLength = 2 }: ExtractInitialsProps) {
     .slice(0, maxLength);
 }
 
-export function formatInviteCode(code: string) {
-  if (!code) return '';
-
-  // Remove all non-alphanumeric characters
-  const cleaned = code.replace(/[^a-zA-Z0-9]/g, '');
-
-  // Convert to uppercase
-  const uppercased = cleaned.toUpperCase();
-
-  // If no valid characters, return empty string
-  if (uppercased.length === 0) return '';
-
-  // Handle different lengths
-  if (uppercased.length <= 4) {
-    return uppercased;
-  } else if (uppercased.length <= 8) {
-    return `${uppercased.slice(0, 4)}-${uppercased.slice(4)}`;
-  } else {
-    // Take only first 12 characters for longer codes
-    const truncated = uppercased.slice(0, 12);
-    return `${truncated.slice(0, 4)}-${truncated.slice(4, 8)}-${truncated.slice(8, 12)}`;
-  }
-}
-
-export function clearCookies() {
-  if (typeof document !== 'undefined') {
-    document.cookie.split(';').forEach((cookie) => {
-      const eqPos = cookie.indexOf('=');
-      const name = eqPos > -1 ? cookie.substr(0, eqPos) : cookie;
-      document.cookie = `${name.trim()}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
-    });
-  }
-}
-
 /**
  * Pauses execution for the specified duration.
  * Useful for adding delays in async operations.
@@ -275,13 +240,6 @@ export function clearCookies() {
  * await sleep(5000); // Wait 5 seconds
  */
 export const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * Helper functions to create timestamps relative to now
- */
-export const minutesAgo = (mins: number): number => Date.now() - mins * 60 * 1000;
-export const hoursAgo = (hours: number): number => Date.now() - hours * 60 * 60 * 1000;
-export const daysAgo = (days: number): number => Date.now() - days * 24 * 60 * 60 * 1000;
 
 /**
  * Formats a filename by truncating it if it exceeds the max length,
@@ -714,23 +672,3 @@ export function focusAdjacentGridItem(button: HTMLButtonElement): void {
     }
   }
 }
-
-/**
- * Snapshot serializer to normalize Radix UI generated IDs.
- * This ensures snapshot tests are consistent across test runs by replacing
- * dynamic Radix IDs (e.g., "radix-_r_12345") with a normalized placeholder.
- *
- * @see https://github.com/pubky/pubky-app/issues/1101
- *
- * @example
- * // In test setup (e.g., vitest.setup.ts):
- * import { radixIdSerializer } from '@/libs/utils/utils';
- * expect.addSnapshotSerializer(radixIdSerializer);
- */
-export const radixIdSerializer: SnapshotSerializer = {
-  test: (val): val is string => typeof val === 'string' && RADIX_ID_TEST_REGEX.test(val),
-  serialize: (val, config, indentation, depth, refs, printer) => {
-    const normalized = (val as string).replace(RADIX_ID_REGEX, 'radix-normalized');
-    return printer(normalized, config, indentation, depth, refs);
-  },
-};

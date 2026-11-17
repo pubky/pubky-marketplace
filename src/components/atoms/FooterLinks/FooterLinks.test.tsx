@@ -3,50 +3,42 @@ import { describe, expect, it } from 'vitest';
 import { FooterLinks } from './FooterLinks';
 
 describe('FooterLinks', () => {
-  it('renders with default props', () => {
+  it('renders a Typography paragraph with the default classes by default', () => {
     render(<FooterLinks>Footer text</FooterLinks>);
-    const footerLinks = screen.getByText('Footer text');
-    expect(footerLinks).toBeInTheDocument();
-  });
-});
-
-describe('FooterLinks - Snapshots', () => {
-  it('matches snapshot with default props', () => {
-    const { container } = render(<FooterLinks>Footer text</FooterLinks>);
-    expect(container.firstChild).toMatchSnapshot();
+    const footer = screen.getByTestId('typography');
+    expect(footer.tagName).toBe('P');
+    expect(footer).toHaveTextContent('Footer text');
+    expect(footer).toHaveClass('leading-light', 'text-sm', 'font-medium', 'text-muted-foreground', 'opacity-80');
   });
 
-  it('matches snapshot with custom className', () => {
-    const { container } = render(<FooterLinks className="custom-footer">Custom footer</FooterLinks>);
-    expect(container.firstChild).toMatchSnapshot();
+  it('merges a custom className with the default classes', () => {
+    render(<FooterLinks className="custom-footer">Footer text</FooterLinks>);
+    expect(screen.getByTestId('typography')).toHaveClass('text-muted-foreground', 'custom-footer');
   });
 
-  it('matches snapshot with simple text', () => {
-    const { container } = render(<FooterLinks>Simple text</FooterLinks>);
-    expect(container.firstChild).toMatchSnapshot();
+  it('passes through a custom data-testid', () => {
+    render(<FooterLinks data-testid="custom-footer-links">Footer text</FooterLinks>);
+    expect(screen.getByTestId('custom-footer-links')).toBeInTheDocument();
   });
 
-  it('matches snapshot with complex children', () => {
-    const { container } = render(
+  it('passes through html attributes', () => {
+    render(<FooterLinks id="footer-id">Footer text</FooterLinks>);
+    expect(screen.getByTestId('typography')).toHaveAttribute('id', 'footer-id');
+  });
+
+  it('renders complex children', () => {
+    render(
       <FooterLinks>
         <span>Copyright 2024</span> | <a href="/privacy">Privacy</a>
       </FooterLinks>,
     );
-    expect(container.firstChild).toMatchSnapshot();
+    const footer = screen.getByTestId('typography');
+    expect(footer.querySelector('span')).toHaveTextContent('Copyright 2024');
+    expect(footer.querySelector('a')).toHaveAttribute('href', '/privacy');
   });
 
-  it('matches snapshot with empty children', () => {
-    const { container } = render(<FooterLinks />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with id prop', () => {
-    const { container } = render(<FooterLinks id="footer-id">Footer with ID</FooterLinks>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with data-testid prop', () => {
-    const { container } = render(<FooterLinks data-testid="custom-footer-links">Footer with test ID</FooterLinks>);
-    expect(container.firstChild).toMatchSnapshot();
+  it('renders without children', () => {
+    render(<FooterLinks />);
+    expect(screen.getByTestId('typography')).toBeInTheDocument();
   });
 });

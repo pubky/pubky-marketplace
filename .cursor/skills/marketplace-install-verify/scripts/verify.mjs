@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Verifies a Pubky Marketplace installation (Shop, marketplace service, Paykit server, Locks
+// Verifies a Pubky Market installation (Shop, marketplace service, Paykit server, Locks
 // server, marketplace Nexus, optional fiat verifier) end to end from the outside.
 //
 //   node verify.mjs --config <stack.env> [--only <sections>] [--out <dir>]
@@ -407,7 +407,7 @@ async function probeInbox(host, origin, inboxUrl) {
       `shop.inbox.reachable.${host}`,
       'inbox service is not up yet',
       describe(pings),
-      `deploy the pubky/inbox service at ${inboxUrl} (owner: the inbox team, Matthew); until then a stranger's first message is found only when the recipient opens the thread, and chat starts pinging by itself once the inbox answers`,
+      `deploy the pubky/inbox service at ${inboxUrl} (owner: the inbox team); until then a stranger's first message is found only when the recipient opens the thread, and chat starts pinging by itself once the inbox answers`,
     );
     return;
   }
@@ -1002,7 +1002,7 @@ async function probeDeep() {
 // ---------- main ----------
 
 const started = new Date();
-if (!args.flags.has('json')) console.log(`Pubky Marketplace install verification — ${ENV} — ${started.toISOString()}`);
+if (!args.flags.has('json')) console.log(`Pubky Market install verification — ${ENV} — ${started.toISOString()}`);
 const plan = [
   ['config', sectionConfig],
   ['tls', sectionTls],

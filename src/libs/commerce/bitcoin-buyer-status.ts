@@ -421,12 +421,6 @@ export function bitcoinPaidConfirmationCopy(paid: BitcoinPaidConfirmation): stri
   return paid.onChain ? SELLER_CONFIRMED_ON_CHAIN_COPY : SELLER_CONFIRMED_PAYMENT_COPY;
 }
 
-/** Headline for a paid order. Bitcoin names who confirmed it; other rails keep the generic line. */
-export function paidOrderHeadline(order: BitcoinStatusOrder, payment: BitcoinStatusPayment): string {
-  const paid = bitcoinPaidConfirmation(order, payment);
-  return paid ? bitcoinPaidConfirmationCopy(paid) : 'Payment confirmed.';
-}
-
 /** The service has observed the payment. The buyer must not be told to pay again. */
 export function bitcoinPaymentHasBeenSeen(order: BitcoinStatusOrder, payment: BitcoinStatusPayment = null): boolean {
   if (!isBitcoinOrder(order)) return false;

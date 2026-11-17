@@ -158,6 +158,23 @@ export const orderStateSchema = z.enum([
  */
 export const PARTIAL_REFUND_ORDER_STATE = 'refunded_partial' as const;
 
+/**
+ * The unit a recorded refund's `amountMinor` is in: `order` (the order
+ * total's minor units), `sat`, or `usdt0` (USDT0 base units). The service
+ * names it on every refund record (`externalRefund.amountUnit`) and on the
+ * seller's `refundCap`; a record without one predates it.
+ */
+export const refundUnitSchema = z.enum(['order', 'sat', 'usdt0']);
+
+export type RefundUnit = z.infer<typeof refundUnitSchema>;
+
+/** Seller-only: what `refund.record_external` takes, the amount it caps at and the unit it is entered in. */
+export type RefundCap = {
+  amountMinor: number;
+  unit: RefundUnit;
+  exponent: number;
+};
+
 export const returnStateSchema = z.enum(['requested', 'approved', 'received', 'refunded']);
 
 /**

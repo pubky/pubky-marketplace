@@ -114,6 +114,16 @@ const stabilizerCss = `
     scrollbar-width: none !important;
   }
 
+  /* The marketplace section bar pins under the page chrome while the page scrolls. Scenes mount
+     a page straight into the VRT root, a scroll container with no site header, and Playwright
+     scrolls the captured element into view, so a pinned bar would cover that element. Scenes keep
+     it in flow unless the page opts into the real behaviour with data-vrt-sticky-nav (see
+     MarketplaceSectionNavSticky.vrt.test.tsx). */
+  html:not([data-vrt-sticky-nav]) [data-surface='marketplace-section-nav'] {
+    position: relative !important;
+    top: auto !important;
+  }
+
   html::-webkit-scrollbar,
   body::-webkit-scrollbar {
     display: none !important;

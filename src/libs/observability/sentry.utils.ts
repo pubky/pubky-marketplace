@@ -18,6 +18,7 @@ import {
   RAW_PUBKY_PATTERN,
   SENSITIVE_CONTEXT_KEYS,
   SENSITIVE_VALUE_REDACTED,
+  SENTRY_BLOCK_SELECTOR,
   SENTRY_LIMIT_REDACTED,
   SENTRY_REDACTION_MAX_DEPTH,
   SENTRY_REDACTION_MAX_NODES,
@@ -451,8 +452,24 @@ function scrubBreadcrumbStrict(breadcrumb: Sentry.Breadcrumb, state: Sanitizatio
     : null;
 }
 
-export function scrubBreadcrumb(breadcrumb: Sentry.Breadcrumb): Sentry.Breadcrumb | null {
+/**
+ * A `ui.*` breadcrumb (click, keypress, input) raised inside a `SENTRY_BLOCK_SELECTOR` subtree, whose message is the
+ * target's id and classes. This does not reach Replay: its click events carry the same id and classes and never pass
+ * through `beforeBreadcrumb`, so position-only ids in blocked subtrees remain the required control. The hint carries
+ * the DOM event, or the element itself, the way the SDK's breadcrumbs integration reads it.
+ */
+function isBlockedUiBreadcrumb(breadcrumb: Sentry.Breadcrumb, hint?: Sentry.BreadcrumbHint): boolean {
+  if (!breadcrumb.category?.startsWith('ui.')) return false;
+  if (typeof Element === 'undefined') return false;
+  const source: unknown = hint?.event;
+  const target: unknown = typeof Event !== 'undefined' && source instanceof Event ? source.target : source;
+  return target instanceof Element && target.closest(SENTRY_BLOCK_SELECTOR) !== null;
+}
+
+/** `beforeBreadcrumb` for every runtime: drops UI breadcrumbs from blocked subtrees, then scrubs the rest. */
+export function scrubBreadcrumb(breadcrumb: Sentry.Breadcrumb, hint?: Sentry.BreadcrumbHint): Sentry.Breadcrumb | null {
   try {
+    if (isBlockedUiBreadcrumb(breadcrumb, hint)) return null;
     return scrubBreadcrumbStrict(breadcrumb, createSanitizationState());
   } catch {
     return null;

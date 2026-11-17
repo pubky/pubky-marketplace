@@ -54,6 +54,8 @@ function catalog(overrides: Partial<Catalog> = {}): Catalog {
     isLoadingMore: false,
     isSaving: false,
     error: null,
+    loadMoreError: null,
+    resumeLoading: async () => {},
     needsSession: false,
     search,
     setSearch: () => {},

@@ -1,14 +1,13 @@
 import type {
   NexusNotification,
   NexusTag,
-  NexusTaggers,
   NexusUserCounts,
   NexusUserDetails,
   TUserId,
 } from '@/services/nexus/nexus.types';
 import { queryNexus } from '@/services/nexus/nexus.utils';
 import { userApi } from '@/services/nexus/user/user.api';
-import type { TUserPaginationParams, TUserTaggersParams, TUserTagsParams } from '@/services/nexus/user/user.types';
+import type { TUserPaginationParams, TUserTagsParams } from '@/services/nexus/user/user.types';
 
 /**
  * Nexus User Service
@@ -36,17 +35,6 @@ export class NexusUserService {
   static async tags(params: TUserTagsParams): Promise<NexusTag[]> {
     const url = userApi.tags(params);
     return await queryNexus<NexusTag[]>({ url });
-  }
-
-  /**
-   * Retrieves taggers for a specific tag label on a user from Nexus API
-   *
-   * @param params - Parameters containing user ID, label, and pagination options
-   * @returns Array of users who tagged the user with the specified label
-   */
-  static async taggers(params: TUserTaggersParams): Promise<NexusTaggers[]> {
-    const url = userApi.taggers(params);
-    return await queryNexus<NexusTaggers[]>({ url });
   }
 
   /**

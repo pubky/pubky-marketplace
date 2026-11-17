@@ -298,12 +298,13 @@ export class PostStreamApplication {
     limit,
     viewerId,
     order,
+    signal,
   }: TFetchStreamParams): Promise<TPostStreamChunkResponse> {
     // Skip cache for ascending order (chronological) - always fetch from Nexus
     // This is because cache is stored in descending order
     // TODO: Might be a better way to handle this.
     if (order === StreamOrder.ASCENDING) {
-      return await this.fetchStreamFromNexus({ streamId, limit, streamTail, streamHead, viewerId, order });
+      return await this.fetchStreamFromNexus({ streamId, limit, streamTail, streamHead, viewerId, order, signal });
     }
 
     // Coordinator head-polls (streamHead > 0) only need the fetch side effects (unread
@@ -311,7 +312,7 @@ export class PostStreamApplication {
     // shared pagination queue: routing them through collect() consumes/rewrites the UI's
     // overflow buffer, and with a raw resume anchor those buffered posts would be skipped.
     if (streamHead > SKIP_FETCH_NEW_POSTS) {
-      return await this.fetchStreamFromNexus({ streamId, limit, streamTail, streamHead, viewerId, order });
+      return await this.fetchStreamFromNexus({ streamId, limit, streamTail, streamHead, viewerId, order, signal });
     }
 
     // Author streams and bookmarks intentionally include posts from muted users:
@@ -361,6 +362,7 @@ export class PostStreamApplication {
           limit,
           viewerId,
           order,
+          signal,
         });
 
         // Track last returned post for cache continuation
@@ -379,8 +381,9 @@ export class PostStreamApplication {
       const repostedUris = relationships
         .filter((rel): rel is PostRelationshipsModelSchema => rel !== undefined && rel.reposted !== null)
         .map((rel) => rel.reposted as string);
-      await this.fetchOriginalPostsByUris({ repostedUris, viewerId });
+      await this.fetchOriginalPostsByUris({ repostedUris, viewerId, signal });
     } catch (error) {
+      if (signal?.aborted) throw error;
       Logger.warn('Failed to fetch missing repost content', { postIds: posts, error });
     }
 
@@ -466,6 +469,7 @@ export class PostStreamApplication {
     limit,
     viewerId,
     order,
+    signal,
   }: TFetchStreamParams): Promise<TPostStreamChunkResponse> {
     // Avoid the indexdb query for skip-paginated streams (engagement + single-collection items):
     // their local cache is timestamp-keyed and incompatible with offset pagination.
@@ -484,7 +488,7 @@ export class PostStreamApplication {
 
         // Partial cache hit, fetch missing posts from Nexus and combine
         if (cachedStreamChunk.length > 0 && cachedStreamChunk.length < limit) {
-          return await this.partialCacheHit({ cachedStreamChunk, limit, streamTail, streamId, viewerId });
+          return await this.partialCacheHit({ cachedStreamChunk, limit, streamTail, streamId, viewerId, signal });
         }
       }
 
@@ -495,7 +499,7 @@ export class PostStreamApplication {
         streamTail = NOT_FOUND_CACHED_STREAM;
       }
     }
-    return await this.fetchStreamFromNexus({ streamId, limit, streamTail, streamHead, viewerId, order });
+    return await this.fetchStreamFromNexus({ streamId, limit, streamTail, streamHead, viewerId, order, signal });
   }
 
   /**
@@ -505,23 +509,26 @@ export class PostStreamApplication {
    * @param streamHead - Detects if the call is coming from the streamCoordinator.
    * @param streamId - ID of the stream. If not provided, it means that it is a single post operation.
    */
-  static async fetchMissingPostsFromNexus({ cacheMissPostIds, viewerId }: TMissingPostsParams) {
+  static async fetchMissingPostsFromNexus({ cacheMissPostIds, viewerId, signal }: TMissingPostsParams) {
     try {
       const postBatch = await NexusPostStreamService.fetchByIds({
         post_ids: cacheMissPostIds,
         // Only pass viewer_id if it's a valid string (not null/undefined)
         ...(viewerId ? { viewer_id: viewerId } : {}),
       });
-      const { attachmentMetadata } = await LocalStreamPostsService.persistPosts({ posts: postBatch });
+      signal?.throwIfAborted();
+      const { attachmentMetadata } = await LocalStreamPostsService.persistPosts({ posts: postBatch, signal });
+      signal?.throwIfAborted();
       await FileApplication.persistFiles(attachmentMetadata);
       // Persist the missing authors of the posts
-      await this.fetchMissingUsersFromNexus({ posts: postBatch, viewerId });
+      await this.fetchMissingUsersFromNexus({ posts: postBatch, viewerId, signal });
       // Fetch original posts for any reposts (to display embedded repost content)
       const repostedUris = postBatch
         .map((post) => post.relationships.reposted)
         .filter((uri): uri is string => uri !== null);
-      await this.fetchOriginalPostsByUris({ repostedUris, viewerId });
+      await this.fetchOriginalPostsByUris({ repostedUris, viewerId, signal });
     } catch (error) {
+      if (signal?.aborted) throw error;
       Logger.warn('Failed to fetch missing posts from Nexus', { cacheMissPostIds, viewerId, error });
     }
   }
@@ -536,10 +543,13 @@ export class PostStreamApplication {
   static async fetchOriginalPostsByUris({
     repostedUris,
     viewerId,
+    signal,
   }: {
     repostedUris: string[];
     /** Optional viewer ID for relationship data. Null/undefined for unauthenticated views. */
     viewerId?: Pubky | null;
+    /** Aborted when the viewer signs out; nothing is persisted after that. */
+    signal?: AbortSignal;
   }) {
     if (repostedUris.length === 0) return;
 
@@ -575,10 +585,13 @@ export class PostStreamApplication {
         post_ids: missingOriginalPostIds,
         viewer_id: viewerId ?? undefined,
       });
-      const { attachmentMetadata } = await LocalStreamPostsService.persistPosts({ posts: originalPosts });
+      signal?.throwIfAborted();
+      const { attachmentMetadata } = await LocalStreamPostsService.persistPosts({ posts: originalPosts, signal });
+      signal?.throwIfAborted();
       await FileApplication.persistFiles(attachmentMetadata);
-      await this.fetchMissingUsersFromNexus({ posts: originalPosts, viewerId });
+      await this.fetchMissingUsersFromNexus({ posts: originalPosts, viewerId, signal });
     } catch (error) {
+      if (signal?.aborted) throw error;
       Logger.warn('Failed to fetch original posts for reposts', { missingOriginalPostIds, error });
     }
   }
@@ -598,6 +611,7 @@ export class PostStreamApplication {
     streamTail,
     streamId,
     viewerId,
+    signal,
   }: TPartialCacheHitParams): Promise<TPostStreamChunkResponse> {
     const lastCachedPostId = cachedStreamChunk[cachedStreamChunk.length - 1];
     const remainingLimit = limit - cachedStreamChunk.length;
@@ -613,6 +627,7 @@ export class PostStreamApplication {
       streamHead: SKIP_FETCH_NEW_POSTS,
       viewerId,
       lastPostId: lastCachedPostId,
+      signal,
     });
 
     // Combine cached posts with fetched posts, deduplicating
@@ -627,13 +642,14 @@ export class PostStreamApplication {
     };
   }
 
-  private static async fetchMissingUsersFromNexus({ posts, viewerId }: TFetchMissingUsersParams) {
+  private static async fetchMissingUsersFromNexus({ posts, viewerId, signal }: TFetchMissingUsersParams) {
     const cacheMissUserIds = await this.getNotPersistedUsersInCache(posts.map((post) => post.details.author));
     if (cacheMissUserIds.length > 0) {
       const userBatch = await NexusUserStreamService.fetchByIds({
         user_ids: cacheMissUserIds,
         viewer_id: viewerId ?? undefined,
       });
+      signal?.throwIfAborted();
       await LocalStreamUsersService.persistUsers(userBatch);
     }
   }
@@ -645,6 +661,7 @@ export class PostStreamApplication {
     streamTail,
     viewerId,
     order,
+    signal,
   }: TFetchStreamParams): Promise<TPostStreamChunkResponse> {
     const { params, invokeEndpoint, extraParams } = createPostStreamParams({
       streamId,
@@ -658,11 +675,12 @@ export class PostStreamApplication {
     // `last_post_score` is null for skip streams; normalize to undefined (advanceCursor derives
     // their offset from the raw page instead).
     const { last_post_score: rawScore, post_keys: compositePostIds } = postStreamChunk;
+    signal?.throwIfAborted();
 
     // Do not persist skip-paginated streams (engagement + single-collection items) to the
     // timestamp-keyed local stream cache; they always page from Nexus by offset.
     if (!isSkipPaginatedStream(streamId) && streamHead === SKIP_FETCH_NEW_POSTS) {
-      await LocalStreamPostsService.persistNewStreamChunk({ stream: compositePostIds, streamId });
+      await LocalStreamPostsService.persistNewStreamChunk({ stream: compositePostIds, streamId, signal });
     }
 
     // When streamHead is greater than 0, it means that it is a streamCoordinator calling this method.
@@ -672,6 +690,7 @@ export class PostStreamApplication {
       await this.persistUnreadStreamChunkAndUpdateCounts({
         streamId,
         compositePostIds,
+        signal,
       });
     }
 
@@ -720,10 +739,12 @@ export class PostStreamApplication {
   private static async persistUnreadStreamChunkAndUpdateCounts({
     streamId,
     compositePostIds,
+    signal,
   }: TPersistUnreadNewStreamChunkParams) {
     const newToUnreadStream = await LocalStreamPostsService.persistUnreadNewStreamChunk({
       stream: compositePostIds,
       streamId,
+      signal,
     });
 
     // Skip count updates if no new posts were added to unread stream
@@ -757,9 +778,11 @@ export class PostStreamApplication {
         pubky: replyParentAuthorId,
         id: replyParentPostId as string,
       });
+      signal?.throwIfAborted();
       await LocalPostService.updatePostCounts({
         postCompositeId: replyParentPostCompositeId,
         countChanges: { replies: trulyNewPostIds.length },
+        signal,
       });
     }
 

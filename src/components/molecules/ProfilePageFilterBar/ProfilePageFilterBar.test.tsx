@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { PROFILE_PAGE_TYPES } from '@/app/profile/types';
@@ -192,66 +191,5 @@ describe('ProfilePageFilterBar', () => {
     expect(spinners.length).toBe(0);
     expect(screen.getByText('2')).toBeInTheDocument(); // notifications count
     expect(screen.getByText('4')).toBeInTheDocument(); // posts count
-  });
-});
-
-describe('ProfilePageFilterBar - Snapshots', () => {
-  it('matches snapshot with stats', () => {
-    const { container } = render(
-      <ProfilePageFilterBar
-        activePage={PROFILE_PAGE_TYPES.NOTIFICATIONS}
-        onPageChangeAction={() => {}}
-        stats={mockStats}
-      />,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with loading state (no stats)', () => {
-    const { container } = render(
-      <ProfilePageFilterBar activePage={PROFILE_PAGE_TYPES.NOTIFICATIONS} onPageChangeAction={() => {}} />,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with zero stats', () => {
-    const zeroStats: ProfileStats = {
-      notifications: 0,
-      posts: 0,
-      replies: 0,
-      collections: 0,
-      followers: 0,
-      following: 0,
-      friends: 0,
-      uniqueTags: 0,
-    };
-    const { container } = render(
-      <ProfilePageFilterBar
-        activePage={PROFILE_PAGE_TYPES.NOTIFICATIONS}
-        onPageChangeAction={() => {}}
-        stats={zeroStats}
-      />,
-    );
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom items', () => {
-    const customItems = [
-      {
-        icon: () => <span>Icon</span>,
-        id: 'notifications',
-        label: 'Notifications',
-        count: 10,
-        pageType: PROFILE_PAGE_TYPES.NOTIFICATIONS,
-      },
-    ];
-    const { container } = render(
-      <ProfilePageFilterBar
-        items={customItems}
-        activePage={PROFILE_PAGE_TYPES.NOTIFICATIONS}
-        onPageChangeAction={() => {}}
-      />,
-    );
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

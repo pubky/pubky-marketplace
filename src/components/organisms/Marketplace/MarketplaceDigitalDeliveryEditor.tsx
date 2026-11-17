@@ -81,7 +81,7 @@ export function MarketplaceDigitalDeliveryEditor({
         <Skeleton className="h-24 w-full" aria-label="Loading digital delivery" />
       ) : editor.readState === 'failed' ? (
         <div className="flex flex-wrap items-center gap-3">
-          <Typography as="p" role="alert" className="text-sm text-amber-300">
+          <Typography as="p" role="alert" className="text-sm text-warning-foreground">
             {editor.error}
           </Typography>
           <Button type="button" variant="secondary" size="sm" onClick={() => void editor.reload()}>
@@ -158,7 +158,7 @@ export function MarketplaceDigitalDeliveryEditor({
                 )}
               </div>
               {editor.picker.error && (
-                <Typography as="p" role="alert" className="text-sm text-amber-300">
+                <Typography as="p" role="alert" className="text-sm text-warning-foreground">
                   {editor.picker.error}
                 </Typography>
               )}
@@ -193,7 +193,12 @@ export function MarketplaceDigitalDeliveryEditor({
           )}
 
           {editor.error && (
-            <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="digital-delivery-error">
+            <Typography
+              as="p"
+              role="alert"
+              className="text-sm text-warning-foreground"
+              data-testid="digital-delivery-error"
+            >
               {editor.error}
             </Typography>
           )}

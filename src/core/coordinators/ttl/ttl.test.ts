@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { captureAuthScope, endAuthScope } from '@/controllers/auth/auth-scope';
 import { TtlController } from '@/controllers/ttl/ttl';
 import { TtlCoordinator } from '@/coordinators/ttl/ttl';
+import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { mockSession } from '@/test-utils/pubky';
@@ -354,6 +356,106 @@ describe('TtlCoordinator', () => {
       findStalePostsSpy.mockClear();
       await advanceAndFlush(5_000);
       expect(findStalePostsSpy).not.toHaveBeenCalled();
+    });
+
+    it('starts ticking when the session is restored after the persisted pubky was hydrated (cold load)', async () => {
+      useAuthStore.setState({ currentUserPubky: 'test-user-pubky', hasProfile: true, hasHydrated: true });
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+      coordinator.subscribePost({ compositePostId: createCompositePostId('author1', 'post1') });
+      findStalePostsSpy.mockClear();
+      coordinator.start();
+      await advanceAndFlush(5_000);
+      expect(findStalePostsSpy).not.toHaveBeenCalled();
+
+      useAuthStore.setState({ session: mockSession() });
+      await waitForTick();
+      await advanceAndFlush(5_000);
+      expect(findStalePostsSpy).toHaveBeenCalled();
+    });
+
+    it('starts ticking when the profile flag arrives after the session', async () => {
+      useAuthStore.setState({
+        session: mockSession(),
+        currentUserPubky: 'test-user-pubky',
+        hasProfile: null,
+        hasHydrated: true,
+      });
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+      coordinator.subscribePost({ compositePostId: createCompositePostId('author1', 'post1') });
+      findStalePostsSpy.mockClear();
+      coordinator.start();
+      await advanceAndFlush(5_000);
+      expect(findStalePostsSpy).not.toHaveBeenCalled();
+
+      useAuthStore.setState({ hasProfile: true });
+      await waitForTick();
+      await advanceAndFlush(5_000);
+      expect(findStalePostsSpy).toHaveBeenCalled();
+    });
+
+    it('keeps the subscriptions through a same-account session drop and restore, and resumes ticking', async () => {
+      setupAuthenticatedUser();
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+      const postId = createCompositePostId('author1', 'post1');
+      coordinator.subscribePost({ compositePostId: postId });
+      coordinator.start();
+      await waitForTick();
+
+      // A cross-tab renewal, or a new host snapshot in the embed: the session
+      // goes away and comes back for the same account; the cards stay mounted.
+      useAuthStore.setState({ session: null });
+      findStalePostsSpy.mockClear();
+      await advanceAndFlush(5_000);
+      expect(findStalePostsSpy).not.toHaveBeenCalled();
+
+      useAuthStore.setState({ session: mockSession() });
+      await waitForTick();
+      await advanceAndFlush(5_000);
+      expect(findStalePostsSpy).toHaveBeenCalled();
+      const queried: string[][] = findStalePostsSpy.mock.calls.map((call: [{ postIds: string[] }]) => call[0].postIds);
+      expect(queried.some((ids) => ids.includes(postId))).toBe(true);
+    });
+
+    it('clears the subscriptions on sign-out, so a later sign-in ticks nothing until the cards subscribe again', async () => {
+      setupAuthenticatedUser();
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+      coordinator.subscribePost({ compositePostId: createCompositePostId('author1', 'post1') });
+      coordinator.start();
+      await waitForTick();
+
+      // What sign-out does to the store.
+      useAuthStore.getState().reset();
+      setupAuthenticatedUser();
+      findStalePostsSpy.mockClear();
+      await waitForTick();
+      await advanceAndFlush(5_000);
+      expect(findStalePostsSpy).not.toHaveBeenCalled();
+    });
+
+    it("clears the old account's subscriptions on an account switch and ticks for the new one", async () => {
+      setupAuthenticatedUser('alice-pubky' as Pubky);
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+      const alicePost = createCompositePostId('alice-pubky', 'post1');
+      coordinator.subscribePost({ compositePostId: alicePost });
+      coordinator.start();
+      await waitForTick();
+
+      // One update: the session and pubky of the next account land together.
+      setupAuthenticatedUser('bob-pubky' as Pubky);
+      findStalePostsSpy.mockClear();
+      const bobPosts = [createCompositePostId('bob-pubky', 'post1'), createCompositePostId('bob-pubky', 'post2')];
+      for (const compositePostId of bobPosts) coordinator.subscribePost({ compositePostId });
+      await waitForTick();
+      await advanceAndFlush(5_000);
+      // Subscribing checks one post at a time; only the ticker queries them all together.
+      const queried: string[][] = findStalePostsSpy.mock.calls.map((call: [{ postIds: string[] }]) => call[0].postIds);
+      expect(queried.some((ids) => ids.length === 2 && bobPosts.every((id) => ids.includes(id)))).toBe(true);
+      expect(queried.some((ids) => ids.includes(alicePost))).toBe(false);
     });
 
     it('start() without authentication does not tick', async () => {
@@ -1185,6 +1287,51 @@ describe('TtlCoordinator', () => {
       );
     });
 
+    it('refreshes under the auth scope the tick started in, which a sign-out ends', async () => {
+      setupAuthenticatedUser();
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+      const postId = createCompositePostId('author1', 'post1');
+      const userId = 'user-1' as Pubky;
+      findStalePostsSpy.mockResolvedValue([postId]);
+      findStaleUsersSpy.mockResolvedValue([userId]);
+      coordinator.subscribePost({ compositePostId: postId });
+      coordinator.subscribeUser({ pubky: userId });
+
+      coordinator.start();
+      forceRefreshPostsSpy.mockClear();
+      forceRefreshUsersSpy.mockClear();
+      const tickScope = captureAuthScope();
+      await waitForTick();
+      const [[posts]] = forceRefreshPostsSpy.mock.calls as [[{ signal?: AbortSignal }]];
+      const [[users]] = forceRefreshUsersSpy.mock.calls as [[{ signal?: AbortSignal }]];
+
+      expect(posts.signal).toBe(tickScope);
+      expect(users.signal).toBe(tickScope);
+      endAuthScope();
+      expect(posts.signal?.aborted).toBe(true);
+    });
+
+    it('logs nothing when a refresh stops because the viewer signed out', async () => {
+      setupAuthenticatedUser();
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+      const postId = createCompositePostId('author1', 'post1');
+      findStalePostsSpy.mockResolvedValue([postId]);
+      forceRefreshPostsSpy.mockImplementation(async () => {
+        endAuthScope();
+        throw new DOMException('This operation was aborted', 'AbortError');
+      });
+      const warn = vi.spyOn(Logger, 'warn');
+      coordinator.subscribePost({ compositePostId: postId });
+
+      coordinator.start();
+      await waitForTick();
+
+      expect(forceRefreshPostsSpy).toHaveBeenCalled();
+      expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('Error refreshing'), expect.anything());
+    });
+
     it('successful refresh removes entities from queue', async () => {
       setupAuthenticatedUser();
 
@@ -1210,6 +1357,27 @@ describe('TtlCoordinator', () => {
       forceRefreshPostsSpy.mockClear();
       await waitForTick();
       expect(forceRefreshPostsSpy).not.toHaveBeenCalled();
+    });
+
+    it('keeps entities queued when a sign-out ends a refresh that then returns', async () => {
+      setupAuthenticatedUser();
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+      const postId = createCompositePostId('author1', 'post1');
+      findStalePostsSpy.mockResolvedValueOnce([postId]);
+      findStalePostsSpy.mockResolvedValueOnce([]);
+      coordinator.subscribePost({ compositePostId: postId });
+      coordinator.start();
+
+      forceRefreshPostsSpy.mockClear();
+      forceRefreshPostsSpy.mockImplementationOnce(async () => {
+        endAuthScope();
+      });
+      await waitForTick();
+      expect(forceRefreshPostsSpy).toHaveBeenCalledTimes(1);
+
+      await waitForTick();
+      expect(forceRefreshPostsSpy).toHaveBeenCalledTimes(2);
     });
 
     it('failed refresh leaves entities in queue for retry', async () => {

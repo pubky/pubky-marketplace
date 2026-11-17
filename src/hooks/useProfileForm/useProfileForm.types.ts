@@ -82,7 +82,6 @@ export interface UseProfileFormPropsBase {
 
 export interface UseProfileFormPropsCreate extends UseProfileFormPropsBase {
   mode: 'create';
-  setShowWelcomeDialog: (show: boolean) => void;
 }
 
 export interface UseProfileFormPropsEdit extends UseProfileFormPropsBase {

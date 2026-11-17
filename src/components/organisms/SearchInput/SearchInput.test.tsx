@@ -43,7 +43,6 @@ vi.mock('@/hooks/useHotTags/useHotTags', () => ({
     rawTags: [],
     isLoading: false,
     error: null,
-    refetch: vi.fn(),
   })),
 }));
 
@@ -51,7 +50,6 @@ vi.mock('@/hooks/useSearchAutocomplete/useSearchAutocomplete', () => ({
   useSearchAutocomplete: vi.fn(() => ({
     tags: [],
     users: [],
-    isLoading: false,
   })),
 }));
 
@@ -72,13 +70,11 @@ vi.mock('@/hooks/useIsMobile/useIsMobile', () => ({
 const mockAddUser = vi.fn();
 const mockAddTag = vi.fn();
 const mockSetActiveTags = vi.fn();
-const mockAddActiveTag = vi.fn();
 const mockRemoveActiveTag = vi.fn();
 vi.mock('@/stores/search/search.store', () => ({
   useSearchStore: vi.fn(() => ({
     activeTags: [],
     setActiveTags: mockSetActiveTags,
-    addActiveTag: mockAddActiveTag,
     removeActiveTag: mockRemoveActiveTag,
     recentUsers: [],
     recentTags: [],
@@ -258,12 +254,10 @@ describe('SearchInput', () => {
       rawTags: [],
       isLoading: false,
       error: null,
-      refetch: vi.fn(),
     });
     vi.mocked(useSearchAutocomplete).mockReturnValue({
       tags: [],
       users: [],
-      isLoading: false,
     });
     vi.mocked(useTagSearch).mockReturnValue({
       addTagToSearch: mockAddTagToSearch,
@@ -275,7 +269,6 @@ describe('SearchInput', () => {
     vi.mocked(useSearchStore).mockReturnValue({
       activeTags: [],
       setActiveTags: mockSetActiveTags,
-      addActiveTag: mockAddActiveTag,
       removeActiveTag: mockRemoveActiveTag,
       recentUsers: [],
       recentTags: [],
@@ -416,7 +409,6 @@ describe('SearchInput', () => {
         rawTags: [],
         isLoading: false,
         error: null,
-        refetch: vi.fn(),
       });
 
       render(<SearchInput />);
@@ -441,7 +433,6 @@ describe('SearchInput', () => {
         rawTags: [],
         isLoading: false,
         error: null,
-        refetch: vi.fn(),
       });
 
       render(<SearchInput />);
@@ -468,7 +459,6 @@ describe('SearchInput', () => {
         rawTags: [],
         isLoading: false,
         error: null,
-        refetch: vi.fn(),
       });
 
       render(<SearchInput />);
@@ -497,7 +487,6 @@ describe('SearchInput', () => {
         rawTags: [],
         isLoading: false,
         error: null,
-        refetch: vi.fn(),
       });
 
       render(<SearchInput />);
@@ -526,7 +515,6 @@ describe('SearchInput', () => {
       vi.mocked(useSearchAutocomplete).mockReturnValue({
         tags: [],
         users: [{ id: 'user123', name: 'Satoshi' }],
-        isLoading: false,
       });
 
       render(<SearchInput />);
@@ -570,56 +558,6 @@ describe('SearchInput', () => {
 
       const input = screen.getByRole('textbox');
       expect(input).toHaveAttribute('readOnly');
-    });
-  });
-
-  describe('SearchInput - Snapshots', () => {
-    beforeEach(() => {
-      mockUseIsMobile.mockReturnValue(false);
-    });
-
-    it('matches snapshot - default state', () => {
-      const { container } = render(<SearchInput />);
-      expect(container.firstChild).toMatchSnapshot();
-    });
-
-    it('matches snapshot - with active tags', async () => {
-      vi.mocked(useTagSearch).mockReturnValue({
-        addTagToSearch: mockAddTagToSearch,
-        removeTagFromSearch: mockRemoveTagFromSearch,
-        activeTags: ['bitcoin', 'pubky'],
-        isReadOnly: false,
-      });
-
-      const { container } = render(<SearchInput />);
-      expect(container.firstChild).toMatchSnapshot();
-    });
-
-    it('matches snapshot - focused with suggestions', async () => {
-      vi.mocked(useSearchInput).mockReturnValue({
-        inputValue: '',
-        isFocused: true,
-        containerRef: { current: null },
-        inputRef: { current: null },
-        handleInputChange: vi.fn(),
-        handleKeyDown: vi.fn(),
-        handleFocus: vi.fn(),
-        clearInputValue: vi.fn(),
-        setFocus: vi.fn(),
-      });
-      vi.mocked(useHotTags).mockReturnValue({
-        tags: [
-          { name: 'pubky', count: 10 },
-          { name: 'bitcoin', count: 5 },
-        ],
-        rawTags: [],
-        isLoading: false,
-        error: null,
-        refetch: vi.fn(),
-      });
-
-      const { container } = render(<SearchInput />);
-      expect(container.firstChild).toMatchSnapshot();
     });
   });
 });

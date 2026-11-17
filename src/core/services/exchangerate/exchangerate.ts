@@ -7,7 +7,7 @@ import { ErrorService } from '@/libs/error/error.types';
 import { HttpMethod } from '@/libs/http/http.types';
 import { PARSE_JSON_WITH_BODY_EXCERPT, parseResponseOrThrow } from '@/libs/http/response.utils';
 import { exchangerateQueryClient } from './exchangerate.query-client';
-import type { BlockTankResponse, BlockTankTicker, BtcRate } from './exchangerate.types';
+import type { BlockTankResponse, BlockTankTicker } from './exchangerate.types';
 
 /**
  * Exchange rate service class.
@@ -54,55 +54,6 @@ export class ExchangerateService {
   }
 
   /**
-   * Fetches the BTC/USD exchange rate from BlockTank API
-   *
-   * @returns Promise resolving to the BTC/USD exchange rate as a number
-   * @throws {AppError} If the API request fails, response is invalid, or BTCUSD ticker is not found
-   */
-  private static async getBtcUsdRate(): Promise<number> {
-    const operation = 'getBtcUsdRate';
-    const tickers = await ExchangerateService.fetchTickers(operation);
-    const btcUsdTicker = tickers.find((ticker) => ticker.symbol === 'BTCUSD');
-
-    if (!btcUsdTicker) {
-      throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'BTCUSD ticker not found in API response', {
-        service: ErrorService.Exchangerate,
-        operation,
-        context: { availableSymbols: tickers.map((t) => t.symbol) },
-      });
-    }
-
-    const rate = parseFloat(btcUsdTicker.lastPrice);
-
-    if (isNaN(rate) || rate <= 0) {
-      throw Err.server(ServerErrorCode.INVALID_RESPONSE, `Invalid exchange rate value: ${btcUsdTicker.lastPrice}`, {
-        service: ErrorService.Exchangerate,
-        operation,
-        context: { lastPrice: btcUsdTicker.lastPrice },
-      });
-    }
-
-    return rate;
-  }
-
-  /**
-   * Gets the current SAT/USD and BTC/USD exchange rate.
-   *
-   * @returns Promise resolving to the BTC rate with satUsd, btcUsd, and lastUpdatedAt
-   * @throws {AppError} If the API request fails, response is invalid, or BTCUSD ticker is not found
-   *
-   * @example
-   * const rate = await ExchangerateService.getSatoshiUsdRate();
-   * console.log(`1 SAT = $${rate.satUsd}`);
-   */
-  static async getSatoshiUsdRate(): Promise<BtcRate> {
-    return exchangerateQueryClient.fetchQuery({
-      queryKey: ['exchangerate', 'btc-rate'],
-      queryFn: ExchangerateService.fetchBtcRate,
-    });
-  }
-
-  /**
    * The Blocktank tickers behind indicative marketplace price estimates, in
    * every listing currency. Refetched when older than five minutes: an "≈"
    * estimate shown beside every listing price should not be half an hour stale.
@@ -116,14 +67,5 @@ export class ExchangerateService {
       queryFn: () => ExchangerateService.fetchTickers('getIndicativeTickers'),
       staleTime: 5 * 60 * 1000,
     });
-  }
-
-  private static async fetchBtcRate(): Promise<BtcRate> {
-    const btcusd = await ExchangerateService.getBtcUsdRate();
-    return {
-      satUsd: btcusd / 100_000_000,
-      btcUsd: btcusd,
-      lastUpdatedAt: new Date(),
-    };
   }
 }

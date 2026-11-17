@@ -18,15 +18,17 @@ import {
   isCreateMarketplaceListingPublishReady,
   type ListingFulfillment,
   listingFulfillmentSchema,
+  PUBLISH_PACKAGE_FIELDS,
+  PUBLISH_REQUIRED_FIELDS,
   UNLIMITED_STOCK_FORM_MESSAGE,
 } from './useCreateMarketplaceListing.types';
 
 /**
- * The form defaults deliberately ship no category (the seller must pick
- * one); these tests exercise the rest of the schema with a resolvable
- * category that requires no attributes.
+ * The form defaults deliberately ship no category and no country (the seller
+ * must pick both); these tests exercise the rest of the schema with a
+ * resolvable category that requires no attributes and a country.
  */
-const formDefaults = { ...createMarketplaceListingDefaults, categoryId: 'fashion' };
+const formDefaults = { ...createMarketplaceListingDefaults, categoryId: 'fashion', countryCode: 'CH' };
 
 describe('createMarketplaceListingSchema', () => {
   it('defaults to physical shipping and final sale', () => {
@@ -403,6 +405,36 @@ describe('isCreateMarketplaceListingPublishReady', () => {
     const ready = isCreateMarketplaceListingPublishReady(values, photoCount);
     expect(ready).toBe(expected);
     expect(ready).toBe(schemaValid && photoCount > 0);
+  });
+
+  // The Sell form marks these fields "Required"; each must really block publishing while empty.
+  it.each([...PUBLISH_REQUIRED_FIELDS])(
+    'blocks publishing while the field the form marks Required, %s, is empty',
+    (field) => {
+      expect(isCreateMarketplaceListingPublishReady({ ...physicalReady, [field]: '' }, 1)).toBe(false);
+    },
+  );
+
+  it.each([...PUBLISH_PACKAGE_FIELDS])('blocks publishing a shipped item while %s is empty', (field) => {
+    expect(isCreateMarketplaceListingPublishReady({ ...physicalReady, [field]: '' }, 1)).toBe(false);
+  });
+
+  it('never publishes an unset country as US: an empty country blocks publishing', () => {
+    expect(createMarketplaceListingDefaults.countryCode).toBe('');
+    const noCountry = { ...physicalReady, countryCode: '' };
+    expect(createMarketplaceListingSchema.safeParse(noCountry).success).toBe(false);
+    expect(isCreateMarketplaceListingPublishReady(noCountry, 1)).toBe(false);
+    expect(createMarketplaceListingPublishChecklist(noCountry, 1)).toEqual(['Country']);
+  });
+
+  it.each(['ZZ', 'XX', 'QQ', 'EU', 'Swiss'])('refuses %s as a listing country: it must be a real country', (code) => {
+    const result = createMarketplaceListingSchema.safeParse({ ...physicalReady, countryCode: code });
+    expect(result.success).toBe(false);
+    expect(createMarketplaceListingPublishChecklist({ ...physicalReady, countryCode: code }, 1)).toEqual(['Country']);
+  });
+
+  it.each(['CF', 'ch', 'UK'])('accepts %s as a listing country', (code) => {
+    expect(createMarketplaceListingSchema.safeParse({ ...physicalReady, countryCode: code }).success).toBe(true);
   });
 
   it('lists description and shipping until they satisfy the schema', () => {

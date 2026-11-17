@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { type SellerPaymentConfigOwnView, sellerPaymentConfigOwnViewSchema } from '@/libs/commerce/payment-methods';
 import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { MarketplaceGetPaidSettings } from '@/organisms/Marketplace/MarketplaceGetPaidSettings';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import type { GrantSigner } from '@/stores/auth/auth.types';
@@ -36,13 +36,11 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     fetchUsdtPaymentsAvailable: vi.fn(),
     getMyPaymentConfig: vi.fn(),
     putMyPaymentConfig: vi.fn(),
-    beginMarketplaceSessionConnect: vi.fn(),
     hasFullHomeserverGrant: vi.fn(() => false),
   },
 }));
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: vi.fn(),
-  useToast: () => ({ toast: vi.fn() }),
 }));
 
 const mocked = vi.mocked(CommerceController);
@@ -355,6 +353,24 @@ describe('MarketplaceGetPaidSettings USDT', () => {
   });
 
   describe('saving', () => {
+    it('shows progress only on the card being saved and holds the other cards during the save', async () => {
+      const config = fromWire(USDT_SELLER_CONFIG_READY_WIRE);
+      mocked.getMyPaymentConfig.mockResolvedValue(config);
+      let finish: (saved: SellerPaymentConfigOwnView) => void = () => undefined;
+      mocked.putMyPaymentConfig.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+      await renderSettings();
+
+      await userEvent.click(screen.getAllByRole('button', { name: 'Save changes' }).at(-1)!);
+
+      const buttons = screen.getAllByRole('button', { name: 'Save changes' });
+      await waitFor(() => expect(buttons.at(-1)!.querySelector('.animate-spin')).not.toBeNull());
+      for (const other of buttons.slice(0, -1)) expect(other.querySelector('.animate-spin')).toBeNull();
+      for (const button of buttons) expect(button).toBeDisabled();
+
+      finish(config);
+      await waitFor(() => expect(document.querySelector('.animate-spin')).toBeNull());
+    });
+
     it('sends the seller consent with the rest of the configuration', async () => {
       mocked.getMyPaymentConfig.mockResolvedValue({
         ...fromWire(USDT_SELLER_CONFIG_READY_WIRE),
@@ -504,11 +520,23 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       expect(new URL(retried.src).searchParams.get('state')).not.toBe(firstState);
     });
 
-    it('reports a failed completion without re-reading', async () => {
+    it('reports a failed completion only after the service still shows no USDT address', async () => {
       const iframe = await openReconnect();
       sendCallback(iframe, { error: 'setup-failed' });
-      expect(screen.getByRole('alert')).toHaveTextContent('Bitkit setup failed. Try again.');
-      expect(mocked.getMyPaymentConfig).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Bitkit setup failed. Try again.'));
+      expect(mocked.getMyPaymentConfig).toHaveBeenCalledTimes(2);
+      expect(mockedToast).not.toHaveBeenCalled();
+    });
+
+    it('shows USDT ready when an expired callback arrives after the service completed the reconnect', async () => {
+      const iframe = await openReconnect();
+      mocked.getMyPaymentConfig.mockResolvedValue(fromWire(USDT_SELLER_CONFIG_READY_WIRE));
+      sendCallback(iframe, { error: 'expired' });
+
+      await waitFor(() => expect(screen.queryByTitle('Add USDT in Bitkit')).not.toBeInTheDocument());
+      expect(mockedToast).toHaveBeenCalledWith({ title: 'USDT is ready' });
+      expect(screen.queryByText(/setup failed/i)).not.toBeInTheDocument();
+      expect(await screen.findByTestId('usdt-readiness-ready')).toBeInTheDocument();
     });
 
     it('reports a different Bitkit identity', async () => {

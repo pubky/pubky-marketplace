@@ -5,7 +5,7 @@ import { getMarketplaceOfferCheckoutRoute } from '@/libs/commerce/checkout-phase
 
 export function generateMetadata() {
   return gatedMarketplaceMetadata(
-    'Checkout | Pubky Marketplace',
+    'Checkout | Pubky Market',
     'Review and pay the terms accepted for your marketplace offer.',
     MARKETPLACE_ROUTES.CHECKOUT,
   );

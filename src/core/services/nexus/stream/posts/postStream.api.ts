@@ -96,5 +96,3 @@ export function buildPostStreamBodyUrl(params: TStreamPostsByIdsParams): TStream
 
   return body;
 }
-
-export type PostStreamApiEndpoint = keyof typeof postStreamApi;

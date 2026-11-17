@@ -23,7 +23,7 @@ function item(overrides: Partial<MarketplaceCatalogItem> = {}): MarketplaceCatal
     attributes: null,
     location: { countryCode: 'US', region: null },
     mediaUrls: [],
-    reputation: null,
+    listingReputation: null,
     revision: 1,
     updatedAt: 1_000,
     ...overrides,

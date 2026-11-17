@@ -139,8 +139,8 @@ export class LocalPostService {
     return [tags] as unknown as TagCollectionModelSchema<string>[];
   }
 
-  static async updatePostCounts({ postCompositeId, countChanges }: TPostCountsParams) {
-    await PostCountsModel.updateCounts({ postCompositeId, countChanges });
+  static async updatePostCounts({ postCompositeId, countChanges, signal }: TPostCountsParams) {
+    await PostCountsModel.updateCounts({ postCompositeId, countChanges, signal });
   }
 
   /**

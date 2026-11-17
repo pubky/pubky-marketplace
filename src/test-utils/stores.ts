@@ -5,7 +5,6 @@ import type { HotStore } from '@/stores/hot/hot.types';
 import type { LocalFilesStore } from '@/stores/localFiles/localFiles.types';
 import type { MigrationStore } from '@/stores/migration/migration.types';
 import type { NotificationStore } from '@/stores/notification/notification.types';
-import type { OnboardingStore } from '@/stores/onboarding/onboarding.types';
 import type { SearchStore } from '@/stores/search/search.types';
 import type { SettingsStore } from '@/stores/settings/settings.types';
 import type { SignInStore } from '@/stores/signIn/signIn.types';
@@ -21,8 +20,6 @@ import type { SignInStore } from '@/stores/signIn/signIn.types';
 const buildStore = <TStore>(partial: Partial<TStore>): TStore => partial as TStore;
 
 export const mockAuthStore = (partial: Partial<AuthStore> = {}): AuthStore => buildStore(partial);
-
-export const mockOnboardingStore = (partial: Partial<OnboardingStore> = {}): OnboardingStore => buildStore(partial);
 
 export const mockMigrationStore = (partial: Partial<MigrationStore> = {}): MigrationStore => buildStore(partial);
 

@@ -25,7 +25,7 @@ vi.mock('@/config/commerce', async () => {
   return {
     ...actual,
     getCommerceAdapterMode: () => 'transaction-service',
-    getMarketplaceUrl: () => 'https://staging-api.pubky.app',
+    getMarketplaceUrl: () => 'https://marketplace-service.example.test',
     isDurableCommerceMode: () => true,
   };
 });
@@ -76,6 +76,9 @@ describe('classifySessionKind', () => {
     const captured = bitkitParityCapture.parity_request.homeserver_verified;
     expect(classifySessionKind(CAPABILITIES)).toBe('purchase');
     expect(classifySessionKind(CAPABILITIES.split(',').reverse().join(','))).toBe('purchase');
+    expect(classifySessionKind('/pub/pubky.app/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw')).toBe(
+      'purchase',
+    );
     expect(classifySessionKind(captured)).toBe('purchase');
     expect(classifySessionKind(captured.split(',').reverse().join(','))).toBe('purchase');
     expect(

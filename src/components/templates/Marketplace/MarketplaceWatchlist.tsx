@@ -28,7 +28,7 @@ import { formatCommerceMoney } from '@/libs/commerce/format';
 import { Logger } from '@/libs/logger/logger';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
 import { MarketplaceProductSummary } from '@/molecules/Marketplace/MarketplaceProductSummary';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import { MarketplaceReauthDialog } from '@/organisms/Marketplace/MarketplaceReauthDialog';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
@@ -68,13 +68,7 @@ export function MarketplaceWatchlist() {
   };
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      className="pb-28"
-    >
+    <MarketplaceContentLayout disableMainContentOverflow className="pb-28">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <MarketplaceSectionNav />
 
@@ -212,7 +206,7 @@ export function MarketplaceWatchlist() {
             </div>
           )}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }
 
@@ -271,7 +265,7 @@ function WatchlistItemRow({ entry }: { entry: MarketplaceWatchlistEntry }) {
             {state && (
               <Badge
                 variant="outline"
-                className={state.tone === 'warn' ? 'border-amber-500/50 text-amber-300' : undefined}
+                className={state.tone === 'warn' ? 'border-amber-500/50 text-warning-foreground' : undefined}
               >
                 {state.label}
               </Badge>
@@ -318,7 +312,7 @@ function EndsAtBadge({ endsAt }: { endsAt: string }) {
       : `Ends ${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(endsMs))}`;
   const isEndingSoon = remaining < 24 * 60 * 60 * 1_000;
   return (
-    <Badge variant="outline" className={isEndingSoon ? 'border-amber-500/50 text-amber-300' : undefined}>
+    <Badge variant="outline" className={isEndingSoon ? 'border-amber-500/50 text-warning-foreground' : undefined}>
       {label}
     </Badge>
   );

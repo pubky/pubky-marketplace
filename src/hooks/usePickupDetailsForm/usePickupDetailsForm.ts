@@ -14,7 +14,7 @@ import {
 import { browserAddressCountry, DEFAULT_ADDRESS_COUNTRY } from '@/libs/commerce/postal-address';
 import { isMarketplaceRevisionConflict } from '@/libs/commerce/transaction-commands';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import {
   type PickupDetailsFormData,
   pickupDetailsFormDefaults,

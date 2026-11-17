@@ -59,7 +59,7 @@ vi.mock('@/hooks/useImportImageUpload/useImportImageUpload', () => ({
   uploadImportImages: (...args: unknown[]) => mocks.upload(...args),
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
+vi.mock('@/molecules/Toaster/toast', () => ({
   toast: (...args: unknown[]) => mocks.toast(...args),
 }));
 
@@ -87,6 +87,78 @@ function planned(extra: Record<string, unknown> = {}) {
 }
 
 const FILE = new File(['x'], 'products.csv', { type: 'text/csv' });
+
+describe('import settings with a shipping profile', () => {
+  const profile = (currency: string, exponent = 2) =>
+    ({
+      sha256: 'a'.repeat(64),
+      record: {
+        profileId: 'worldwide',
+        name: 'Worldwide',
+        currency,
+        exponent,
+        excludedCountries: [],
+        zones: [
+          {
+            zoneId: 'us',
+            name: 'United States',
+            countries: ['US'],
+            rates: [
+              {
+                pricing: 'flat',
+                rateId: 'std',
+                label: 'Standard',
+                amountMinor: 899,
+                estimatedMinDays: 4,
+                estimatedMaxDays: 8,
+              },
+            ],
+          },
+        ],
+      },
+    }) as never;
+  const chosen = { ...importSettingsFormDefaults, countryCode: 'US', shippingMode: 'profile' as const };
+
+  it('asks for a profile before applying', () => {
+    const result = importSettingsFormSchema.safeParse(chosen);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((issue) => issue.path[0])).toContain('shippingProfileId');
+    expect(importSettingsFormSchema.safeParse({ ...chosen, shippingProfileId: 'worldwide' }).success).toBe(true);
+  });
+
+  it('ignores delivery days that profile mode hides, and still checks them for free and flat shipping', () => {
+    const hidden = { ...chosen, shippingProfileId: 'worldwide', shippingMinDays: '9', shippingMaxDays: 'x' };
+    expect(importSettingsFormSchema.safeParse(hidden).success).toBe(true);
+    for (const shippingMode of ['free', 'flat'] as const) {
+      const result = importSettingsFormSchema.safeParse({
+        ...hidden,
+        shippingMode,
+        shippingPrice: '5',
+      });
+      expect(result.error?.issues.map((issue) => issue.path[0])).toEqual(['shippingMaxDays']);
+    }
+    const reversed = importSettingsFormSchema.safeParse({
+      ...hidden,
+      shippingMode: 'free',
+      shippingMaxDays: '2',
+    });
+    expect(reversed.error?.issues[0]?.message).toBe('Maximum delivery must not be before the minimum.');
+  });
+
+  it('names the profile and derives the legacy option from it', () => {
+    const settings = toImportSettings({ ...chosen, shippingProfileId: 'worldwide' }, [profile('USD')]);
+    expect(settings.shipping).toMatchObject({
+      mode: 'profile',
+      profileId: 'worldwide',
+      option: { pricing: 'flat', price: { amountMinor: 899, currency: 'USD' } },
+    });
+  });
+
+  it('leaves shipping unchosen when the profile is unknown or priced in another currency', () => {
+    expect(toImportSettings({ ...chosen, shippingProfileId: 'worldwide' }, []).shipping).toBeNull();
+    expect(toImportSettings({ ...chosen, shippingProfileId: 'worldwide' }, [profile('EUR')]).shipping).toBeNull();
+  });
+});
 
 describe('import settings form schema', () => {
   it('offers the currencies and conditions of the listing schema', () => {
@@ -116,6 +188,20 @@ describe('import settings form schema', () => {
       countryCode: 'CH',
       shipping: { mode: 'free', minDays: 3, maxDays: 10 },
     });
+  });
+
+  it('takes only a real ships-from country, and imports UK as GB', () => {
+    const complete = { ...importSettingsFormDefaults, shippingMode: 'free' as const };
+    for (const code of ['ZZ', 'XX', 'EU', 'USA']) {
+      const result = importSettingsFormSchema.safeParse({ ...complete, countryCode: code });
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0]?.message).toBe(
+        `"${code}" is not a country code. Use a two-letter code like CH or US.`,
+      );
+      expect(toImportSettings({ ...complete, countryCode: code }).countryCode).toBeNull();
+    }
+    expect(importSettingsFormSchema.safeParse({ ...complete, countryCode: 'uk' }).success).toBe(true);
+    expect(toImportSettings({ ...complete, countryCode: 'uk' }).countryCode).toBe('GB');
   });
 
   it('requires a flat price in the currency, valid delivery days and a two-letter country', () => {
@@ -383,6 +469,43 @@ describe('useMarketplaceInventoryImport', () => {
         await publishing;
       });
       expect(result.current.progressPhase).toBe('listings');
+    });
+
+    it('counts the listings, not the variant rows, and follows the listing the publish reports', async () => {
+      let report: (progress: { done: number; total: number }) => void = () => undefined;
+      let finish: () => void = () => undefined;
+      mocks.plan.mockResolvedValue(
+        planned({ listingCount: 183, counts: { create: 705, update: 0, end: 0, unchanged: 0, conflict: 0 } }),
+      );
+      mocks.targets.mockResolvedValue([]);
+      mocks.publish.mockImplementation(
+        (_seller: string, _manifest: string, onProgress: (progress: { done: number; total: number }) => void) =>
+          new Promise((resolvePublish) => {
+            report = onProgress;
+            finish = () => resolvePublish(COMPLETE);
+          }),
+      );
+      const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+      await act(async () => {
+        await result.current.planFile(FILE);
+      });
+      expect(result.current.listingCount).toBe(183);
+
+      let publishing: Promise<void> = Promise.resolve();
+      await act(async () => {
+        publishing = result.current.publish();
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(result.current.progress).toEqual({ done: 0, total: 183 }));
+      expect(result.current.progressPhase).toBe('listings');
+
+      act(() => report({ done: 76, total: 183 }));
+      expect(result.current.progress).toEqual({ done: 76, total: 183 });
+
+      await act(async () => {
+        finish();
+        await publishing;
+      });
     });
 
     it('only attaches, and fetches nothing, for a stored listing whose photos are unchanged', async () => {
@@ -1168,7 +1291,7 @@ describe('useMarketplaceInventoryImport, an unfinished import', () => {
     });
     expect(mocks.targets).toHaveBeenCalledWith('seller', 'manifest_old');
     expect(mocks.attach).toHaveBeenCalledWith('seller', 'manifest_old', expect.any(Array));
-    expect(mocks.resume).toHaveBeenCalledWith('seller', 'manifest_old');
+    expect(mocks.resume).toHaveBeenCalledWith('seller', 'manifest_old', expect.any(Function));
     expect(mocks.plan).not.toHaveBeenCalled();
     expect(mocks.publish).not.toHaveBeenCalled();
     expect(mocks.markStarted).not.toHaveBeenCalled();
@@ -1193,7 +1316,7 @@ describe('useMarketplaceInventoryImport, an unfinished import', () => {
     await act(async () => {
       await result.current.resume();
     });
-    expect(mocks.resume).toHaveBeenCalledWith('seller', 'manifest_old');
+    expect(mocks.resume).toHaveBeenCalledWith('seller', 'manifest_old', expect.any(Function));
     expect(result.current.scene).toBe('result');
   });
 

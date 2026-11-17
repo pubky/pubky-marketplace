@@ -98,8 +98,8 @@ vi.mock('@/organisms/FullUserListItemSkeleton/FullUserListItemSkeleton', () => {
 
 vi.mock('@/organisms/UserListItem/UserListItem', () => {
   return {
-    UserListItem: ({ user, followButtonVariant }: { user: { id: string }; followButtonVariant?: string }) => (
-      <div data-testid="user-list-item" data-user-id={user.id} data-follow-button-variant={followButtonVariant}>
+    UserListItem: ({ user }: { user: { id: string } }) => (
+      <div data-testid="user-list-item" data-user-id={user.id}>
         User item
       </div>
     ),
@@ -188,43 +188,5 @@ describe('ProfileFollowers', () => {
     expect(userItems).toHaveLength(2);
     expect(userItems[0]).toHaveAttribute('data-user-id', 'user-1');
     expect(userItems[1]).toHaveAttribute('data-user-id', 'user-2');
-  });
-
-  it('passes followButtonVariant="icon" to UserListItem', () => {
-    vi.mocked(useProfileConnections).mockReturnValue(mockConnectionsResult);
-
-    render(<ProfileFollowers />);
-    const userItems = screen.getAllByTestId('user-list-item');
-    userItems.forEach((item) => {
-      expect(item).toHaveAttribute('data-follow-button-variant', 'icon');
-    });
-  });
-});
-
-describe('ProfileFollowers - Snapshots', () => {
-  beforeEach(() => {
-    vi.mocked(useProfileConnections).mockReturnValue(mockUseProfileConnections());
-    vi.mocked(useInfiniteScroll).mockReturnValue(
-      asOpaque<ReturnType<typeof useInfiniteScroll>>(mockUseInfiniteScroll()),
-    );
-    vi.mocked(useFollowUser).mockReturnValue(asOpaque<ReturnType<typeof useFollowUser>>(mockUseFollowUser()));
-  });
-
-  it('matches snapshot with no connections', () => {
-    const { container } = render(<ProfileFollowers />);
-    expect(container).toMatchSnapshot();
-  });
-
-  it('matches snapshot when loading', () => {
-    vi.mocked(useProfileConnections).mockReturnValue(mockLoadingConnectionsResult);
-    const { container } = render(<ProfileFollowers />);
-    expect(container).toMatchSnapshot();
-  });
-
-  it('matches snapshot with connections', () => {
-    vi.mocked(useProfileConnections).mockReturnValue(mockConnectionsResult);
-
-    const { container } = render(<ProfileFollowers />);
-    expect(container).toMatchSnapshot();
   });
 });

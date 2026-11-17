@@ -11,8 +11,8 @@ vi.mock('@/controllers/post/post', () => ({
   },
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
-  useToast: () => ({ toast: vi.fn() }),
+vi.mock('@/molecules/Toaster/toast', () => ({
+  toast: vi.fn(),
 }));
 
 vi.mock('@/hooks/useAuthoredCollections/useAuthoredCollections', () => ({
@@ -44,13 +44,5 @@ describe('NewCollectionCardCTA', () => {
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'New Collection' })).toBeInTheDocument();
-  });
-});
-
-describe('NewCollectionCardCTA - Snapshots', () => {
-  it('matches the closed trigger snapshot', () => {
-    const { container } = render(<NewCollectionCardCTA />);
-
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

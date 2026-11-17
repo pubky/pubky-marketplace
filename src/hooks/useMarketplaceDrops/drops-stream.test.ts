@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { estimateDropBucket, fetchDropsStream, type NexusDropStreamEntry } from './drops-stream';
+import { estimateDropBucket, fetchDropsStream, type NexusDropStreamEntry, placeDropEntry } from './drops-stream';
 
 vi.mock('@/config/nexus', () => ({
   getMarketplaceNexusUrl: () => 'https://nexus.example',
@@ -83,5 +83,34 @@ describe('estimateDropBucket', () => {
 
   it('treats an unparseable start as upcoming rather than claiming live', () => {
     expect(estimateDropBucket(makeEntry({ starts_at: 'not-a-date' }), now)).toBe('upcoming');
+  });
+});
+
+describe('placeDropEntry', () => {
+  const now = Date.parse('2026-09-20T12:00:00.000Z');
+  const started = makeEntry({ starts_at: '2026-09-10T17:00:00.000Z', ends_at: null });
+  const startedAndEnded = makeEntry({ starts_at: '2026-09-10T17:00:00.000Z', ends_at: '2026-09-11T17:00:00.000Z' });
+  const notStarted = makeEntry({ starts_at: '2026-10-01T17:00:00.000Z' });
+
+  it('hides a never-registered drop once its start has passed, with or without an end time', () => {
+    expect(placeDropEntry(started, 'unregistered', now)).toBeNull();
+    expect(placeDropEntry(startedAndEnded, 'unregistered', now)).toBeNull();
+  });
+
+  it('keeps a not-yet-registered drop upcoming until its start time', () => {
+    expect(placeDropEntry(notStarted, 'unregistered', now)).toBe('upcoming');
+  });
+
+  it('moves every ended service state to the ended section, whatever the indexed times say', () => {
+    expect(placeDropEntry(notStarted, 'ended_cancelled', now)).toBe('ended');
+    expect(placeDropEntry(started, 'ended_sold_out', now)).toBe('ended');
+    expect(placeDropEntry(started, 'ended_closed', now)).toBe('ended');
+  });
+
+  it('keeps the index-time estimate for active drops and when the public read failed', () => {
+    expect(placeDropEntry(notStarted, 'announced', now)).toBe('upcoming');
+    expect(placeDropEntry(started, 'live', now)).toBe('live');
+    expect(placeDropEntry(started, 'unknown', now)).toBe('live');
+    expect(placeDropEntry(startedAndEnded, 'unknown', now)).toBe('ended');
   });
 });

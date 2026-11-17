@@ -8,13 +8,10 @@ import {
 import { asInvalid } from '@/test-utils/type-assertions';
 import {
   canSubmitPost,
-  clearCookies,
   cn,
   copyToClipboard,
-  daysAgo,
   extractInitials,
   focusAdjacentGridItem,
-  formatInviteCode,
   formatPublicKey,
   formatUSDate,
   generateRandomColor,
@@ -22,69 +19,20 @@ import {
   getDisplayTags,
   getValidAuthorPubkyFromPostCompositeId,
   hexToRgba,
-  hoursAgo,
   isPostDeleted,
   isPubkyIdentifier,
   isSameDomain,
   isValidPostCompositeId,
   isValidTagLabel,
-  minutesAgo,
-  radixIdSerializer,
   resolveDisplayName,
   sanitizeTagInput,
   shouldBypassLinkConfirmation,
   stripPubkyPrefix,
   truncateString,
 } from './utils';
-import { HASHTAG_IN_TEXT_REGEX, RADIX_ID_REGEX, RADIX_ID_TEST_REGEX, TAG_BANNED_CHARS } from './utils.constants';
+import { HASHTAG_IN_TEXT_REGEX, TAG_BANNED_CHARS } from './utils.constants';
 
 describe('Utils', () => {
-  describe('radixIdSerializer', () => {
-    describe('regex patterns', () => {
-      it('RADIX_ID_TEST_REGEX matches Radix IDs', () => {
-        expect(RADIX_ID_TEST_REGEX.test('radix-_r_12345')).toBe(true);
-        expect(RADIX_ID_TEST_REGEX.test('_r_12345')).toBe(true);
-        expect(RADIX_ID_TEST_REGEX.test('class="radix-_r_12345"')).toBe(true);
-      });
-
-      it('RADIX_ID_TEST_REGEX does not match other strings', () => {
-        expect(RADIX_ID_TEST_REGEX.test('normal-id')).toBe(false);
-        expect(RADIX_ID_TEST_REGEX.test('radical')).toBe(false);
-      });
-
-      it('RADIX_ID_REGEX matches all occurrences globally', () => {
-        const input = 'id="radix-_r_1" and id="radix-_r_2"';
-        const matches = input.match(RADIX_ID_REGEX);
-        expect(matches).toHaveLength(2);
-        expect(matches).toEqual(['radix-_r_1', 'radix-_r_2']);
-      });
-    });
-
-    describe('test function', () => {
-      it('returns true for strings containing Radix IDs', () => {
-        expect(radixIdSerializer.test('some content with radix-_r_12345 inside')).toBe(true);
-      });
-
-      it('returns false for strings without Radix IDs', () => {
-        expect(radixIdSerializer.test('some content without special ids')).toBe(false);
-      });
-
-      it('returns false for non-string values', () => {
-        expect(radixIdSerializer.test(123)).toBe(false);
-        expect(radixIdSerializer.test(null)).toBe(false);
-        expect(radixIdSerializer.test({})).toBe(false);
-      });
-
-      it('does not have stateful issues with multiple calls (g flag check)', () => {
-        const input = 'radix-_r_123';
-        // If the regex had 'g' flag and was reused, subsequent calls might fail
-        expect(radixIdSerializer.test(input)).toBe(true);
-        expect(radixIdSerializer.test(input)).toBe(true);
-        expect(radixIdSerializer.test(input)).toBe(true);
-      });
-    });
-  });
-
   describe('cn', () => {
     it('should combine multiple class names', () => {
       const result = cn('class1', 'class2', 'class3');
@@ -123,48 +71,6 @@ describe('Utils', () => {
     it('should handle null and undefined values', () => {
       const result = cn('valid', null, undefined, 'another');
       expect(result).toBe('valid another');
-    });
-  });
-
-  describe('formatInviteCode', () => {
-    it('should format a 12-character code correctly', () => {
-      const result = formatInviteCode('ABCD1234EFGH');
-      expect(result).toBe('ABCD-1234-EFGH');
-    });
-
-    it('should convert lowercase to uppercase', () => {
-      const result = formatInviteCode('abcd1234efgh');
-      expect(result).toBe('ABCD-1234-EFGH');
-    });
-
-    it('should remove non-alphanumeric characters', () => {
-      const result = formatInviteCode('AB-CD_12@34#EF!GH');
-      expect(result).toBe('ABCD-1234-EFGH');
-    });
-
-    it('should handle codes shorter than 12 characters', () => {
-      const result = formatInviteCode('ABC123');
-      expect(result).toBe('ABC1-23');
-    });
-
-    it('should truncate codes longer than 12 characters', () => {
-      const result = formatInviteCode('ABCD1234EFGH5678');
-      expect(result).toBe('ABCD-1234-EFGH');
-    });
-
-    it('should handle empty string', () => {
-      const result = formatInviteCode('');
-      expect(result).toBe('');
-    });
-
-    it('should handle string with only special characters', () => {
-      const result = formatInviteCode('!@#$%^&*()');
-      expect(result).toBe('');
-    });
-
-    it('should handle mixed case with special characters', () => {
-      const result = formatInviteCode('aBc-123_DeF!456');
-      expect(result).toBe('ABC1-23DE-F456');
     });
   });
 
@@ -421,73 +327,6 @@ describe('Utils', () => {
     });
   });
 
-  describe('clearCookies', () => {
-    let originalCookie: string;
-
-    beforeEach(() => {
-      originalCookie = document.cookie;
-      // Clear any existing cookies
-      document.cookie.split(';').forEach((c) => {
-        const eqPos = c.indexOf('=');
-        const name = eqPos > -1 ? c.substr(0, eqPos) : c;
-        document.cookie = `${name.trim()}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
-      });
-    });
-
-    afterEach(() => {
-      // Restore original cookies if any
-      if (originalCookie) {
-        document.cookie = originalCookie;
-      }
-    });
-
-    it('should clear all cookies', () => {
-      // Set some test cookies
-      document.cookie = 'testCookie1=value1; path=/';
-      document.cookie = 'testCookie2=value2; path=/';
-      document.cookie = 'testCookie3=value3; path=/';
-
-      // Verify cookies are set
-      expect(document.cookie).toContain('testCookie1');
-      expect(document.cookie).toContain('testCookie2');
-      expect(document.cookie).toContain('testCookie3');
-
-      // Clear cookies
-      clearCookies();
-
-      // Note: In test environment, we can't actually verify cookies are cleared
-      // because document.cookie behavior is limited in jsdom
-      // We can only test that the function runs without errors
-      expect(() => clearCookies()).not.toThrow();
-    });
-
-    it('should handle empty cookies gracefully', () => {
-      // Ensure no cookies exist
-      expect(document.cookie).toBe('');
-
-      // Should not throw error
-      expect(() => clearCookies()).not.toThrow();
-    });
-
-    it('should handle cookies with spaces', () => {
-      // Set cookies with various formats
-      document.cookie = ' testCookie1 = value1 ; path=/';
-      document.cookie = '  testCookie2=value2; path=/';
-
-      // Should not throw error
-      expect(() => clearCookies()).not.toThrow();
-    });
-
-    it('should handle cookies with special characters in names', () => {
-      // Set cookies with special characters (that are valid)
-      document.cookie = 'test_cookie-1=value1; path=/';
-      document.cookie = 'test.cookie.2=value2; path=/';
-
-      // Should not throw error
-      expect(() => clearCookies()).not.toThrow();
-    });
-  });
-
   describe('generateRandomColor', () => {
     it('should return custom colors for specific names', () => {
       expect(generateRandomColor('bitcoin')).toBe('#FF9900');
@@ -619,7 +458,7 @@ describe('Utils', () => {
   describe('truncateString', () => {
     it('should truncate strings longer than maxLength', () => {
       expect(truncateString('VeryLongUserName', 10)).toBe('VeryLongUs...');
-      expect(truncateString('Miguel Medeiros', 10)).toBe('Miguel Med...');
+      expect(truncateString('Jane Doe Example', 10)).toBe('Jane Doe E...');
     });
 
     it('should not truncate strings shorter than maxLength', () => {
@@ -706,120 +545,6 @@ describe('Utils', () => {
 
     it('should handle mixed alphanumeric strings', () => {
       expect(truncateString('User123Name456', 8)).toBe('User123N...');
-    });
-  });
-
-  describe('minutesAgo', () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
-    it('should return timestamp for minutes ago', () => {
-      const now = Date.now();
-      vi.setSystemTime(now);
-
-      const result = minutesAgo(5);
-      const expected = now - 5 * 60 * 1000;
-
-      expect(result).toBe(expected);
-    });
-
-    it('should handle zero minutes', () => {
-      const now = Date.now();
-      vi.setSystemTime(now);
-
-      const result = minutesAgo(0);
-      expect(result).toBe(now);
-    });
-
-    it('should handle large number of minutes', () => {
-      const now = Date.now();
-      vi.setSystemTime(now);
-
-      const result = minutesAgo(1440); // 24 hours
-      const expected = now - 1440 * 60 * 1000;
-
-      expect(result).toBe(expected);
-    });
-  });
-
-  describe('hoursAgo', () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
-    it('should return timestamp for hours ago', () => {
-      const now = Date.now();
-      vi.setSystemTime(now);
-
-      const result = hoursAgo(3);
-      const expected = now - 3 * 60 * 60 * 1000;
-
-      expect(result).toBe(expected);
-    });
-
-    it('should handle zero hours', () => {
-      const now = Date.now();
-      vi.setSystemTime(now);
-
-      const result = hoursAgo(0);
-      expect(result).toBe(now);
-    });
-
-    it('should handle large number of hours', () => {
-      const now = Date.now();
-      vi.setSystemTime(now);
-
-      const result = hoursAgo(48); // 2 days
-      const expected = now - 48 * 60 * 60 * 1000;
-
-      expect(result).toBe(expected);
-    });
-  });
-
-  describe('daysAgo', () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
-    it('should return timestamp for days ago', () => {
-      const now = Date.now();
-      vi.setSystemTime(now);
-
-      const result = daysAgo(7);
-      const expected = now - 7 * 24 * 60 * 60 * 1000;
-
-      expect(result).toBe(expected);
-    });
-
-    it('should handle zero days', () => {
-      const now = Date.now();
-      vi.setSystemTime(now);
-
-      const result = daysAgo(0);
-      expect(result).toBe(now);
-    });
-
-    it('should handle large number of days', () => {
-      const now = Date.now();
-      vi.setSystemTime(now);
-
-      const result = daysAgo(30);
-      const expected = now - 30 * 24 * 60 * 60 * 1000;
-
-      expect(result).toBe(expected);
     });
   });
 

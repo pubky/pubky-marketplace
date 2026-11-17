@@ -152,22 +152,4 @@ describe('MentionPopover', () => {
       getBoundingClientRect.mockRestore();
     }
   });
-
-  describe('MentionPopover - Snapshots', () => {
-    // The popover renders in a portal, so it lives in document.body, not the render container.
-    it('matches snapshot with users', () => {
-      render(<MentionPopover {...defaultProps} />);
-      expect(screen.getByTestId('mention-popover')).toMatchSnapshot();
-    });
-
-    it('matches snapshot with selected index', () => {
-      render(<MentionPopover {...defaultProps} selectedIndex={0} />);
-      expect(screen.getByTestId('mention-popover')).toMatchSnapshot();
-    });
-
-    it('matches snapshot with empty users', () => {
-      const { container } = render(<MentionPopover {...defaultProps} users={[]} />);
-      expect(container.firstChild).toMatchSnapshot();
-    });
-  });
 });

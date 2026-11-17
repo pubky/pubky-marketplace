@@ -84,13 +84,13 @@ export function MarketplacePickupRevealDialog({ order }: { order: MarketplaceOrd
                       </Typography>
                     )}
                     {line.updatedSincePayment && (
-                      <Typography as="p" role="status" className="text-sm text-amber-300">
+                      <Typography as="p" role="status" className="text-sm text-warning-foreground">
                         Seller changed the pickup terms since you paid — you&apos;re seeing the terms pinned at your
                         payment, and you can cancel this order instantly from the order actions.
                       </Typography>
                     )}
                     {line.withdrawnBySeller && (
-                      <Typography as="p" role="status" className="text-sm text-amber-300">
+                      <Typography as="p" role="status" className="text-sm text-warning-foreground">
                         Details withdrawn by seller — you&apos;re seeing the terms pinned at your payment, and you can
                         cancel this order instantly from the order actions.
                       </Typography>

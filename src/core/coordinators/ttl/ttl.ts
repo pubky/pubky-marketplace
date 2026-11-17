@@ -5,9 +5,11 @@ import {
   getTtlUserMaxBatchSize,
   getTtlUserMs,
 } from '@/config/sync';
+import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import { TtlController } from '@/controllers/ttl/ttl';
 import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
+import { accountLeft, isSignedIn, signInOrProfileChanged } from '@/stores/auth/auth.change';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import type {
   EntityOps,
@@ -237,20 +239,25 @@ export class TtlCoordinator {
   private setupListeners(): void {
     // Listen to auth store changes
     this.authStoreUnsubscribe = useAuthStore.subscribe((state, prevState) => {
-      const isAuthenticated = state.selectIsAuthenticated();
-      const wasAuthenticated = prevState.selectIsAuthenticated();
-
-      if (isAuthenticated !== wasAuthenticated) {
-        Logger.debug('TtlCoordinator: Auth state changed', { isAuthenticated });
-
-        if (!isAuthenticated) {
-          // User logged out - stop and reset
-          this.stopTicking();
-          this.reset();
-        } else {
-          // User logged in - start if coordinator is started
-          this.evaluateAndStartTicking();
-        }
+      // Subscriptions belong to the account, not the session: a sign-out or an
+      // account switch clears them. A transient session drop of the same account
+      // (a cross-tab renewal, a new host snapshot) only pauses ticking, because
+      // the mounted cards never subscribe again.
+      const switched = accountLeft(state, prevState);
+      if (switched) {
+        Logger.debug('TtlCoordinator: Account changed', { currentUserPubky: state.currentUserPubky });
+        this.stopTicking();
+        this.reset();
+      }
+      // An account switch in one update leaves the session non-null on both
+      // sides; evaluate then too, so the new account's cards tick.
+      if (!switched && !signInOrProfileChanged(state, prevState)) return;
+      const isAuthenticated = isSignedIn(state);
+      Logger.debug('TtlCoordinator: Auth state changed', { isAuthenticated, hasProfile: state.hasProfile });
+      if (isAuthenticated) {
+        this.evaluateAndStartTicking();
+      } else {
+        this.stopTicking();
       }
     });
 
@@ -496,7 +503,8 @@ export class TtlCoordinator {
       maxBatchSize: this.config.postMaxBatchSize,
       requiresViewerId: true,
       findStaleByIds: (ids) => TtlController.findStalePostsByIds({ postIds: ids, ttlMs: this.config.postTtlMs }),
-      forceRefresh: (ids, viewerId) => TtlController.forceRefreshPostsByIds({ postIds: ids, viewerId: viewerId! }),
+      forceRefresh: (ids, viewerId, signal) =>
+        TtlController.forceRefreshPostsByIds({ postIds: ids, viewerId: viewerId!, signal }),
     };
   }
 
@@ -512,8 +520,8 @@ export class TtlCoordinator {
       maxBatchSize: this.config.userMaxBatchSize,
       requiresViewerId: false,
       findStaleByIds: (ids) => TtlController.findStaleUsersByIds({ userIds: ids, ttlMs: this.config.userTtlMs }),
-      forceRefresh: (ids, viewerId) =>
-        TtlController.forceRefreshUsersByIds({ userIds: ids, viewerId: viewerId ?? undefined }),
+      forceRefresh: (ids, viewerId, signal) =>
+        TtlController.forceRefreshUsersByIds({ userIds: ids, viewerId: viewerId ?? undefined, signal }),
     };
   }
 
@@ -573,7 +581,11 @@ export class TtlCoordinator {
   /**
    * Refresh stale entities in batches
    */
-  private async refreshStaleEntities<T extends string>(ops: EntityOps<T>, viewerId: Pubky | null): Promise<void> {
+  private async refreshStaleEntities<T extends string>(
+    ops: EntityOps<T>,
+    viewerId: Pubky | null,
+    signal: AbortSignal,
+  ): Promise<void> {
     if (ops.batchQueue.size === 0) return;
 
     // viewerId may be required for certain entity types
@@ -592,7 +604,9 @@ export class TtlCoordinator {
       });
 
       // Fetch and persist entities
-      await ops.forceRefresh(ids, viewerId);
+      await ops.forceRefresh(ids, viewerId, signal);
+      // A refresh can return early once its scope ends, so it may have saved nothing.
+      signal.throwIfAborted();
 
       Logger.debug(`TtlCoordinator: Successfully refreshed ${ops.entityName}s`, { count: ids.length });
 
@@ -601,6 +615,7 @@ export class TtlCoordinator {
         ops.batchQueue.delete(id);
       }
     } catch (error) {
+      if (signal.aborted) return;
       // FAILURE: Leave in queue for retry on next tick
       Logger.warn(`TtlCoordinator: Error refreshing stale ${ops.entityName}s`, { ids, error });
     }
@@ -623,6 +638,7 @@ export class TtlCoordinator {
     }
 
     const viewerId = authState.currentUserPubky;
+    const signal = captureAuthScope();
     const postOps = this.getPostOps();
     const userOps = this.getUserOps();
 
@@ -642,6 +658,9 @@ export class TtlCoordinator {
     });
 
     // Fire batch refreshes (parallel)
-    await Promise.all([this.refreshStaleEntities(postOps, viewerId), this.refreshStaleEntities(userOps, viewerId)]);
+    await Promise.all([
+      this.refreshStaleEntities(postOps, viewerId, signal),
+      this.refreshStaleEntities(userOps, viewerId, signal),
+    ]);
   }
 }

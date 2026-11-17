@@ -28,14 +28,13 @@ describe('useKeyboardOffset', () => {
     });
   });
 
-  it('returns isKeyboardVisible as false and keyboardOffset as 0 when keyboard is not visible', () => {
+  it('reports when the keyboard is hidden', () => {
     const { result } = renderHook(() => useKeyboardOffset());
 
     expect(result.current.isKeyboardVisible).toBe(false);
-    expect(result.current.keyboardOffset).toBe(0);
   });
 
-  it('returns the keyboard height when keyboard is visible', () => {
+  it('reports when the keyboard is visible', () => {
     mockUseKeyboardViewport.mockReturnValue({
       isKeyboardVisible: true,
       keyboardHeight: 300,
@@ -47,10 +46,9 @@ describe('useKeyboardOffset', () => {
     const { result } = renderHook(() => useKeyboardOffset());
 
     expect(result.current.isKeyboardVisible).toBe(true);
-    expect(result.current.keyboardOffset).toBe(300);
   });
 
-  it('applies offsetAdjustment to reduce the calculated offset', () => {
+  it('retains keyboard visibility with offset adjustment', () => {
     mockUseKeyboardViewport.mockReturnValue({
       isKeyboardVisible: true,
       keyboardHeight: 300,
@@ -60,11 +58,10 @@ describe('useKeyboardOffset', () => {
     });
 
     const { result } = renderHook(() => useKeyboardOffset({ offsetAdjustment: 100 }));
-
-    expect(result.current.keyboardOffset).toBe(200);
+    expect(result.current.isKeyboardVisible).toBe(true);
   });
 
-  it('ensures offset never goes below 0 with large adjustments', () => {
+  it('retains keyboard visibility with a large adjustment', () => {
     mockUseKeyboardViewport.mockReturnValue({
       isKeyboardVisible: true,
       keyboardHeight: 300,
@@ -74,7 +71,6 @@ describe('useKeyboardOffset', () => {
     });
 
     const { result } = renderHook(() => useKeyboardOffset({ offsetAdjustment: 400 }));
-
-    expect(result.current.keyboardOffset).toBe(0);
+    expect(result.current.isKeyboardVisible).toBe(true);
   });
 });

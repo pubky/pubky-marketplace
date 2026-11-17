@@ -1,6 +1,6 @@
 # Checkout delivery address
 
-A US buyer types City / Region / Postal code / Country. Region is required only where the postal system needs a subdivision. US and CA use a searchable closed list. US ZIP fills City and State on the device. Street autocomplete stays off until John puts a restricted Places key in runtime config.
+A US buyer types City / Region / Postal code / Country. Region is required only where the postal system needs a subdivision. US and CA use a searchable closed list. US ZIP fills City and State on the device. Street autocomplete stays off until BitcoinErrorLog puts a restricted Places key in runtime config.
 
 ## Why Region was required
 

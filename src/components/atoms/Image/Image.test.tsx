@@ -37,74 +37,30 @@ describe('Image', () => {
   });
 });
 
-describe('Image - Snapshots', () => {
-  it('matches snapshot with required props', () => {
-    const { container } = render(<Image src="/image.jpg" alt="Test image" />);
-    expect(container.firstChild).toMatchSnapshot();
+describe('Image - Rendering', () => {
+  it('applies default dimensions when width and height are not provided', () => {
+    render(<Image src="/image.jpg" alt="Test image" data-testid="img" />);
+    const image = screen.getByTestId('img') as HTMLImageElement;
+    expect(image.getAttribute('width')).toBe('800');
+    expect(image.getAttribute('height')).toBe('600');
   });
 
-  it('matches snapshot with custom className', () => {
-    const { container } = render(<Image src="/image.jpg" alt="Image" className="rounded-full border-2" />);
-    expect(container.firstChild).toMatchSnapshot();
+  it('omits width and height attributes in fill mode', () => {
+    render(<Image src="/image.jpg" alt="Test image" fill data-testid="img" />);
+    const image = screen.getByTestId('img');
+    expect(image).not.toHaveAttribute('width');
+    expect(image).not.toHaveAttribute('height');
   });
 
-  it('matches snapshot with JPG image', () => {
-    const { container } = render(<Image src="/photo.jpg" alt="JPG photo" />);
-    expect(container.firstChild).toMatchSnapshot();
+  it('passes through the loading attribute', () => {
+    render(<Image src="/lazy.jpg" alt="Lazy loaded" loading="lazy" data-testid="img" />);
+    expect(screen.getByTestId('img')).toHaveAttribute('loading', 'lazy');
   });
 
-  it('matches snapshot with PNG image', () => {
-    const { container } = render(<Image src="/graphic.png" alt="PNG graphic" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with SVG image', () => {
-    const { container } = render(<Image src="/icon.svg" alt="SVG icon" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with WebP image', () => {
-    const { container } = render(<Image src="/modern.webp" alt="WebP image" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with width and height attributes', () => {
-    const { container } = render(<Image src="/sized.jpg" alt="Sized image" width={300} height={200} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with loading attribute', () => {
-    const { container } = render(<Image src="/lazy.jpg" alt="Lazy loaded" loading="lazy" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with id prop', () => {
-    const { container } = render(<Image src="/image.jpg" alt="Image" id="hero-image" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with data-testid prop', () => {
-    const { container } = render(<Image src="/image.jpg" alt="Image" data-testid="custom-test-id" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with title attribute', () => {
-    const { container } = render(<Image src="/image.jpg" alt="Image" title="Image tooltip" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with multiple custom attributes', () => {
-    const { container } = render(
-      <Image
-        src="/complex.jpg"
-        alt="Complex image"
-        className="rounded-lg shadow-md"
-        width={400}
-        height={300}
-        loading="lazy"
-        title="A complex image"
-      />,
-    );
-    expect(container.firstChild).toMatchSnapshot();
+  it('passes through id and title attributes', () => {
+    render(<Image src="/image.jpg" alt="Image" id="hero-image" title="Image tooltip" data-testid="img" />);
+    const image = screen.getByTestId('img');
+    expect(image).toHaveAttribute('id', 'hero-image');
+    expect(image).toHaveAttribute('title', 'Image tooltip');
   });
 });

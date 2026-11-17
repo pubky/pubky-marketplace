@@ -19,7 +19,7 @@ export default defineConfig({
       NEXT_PUBLIC_DB_VERSION: '9',
       NEXT_PUBLIC_DEBUG_MODE: 'false',
       PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE: 'transaction-service',
-      PUBKY_RUNTIME_MARKETPLACE_URL: process.env.MARKETPLACE_SERVICE_URL ?? 'https://staging-api.pubky.app',
+      PUBKY_RUNTIME_MARKETPLACE_URL: process.env.MARKETPLACE_SERVICE_URL ?? '',
       PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL: process.env.MARKETPLACE_NEXUS_URL ?? 'https://nexus.staging.pubky.app',
     },
     testTimeout: 900_000,

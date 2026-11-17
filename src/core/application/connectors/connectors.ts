@@ -1,15 +1,21 @@
 import {
+  classifyShopifyAddress,
   type ConnectionHealth,
   connectionHealth,
   type ConnectorAlert,
   type ConnectorCatalogPage,
   type ConnectorCatalogProduct,
+  type ConnectorChangeResolution,
   type ConnectorCheck,
   type ConnectorConnection,
   type ConnectorMapping,
+  type ConnectorProductChange,
   type ConnectorProvider,
   type ConnectorPush,
   connectorRefusalReason,
+  type ConnectorSync,
+  type ConnectorSyncDirection,
+  type ConnectorSyncGroup,
   type ConnectorUnmappedListing,
   isWooAuthorizeUrlFor,
   normalizeShopifyDomain,
@@ -20,6 +26,7 @@ import { isAppError } from '@/libs/error/error';
 import { ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
+import { getRetryAfter } from '@/libs/error/error.utils';
 import {
   type LinkableListing,
   type ListingLinkSuggestion,
@@ -64,6 +71,41 @@ export type StorePushOverview = {
 
 const RECENT_PUSHES_PER_CONNECTION = 50;
 const MAX_CATALOG_PAGES = 100;
+/**
+ * A store answers a catalog page with `provider_rate_limited` when its API
+ * throttle is empty (Shopify's cost bucket refills in seconds). The page is
+ * asked for again after the wait the service names, a few times, so one
+ * throttled page does not abandon a catalog read that is part-way through.
+ */
+const CATALOG_RATE_LIMIT_RETRIES = 4;
+const CATALOG_RETRY_MIN_SECONDS = 2;
+const CATALOG_RETRY_MAX_SECONDS = 30;
+const CATALOG_RETRY_DEFAULT_SECONDS = 5;
+
+/** Sleeps `ms`; rejects with the signal's reason as soon as it is aborted, so a closed page stops waiting. */
+function waitUnlessAborted(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function catalogRetryDelayMs(error: unknown): number {
+  const named = isAppError(error) ? getRetryAfter(error) : undefined;
+  const seconds = typeof named === 'number' && Number.isFinite(named) ? named : CATALOG_RETRY_DEFAULT_SECONDS;
+  return Math.min(Math.max(seconds, CATALOG_RETRY_MIN_SECONDS), CATALOG_RETRY_MAX_SECONDS) * 1000;
+}
 
 function invalidInput(operation: string, message: string): never {
   throw Err.validation(ValidationErrorCode.INVALID_INPUT, message, { service: ErrorService.Marketplace, operation });
@@ -149,6 +191,28 @@ export class ConnectorsApplication {
       await MarketplaceConnectorsService.disconnect(actor, started.connection.id).catch(() => undefined);
       throw error;
     }
+  }
+
+  /**
+   * The `*.myshopify.com` shop for what the seller typed. A `*.myshopify.com`
+   * address (or handle, or admin URL) is taken as it is; a store's own domain
+   * is looked up by the service, so `domain` names the address that was
+   * resolved and is `null` when no lookup was needed.
+   */
+  static async resolveShopifyAddress(actor: string, input: string): Promise<{ shop: string; domain: string | null }> {
+    const address = classifyShopifyAddress(input);
+    if (!address) {
+      invalidInput(
+        'resolveShopifyAddress',
+        'Enter your store address, for example your-store.myshopify.com or the domain your store uses.',
+      );
+    }
+    if (address.kind === 'myshopify') return { shop: address.domain, domain: null };
+    const resolved = await MarketplaceConnectorsService.resolveShop(actor, {
+      provider: 'shopify',
+      domain: address.host,
+    });
+    return { shop: resolved.shop, domain: resolved.domain ?? address.host };
   }
 
   /** The draft connection for a store; its `urls` are the ones the merchant pastes into their app. */
@@ -279,9 +343,18 @@ export class ConnectorsApplication {
   static async catalogPage(
     actor: string,
     connectionId: string,
-    options: { page?: string | null; selected?: boolean } = {},
+    options: { page?: string | null; selected?: boolean; signal?: AbortSignal } = {},
   ): Promise<ConnectorCatalogPage> {
-    return await MarketplaceConnectorsService.catalog(actor, connectionId, options);
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await MarketplaceConnectorsService.catalog(actor, connectionId, options);
+      } catch (error) {
+        if (connectorRefusalReason(error) !== 'provider_rate_limited' || attempt >= CATALOG_RATE_LIMIT_RETRIES) {
+          throw error;
+        }
+        await waitUnlessAborted(catalogRetryDelayMs(error), options.signal);
+      }
+    }
   }
 
   /** Every product the seller chose to also publish, all pages, as the store describes it now. */
@@ -289,7 +362,7 @@ export class ConnectorsApplication {
     const products: ConnectorCatalogProduct[] = [];
     let page: string | null = null;
     for (let index = 0; index < MAX_CATALOG_PAGES; index += 1) {
-      const next = await MarketplaceConnectorsService.catalog(actor, connectionId, { page, selected: true });
+      const next = await this.catalogPage(actor, connectionId, { page, selected: true });
       products.push(...next.products.filter((product) => product.selected));
       if (!next.nextPage) return products;
       page = next.nextPage;
@@ -302,7 +375,7 @@ export class ConnectorsApplication {
     const products: ConnectorCatalogProduct[] = [];
     let page: string | null = null;
     for (let index = 0; index < MAX_CATALOG_PAGES; index += 1) {
-      const next = await MarketplaceConnectorsService.catalog(actor, connectionId, { page });
+      const next = await this.catalogPage(actor, connectionId, { page });
       products.push(...next.products);
       if (!next.nextPage) return products;
       page = next.nextPage;
@@ -409,6 +482,40 @@ export class ConnectorsApplication {
 
   static async mappings(actor: string, connectionId: string): Promise<ConnectorMapping[]> {
     return await MarketplaceConnectorsService.mappings(actor, connectionId);
+  }
+
+  static async sync(actor: string, connectionId: string): Promise<ConnectorSync> {
+    return await MarketplaceConnectorsService.sync(actor, connectionId);
+  }
+
+  static async saveSync(
+    actor: string,
+    connectionId: string,
+    groups: Partial<Record<ConnectorSyncGroup, ConnectorSyncDirection>>,
+  ): Promise<ConnectorSync> {
+    return await MarketplaceConnectorsService.putSync(actor, connectionId, groups);
+  }
+
+  static async saveListingSync(
+    actor: string,
+    connectionId: string,
+    listingId: string,
+    groups: Partial<Record<ConnectorSyncGroup, ConnectorSyncDirection | null>>,
+  ): Promise<ConnectorSync> {
+    return await MarketplaceConnectorsService.putListingSync(actor, connectionId, listingId, groups);
+  }
+
+  static async changes(actor: string, connectionId: string): Promise<ConnectorProductChange[]> {
+    return await MarketplaceConnectorsService.changes(actor, connectionId);
+  }
+
+  static async resolveChange(
+    actor: string,
+    connectionId: string,
+    change: Pick<ConnectorProductChange, 'id' | 'proposedHash'>,
+    resolution: ConnectorChangeResolution,
+  ): Promise<void> {
+    await MarketplaceConnectorsService.resolveChange(actor, connectionId, change, resolution);
   }
 
   /**

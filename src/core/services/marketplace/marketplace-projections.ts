@@ -15,6 +15,7 @@ import {
   listingStateSchema,
   orderStateSchema,
   PARTIAL_REFUND_ORDER_STATE,
+  refundUnitSchema,
 } from '@/libs/commerce/transaction-contracts';
 import { refundDestinationFieldsShape } from '@/libs/commerce/usdt-refund';
 import { usdtSettlementFieldsShape } from '@/libs/commerce/usdt-settlement-contract';
@@ -315,6 +316,37 @@ export const marketplaceNotificationReviewReasonSchema = z.enum([
   'seller_response_overdue',
 ]);
 
+/**
+ * The statement of reasons on a `moderation_decision` notification
+ * (pubky/pubky-marketplace-service `docs/moderation-decisions.md`), sent to
+ * the owner of the restricted listing, shop or review only.
+ */
+export const marketplaceModerationDecisionSchema = z
+  .object({
+    id: z.uuid(),
+    restriction: z.enum(['listing_removed', 'shop_suspended', 'review_text_hidden', 'review_excluded']),
+    targetUri: z.string().min(1),
+    territorialScope: z.string().min(1),
+    endsAt: z.iso.datetime({ offset: true }).nullable(),
+    decidedAt: z.iso.datetime({ offset: true }),
+    basis: z.enum(['notice', 'own_initiative']),
+    facts: z.string().min(1),
+    automatedDetection: z.boolean(),
+    automatedDecision: z.boolean(),
+    automatedMeans: z.string().min(1).nullable(),
+    ground: z.enum(['illegal_content', 'terms']),
+    groundReference: z.string().min(1),
+    explanation: z.string().min(1),
+  })
+  // The service describes automated means exactly when they were used; a
+  // statement that says otherwise would misstate how it was decided.
+  .refine(
+    (decision) => (decision.automatedDetection || decision.automatedDecision) === (decision.automatedMeans !== null),
+    { message: 'automatedMeans must be present exactly when automated means were used' },
+  );
+
+export type MarketplaceModerationDecision = z.infer<typeof marketplaceModerationDecisionSchema>;
+
 export const marketplaceNotificationSchema = z
   .object({
     id: z.uuid(),
@@ -342,6 +374,13 @@ export const marketplaceNotificationSchema = z
       'payment_confirmed',
       'bitcoin_manual_review',
       'bitcoin_payment_seen',
+      // Seller-confirmed payment: a USDT transfer arrived, or PayPal reported
+      // a payment, and waits for the seller's confirmation.
+      'usdt_payment_seen',
+      'paypal_payment_seen',
+      // A paid order's instant digital lines were released while email or
+      // message lines are still to come (the buyer's notice).
+      'digital_released',
       'bitcoin_prepare_voided',
       'order_cancelled',
       'order_shipped',
@@ -355,6 +394,10 @@ export const marketplaceNotificationSchema = z
       // receives it, and only for USDT orders.
       'refund_destination_confirmed',
       'review_received',
+      // Double-blind reviews: the counterparty reviewed first; both reviewers
+      // are told when the pair completes or the window ends.
+      'review_waiting',
+      'review_released',
       // Local pickup (Wave 7, §A3/§A6): details edited or cleared on a paid
       // order (buyer-facing), and the seller arming pickup readiness.
       'pickup_details_updated',
@@ -369,6 +412,9 @@ export const marketplaceNotificationSchema = z
       // A verified PayPal `Canceled_Reversal`: the disputed money went back
       // to the seller, and a fully reversed order returned to its prior state.
       'payment_reversal_cancelled',
+      // A moderator restricted the recipient's listing, shop or review; the
+      // statement of reasons rides on `moderationDecision`.
+      'moderation_decision',
     ]),
     aggregateId: z.string(),
     // Optional monetary context (ADR-0019 §8: present only where the
@@ -388,6 +434,10 @@ export const marketplaceNotificationSchema = z
     // `bitcoin_payment_seen`. An unknown reason becomes null rather than
     // failing the row.
     reviewReason: marketplaceNotificationReviewReasonSchema.nullable().optional().catch(null),
+    // Present on `moderation_decision`, null on every other type. A statement
+    // this build cannot read becomes null; the row still renders and points
+    // to the appeal route.
+    moderationDecision: marketplaceModerationDecisionSchema.nullable().optional().catch(null),
   })
   .passthrough();
 
@@ -544,8 +594,6 @@ export const marketplaceFxConversionSchema = z
   })
   .passthrough();
 
-export type MarketplaceFxConversion = z.infer<typeof marketplaceFxConversionSchema>;
-
 const marketplaceDeliveryAddressValueSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
@@ -595,8 +643,6 @@ export const marketplaceDeliveryAddressSchema = z.preprocess(
     .optional()
     .catch({ format: 'unsupported' }),
 );
-
-export type MarketplaceDeliveryAddress = z.infer<typeof marketplaceDeliveryAddressSchema>;
 
 export const marketplaceOrderProjectionSchema = z
   .object({
@@ -664,6 +710,12 @@ export const marketplaceOrderProjectionSchema = z
     // null when the seller left one unset (the service default applies).
     deliveryAssumeDays: z.number().int().positive().nullish(),
     autoCompleteDays: z.number().int().positive().nullish(),
+    // The listing's return policy frozen on the order when its payment
+    // started; null when none was captured (the service then takes any return).
+    returnPolicy: z
+      .object({ acceptsReturns: z.boolean(), returnWindowDays: z.number().int().positive().nullable() })
+      .nullish()
+      .catch(null),
     nextActor: z
       .enum(['buyer', 'seller', 'none'])
       .nullable()
@@ -693,15 +745,29 @@ export const marketplaceOrderProjectionSchema = z
         state: z.enum(['requested', 'approved', 'received', 'refunded']),
         reason: z.string(),
         requestedAmountMinor: z.number().int().positive(),
+        // Where `return.cancel` sends the order back to; absent on older returns.
+        requestedFrom: z.enum(['delivered', 'completed']).optional().catch(undefined),
         requestedAt: z.string(),
         updatedAt: z.string(),
       })
       .nullable()
       .optional(),
     externalRefund: z
-      .object({ amountMinor: z.number().int().positive(), transactionId: z.string(), recordedAt: z.string() })
+      .object({
+        amountMinor: z.number().int().positive(),
+        transactionId: z.string(),
+        recordedAt: z.string(),
+        // USDT millionths Arbitrum shows reaching the refund address, when the service checked it.
+        receivedUnits: z.number().int().nonnegative().nullish().catch(null),
+        // The unit `amountMinor` is in; absent on a record from a service that names none.
+        amountUnit: refundUnitSchema.optional().catch(undefined),
+      })
       .nullable()
       .optional(),
+    // Every participant's: whether `externalRefund` reaches what was paid, in
+    // its unit. Null when it cannot be read against that; absent from a
+    // service that predates it.
+    externalRefundFull: z.boolean().nullish().catch(undefined),
     // PayPal refund notifications (service 94ecb0d). Display-only flags: a
     // malformed value drops the line for that order, never the order.
     paymentReversedAt: z.string().nullish().catch(null),
@@ -714,9 +780,18 @@ export const marketplaceOrderProjectionSchema = z
           id: z.uuid(),
           reviewerPubky: commercePubkySchema,
           subjectPubky: commercePubkySchema,
+          /** The listing a buyer's item review rates; absent on orders read from a service without per-item reviews. */
+          listingAggregateId: z.string().optional(),
           rating: z.number().int().min(1).max(5),
           text: z.string(),
+          /** The buyer's per-order seller ratings, on every item review of the order; null when unrated. */
+          shipping: z.number().int().min(1).max(5).nullish(),
+          communication: z.number().int().min(1).max(5).nullish(),
           createdAt: z.string(),
+          updatedAt: z.string().optional(),
+          // Only the author's own view carries it, and only when set (`review.withdraw`).
+          // Absent on an older service and on every other viewer's rows: not removed.
+          publicRemoved: z.boolean().optional().catch(undefined),
         }),
       )
       .optional(),
@@ -756,6 +831,17 @@ export const marketplaceOrderProjectionSchema = z
     ),
     paymentReportedAt: z.string().nullable().optional(),
     fiatTransactionRef: z.string().nullable().optional(),
+    // Who marks the order paid, frozen at its payment start: `seller` when
+    // only the seller's confirmation pays it, `automatic` when a matching
+    // Paykit report or PayPal notification does. Absent on older services.
+    paymentConfirmation: z.enum(['seller', 'automatic']).nullish().catch(null),
+    // When PayPal reported a matching payment the seller has yet to confirm.
+    gatewayPaymentSeenAt: z.string().nullish().catch(null),
+    // Who releases a paid digital order's instant lines, frozen at payment:
+    // `seller` while they wait for the seller's release, `payment` when the
+    // payment released them. Absent on older services and older orders.
+    digitalRelease: z.enum(['seller', 'payment']).nullish().catch(null),
+    digitalReleasedAt: z.string().nullish().catch(null),
     // FX-quoted Bitcoin orders carry the service's exact settlement amount.
     // Older orders and non-FX orders may omit this projection entirely.
     bitcoinQuote: marketplaceBitcoinQuoteSchema.nullable().optional(),
@@ -780,6 +866,18 @@ export const marketplaceOrderProjectionSchema = z
     paykitSellerConfirmationEnteredAt: z.string().nullable().optional(),
     paykitSellerConfirmationDeadline: z.string().nullable().optional(),
     paykitTotalSats: z.number().int().nonnegative().nullable().optional(),
+    // Seller-only: what a refund is entered in and capped at (the sats a
+    // Bitcoin order received, the USDT paid, or the order total). Absent on
+    // buyer views and from a service that predates it; a malformed value
+    // reads as absent.
+    refundCap: z
+      .object({
+        amountMinor: z.number().int().nonnegative(),
+        unit: refundUnitSchema,
+        exponent: z.number().int().nonnegative(),
+      })
+      .nullish()
+      .catch(undefined),
     // The activated Paykit request's deadline: the wallet's own "pay by".
     // Null until the request is activated (an upstream auction bind starts
     // from the reservation-based hold). Tolerant: a malformed value reads as
@@ -809,21 +907,43 @@ export const marketplaceOrderProjectionSchema = z
   })
   .passthrough();
 
-export const marketplaceOrderSchema = z.preprocess((input) => {
+/**
+ * While a double-blind window runs, the counterparty's review reaches an
+ * order view only as `{ role, submitted: true }`: a fact, not a review. It
+ * has no reviewer, rating or text, so it is dropped here and nothing
+ * downstream can render, count or match it as a review.
+ */
+function withoutSubmittedReviewStubs(record: Record<string, unknown>): Record<string, unknown> {
+  if (!Array.isArray(record.reviews)) return record;
+  const readable = record.reviews.filter(
+    (entry) =>
+      !(
+        entry !== null &&
+        typeof entry === 'object' &&
+        (entry as Record<string, unknown>).submitted === true &&
+        !('rating' in entry)
+      ),
+  );
+  return readable.length === record.reviews.length ? record : { ...record, reviews: readable };
+}
+
+function normalizeOrderInput(input: unknown): unknown {
   if (!input || typeof input !== 'object') return input;
-  const record = input as Record<string, unknown>;
+  const record = withoutSubmittedReviewStubs(input as Record<string, unknown>);
   const bitcoinQuote = record.bitcoinQuote;
   if (
     bitcoinQuote === undefined ||
     bitcoinQuote === null ||
     marketplaceBitcoinQuoteSchema.safeParse(bitcoinQuote).success
   ) {
-    return input;
+    return record;
   }
   const withoutBitcoinQuote = { ...record };
   delete withoutBitcoinQuote.bitcoinQuote;
   return withoutBitcoinQuote;
-}, marketplaceOrderProjectionSchema);
+}
+
+export const marketplaceOrderSchema = z.preprocess(normalizeOrderInput, marketplaceOrderProjectionSchema);
 
 /**
  * Participant-list orders deliberately exclude the seller-only delivery
@@ -835,21 +955,10 @@ export const marketplaceParticipantOrderProjectionSchema = marketplaceOrderProje
   .omit({ deliveryAddress: true })
   .strip();
 
-export const marketplaceParticipantOrderSchema = z.preprocess((input) => {
-  if (!input || typeof input !== 'object') return input;
-  const record = input as Record<string, unknown>;
-  const bitcoinQuote = record.bitcoinQuote;
-  if (
-    bitcoinQuote === undefined ||
-    bitcoinQuote === null ||
-    marketplaceBitcoinQuoteSchema.safeParse(bitcoinQuote).success
-  ) {
-    return input;
-  }
-  const withoutBitcoinQuote = { ...record };
-  delete withoutBitcoinQuote.bitcoinQuote;
-  return withoutBitcoinQuote;
-}, marketplaceParticipantOrderProjectionSchema);
+export const marketplaceParticipantOrderSchema = z.preprocess(
+  normalizeOrderInput,
+  marketplaceParticipantOrderProjectionSchema,
+);
 
 /**
  * The PUBLIC drop projection (`GET /v0/drops/{seller}/{dropId}`, ADR 0026):

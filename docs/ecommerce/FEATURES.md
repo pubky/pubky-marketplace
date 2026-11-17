@@ -1,6 +1,6 @@
 # Marketplace Feature Inventory
 
-Every feature in the Pubky marketplace, organized hierarchically. Honesty
+Every feature in Pubky Market, organized hierarchically. Honesty
 labels follow [`status.md`](status.md) (the authoritative real-vs-simulated
 ledger with live-proof records): anything unlabeled is built, tested, and
 deployed to the staging stack; **experiment-grade** and **sandbox-only**
@@ -34,7 +34,7 @@ mean exactly that.
   - Title, description, condition (with optional details), adult-content flag
   - Category picker with per-category attribute fields
   - Drafts autosave locally; legacy-draft migration
-  - Namespaced as **Seller studio**; mobile sheet **My marketplace**
+  - Namespaced as **Seller studio**; mobile sheet **My market**
   - Duplicate listing creates a new local draft (photos not copied; auctions
     copied as fixed price)
 - **Pricing**
@@ -52,12 +52,19 @@ mean exactly that.
   - Return policy (window or no-returns)
 - **Listing management**
   - Edit, unlist/relist (fixed-price), delete, copy public link
+  - Delete is reachable from the owner panel on the listing page, each row and
+    the bulk selection in the seller studio table, and the edit page. All
+    four open one confirmation that warns about open orders and refuses an
+    auction that has bids
   - Dashboard **Export CSV** emits the canonical import CSV; an exported file
     imports back with zero diffs and edits become planned updates (see
     [`import-export.md`](import-export.md))
   - Owner panel self-heals transaction-service registration (re-runs on
     session connect)
   - Listing thumbnails in seller lists
+  - Seller studio table: filters (state, format, checkout registration, store
+    source, stock), title/SKU search, sorts, 50-row pages, filter and sort kept
+    in the URL, select-all-matching, and bulk Register for checkout
 - **Drop Studio**
   - Compose FCFS drops over existing listings at `/marketplace/sell/drops`:
     schedule, total and per-buyer caps, stock-display policy
@@ -320,7 +327,7 @@ Ring, Passport).
 - **Transaction service** (Rust): event-sourced PostgreSQL with outbox,
   registration drain, auction close, reservation expiry, and drop
   open/close workers; server-time drop gating with gapless edition
-  assignment; health, readiness, metrics; Docker + Railway deploy
+  assignment; health, readiness, metrics; Docker deploy
 - **Marketplace Nexus** (fork): listing/shop/review/tag/drop indexing
   (`/v0/stream/drops` + per-drop projections), reputation aggregation,
   auction-terms and review backfill migrations, replay runbooks, poll
@@ -332,7 +339,7 @@ Ring, Passport).
 - **Fiat verifier gateway** (Rust): PayPal bridging to Locks. Card
   verification code stays in the service and is not offered in the shop.
   Fail-closed configuration, live-mode guards
-- **Payment rails**: per-service Dockerfiles and Railway entrypoints for
+- **Payment rails**: per-service Dockerfiles and entrypoints for
   bitcoind, Fulcrum, Lock Server, Paykit Server; verification driver
 - **Testing discipline**: unit suites, visual regression (timezone-frozen
   harness), contract drift tests against the canonical service contract,

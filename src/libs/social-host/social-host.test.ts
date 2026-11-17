@@ -53,9 +53,9 @@ describe('parseSocialHost', () => {
       /not this Shop/,
     );
     expect(() =>
-      parseSocialHost('https://pubky-marketplace-staging.vercel.app', 'production', [
+      parseSocialHost('https://shop-staging-example.vercel.app', 'production', [
         'https://shop.pubky.app',
-        'https://pubky-marketplace-staging.vercel.app',
+        'https://shop-staging-example.vercel.app',
       ]),
     ).toThrow(/redirect to itself/);
   });
@@ -120,13 +120,13 @@ describe('resolveShopOrigins', () => {
       resolveShopOrigins({
         PUBKY_RUNTIME_DEFAULT_URL: 'https://shop.pubky.app/marketplace',
         VERCEL_PROJECT_PRODUCTION_URL: 'shop.pubky.app',
-        VERCEL_BRANCH_URL: 'pubky-marketplace-git-main.vercel.app',
-        VERCEL_URL: 'pubky-marketplace-abc123.vercel.app',
+        VERCEL_BRANCH_URL: 'shop-example-git-main.vercel.app',
+        VERCEL_URL: 'shop-example-abc123.vercel.app',
       }),
     ).toEqual([
       'https://shop.pubky.app',
-      'https://pubky-marketplace-git-main.vercel.app',
-      'https://pubky-marketplace-abc123.vercel.app',
+      'https://shop-example-git-main.vercel.app',
+      'https://shop-example-abc123.vercel.app',
     ]);
   });
 

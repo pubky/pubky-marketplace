@@ -1,0 +1,1 @@
+Reviews show small "Refunded" and "Returned" notes with the date when the attestor that vouched for the purchase recorded that outcome, and the Shop narrows how long it trusts an attestor key when the attestor's own published profile says the key was retired or compromised. The notes are informational and never change a rating, a count or the order of reviews.

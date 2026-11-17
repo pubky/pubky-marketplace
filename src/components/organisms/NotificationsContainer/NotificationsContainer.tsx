@@ -44,6 +44,9 @@ const MARKETPLACE_TAB_NOTIFICATION_TYPES = {
   payment_confirmed: true,
   bitcoin_manual_review: true,
   bitcoin_payment_seen: true,
+  usdt_payment_seen: true,
+  paypal_payment_seen: true,
+  digital_released: true,
   bitcoin_prepare_voided: true,
   order_cancelled: true,
   order_cancelled_terms_change: true,
@@ -56,12 +59,15 @@ const MARKETPLACE_TAB_NOTIFICATION_TYPES = {
   refund_recorded: true,
   refund_destination_confirmed: true,
   review_received: true,
+  review_waiting: true,
+  review_released: true,
   pickup_details_updated: true,
   pickup_details_cleared: true,
   pickup_ready: true,
   payment_refund_required: true,
   drop_sold_out: true,
   payment_reversal_cancelled: true,
+  moderation_decision: true,
 } as const satisfies Record<MarketplaceNotification['type'], true>;
 
 const SOCIAL_TAB_NOTIFICATION_TYPES = {
@@ -205,7 +211,7 @@ export function NotificationsContainer() {
       </Heading>
       {unrecognizedMarketplaceCount > 0 && (
         <Container role="status" overrideDefaults={true} className="rounded-md border border-amber-500/40 p-4 text-sm">
-          {unrecognizedMarketplaceCount} unrecognized marketplace event
+          {unrecognizedMarketplaceCount} unrecognized market event
           {unrecognizedMarketplaceCount === 1 ? '' : 's'} — history may be incomplete.
         </Container>
       )}

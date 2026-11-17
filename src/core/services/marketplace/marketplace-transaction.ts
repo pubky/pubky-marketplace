@@ -5,6 +5,8 @@ import {
   marketplaceEditionAttestationSchema,
   type MarketplaceReceiptAttestation,
   marketplaceReceiptAttestationSchema,
+  type MarketplaceReviewAttestationPending,
+  readReviewAttestationPending,
 } from '@/libs/commerce/attestation';
 import {
   classifyDigitalReadRefusal,
@@ -151,17 +153,20 @@ const TRANSACTION_SERVICE_COMMAND_KINDS: ReadonlySet<MarketplaceCommand['kind']>
   'digital_delivery.clear',
   'order.set_delivery_email',
   'fulfillment.deliver_digital',
+  'fulfillment.release_digital',
   'fulfillment.mark_ready',
   'fulfillment.confirm_pickup',
   'order.cancel_request',
   'order.cancel_approve',
   'return.request',
   'return.approve',
+  'return.cancel',
   'return.receive',
   'refund.record_external',
   'refund.confirm_destination',
   'review.create',
   'review.update',
+  'review.withdraw',
 ] satisfies MarketplaceCommand['kind'][]);
 
 /** A hung public config read must end in Checkout's retryable failure state, not an endless skeleton. */
@@ -364,8 +369,11 @@ export class MarketplaceTransactionService {
    * sub-objects. `receipt_id` stays null until payment confirmation issues
    * the durable receipt.
    */
-  static async getOrders(actor: string): Promise<MarketplaceParticipantOrder[]> {
-    const raw = await this.readProjection('getOrders', actor, '/v1/orders');
+  static async getOrders(
+    actor: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<MarketplaceParticipantOrder[]> {
+    const raw = await this.readProjection('getOrders', actor, '/v1/orders', { signal: options.signal });
     return this.parseProjection(
       'getOrders',
       z.object({ orders: z.array(marketplaceParticipantOrderSchema) }),
@@ -403,10 +411,15 @@ export class MarketplaceTransactionService {
   }
 
   /** `GET /v1/orders/{id}`: participant-scoped order read; foreign orders are 404. */
-  static async getOrder(actor: string, orderId: string): Promise<MarketplaceOrder | null> {
+  static async getOrder(
+    actor: string,
+    orderId: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<MarketplaceOrder | null> {
     const raw = await this.readProjection('getOrder', actor, `/v1/orders/${encodeURIComponent(orderId)}`, {
       nullOnNotFound: true,
       noStore: true,
+      signal: options.signal,
     });
     if (raw === null) return null;
     return this.parseProjection('getOrder', marketplaceOrderSchema, raw, 'Marketplace returned an invalid order.');
@@ -788,9 +801,13 @@ export class MarketplaceTransactionService {
    * purchase attestation for the order — idempotent re-fetch for
    * re-publication (issuance is deterministic per order+reviewer). Null when
    * the caller has not reviewed the order or the deployment issues no
-   * attestations.
+   * attestations. While a double-blind window withholds it, the answer is
+   * the `{ status: "pending", releaseAt }` the route sends.
    */
-  static async getReviewAttestation(actor: string, orderId: string): Promise<unknown | null> {
+  static async getReviewAttestation(
+    actor: string,
+    orderId: string,
+  ): Promise<unknown | MarketplaceReviewAttestationPending | null> {
     const raw = await this.readProjection(
       'getReviewAttestation',
       actor,
@@ -798,12 +815,46 @@ export class MarketplaceTransactionService {
       { nullOnNotFound: true },
     );
     if (raw === null) return null;
+    const pending = readReviewAttestationPending(raw);
+    if (pending !== null) return pending;
     return this.parseProjection(
       'getReviewAttestation',
       z.object({ attestation: z.object({ jws: z.string().min(32) }).passthrough() }),
       raw,
       'Marketplace returned an invalid review attestation.',
     ).attestation;
+  }
+
+  /**
+   * `GET /v1/orders/{id}/review-attestations`: every purchase attestation
+   * the caller was issued for the order, one per reviewed listing in line
+   * order and all sharing the order's `order_ref`. Idempotent re-fetch for
+   * re-publication of any item record. Empty when the caller has reviewed
+   * nothing or the deployment issues no attestations; null when the order is
+   * unknown or foreign. While a double-blind window withholds them, the
+   * answer is the `{ status: "pending", releaseAt }` the route sends.
+   */
+  static async getReviewAttestations(
+    actor: string,
+    orderId: string,
+  ): Promise<unknown[] | MarketplaceReviewAttestationPending | null> {
+    const raw = await this.readProjection(
+      'getReviewAttestations',
+      actor,
+      `/v1/orders/${encodeURIComponent(orderId)}/review-attestations`,
+      { nullOnNotFound: true },
+    );
+    if (raw === null) return null;
+    const pending = readReviewAttestationPending(raw);
+    if (pending !== null) return pending;
+    return this.parseProjection(
+      'getReviewAttestations',
+      z.object({
+        attestations: z.array(z.object({ listingId: z.string().min(1), jws: z.string().min(32) }).passthrough()),
+      }),
+      raw,
+      'Marketplace returned invalid review attestations.',
+    ).attestations;
   }
 
   /**
@@ -1192,13 +1243,21 @@ export class MarketplaceTransactionService {
     return this.parseOrderEnvelope('markFiatPaid', raw);
   }
 
-  /** `POST /v0/orders/{id}/fiat/confirm-received` — the seller's confirmation pays a PayPal order. */
-  static async confirmFiatReceived(actor: string, orderId: string): Promise<MarketplaceOrder> {
+  /**
+   * `POST /v0/orders/{id}/fiat/confirm-received` — the seller's confirmation pays a PayPal order.
+   * `releaseDigital` also releases its instant digital lines when they wait for the seller.
+   */
+  static async confirmFiatReceived(
+    actor: string,
+    orderId: string,
+    releaseDigital = false,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<MarketplaceOrder> {
     const raw = await this.paymentMethodRequest(
       'confirmFiatReceived',
       actor,
       `/v0/orders/${encodeURIComponent(orderId)}/fiat/confirm-received`,
-      { method: 'POST', body: {} },
+      { method: 'POST', body: releaseDigital ? { releaseDigital: true } : {}, signal: options.signal },
     );
     return this.parseOrderEnvelope('confirmFiatReceived', raw);
   }
@@ -1207,12 +1266,18 @@ export class MarketplaceTransactionService {
     actor: string,
     orderId: string,
     reason?: string,
+    releaseDigital = false,
+    options: { signal?: AbortSignal } = {},
   ): Promise<{ order: MarketplaceOrder | null; confirmation: z.infer<typeof sellerPaymentConfirmationSchema> }> {
     const raw = await this.paymentMethodRequest(
       'confirmBitcoinPayment',
       actor,
       `/v0/orders/${encodeURIComponent(orderId)}/confirm-bitcoin-payment`,
-      { method: 'POST', body: reason ? { reason } : {} },
+      {
+        method: 'POST',
+        body: { ...(reason ? { reason } : {}), ...(releaseDigital ? { releaseDigital: true } : {}) },
+        signal: options.signal,
+      },
     );
     const parsed = this.parseProjection(
       'confirmBitcoinPayment',
@@ -1265,6 +1330,7 @@ export class MarketplaceTransactionService {
       headers?: Record<string, string>;
       /** The rail a bind chose, so a refusal reads in that rail's copy. */
       boundPaymentMethod?: PaymentMethodKind;
+      signal?: AbortSignal;
     },
   ): Promise<unknown> {
     this.assertTransactionServiceMode(operation);
@@ -1282,6 +1348,7 @@ export class MarketplaceTransactionService {
           ),
         },
         body: JSON.stringify(toSnakeCaseWire(request.body)),
+        ...(request.signal ? { signal: request.signal } : {}),
       },
       ErrorService.Marketplace,
       operation,

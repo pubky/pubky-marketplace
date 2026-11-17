@@ -48,7 +48,6 @@ export function useCollectionsNavDiscovery() {
   };
 
   return {
-    showCollectionsNew,
     markCollectionsNavSeen,
   };
 }

@@ -27,9 +27,6 @@ const mockHomeStore = vi.hoisted(() => {
     setContent: (content: string) => {
       state.content = content;
     },
-    setProfileTags: (profileTags: string[]) => {
-      state.profileTags = profileTags;
-    },
     setTaggedAsActive: (taggedAsActive: boolean) => {
       state.taggedAsActive = taggedAsActive;
     },
@@ -256,9 +253,8 @@ describe('useStreamIdFromFilters', () => {
 
   it('should build a depth-2 wot_domain stream when Tagged as is active', () => {
     const { result: setTaggedAsActive } = renderHook(() => useHomeStore((state) => state.setTaggedAsActive));
-    const { result: setProfileTags } = renderHook(() => useHomeStore((state) => state.setProfileTags));
 
-    setProfileTags.current(['dev', 'bitcoin']);
+    mockHomeStore.state.profileTags = ['dev', 'bitcoin'];
     setTaggedAsActive.current(true);
 
     const { result } = renderHook(() => useStreamIdFromFilters());
@@ -269,9 +265,8 @@ describe('useStreamIdFromFilters', () => {
   it('should use the same Tagged-as stream regardless of the parked base reach', () => {
     const { result: setReach } = renderHook(() => useHomeStore((state) => state.setReach));
     const { result: setTaggedAsActive } = renderHook(() => useHomeStore((state) => state.setTaggedAsActive));
-    const { result: setProfileTags } = renderHook(() => useHomeStore((state) => state.setProfileTags));
 
-    setProfileTags.current(['bitcoin']);
+    mockHomeStore.state.profileTags = ['bitcoin'];
     setTaggedAsActive.current(true);
 
     setReach.current(REACH.FOLLOWING);
@@ -288,9 +283,8 @@ describe('useStreamIdFromFilters', () => {
 
   it('should keep parked profile tags out of the base stream', () => {
     const { result: setReach } = renderHook(() => useHomeStore((state) => state.setReach));
-    const { result: setProfileTags } = renderHook(() => useHomeStore((state) => state.setProfileTags));
 
-    setProfileTags.current(['bitcoin']);
+    mockHomeStore.state.profileTags = ['bitcoin'];
 
     setReach.current(REACH.ALL);
     const { result: allResult } = renderHook(() => useStreamIdFromFilters());
@@ -300,10 +294,9 @@ describe('useStreamIdFromFilters', () => {
 
   it('should keep the Me base stream while Tagged as is inactive', () => {
     const { result: setReach } = renderHook(() => useHomeStore((state) => state.setReach));
-    const { result: setProfileTags } = renderHook(() => useHomeStore((state) => state.setProfileTags));
 
     setReach.current(REACH.ME);
-    setProfileTags.current(['dev', 'bitcoin']);
+    mockHomeStore.state.profileTags = ['dev', 'bitcoin'];
 
     const { result: meResult } = renderHook(() => useStreamIdFromFilters());
 
@@ -314,13 +307,12 @@ describe('useStreamIdFromFilters', () => {
     const { result: setSort } = renderHook(() => useHomeStore((state) => state.setSort));
     const { result: setReach } = renderHook(() => useHomeStore((state) => state.setReach));
     const { result: setContent } = renderHook(() => useHomeStore((state) => state.setContent));
-    const { result: setProfileTags } = renderHook(() => useHomeStore((state) => state.setProfileTags));
     const { result: setTaggedAsActive } = renderHook(() => useHomeStore((state) => state.setTaggedAsActive));
 
     setSort.current(SORT.ENGAGEMENT);
     setReach.current(REACH.NETWORK);
     setContent.current(CONTENT.IMAGES);
-    setProfileTags.current(['🔥']);
+    mockHomeStore.state.profileTags = ['🔥'];
     setTaggedAsActive.current(true);
 
     const { result } = renderHook(() => useStreamIdFromFilters());

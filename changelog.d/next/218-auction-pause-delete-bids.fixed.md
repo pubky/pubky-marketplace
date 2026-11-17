@@ -1,0 +1,1 @@
+The dashboard no longer pauses an auction that has not ended, matching the listing page, and an auction that has not ended can't be deleted while it has bids. The dashboard also stops offering "Register for checkout" for a listing the service already holds, a sold one included (pubky-marketplace #218).

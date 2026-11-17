@@ -1,5 +1,6 @@
 import { APP_ROUTES, POST_ROUTES } from '@/app/routes';
 import { postStreamQueue } from '@/application/stream/posts/muting/post-stream-queue';
+import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import { FeedController } from '@/controllers/feed/feed';
 import { FORCE_FETCH_NEW_POSTS, SKIP_FETCH_NEW_POSTS } from '@/controllers/stream/posts/post.constants';
 import { StreamPostsController } from '@/controllers/stream/posts/posts';
@@ -510,6 +511,7 @@ export class StreamCoordinator extends Coordinator<StreamCoordinatorConfig, Stre
    * Execute a single poll operation
    */
   protected async poll() {
+    const signal = captureAuthScope();
     try {
       // Capture stream ID in local variable for type safety
       const streamId = this.streamState.currentStreamId;
@@ -530,8 +532,10 @@ export class StreamCoordinator extends Coordinator<StreamCoordinatorConfig, Stre
         streamId,
         streamHead: this.streamState.streamHead,
         limit: this.streamConfig.fetchLimit,
+        signal,
       });
     } catch (error) {
+      if (signal.aborted) return;
       Logger.error('Error polling stream', { error });
     }
   }

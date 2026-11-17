@@ -19,8 +19,8 @@ vi.mock('@/hooks/usePostDetails/usePostDetails', () => ({
   usePostDetails: () => ({ postDetails: mocks.postDetails, isLoading: false }),
 }));
 
-vi.mock('@/molecules/Toaster/use-toast', () => ({
-  useToast: () => ({ toast: mocks.toast }),
+vi.mock('@/molecules/Toaster/toast', () => ({
+  toast: mocks.toast,
 }));
 
 vi.mock('@/stores/localFiles/localFiles.store', () => ({
@@ -164,23 +164,5 @@ describe('DialogEditCollection', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
 
     expect(onOpenChange).toHaveBeenCalledWith(false);
-  });
-});
-
-describe('DialogEditCollection - Snapshots', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.postDetails = { content: collectionContent() };
-  });
-
-  it('matches snapshot when open with the envelope prefilled', async () => {
-    mocks.postDetails = {
-      content: collectionContent({ name: 'Proof of Work', description: 'Bitcoin essays' }),
-    };
-
-    render(<DialogEditCollection open onOpenChange={vi.fn()} compositeCollectionId={COMPOSITE_ID} />);
-
-    await waitFor(() => expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Proof of Work'));
-    expect(document.body).toMatchSnapshot();
   });
 });

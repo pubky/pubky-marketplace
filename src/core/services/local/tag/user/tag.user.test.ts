@@ -256,4 +256,42 @@ describe('LocalUserTagService', () => {
       expect(result).toBe(true);
     });
   });
+  describe('getLabelsTaggedBy', () => {
+    const upsertUserTags = async (id: Pubky, tags: [string, Pubky[]][]) =>
+      await UserTagsModel.upsert({ id, tags: tags.map(([label, taggers]) => createTagRecord(label, taggers, false)) });
+
+    it('returns the labels the tagger used, most used first and alphabetical on a tie', async () => {
+      await upsertUserTags(testData.taggedPubky, [
+        ['trusted', [testData.taggerPubky]],
+        ['fast', [testData.taggerPubky]],
+        ['rude', [testData.anotherTaggerPubky]],
+      ]);
+      await upsertUserTags(testData.anotherTaggerPubky, [
+        ['trusted', [testData.taggerPubky, testData.anotherTaggerPubky]],
+        ['alpha', [testData.taggerPubky]],
+      ]);
+
+      await expect(LocalUserTagService.getLabelsTaggedBy(testData.taggerPubky, 10)).resolves.toEqual([
+        'trusted',
+        'alpha',
+        'fast',
+      ]);
+    });
+
+    it('caps the labels at the limit', async () => {
+      await upsertUserTags(testData.taggedPubky, [
+        ['a', [testData.taggerPubky]],
+        ['b', [testData.taggerPubky]],
+        ['c', [testData.taggerPubky]],
+      ]);
+
+      await expect(LocalUserTagService.getLabelsTaggedBy(testData.taggerPubky, 2)).resolves.toEqual(['a', 'b']);
+    });
+
+    it('returns nothing for a tagger who tagged no one, or an empty device', async () => {
+      await expect(LocalUserTagService.getLabelsTaggedBy(testData.taggerPubky, 5)).resolves.toEqual([]);
+      await upsertUserTags(testData.taggedPubky, [['trusted', [testData.anotherTaggerPubky]]]);
+      await expect(LocalUserTagService.getLabelsTaggedBy(testData.taggerPubky, 5)).resolves.toEqual([]);
+    });
+  });
 });

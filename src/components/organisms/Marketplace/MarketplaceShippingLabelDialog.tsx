@@ -16,7 +16,7 @@ import { MARKETPLACE_FAILURE_MESSAGES, shippingFailureMessage } from '@/libs/com
 import type { ShippingLabel, ShippoRate } from '@/libs/commerce/shipping';
 import { isUsdtFulfilmentBlocked, PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
 import { Logger } from '@/libs/logger/logger';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 
 /**

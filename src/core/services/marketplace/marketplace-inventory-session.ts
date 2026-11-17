@@ -1,30 +1,21 @@
 import { z } from 'zod';
-import { getCommerceAdapterMode, getMarketplaceUrl, isDurableCommerceMode } from '@/config/commerce';
+import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { commercePubkySchema } from '@/libs/commerce/transaction-contracts';
-import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
-import { AuthErrorCode, ClientErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
-import { Err } from '@/libs/error/error.factories';
-import { httpResponseToError, safeFetch } from '@/libs/error/error.http';
-import { ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
-import { HomeserverService } from '@/services/homeserver/homeserver';
 import {
   capabilitiesCoverInventoryScope,
   clampInventoryPersistedCapabilities,
-  INVENTORY_GRANT,
   INVENTORY_SESSION_STORAGE_KEY,
   inventoryCapabilityCovers,
-  studioInventoryCapabilities,
 } from './marketplace-inventory-grant';
 import {
   type MarketplaceSessionEndedEvent,
   type MarketplaceSessionEndedReason,
-  type MarketplaceSessionFlow,
   type MarketplaceSessionInfo,
   MarketplaceSessionService,
-  SESSION_FLOW_TIMEOUT_MS,
 } from './marketplace-session';
 import { marketplaceSessionIdSchema } from './marketplace-session-id';
+import { revokeHeldMarketplaceSessions } from './marketplace-session-revocation';
 
 const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
@@ -53,8 +44,8 @@ type StoredInventorySession = {
 
 /**
  * Seller-scoped inventory bearer, independent of the identity checkout session.
- * Mint uses `generateAuthTokenFlow(INVENTORY_GRANT)` and POSTs `/v1/auth/sessions`
- * into this slot. It never calls `MarketplaceSessionService.establishWithAuthToken`.
+ * Restores existing Studio approvals. Current browser approvals use the
+ * purchase grant, which {@link getCoveringBearer} also accepts for stock calls.
  */
 export class MarketplaceInventorySessionService {
   private constructor() {}
@@ -67,119 +58,6 @@ export class MarketplaceInventorySessionService {
     return () => {
       this.sessionEndedListeners.delete(listener);
     };
-  }
-
-  static beginInventorySessionFlow(expectedPubky: string): MarketplaceSessionFlow {
-    this.assertTransactionServiceMode('beginInventorySessionFlow');
-    const identity = MarketplaceSessionService.getActiveSession();
-    if (!identity || identity.pubky !== expectedPubky) {
-      throw Err.auth(
-        AuthErrorCode.UNAUTHORIZED,
-        'Approve purchases first, then grant marketplace-service access for stock.',
-        {
-          service: ErrorService.Marketplace,
-          operation: 'beginInventorySessionFlow',
-        },
-      );
-    }
-    const capabilities = studioInventoryCapabilities();
-    if (capabilities !== INVENTORY_GRANT) {
-      throw Err.client(
-        ClientErrorCode.BAD_REQUEST,
-        'Inventory Studio refused a capability string outside its allow-list.',
-        {
-          service: ErrorService.Marketplace,
-          operation: 'beginInventorySessionFlow',
-        },
-      );
-    }
-    const flow = HomeserverService.generateAuthTokenFlow(capabilities);
-    return {
-      authorizationUrl: flow.authorizationUrl,
-      awaitSession: async () => {
-        const authToken = await MarketplaceSessionService.withFlowTimeout(flow.awaitToken(), flow.cancelAuthFlow);
-        return await this.mintInventorySession(authToken.toBytes(), expectedPubky);
-      },
-      cancel: flow.cancelAuthFlow,
-    };
-  }
-
-  static async mintInventorySession(
-    authTokenBytes: Uint8Array,
-    expectedPubky: string,
-  ): Promise<MarketplaceSessionInfo> {
-    this.assertTransactionServiceMode('mintInventorySession');
-    const identity = MarketplaceSessionService.getActiveSession();
-    if (!identity || identity.pubky !== expectedPubky) {
-      throw Err.auth(
-        AuthErrorCode.UNAUTHORIZED,
-        'Approve purchases first, then grant marketplace-service access for stock.',
-        {
-          service: ErrorService.Marketplace,
-          operation: 'mintInventorySession',
-        },
-      );
-    }
-    const url = `${getMarketplaceUrl()}/v1/auth/sessions`;
-    const response = await safeFetch(
-      url,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/octet-stream' },
-        body: authTokenBytes as BodyInit,
-      },
-      ErrorService.Marketplace,
-      'mintInventorySession',
-    );
-    if (!response.ok) {
-      if (response.status >= 500) {
-        throw httpResponseToError(response, ErrorService.Marketplace, 'mintInventorySession', url);
-      }
-      throw Err.auth(AuthErrorCode.INVALID_TOKEN, 'The marketplace service rejected the inventory grant token.', {
-        service: ErrorService.Marketplace,
-        operation: 'mintInventorySession',
-        context: { statusCode: response.status },
-      });
-    }
-    const raw = await this.parseSessionMintBody(response);
-    const parsed = sessionResponseSchema.safeParse(toCamelCaseWire(raw));
-    if (!parsed.success) {
-      throw Err.server(
-        ServerErrorCode.INVALID_RESPONSE,
-        'Marketplace returned an invalid inventory session response.',
-        {
-          service: ErrorService.Marketplace,
-          operation: 'mintInventorySession',
-          context: { statusCode: response.status },
-        },
-      );
-    }
-    if (parsed.data.pubky !== expectedPubky) {
-      throw Err.auth(AuthErrorCode.FORBIDDEN, 'Marketplace returned an inventory session for a different account.', {
-        service: ErrorService.Marketplace,
-        operation: 'mintInventorySession',
-        context: { statusCode: response.status },
-      });
-    }
-    const capabilities = clampInventoryPersistedCapabilities(parsed.data.capabilities);
-    if (capabilities === null) {
-      throw Err.auth(
-        AuthErrorCode.FORBIDDEN,
-        'Marketplace returned inventory capabilities outside the Studio allow-list.',
-        {
-          service: ErrorService.Marketplace,
-          operation: 'mintInventorySession',
-          context: { statusCode: response.status },
-        },
-      );
-    }
-    const { token, sessionId, pubky, expiresAt } = parsed.data;
-    const issuedAt = new Date().toISOString();
-    const session = { token, sessionId, pubky, capabilities, expiresAt };
-    this.session = { ...session, expiresAtMs: Date.parse(expiresAt), issuedAt };
-    this.writePersistedSession(session);
-    Logger.info('Established marketplace inventory session', { pubky, expiresAt });
-    return this.toPublicInfo(this.session);
   }
 
   /**
@@ -284,26 +162,31 @@ export class MarketplaceInventorySessionService {
 
   /**
    * Sign-out and account switch: no Studio bearer may stay at rest for the
-   * user who is leaving, whichever tab persisted it. The only path that
-   * removes a record it did not write.
+   * user who is leaving, whichever tab persisted it, and none may stay valid
+   * at the service: the in-memory bearer and the persisted one are both
+   * revoked there. The only path that removes a record it did not write.
    */
   static clearForSignOut(): void {
     const ended = this.session;
+    const persisted = this.persistedBearer();
     this.session = null;
     this.removePersistedSession();
+    revokeHeldMarketplaceSessions([ended, persisted]);
     if (!ended) return;
     this.notifySessionEnded({ reason: 'cleared', issuedAt: ended.issuedAt });
   }
 
   /**
    * Account switch without a sign-out: the Studio bearer of any account but
-   * `keepPubky` goes from memory and from rest, whichever tab persisted it.
-   * A Studio bearer `keepPubky` holds is persisted again if the departed
-   * record had kept it out of the slot.
+   * `keepPubky` goes from memory, from rest and from the service, whichever
+   * tab persisted it. A Studio bearer `keepPubky` holds is persisted again if
+   * the departed record had kept it out of the slot.
    */
   static clearOtherAccounts(keepPubky: string): void {
-    if (this.session && this.session.pubky !== keepPubky) this.clearSession('cleared');
+    const departedMemory = this.session && this.session.pubky !== keepPubky ? this.session : null;
+    if (departedMemory) this.clearSession('cleared');
     const stored = this.persistedBearer();
+    revokeHeldMarketplaceSessions([departedMemory, stored && stored.pubky !== keepPubky ? stored : null]);
     if (!stored || stored.pubky === keepPubky) return;
     this.removePersistedSession();
     if (this.session) {
@@ -329,9 +212,8 @@ export class MarketplaceInventorySessionService {
   }
 
   /**
-   * Persists a freshly minted Studio session unless the slot already holds a
-   * different bearer that outlives it: another tab minted after this tab's
-   * request left, and its newer record must not be overwritten.
+   * Re-persists the staying account's Studio session during account cleanup.
+   * A newer approval another tab persisted during that cleanup must survive.
    */
   private static writePersistedSession(session: z.infer<typeof sessionResponseSchema>): void {
     if (typeof window === 'undefined') return;
@@ -348,15 +230,25 @@ export class MarketplaceInventorySessionService {
   }
 
   /** The bearer, account and expiry of the persisted record, or null when there is none to compare. */
-  private static persistedBearer(): { token: string; pubky: unknown; expiresAtMs: number } | null {
+  private static persistedBearer(): {
+    token: string;
+    pubky: unknown;
+    sessionId: unknown;
+    expiresAtMs: number;
+  } | null {
     const raw = this.readStorage();
     if (raw === null) return null;
     const value = this.parseJson(raw);
     if (typeof value !== 'object' || value === null) return null;
-    const { token, pubky, expiresAt } = value as { token?: unknown; pubky?: unknown; expiresAt?: unknown };
+    const { token, pubky, sessionId, expiresAt } = value as {
+      token?: unknown;
+      pubky?: unknown;
+      sessionId?: unknown;
+      expiresAt?: unknown;
+    };
     if (typeof token !== 'string') return null;
     const expiresAtMs = typeof expiresAt === 'string' ? Date.parse(expiresAt) : Number.NaN;
-    return { token, pubky, expiresAtMs: Number.isNaN(expiresAtMs) ? 0 : expiresAtMs };
+    return { token, pubky, sessionId, expiresAtMs: Number.isNaN(expiresAtMs) ? 0 : expiresAtMs };
   }
 
   /** Removes the persisted record only when it still carries `token`. */
@@ -396,32 +288,4 @@ export class MarketplaceInventorySessionService {
       return null;
     }
   }
-
-  private static async parseSessionMintBody(response: Response): Promise<unknown> {
-    const text = await response.text();
-    try {
-      return JSON.parse(text) as unknown;
-    } catch {
-      throw Err.server(
-        ServerErrorCode.INVALID_RESPONSE,
-        'Marketplace returned an unreadable inventory session response.',
-        {
-          service: ErrorService.Marketplace,
-          operation: 'mintInventorySession',
-          context: { statusCode: response.status },
-        },
-      );
-    }
-  }
-
-  private static assertTransactionServiceMode(operation: string): void {
-    if (!isDurableCommerceMode(getCommerceAdapterMode())) {
-      throw Err.client(ClientErrorCode.BAD_REQUEST, 'Marketplace inventory sessions are disabled.', {
-        service: ErrorService.Marketplace,
-        operation,
-      });
-    }
-  }
 }
-
-export { SESSION_FLOW_TIMEOUT_MS };

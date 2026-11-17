@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { Privacy } from './Privacy';
@@ -22,12 +21,5 @@ describe('Privacy', () => {
     render(<Privacy />);
     expect(screen.getByText('Show confirmation before redirecting')).toBeInTheDocument();
     expect(screen.getByText('Blur censored posts or profile pictures')).toBeInTheDocument();
-  });
-});
-
-describe('Privacy - Snapshots', () => {
-  it('matches snapshot', () => {
-    const { container } = render(<Privacy />);
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

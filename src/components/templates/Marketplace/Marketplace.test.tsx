@@ -1,14 +1,17 @@
 import { renderToString } from 'react-dom/server';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
 import {
   buildFeatureDiscoveryDeviceStorageKey,
   FEATURE_DISCOVERY_STORAGE_PREFIX,
   MARKETPLACE_PROMO_STORAGE_ID,
 } from '@/config/featureDiscovery';
+import { useClientRegionStore } from '@/stores/client-region/client-region.store';
 import { createCommerceShopFixture } from '@/test/fixtures/commerce/commerce';
+import { resetRegionState, setRegionModes, stubClientRegion } from '@/test-utils/region-modes';
+import { asOpaque } from '@/test-utils/type-assertions';
 import { Marketplace } from './Marketplace';
 
 const routerPush = vi.hoisted(() => vi.fn());
@@ -146,8 +149,8 @@ vi.mock('@/stores/commerce/commerce.store', () => ({
   useCommerceStore: (selector: (state: typeof commerceState) => unknown) => selector(commerceState),
 }));
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 
 vi.mock('@/organisms/Marketplace/MarketplaceFilters', () => ({
@@ -226,7 +229,7 @@ describe('Marketplace', () => {
       vi.stubGlobal('innerWidth', 390);
       view = render(<Marketplace />, { container, hydrate: true });
 
-      expect(screen.getByRole('textbox', { name: 'Filter marketplace' })).toHaveAttribute('placeholder', 'Search');
+      expect(screen.getByRole('textbox', { name: 'Filter market' })).toHaveAttribute('placeholder', 'Search');
       expect(consoleError.mock.calls.flat().join(' ')).not.toMatch(/hydrat|didn't match/i);
     } finally {
       view?.unmount();
@@ -274,7 +277,7 @@ describe('Marketplace', () => {
         attributes: null,
         location: { countryCode: 'US', region: 'NY' },
         mediaUrls: [],
-        reputation: null,
+        listingReputation: null,
         revision: 1,
         updatedAt: Date.parse('2026-08-19T21:00:00.000Z'),
       },
@@ -324,6 +327,45 @@ describe('Marketplace', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  describe('in a blocked region', () => {
+    const LAUNCH = 'EU=blocked,GB=blocked,US=blocked';
+
+    afterEach(() => resetRegionState());
+
+    it('offers no Sell an item to a visitor whose region is blocked', async () => {
+      setRegionModes(LAUNCH);
+      stubClientRegion('BG');
+      render(<Marketplace />);
+
+      await waitFor(() => expect(useClientRegionStore.getState().status).toBe('ready'));
+      expect(screen.queryByRole('button', { name: 'Sell an item' })).not.toBeInTheDocument();
+    });
+
+    it('offers no Sell an item to a visitor whose region cannot be told', async () => {
+      setRegionModes(LAUNCH);
+      stubClientRegion(null);
+      render(<Marketplace />);
+
+      await waitFor(() => expect(useClientRegionStore.getState().status).toBe('ready'));
+      expect(screen.queryByRole('button', { name: 'Sell an item' })).not.toBeInTheDocument();
+    });
+
+    it('keeps Sell an item for a visitor outside the block', async () => {
+      setRegionModes(LAUNCH);
+      stubClientRegion('CH');
+      render(<Marketplace />);
+
+      expect(await screen.findByRole('button', { name: 'Sell an item' })).toBeInTheDocument();
+    });
+
+    it('keeps Sell an item while no region is blocked', () => {
+      setRegionModes('none');
+      render(<Marketplace />);
+
+      expect(screen.getByRole('button', { name: 'Sell an item' })).toBeInTheDocument();
+    });
+  });
+
   it('gates section navigation through the existing auth flow', async () => {
     const user = userEvent.setup();
 
@@ -340,7 +382,7 @@ describe('Marketplace', () => {
 
     render(<Marketplace />);
 
-    const dismissButton = await screen.findByRole('button', { name: 'Dismiss marketplace promo' });
+    const dismissButton = await screen.findByRole('button', { name: 'Dismiss market promo' });
     await user.click(dismissButton);
 
     await waitFor(() => expect(promoDismiss).toHaveBeenCalledOnce());
@@ -350,7 +392,7 @@ describe('Marketplace', () => {
     expect(buildFeatureDiscoveryDeviceStorageKey(MARKETPLACE_PROMO_STORAGE_ID)).toBe(
       `${FEATURE_DISCOVERY_STORAGE_PREFIX}:${MARKETPLACE_PROMO_STORAGE_ID}`,
     );
-    expect(screen.queryByRole('region', { name: 'Marketplace promo' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Market promo' })).not.toBeInTheDocument();
   });
 
   it('keeps the server-rendered promo mounted until the account dismissal resolves', () => {
@@ -358,12 +400,12 @@ describe('Marketplace', () => {
 
     const { rerender } = render(<Marketplace />);
 
-    expect(screen.getByRole('region', { name: 'Marketplace promo' })).toHaveAttribute('data-marketplace-promo');
+    expect(screen.getByRole('region', { name: 'Market promo' })).toHaveAttribute('data-marketplace-promo');
 
     promoState.isResolved = true;
     rerender(<Marketplace />);
 
-    expect(screen.queryByRole('region', { name: 'Marketplace promo' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Market promo' })).not.toBeInTheDocument();
   });
 
   it('shows the indexed-state caveat on the drops filter and does not repeat the same drop', () => {
@@ -378,6 +420,55 @@ describe('Marketplace', () => {
       screen.getByText(/Discover timed, limited releases. Open a drop to check availability./),
     ).toBeInTheDocument();
     expect(screen.getAllByText('Drops live proof — 1 of 1')).toHaveLength(1);
+  });
+
+  it('places drops among listings by date, upcoming drops first, when all types are shown under Newest', () => {
+    catalogState.adapterMode = 'transaction-service';
+    const listing = (id: string, title: string, updatedAt: string) => ({
+      id: `seller:${id}`,
+      sellerId: 'y'.repeat(52),
+      listingId: id,
+      state: 'active' as const,
+      title,
+      description: 'A listing.',
+      categoryId: 'fashion-shoes-boots',
+      condition: 'good' as const,
+      tags: [],
+      saleFormat: 'fixed_price' as const,
+      price: { amountMinor: 12_500, currency: 'USD', exponent: 2 },
+      auction: null,
+      attributes: null,
+      location: { countryCode: 'US', region: 'NY' },
+      mediaUrls: [],
+      listingReputation: null,
+      revision: 1,
+      updatedAt: Date.parse(updatedAt),
+    });
+    catalogState.listings = asOpaque<typeof catalogState.listings>([
+      listing('new', 'Listing updated last', '2026-09-25T00:00:00.000Z'),
+      listing('old', 'Listing updated first', '2026-09-01T00:00:00.000Z'),
+    ]);
+    dropsState.buckets = {
+      upcoming: [{ ...dropEntry, id: 'up', title: 'Drop coming up', starts_at: '2026-10-30T12:00:00.000Z' }],
+      live: [{ ...dropEntry, id: 'live', title: 'Drop live now', starts_at: '2026-09-20T12:00:00.000Z' }],
+      ended: [{ ...dropEntry, id: 'ended', title: 'Drop already ended', starts_at: '2026-08-01T12:00:00.000Z' }],
+    };
+
+    render(<Marketplace />);
+
+    const order = [
+      'Drop coming up',
+      'Listing updated last',
+      'Drop live now',
+      'Listing updated first',
+      'Drop already ended',
+    ];
+    const positions = order.map((title) => screen.getByText(title));
+    for (let index = 1; index < positions.length; index++) {
+      expect(positions[index - 1]!.compareDocumentPosition(positions[index]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+    }
   });
 
   it("passes the deployment's payment filter options to the filter bar", () => {

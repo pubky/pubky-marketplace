@@ -2,13 +2,14 @@ import 'fake-indexeddb/auto';
 import { type ChildProcess, spawn } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { Keypair, Pubky } from '@synonymdev/pubky';
+import { Keypair } from '@synonymdev/pubky';
 import { type Browser, type BrowserContext, chromium, type Page } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { establishMarketplaceGrantSession } from './marketplace-grant-session';
 
 /**
  * Issue 42 C-2 live proof: Chromium against this-branch Shop pointed at
- * staging-api, seller seat from the drop identities file. Confirms:
+ * the staging service, seller seat from the drop identities file. Confirms:
  *   - a missing marketplace session bootstraps (no "Status unavailable")
  *   - restoring the persisted bearer reads real drop status
  *   - header New drop stays above the fold
@@ -17,10 +18,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
  *   npm run test:marketplace:drop-status
  */
 
-const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? 'https://staging-api.pubky.app';
+const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? '';
+if (!SERVICE_URL) throw new Error('set MARKETPLACE_SERVICE_URL: the live suites have no default service');
 const NEXUS_URL = process.env.MARKETPLACE_NEXUS_URL ?? 'https://nexus.staging.pubky.app';
-const DROP_IDENTITIES_FILE =
-  process.env.MARKETPLACE_STAGING_DROP_IDENTITIES_FILE ?? '/Users/johncarvalho/work/.staging-drop-identities.json';
+const DROP_IDENTITIES_FILE = process.env.MARKETPLACE_STAGING_DROP_IDENTITIES_FILE ?? '';
+if (!DROP_IDENTITIES_FILE)
+  throw new Error('set MARKETPLACE_STAGING_DROP_IDENTITIES_FILE: the live suites have no default identities file');
 const EVIDENCE_DIR = process.env.DROP_STATUS_EVIDENCE_DIR ?? '/Volumes/t7/vibes-dev/.evidence/issue-42';
 const LIVE_SEATS_DIR = path.join(EVIDENCE_DIR, 'live-seats');
 const SHOT_DIR = path.join(EVIDENCE_DIR, 'chromium-shots');
@@ -190,12 +193,13 @@ async function signInHomeserver(keypair: Keypair, pubky: string): Promise<void> 
   modules.useAuthStore.setState({ session: signedIn.session, currentUserPubky: pubky });
 }
 
-async function connectServiceSession(keypair: Keypair, pubky: string): Promise<ServiceSession> {
+async function connectServiceSession(pubky: string): Promise<ServiceSession> {
   return await withPatience(`marketplace session for ${pubky.slice(0, 8)}`, 90_000, 4_000, async () => {
     try {
-      const flow = modules.MarketplaceSessionService.beginSessionFlow();
-      await new Pubky().signer(keypair).approveAuthRequest(flow.authorizationUrl);
-      const info = await flow.awaitSession();
+      const info = await establishMarketplaceGrantSession({
+        session: modules.useAuthStore.getState().selectSession() ?? undefined,
+        pubky,
+      });
       if (info.pubky !== pubky) {
         return { done: false, value: null as never, detail: `session pubky ${info.pubky.slice(0, 8)}` };
       }
@@ -331,7 +335,7 @@ async function capturePage(page: Page, name: string): Promise<void> {
 
 async function completeOnboardingIfNeeded(page: Page): Promise<void> {
   const form = page.getByTestId('create-profile-form');
-  const onOnboarding = page.url().includes('/onboarding/profile') || (await form.count()) > 0;
+  const onOnboarding = page.url().includes('/complete-profile') || (await form.count()) > 0;
   if (!onOnboarding) return;
   const nameInput = page.locator('#profile-name-input');
   await nameInput.waitFor({ state: 'visible', timeout: 30_000 });
@@ -339,13 +343,7 @@ async function completeOnboardingIfNeeded(page: Page): Promise<void> {
     await nameInput.fill('Drop status proof');
   }
   await page.getByRole('button', { name: 'Finish' }).click();
-  await page.waitForURL((url) => !url.pathname.includes('/onboarding/profile'), { timeout: 90_000 });
-  const explore = page.locator('#welcome-explore-pubky-btn');
-  const welcomeVisible = await explore
-    .waitFor({ state: 'visible', timeout: 8_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (welcomeVisible) await explore.click();
+  await page.waitForURL((url) => !url.pathname.includes('/complete-profile'), { timeout: 90_000 });
 }
 
 async function signInWithEncryptedFile(page: Page, seat: Seat): Promise<void> {
@@ -501,7 +499,7 @@ describe('Chromium Shop: seller drop-status studio', () => {
     expect(ownedDropCount, 'seller must own at least one homeserver drop').toBeGreaterThan(0);
 
     failingStep = 'seller_marketplace_session';
-    await connectServiceSession(sellerSeat.keypair, sellerSeat.pubky);
+    await connectServiceSession(sellerSeat.pubky);
     persistedSession = snapshotMarketplaceSession(sellerSeat.pubky);
 
     failingStep = 'protected_drop_read';

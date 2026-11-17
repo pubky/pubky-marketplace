@@ -3,10 +3,86 @@ import { describe, expect, it } from 'vitest';
 import { Container } from './Container';
 
 describe('Container', () => {
-  it('renders with default props', () => {
+  it('renders a <div> with the default classes by default', () => {
     render(<Container>Default Container</Container>);
-    const container = screen.getByText('Default Container');
-    expect(container).toBeInTheDocument();
+    const container = screen.getByTestId('container');
+    expect(container.tagName).toBe('DIV');
+    expect(container).toHaveTextContent('Default Container');
+    expect(container).toHaveClass('mx-auto', 'w-full', 'flex-col', 'flex');
+  });
+
+  it.each([
+    ['div', 'DIV'],
+    ['section', 'SECTION'],
+    ['article', 'ARTICLE'],
+    ['main', 'MAIN'],
+    ['header', 'HEADER'],
+    ['footer', 'FOOTER'],
+    ['aside', 'ASIDE'],
+    ['nav', 'NAV'],
+    ['figure', 'FIGURE'],
+  ] as const)('renders as <%s> when as="%s"', (as, tagName) => {
+    render(<Container as={as}>Content</Container>);
+    expect(screen.getByTestId('container').tagName).toBe(tagName);
+  });
+
+  it('applies no max-width class for the default size', () => {
+    render(<Container size="default">Content</Container>);
+    const container = screen.getByTestId('container');
+    expect(container.className).not.toContain('max-w');
+  });
+
+  it.each([
+    ['sm', 'max-w-screen-sm'],
+    ['md', 'max-w-screen-md'],
+    ['lg', 'max-w-screen-lg'],
+    ['xl', 'max-w-screen-xl'],
+    ['container', 'max-w-(--container-max-width)'],
+  ] as const)('applies size="%s" as the %s class', (size, sizeClass) => {
+    render(<Container size={size}>Content</Container>);
+    expect(screen.getByTestId('container')).toHaveClass(sizeClass);
+  });
+
+  it.each([
+    ['flex', 'flex'],
+    ['grid', 'grid'],
+    ['block', 'block'],
+  ] as const)('applies display="%s" as the %s class', (display, displayClass) => {
+    render(<Container display={display}>Content</Container>);
+    expect(screen.getByTestId('container')).toHaveClass(displayClass);
+  });
+
+  it('drops the default classes when overrideDefaults is set', () => {
+    render(
+      <Container overrideDefaults className="custom-class">
+        Content
+      </Container>,
+    );
+    const container = screen.getByTestId('container');
+    expect(container).toHaveClass('custom-class');
+    expect(container).not.toHaveClass('mx-auto');
+    expect(container).not.toHaveClass('flex');
+  });
+
+  it('merges a custom className with the default classes', () => {
+    render(<Container className="custom-class">Content</Container>);
+    expect(screen.getByTestId('container')).toHaveClass('mx-auto', 'w-full', 'flex-col', 'custom-class');
+  });
+
+  it('passes through a custom data-testid', () => {
+    render(<Container data-testid="custom-container">Content</Container>);
+    expect(screen.getByTestId('custom-container')).toBeInTheDocument();
+  });
+
+  it('applies combined props together', () => {
+    render(
+      <Container as="article" size="lg" display="grid" className="custom-class">
+        Content
+      </Container>,
+    );
+    const container = screen.getByTestId('container');
+    expect(container.tagName).toBe('ARTICLE');
+    expect(container).toHaveClass('grid', 'max-w-screen-lg', 'custom-class');
   });
 
   describe('Accessibility Props', () => {
@@ -58,96 +134,5 @@ describe('Container', () => {
       expect(container).toHaveAttribute('aria-label', 'Dialog Title');
       expect(container).toHaveAttribute('tabIndex', '-1');
     });
-  });
-});
-
-describe('Container - Snapshots', () => {
-  it('matches snapshot with default props', () => {
-    const { container } = render(<Container>Default Container</Container>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for div element', () => {
-    const { container } = render(<Container as="div">Div Container</Container>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for section element', () => {
-    const { container } = render(<Container as="section">Section Container</Container>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for main element', () => {
-    const { container } = render(<Container as="main">Main Container</Container>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for article element', () => {
-    const { container } = render(<Container as="article">Article Container</Container>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for header element', () => {
-    const { container } = render(<Container as="header">Header Container</Container>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for footer element', () => {
-    const { container } = render(<Container as="footer">Footer Container</Container>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for default size', () => {
-    const { container } = render(<Container size="default">Default Size</Container>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for small size', () => {
-    const { container } = render(<Container size="sm">Small Container</Container>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for medium size', () => {
-    const { container } = render(<Container size="md">Medium Container</Container>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for large size', () => {
-    const { container } = render(<Container size="lg">Large Container</Container>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for extra large size', () => {
-    const { container } = render(<Container size="xl">Extra Large Container</Container>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for container size', () => {
-    const { container } = render(<Container size="container">Container Size</Container>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for flex display', () => {
-    const { container } = render(<Container display="flex">Flex Container</Container>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for grid display', () => {
-    const { container } = render(<Container display="grid">Grid Container</Container>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for block display', () => {
-    const { container } = render(<Container display="block">Block Container</Container>);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshots for combined props', () => {
-    const { container: combinedContainer } = render(
-      <Container as="article" size="lg" display="grid" className="custom-class">
-        Combined Props Container
-      </Container>,
-    );
-    expect(combinedContainer.firstChild).toMatchSnapshot();
   });
 });

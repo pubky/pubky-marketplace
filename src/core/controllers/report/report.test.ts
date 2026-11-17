@@ -5,6 +5,7 @@ import {
   REPORT_ISSUE_TYPE_VALUES,
   REPORT_ISSUE_TYPES,
   REPORT_REASON_MAX_LENGTH,
+  REVIEW_REPORT_ISSUE_TYPES,
 } from '@/pipes/report/report.constants';
 import { asInvalid } from '@/test-utils/type-assertions';
 import type { TReportSubmitParams } from './report.types';
@@ -71,6 +72,21 @@ describe('ReportController', () => {
       );
     });
 
+    it('should accept the reporter pubky as the name of a listing report', async () => {
+      const submitSpy = vi.spyOn(ReportApplication, 'submit');
+
+      await ReportController.submit(
+        createReportParams({ name: testData.userPubky, listingId: 'boots_01', sellerPubky: testData.userPubky }),
+      );
+
+      expect(submitSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: testData.userPubky,
+          listing: { listingId: 'boots_01', sellerPubky: testData.userPubky },
+        }),
+      );
+    });
+
     it('should not add a listing to a post report', async () => {
       const submitSpy = vi.spyOn(ReportApplication, 'submit');
 
@@ -85,6 +101,58 @@ describe('ReportController', () => {
       await expect(ReportController.submit(createReportParams({ listingId: 'boots_01' }))).rejects.toThrow(
         'A listing report needs both the listing id and the seller pubky',
       );
+      expect(submitSpy).not.toHaveBeenCalled();
+    });
+
+    it('should pass a validated review reference and review reason to the application layer', async () => {
+      const submitSpy = vi.spyOn(ReportApplication, 'submit');
+      const reviewer = 'a'.repeat(52);
+      const reviewUri = `pubky://${reviewer}/pub/pubky.app/marketplace/v1/reviews/8Z8CWH8NVYQY39ZEBFGKQWWEKG`;
+
+      await ReportController.submit(
+        createReportParams({
+          issueType: REVIEW_REPORT_ISSUE_TYPES.FAKE_REVIEW,
+          reviewUri,
+          reviewerPubky: reviewer,
+          listingId: 'boots_01',
+          sellerPubky: testData.userPubky,
+        }),
+      );
+
+      expect(submitSpy).toHaveBeenCalledWith({
+        pubky: testData.userPubky,
+        postUrl: testData.postUrl,
+        issueType: REVIEW_REPORT_ISSUE_TYPES.FAKE_REVIEW,
+        reason: 'This post contains my personal information without consent',
+        name: testData.userName,
+        review: { reviewUri, reviewerPubky: reviewer, listingId: 'boots_01', sellerPubky: testData.userPubky },
+      });
+    });
+
+    it('should refuse a post reason on a review report', async () => {
+      const submitSpy = vi.spyOn(ReportApplication, 'submit');
+      const reviewer = 'a'.repeat(52);
+
+      await expect(
+        ReportController.submit(
+          createReportParams({
+            issueType: REPORT_ISSUE_TYPES.ILLEGAL_SALES,
+            reviewUri: `pubky://${reviewer}/pub/pubky.app/marketplace/v1/reviews/8Z8CWH8NVYQY39ZEBFGKQWWEKG`,
+            reviewerPubky: reviewer,
+            listingId: 'boots_01',
+            sellerPubky: testData.userPubky,
+          }),
+        ),
+      ).rejects.toThrow('Invalid review report reason');
+      expect(submitSpy).not.toHaveBeenCalled();
+    });
+
+    it('should refuse a review reason on a post report', async () => {
+      const submitSpy = vi.spyOn(ReportApplication, 'submit');
+
+      await expect(
+        ReportController.submit(createReportParams({ issueType: REVIEW_REPORT_ISSUE_TYPES.FAKE_REVIEW })),
+      ).rejects.toThrow('Invalid issue type');
       expect(submitSpy).not.toHaveBeenCalled();
     });
 
@@ -210,7 +278,7 @@ describe('ReportController', () => {
 
     it('should trim whitespace from inputs', async () => {
       const params = createReportParams({
-        pubky: '  test-pubky  ' as Pubky,
+        pubky: `  ${testData.userPubky}  ` as Pubky,
         postUrl: '  https://example.com/post  ',
         issueType: `  ${REPORT_ISSUE_TYPES.HATE_SPEECH}  `,
         reason: '  Some reason  ',
@@ -221,7 +289,7 @@ describe('ReportController', () => {
       await ReportController.submit(params);
 
       expect(submitSpy).toHaveBeenCalledWith({
-        pubky: 'test-pubky',
+        pubky: testData.userPubky,
         postUrl: 'https://example.com/post',
         issueType: REPORT_ISSUE_TYPES.HATE_SPEECH,
         reason: 'Some reason',

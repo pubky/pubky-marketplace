@@ -12,8 +12,4 @@ export interface UseUnreadPostsResult {
    * Array of unread post IDs
    */
   unreadPostIds: string[];
-  /**
-   * Number of unread posts
-   */
-  unreadCount: number;
 }

@@ -181,3 +181,80 @@ describe('orderShowsCommandResult shipment tracking', () => {
     ).toBe(false);
   });
 });
+
+describe('orderShowsCommandResult per-item reviews', () => {
+  const BUYER = 'b'.repeat(52);
+  const SELLER = 's'.repeat(52);
+  const review = (
+    listingId: string,
+    rating: number,
+    text: string,
+    seller?: { shipping: number; communication: number },
+  ) => ({
+    reviewerPubky: BUYER,
+    listingAggregateId: `listing:${SELLER}_${listingId}`,
+    rating,
+    text,
+    ...(seller ?? {}),
+  });
+  const landed = (reviews: ReturnType<typeof review>[]) =>
+    order({ buyerPubky: BUYER, sellerPubky: SELLER, reviews, state: 'completed' });
+  const payload = {
+    items: [
+      { listingId: 'boots', rating: 5, text: 'Great boots.' },
+      { listingId: 'belt', rating: 3, text: '' },
+    ],
+  };
+
+  it('matches once every named listing carries the sent stars and text', () => {
+    const reviews = [review('boots', 5, 'Great boots.'), review('belt', 3, '')];
+
+    expect(orderShowsCommandResult(landed(reviews), 'review.create', payload)).toBe(true);
+    expect(orderShowsCommandResult(landed(reviews), 'review.update', payload)).toBe(true);
+  });
+
+  it('does not match while a named listing is missing or differs', () => {
+    expect(orderShowsCommandResult(landed([review('boots', 5, 'Great boots.')]), 'review.create', payload)).toBe(false);
+    expect(
+      orderShowsCommandResult(
+        landed([review('boots', 4, 'Great boots.'), review('belt', 3, '')]),
+        'review.create',
+        payload,
+      ),
+    ).toBe(false);
+  });
+
+  it("does not match another reviewer's review of the listing", () => {
+    const foreign = { ...review('boots', 5, 'Great boots.'), reviewerPubky: SELLER };
+
+    expect(orderShowsCommandResult(landed([foreign, review('belt', 3, '')]), 'review.create', payload)).toBe(false);
+  });
+
+  it('requires the sent seller ratings on every one of the buyer reviews', () => {
+    const withSeller = { ...payload, seller: { shipping: 4, communication: 5 } };
+    const rated = { shipping: 4, communication: 5 };
+
+    expect(
+      orderShowsCommandResult(
+        landed([review('boots', 5, 'Great boots.', rated), review('belt', 3, '', rated)]),
+        'review.update',
+        withSeller,
+      ),
+    ).toBe(true);
+    expect(
+      orderShowsCommandResult(
+        landed([review('boots', 5, 'Great boots.', rated), review('belt', 3, '')]),
+        'review.update',
+        withSeller,
+      ),
+    ).toBe(false);
+  });
+
+  it('cannot tell without the parties of the order', () => {
+    expect(
+      orderShowsCommandResult(order({ reviews: [review('boots', 5, 'Great boots.')] }), 'review.create', {
+        items: [{ listingId: 'boots', rating: 5, text: 'Great boots.' }],
+      }),
+    ).toBe(false);
+  });
+});

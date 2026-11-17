@@ -9,6 +9,7 @@ import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
 import { ACCEPTED_OFFER_AWARD_WIRE_FIXTURE } from '@/test/fixtures/commerce/offers';
 import type { MarketplaceOffer } from '@/services/marketplace/marketplace';
 import { asOpaque } from '@/test-utils/type-assertions';
+import { noZoneShipping } from '@/test-utils/zone-shipping';
 
 const state = vi.hoisted(() => ({
   outcome: 'active' as 'active' | 'expired' | 'success',
@@ -26,8 +27,8 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams('offer=00000000-0000-0000-0000-000000000901'),
   usePathname: () => '/marketplace/checkout',
 }));
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 vi.mock('@/hooks/useMarketplaceOffers/useMarketplaceOffers', () => ({
   useMarketplaceOffers: () => ({
@@ -104,6 +105,7 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
       hasFulfillmentConflict: false,
       isPickupCapabilityLoadingForSeller: () => false,
       orderCount: 1,
+      zoneShipping: noZoneShipping(),
       rememberAddress: vi.fn(async () => {}),
       pendingKeyChange: null,
       decideKeyChange: vi.fn(),
@@ -153,7 +155,7 @@ vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getShop: vi.fn(async () => null),
-    getOrFetchShop: vi.fn(async () => null),
+    refreshShopOrGetCached: vi.fn(async () => null),
     getSellerAnnualLimit: vi.fn(async () => ({ enabled: false })),
     getSellerPaymentConfig: vi.fn(async () => ({
       bitcoinAvailable: true,

@@ -41,7 +41,7 @@ import { getMaxStreamTags } from '@/libs/runtime-config/runtime-config';
 import { TAGGED_AS_FILTER_KEY } from '@/molecules/Filters/FilterReach/FilterReach';
 import { PostTag } from '@/molecules/PostTag/PostTag';
 import { TagInput } from '@/molecules/TagInput/TagInput';
-import { useToast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { HOME_PROFILE_TAGS_MAX_SELECTED } from '@/stores/home/home.types';
 
 type CustomFeedDialogProps = {
@@ -56,7 +56,6 @@ function isVisualCustomFeedContentSupported(content?: CustomFeedDialogContent): 
 }
 export const CustomFeedDialog = ({ mode, children }: CustomFeedDialogProps) => {
   const router = useRouter();
-  const { toast } = useToast();
   const customFeed = useCustomFeed();
   const { commitCreate, commitUpdate, commitDelete, loading } = useCustomFeedMutation();
   const [open, setOpen] = useState(false);

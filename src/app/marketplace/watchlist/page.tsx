@@ -5,8 +5,8 @@ export { MarketplaceWatchlist as default } from '@/templates/Marketplace/Marketp
 
 export function generateMetadata() {
   return gatedMarketplaceMetadata(
-    'Watchlist | Pubky Marketplace',
-    'Items you are watching on the Pubky Marketplace.',
+    'Watchlist | Pubky Market',
+    'Items you are watching on the Pubky Market.',
     MARKETPLACE_ROUTES.WATCHLIST,
   );
 }

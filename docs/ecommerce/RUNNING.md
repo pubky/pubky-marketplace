@@ -74,7 +74,7 @@ In every mode **except sandbox**, the catalog refreshes itself from the Nexus ma
 
 **Sandbox mode never queries Nexus.** The sandbox catalog is a self-contained demo seeded with fictional sellers, and mixing indexed network listings into it would blend real and simulated content — so with `commerceAdapterMode=sandbox` the browsing flow above works exactly as described with no Nexus involved.
 
-The marketplace endpoints are implemented on the `main` branch of [`pubky/marketplace-nexus`](https://github.com/pubky/marketplace-nexus) (the earlier fork `BitcoinErrorLog/pubky-nexus` is frozen) and are deployed as a **dedicated marketplace-indexing Nexus on Railway** (`https://nexusd-production-7108.up.railway.app`, runbook in that repository's `docs/railway-deploy.md`), which both the production and the staging Shop reach through the override below. The **official** staging Nexus the app points at by default still has no marketplace endpoints — against it the listing stream 404s and the catalog stays cache-only.
+The marketplace endpoints are implemented on the `main` branch of [`pubky/marketplace-nexus`](https://github.com/pubky/marketplace-nexus) (the earlier fork `BitcoinErrorLog/pubky-nexus` is frozen) and are deployed as a **dedicated marketplace-indexing Nexus** (`<marketplace Nexus URL>`), which both the production and the staging Shop reach through the override below. The **official** staging Nexus the app points at by default still has no marketplace endpoints — against it the listing stream 404s and the catalog stays cache-only.
 
 Because a dedicated marketplace-indexing Nexus is deployed separately from the main social Nexus, the app supports an **optional marketplace-only override**: set `PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL` to route ONLY the commerce/marketplace index reads at that deployment — listing stream and details, listing/shop tags, shop reviews/reputation, and the drops stream — while every social surface (posts, users, tags, files, streams, search) keeps using `PUBKY_RUNTIME_NEXUS_URL`. When the override is unset, marketplace reads fall back to the main `nexusUrl` — the variable is genuinely optional, including under the strict deployed-mode config parse. (Pointing the whole app at a marketplace-indexing Nexus with `PUBKY_RUNTIME_NEXUS_URL` still works for a single-Nexus setup.)
 
@@ -173,21 +173,23 @@ npm run dev
 
 The client selects a wholly different transport in this mode (`MarketplaceTransactionService`):
 
-- **Auth is real.** The active homeserver grant writes a bootstrap proof; the Shop BFF verifies it and starts a separate marketplace grant approval. The resulting service bearer authorizes commands through `Authorization: Bearer`; the forgeable `x-pubky-actor` header does not exist on this path. The client keeps the bearer in memory and a `localStorage` mirror, bounded by expiry and identity. The BFF separately holds an encrypted server-side pairing referenced by an HttpOnly cookie. Sign-out/account changes clear service credentials; a hosted cleanup boundary is not acknowledged until the BFF confirms cookie removal. [`service-auth.md`](service-auth.md) also documents older AuthToken compatibility paths, which the current UI does not use.
+- **Auth is real.** When grant-session minting is enabled, the active homeserver sign-in grant proves possession with a single-use proof document and the service mints the bearer after sign-in or restore, without another signer approval. When no usable bearer can be restored or minted, the connect UI falls back to the separate marketplace approval: the grant writes a bootstrap proof, then the Shop BFF verifies it and starts the approval. The resulting service bearer authorizes commands through `Authorization: Bearer`; the forgeable `x-pubky-actor` header does not exist on this path. The client keeps the bearer in memory and a `localStorage` mirror, bounded by expiry and identity. The BFF separately holds an encrypted server-side pairing referenced by an HttpOnly cookie. Sign-out/account changes clear service credentials; a hosted cleanup boundary is not acknowledged until the BFF confirms cookie removal. [`service-auth.md`](service-auth.md) also documents older AuthToken compatibility paths, which the current UI does not use.
 - **Wire casing is snake_case** per ADR 0019 §3; the client converts its camelCase contracts at the transport boundary in both directions.
 - **The ported command set is accepted** — listings, offers, bids, checkout, order cancellation, fulfillment, returns, external-refund evidence, and reviews. Kinds the durable service does not implement (`payment.sandbox_advance`, the sandbox's plaintext `message.send`, notification read state/preferences) are rejected client-side before any bytes are sent, and the UI withholds those affordances in this mode.
 - **Reads come from the service's role-scoped projections** (listings, offers, orders with embedded payment/shipment/return/refund/review sub-objects, payments, receipts, and notifications). The interactive shopping UI sources every `expected_revision` from a fresh projection read and treats `REVISION_CONFLICT` as refetch-and-retry.
 
 ### Connecting the session from the UI
 
-Durable-mode screens that need a session offer a marketplace approval action. If the homeserver grant is missing, the dialog first offers standalone sign-in or **Continue in Pubky App** for a hosted session. Once authority is available:
+When grant-session minting is enabled, Shop mints the marketplace bearer from the active homeserver sign-in grant after sign-in or restore, and durable-mode screens need no further approval. A refused mint is not repeated for that sign-in without an explicit retry.
+
+When no usable bearer can be restored or minted, durable-mode screens that need a session offer a marketplace approval action as the fallback. If the homeserver grant is missing, the dialog first offers standalone sign-in or **Continue in Pubky App** for a hosted session. Once authority is available:
 
 1. The active grant writes the single-use bootstrap proof and the BFF verifies it.
 2. Shop opens a separate `pubkyauth://signin_grant` approval for the same identity, using Ring, Bitkit or enabled Passport. Hosted and local-key sessions ask the user to choose an external signer; a recovery key is not retained for later purchases.
 3. Closing the dialog cancels the attempt. Identity/session changes invalidate pending work, and failures offer a fresh attempt.
 4. Successful approval yields the marketplace bearer and refreshes the waiting surfaces.
 
-The flow is bounded by the backend expiry; expired or rejected approvals are not reused. A valid persisted bearer can resume after reload until expiry or refusal. A 401 or expired bearer returns the surface to reconnect. These are separate service credentials: homeserver sign-in alone does not approve a purchase. See [the current grant contract](../launch/grant-auth-session.md#commerce-remains-a-separate-approval).
+The approval flow is bounded by the backend expiry; expired or rejected approvals are not reused. A valid persisted bearer can resume after reload until expiry or refusal. A 401 or expired bearer returns the surface to reconnect. The marketplace bearer remains a separate service credential with its own lifecycle; with grant-session minting disabled, homeserver sign-in alone does not yield one. See [the current grant contract](../launch/grant-auth-session.md#commerce-session-and-approval-ownership).
 
 To prove the transport against the running service (session establishment, snake_case commands, idempotent replay, revision conflicts, report reads):
 
@@ -195,7 +197,9 @@ To prove the transport against the running service (session establishment, snake
 npm run test:marketplace:service
 ```
 
-This older transport integration suite exercises the service AuthToken compatibility path with a throwaway signer; it does not exercise the current browser grant/bootstrap path. It needs the service on `127.0.0.1:8080` (override with `MARKETPLACE_SERVICE_URL`) and relay access. It is not a unit gate or proof of deployed grant sign-in. Use the synthetic launch gate for the current UI/SDK contract and perform deployed grant QA separately.
+This transport integration suite mints sessions through the grant challenge/live-proof API. It needs the service on `127.0.0.1:8080` (override with `MARKETPLACE_SERVICE_URL`) and three distinct existing homeserver accounts supplied through `MARKETPLACE_INTEGRATION_SECRET_SELLER`, `MARKETPLACE_INTEGRATION_SECRET_BUYER` and `MARKETPLACE_INTEGRATION_SECRET_BYSTANDER` (32-byte secret hex, never committed). Random unregistered identities cannot write the proof document. Configure the test network to match the service's `HOMESERVER_URL`, enable `MARKETPLACE_GRANT_SESSION_ENABLED`, set `PUBLIC_SERVICE_ORIGIN` to the service origin, and allow the Shop client ID in `MARKETPLACE_GRANT_SESSION_CLIENT_IDS`. This is a transport test, not a browser signer/bootstrap test. Use the synthetic launch gate for the current UI/SDK contract and perform deployed grant QA separately.
+
+The live inventory, drops, private-data and payment harnesses use that same grant-session API. Their existing staging-token, saved-identity or local-stack prerequisites below still apply, with the grant-service configuration above. Public-only delegated grants verify private-key denial and inventory-session isolation. The private-data test no longer mints a legacy identity-only AuthToken; its inventory-only service bearer must still be refused private keys. None of these live suites runs as part of the offline unit gate.
 
 The client's state tables are held in lockstep with the service's canonical contract: `contracts/state-machines.json` from the service repo is vendored at `src/libs/commerce/contracts/state-machines.json`, and `src/libs/commerce/state-machines.contract.test.ts` fails CI on any drift. When the service contract changes, re-vendor the file and reconcile the TypeScript — the service is canonical.
 
@@ -217,8 +221,6 @@ PUBKY_RUNTIME_HOMESERVER_URL=http://localhost:6286 PUBKY_RUNTIME_NEXUS_URL=http:
 PUBKY_RUNTIME_CDN_URL=http://localhost:8080/static PUBKY_RUNTIME_DEFAULT_HTTP_RELAY=http://localhost:15412/inbox/ \
 PUBKY_RUNTIME_INBOX_URL=http://localhost:8088 PUBKY_RUNTIME_INBOX_AUDIENCE=http://localhost:8088 npm run dev
 ```
-
-The dev signup-token route needs `HOMESERVER_ADMIN_URL=http://localhost:6288/generate_signup_token` and `HOMESERVER_ADMIN_PASSWORD=admin`.
 
 To prove chat live — two accounts, real crypto, real homeserver — against that stack (dev server, homeserver and inbox container running):
 

@@ -45,6 +45,8 @@ import {
   listingAttributeFormField,
   type ListingFulfillment,
   type ListingFulfillmentFlags,
+  PUBLISH_PACKAGE_FIELDS,
+  PUBLISH_REQUIRED_FIELDS,
 } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing.types';
 import {
   useDigitalDeliveryCapability,
@@ -60,12 +62,14 @@ import {
   isListingMediaPublishReady,
   LISTING_PHOTO_MIME_TYPES,
 } from '@/hooks/useListingMediaManager/useListingMediaManager';
+import type { ListingStoreSync } from '@/hooks/useListingStoreSync/useListingStoreSync';
 import { useMarketplaceShippingPresets } from '@/hooks/useMarketplaceShippingPresets/useMarketplaceShippingPresets';
 import {
   presetToShippingFields,
   shippingPresetMoney,
 } from '@/hooks/useMarketplaceShippingPresets/useMarketplaceShippingPresets.types';
 import { auctionDurationLabel, auctionDurationOptionLabel } from '@/libs/commerce/auction-duration';
+import type { ConnectorSyncGroup } from '@/libs/commerce/connectors';
 import { DIGITAL_DELIVERY_COPY } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { isListingDraftSectionId, type ListingDraftSectionId } from '@/libs/commerce/listing-drafts';
@@ -83,6 +87,7 @@ import {
   assetForListingCurrency,
   tryAmountInputToMoney,
 } from '@/libs/commerce/pricing';
+import { shippingZonesFromForm } from '@/libs/commerce/shipping-zones-form';
 import {
   dimensionInputFromMillimeters,
   dimensionUnitLabel,
@@ -96,12 +101,14 @@ import { cn } from '@/libs/utils/utils';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
 import { ListingPublishGuardNotice } from '@/molecules/Marketplace/ListingPublishGuardNotice';
+import { MarketplaceListingStoreFollow } from '@/molecules/Marketplace/MarketplaceListingStoreFollow';
 import { RequiredToPublishSummary } from '@/molecules/Marketplace/RequiredToPublishSummary';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { MarketplaceCategoryPicker } from '@/organisms/Marketplace/MarketplaceCategoryPicker';
 import { MarketplaceDigitalDeliveryEditor } from '@/organisms/Marketplace/MarketplaceDigitalDeliveryEditor';
 import { MarketplaceListingAttributeFields } from '@/organisms/Marketplace/MarketplaceListingAttributeFields';
+import { MarketplaceListingShippingMode } from '@/organisms/Marketplace/MarketplaceListingShippingMode';
 import {
   MarketplacePickupDetailsEditor,
   type MarketplacePickupDetailsEditorHandle,
@@ -143,6 +150,11 @@ export interface MarketplaceListingFormProps {
   mode?: 'create' | 'edit';
   /** True for auctions being edited: price and format were fixed at publish. */
   saleTermsLocked?: boolean;
+  /**
+   * Edit mode, for a listing linked to a connected store: which parts follow the store. A part that follows is
+   * read-only here, and a switch turns it into this listing's own.
+   */
+  storeSync?: MarketplaceListingStoreSync | null;
   /** Restored wizard section from a listing draft (create mode). */
   initialActiveSectionId?: ListingDraftSectionId;
   onActiveSectionChange?: (sectionId: ListingDraftSectionId) => void;
@@ -162,6 +174,14 @@ export interface MarketplaceListingFormProps {
   sidebarFooter?: ReactNode;
 }
 
+export type MarketplaceListingStoreSync = {
+  /** The connected stores the listing is linked to. */
+  syncs: readonly ListingStoreSync[];
+  /** `<connection id>:<group>` of the setting being saved. */
+  saving: string | null;
+  onToggle: (connectionId: string, group: ConnectorSyncGroup) => void;
+};
+
 export function MarketplaceListingForm({
   form,
   media,
@@ -171,6 +191,7 @@ export function MarketplaceListingForm({
   listingId,
   mode = 'create',
   saleTermsLocked = false,
+  storeSync = null,
   initialActiveSectionId,
   onActiveSectionChange,
   publishBlocked = null,
@@ -192,13 +213,17 @@ export function MarketplaceListingForm({
     moveItem,
     setAltText,
   } = media;
-  const photoDrop = usePhotoFileDrop(addFiles, !isPublishing);
+  const followsContent = storeSync?.syncs.some((sync) => sync.groups.content.follows) === true;
+  const followsPrice = storeSync?.syncs.some((sync) => sync.groups.price.follows) === true;
+  const followsVariants = storeSync?.syncs.some((sync) => sync.groups.variants.follows) === true;
+  const photoDrop = usePhotoFileDrop(addFiles, !isPublishing && !followsContent);
   const fulfillment = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.FULFILLMENT });
   const saleFormat = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.SALE_FORMAT });
   const auctionDurations = getAuctionDurationsMinutes();
   const currency = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.CURRENCY });
   const { presets, saveFromFields } = useMarketplaceShippingPresets();
   const [saveDeliveryPreset, setSaveDeliveryPreset] = useState(false);
+  const shippingMode = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_MODE });
   const freeShipping = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.FREE_SHIPPING });
   const watchedListingFields = useWatch({
     control: form.control,
@@ -252,6 +277,18 @@ export function MarketplaceListingForm({
     }
   };
   const isEdit = mode === 'edit';
+  const storeFollow = (group: ConnectorSyncGroup) =>
+    storeSync?.syncs.map((sync) => (
+      <MarketplaceListingStoreFollow
+        key={sync.connectionId}
+        group={group}
+        domain={sync.domain}
+        state={sync.groups[group]}
+        editInStoreUrl={sync.editInStoreUrl}
+        saving={storeSync.saving !== null || isPublishing}
+        onToggle={() => storeSync.onToggle(sync.connectionId, group)}
+      />
+    ));
   const auctionDuration = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.AUCTION_DURATION });
   // The select shows the length that will publish: an empty or no-longer-offered
   // value (a fresh form, an older draft) moves to the deploy's first offered length.
@@ -284,6 +321,10 @@ export function MarketplaceListingForm({
   useEffect(() => {
     if (saleFormat === 'auction' && form.getValues(CREATE_MARKETPLACE_LISTING_FIELDS.FULFILLMENT) !== 'shipping') {
       form.setValue(CREATE_MARKETPLACE_LISTING_FIELDS.FULFILLMENT, 'shipping', { shouldValidate: true });
+    }
+    // The shipping selector shows flat and locks for an auction, so the stored mode must follow it.
+    if (saleFormat === 'auction' && form.getValues(CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_MODE) !== 'flat') {
+      form.setValue(CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_MODE, 'flat', { shouldValidate: true });
     }
   }, [saleFormat, form]);
   // A deployment without pickup cannot publish it either — drop a pickup
@@ -449,7 +490,7 @@ export function MarketplaceListingForm({
       editor.isDirty;
     const values = form.getValues();
     const presetFields =
-      saveDeliveryPreset && delivery.ship && !values.freeShipping
+      saveDeliveryPreset && delivery.ship && values.shippingMode === 'flat' && !values.freeShipping
         ? {
             shippingLabel: values.shippingLabel,
             shippingPrice: values.shippingPrice,
@@ -500,6 +541,7 @@ export function MarketplaceListingForm({
           complete={sectionStatuses['listing-section-photos']}
           dropZone={photoDrop}
         >
+          {storeFollow('content')}
           {mediaItems.length > 0 && (
             <ul className="flex flex-col gap-3" aria-label="Listing photos in display order">
               {mediaItems.map((item, index) => (
@@ -508,7 +550,7 @@ export function MarketplaceListingForm({
                   item={item}
                   index={index}
                   count={mediaItems.length}
-                  isPublishing={isPublishing}
+                  isPublishing={isPublishing || followsContent}
                   onMove={moveItem}
                   onRemove={removeItem}
                   onAltTextChange={setAltText}
@@ -521,7 +563,7 @@ export function MarketplaceListingForm({
             type="button"
             variant="secondary"
             className="w-fit rounded-full"
-            disabled={isPublishing || mediaItems.length >= maxPhotos}
+            disabled={isPublishing || followsContent || mediaItems.length >= maxPhotos}
             onClick={choose}
           >
             <ImagePlus className="size-4" />
@@ -550,18 +592,20 @@ export function MarketplaceListingForm({
         >
           <ControlledInputField
             name={CREATE_MARKETPLACE_LISTING_FIELDS.TITLE}
+            markRequired={PUBLISH_REQUIRED_FIELDS.has(CREATE_MARKETPLACE_LISTING_FIELDS.TITLE)}
             control={form.control}
             label="Title"
             placeholder="What are you selling?"
-            disabled={isPublishing}
+            disabled={isPublishing || followsContent}
           />
           <ControlledTextareaField
             name={CREATE_MARKETPLACE_LISTING_FIELDS.DESCRIPTION}
+            markRequired={PUBLISH_REQUIRED_FIELDS.has(CREATE_MARKETPLACE_LISTING_FIELDS.DESCRIPTION)}
             control={form.control}
             label="Description"
             placeholder="Condition, provenance, measurements, and anything a buyer should know"
             rows={6}
-            disabled={isPublishing}
+            disabled={isPublishing || followsContent}
           />
           <Controller
             name={CREATE_MARKETPLACE_LISTING_FIELDS.CATEGORY}
@@ -572,6 +616,7 @@ export function MarketplaceListingForm({
                 onChange={field.onChange}
                 disabled={isPublishing}
                 error={fieldState.error?.message}
+                markRequired={PUBLISH_REQUIRED_FIELDS.has(CREATE_MARKETPLACE_LISTING_FIELDS.CATEGORY)}
               />
             )}
           />
@@ -593,9 +638,10 @@ export function MarketplaceListingForm({
             />
             <ControlledInputField
               name={CREATE_MARKETPLACE_LISTING_FIELDS.COUNTRY_CODE}
+              markRequired={PUBLISH_REQUIRED_FIELDS.has(CREATE_MARKETPLACE_LISTING_FIELDS.COUNTRY_CODE)}
               control={form.control}
               label="Country"
-              placeholder="US"
+              placeholder="Two-letter code"
               disabled={isPublishing}
             />
             <ControlledInputField
@@ -614,6 +660,8 @@ export function MarketplaceListingForm({
           description="Choose the sale format, price, and inventory options."
           complete={sectionStatuses['listing-section-price']}
         >
+          {storeFollow('price')}
+          {storeFollow('variants')}
           <div className="grid gap-5 sm:grid-cols-3">
             <FormSelect
               form={form}
@@ -645,7 +693,7 @@ export function MarketplaceListingForm({
               form={form}
               name={CREATE_MARKETPLACE_LISTING_FIELDS.CURRENCY}
               label="Pricing currency"
-              disabled={isPublishing || saleTermsLocked}
+              disabled={isPublishing || saleTermsLocked || followsPrice}
               options={LISTING_CURRENCY_CODES.map((code) => ({
                 value: code,
                 label: LISTING_CURRENCY_REGISTRY[code].pickerLabel,
@@ -653,10 +701,11 @@ export function MarketplaceListingForm({
             />
             <ControlledInputField
               name={CREATE_MARKETPLACE_LISTING_FIELDS.PRICE}
+              markRequired={PUBLISH_REQUIRED_FIELDS.has(CREATE_MARKETPLACE_LISTING_FIELDS.PRICE)}
               control={form.control}
               label={saleFormat === 'auction' ? `Starting price (${priceUnit})` : `Price (${priceUnit})`}
               placeholder={pricePlaceholder}
-              disabled={isPublishing || saleTermsLocked}
+              disabled={isPublishing || saleTermsLocked || followsPrice}
             />
             {saleFormat === 'auction' && (
               <ControlledInputField
@@ -695,7 +744,13 @@ export function MarketplaceListingForm({
               size="sm"
               variant="secondary"
               className="shrink-0 rounded-full"
-              disabled={isPublishing || saleFormat === 'auction' || variants.fields.length >= 100}
+              disabled={
+                isPublishing ||
+                followsVariants ||
+                followsPrice ||
+                saleFormat === 'auction' ||
+                variants.fields.length >= 100
+              }
               onClick={() =>
                 variants.append({
                   sku: '',
@@ -721,28 +776,28 @@ export function MarketplaceListingForm({
                   control={form.control}
                   label="Seller SKU"
                   placeholder="BOOTS-42"
-                  disabled={isPublishing}
+                  disabled={isPublishing || followsVariants}
                 />
                 <ControlledInputField
                   name={`variants.${index}.size`}
                   control={form.control}
                   label="Size"
                   placeholder="42"
-                  disabled={isPublishing}
+                  disabled={isPublishing || followsVariants}
                 />
                 <ControlledInputField
                   name={`variants.${index}.color`}
                   control={form.control}
                   label="Color"
                   placeholder="Brown"
-                  disabled={isPublishing}
+                  disabled={isPublishing || followsVariants}
                 />
                 <ControlledInputField
                   name={`variants.${index}.style`}
                   control={form.control}
                   label="Style"
                   placeholder="Classic"
-                  disabled={isPublishing}
+                  disabled={isPublishing || followsVariants}
                 />
                 {fulfillment === 'digital' ? (
                   <div className="flex flex-col gap-3">
@@ -795,7 +850,7 @@ export function MarketplaceListingForm({
                   control={form.control}
                   label={`Price override (${priceUnit})`}
                   placeholder="Optional"
-                  disabled={isPublishing}
+                  disabled={isPublishing || followsPrice}
                 />
                 {variants.fields.length > 1 && (
                   <Button
@@ -804,7 +859,7 @@ export function MarketplaceListingForm({
                     variant="ghost"
                     className="absolute top-2 right-2 rounded-full"
                     aria-label={`Remove variant ${index + 1}`}
-                    disabled={isPublishing}
+                    disabled={isPublishing || followsVariants || followsPrice}
                     onClick={() => variants.remove(index)}
                   >
                     <Trash2 className="size-4" />
@@ -886,7 +941,7 @@ export function MarketplaceListingForm({
               as="p"
               role="note"
               data-testid="listing-digital-paypal-warning"
-              className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200"
+              className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-notice-foreground"
             >
               {DIGITAL_DELIVERY_COPY.paypalWarning}
             </Typography>
@@ -913,77 +968,89 @@ export function MarketplaceListingForm({
 
           {delivery.ship && (
             <>
-              <ListingShippingPresetRow
+              <MarketplaceListingShippingMode
                 form={form}
                 isPublishing={isPublishing}
-                presets={presets}
-                listingCurrency={currency}
+                zonesAllowed={saleFormat !== 'auction'}
               />
-              <div className="grid gap-5 sm:grid-cols-2">
-                <ControlledInputField
-                  name={CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_LABEL}
-                  control={form.control}
-                  label="Shipping label"
-                  placeholder="Standard shipping"
-                  disabled={isPublishing}
-                />
-                <div className="grid gap-2">
-                  <ControlledInputField
-                    name={CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_PRICE}
-                    control={form.control}
-                    label={`Flat shipping (${priceUnit})`}
-                    placeholder={amountInputExample(assetForListingCurrency(currency), AMOUNT_EXAMPLES.shipping)}
-                    disabled={isPublishing || freeShipping}
+              {shippingMode === 'flat' && (
+                <>
+                  <ListingShippingPresetRow
+                    form={form}
+                    isPublishing={isPublishing}
+                    presets={presets}
+                    listingCurrency={currency}
                   />
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="listing-free-shipping"
-                      checked={freeShipping}
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <ControlledInputField
+                      name={CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_LABEL}
+                      control={form.control}
+                      label="Shipping label"
+                      placeholder="Standard shipping"
                       disabled={isPublishing}
-                      onCheckedChange={(checked) => setFreeShipping(checked === true)}
                     />
-                    <Label htmlFor="listing-free-shipping" className="cursor-pointer text-sm">
-                      Free shipping
-                    </Label>
+                    <div className="grid gap-2">
+                      <ControlledInputField
+                        name={CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_PRICE}
+                        // A flat rate is required unless shipping is free.
+                        markRequired={!freeShipping}
+                        control={form.control}
+                        label={`Flat shipping (${priceUnit})`}
+                        placeholder={amountInputExample(assetForListingCurrency(currency), AMOUNT_EXAMPLES.shipping)}
+                        disabled={isPublishing || freeShipping}
+                      />
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="listing-free-shipping"
+                          checked={freeShipping}
+                          disabled={isPublishing}
+                          onCheckedChange={(checked) => setFreeShipping(checked === true)}
+                        />
+                        <Label htmlFor="listing-free-shipping" className="cursor-pointer text-sm">
+                          Free shipping
+                        </Label>
+                      </div>
+                    </div>
+                    <ControlledInputField
+                      name={CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_MIN_DAYS}
+                      control={form.control}
+                      label="Delivery estimate min (days)"
+                      placeholder="3"
+                      disabled={isPublishing}
+                    />
+                    <ControlledInputField
+                      name={CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_MAX_DAYS}
+                      control={form.control}
+                      label="Delivery estimate max (days)"
+                      placeholder="7"
+                      disabled={isPublishing}
+                    />
                   </div>
-                </div>
-                <ControlledInputField
-                  name={CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_MIN_DAYS}
-                  control={form.control}
-                  label="Delivery estimate min (days)"
-                  placeholder="3"
-                  disabled={isPublishing}
-                />
-                <ControlledInputField
-                  name={CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_MAX_DAYS}
-                  control={form.control}
-                  label="Delivery estimate max (days)"
-                  placeholder="7"
-                  disabled={isPublishing}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="listing-save-delivery-preset"
-                    checked={saveDeliveryPreset && !freeShipping}
-                    disabled={isPublishing || freeShipping}
-                    onCheckedChange={(checked) => setSaveDeliveryPreset(checked === true)}
-                    aria-describedby="listing-save-delivery-preset-hint"
-                  />
-                  <Label htmlFor="listing-save-delivery-preset" className="cursor-pointer text-sm">
-                    Save delivery details as preset
-                  </Label>
-                </div>
-                <Typography as="p" id="listing-save-delivery-preset-hint" className="text-sm text-muted-foreground">
-                  {freeShipping
-                    ? 'Presets hold a paid flat rate; free shipping cannot be saved as one.'
-                    : 'Saves the shipping label, flat rate and delivery estimates on this device when you save the listing.'}
-                </Typography>
-              </div>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="listing-save-delivery-preset"
+                        checked={saveDeliveryPreset && !freeShipping}
+                        disabled={isPublishing || freeShipping}
+                        onCheckedChange={(checked) => setSaveDeliveryPreset(checked === true)}
+                        aria-describedby="listing-save-delivery-preset-hint"
+                      />
+                      <Label htmlFor="listing-save-delivery-preset" className="cursor-pointer text-sm">
+                        Save delivery details as preset
+                      </Label>
+                    </div>
+                    <Typography as="p" id="listing-save-delivery-preset-hint" className="text-sm text-muted-foreground">
+                      {freeShipping
+                        ? 'Presets hold a paid flat rate; free shipping cannot be saved as one.'
+                        : 'Saves the shipping label, flat rate and delivery estimates on this device when you save the listing.'}
+                    </Typography>
+                  </div>
+                </>
+              )}
               <div className="grid gap-5 sm:grid-cols-2">
                 <ControlledInputField
                   name={CREATE_MARKETPLACE_LISTING_FIELDS.PACKAGE_WEIGHT}
+                  markRequired={PUBLISH_PACKAGE_FIELDS.has(CREATE_MARKETPLACE_LISTING_FIELDS.PACKAGE_WEIGHT)}
                   control={form.control}
                   label={`Weight (${weightUnitLabel(measurementSystem)})`}
                   placeholder={isImperial ? '42.3' : '1200'}
@@ -1020,6 +1087,7 @@ export function MarketplaceListingForm({
               <div className="grid gap-5 sm:grid-cols-3">
                 <ControlledInputField
                   name={CREATE_MARKETPLACE_LISTING_FIELDS.PACKAGE_LENGTH}
+                  markRequired={PUBLISH_PACKAGE_FIELDS.has(CREATE_MARKETPLACE_LISTING_FIELDS.PACKAGE_LENGTH)}
                   control={form.control}
                   label={`Length (${dimensionUnitLabel(measurementSystem)})`}
                   placeholder={isImperial ? '13.8' : '35.0'}
@@ -1027,6 +1095,7 @@ export function MarketplaceListingForm({
                 />
                 <ControlledInputField
                   name={CREATE_MARKETPLACE_LISTING_FIELDS.PACKAGE_WIDTH}
+                  markRequired={PUBLISH_PACKAGE_FIELDS.has(CREATE_MARKETPLACE_LISTING_FIELDS.PACKAGE_WIDTH)}
                   control={form.control}
                   label={`Width (${dimensionUnitLabel(measurementSystem)})`}
                   placeholder={isImperial ? '9.8' : '25.0'}
@@ -1034,6 +1103,7 @@ export function MarketplaceListingForm({
                 />
                 <ControlledInputField
                   name={CREATE_MARKETPLACE_LISTING_FIELDS.PACKAGE_HEIGHT}
+                  markRequired={PUBLISH_PACKAGE_FIELDS.has(CREATE_MARKETPLACE_LISTING_FIELDS.PACKAGE_HEIGHT)}
                   control={form.control}
                   label={`Height (${dimensionUnitLabel(measurementSystem)})`}
                   placeholder={isImperial ? '5.9' : '15.0'}
@@ -1059,6 +1129,13 @@ export function MarketplaceListingForm({
             publishMinimumMet={canPublish}
             onSelectRequired={(item) => {
               navigateToSection(listingChecklistSection(item));
+              // A section can be long (Item is), so a field the item names is brought into view itself.
+              const fieldName = listingChecklistField(item);
+              const field = fieldName ? document.getElementById(fieldName) : null;
+              if (field) {
+                field.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+                field.focus({ preventScroll: true });
+              }
               const guard = document.getElementById('listing-publish-guard');
               if (guard && typeof guard.focus === 'function' && isPublishGuardChecklistItem(item)) {
                 guard.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1374,10 +1451,18 @@ function listingChecklistSection(item: string): ListingFormSectionId {
     return 'listing-section-item';
   }
   if (item === 'Price') return 'listing-section-price';
-  if (item === 'Country' || item === 'Shipping details' || item === 'Choose shipping or pickup') {
+  // The item's country sits in the Item section with its region.
+  if (item === 'Country') return 'listing-section-item';
+  if (item === 'Shipping details' || item === 'Choose shipping or pickup') {
     return 'listing-section-shipping';
   }
   return 'listing-section-review';
+}
+
+/** The input a Required to publish item names, when it is one field; it is scrolled to and focused. */
+function listingChecklistField(item: string): string | null {
+  if (item === 'Country') return CREATE_MARKETPLACE_LISTING_FIELDS.COUNTRY_CODE;
+  return null;
 }
 
 function isPublishGuardChecklistItem(item: string): boolean {
@@ -1407,11 +1492,16 @@ function getListingSectionStatuses(
     categoryRequiredAttributesComplete(values);
   const shippingComplete =
     !fulfillmentFlags(values.fulfillment).ship ||
-    (values.shippingLabel.trim().length > 0 &&
-      (values.freeShipping ||
-        amountInputSchemaForAsset(assetForListingCurrency(values.currency)).safeParse(values.shippingPrice).success) &&
-      /^\d+$/.test(values.shippingMinDays) &&
-      /^\d+$/.test(values.shippingMaxDays) &&
+    ((values.shippingMode === 'profile'
+      ? values.shippingProfileId !== ''
+      : values.shippingMode === 'custom'
+        ? shippingZonesFromForm(values.shippingZoneValues, assetForListingCurrency(values.currency)).ok
+        : values.shippingLabel.trim().length > 0 &&
+          (values.freeShipping ||
+            amountInputSchemaForAsset(assetForListingCurrency(values.currency)).safeParse(values.shippingPrice)
+              .success) &&
+          /^\d+$/.test(values.shippingMinDays) &&
+          /^\d+$/.test(values.shippingMaxDays)) &&
       values.packageWeight.trim().length > 0 &&
       values.packageLength.trim().length > 0 &&
       values.packageWidth.trim().length > 0 &&

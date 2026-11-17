@@ -312,6 +312,60 @@ describe('MarketplaceInventoryImport progress', () => {
   });
 });
 
+describe('MarketplaceInventoryImport listings and variants', () => {
+  const rows = { create: 705, update: 0, end: 0, unchanged: 0, conflict: 0 };
+
+  it('says how many listings the variant rows make, and names the rows variants', () => {
+    render(<MarketplaceInventoryImport step={4} scene="dry-run" counts={rows} listingCount={183} />);
+    expect(screen.getByTestId('inventory-import-listing-size')).toHaveTextContent(
+      '183 listings (705 variants) will be saved.',
+    );
+    expect(screen.getByTestId('inventory-import-dry-run')).toHaveTextContent('Create 705 variants');
+  });
+
+  it('adds nothing when every row is its own listing', () => {
+    render(<MarketplaceInventoryImport step={4} scene="dry-run" counts={{ ...rows, create: 3 }} listingCount={3} />);
+    expect(screen.queryByTestId('inventory-import-listing-size')).not.toBeInTheDocument();
+    expect(screen.getByTestId('inventory-import-dry-run')).toHaveTextContent(/^Create 3Update 0End 0/);
+  });
+
+  it('counts listings, not variants, while the listings are saved, and keeps photos on their own count', () => {
+    const { rerender } = render(
+      <MarketplaceInventoryImport
+        step={5}
+        scene="progress"
+        counts={rows}
+        listingCount={183}
+        progress={{ done: 76, total: 183 }}
+      />,
+    );
+    expect(screen.getByTestId('inventory-import-progress')).toHaveTextContent(
+      'Saving your listings… 76 of 183 (705 variants).',
+    );
+    rerender(
+      <MarketplaceInventoryImport
+        step={5}
+        scene="progress"
+        counts={rows}
+        listingCount={183}
+        progress={{ done: 10, total: 83 }}
+      />,
+    );
+    expect(screen.getByTestId('inventory-import-progress')).toHaveTextContent(/^Saving your listings… 10 of 83\.$/);
+    rerender(
+      <MarketplaceInventoryImport
+        step={5}
+        scene="progress"
+        counts={rows}
+        listingCount={183}
+        progressPhase="photos"
+        progress={{ done: 76, total: 705 }}
+      />,
+    );
+    expect(screen.getByTestId('inventory-import-progress')).toHaveTextContent('Loading photos… 76 of 705.');
+  });
+});
+
 describe('MarketplaceInventoryImport resuming an unfinished import', () => {
   const unfinished = { listings: { done: 120, total: 279 }, photosLeft: 605 };
 

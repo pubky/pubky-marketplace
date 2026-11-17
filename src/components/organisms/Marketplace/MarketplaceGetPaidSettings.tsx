@@ -32,7 +32,7 @@ import { deriveUsdtSellerReadiness } from '@/libs/commerce/usdt-seller-setup';
 import { truncateMiddle } from '@/libs/utils/utils';
 import { BitkitDownloads } from '@/molecules/BitkitDownloads/BitkitDownloads';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
 import { MarketplaceUsdtSellerSetup } from '@/organisms/Marketplace/MarketplaceUsdtSellerSetup';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -64,6 +64,13 @@ type PaykitSetupProblem = 'mismatch' | 'unconfirmed' | 'error';
 type PaykitSetupMode = 'setup' | 'reconnect' | 'bitcoin-reconnect';
 
 const PAYKIT_SETUP_TIMEOUT_MS = 6 * 60 * 1_000;
+
+/**
+ * How a setup attempt ended. paykit-server expires a flow after five minutes and deletes a completed flow with it, so
+ * a tab that was suspended while the seller approved in Bitkit polls after expiry and gets an error even though the
+ * setup finished. `error` and `timeout` are therefore only claims; the service's own setup status decides.
+ */
+type PaykitSetupOutcome = 'finished' | 'error' | 'timeout';
 
 function paykitKeyLabel(pubky: string | null): string {
   return pubky ? ` (${truncateMiddle(pubky, 16)})` : '';
@@ -100,6 +107,13 @@ const PAYKIT_BITCOIN_RECONNECT_EXPLANATION =
 /** Upstream `/setup` refuses an account Paykit already holds (for example one set up for Locks); reconnect re-approves it. */
 const PAYKIT_SETUP_FAILED_COPY =
   'Bitkit setup failed. If this pubky already has a Paykit setup, for example from Locks or another Shop, reconnect it instead.';
+/**
+ * A failed first setup for a seller the service does not say Paykit holds. paykit-server ends a setup flow after five
+ * minutes and the failure callback carries no reason, so this is the likeliest cause; reconnecting cannot help because
+ * Paykit has no account to reconnect.
+ */
+const PAYKIT_SETUP_EXPIRED_COPY =
+  'The Bitkit setup request ran out of time, so nothing was set up yet. Connect Bitkit to start again, and approve it in Bitkit within 5 minutes.';
 const PAYKIT_RECONNECT_FAILED_COPY = 'Reconnecting Bitkit failed. Try again.';
 
 function createPaykitSetupState(): string {
@@ -168,7 +182,10 @@ function MethodCard({
  * seller's own claimed watch-only account. PayPal settles into the seller's
  * own account. This marketplace never receives funds on any rail.
  */
+type PaymentCard = 'paypal' | 'bitcoin' | 'usdt';
+
 export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettingsProps) {
+  const [savingCard, setSavingCard] = useState<PaymentCard | null>(null);
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const grantSigner = useGrantSigner();
@@ -182,6 +199,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
   const showUsdtCard = usdtCapability === 'available' || usdtCapability === 'unreadable';
   const paykitIframeRef = useRef<HTMLIFrameElement>(null);
   const paykitSetupGenerationRef = useRef<string | null>(null);
+  const paykitSetupOutcomeRef = useRef<PaykitSetupOutcome>('finished');
   const [paykitSetupOpen, setPaykitSetupOpen] = useState(false);
   const [paykitSetupUrl, setPaykitSetupUrl] = useState<string | null>(null);
   const [paykitSetupState, setPaykitSetupState] = useState<string | null>(null);
@@ -191,6 +209,8 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
   const [paykitSetupProblemState, setPaykitSetupProblem] = useState<{
     problem: PaykitSetupProblem;
     pubky: string | null;
+    /** The flow that failed, for an `error` problem. */
+    failedMode?: PaykitSetupMode;
   } | null>(null);
   const [isRetryingUsdt, setIsRetryingUsdt] = useState(false);
   const [paypalTouched, setPaypalTouched] = useState(false);
@@ -222,8 +242,19 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
     setRailDraft({ bitcoin: null, paypal: null, usdt: null });
   }
 
-  /** Confirms a finished Bitcoin setup against a fresh read; an unknown answer is re-read, never re-authorized. */
-  function confirmBitcoinSetup(state: string) {
+  function showSetupFailure(outcome: 'error' | 'timeout') {
+    setPaykitSetupStatus(outcome);
+    if (outcome === 'error') {
+      setPaykitSetupProblem({ problem: 'error', pubky: currentUserPubky, failedMode: paykitSetupMode });
+    }
+  }
+
+  /**
+   * Confirms a Bitcoin setup against a fresh read; an unknown answer is re-read, never re-authorized. A callback that
+   * reported an error or an expiry is believed only when the service also says the account is not set up.
+   */
+  function confirmBitcoinSetup(state: string, outcome: PaykitSetupOutcome) {
+    paykitSetupOutcomeRef.current = outcome;
     setPaykitSetupStatus('verifying');
     void refreshPaymentConfig().then((claimed) => {
       if (paykitSetupGenerationRef.current !== state) return;
@@ -234,14 +265,51 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
         toast({ title: paykitSetupMode === 'bitcoin-reconnect' ? 'Bitkit reconnected' : 'Bitkit setup connected' });
         return;
       }
-      // `false` is a definite answer: Bitkit finished, but not for this key.
-      // `null` is no answer, which must not accuse the seller of a wrong key.
+      // `false` is a definite answer. After a finished setup it means Bitkit approved a different key; after an error
+      // or an expiry it means the setup really did not complete. `null` is no answer, which must not accuse the seller
+      // of a wrong key or of a failed setup.
+      if (claimed === false && outcome !== 'finished') {
+        showSetupFailure(outcome);
+        return;
+      }
       const problem = claimed === false ? 'mismatch' : 'unconfirmed';
       setPaykitSetupStatus(problem);
       setPaykitSetupProblem({ problem, pubky: currentUserPubky });
     });
   }
-  const onBitcoinSetupFinished = useEffectEvent(confirmBitcoinSetup);
+
+  /** The USDT reconnect succeeded when the service now reports the seller's USDT setup as ready. */
+  function confirmUsdtSetup(state: string, outcome: PaykitSetupOutcome) {
+    paykitSetupOutcomeRef.current = outcome;
+    setPaykitSetupStatus('verifying');
+    void refreshOwnConfig().then((next) => {
+      if (paykitSetupGenerationRef.current !== state) return;
+      if (next && deriveUsdtSellerReadiness(next) === 'ready') {
+        closePaykitSetup();
+        toast({ title: 'USDT is ready' });
+        return;
+      }
+      if (outcome === 'finished') setPaykitSetupStatus('usdt-missing');
+      else showSetupFailure(outcome);
+    });
+  }
+
+  /**
+   * Every end of a setup attempt re-reads the service before any failure is shown. An account that was already
+   * connected when the attempt ended proves nothing about this attempt, so an error there is taken as it is.
+   */
+  function settleSetupAttempt(state: string, outcome: PaykitSetupOutcome) {
+    if (paykitSetupMode === 'reconnect') {
+      confirmUsdtSetup(state, outcome);
+      return;
+    }
+    if (outcome !== 'finished' && payments.accountClaimed === true) {
+      showSetupFailure(outcome);
+      return;
+    }
+    confirmBitcoinSetup(state, outcome);
+  }
+  const onSetupSettled = useEffectEvent(settleSetupAttempt);
 
   useEffect(() => {
     if (!paykitSetupOpen || !paykitSetupUrl || !paykitSetupState) return;
@@ -260,33 +328,15 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
         setPaykitSetupProblem({ problem: 'mismatch', pubky: currentUserPubky });
         return;
       }
-      if (event.data.error) {
-        setPaykitSetupStatus('error');
-        setPaykitSetupProblem({ problem: 'error', pubky: currentUserPubky });
-        return;
-      }
-      setPaykitSetupStatus('verifying');
-      if (paykitSetupMode === 'reconnect') {
-        void refreshOwnConfig().then((next) => {
-          if (paykitSetupGenerationRef.current !== event.data.state) return;
-          if (next && deriveUsdtSellerReadiness(next) === 'ready') {
-            closePaykitSetup();
-            toast({ title: 'USDT is ready' });
-            return;
-          }
-          setPaykitSetupStatus('usdt-missing');
-        });
-        return;
-      }
-      onBitcoinSetupFinished(event.data.state);
+      onSetupSettled(event.data.state, event.data.error ? 'error' : 'finished');
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [currentUserPubky, paykitSetupMode, paykitSetupOpen, paykitSetupState, paykitSetupUrl, refreshOwnConfig]);
+  }, [currentUserPubky, paykitSetupOpen, paykitSetupState, paykitSetupUrl]);
 
   useEffect(() => {
     if (!paykitSetupOpen || !paykitSetupUrl || !paykitSetupState || paykitSetupStatus !== 'idle') return;
-    const timeout = window.setTimeout(() => setPaykitSetupStatus('timeout'), PAYKIT_SETUP_TIMEOUT_MS);
+    const timeout = window.setTimeout(() => onSetupSettled(paykitSetupState, 'timeout'), PAYKIT_SETUP_TIMEOUT_MS);
     return () => window.clearTimeout(timeout);
   }, [paykitSetupOpen, paykitSetupState, paykitSetupStatus, paykitSetupUrl]);
 
@@ -318,8 +368,9 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
     setPaykitSetupOpen(true);
   };
 
-  const onSave = async () => {
+  const onSave = async (card: PaymentCard) => {
     if (!serverConfig || payments.isLoading || serverBaseline !== draftBaseline) return;
+    setSavingCard(card);
     const saved = await payments.save({
       bitcoinEnabled: railDraft.bitcoin ?? serverConfig.bitcoinEnabled,
       paypalMerchantEmail: railDraft.paypal ?? serverConfig.paypalMerchantEmail ?? '',
@@ -330,6 +381,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
       // from resetting the consent.
       ...(serverConfig.usdtEnabled !== undefined ? { usdtEnabled: railDraft.usdt ?? serverConfig.usdtEnabled } : {}),
     });
+    setSavingCard(null);
     if (saved) onSaved?.(saved);
   };
 
@@ -343,9 +395,15 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
     serverBaseline === draftBaseline &&
     !paypalInvalid;
 
-  const saveButton = (
-    <Button className="w-fit rounded-full" disabled={payments.isSaving || !saveReady} onClick={() => void onSave()}>
-      {payments.isSaving ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
+  // Each card has its own button: only the one that started the save spins,
+  // and the others stay disabled while it runs.
+  const saveButton = (card: PaymentCard) => (
+    <Button className="w-fit rounded-full" disabled={payments.isSaving || !saveReady} onClick={() => void onSave(card)}>
+      {payments.isSaving && savingCard === card ? (
+        <LoaderCircle className="size-4 animate-spin" />
+      ) : (
+        <Save className="size-4" />
+      )}
       Save changes
     </Button>
   );
@@ -388,9 +446,6 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
   const paykitCodeExpired = paykitSetupStatus === 'error' || paykitSetupStatus === 'timeout';
   const step2Mode: PaykitSetupMode =
     upstreamPaykit && (payments.accountClaimed === true || bitcoinNeedsReconnect) ? 'bitcoin-reconnect' : 'setup';
-  const offerBitcoinReconnect =
-    upstreamPaykit && step2Mode === 'setup' && paykitSetupProblem === 'error' && payments.accountClaimed === false;
-  const failedSetupInDialog = upstreamPaykit && paykitSetupStatus === 'error' && paykitSetupMode === 'setup';
   // The service's `reconnect` is its record that Paykit once held the seller. A Paykit that no longer holds the creator
   // refuses `/setup/reconnect` before serving its page, so nothing calls back and the reconnect only expires; an expired
   // one falls back to initial setup. An `error` callback means Paykit found the creator, so it keeps the reconnect.
@@ -398,6 +453,14 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
     upstreamPaykit &&
     payments.accountClaimed === false &&
     (payments.config?.bitcoinSetupAction === 'reconnect' || payments.config?.usdtSetupAction === 'reconnect');
+  // A failed initial setup offers Reconnect Bitkit only for a seller Paykit holds: the service says so, or the wallet
+  // is already connected. Otherwise Paykit has no account to reconnect (`/setup/reconnect` answers 400), and the way
+  // back is a fresh setup.
+  const reconnectFixesFailedSetup = payments.accountClaimed === true || paykitHoldsSellerPerService;
+  const setupDialogFailed = upstreamPaykit && paykitSetupStatus === 'error' && paykitSetupMode === 'setup';
+  const failedSetupInDialog = setupDialogFailed && reconnectFixesFailedSetup;
+  const expiredSetupInDialog = setupDialogFailed && !reconnectFixesFailedSetup && payments.accountClaimed === false;
+  const expiredSetupOnCard = upstreamPaykit && step2Mode === 'setup' && paykitSetupProblem === 'error';
   const expiredServiceReconnectInDialog =
     paykitHoldsSellerPerService && paykitSetupMode !== 'setup' && paykitSetupStatus === 'timeout';
   // Only the missing-step reason is explained here; without a session the
@@ -427,7 +490,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
     }
     if (payments.loadError) {
       return (
-        <Typography as="p" role="alert" className="text-sm text-amber-300">
+        <Typography as="p" role="alert" className="text-sm text-warning-foreground">
           {payments.loadError}
         </Typography>
       );
@@ -486,12 +549,12 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                 aria-describedby={showPaypalError ? 'get-paid-paypal-error' : undefined}
               />
               {showPaypalError && (
-                <Typography as="p" id="get-paid-paypal-error" role="alert" className="text-sm text-amber-300">
+                <Typography as="p" id="get-paid-paypal-error" role="alert" className="text-sm text-warning-foreground">
                   {PAYPAL_EMAIL_INVALID_COPY}
                 </Typography>
               )}
             </div>
-            {saveButton}
+            {saveButton('paypal')}
           </>,
         )}
       </MethodCard>
@@ -502,7 +565,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
         promise="Connect your Bitkit wallet to accept bitcoin."
         status={bitcoinStatus}
         statusTestId="payment-method-status-bitcoin"
-        headerContent={getPaykitServerApi() === 'upstream' ? <BitkitDownloads compact /> : undefined}
+        headerContent={getPaykitServerApi() === 'upstream' ? <BitkitDownloads compact label="Get Bitkit" /> : undefined}
       >
         <div className="grid gap-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
           <div>
@@ -523,7 +586,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                 as="p"
                 id="get-paid-bitkit-unknown"
                 role="status"
-                className="text-sm text-amber-300"
+                className="text-sm text-warning-foreground"
                 data-testid="bitkit-setup-unknown"
               >
                 {BITCOIN_TOGGLE_BLOCKER_COPY['bitkit-unknown']}
@@ -543,17 +606,19 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
               <Typography
                 as="p"
                 role="alert"
-                className="mt-2 text-sm text-amber-300"
+                className="mt-2 text-sm text-warning-foreground"
                 data-testid="paykit-setup-problem"
               >
                 {paykitSetupProblem === 'mismatch'
                   ? paykitMismatchMessage(currentUserPubky)
                   : paykitSetupProblem === 'unconfirmed'
                     ? PAYKIT_UNCONFIRMED_COPY
-                    : offerBitcoinReconnect
-                      ? PAYKIT_SETUP_FAILED_COPY
+                    : expiredSetupOnCard
+                      ? PAYKIT_SETUP_EXPIRED_COPY
                       : step2Mode === 'bitcoin-reconnect'
-                        ? PAYKIT_RECONNECT_FAILED_COPY
+                        ? paykitSetupProblemState?.failedMode === 'setup'
+                          ? PAYKIT_SETUP_FAILED_COPY
+                          : PAYKIT_RECONNECT_FAILED_COPY
                         : 'Bitkit setup failed. Try again.'}
               </Typography>
             )}
@@ -565,26 +630,17 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
             </Button>
           ) : bitkitRead === 'checking' ? null : (
             <div className="flex flex-wrap gap-2">
-              {offerBitcoinReconnect && (
-                <Button
-                  variant="secondary"
-                  className="w-fit"
-                  disabled={!marketplaceSession || !currentUserPubky}
-                  onClick={() => openPaykitSetup('bitcoin-reconnect')}
-                >
-                  Reconnect Bitkit
-                  <ExternalLink className="size-4" />
-                </Button>
-              )}
               <Button
-                variant="secondary"
+                // The step the card exists for: the main action until the wallet is connected.
+                variant={payments.accountClaimed === true ? 'secondary' : 'default'}
                 className="w-fit"
                 disabled={!marketplaceSession || !currentUserPubky}
                 onClick={() => openPaykitSetup(step2Mode)}
+                data-testid="get-paid-connect-bitkit"
               >
                 {step2Mode === 'bitcoin-reconnect'
                   ? 'Reconnect Bitkit'
-                  : paykitSetupProblem && payments.accountClaimed !== true
+                  : paykitSetupProblem && payments.accountClaimed !== true && !expiredSetupOnCard
                     ? 'Try again'
                     : 'Connect Bitkit'}
                 <ExternalLink className="size-4" />
@@ -664,7 +720,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
               </CollapsibleContent>
             </Collapsible>
 
-            {saveButton}
+            {saveButton('bitcoin')}
           </>,
         )}
       </MethodCard>
@@ -698,7 +754,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                 canOpenBitkit={Boolean(marketplaceSession && currentUserPubky)}
                 signer={grantSigner}
               />
-              {saveButton}
+              {saveButton('usdt')}
             </>,
           )}
         </MethodCard>
@@ -721,9 +777,11 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                 {paykitSetupStatus === 'error'
                   ? failedSetupInDialog
                     ? PAYKIT_SETUP_FAILED_COPY
-                    : paykitSetupMode === 'bitcoin-reconnect'
-                      ? PAYKIT_RECONNECT_FAILED_COPY
-                      : 'Bitkit setup failed. Try again.'
+                    : expiredSetupInDialog
+                      ? PAYKIT_SETUP_EXPIRED_COPY
+                      : paykitSetupMode === 'bitcoin-reconnect'
+                        ? PAYKIT_RECONNECT_FAILED_COPY
+                        : 'Bitkit setup failed. Try again.'
                   : paykitSetupStatus === 'mismatch'
                     ? paykitMismatchMessage(currentUserPubky)
                     : paykitSetupStatus === 'unconfirmed'
@@ -756,26 +814,36 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                     Connect Bitkit
                   </Button>
                 )}
+                {expiredSetupInDialog && (
+                  <Button variant="default" className="w-fit rounded-full" onClick={() => openPaykitSetup('setup')}>
+                    <RefreshCw className="size-4" />
+                    Connect Bitkit
+                  </Button>
+                )}
                 {paykitSetupStatus === 'unconfirmed' ? (
                   <Button
                     variant="secondary"
                     className="w-fit rounded-full"
                     onClick={() => {
-                      if (paykitSetupGenerationRef.current) confirmBitcoinSetup(paykitSetupGenerationRef.current);
+                      if (paykitSetupGenerationRef.current) {
+                        confirmBitcoinSetup(paykitSetupGenerationRef.current, paykitSetupOutcomeRef.current);
+                      }
                     }}
                   >
                     <RefreshCw className="size-4" />
                     Check again
                   </Button>
                 ) : (
-                  <Button
-                    variant="secondary"
-                    className="w-fit rounded-full"
-                    onClick={() => openPaykitSetup(paykitSetupMode)}
-                  >
-                    <RefreshCw className="size-4" />
-                    Retry
-                  </Button>
+                  !expiredSetupInDialog && (
+                    <Button
+                      variant="secondary"
+                      className="w-fit rounded-full"
+                      onClick={() => openPaykitSetup(paykitSetupMode)}
+                    >
+                      <RefreshCw className="size-4" />
+                      Retry
+                    </Button>
+                  )
                 )}
               </div>
             </div>

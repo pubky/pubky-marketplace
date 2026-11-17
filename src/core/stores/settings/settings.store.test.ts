@@ -83,18 +83,6 @@ describe('SettingsStore', () => {
       });
     });
 
-    it('should set all notification preferences at once', () => {
-      const store = useSettingsStore.getState();
-      const newPreferences = {
-        ...defaultNotificationPreferences,
-        follow: false,
-        reply: false,
-      };
-
-      store.setAllNotifications(newPreferences);
-      expect(useSettingsStore.getState().notifications).toEqual(newPreferences);
-    });
-
     it('should update multiple notification preferences independently', () => {
       const store = useSettingsStore.getState();
 
@@ -165,69 +153,6 @@ describe('SettingsStore', () => {
     });
   });
 
-  describe('Muted Users', () => {
-    it('should add muted user', () => {
-      const store = useSettingsStore.getState();
-      const userId = 'user-123';
-
-      store.addMutedUser(userId);
-      expect(useSettingsStore.getState().muted).toContain(userId);
-      expect(useSettingsStore.getState().muted.length).toBe(1);
-    });
-
-    it('should not add duplicate muted users', () => {
-      const store = useSettingsStore.getState();
-      const userId = 'user-123';
-
-      store.addMutedUser(userId);
-      store.addMutedUser(userId); // Try to add again
-
-      expect(useSettingsStore.getState().muted).toEqual([userId]);
-      expect(useSettingsStore.getState().muted.length).toBe(1);
-    });
-
-    it('should remove muted user', () => {
-      const store = useSettingsStore.getState();
-      const userId1 = 'user-123';
-      const userId2 = 'user-456';
-
-      store.addMutedUser(userId1);
-      store.addMutedUser(userId2);
-      expect(useSettingsStore.getState().muted.length).toBe(2);
-
-      store.removeMutedUser(userId1);
-      expect(useSettingsStore.getState().muted).not.toContain(userId1);
-      expect(useSettingsStore.getState().muted).toContain(userId2);
-      expect(useSettingsStore.getState().muted.length).toBe(1);
-    });
-
-    it('should set muted users array', () => {
-      const store = useSettingsStore.getState();
-      const userIds = ['user-1', 'user-2', 'user-3'];
-
-      store.setMutedUsers(userIds);
-      expect(useSettingsStore.getState().muted).toEqual(userIds);
-    });
-
-    it('should clear all muted users', () => {
-      const store = useSettingsStore.getState();
-
-      store.addMutedUser('user-1');
-      store.addMutedUser('user-2');
-      expect(useSettingsStore.getState().muted.length).toBe(2);
-
-      store.clearMutedUsers();
-      expect(useSettingsStore.getState().muted).toEqual([]);
-    });
-
-    it('should handle removing non-existent user gracefully', () => {
-      const store = useSettingsStore.getState();
-
-      store.removeMutedUser('non-existent-user');
-      expect(useSettingsStore.getState().muted).toEqual([]);
-    });
-  });
-
   describe('Store Reset', () => {
     it('should reset store to default state', () => {
       const store = useSettingsStore.getState();
@@ -235,7 +160,7 @@ describe('SettingsStore', () => {
       // Set some state
       store.setNotificationPreference('follow', false);
       store.setShowConfirm(false);
-      store.addMutedUser('user-123');
+      useSettingsStore.setState({ muted: ['user-123'] });
 
       // Verify state is set
       expect(useSettingsStore.getState().notifications.follow).toBe(false);
@@ -282,8 +207,7 @@ describe('SettingsStore', () => {
       // Change multiple settings
       store.setNotificationPreference('follow', false);
       store.setShowConfirm(false);
-      store.addMutedUser('user-1');
-      store.addMutedUser('user-2');
+      store.loadFromHomeserver({ ...useSettingsStore.getState(), muted: ['user-1', 'user-2'] });
 
       const state = useSettingsStore.getState();
       expect(state.notifications.follow).toBe(false);
@@ -294,11 +218,9 @@ describe('SettingsStore', () => {
     it('should maintain state consistency across multiple operations', () => {
       const store = useSettingsStore.getState();
 
-      // Add and remove users
-      store.addMutedUser('user-1');
-      store.addMutedUser('user-2');
-      store.removeMutedUser('user-1');
-      store.addMutedUser('user-3');
+      // Apply successive synced mute lists
+      store.loadFromHomeserver({ ...useSettingsStore.getState(), muted: ['user-1', 'user-2'] });
+      store.loadFromHomeserver({ ...useSettingsStore.getState(), muted: ['user-2', 'user-3'] });
 
       const state = useSettingsStore.getState();
       expect(state.muted.length).toBe(2);

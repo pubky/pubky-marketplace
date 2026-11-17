@@ -2,7 +2,7 @@
 
 # Pubky web app
 
-## Pubky Marketplace
+## Pubky Market
 
 `pubky/pubky-marketplace` holds the Shop web client, its documentation and
 the tester issue tracker. The client is built on the official
@@ -11,7 +11,7 @@ peer-to-peer **marketplace** on top of the social app; its history includes
 the official app's history. Release line: branch `master` (the repository
 default), live at [shop.pubky.app](https://shop.pubky.app) as
 [`shop-v0.6.51`](https://github.com/pubky/pubky-marketplace/releases/tag/shop-v0.6.51)
-(the deployment id behind the domain comes from `vercel inspect`, see
+(deployment is through [pubky/shop-migration](https://github.com/pubky/shop-migration), see
 [`docs/ecommerce/release.md`](docs/ecommerce/release.md#deploy)). Payments there are
 real and go straight to the seller.
 
@@ -113,7 +113,8 @@ All deployer-facing values are `PUBKY_RUNTIME_*` variables, validated by
 - Check architecture and coding conventions: [docs/README.md](./docs/README.md)
 - Contribute: [CONTRIBUTING.md](./CONTRIBUTING.md); run `bash scripts/prepush.sh` before every push
 - Release: [docs/ecommerce/release.md](./docs/ecommerce/release.md)
-- Run local code review workflow (Cursor): use `/review` (defined in `.cursor/skills/code-review/SKILL.md`)
+- Follow the development workflow: [docs/development-workflow.md](./docs/development-workflow.md)
+- Run a local code review: use the shared [pubky-code-review skill](./.agents/skills/pubky-code-review/SKILL.md); the Cursor `code-review` skill delegates to the same instructions
 - Follow commit message format: [docs/commit-message.md](./docs/commit-message.md)
 
 ## License

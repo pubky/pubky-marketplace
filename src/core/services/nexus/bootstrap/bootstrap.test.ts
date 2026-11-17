@@ -172,7 +172,11 @@ describe('NexusBootstrapService', () => {
         const { nexusQueryClient } = await import('../nexus.query-client');
         try {
           await vi.advanceTimersByTimeAsync(75_001);
-          expect(result).toMatchObject({ category: ErrorCategory.Timeout, code: 'REQUEST_TIMEOUT' });
+          expect(result).toMatchObject({
+            category: ErrorCategory.Timeout,
+            code: 'REQUEST_TIMEOUT',
+            context: { ioDeadline: true, ioEndpoint: 'v0/bootstrap/:pubky' },
+          });
           if (phase !== 'offline') expect(signals.length).toBeGreaterThan(0);
           expect(signals.every((signal) => signal.aborted)).toBe(true);
           const attempts = mockFetch.mock.calls.length;

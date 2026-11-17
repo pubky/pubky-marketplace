@@ -104,11 +104,6 @@ export function commerceCategoryChildren(categoryId: string | null): CommerceTax
   return nodes.filter((node) => !node.legacy);
 }
 
-export function isCommerceCategoryLeaf(categoryId: string): boolean {
-  const resolved = resolveCommerceCategory(categoryId);
-  return resolved !== null && commerceCategoryChildren(categoryId).length === 0;
-}
-
 // ---------------------------------------------------------------------------
 // Category-dependent attributes ("item specifics")
 // ---------------------------------------------------------------------------

@@ -1,0 +1,56 @@
+{
+  "annotation": {
+    "canonicalBody": "{\"orderRef\":\"5f1a3a1c2d0e4b8f9a7c6e5d4b3a29181716151413121110f0e0d0c0b0a09080\",\"outcomes\":[{\"kind\":\"returned\",\"on\":\"2026-10-12\"},{\"kind\":\"refunded\",\"on\":\"2026-10-14\"}],\"revision\":2}",
+    "proof": "eyJhbGciOiJFZERTQSIsInR5cCI6InB1Ymt5LWF0dGVzdG9yLWFubm90YXRpb24rdjEifQ..JX8ewq5sBaVB9PAIe8s6c1rZUor1MUgxcH5Q88HJ2iOzOFc3lZSMgTz9xzr9BtK5GnAJ6OiLfgR_EDUmuPreAA",
+    "record": {
+      "orderRef": "5f1a3a1c2d0e4b8f9a7c6e5d4b3a29181716151413121110f0e0d0c0b0a09080",
+      "outcomes": [
+        {
+          "kind": "returned",
+          "on": "2026-10-12"
+        },
+        {
+          "kind": "refunded",
+          "on": "2026-10-14"
+        }
+      ],
+      "proof": "eyJhbGciOiJFZERTQSIsInR5cCI6InB1Ymt5LWF0dGVzdG9yLWFubm90YXRpb24rdjEifQ..JX8ewq5sBaVB9PAIe8s6c1rZUor1MUgxcH5Q88HJ2iOzOFc3lZSMgTz9xzr9BtK5GnAJ6OiLfgR_EDUmuPreAA",
+      "revision": 2
+    },
+    "uri": "pubky://7jfgaa9nutjyixzikb7tgmsf9gkwq7iqz498zr1nd5ig1fng4esy/pub/pubky.app/marketplace/v1/attestor/annotations/5f1a3a1c2d0e4b8f9a7c6e5d4b3a29181716151413121110f0e0d0c0b0a09080"
+  },
+  "attestorPubky": "7jfgaa9nutjyixzikb7tgmsf9gkwq7iqz498zr1nd5ig1fng4esy",
+  "description": "Canonical attestor record vectors from pubky-app-specs 0.6.2-marketplace.16 (src/test_fixtures/attestor-records-v1.json), with the test-only signing key left out. canonicalBody is the RFC 8785 serialization of the record without proof; proof is the detached-payload compact JWS over it; record is the published JSON object.",
+  "profile": {
+    "canonicalBody": "{\"issuancePolicy\":{\"amountBand\":\"both-sides consent\",\"blindWindowDays\":14,\"editWindowHours\":24,\"minOrderValue\":null,\"priceDecade\":\"always\"},\"keys\":[{\"pubky\":\"7jfgaa9nutjyixzikb7tgmsf9gkwq7iqz498zr1nd5ig1fng4esy\",\"validFrom\":\"2026-08-01T00:00:00Z\"},{\"compromisedFrom\":\"2026-07-15T00:00:00Z\",\"pubky\":\"9wm1eqn4wddis385xdgsym7b5ge9549zpcjhmdszymicopxj6acy\",\"validFrom\":\"2026-01-01T00:00:00Z\",\"validUntil\":\"2026-08-01T00:00:00Z\"}],\"operator\":{\"name\":\"Pubky Market\",\"policyUrl\":\"https://pubky-market.example/attestor-policy\",\"url\":\"https://pubky-market.example\"}}",
+    "proof": "eyJhbGciOiJFZERTQSIsInR5cCI6InB1Ymt5LWF0dGVzdG9yLXByb2ZpbGUrdjEifQ..7INeTcsmd2drWFBIerNPtAiqegS30hxyRLAHN3_Ztt0OthOrS3P4mmwqPxkXGKnNKRj1j29StKMAhcxdGf1mCA",
+    "record": {
+      "issuancePolicy": {
+        "amountBand": "both-sides consent",
+        "blindWindowDays": 14,
+        "editWindowHours": 24,
+        "minOrderValue": null,
+        "priceDecade": "always"
+      },
+      "keys": [
+        {
+          "pubky": "7jfgaa9nutjyixzikb7tgmsf9gkwq7iqz498zr1nd5ig1fng4esy",
+          "validFrom": "2026-08-01T00:00:00Z"
+        },
+        {
+          "compromisedFrom": "2026-07-15T00:00:00Z",
+          "pubky": "9wm1eqn4wddis385xdgsym7b5ge9549zpcjhmdszymicopxj6acy",
+          "validFrom": "2026-01-01T00:00:00Z",
+          "validUntil": "2026-08-01T00:00:00Z"
+        }
+      ],
+      "operator": {
+        "name": "Pubky Market",
+        "policyUrl": "https://pubky-market.example/attestor-policy",
+        "url": "https://pubky-market.example"
+      },
+      "proof": "eyJhbGciOiJFZERTQSIsInR5cCI6InB1Ymt5LWF0dGVzdG9yLXByb2ZpbGUrdjEifQ..7INeTcsmd2drWFBIerNPtAiqegS30hxyRLAHN3_Ztt0OthOrS3P4mmwqPxkXGKnNKRj1j29StKMAhcxdGf1mCA"
+    },
+    "uri": "pubky://7jfgaa9nutjyixzikb7tgmsf9gkwq7iqz498zr1nd5ig1fng4esy/pub/pubky.app/marketplace/v1/attestor/profile"
+  }
+}

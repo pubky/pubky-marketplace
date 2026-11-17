@@ -40,12 +40,16 @@ export class ProfileApplication {
    * @param profile - The profile to set
    * @param url - The URL of the profile
    * @param pubky - The public key of the user
+   * @param isCurrent - Whether the submitting identity is still signed in; gates the auth store write
    */
-  static async commitCreate({ profile, url, pubky }: TCreateProfileInput) {
+  static async commitCreate({ profile, url, pubky, isCurrent }: TCreateProfileInput) {
     try {
       await HomeserverService.request({ method: HttpMethod.PUT, url, bodyJson: profile.toJson() });
       // Tell Nexus this user exists (best-effort, never rejects; see NexusBootstrapService.ingest).
       void NexusBootstrapService.ingest(pubky);
+      // The session can change while the PUT is in flight. Only the identity that
+      // submitted is marked complete, never the one that replaced it.
+      if (!isCurrent()) return;
       const authStore = useAuthStore.getState();
       authStore.setCurrentUserPubky(pubky);
       authStore.setHasProfile(true);

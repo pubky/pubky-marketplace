@@ -86,28 +86,13 @@ export class UserStreamApplication {
   }
 
   /**
-   * Reads one page of a user stream's ids straight from Nexus, leaving the
-   * local stream cache untouched. For callers that need the current list
-   * every time (a cached slice never sees later followers) without
-   * reshaping the cache the stream screens page through.
-   */
-  static async fetchStreamIds({
-    streamId,
-    skip,
-    limit,
-    viewerId,
-  }: Pick<TFetchUserStreamChunkParams, 'streamId' | 'skip' | 'limit' | 'viewerId'>): Promise<Pubky[]> {
-    return await NexusUserStreamService.fetch({ streamId, params: { skip, limit, viewer_id: viewerId } });
-  }
-
-  /**
    * Fetch missing user details from Nexus
    * Called in background to populate cache with full user data
    *
    * @param cacheMissUserIds - Array of user IDs that need to be fetched
    * @param viewerId - Optional viewer ID for relationship data
    */
-  static async fetchMissingUsersFromNexus({ cacheMissUserIds, viewerId }: TMissingUsersParams): Promise<void> {
+  static async fetchMissingUsersFromNexus({ cacheMissUserIds, viewerId, signal }: TMissingUsersParams): Promise<void> {
     if (cacheMissUserIds.length === 0) {
       return;
     }
@@ -117,8 +102,10 @@ export class UserStreamApplication {
         user_ids: cacheMissUserIds,
         viewer_id: viewerId,
       });
+      signal?.throwIfAborted();
       await LocalStreamUsersService.persistUsers(userBatch);
     } catch (error) {
+      if (signal?.aborted) throw error;
       Logger.warn('Failed to fetch missing users from Nexus:', { error });
     }
   }

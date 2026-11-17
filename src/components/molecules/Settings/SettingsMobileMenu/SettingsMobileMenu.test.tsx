@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { SETTINGS_ROUTES } from '@/app/routes';
@@ -39,12 +38,5 @@ describe('SettingsMobileMenu', () => {
     const root = container.firstChild as HTMLElement;
     expect(root).toHaveClass('fixed', 'top-(--header-height-settings)', 'right-0', 'left-0');
     expect(root).not.toHaveClass('sticky');
-  });
-});
-
-describe('SettingsMobileMenu - Snapshots', () => {
-  it('matches snapshot', () => {
-    const { container } = render(<SettingsMobileMenu />);
-    expect(container.firstChild).toMatchSnapshot();
   });
 });

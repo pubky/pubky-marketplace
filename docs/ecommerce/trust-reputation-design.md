@@ -29,7 +29,7 @@ Everything below was verified in the actual repos on 2026-08-21. The design is s
 `pubky-app-specs` fork, `src/models/marketplace_review.rs`:
 
 - `PubkyAppMarketplaceReview` lives at `/pub/pubky.app/marketplace/v1/reviews/{review_id}` **on the reviewer's homeserver** (`owner_pubky` is the reviewer). The reviewer owns their words; the seller cannot delete them.
-- `review_id = Crockford-base32(Blake3("{listing_uri}:{subject_pubky}:{role}")[:half])` — deterministic per (listing, subject, role). **The order is not part of the ID**: a repeat buyer has one living review per listing per role, revised via `revision`, not one review per order (§6.1 takes a position on this).
+- `review_id = Crockford-base32(Blake3("{listing_uri}:{subject_pubky}:{role}:{order_ref}")[:half])` — deterministic per (listing, subject, role, attested order), specs `0.6.2-marketplace.14`. A repeat buyer has one review per order, each revised via `revision` (§6.1). Records published before `.14` carry no `orderRef` and keep the three-part ID.
 - Fields: `subjectPubky`, `listingOwnerPubky`, `listingId`, `role` (`buyer_reviewing_seller` | `seller_reviewing_buyer`), `ratings` (`overall` required, `itemAccuracy`/`shipping`/`communication` optional, all integers 1–5), `text` (1–5,000 chars), and — critically — **`eligibilityAttestation`: an opaque string, 32–4,096 chars, charset `[A-Za-z0-9._~-]`**. The field is reserved and validated but nothing issues or verifies its content today. The charset admits base64url plus `.`, so a compact JWS fits exactly.
 - The specs URI parser (`src/uri/resource.rs`) already routes `Resource::MarketplaceReview(id)` — Nexus can dispatch review PUT/DEL events without parser work.
 
@@ -169,9 +169,11 @@ Nothing above is singular. A review's attestation names its `iss`; a second mark
 
 ## 6. Record topology (design question 2)
 
-### 6.1 Reviews: confirm reviewer-homeserver ownership; keep one-per-(listing,subject,role)
+### 6.1 Reviews: confirm reviewer-homeserver ownership; one review per attested order
 
 The spec's placement is confirmed as-is: reviewer's homeserver, reviewer owns the record. The deterministic ID without an order component means a repeat buyer _revises_ one living review rather than accumulating one per order. **Position: keep it for v1.** Rationale: it matches the shipped spec (changing the ID recipe is a breaking spec change); it caps per-buyer influence on a seller's aggregate at one review per listing per direction (an anti-spam property eBay lacked); and repeat purchases still count — each new order yields a fresh attestation, and the record's attestation can be superseded by the newest one while Nexus counts distinct attested orders via `order_ref`. The cost — a buyer cannot keep separate 5-star and 1-star reviews of the same listing — is accepted and listed as open decision D1 for the product owner (§11) since reversing it later means a spec v2.
+
+**Superseded (Oct 2026, pubky/pubky-marketplace#367):** a second order's review overwrote the first one, so the product owner reversed D1: every verified order keeps its own review. The record carries the attestation's `order_ref` as `orderRef`, the ID hashes it in, and the attestation binding requires `order_ref == orderRef`. Older records without `orderRef` stay valid at their per-listing path.
 
 ### 6.2 Discovery: tag-style reverse indexing; portability of discovery stated honestly
 
@@ -294,7 +296,7 @@ All eight decisions were ratified by the product owner on 2026-08-21. The table 
 
 | #   | Decision                                                             | Ratified position                                                                                                                                                                                                                                                                                        |
 | --- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | One living review per (listing, subject, role) vs. per-order reviews | **Keep spec** (§6.1): one living review per listing per role, revised in place; repeat orders refresh the attestation; Nexus counts distinct attested orders via `order_ref`                                                                                                                             |
+| D1  | One living review per (listing, subject, role) vs. per-order reviews | **Per-order reviews** (§6.1, reversed Oct 2026): one review per attested order, `orderRef` in the ID; each revised in place. Was: keep one living review per listing per role                                                                                                                            |
 | D2  | Amount bands in attestations                                         | **Custom — both-sides consent.** A band is included only when both the buyer and the seller have allowed it: the seller holds a standing band-consent preference on the shop/service side, the buyer opts in per review at review time. Default on both sides is _not included_. Consent mechanics: §5.3 |
 | D3  | Stat attestation cadence and stat set                                | **Weekly**, minimal set {ship-time, completion rate} (§7.2)                                                                                                                                                                                                                                              |
 | D4  | Does reputation enter default catalog ranking?                       | **Never in v1** (§10.3) — reputation is a filter/display facet only                                                                                                                                                                                                                                      |

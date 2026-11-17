@@ -76,10 +76,8 @@ vi.mock('@/stores/home/home.store', async () => {
       setTaggedAsActive: vi.fn(),
       applyDefaultReach: vi.fn(),
       setContent: vi.fn(),
-      setProfileTags: vi.fn(),
       addProfileTag: vi.fn(),
       removeProfileTag: vi.fn(),
-      clearProfileTags: vi.fn(),
       setHasHydrated: vi.fn(),
       reset: vi.fn(),
     }),
@@ -110,15 +108,6 @@ vi.mock('@/stores/auth/auth.store', async () => {
     }),
   };
 });
-
-vi.mock('@/stores/onboarding/onboarding.store', () => ({
-  useOnboardingStore: createZustandLikeHook({
-    secretKey: null as string | null,
-    showWelcomeDialog: false,
-    setShowWelcomeDialog: () => {},
-    hasHydrated: true,
-  }),
-}));
 
 vi.mock('@/stores/migration/migration.store', () => ({
   useMigrationStore: createZustandLikeHook({

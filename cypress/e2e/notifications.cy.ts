@@ -18,13 +18,7 @@ import {
   addProfileTags,
   causeNotificationsToBeRead,
 } from '../support/profile';
-import {
-  BackupType,
-  CheckForNewPosts,
-  HasBackedUp,
-  LatestNotificationReadState,
-  WaitForNewPosts,
-} from '../support/types/enums';
+import { BackupType, CheckForNewPosts, HasBackedUp, LatestNotificationReadState } from '../support/types/enums';
 import { verifyNotificationCounter } from '../support/common';
 import {
   createCollection,

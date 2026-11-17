@@ -16,8 +16,6 @@ import { ErrorService } from '@/libs/error/error.types';
 import { HttpMethod } from '@/libs/http/http.types';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 
-const PRIV_LIST_PAGE = 500;
-
 /**
  * Encrypted records under `/priv/pubky.app/marketplace/v2/s/`. Every read
  * decrypts, every write is read back and decrypted before it counts, and
@@ -80,29 +78,6 @@ export class CommercePrivStoreService {
       url: privListedEntryUrl(keyring, family, name),
       logUrl: PRIV_V2_LOG_PATH,
     });
-  }
-
-  /**
-   * Every listed entry name in the family, following the list cursor until
-   * a page comes back short. Anything else in the directory is skipped.
-   */
-  static async listAllNames(keyring: PrivKeyring, family: PrivFamily): Promise<string[]> {
-    const names: string[] = [];
-    let cursor: string | undefined;
-    for (;;) {
-      const urls = await HomeserverService.list({
-        baseDirectory: privFamilyUrl(keyring, family),
-        cursor,
-        limit: PRIV_LIST_PAGE,
-        logUrl: PRIV_V2_LOG_PATH,
-      });
-      for (const url of urls) {
-        const name = url.slice(url.lastIndexOf('/') + 1);
-        if (isPrivEntryName(name)) names.push(name);
-      }
-      if (urls.length < PRIV_LIST_PAGE) return names;
-      cursor = urls[urls.length - 1];
-    }
   }
 
   /** The names of the family's listed entries; anything else in the directory is skipped. */

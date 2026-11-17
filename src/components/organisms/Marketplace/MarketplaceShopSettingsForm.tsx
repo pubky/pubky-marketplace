@@ -16,28 +16,31 @@ import {
   COMMERCE_SHOP_TERM_DAYS_MAX,
   COMMERCE_SHOP_TERM_DAYS_MIN,
 } from '@/config/commerce';
-import {
-  type ShopImageSlot,
+import type {
+  ShopImageSlot,
   useMarketplaceShopSettings,
 } from '@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings';
 import type { MarketplaceShopSettingsData } from '@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings.types';
+import { usePaymentConfirmationMode } from '@/hooks/usePaymentConfirmationMode/usePaymentConfirmationMode';
 import { useSellerAnnualLimit } from '@/hooks/useSellerAnnualLimit/useSellerAnnualLimit';
+import { useSellerPaymentAutoConfirm } from '@/hooks/useSellerPaymentAutoConfirm/useSellerPaymentAutoConfirm';
 import { SELLER_STATUS_COPY } from '@/libs/commerce/eu-region';
+import { SELLING_BLOCKED_COUNTRY_MESSAGE } from '@/libs/commerce/region-modes';
+import {
+  SELLER_AUTO_CONFIRM_COPY,
+  SELLER_AUTO_CONFIRM_HINT_COPY,
+  SELLER_CONFIRMS_PAYMENTS_COPY,
+} from '@/libs/commerce/seller-auto-confirm';
 import { formatShipsToCountries, parseShipsToField, shipsToFieldError } from '@/libs/commerce/ships-to';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
+import { InfoHint } from '@/molecules/InfoHint/InfoHint';
 import { SellerAnnualLimitNotice } from '@/molecules/Marketplace/SellerAnnualLimitNotice';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 export interface MarketplaceShopSettingsFormProps {
   onSaved?: () => void;
-}
-
-export function MarketplaceShopSettingsForm({ onSaved }: MarketplaceShopSettingsFormProps) {
-  const settings = useMarketplaceShopSettings();
-
-  return <MarketplaceShopSettingsFormView settings={settings} onSaved={onSaved} />;
 }
 
 export type MarketplaceShopSettings = ReturnType<typeof useMarketplaceShopSettings>;
@@ -71,7 +74,7 @@ export function MarketplaceShopSettingsFormView({ settings, onSaved }: Marketpla
 
 function MarketplaceShopSettingsLoaded({ settings, onSaved }: MarketplaceShopSettingsFormViewProps) {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
-  const annualLimit = useSellerAnnualLimit(currentUserPubky);
+  const annualLimit = useSellerAnnualLimit(currentUserPubky, settings.revision);
   const sellerStatus = useWatch({ control: settings.form.control, name: 'sellerStatus' });
   const reconfirmationRequired =
     annualLimit.status === 'ready' && annualLimit.limit.reconfirmationRequired === true && sellerStatus === 'private';
@@ -110,14 +113,50 @@ function MarketplaceShopSettingsLoaded({ settings, onSaved }: MarketplaceShopSet
             disabled={settings.isSaving}
           />
 
-          <ControlledInputField name="name" control={settings.form.control} label="Shop name" />
+          <ControlledInputField
+            name="name"
+            control={settings.form.control}
+            label="Shop name"
+            placeholder="e.g. Satoshi Vintage"
+          />
           <ControlledTextareaField name="bio" control={settings.form.control} label="About your shop" />
           <div className="grid gap-4 sm:grid-cols-2">
-            <ControlledInputField name="countryCode" control={settings.form.control} label="Country" />
+            <ControlledInputField
+              name="countryCode"
+              control={settings.form.control}
+              label="Country"
+              placeholder="Two-letter code"
+              disabled={settings.countryLocked}
+            />
             <ControlledInputField name="region" control={settings.form.control} label="Region" />
           </div>
+          {settings.countryLockedMessage && (
+            <Typography
+              as="p"
+              role="status"
+              className="-mt-2 text-sm text-muted-foreground"
+              data-testid="shop-settings-country-locked"
+            >
+              {settings.countryLockedMessage}
+            </Typography>
+          )}
+          {settings.countryBlocked && !settings.form.formState.errors.countryCode && (
+            <Typography
+              as="p"
+              role="status"
+              className="-mt-2 text-sm text-destructive"
+              data-testid="shop-settings-country-blocked"
+            >
+              {SELLING_BLOCKED_COUNTRY_MESSAGE}
+            </Typography>
+          )}
 
-          <ControlledTextareaField name="shippingPolicy" control={settings.form.control} label="Shipping policy" />
+          <ControlledTextareaField
+            name="shippingPolicy"
+            control={settings.form.control}
+            label="Shipping policy"
+            placeholder="e.g. Ships within three business days."
+          />
           <div className="grid gap-2" data-testid="shop-settings-ships-to">
             <ControlledInputField
               name="shipsToCountries"
@@ -128,7 +167,12 @@ function MarketplaceShopSettingsLoaded({ settings, onSaved }: MarketplaceShopSet
             />
             <ShipsToHint control={settings.form.control} />
           </div>
-          <ControlledTextareaField name="returnPolicy" control={settings.form.control} label="Return policy" />
+          <ControlledTextareaField
+            name="returnPolicy"
+            control={settings.form.control}
+            label="Return policy"
+            placeholder="e.g. Returns accepted within 30 days unless marked final sale."
+          />
 
           <Controller
             name="sellerStatus"
@@ -237,29 +281,7 @@ function MarketplaceShopSettingsLoaded({ settings, onSaved }: MarketplaceShopSet
               </div>
             )}
           />
-          <Controller
-            name="confirmBitcoinPayments"
-            control={settings.form.control}
-            render={({ field }) => (
-              <div data-testid="shop-settings-confirm-bitcoin">
-                <Label className="justify-between">
-                  I confirm my own Bitcoin payments
-                  <Switch
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                    disabled={settings.isSaving}
-                    aria-label="I confirm my own Bitcoin payments"
-                  />
-                </Label>
-                <Typography as="p" className="mt-1 text-sm text-muted-foreground">
-                  When on, a Bitcoin payment made through Paykit is not marked paid automatically: you confirm each one
-                  from the order once it reaches your wallet, and digital items are released only after you do. If you
-                  do not confirm within 24 hours, the payment goes to review. This applies to new orders only. Orders
-                  paid through Locks are not held. Off by default.
-                </Typography>
-              </div>
-            )}
-          />
+          <SellerPaymentConfirmationSettings control={settings.form.control} isSaving={settings.isSaving} />
           <Button size="lg" className="w-full rounded-full" disabled={settings.isSaving} onClick={() => void submit()}>
             {settings.isSaving ? 'Saving…' : 'Save storefront'}
           </Button>
@@ -374,5 +396,85 @@ function ShopImageField({
         </Typography>
       )}
     </div>
+  );
+}
+
+/**
+ * Who confirms the seller's payments. On a seller-confirmed deployment every
+ * payment waits for the seller, so the per-seller Bitcoin option is moot and
+ * is replaced by what happens instead, and by the switch that lets this
+ * browser confirm matching payments for them while they are signed in (on by
+ * default). An `automatic` deployment keeps the per-seller Bitcoin option and
+ * offers no automatic confirmation: a seller who opts in confirms each Bitcoin
+ * payment by hand, as before.
+ */
+function SellerPaymentConfirmationSettings({
+  control,
+  isSaving,
+}: {
+  control: Control<MarketplaceShopSettingsData>;
+  isSaving: boolean;
+}) {
+  const mode = usePaymentConfirmationMode();
+  const autoConfirm = useSellerPaymentAutoConfirm();
+  return (
+    <>
+      {mode === 'seller' ? (
+        <div data-testid="shop-settings-seller-confirms">
+          <Typography as="p" className="text-sm font-medium">
+            You confirm your payments
+          </Typography>
+          <Typography as="p" className="mt-1 text-sm text-muted-foreground">
+            {SELLER_CONFIRMS_PAYMENTS_COPY}
+          </Typography>
+        </div>
+      ) : (
+        <Controller
+          name="confirmBitcoinPayments"
+          control={control}
+          render={({ field }) => (
+            <div data-testid="shop-settings-confirm-bitcoin">
+              <Label className="justify-between">
+                <span className="flex items-center gap-1.5">
+                  I confirm my own Bitcoin payments
+                  <InfoHint label="About confirming Bitcoin payments">
+                    You confirm each Paykit Bitcoin payment from the order once it reaches your wallet, and digital
+                    items are released only after you do. If you don’t confirm within 24 hours, the payment goes to
+                    review. This applies to new orders only, and orders paid through Locks aren’t held.
+                  </InfoHint>
+                </span>
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                  disabled={isSaving || mode === 'checking'}
+                  aria-label="I confirm my own Bitcoin payments"
+                />
+              </Label>
+              <Typography as="p" className="mt-1 text-sm text-muted-foreground">
+                A Bitcoin payment isn’t marked paid until you confirm it. Off by default.
+              </Typography>
+            </div>
+          )}
+        />
+      )}
+      {mode === 'seller' && (
+        <div data-testid="shop-settings-auto-confirm">
+          <Label className="justify-between">
+            <span className="flex items-center gap-1.5">
+              Confirm matching payments automatically
+              <InfoHint label="About confirming payments automatically">{SELLER_AUTO_CONFIRM_HINT_COPY}</InfoHint>
+            </span>
+            <Switch
+              checked={autoConfirm.enabled}
+              onCheckedChange={autoConfirm.setEnabled}
+              aria-label="Confirm matching payments automatically"
+            />
+          </Label>
+          <Typography as="p" className="mt-1 text-sm text-muted-foreground">
+            {SELLER_AUTO_CONFIRM_COPY}
+          </Typography>
+        </div>
+      )}
+    </>
   );
 }

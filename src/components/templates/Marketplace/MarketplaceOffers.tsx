@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { HandCoins } from 'lucide-react';
 import { getMarketplaceListingRoute } from '@/app/routes';
@@ -16,6 +16,7 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { withBasePath } from '@/config/base-path';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { isMarketplaceAwardCheckoutEligible } from '@/core/services/marketplace/marketplace-projections';
+import { useCommerceAvailability } from '@/hooks/useCommerceAvailability/useCommerceAvailability';
 import { useMarketplaceCart } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
@@ -33,9 +34,10 @@ import { takeDocumentFragment } from '@/libs/navigation/document-fragment';
 import { formatDateTime } from '@/libs/utils/dateTime';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
+import { CommerceBlockedNotice } from '@/molecules/Marketplace/CommerceBlockedNotice';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
 import { MarketplaceProductSummary } from '@/molecules/Marketplace/MarketplaceProductSummary';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import type { MarketplaceOffer, MarketplaceOrder } from '@/services/marketplace/marketplace';
@@ -46,11 +48,12 @@ export function MarketplaceOffers() {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const offers = useMarketplaceOffers();
   const cart = useMarketplaceCart();
+  const commerce = useCommerceAvailability();
   const [convertedOrderStates, setConvertedOrderStates] = useState<Record<string, MarketplaceOrder['state']>>({});
   const [countering, setCountering] = useState<MarketplaceOffer | null>(null);
   const { listings, isHydrating } = useOfferListings(offers.offers);
-  const linkedOfferId = useLinkedOffer(offers.isLoading);
-  const linkedOfferMissing = isLinkedOfferMissing(linkedOfferId, offers.offers, offers.isLoading, offers.error);
+  const linkedOffer = useLinkedOffer(offers.isLoading);
+  const linkedOfferMissing = isLinkedOfferMissing(linkedOffer.offerId, offers.offers, offers.isLoading, offers.error);
 
   useEffect(() => {
     let active = true;
@@ -91,13 +94,7 @@ export function MarketplaceOffers() {
   };
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      className="pb-28"
-    >
+    <MarketplaceContentLayout disableMainContentOverflow className="pb-28">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <MarketplaceSectionNav />
         <div>
@@ -109,7 +106,16 @@ export function MarketplaceOffers() {
           </Typography>
         </div>
 
-        {offers.isLoading ? (
+        {commerce.blocked && commerce.message && commerce.info && (
+          <CommerceBlockedNotice
+            message={commerce.message}
+            info={commerce.info}
+            source={commerce.source}
+            testId="marketplace-offers-blocked"
+          />
+        )}
+
+        {offers.isLoading || !linkedOffer.ready ? (
           <Skeleton className="h-40 w-full" />
         ) : offers.needsSession && offers.error ? (
           <MarketplaceEmptyState
@@ -223,6 +229,7 @@ export function MarketplaceOffers() {
                         <Button
                           size="default"
                           className="rounded-full"
+                          disabled={commerce.held}
                           onClick={async () => {
                             const award = offer.award;
                             if (!award || award.state !== 'active') return;
@@ -249,6 +256,7 @@ export function MarketplaceOffers() {
                             <Button
                               size="default"
                               className="rounded-full"
+                              disabled={commerce.held}
                               onClick={() => void offers.act(offer, 'offer.accept')}
                             >
                               Accept
@@ -257,6 +265,7 @@ export function MarketplaceOffers() {
                               size="default"
                               variant="outline"
                               className="rounded-full"
+                              disabled={commerce.held}
                               onClick={() => setCountering(offer)}
                             >
                               Counter
@@ -324,7 +333,7 @@ export function MarketplaceOffers() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }
 
@@ -376,45 +385,80 @@ function listingCompositeId(offer: MarketplaceOffer): string {
   return listingRef ? `${listingRef.sellerPubky}:${listingRef.listingId}` : '';
 }
 
+/** How long an offer waits before its listing, which failed to load, is tried again. */
+export const OFFER_LISTING_RETRY_MS = 30_000;
+
 function useOfferListings(offers: readonly MarketplaceOffer[]) {
   const ids = useMemo(() => offers.map(listingCompositeId).filter(Boolean).sort().join('|'), [offers]);
   const [listings, setListings] = useState<Map<string, CommerceListingRecord>>(new Map());
   const [isHydrating, setIsHydrating] = useState(false);
+  // The offers poll hands back a new array every few seconds even when nothing changed. Reloading on it
+  // cleared the listings each time, so every card's thumbnail fell back to the placeholder and loaded
+  // again. Reload only when the set of listings changes, and keep the shown ones until the new ones land.
+  const offersRef = useRef(offers);
+  useEffect(() => {
+    offersRef.current = offers;
+  }, [offers]);
 
   useEffect(() => {
     let active = true;
-    const currentOffers = offers;
-    setListings(new Map());
-    setIsHydrating(false);
-    void loadOfferListings(currentOffers).then((nextListings) => {
-      if (!active) return;
-      setListings(nextListings);
-      setIsHydrating(false);
-    });
-    if (ids) setIsHydrating(true);
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    const loaded = new Map<string, CommerceListingRecord>();
+    // A listing that failed to load (a transient fetch error) is tried again on a slow timer, alone, so
+    // its card heals without the set of offers changing and the loaded ones are never reloaded.
+    const load = (offersToLoad: readonly MarketplaceOffer[]) => {
+      void loadOfferListings(offersToLoad).then((nextListings) => {
+        if (!active) return;
+        for (const [id, listing] of nextListings) loaded.set(id, listing);
+        setListings(new Map(loaded));
+        setIsHydrating(false);
+        const missing = offersRef.current.filter((offer) => {
+          const id = listingCompositeId(offer);
+          return Boolean(id) && !loaded.has(id);
+        });
+        if (missing.length) retry = setTimeout(() => load(missing), OFFER_LISTING_RETRY_MS);
+      });
+    };
+    load(offersRef.current);
+    setIsHydrating(Boolean(ids));
     return () => {
       active = false;
+      if (retry) clearTimeout(retry);
     };
-  }, [ids, offers]);
+  }, [ids]);
 
   return { listings, isHydrating };
 }
 
+/**
+ * The offer the page's link names. An old `#offer-<id>` fragment can only be read after mount, so the page is not
+ * `ready` until it has been: otherwise the list or "No offers yet" shows before the linked offer. Next reflects the
+ * replaced `?offer=` in its search params only on a later render, so the fragment's id stands in until it does.
+ */
 function useLinkedOffer(isLoading: boolean) {
-  const offerId = readLinkedOfferId(useSearchParams());
+  const queryId = readLinkedOfferId(useSearchParams());
+  const [fragment, setFragment] = useState<{ read: boolean; id: string | null }>({ read: false, id: null });
 
   useEffect(() => {
-    const fragment = takeDocumentFragment(window.location);
-    const legacyId = fragment ? readLegacyOfferFragment(fragment) : null;
+    const taken = takeDocumentFragment(window.location);
+    const legacyId = taken ? readLegacyOfferFragment(taken) : null;
     if (legacyId) window.history.replaceState(null, '', withBasePath(getMarketplaceOfferRoute(legacyId)));
+    // A repeated mount effect finds the fragment already taken; it must not drop the id the first run read.
+    setFragment((current) => (current.id ? { ...current, read: true } : { read: true, id: legacyId }));
   }, []);
+
+  useEffect(() => {
+    if (fragment.id && queryId === fragment.id) setFragment({ read: true, id: null });
+  }, [fragment.id, queryId]);
+
+  const offerId = queryId ?? fragment.id;
 
   useEffect(() => {
     if (isLoading || !offerId) return;
     document.getElementById(`offer-${offerId}`)?.scrollIntoView({ block: 'center' });
   }, [isLoading, offerId]);
 
-  return offerId;
+  return { offerId, ready: fragment.read };
 }
 
 export function isLinkedOfferMissing(

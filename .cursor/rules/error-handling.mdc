@@ -1,6 +1,6 @@
 ---
-description: Error handling conventions using AppError across all layers
-globs: src/core/**/*
+description: Error handling conventions using AppError across layers and boundaries
+globs: src/core/**/*,src/hooks/**/*,src/libs/error/**/*,src/libs/http/**/*,src/app/**/error.tsx,src/app/global-error.tsx
 alwaysApply: false
 ---
 

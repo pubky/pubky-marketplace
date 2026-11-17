@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Pubky } from '@/models/models.types';
 import { ModerationType } from '@/models/moderation/moderation.schema';
 import type { PostDetailsModelSchema } from '@/models/post/details/postDetails.schema';
-import type { UserDetailsModelSchema } from '@/models/user/details/userDetails.schema';
 import { LocalModerationService } from '@/services/local/moderation/moderation';
 import { ModerationApplication } from './moderation';
 
@@ -187,98 +185,6 @@ describe('ModerationApplication', () => {
       ]);
 
       const result = await ModerationApplication.enrichPostsWithModeration(posts, false);
-
-      expect(result[0].is_moderated).toBe(true);
-      expect(result[0].is_blurred).toBe(false);
-      expect(result[1].is_moderated).toBe(true);
-      expect(result[1].is_blurred).toBe(true);
-      expect(result[2].is_moderated).toBe(false);
-      expect(result[2].is_blurred).toBe(false);
-    });
-  });
-
-  describe('enrichUsersWithModeration', () => {
-    const createMockUser = (id: string): UserDetailsModelSchema => ({
-      id: id as Pubky,
-      name: 'Test User',
-      bio: 'Test bio',
-      image: null,
-      links: [],
-      status: null,
-      indexed_at: 123456,
-    });
-
-    it('should return not moderated when no record exists', async () => {
-      const users = [createMockUser('pk:user1')];
-
-      vi.spyOn(LocalModerationService, 'getModerationRecords').mockResolvedValue([]);
-
-      const result = await ModerationApplication.enrichUsersWithModeration(users, false);
-
-      expect(result).toEqual([{ ...users[0], is_moderated: false, is_blurred: false }]);
-    });
-
-    it('should return blurred when user is moderated and is_blurred is true', async () => {
-      const users = [createMockUser('pk:user1')];
-
-      vi.spyOn(LocalModerationService, 'getModerationRecords').mockResolvedValue([
-        { id: 'pk:user1', type: ModerationType.PROFILE, is_blurred: true, created_at: Date.now() },
-      ]);
-
-      const result = await ModerationApplication.enrichUsersWithModeration(users, false);
-
-      expect(result).toEqual([{ ...users[0], is_moderated: true, is_blurred: true }]);
-    });
-
-    it('should return not blurred when user is moderated but is_blurred is false', async () => {
-      const users = [createMockUser('pk:user1')];
-
-      vi.spyOn(LocalModerationService, 'getModerationRecords').mockResolvedValue([
-        { id: 'pk:user1', type: ModerationType.PROFILE, is_blurred: false, created_at: Date.now() },
-      ]);
-
-      const result = await ModerationApplication.enrichUsersWithModeration(users, false);
-
-      expect(result).toEqual([{ ...users[0], is_moderated: true, is_blurred: false }]);
-    });
-
-    it('should return not blurred when blur is disabled globally', async () => {
-      const users = [createMockUser('pk:user1')];
-
-      vi.spyOn(LocalModerationService, 'getModerationRecords').mockResolvedValue([
-        { id: 'pk:user1', type: ModerationType.PROFILE, is_blurred: true, created_at: Date.now() },
-      ]);
-
-      const result = await ModerationApplication.enrichUsersWithModeration(users, true); // blur disabled
-
-      expect(result).toEqual([{ ...users[0], is_moderated: true, is_blurred: false }]);
-    });
-
-    it('should filter by PROFILE type when calling getModerationRecords', async () => {
-      const users = [createMockUser('pk:user1'), createMockUser('pk:user2')];
-
-      const getModerationRecordsSpy = vi.spyOn(LocalModerationService, 'getModerationRecords').mockResolvedValue([]);
-
-      await ModerationApplication.enrichUsersWithModeration(users, false);
-
-      expect(getModerationRecordsSpy).toHaveBeenCalledWith(['pk:user1', 'pk:user2'], ModerationType.PROFILE);
-    });
-
-    it('should return empty array for empty input', async () => {
-      const result = await ModerationApplication.enrichUsersWithModeration([], false);
-
-      expect(result).toEqual([]);
-    });
-
-    it('should handle mixed moderation states', async () => {
-      const users = [createMockUser('pk:user1'), createMockUser('pk:user2'), createMockUser('pk:user3')];
-
-      vi.spyOn(LocalModerationService, 'getModerationRecords').mockResolvedValue([
-        { id: 'pk:user1', type: ModerationType.PROFILE, is_blurred: false, created_at: Date.now() },
-        { id: 'pk:user2', type: ModerationType.PROFILE, is_blurred: true, created_at: Date.now() },
-      ]);
-
-      const result = await ModerationApplication.enrichUsersWithModeration(users, false);
 
       expect(result[0].is_moderated).toBe(true);
       expect(result[0].is_blurred).toBe(false);

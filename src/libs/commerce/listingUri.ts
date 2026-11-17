@@ -27,8 +27,3 @@ export function parseListingUri(uri: string): ListingUriRef | null {
   }
   return { sellerPubky: match[1], listingId: match[2] };
 }
-
-/** True when the URI is a canonical marketplace listing URI. */
-export function isListingUri(uri: string): boolean {
-  return parseListingUri(uri) !== null;
-}

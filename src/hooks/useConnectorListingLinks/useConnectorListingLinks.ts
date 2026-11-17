@@ -10,7 +10,7 @@ import {
   type ConnectorConnection,
   connectorErrorMessage,
 } from '@/libs/commerce/connectors';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import {
   type LinkableListing,
   linkableListingsFrom,

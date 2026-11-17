@@ -15,7 +15,6 @@ export function Account() {
   const router = useRouter();
   const { handleSignOut, isLoading: loadingSignOut } = useSignOut();
   const signOutCopy = useSignOutCopy();
-  const [disposableAccount] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const handleOpenDeleteDialog = () => {
     setShowDeleteDialog(true);
@@ -52,14 +51,12 @@ export function Account() {
         <SettingsSection
           title={'Backup your account'}
           description={
-            disposableAccount
-              ? 'Without a backup you lose your account if you close your browser!'
-              : 'You have already completed the backup, or closed your browser before doing so. Your recovery file and seed phrase have been deleted.'
+            'You have already completed the backup, or closed your browser before doing so. Your recovery file and seed phrase have been deleted.'
           }
           buttonText={'Back up'}
           buttonIcon={LockKeyhole}
           buttonId="backup-account-btn"
-          buttonDisabled={!disposableAccount}
+          buttonDisabled
           buttonOnClick={() => {}}
         />
 

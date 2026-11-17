@@ -8,6 +8,8 @@ import {
 } from '@/test/fixtures/commerce/usdt-payment-review.wire';
 import { REFUND_FIXTURE_ADDRESS } from '@/test/fixtures/commerce/usdt-refund.wire';
 import {
+  REASON_TOO_LONG_COPY,
+  sellerPaymentConfirmationInputSchema,
   sellerPaymentResolutionInputSchema,
   sellerPaymentResolutionSchema,
   sellerPaymentReviewReasonCopy,
@@ -215,5 +217,34 @@ describe('USDT review copy', () => {
 
     expect(copy).toMatch(/recorded by the seller/i);
     expect(copy).not.toMatch(/verified|confirmed on arbitrum|bitcoin|sats/i);
+  });
+});
+
+describe('payment-review reasons are bounded in UTF-8 bytes, like the service', () => {
+  const EMOJI = '\u{1F600}';
+  const usdtRefused = { outcome: 'refunded', externalRefundReference: USDT_RESOLVE_TX_HASH };
+
+  it.each([
+    ['confirmation', (reason: string) => sellerPaymentConfirmationInputSchema.safeParse({ reason })],
+    [
+      'Bitcoin resolution',
+      (reason: string) => sellerPaymentResolutionInputSchema.safeParse({ outcome: 'abandoned', reason }),
+    ],
+    ['USDT resolution', (reason: string) => usdtPaymentResolutionInputSchema.safeParse({ ...usdtRefused, reason })],
+  ])('%s takes 500 bytes and refuses 501', (_name, parse) => {
+    expect(parse('a'.repeat(500)).success).toBe(true);
+    expect(parse('a'.repeat(501)).success).toBe(false);
+    expect(parse(`  ${'a'.repeat(500)}  `).success).toBe(true);
+    // 125 emoji are 500 bytes (250 UTF-16 units); 126 are 504 bytes.
+    expect(parse(EMOJI.repeat(125)).success).toBe(true);
+    expect(parse(EMOJI.repeat(126)).success).toBe(false);
+    // 300 two-byte letters are 600 bytes but only 300 UTF-16 units.
+    expect(parse('\u00e9'.repeat(250)).success).toBe(true);
+    expect(parse('\u00e9'.repeat(251)).success).toBe(false);
+  });
+
+  it('says why a long reason is refused', () => {
+    const result = usdtPaymentResolutionInputSchema.safeParse({ ...usdtRefused, reason: EMOJI.repeat(126) });
+    expect(result.success ? '' : result.error.issues[0].message).toBe(REASON_TOO_LONG_COPY);
   });
 });

@@ -42,7 +42,7 @@ export function ChatConversationRow({ conversation }: { conversation: ChatConver
         ) : null}
         {unread ? (
           <span
-            className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-xs font-semibold text-background"
+            className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-xs font-semibold text-brand-foreground"
             aria-label={`${conversation.unreadCount} unread`}
             data-testid="chat-conversation-unread"
           >

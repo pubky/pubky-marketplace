@@ -4,7 +4,7 @@ import { renderListingOg } from '@/libs/og/renderListingOg';
 // Metadata exports read by Next for the injected <meta> tags.
 export const size = OG_SIZE;
 export const contentType = OG_CONTENT_TYPE;
-export const alt = 'Pubky Marketplace listing preview';
+export const alt = 'Pubky Market listing preview';
 
 // Dynamic responses let Cache-Control decide whether found or fallback images cache.
 export const dynamic = 'force-dynamic';

@@ -3,18 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Home } from './Home';
 
 // Mock Organisms
-vi.mock('@/organisms/AlertBackup/AlertBackup', () => {
-  return {
-    AlertBackup: () => <div data-testid="alert-backup">AlertBackup</div>,
-  };
-});
-
-vi.mock('@/organisms/DialogWelcome/DialogWelcome', () => {
-  return {
-    DialogWelcome: () => <div data-testid="dialog-welcome">DialogWelcome</div>,
-  };
-});
-
 vi.mock('@/organisms/FeedNavigation/FeedNavigation', () => {
   return {
     FeedNavigation: ({ className }: { className?: string }) => (
@@ -88,16 +76,6 @@ describe('Home', () => {
     window.sessionStorage.clear();
   });
 
-  it('renders DialogWelcome', () => {
-    render(<Home />);
-    expect(screen.getByTestId('dialog-welcome')).toBeInTheDocument();
-  });
-
-  it('renders AlertBackup', () => {
-    render(<Home />);
-    expect(screen.getByTestId('alert-backup')).toBeInTheDocument();
-  });
-
   it('renders FeedNavigation in main content with hidden lg:flex class', () => {
     render(<Home />);
     const feedNavs = screen.getAllByTestId('feed-navigation');
@@ -141,12 +119,5 @@ describe('Home', () => {
   it('does not render a ContentLayout shell (hoisted into (feeds)/layout.tsx)', () => {
     render(<Home />);
     expect(screen.queryByTestId('content-layout')).not.toBeInTheDocument();
-  });
-});
-
-describe('Home - Snapshots', () => {
-  it('matches snapshot', () => {
-    const { container } = render(<Home />);
-    expect(container).toMatchSnapshot();
   });
 });

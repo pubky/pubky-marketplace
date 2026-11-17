@@ -59,7 +59,7 @@ export type CommerceReceiptPublicationUiStatus =
   | 'unavailable';
 
 export type CommerceConditionFilter = 'new' | 'like_new' | 'excellent' | 'good' | 'fair' | 'for_parts';
-export type CommerceSort = 'recommended' | 'newest' | 'price_low' | 'price_high' | 'ending_soon';
+export type CommerceSort = 'newest' | 'price_low' | 'price_high' | 'ending_soon';
 export type CommerceLayout = 'grid' | 'list';
 
 export interface CommerceState {
@@ -142,7 +142,7 @@ export const commerceInitialState: CommerceState = {
   maximumPriceMinor: null,
   countryCode: null,
   paymentMethod: null,
-  sort: 'recommended',
+  sort: 'newest',
   layout: 'grid',
   selectedListingId: null,
   pendingEntityIds: [],

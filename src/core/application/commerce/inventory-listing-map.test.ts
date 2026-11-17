@@ -3,6 +3,65 @@ import { PHOTO_REQUIRED_MESSAGE } from '@/pipes/commerce/import-publish-failure'
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { listingToCanonicalRows, mapCanonicalRowsToListing } from './inventory-listing-map';
 
+describe('mapCanonicalRowsToListing shipping profile', () => {
+  it('publishes the listing under the profile its row names and keeps the legacy option', () => {
+    const record = createCommerceListingFixture();
+    const [row] = listingToCanonicalRows(record);
+    const mapped = mapCanonicalRowsToListing(
+      [
+        {
+          ...row!,
+          extraFields: {
+            country_code: 'US',
+            media_json: JSON.stringify(record.media),
+            shipping_profile_id: 'worldwide',
+          },
+        },
+      ],
+      record.ownerPubky,
+    );
+    expect(mapped.ok).toBe(true);
+    if (mapped.ok) {
+      expect(mapped.record.shippingProfileId).toBe('worldwide');
+      expect(mapped.record.shippingOptions.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('leaves the profile off when the row names none', () => {
+    const record = createCommerceListingFixture();
+    const [row] = listingToCanonicalRows(record);
+    const mapped = mapCanonicalRowsToListing(
+      [{ ...row!, extraFields: { country_code: 'US', media_json: JSON.stringify(record.media) } }],
+      record.ownerPubky,
+    );
+    expect(mapped.ok && mapped.record.shippingProfileId).toBeFalsy();
+  });
+});
+
+describe('mapCanonicalRowsToListing profile in a whole-record round trip', () => {
+  const priced = () => createCommerceListingFixture({ listingId: 'boots_01', shippingProfileId: 'worldwide' });
+  const edited = (title: string) => {
+    const record = priced();
+    const rows = listingToCanonicalRows({ ...record, title });
+    return { record, rows };
+  };
+
+  it('keeps the profile of the stored listing when an edited export is re-imported over it', () => {
+    const { record, rows } = edited('Boots, edited');
+    const mapped = mapCanonicalRowsToListing(rows, record.ownerPubky, 'worldwide');
+    expect(mapped.ok && mapped.record.title).toBe('Boots, edited');
+    expect(mapped.ok && mapped.record.shippingProfileId).toBe('worldwide');
+  });
+
+  it('never lets a file introduce a profile on a create or an unpriced listing', () => {
+    const { record, rows } = edited('Boots');
+    const created = mapCanonicalRowsToListing(rows, record.ownerPubky);
+    expect(created.ok && created.record.shippingProfileId).toBeUndefined();
+    const other = mapCanonicalRowsToListing(rows, record.ownerPubky, 'someone-elses');
+    expect(other.ok && other.record.shippingProfileId).toBeUndefined();
+  });
+});
+
 describe('mapCanonicalRowsToListing', () => {
   it('prefers extraFields.record_json for a Shop-valid create', () => {
     const record = createCommerceListingFixture({ listingId: 'boots_01' });
@@ -27,6 +86,51 @@ describe('mapCanonicalRowsToListing', () => {
     if (mapped.ok) {
       expect(mapped.record.returnPolicy.acceptsReturns).toBe(true);
       expect(mapped.record.location.countryCode).toBe('US');
+    }
+  });
+
+  it('publishes an imported UK as GB, from the country_code field and from location_json', () => {
+    const record = createCommerceListingFixture();
+    const [row] = listingToCanonicalRows(record);
+    const media_json = JSON.stringify(record.media);
+    for (const extraFields of <Array<Record<string, string>>>[
+      { country_code: 'uk', media_json },
+      { location_json: JSON.stringify({ countryCode: 'UK', region: 'London' }), media_json },
+    ]) {
+      const mapped = mapCanonicalRowsToListing([{ ...row!, extraFields }], record.ownerPubky);
+      expect(mapped.ok).toBe(true);
+      if (mapped.ok) expect(mapped.record.location.countryCode).toBe('GB');
+    }
+  });
+
+  it('publishes UK as GB and refuses a code that names no country in record_json too', () => {
+    const uk = createCommerceListingFixture({ location: { countryCode: 'UK' } });
+    const mapped = mapCanonicalRowsToListing(listingToCanonicalRows(uk), uk.ownerPubky);
+    expect(mapped.ok).toBe(true);
+    if (mapped.ok) {
+      expect(mapped.record.location.countryCode).toBe('GB');
+      expect(mapped.record.revision).toBe(uk.revision + 1);
+    }
+
+    const zz = createCommerceListingFixture({ location: { countryCode: 'ZZ' } });
+    expect(mapCanonicalRowsToListing(listingToCanonicalRows(zz), zz.ownerPubky)).toEqual({
+      ok: false,
+      message: '"ZZ" is not a country code. Use a two-letter code like CH or US.',
+    });
+  });
+
+  it('refuses an imported country code that names no country', () => {
+    const record = createCommerceListingFixture();
+    const [row] = listingToCanonicalRows(record);
+    const media_json = JSON.stringify(record.media);
+    for (const extraFields of <Array<Record<string, string>>>[
+      { country_code: 'ZZ', media_json },
+      { location_json: JSON.stringify({ countryCode: 'ZZ' }), media_json },
+    ]) {
+      expect(mapCanonicalRowsToListing([{ ...row!, extraFields }], record.ownerPubky)).toEqual({
+        ok: false,
+        message: '"ZZ" is not a country code. Use a two-letter code like CH or US.',
+      });
     }
   });
 

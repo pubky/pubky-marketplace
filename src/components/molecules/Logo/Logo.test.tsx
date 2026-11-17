@@ -44,17 +44,46 @@ describe('Logo', () => {
     });
   });
 
-  it('renders with default src', () => {
+  it('renders dark and light wordmarks, toggled by the .light class via CSS', () => {
     vi.mocked(usePathname).mockReturnValue('/home');
 
     render(<Logo />);
 
-    const container = screen.getByTestId('logo-image').parentElement;
-    const image = screen.getByTestId('logo-image');
+    const [darkImage, lightImage] = screen.getAllByTestId('logo-image');
 
-    expect(container).toBeInTheDocument();
-    expect(image).toBeInTheDocument();
-    expect(image).toHaveAttribute('src', '/pubky-logo.svg');
+    expect(darkImage.parentElement).toBeInTheDocument();
+    expect(darkImage).toHaveAttribute('src', '/pubky-logo.svg');
+    expect(darkImage).toHaveClass('[.light_&]:hidden');
+    expect(lightImage).toHaveAttribute('src', '/pubky-logo-on-light.svg');
+    expect(lightImage).toHaveClass('hidden', '[.light_&]:block');
+  });
+
+  it('uses the fixed default size classes and no inline size at the default dimensions', () => {
+    vi.mocked(usePathname).mockReturnValue('/home');
+
+    render(<Logo className="custom-logo-style" />);
+
+    const [image] = screen.getAllByTestId('logo-image');
+    const link = image.closest('a')!;
+    expect(link).toHaveClass('min-h-[36px]', 'min-w-[109px]', 'custom-logo-style');
+    expect(link.style.minWidth).toBe('');
+    expect(image).toHaveClass('h-[36px]', 'w-[109px]');
+    expect(image).toHaveAttribute('width', '109');
+    expect(image).toHaveAttribute('height', '36');
+  });
+
+  it('sizes a custom-dimension logo inline instead of with the default classes', () => {
+    vi.mocked(usePathname).mockReturnValue('/home');
+
+    render(<Logo width={200} height={80} />);
+
+    const [image] = screen.getAllByTestId('logo-image');
+    const link = image.closest('a')!;
+    expect(link).not.toHaveClass('min-h-[36px]', 'min-w-[109px]');
+    expect(link).toHaveStyle({ minWidth: '200px', minHeight: '80px' });
+    expect(image).not.toHaveClass('h-[36px]', 'w-[109px]');
+    expect(image).toHaveAttribute('width', '200');
+    expect(image).toHaveAttribute('height', '80');
   });
 
   it('scrolls to top when clicking logo on /home', () => {
@@ -63,7 +92,7 @@ describe('Logo', () => {
     Object.defineProperty(window, 'scrollTo', { value: vi.fn(), writable: true });
 
     render(<Logo />);
-    const link = screen.getByTestId('logo-image').closest('a');
+    const link = screen.getAllByTestId('logo-image')[0].closest('a');
     expect(link).toBeTruthy();
 
     fireEvent.click(link!);
@@ -77,7 +106,7 @@ describe('Logo', () => {
     const setItemSpy = vi.spyOn(window.sessionStorage, 'setItem');
 
     render(<Logo />);
-    const link = screen.getByTestId('logo-image').closest('a');
+    const link = screen.getAllByTestId('logo-image')[0].closest('a');
     expect(link).toBeTruthy();
 
     fireEvent.click(link!);
@@ -85,12 +114,12 @@ describe('Logo', () => {
     expect(setItemSpy).toHaveBeenCalledWith(FORCE_FEED_SCROLL_TOP_KEY, '1');
   });
 
-  it.each(LOGO_LANDING_ROUTES)('links to the landing page on %s', (pathname) => {
+  it.each(LOGO_LANDING_ROUTES)('links to the root URL on %s', (pathname) => {
     vi.mocked(usePathname).mockReturnValue(pathname);
 
     render(<Logo />);
 
-    expect(screen.getByTestId('logo-image').closest('a')).toHaveAttribute('href', '/');
+    expect(screen.getAllByTestId('logo-image')[0].closest('a')).toHaveAttribute('href', '/');
   });
 
   it.each(LOGO_LANDING_ROUTES)('does not set home scroll intent when clicking logo on %s', (pathname) => {
@@ -100,7 +129,7 @@ describe('Logo', () => {
     const setItemSpy = vi.spyOn(window.sessionStorage, 'setItem');
 
     render(<Logo />);
-    fireEvent.click(screen.getByTestId('logo-image').closest('a')!);
+    fireEvent.click(screen.getAllByTestId('logo-image')[0].closest('a')!);
 
     expect(window.scrollTo).not.toHaveBeenCalled();
     expect(setItemSpy).not.toHaveBeenCalled();
@@ -122,14 +151,14 @@ describe('Logo - social link-out', () => {
   it('links to /home while off', () => {
     vi.mocked(usePathname).mockReturnValue('/marketplace/orders');
     render(<Logo />);
-    expect(screen.getByTestId('logo-image').closest('a')).toHaveAttribute('href', '/home');
+    expect(screen.getAllByTestId('logo-image')[0].closest('a')).toHaveAttribute('href', '/home');
   });
 
   it('links to the marketplace while on', () => {
     setSocialHost('https://pubky.app');
     vi.mocked(usePathname).mockReturnValue('/marketplace/orders');
     render(<Logo />);
-    expect(screen.getByTestId('logo-image').closest('a')).toHaveAttribute('href', '/marketplace');
+    expect(screen.getAllByTestId('logo-image')[0].closest('a')).toHaveAttribute('href', '/marketplace');
   });
 
   it('scrolls to top instead of navigating when already on the marketplace while on', () => {
@@ -138,38 +167,15 @@ describe('Logo - social link-out', () => {
     Object.defineProperty(window, 'scrollTo', { value: vi.fn(), writable: true });
 
     render(<Logo />);
-    fireEvent.click(screen.getByTestId('logo-image').closest('a')!);
+    fireEvent.click(screen.getAllByTestId('logo-image')[0].closest('a')!);
 
     expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' });
   });
 
-  it('keeps landing routes on the landing page while on', () => {
+  it('keeps root-linked routes pointing to root with social link-out on', () => {
     setSocialHost('https://pubky.app');
     vi.mocked(usePathname).mockReturnValue('/sign-in');
     render(<Logo />);
-    expect(screen.getByTestId('logo-image').closest('a')).toHaveAttribute('href', '/');
-  });
-});
-
-describe('Logo - Snapshots', () => {
-  it('matches snapshot for default Logo', () => {
-    vi.mocked(usePathname).mockReturnValue('/home');
-
-    const { container } = render(<Logo />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for Logo with custom dimensions', () => {
-    vi.mocked(usePathname).mockReturnValue('/home');
-
-    const { container } = render(<Logo width={200} height={80} />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for Logo with custom className', () => {
-    vi.mocked(usePathname).mockReturnValue('/home');
-
-    const { container } = render(<Logo className="custom-logo-style" />);
-    expect(container.firstChild).toMatchSnapshot();
+    expect(screen.getAllByTestId('logo-image')[0].closest('a')).toHaveAttribute('href', '/');
   });
 });

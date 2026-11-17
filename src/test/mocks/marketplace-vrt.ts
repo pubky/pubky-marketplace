@@ -49,7 +49,15 @@ export function createMarketplaceVrtCommerceController() {
     getConnectorStores: async () => new Map(),
     // USDT stays off unless a scene opts in.
     fetchUsdtPaymentsAvailable: async () => false,
+    // No cached catalog entries for a seller unless a scene opts in.
+    getCatalogEntriesBySeller: async () => [],
+    // No attestor annotations unless a scene opts in.
+    fetchReviewOutcomes: async () => new Map(),
     getOrFetchShop: async () => null,
+    refreshShopOrGetCached: async () => null,
+    // No live shop events in a scene.
+    subscribeShopEvents: async () => null,
+    latestShopEventCursor: async () => null,
     getSellerAnnualLimit: async () => ({ enabled: false }),
     getSellerPaymentConfig: async () => ({
       bitcoinAvailable: false,

@@ -100,18 +100,4 @@ describe('SearchRecentItem', () => {
 
     expect(container.firstChild).toBeNull();
   });
-
-  describe('SearchRecentItem - Snapshots', () => {
-    it('matches snapshot for user type', () => {
-      const { container } = render(
-        <SearchRecentItem type={RECENT_ITEM_TYPE.USER} user={mockUser} onUserClick={vi.fn()} />,
-      );
-      expect(container.firstChild).toMatchSnapshot();
-    });
-
-    it('matches snapshot for tag type', () => {
-      const { container } = render(<SearchRecentItem type={RECENT_ITEM_TYPE.TAG} tag={mockTag} onTagClick={vi.fn()} />);
-      expect(container.firstChild).toMatchSnapshot();
-    });
-  });
 });

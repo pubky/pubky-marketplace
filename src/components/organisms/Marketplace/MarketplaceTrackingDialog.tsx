@@ -1,16 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { Controller, useWatch } from 'react-hook-form';
+import { useWatch } from 'react-hook-form';
 import { Button } from '@/atoms/Button/Button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/atoms/Dialog/Dialog';
-import { Label } from '@/atoms/Label/Label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
-import { FORM_LABEL_CLASSES } from '@/config/forms';
 import { useOrderTracking } from '@/hooks/useOrderTracking/useOrderTracking';
-import { OTHER_CARRIER_ID, SHIPPING_CARRIERS } from '@/libs/commerce/carriers';
+import { OTHER_CARRIER_ID } from '@/libs/commerce/carriers';
 import { canEditOrderTracking, hasTrackingNumber, ORDER_TRACKING_COPY } from '@/libs/commerce/order-tracking';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
+import { MarketplaceCarrierSelect } from '@/molecules/Marketplace/MarketplaceCarrierSelect';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 
 /**
@@ -58,29 +56,7 @@ export function MarketplaceTrackingDialog({
           <DialogHeader>
             <DialogTitle>{label}</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-2">
-            <Label htmlFor="tracking-carrier-select" className={FORM_LABEL_CLASSES}>
-              Carrier
-            </Label>
-            <Controller
-              name="carrierChoice"
-              control={tracking.form.control}
-              render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger theme="secondary" id="tracking-carrier-select" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SHIPPING_CARRIERS.map((carrier) => (
-                      <SelectItem key={carrier.id} value={carrier.id}>
-                        {carrier.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            />
-          </div>
+          <MarketplaceCarrierSelect control={tracking.form.control} name="carrierChoice" id="tracking-carrier-select" />
           {carrierChoice === OTHER_CARRIER_ID && (
             <ControlledInputField name="carrier" control={tracking.form.control} label="Carrier name" />
           )}

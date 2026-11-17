@@ -16,7 +16,9 @@ import {
   marketplaceOfferFailureMessage,
   marketplacePaymentMethodFailureMessage,
   marketplacePaymentMethodReasonMessage,
+  marketplaceShippingRefusalMessage,
   PAYKIT_PAYMENT_METHOD_REASON_MESSAGES,
+  SHIPPING_CHANGED_MESSAGE,
 } from './failure-messages';
 
 describe('marketplaceFailureMessage', () => {
@@ -636,5 +638,18 @@ describe('marketplaceListingNotActiveMessage', () => {
   it('returns null for any other code', () => {
     expect(marketplaceListingNotActiveMessage({ code: 'INVALID_STATE', reason: 'listing_paused' })).toBeNull();
     expect(marketplaceListingNotActiveMessage({ code: 'UPSTREAM_UNAVAILABLE' })).toBeNull();
+  });
+});
+
+describe('marketplaceShippingRefusalMessage', () => {
+  it('names a profile changed since the quote, a country nobody serves, and unreadable terms', () => {
+    expect(marketplaceShippingRefusalMessage({ code: 'SHIPPING_CHANGED' })).toBe(SHIPPING_CHANGED_MESSAGE);
+    expect(marketplaceShippingRefusalMessage({ code: 'SHIPPING_UNAVAILABLE_TO_COUNTRY' })).toContain('does not ship');
+    expect(marketplaceShippingRefusalMessage({ code: 'SHIPPING_UNAVAILABLE' })).toContain('Nothing was reserved');
+  });
+
+  it('returns null for every other code', () => {
+    expect(marketplaceShippingRefusalMessage({ code: 'INSUFFICIENT_INVENTORY' })).toBeNull();
+    expect(marketplaceShippingRefusalMessage({})).toBeNull();
   });
 });

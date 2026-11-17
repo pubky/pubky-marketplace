@@ -60,13 +60,18 @@ import {
   formatOrderInstant,
   holderBoundCopy,
   holderUnboundCopy,
+  isBuyerCancelledUnpaid,
   isHoldExpiredNoLateMoney,
   isLateCompletionOrder,
   isRefundRequiredPayment,
   refundRequiredCopyForRole,
   UNBOUND_BACK_CANCEL_REASON,
 } from '@/libs/commerce/checkout-hold';
+import { isAbandonedReviewOrder } from '@/libs/commerce/checkout-phase';
+import { hasInstantDigitalLines } from '@/libs/commerce/digital';
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
+import { PAYPAL_CHECKOUT_URL_REFUSED_COPY, trustedFiatCheckoutUrl } from '@/libs/commerce/fiat-checkout-url';
+import { formatCommerceMoney } from '@/libs/commerce/format';
 import {
   LOCKS_ADMISSION_COPY,
   locksAdmissionFailureCopy,
@@ -97,6 +102,7 @@ import {
   bitcoinWalletUnsupportedBody,
   bitcoinWalletUnverifiedBody,
 } from '@/libs/commerce/paykit-wallet';
+import { formatUsdt } from '@/libs/commerce/payment-options';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import { buildMarketplaceOrderAggregateId } from '@/libs/commerce/transaction-commands';
 import {
@@ -105,6 +111,7 @@ import {
   USDT_FINALITY_EXPECTATION_COPY,
   USDT_FUNDS_HINT,
   USDT_WALLET_HINT,
+  usdtAmountLabel,
   usdtFulfilmentWaitsForFinality,
   usdtPhaseCopy,
   usdtSellerReviewCopy,
@@ -283,13 +290,19 @@ export function MarketplacePaymentStatusCard({
     buyerWallet.recheck();
   };
   const reviewRail = paymentReviewRail(order);
-  const sellerReview = useMarketplaceSellerPaymentReviewForm(order.id, onPaymentChanged, reviewRail);
+  // A digital order's instant lines are released in the same step as the seller's confirmation.
+  const releasesOnConfirm = hasInstantDigitalLines(order);
+  const sellerReview = useMarketplaceSellerPaymentReviewForm(order.id, onPaymentChanged, reviewRail, releasesOnConfirm);
   const [paypalTransactionRef, setPaypalTransactionRef] = useState('');
   const [isReleasingHold, setIsReleasingHold] = useState(false);
   const [releaseHoldError, setReleaseHoldError] = useState<string | null>(null);
   const lateCompletion = isLateCompletionOrder(order);
   const refundRequired = isRefundRequiredPayment(payment);
   const expiredNoLateMoney = isHoldExpiredNoLateMoney(order, payment);
+  // Money a closed review never applied: never "no verified payment arrived",
+  // and owed back until the seller records the refund.
+  const reviewAbandoned = payment?.state === 'expired' && payment.resolutionOutcome === 'abandoned';
+  const abandonedReview = isAbandonedReviewOrder(order, payment) && !order.externalRefund;
   const locksTerminalReason =
     isLocksPaykit && isBuyer && payment?.adapter === 'locks' && locks.admission?.kind === 'expired'
       ? locks.admission.reason
@@ -327,6 +340,7 @@ export function MarketplacePaymentStatusCard({
   const isPaykitRail = isPaykitOrder(order);
   const rail = observedPaymentRail(order);
   const hasBuyerBitcoinProgress = usesMethodFlow && isBuyer && (rail === 'bitcoin' || followsBitcoinFlow(order));
+  const paypalCheckoutUrl = trustedFiatCheckoutUrl(order.fiatCheckoutUrl);
 
   const statusInLabels = confirmedStatusInOrderLabels && visibleStatus === 'confirmed';
 
@@ -346,7 +360,7 @@ export function MarketplacePaymentStatusCard({
           state={buyerWallet.state}
           canPayWithPaypal={methodPayment.availableMethods?.includes('paypal') ?? false}
           onOpenChange={(open) => setBuyerConnection({ owner: currentUserPubky, orderId: order.id, open })}
-          onRecheck={buyerWallet.recheck}
+          onRecheck={() => buyerWallet.recheck()}
         />
       )}
       {showStatusLabels && !statusInLabels && (
@@ -364,7 +378,7 @@ export function MarketplacePaymentStatusCard({
         <Typography
           as="p"
           role="note"
-          className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
+          className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-notice-foreground"
         >
           {stagingUsdtPossible ? STAGING_USDT_FUNDS_NOTE : 'Staging environment — test rails, no real funds move'}
         </Typography>
@@ -411,23 +425,50 @@ export function MarketplacePaymentStatusCard({
           {locksTerminalReasonCopy(locksTerminalReason)}
         </Typography>
       )}
-      {visibleStatus === 'expired' && !locksTerminalReason && (
-        <Typography as="p" className="text-sm text-muted-foreground">
-          {expiredNoLateMoney
-            ? CHECKOUT_HOLD_COPY.expiredNoLateMoney
-            : 'The marketplace payment window elapsed before a verified payment arrived, so this checkout was not completed. A payment verified after expiry is reconciled manually — never silently applied or discarded.'}
+      {visibleStatus === 'expired' && !locksTerminalReason && isBuyerCancelledUnpaid(order) && (
+        <Typography as="p" className="text-sm text-muted-foreground" data-testid="buyer-cancelled-note">
+          {isBuyer ? CHECKOUT_HOLD_COPY.cancelledByBuyer : CHECKOUT_HOLD_COPY.cancelledByBuyerSeller}
         </Typography>
       )}
-      {visibleStatus === 'expired' && expiredNoLateMoney && isBuyer && isPaykitRail && (
+      {visibleStatus === 'expired' && order.gatewayPaymentSeenAt && !order.receiptId && (
+        <PaypalSeenButUnconfirmed order={order} isBuyer={isBuyer} methodPayment={methodPayment} />
+      )}
+      {abandonedReview && (
+        <Typography as="p" className="text-sm text-muted-foreground" data-testid="payment-review-abandoned">
+          {abandonedReviewCopy(isBuyer, payment.resolutionBasis)}
+        </Typography>
+      )}
+      {visibleStatus === 'expired' &&
+        !locksTerminalReason &&
+        !isBuyerCancelledUnpaid(order) &&
+        !(order.gatewayPaymentSeenAt && !order.receiptId) &&
+        !reviewAbandoned && (
+          <Typography as="p" className="text-sm text-muted-foreground">
+            {expiredNoLateMoney
+              ? CHECKOUT_HOLD_COPY.expiredNoLateMoney
+              : 'The marketplace payment window elapsed before a verified payment arrived, so this checkout was not completed. A payment verified after expiry is reconciled manually — never silently applied or discarded.'}
+          </Typography>
+        )}
+      {visibleStatus === 'expired' && expiredNoLateMoney && !reviewAbandoned && isBuyer && isPaykitRail && (
         <Typography as="p" className="text-sm text-muted-foreground" data-testid="bitcoin-pending-payment-note">
           {CHECKOUT_HOLD_COPY.pendingBitcoinPaymentBuyer}
         </Typography>
       )}
-      {visibleStatus === 'expired' && isBuyer && isPaykitRail && order.paykitDeliveryState !== 'delivered' && (
-        <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
-          {PAYKIT_DELIVERY_ELAPSED_COPY}
-        </Typography>
-      )}
+      {visibleStatus === 'expired' &&
+        isBuyer &&
+        isPaykitRail &&
+        !reviewAbandoned &&
+        order.paykitDeliveryState !== 'delivered' &&
+        !isBuyerCancelledUnpaid(order) && (
+          <Typography
+            as="p"
+            role="alert"
+            className="text-sm text-warning-foreground"
+            data-testid="paykit-delivery-failed"
+          >
+            {PAYKIT_DELIVERY_ELAPSED_COPY}
+          </Typography>
+        )}
       {visibleStatus === 'manual_review' && !refundRequired && (
         <Typography as="p" className="text-sm text-muted-foreground" data-testid="payment-manual-review-copy">
           {isBuyer && rail === 'bitcoin'
@@ -440,13 +481,14 @@ export function MarketplacePaymentStatusCard({
 
       {isDurable &&
         isSeller &&
-        mayPayInBitcoin(order) &&
+        (mayPayInBitcoin(order) || rail === 'usdt') &&
         payment.adapter === 'paykit' &&
         order.paykitRequestState === 'awaiting_seller_confirmation' && (
           <SellerBitcoinConfirmationReview
-            prompt={sellerBitcoinConfirmPrompt(order)}
+            prompt={rail === 'usdt' ? sellerUsdtConfirmPrompt(order) : sellerBitcoinConfirmPrompt(order)}
             observation={order.paykitObservation ?? null}
             deadline={order.paykitSellerConfirmationDeadline}
+            releasesDigital={releasesOnConfirm}
             form={sellerReview.confirmForm}
             isSubmitting={sellerReview.isSubmitting}
             error={sellerReview.error}
@@ -519,7 +561,7 @@ export function MarketplacePaymentStatusCard({
       {usesMethodFlow && isBuyer && !order.paymentMethod && (
         <div className="grid gap-2">
           {methodPayment.configError ? (
-            <Typography as="p" role="alert" className="text-sm text-amber-300">
+            <Typography as="p" role="alert" className="text-sm text-warning-foreground">
               {methodPayment.configError}
             </Typography>
           ) : methodPayment.availableMethods === null ? (
@@ -539,8 +581,8 @@ export function MarketplacePaymentStatusCard({
               )}
               <Button
                 size="sm"
-                variant="ghost"
-                className="w-fit rounded-full"
+                variant="destructive-soft"
+                className="w-full rounded-full"
                 disabled={isReleasingHold}
                 onClick={() => void releaseUnboundHold()}
               >
@@ -681,9 +723,17 @@ export function MarketplacePaymentStatusCard({
                     variant="secondary"
                     className="w-fit rounded-full"
                     data-testid="order-payment-bitkit-unverified-recheck"
-                    onClick={buyerWallet.recheck}
+                    disabled={buyerWallet.pending}
+                    onClick={() => buyerWallet.recheck({ keepVerdict: true })}
                   >
-                    Check connection
+                    {buyerWallet.pending ? (
+                      <>
+                        <LoaderCircle className="size-4 animate-spin" />
+                        Checking…
+                      </>
+                    ) : (
+                      'Check connection'
+                    )}
                   </Button>
                 </div>
               )}
@@ -695,8 +745,8 @@ export function MarketplacePaymentStatusCard({
               )}
               <Button
                 size="sm"
-                variant="ghost"
-                className="mt-2 w-fit rounded-full"
+                variant="destructive-soft"
+                className="mt-2 w-full rounded-full"
                 disabled={isReleasingHold || methodPayment.pendingAction !== null}
                 onClick={() => void releaseUnboundHold()}
               >
@@ -704,7 +754,7 @@ export function MarketplacePaymentStatusCard({
                 Cancel checkout
               </Button>
               {releaseHoldError && (
-                <Typography as="p" role="alert" className="text-sm text-amber-300">
+                <Typography as="p" role="alert" className="text-sm text-warning-foreground">
                   {releaseHoldError}
                 </Typography>
               )}
@@ -723,28 +773,49 @@ export function MarketplacePaymentStatusCard({
         <BuyerBitcoinPaymentProgress order={order} payment={payment} checkoutActions={checkoutActions} />
       )}
 
-      {/* Bound USDT: the request waits in the buyer's Paykit wallet until it is paid. */}
-      {usesMethodFlow && isBuyer && rail === 'usdt' && (
-        <BuyerUsdtPaymentProgress order={order} checkoutActions={checkoutActions} />
-      )}
+      {/* Bound USDT: the request waits in the buyer's Paykit wallet until it is
+          paid. A transfer waiting for the seller is paid: the summary says so. */}
+      {usesMethodFlow &&
+        isBuyer &&
+        rail === 'usdt' &&
+        (order.paykitRequestState === 'awaiting_seller_confirmation' ? (
+          <BuyerUsdtSellerWindow order={order} />
+        ) : (
+          <BuyerUsdtPaymentProgress order={order} checkoutActions={checkoutActions} />
+        ))}
 
       {/* Bound paypal: hosted checkout; PayPal's verified notification pays
           the order automatically. The buyer report + seller confirmation
           remain as the fallback when no notification arrives. */}
       {usesMethodFlow && isBuyer && order.paymentMethod === 'paypal' && order.fiatCheckoutUrl && (
         <div className="grid gap-4">
-          {formatOrderInstant(order.holdExpiresAt) && (
+          {!order.gatewayPaymentSeenAt && formatOrderInstant(order.holdExpiresAt) && (
             <Typography as="p" className="text-sm text-muted-foreground">
               Pay by {formatOrderInstant(order.holdExpiresAt)} to keep your reservation.
             </Typography>
           )}
-          {order.paymentReportedAt ? (
+          {order.gatewayPaymentSeenAt ? (
+            <div className="grid gap-1" role="status" data-testid="paypal-payment-seen-buyer">
+              <Typography as="p" className="text-sm font-semibold">
+                PayPal reported your payment
+              </Typography>
+              <Typography as="p" className="text-sm text-muted-foreground">
+                {PAYPAL_SEEN_BUYER_COPY}
+                {formatOrderInstant(order.holdExpiresAt)
+                  ? ` Your item stays reserved until ${formatOrderInstant(order.holdExpiresAt)}.`
+                  : ''}
+              </Typography>
+              {checkoutActions}
+            </div>
+          ) : order.paymentReportedAt ? (
             <div className="grid gap-1" role="status">
               <Typography as="p" className="text-sm font-semibold">
                 Payment reported
               </Typography>
               <Typography as="p" className="text-sm text-muted-foreground">
-                Waiting for PayPal or the seller to confirm receipt. You don&rsquo;t need to pay again.
+                {order.paymentConfirmation === 'seller'
+                  ? 'Waiting for the seller to confirm receipt. You don\u2019t need to pay again.'
+                  : 'Waiting for PayPal or the seller to confirm receipt. You don\u2019t need to pay again.'}
               </Typography>
               {order.fiatTransactionRef && (
                 <Typography as="p" className="text-sm break-all text-muted-foreground">
@@ -760,13 +831,24 @@ export function MarketplacePaymentStatusCard({
                   Complete your payment in PayPal. This page updates when your payment is confirmed.
                 </Typography>
                 <div className="flex flex-wrap items-center gap-3">
-                  <Button asChild className="w-fit rounded-full">
-                    <a href={order.fiatCheckoutUrl} target="_blank" rel="noopener noreferrer">
-                      <Banknote className="size-4" aria-hidden="true" />
-                      Continue to PayPal
-                      <ExternalLink className="size-4" aria-hidden="true" />
-                    </a>
-                  </Button>
+                  {paypalCheckoutUrl ? (
+                    <Button asChild className="w-fit rounded-full">
+                      <a href={paypalCheckoutUrl} target="_blank" rel="noopener noreferrer">
+                        <Banknote className="size-4" aria-hidden="true" />
+                        Continue to PayPal
+                        <ExternalLink className="size-4" aria-hidden="true" />
+                      </a>
+                    </Button>
+                  ) : (
+                    <Typography
+                      as="p"
+                      role="alert"
+                      className="text-sm text-warning-foreground"
+                      data-testid="paypal-checkout-url-refused"
+                    >
+                      {PAYPAL_CHECKOUT_URL_REFUSED_COPY}
+                    </Typography>
+                  )}
                   {checkoutActions}
                 </div>
               </div>
@@ -815,35 +897,7 @@ export function MarketplacePaymentStatusCard({
 
       {/* Seller side: the PayPal receipt confirmation is what pays the order. */}
       {usesMethodFlow && !isBuyer && order.paymentMethod === 'paypal' && (
-        <div className="grid gap-2">
-          {order.paymentReportedAt ? (
-            <>
-              <Typography as="p" className="text-sm text-muted-foreground">
-                The buyer reported a PayPal payment
-                {order.fiatTransactionRef ? ` (ref ${order.fiatTransactionRef})` : ''}. Check your PayPal account;
-                confirming receipt marks this order paid.
-              </Typography>
-              <Button
-                size="sm"
-                className="w-fit rounded-full"
-                disabled={methodPayment.pendingAction !== null}
-                onClick={() => void methodPayment.confirmReceived()}
-              >
-                {methodPayment.pendingAction === 'confirm' ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="size-4" />
-                )}
-                Confirm payment received
-              </Button>
-            </>
-          ) : (
-            <Typography as="p" className="text-sm text-muted-foreground">
-              Awaiting the buyer&rsquo;s PayPal payment. PayPal&rsquo;s notification usually completes the order
-              automatically; if the buyer reports the payment instead, you will be asked to confirm receipt.
-            </Typography>
-          )}
-        </div>
+        <SellerPaypalConfirmation order={order} methodPayment={methodPayment} />
       )}
 
       {isLocksPaykit && isBuyer && isAwaiting && digitalLock && !locks.correlation && (
@@ -882,7 +936,7 @@ export function MarketplacePaymentStatusCard({
           <Typography
             as="p"
             role="alert"
-            className="flex items-center gap-2 text-sm text-amber-300"
+            className="flex items-center gap-2 text-sm text-warning-foreground"
             data-testid="locks-admission-failed"
           >
             <FileWarning className="size-4 shrink-0" />
@@ -970,7 +1024,7 @@ export function MarketplacePaymentStatusCard({
       )}
 
       {locks.error && (
-        <Typography as="p" role="alert" className="flex items-center gap-2 text-sm text-amber-300">
+        <Typography as="p" role="alert" className="flex items-center gap-2 text-sm text-warning-foreground">
           <FileWarning className="size-4" />
           {locks.error}
         </Typography>
@@ -1055,7 +1109,12 @@ function BuyerBitcoinPaymentProgress({
     <div className="grid gap-2">
       {order.paykitDeliveryState === 'failed' ? (
         <div className="grid justify-items-start gap-2">
-          <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
+          <Typography
+            as="p"
+            role="alert"
+            className="text-sm text-warning-foreground"
+            data-testid="paykit-delivery-failed"
+          >
             {PAYKIT_DELIVERY_FAILED_COPY}
           </Typography>
           {checkoutActions}
@@ -1068,6 +1127,7 @@ function BuyerBitcoinPaymentProgress({
             : `${progress.text}${paymentDeadline ? ` Pay by ${paymentDeadline}.` : ''}`}
         </div>
       )}
+      {order.paykitDeliveryState !== 'failed' && checkoutActions}
       {!requestSent && order.paykitDeliveryState !== 'failed' && (
         <Typography as="p" className="text-xs text-muted-foreground" data-testid="bitcoin-wallet-contact-hint">
           {BITCOIN_WALLET_CONTACT_COPY}
@@ -1103,7 +1163,12 @@ function BuyerPaykitPaymentProgress({
       </Typography>
       {order.paykitDeliveryState === 'failed' ? (
         <div className="grid justify-items-start gap-2">
-          <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
+          <Typography
+            as="p"
+            role="alert"
+            className="text-sm text-warning-foreground"
+            data-testid="paykit-delivery-failed"
+          >
             {PAYKIT_DELIVERY_FAILED_COPY}
           </Typography>
           {checkoutActions}
@@ -1122,6 +1187,7 @@ function BuyerPaykitPaymentProgress({
           </Typography>
         </div>
       )}
+      {order.paykitDeliveryState !== 'failed' && checkoutActions}
       {offersUsdt && (
         <Typography as="p" className="text-xs text-muted-foreground" data-testid="paykit-usdt-wallet-hint">
           {USDT_WALLET_HINT} {USDT_FUNDS_HINT}
@@ -1134,6 +1200,48 @@ function BuyerPaykitPaymentProgress({
       )}
     </div>
   );
+}
+
+/** A USDT transfer waiting for the seller: when they confirm by, and that the item is held meanwhile. */
+function BuyerUsdtSellerWindow({ order }: { order: MarketplaceOrder }) {
+  const confirmDeadline = order.paykitSellerConfirmationDeadline ?? order.holdExpiresAt;
+  const nowMs = useNowMs(true);
+  const countdown = holdCountdownCopy(confirmDeadline, nowMs);
+  return (
+    <div className="grid gap-2" data-testid="usdt-payment-seen">
+      <Typography as="p" className="text-sm text-muted-foreground" data-testid="usdt-seller-confirms-by">
+        {sellerConfirmsByCopy(confirmDeadline)}
+        {countdown ? (
+          <>
+            {' '}
+            <span className="font-medium text-foreground tabular-nums" data-testid="usdt-hold-countdown">
+              {countdown}
+            </span>
+          </>
+        ) : null}
+      </Typography>
+      <Typography as="p" className="text-sm text-muted-foreground" data-testid="usdt-seen-hold-copy">
+        {PAYMENT_SEEN_HOLD_COPY}
+      </Typography>
+    </div>
+  );
+}
+
+/**
+ * A payment that arrived but whose manual review ended `abandoned`: the order
+ * was cancelled without it, so the money is owed back. Says who closed the
+ * review: the seller, or the seven days without the seller's decision.
+ */
+function abandonedReviewCopy(isBuyer: boolean, basis: string | null | undefined): string {
+  const closed =
+    basis === 'seller_unresponsive'
+      ? 'its review closed after seven days without the seller\u2019s decision'
+      : basis === 'seller_attestation'
+        ? 'the seller closed its review without completing the order'
+        : 'its review was closed without completing the order';
+  return isBuyer
+    ? `Your payment arrived, but ${closed}, so the order was cancelled. The seller owes it back to you.`
+    : `The buyer\u2019s payment arrived, but ${closed}, so the order was cancelled. Return it to the buyer and record the refund.`;
 }
 
 function BuyerUsdtPaymentProgress({
@@ -1155,7 +1263,12 @@ function BuyerUsdtPaymentProgress({
       )}
       {order.paykitDeliveryState === 'failed' ? (
         <div className="grid justify-items-start gap-2">
-          <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
+          <Typography
+            as="p"
+            role="alert"
+            className="text-sm text-warning-foreground"
+            data-testid="paykit-delivery-failed"
+          >
             {PAYKIT_DELIVERY_FAILED_COPY}
           </Typography>
           {checkoutActions}
@@ -1166,6 +1279,7 @@ function BuyerUsdtPaymentProgress({
           {USDT_BUYER_PHASE_COPY.awaiting}
         </div>
       )}
+      {order.paykitDeliveryState !== 'failed' && checkoutActions}
       <Typography as="p" className="text-xs text-muted-foreground" data-testid="usdt-wallet-hint">
         {USDT_WALLET_HINT} {USDT_FUNDS_HINT}
       </Typography>
@@ -1178,10 +1292,135 @@ function BuyerUsdtPaymentProgress({
   );
 }
 
+/** The seller's confirm button on a digital order: the confirmation also releases the purchase. */
+const CONFIRM_AND_RELEASE_LABEL = 'Confirm payment and release';
+
+const PAYPAL_SEEN_BUYER_COPY =
+  'The seller checks their PayPal account and confirms receipt, then your order is paid. You don\u2019t need to pay again.';
+
+/** The amount a Paykit observation saw, on the rail it saw it: Bitcoin in sats, USDT in USDT. */
+function observedAmountFact(observation: NonNullable<MarketplaceOrder['paykitObservation']>): string | null {
+  if (observation.asset === 'USDT') {
+    if (observation.observedUnits == null) return null;
+    const units = Number(observation.observedUnits);
+    return Number.isSafeInteger(units) && units >= 0 ? formatUsdt(units) : null;
+  }
+  return observation.observedSats == null ? null : formatBitcoinAmount(observation.observedSats);
+}
+
+function sellerUsdtConfirmPrompt(order: MarketplaceOrder): string {
+  const amount = usdtAmountLabel(order);
+  return amount ? `Confirm you received ${amount}` : 'Confirm you received this USDT payment';
+}
+
+/**
+ * A seller-confirmed PayPal order whose seller did not confirm the payment
+ * PayPal reported before the seller window ended, so the checkout expired.
+ * The money is with the seller: the buyer is told to ask them, and the seller
+ * can still confirm it (the service applies it as a late payment) or refund
+ * it in PayPal. Nothing is offered once PayPal reports it refunded or reversed.
+ */
+function PaypalSeenButUnconfirmed({
+  order,
+  isBuyer,
+  methodPayment,
+}: {
+  order: MarketplaceOrder;
+  isBuyer: boolean;
+  methodPayment: ReturnType<typeof useMarketplaceOrderPayment>;
+}) {
+  const takenBack = Boolean(order.externalRefund || order.paymentReversedAt);
+  if (isBuyer) {
+    return (
+      <Typography as="p" className="text-sm text-muted-foreground" data-testid="paypal-seen-expired-buyer">
+        {takenBack
+          ? 'This checkout ended and PayPal reports your payment refunded or reversed.'
+          : 'This checkout ended before the seller confirmed the payment PayPal reported. Message the seller: they can still confirm it, or refund you in PayPal.'}
+      </Typography>
+    );
+  }
+  return (
+    <div className="grid gap-2" data-testid="paypal-seen-expired-seller">
+      <Typography as="p" className="text-sm text-muted-foreground">
+        {takenBack
+          ? 'This checkout ended and PayPal reports the payment refunded or reversed.'
+          : 'This checkout ended before you confirmed the payment PayPal reported. If it is in your PayPal account, confirm it now, or refund the buyer in PayPal.'}
+      </Typography>
+      {!takenBack && (
+        <Button
+          size="sm"
+          className="w-fit rounded-full"
+          disabled={methodPayment.pendingAction !== null}
+          onClick={() => void methodPayment.confirmReceived()}
+        >
+          {methodPayment.pendingAction === 'confirm' ? (
+            <LoaderCircle className="size-4 animate-spin" />
+          ) : (
+            <CheckCircle2 className="size-4" />
+          )}
+          {hasInstantDigitalLines(order) ? CONFIRM_AND_RELEASE_LABEL : 'Confirm payment received'}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The seller's PayPal step. On a seller-confirmed order PayPal's verified
+ * notification only tells the seller; their confirmation pays the order. On an
+ * automatic order the notification pays it, and the seller confirms only a
+ * payment the buyer reported without one.
+ */
+function SellerPaypalConfirmation({
+  order,
+  methodPayment,
+}: {
+  order: MarketplaceOrder;
+  methodPayment: ReturnType<typeof useMarketplaceOrderPayment>;
+}) {
+  const sellerConfirms = order.paymentConfirmation === 'seller';
+  const reference = order.fiatTransactionRef ? ` (ref ${order.fiatTransactionRef})` : '';
+  const prompt = order.gatewayPaymentSeenAt
+    ? `PayPal reported a payment of ${formatCommerceMoney(order.total)}${reference}. Check your PayPal account; confirming receipt marks this order paid.`
+    : order.paymentReportedAt
+      ? `The buyer reported a PayPal payment${reference}. Check your PayPal account; confirming receipt marks this order paid.`
+      : null;
+  if (!prompt) {
+    return (
+      <Typography as="p" className="text-sm text-muted-foreground" data-testid="seller-paypal-awaiting">
+        {sellerConfirms
+          ? 'Awaiting the buyer\u2019s PayPal payment. When PayPal reports it, you confirm receipt here to mark the order paid.'
+          : 'Awaiting the buyer\u2019s PayPal payment. PayPal\u2019s notification usually completes the order automatically; if the buyer reports the payment instead, you will be asked to confirm receipt.'}
+      </Typography>
+    );
+  }
+  return (
+    <div className="grid gap-2" data-testid="seller-paypal-confirm">
+      <Typography as="p" className="text-sm text-muted-foreground">
+        {prompt}
+      </Typography>
+      <Button
+        size="sm"
+        className="w-fit rounded-full"
+        disabled={methodPayment.pendingAction !== null}
+        onClick={() => void methodPayment.confirmReceived()}
+      >
+        {methodPayment.pendingAction === 'confirm' ? (
+          <LoaderCircle className="size-4 animate-spin" />
+        ) : (
+          <CheckCircle2 className="size-4" />
+        )}
+        {hasInstantDigitalLines(order) ? CONFIRM_AND_RELEASE_LABEL : 'Confirm payment received'}
+      </Button>
+    </div>
+  );
+}
+
 function SellerBitcoinConfirmationReview({
   prompt,
   observation,
   deadline,
+  releasesDigital,
   form,
   isSubmitting,
   error,
@@ -1190,6 +1429,7 @@ function SellerBitcoinConfirmationReview({
   prompt: string;
   observation: MarketplaceOrder['paykitObservation'] | null;
   deadline?: string | null;
+  releasesDigital: boolean;
   form: UseFormReturn<SellerPaymentConfirmationForm, unknown, SellerPaymentConfirmationSubmission>;
   isSubmitting: boolean;
   error: string | null;
@@ -1213,10 +1453,7 @@ function SellerBitcoinConfirmationReview({
       {observation && (
         <dl className="grid gap-2 text-sm sm:grid-cols-2">
           <ReviewFact label="Transaction ID" value={observation.txid} />
-          <ReviewFact
-            label="Observed amount"
-            value={observation.observedSats == null ? null : formatBitcoinAmount(observation.observedSats)}
-          />
+          <ReviewFact label="Observed amount" value={observedAmountFact(observation)} />
           <ReviewFact label="Confirmations" value={observation.confirmations} />
           <ReviewFact label="Amount matched" value={formatBooleanFact(observation.amountMatched)} />
           <ReviewFact label="Payment disappeared" value={formatBooleanFact(observation.disappeared)} />
@@ -1248,18 +1485,18 @@ function SellerBitcoinConfirmationReview({
               maxLength={500}
               aria-describedby="bitcoin-confirm-error"
             />
-            {fieldState.error && <span className="text-amber-300">{fieldState.error.message}</span>}
+            {fieldState.error && <span className="text-warning-foreground">{fieldState.error.message}</span>}
           </label>
         )}
       />
       {error && (
-        <Typography id="bitcoin-confirm-error" role="alert" className="text-sm text-amber-300">
+        <Typography id="bitcoin-confirm-error" role="alert" className="text-sm text-warning-foreground">
           {error}
         </Typography>
       )}
       <Button className="w-fit rounded-full" disabled={isSubmitting} onClick={onConfirm}>
         {isSubmitting ? <LoaderCircle className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
-        Confirm payment received
+        {releasesDigital ? CONFIRM_AND_RELEASE_LABEL : 'Confirm payment received'}
       </Button>
     </section>
   );
@@ -1349,7 +1586,7 @@ function SellerBitcoinResolutionReview({
                 aria-invalid={!validRefundReference}
                 inputMode="text"
               />
-              {fieldState.error && <span className="text-amber-300">{fieldState.error.message}</span>}
+              {fieldState.error && <span className="text-warning-foreground">{fieldState.error.message}</span>}
             </label>
           )}
         />
@@ -1361,17 +1598,17 @@ function SellerBitcoinResolutionReview({
           <label className="grid gap-1 text-sm" htmlFor="bitcoin-resolution-reason">
             Reason (optional)
             <Input theme="dashed" {...field} id="bitcoin-resolution-reason" maxLength={500} />
-            {fieldState.error && <span className="text-amber-300">{fieldState.error.message}</span>}
+            {fieldState.error && <span className="text-warning-foreground">{fieldState.error.message}</span>}
           </label>
         )}
       />
       {outcome === 'refunded' && !validRefundReference && (
-        <Typography id="bitcoin-resolution-reference-error" role="alert" className="text-sm text-amber-300">
+        <Typography id="bitcoin-resolution-reference-error" role="alert" className="text-sm text-warning-foreground">
           Enter a printable ASCII refund reference from 1 to 64 characters.
         </Typography>
       )}
       {error && (
-        <Typography id="bitcoin-resolution-error" role="alert" className="text-sm text-amber-300">
+        <Typography id="bitcoin-resolution-error" role="alert" className="text-sm text-warning-foreground">
           {error}
         </Typography>
       )}

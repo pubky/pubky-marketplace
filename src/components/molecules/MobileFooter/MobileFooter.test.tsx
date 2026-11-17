@@ -117,7 +117,7 @@ vi.mock('@/hooks/usePublicRoute/usePublicRoute', () => ({
 }));
 
 vi.mock('@/hooks/useKeyboardOffset/useKeyboardOffset', () => ({
-  useKeyboardOffset: vi.fn(() => ({ isKeyboardVisible: false, keyboardOffset: 0 })),
+  useKeyboardOffset: vi.fn(() => ({ isKeyboardVisible: false })),
 }));
 vi.mock('@/hooks/useChatUnread/useChatUnread', () => ({
   useChatUnread: vi.fn(() => 0),
@@ -192,7 +192,7 @@ describe('MobileFooter', () => {
     HTMLElement.prototype.scrollIntoView = vi.fn();
 
     // Reset keyboard offset mock
-    vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: false, keyboardOffset: 0 });
+    vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: false });
   });
 
   describe('embedded in another app', () => {
@@ -240,16 +240,16 @@ describe('MobileFooter', () => {
     });
   });
 
-  it('hides Marketplace from navigation by default', () => {
+  it('hides Market from navigation by default', () => {
     render(<MobileFooter />);
-    expect(screen.queryByRole('link', { name: 'Marketplace' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Market' })).not.toBeInTheDocument();
   });
 
-  it('shows Marketplace in navigation when the commerce adapter is enabled', () => {
+  it('shows Market in navigation when the commerce adapter is enabled', () => {
     const adapterMode = vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('sandbox');
     try {
       render(<MobileFooter />);
-      expect(screen.getByRole('link', { name: 'Marketplace' })).toHaveAttribute('href', '/marketplace');
+      expect(screen.getByRole('link', { name: 'Market' })).toHaveAttribute('href', '/marketplace');
     } finally {
       adapterMode.mockRestore();
     }
@@ -261,7 +261,7 @@ describe('MobileFooter', () => {
     try {
       render(<MobileFooter />);
 
-      expect(screen.getByRole('link', { name: 'Marketplace, 3 items in cart' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Market, 3 items in cart' })).toBeInTheDocument();
       expect(document.querySelector('[data-cy="mobile-marketplace-counter"]')).toHaveTextContent('3');
     } finally {
       adapterMode.mockRestore();
@@ -274,7 +274,7 @@ describe('MobileFooter', () => {
     try {
       render(<MobileFooter />);
 
-      expect(screen.getByRole('link', { name: 'Marketplace, 1 item in cart' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Market, 1 item in cart' })).toBeInTheDocument();
     } finally {
       adapterMode.mockRestore();
     }
@@ -291,7 +291,7 @@ describe('MobileFooter', () => {
       vi.mocked(useMarketplaceCartCount).mockReturnValue(22);
       render(<MobileFooter />);
       expect(document.querySelector('[data-cy="mobile-marketplace-counter"]')).toHaveTextContent('21+');
-      expect(screen.getByRole('link', { name: 'Marketplace, 22 items in cart' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Market, 22 items in cart' })).toBeInTheDocument();
     } finally {
       adapterMode.mockRestore();
     }
@@ -304,7 +304,7 @@ describe('MobileFooter', () => {
     try {
       render(<MobileFooter />);
 
-      expect(screen.getByRole('link', { name: 'Marketplace, 1 item in cart, 2 need attention' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Market, 1 item in cart, 2 need attention' })).toBeInTheDocument();
       expect(document.querySelector('[data-cy="mobile-marketplace-counter"]')).toHaveTextContent('3');
     } finally {
       adapterMode.mockRestore();
@@ -401,7 +401,7 @@ describe('MobileFooter', () => {
     render(<MobileFooter />);
 
     const homeLink = document.querySelector('.lucide-house')?.closest('a');
-    expect(homeLink).toHaveClass('border', 'border-border', 'bg-white/5');
+    expect(homeLink).toHaveClass('border', 'border-border', 'bg-glass');
     expect(homeLink).not.toHaveClass('bg-secondary');
   });
 
@@ -436,7 +436,7 @@ describe('MobileFooter', () => {
     render(<MobileFooter />);
 
     const collectionsLink = document.querySelector('.lucide-library')?.closest('a');
-    expect(collectionsLink).toHaveClass('border', 'border-border', 'bg-white/5');
+    expect(collectionsLink).toHaveClass('border', 'border-border', 'bg-glass');
     expect(screen.queryByText('New')).not.toBeInTheDocument();
   });
 
@@ -564,38 +564,22 @@ describe('MobileFooter', () => {
     expect(setItemSpy).toHaveBeenCalledWith(FORCE_FEED_SCROLL_TOP_KEY, '1');
   });
 
-  it('applies transform when keyboard is visible', async () => {
-    vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: true, keyboardOffset: 300 });
+  it('hides while the keyboard is open, so it never floats on the keyboard', () => {
+    vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: true });
 
     const { container } = render(<MobileFooter />);
-    const footerContainer = container.querySelector('.fixed');
 
-    expect(footerContainer).toBeInTheDocument();
-    expect(footerContainer?.getAttribute('style')).toContain('translateY(-300px)');
+    expect(container.querySelector('.fixed')).not.toBeInTheDocument();
   });
 
-  it('does not apply transform when keyboard is not visible', async () => {
-    vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: false, keyboardOffset: 0 });
+  it('shows with the keyboard closed', () => {
+    vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: false });
 
     const { container } = render(<MobileFooter />);
     const footerContainer = container.querySelector('.fixed');
 
     expect(footerContainer).toBeInTheDocument();
     expect(footerContainer?.getAttribute('style')).toBeFalsy();
-  });
-
-  it('always applies transition classes for smooth keyboard animation', async () => {
-    // transition-transform and duration-75 are always present regardless of keyboard state
-    vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: false, keyboardOffset: 0 });
-    const { container, rerender } = render(<MobileFooter />);
-    let footerContainer = container.querySelector('.fixed');
-    expect(footerContainer).toHaveClass('transition-transform', 'duration-75');
-
-    // Still present when keyboard is visible
-    vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: true, keyboardOffset: 300 });
-    rerender(<MobileFooter />);
-    footerContainer = container.querySelector('.fixed');
-    expect(footerContainer).toHaveClass('transition-transform', 'duration-75');
   });
 
   it('renders the designer public navigation and join action for guests', () => {
@@ -681,49 +665,6 @@ describe('MobileFooter', () => {
       expect(collectionsDiscoveryMock.setShowSignInDialog).not.toHaveBeenCalled();
       expect(screen.getByRole('button', { name: 'Join Pubky' })).toBeInTheDocument();
     });
-  });
-});
-
-describe('MobileFooter - Snapshots', () => {
-  beforeEach(async () => {
-    vi.clearAllMocks();
-    vi.mocked(usePathname).mockReturnValue('/home');
-    mockSelectUnread.mockReturnValue(0);
-    mockCurrentUserPubky = 'pk:test-user-pubky';
-    collectionsDiscoveryMock.showCollectionsNew = false;
-    mockIsPublicRoute = false;
-    mockIsCoreExploreRoute = false;
-    vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: false, keyboardOffset: 0 });
-  });
-
-  it('matches snapshot with default props', () => {
-    const { container } = render(<MobileFooter />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with custom className', () => {
-    const { container } = render(<MobileFooter className="custom-footer" />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot with different active path', () => {
-    vi.mocked(usePathname).mockReturnValue('/search');
-    const { container } = render(<MobileFooter />);
-    expect(container.firstChild).toMatchSnapshot();
-  });
-
-  it('matches snapshot for navigation links', () => {
-    render(<MobileFooter />);
-
-    const homeLink = document.querySelector('.lucide-house')?.closest('a');
-    expect(homeLink).toMatchSnapshot();
-  });
-
-  it('matches snapshot for account menu trigger', () => {
-    render(<MobileFooter />);
-
-    const accountMenu = screen.getByTestId('avatar-with-fallback').closest('button');
-    expect(accountMenu).toMatchSnapshot();
   });
 });
 

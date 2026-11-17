@@ -7,7 +7,7 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import { TagController } from '@/controllers/tag/tag';
 import type { TagWithAvatars } from '@/molecules/TaggedItem/TaggedItem.types';
 import { transformTagsForViewer } from '@/molecules/TaggedItem/TaggedItem.utils';
-import { toast } from '@/molecules/Toaster/use-toast';
+import { toast } from '@/molecules/Toaster/toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 export type MarketplaceTagTarget =
@@ -16,7 +16,6 @@ export type MarketplaceTagTarget =
 
 export interface UseMarketplaceTagsResult {
   tags: TagWithAvatars[];
-  isLoading: boolean;
   handleTagAdd: (label: string) => Promise<{ success: boolean; error?: string }>;
   handleTagToggle: (tag: { label: string; relationship?: boolean }) => Promise<void>;
 }
@@ -89,7 +88,6 @@ export function useMarketplaceTags(target: MarketplaceTagTarget | null): UseMark
     // eslint-disable-next-line react-hooks/exhaustive-deps -- targetKey encodes every field of target
   }, [targetKey, hasFetched, viewerId]);
 
-  const isLoading = localTags === undefined;
   const tags = transformTagsForViewer(localTags ?? [], viewerId);
 
   const handleTagAdd = useCallback(
@@ -160,5 +158,5 @@ export function useMarketplaceTags(target: MarketplaceTagTarget | null): UseMark
     [targetKey, viewerId, localTags],
   );
 
-  return { tags, isLoading, handleTagAdd, handleTagToggle };
+  return { tags, handleTagAdd, handleTagToggle };
 }

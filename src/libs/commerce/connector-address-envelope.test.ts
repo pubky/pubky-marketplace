@@ -25,7 +25,7 @@ const suite = new CipherSuite({
 });
 
 const ADDRESS = {
-  name: 'Pav Tester',
+  name: 'Test Buyer',
   line1: 'Bahnhofstrasse 1',
   line2: '',
   city: 'Lugano',

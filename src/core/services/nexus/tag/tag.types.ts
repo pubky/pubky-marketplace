@@ -19,5 +19,3 @@ export type TTagTaggersParams = TPaginationParams &
   };
 
 export const TAGS_PATH_PARAMS = ['label'] as const;
-
-export type TTagsQueryParams = TTagHotParams | TTagTaggersParams;

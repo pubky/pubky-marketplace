@@ -66,11 +66,6 @@ export const envSchema = z
     // Test environment variable (optional)
     VITEST: z.string().optional(),
 
-    // Server-side only admin credentials for signup token generation (dev/test only)
-    // These are NOT exposed to the client bundle - only available on the server
-    HOMESERVER_ADMIN_URL: z.url().default('http://localhost:6288/generate_signup_token'),
-    HOMESERVER_ADMIN_PASSWORD: z.string().default('admin'),
-
     // Server-side Chatwoot configuration (optional in schema, validated at runtime when service is used)
     // These are server-side only and not available in browser, so we make them optional here
     // but ChatwootService.getConfig() will validate they exist when actually needed
@@ -191,8 +186,6 @@ function parseEnv(): z.infer<typeof envSchema> {
     NEXT_PUBLIC_BASE_PATH: process.env.NEXT_PUBLIC_BASE_PATH,
     NEXT_PUBLIC_ASSET_PREFIX: process.env.NEXT_PUBLIC_ASSET_PREFIX,
     VITEST: process.env.VITEST,
-    HOMESERVER_ADMIN_URL: process.env.HOMESERVER_ADMIN_URL,
-    HOMESERVER_ADMIN_PASSWORD: process.env.HOMESERVER_ADMIN_PASSWORD,
     BASE_URL_SUPPORT: process.env.BASE_URL_SUPPORT,
     SUPPORT_API_ACCESS_TOKEN: process.env.SUPPORT_API_ACCESS_TOKEN,
     SUPPORT_ACCOUNT_ID: process.env.SUPPORT_ACCOUNT_ID,

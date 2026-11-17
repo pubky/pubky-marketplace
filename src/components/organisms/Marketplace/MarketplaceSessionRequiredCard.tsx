@@ -11,14 +11,6 @@ import { MarketplaceSessionConnectDialog } from './MarketplaceSessionConnectDial
  * approves the grant link (`useMarketplaceApprovalSigner`). Sandbox surfaces
  * never see this card because they do not use the durable transport.
  */
-/**
- * Orders and the seller dashboard read through the marketplace session.
- * That session is the approval labeled for purchases. The service will not
- * list sales without it.
- */
-export const SALES_LIST_SESSION_NOTE =
-  'Your sales use this same approval, because the marketplace lists them only for a session it can tie to you.';
-
 export function MarketplaceSessionRequiredCard({
   onConnected,
   note,

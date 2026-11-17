@@ -98,6 +98,25 @@ price). Honest treatment, enforced in code (`src/core/pipes/money/money.convert.
   otherwise). This does not describe ordinary marketplace orders: for those the service
   fixes a fresh Blocktank quote at bind (see the service's multi-currency notes), which is
   what checkout shows. This client converts nothing for payment.
+- **A Bitcoin refund is in the sats received, whatever the price currency.** The
+  service decides the refund's unit and cap and projects them on the seller's order as
+  `refundCap` (`{amountMinor, unit, exponent}`): `sat` with the sats received for an order
+  paid in Bitcoin; the USDT received for a USDT order, `usdt0` outside USD and `order`
+  cents for a USD one; else `order` with the order total. The refund form starts at, and
+  is capped at, that figure (`orderRefundEntry`) and sends its `unit` as `amountUnit`,
+  which the service refuses when it no longer matches. The Shop does not work out the
+  payment rail itself. A service that projects no `refundCap` gets the earlier entry
+  (`orderAmountEntry`, a USDT order capped at the USDT received) and no `amountUnit`. A
+  return request is entered in the order's own units (`orderReturnEntry`). Every recorded
+  refund names its unit (`externalRefund.amountUnit`). Labels read a `sat` record against
+  the seller's `refundCap` and a record in any other unit, or that names none, against the
+  order total, or the USDT received in cents for a USD order paid in USDT. A partial refund leaves the order `refunded_external` like a full one, and
+  the buyer sees no `refundCap`, so whether a sats refund is full comes from the service's
+  `externalRefundFull`, which every participant sees (`satsRefundIsFull`). The buyer's
+  label then names the sats refunded alone ("Partly refunded ₿X"). When neither the flag
+  nor the cap is known, the line claims neither part nor all. Deploy the service before
+  the Shop: against an older service the Shop has no `refundCap` and reads unnamed records
+  in order units.
 - **This app never authors content locks.** The listing studio cannot create a
   `digitalLock`; locks are created by external tooling against the Lock Server's
   creator-publishing API. So the studio's pricing choice does not by itself make a

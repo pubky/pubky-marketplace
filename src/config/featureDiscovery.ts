@@ -15,6 +15,13 @@ export function buildFeatureDiscoveryStorageKey(pubky: string, featureId: string
   return `${FEATURE_DISCOVERY_STORAGE_PREFIX}:${pubky}:${featureId}`;
 }
 
+/** The start of every key one account has under a feature-discovery prefix (current and pre-namespace). */
+export function featureDiscoveryPubkyPrefixes(pubky: string): string[] {
+  return [FEATURE_DISCOVERY_STORAGE_PREFIX, LEGACY_FEATURE_DISCOVERY_STORAGE_PREFIX].map(
+    (prefix) => `${prefix}:${pubky}:`,
+  );
+}
+
 /** Device-wide key (no account). Same prefix as per-account keys; no pubky segment. */
 export function buildFeatureDiscoveryDeviceStorageKey(featureId: string): string {
   return `${FEATURE_DISCOVERY_STORAGE_PREFIX}:${featureId}`;

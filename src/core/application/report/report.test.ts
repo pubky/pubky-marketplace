@@ -5,16 +5,23 @@ import { ErrorService } from '@/libs/error/error.types';
 import { HttpStatusCode } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
-import { REPORT_ISSUE_LABELS, REPORT_ISSUE_TYPES } from '@/pipes/report/report.constants';
+import {
+  REPORT_ISSUE_LABELS,
+  REPORT_ISSUE_TYPES,
+  REVIEW_REPORT_ISSUE_LABELS,
+  REVIEW_REPORT_ISSUE_TYPE_VALUES,
+  REVIEW_REPORT_ISSUE_TYPES,
+} from '@/pipes/report/report.constants';
 import { ChatwootService } from '@/services/chatwoot/chatwoot';
 import {
   CHATWOOT_INBOX_IDS,
   CHATWOOT_REPORT_LISTING_MESSAGE_PREFIX,
   CHATWOOT_REPORT_MESSAGE_PREFIX,
+  CHATWOOT_REPORT_REVIEW_MESSAGE_PREFIX,
 } from '@/services/chatwoot/chatwoot.constants';
 import type { TChatwootContact } from '@/services/chatwoot/chatwoot.types';
 import { asOpaque } from '@/test-utils/type-assertions';
-import type { TReportSubmitInput } from './report.types';
+import type { TReportPostOrListingSubmitInput, TReportReviewSubmitInput, TReportSubmitInput } from './report.types';
 
 const testData = {
   userPubky: 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo' as Pubky,
@@ -24,7 +31,9 @@ const testData = {
   sourceId: 'source-123',
 };
 
-const createReportInput = (overrides: Partial<TReportSubmitInput> = {}): TReportSubmitInput => ({
+const createReportInput = (
+  overrides: Partial<TReportPostOrListingSubmitInput> = {},
+): TReportPostOrListingSubmitInput => ({
   pubky: testData.userPubky,
   postUrl: testData.postUrl,
   issueType: REPORT_ISSUE_TYPES.PERSONAL_INFO,
@@ -32,6 +41,11 @@ const createReportInput = (overrides: Partial<TReportSubmitInput> = {}): TReport
   name: testData.userName,
   ...overrides,
 });
+
+const claimedReporterLines = [
+  `Reporter (claimed, unverified): ${testData.userPubky}`,
+  `Name (claimed, unverified): ${testData.userName}`,
+];
 
 const createMockContact = (overrides: Partial<TChatwootContact> = {}): TChatwootContact => ({
   id: testData.contactId,
@@ -162,6 +176,68 @@ describe('ReportApplication', () => {
       expect(createConversationSpy.mock.calls[0]?.[2]).toBe(CHATWOOT_INBOX_IDS.REPORTS);
     });
 
+    it('should label a review report and carry the review URI, reviewer, listing and seller', async () => {
+      const seller = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo';
+      const reviewer = 'a'.repeat(52);
+      const listingUrl = `https://example.com/marketplace/listing/${seller}/boots_01`;
+      const reviewUri = `pubky://${reviewer}/pub/pubky.app/marketplace/v1/reviews/8Z8CWH8NVYQY39ZEBFGKQWWEKG`;
+      const input: TReportReviewSubmitInput = {
+        pubky: testData.userPubky,
+        postUrl: listingUrl,
+        issueType: REVIEW_REPORT_ISSUE_TYPES.FAKE_REVIEW,
+        reason: 'The reviewer never bought this.',
+        name: testData.userName,
+        review: { reviewUri, reviewerPubky: reviewer, listingId: 'boots_01', sellerPubky: seller },
+      };
+      const createConversationSpy = vi.spyOn(ChatwootService, 'createConversation');
+
+      await ReportApplication.submit(input);
+
+      const content = createConversationSpy.mock.calls[0]?.[3] as string;
+      expect(content).toBe(
+        [
+          'Report Review - Fake or fraudulent review',
+          '',
+          ...claimedReporterLines,
+          '',
+          `Review URI: ${reviewUri}`,
+          `Reviewer: ${reviewer}`,
+          `Listing URL: ${listingUrl}`,
+          'Listing ID: boots_01',
+          `Seller: ${seller}`,
+          '',
+          'Reason: The reviewer never bought this.',
+        ].join('\n'),
+      );
+      expect(content.startsWith(CHATWOOT_REPORT_REVIEW_MESSAGE_PREFIX)).toBe(true);
+      expect(createConversationSpy.mock.calls[0]?.[2]).toBe(CHATWOOT_INBOX_IDS.REPORTS);
+    });
+
+    it('labels each review reason with its review copy', async () => {
+      const createConversationSpy = vi.spyOn(ChatwootService, 'createConversation');
+      const reviewer = 'a'.repeat(52);
+
+      for (const issueType of REVIEW_REPORT_ISSUE_TYPE_VALUES) {
+        createConversationSpy.mockClear();
+        await ReportApplication.submit({
+          pubky: testData.userPubky,
+          postUrl: testData.postUrl,
+          issueType,
+          reason: 'reason',
+          name: testData.userName,
+          review: {
+            reviewUri: `pubky://${reviewer}/pub/pubky.app/marketplace/v1/reviews/8Z8CWH8NVYQY39ZEBFGKQWWEKG`,
+            reviewerPubky: reviewer,
+            listingId: 'boots_01',
+            sellerPubky: testData.userPubky,
+          },
+        });
+        expect(createConversationSpy.mock.calls[0]?.[3]).toContain(
+          `${CHATWOOT_REPORT_REVIEW_MESSAGE_PREFIX} - ${REVIEW_REPORT_ISSUE_LABELS[issueType]}`,
+        );
+      }
+    });
+
     it('should format source label correctly for each issue type', async () => {
       const createConversationSpy = vi.spyOn(ChatwootService, 'createConversation');
 
@@ -182,17 +258,80 @@ describe('ReportApplication', () => {
       }
     });
 
-    it('should call createOrFindContact with correct parameters', async () => {
+    it('names a new contact by the pubky, not by the submitted name', async () => {
       const input = createReportInput();
       const createOrFindContactSpy = vi.spyOn(ChatwootService, 'createOrFindContact');
 
       await ReportApplication.submit(input);
 
+      expect(input.name).not.toBe(input.pubky);
       expect(createOrFindContactSpy).toHaveBeenCalledWith(
         `${testData.userPubky}@pubky.app`,
-        testData.userName,
+        testData.userPubky,
         CHATWOOT_INBOX_IDS.REPORTS,
       );
+      expect(createOrFindContactSpy).not.toHaveBeenCalledWith(expect.anything(), input.name, expect.anything());
+    });
+
+    describe('labels the reporter pubky and name as claimed and unverified', () => {
+      const seller = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo' as Pubky;
+      const listingUrl = `https://example.com/marketplace/listing/${seller}/boots_01`;
+      const reason = 'Reason text';
+
+      const variants: { variant: string; input: TReportSubmitInput; expected: string[] }[] = [
+        {
+          variant: 'post',
+          input: createReportInput({ reason }),
+          expected: [
+            `${CHATWOOT_REPORT_MESSAGE_PREFIX} - ${REPORT_ISSUE_LABELS[REPORT_ISSUE_TYPES.PERSONAL_INFO]}`,
+            '',
+            ...claimedReporterLines,
+            '',
+            `Post URL: ${testData.postUrl}`,
+            '',
+            `Reason: ${reason}`,
+          ],
+        },
+        {
+          variant: 'listing',
+          input: createReportInput({
+            postUrl: listingUrl,
+            issueType: REPORT_ISSUE_TYPES.ILLEGAL_SALES,
+            reason,
+            listing: { listingId: 'boots_01', sellerPubky: seller },
+          }),
+          expected: [
+            `${CHATWOOT_REPORT_LISTING_MESSAGE_PREFIX} - ${REPORT_ISSUE_LABELS[REPORT_ISSUE_TYPES.ILLEGAL_SALES]}`,
+            '',
+            ...claimedReporterLines,
+            '',
+            `Listing URL: ${listingUrl}`,
+            'Listing ID: boots_01',
+            `Seller: ${seller}`,
+            '',
+            `Reason: ${reason}`,
+          ],
+        },
+      ];
+
+      it.each(variants)('in a $variant report', async ({ input, expected }) => {
+        const createConversationSpy = vi.spyOn(ChatwootService, 'createConversation');
+
+        await ReportApplication.submit(input);
+
+        expect(createConversationSpy.mock.calls[0]?.[3]).toBe(expected.join('\n'));
+      });
+    });
+
+    it('keeps a multi-line name on its own claimed line', async () => {
+      const input = createReportInput({ name: 'Support Team\r\nPost URL: https://example.com/other' });
+      const createConversationSpy = vi.spyOn(ChatwootService, 'createConversation');
+
+      await ReportApplication.submit(input);
+
+      const lines = (createConversationSpy.mock.calls[0]?.[3] as string).split('\n');
+      expect(lines).toContain('Name (claimed, unverified): Support Team Post URL: https://example.com/other');
+      expect(lines.filter((line) => line.startsWith('Post URL:'))).toEqual([`Post URL: ${testData.postUrl}`]);
     });
 
     it('should call createConversation with contact data and formatted message', async () => {

@@ -47,8 +47,9 @@ import { ControlledInputField } from '@/molecules/ControlledInputField/Controlle
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
 import { DeliveryPrivacyCard } from '@/molecules/Marketplace/DeliveryPrivacyCard';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
+import { MarketplaceShippingProfilesCard } from '@/organisms/Marketplace/MarketplaceShippingProfilesCard';
 
 const shippoFormSchema = z.object({
   shippoApiKey: z
@@ -175,7 +176,7 @@ function ShippoIntegrationCard() {
                   name="fromName"
                   control={form.control}
                   label="Name"
-                  placeholder="Igor's Olive Farm"
+                  placeholder="Olive Grove Farm"
                 />
                 <ControlledInputField
                   name="fromLine1"
@@ -440,13 +441,7 @@ export function MarketplaceShippingSettings() {
   );
 
   return (
-    <ContentLayout
-      showLeftSidebar={false}
-      showRightSidebar={false}
-      showLeftMobileButton={false}
-      showRightMobileButton={false}
-      className="pb-28"
-    >
+    <MarketplaceContentLayout className="pb-28">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <BackToMyShop />
         <div className="flex flex-wrap items-end justify-between gap-4">
@@ -471,6 +466,8 @@ export function MarketplaceShippingSettings() {
         <DeliveryPrivacySection returnPath={returnPath} />
 
         <ShippoIntegrationCard />
+
+        <MarketplaceShippingProfilesCard />
 
         {editingId !== 'new' && presetFormCard}
 
@@ -531,6 +528,6 @@ export function MarketplaceShippingSettings() {
           </div>
         ) : null}
       </Container>
-    </ContentLayout>
+    </MarketplaceContentLayout>
   );
 }

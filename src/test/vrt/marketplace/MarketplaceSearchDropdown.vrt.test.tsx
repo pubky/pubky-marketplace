@@ -1,7 +1,7 @@
 // Intentional import order — browser-mode mock factories rely on stable aliases.
 /* eslint-disable simple-import-sort/imports */
 import { createMarketplaceVrtAuthStore } from '@/test/mocks/marketplace-vrt';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { renderForVRT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
@@ -162,8 +162,10 @@ vi.mock('@/hooks/useSearchAutocomplete/useSearchAutocomplete', async () => {
   };
 });
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main className="w-full py-6">{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => (
+    <main className="w-full py-6">{children}</main>
+  ),
 }));
 
 // `Header` hides itself below `lg` for signed-in users, so the mobile scene
@@ -241,6 +243,11 @@ async function renderOpenDropdown(mobile: boolean, disableHover: boolean) {
 }
 
 describe('Marketplace header search dropdown — visual regression', () => {
+  // The browser's storage outlives a spec file: a promo dismissed by an earlier file would change this page.
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
   it('draws the open search dropdown above the section tabs at desktop viewport', async () => {
     const screen = await renderOpenDropdown(false, true);
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(

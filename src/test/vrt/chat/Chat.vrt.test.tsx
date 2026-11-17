@@ -62,6 +62,22 @@ vi.mock('@/hooks/useUserDetails/useUserDetails', () => ({
   }),
 }));
 
+// The launched Shop runs with commerce, so the inbox shows the Market tab bar; without it the bar is left out.
+vi.mock('@/config/commerce', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/config/commerce')>()),
+  getCommerceAdapterMode: () => 'transaction-service',
+}));
+
+// The Market tab bar above the inbox: its badges read the cart, activity and orders; none are shown here.
+vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({ useMarketplaceCartCount: () => 0 }));
+vi.mock('@/hooks/useMarketplaceActivityUnread/useMarketplaceActivityUnread', () => ({
+  useMarketplaceActivityUnread: () => 0,
+}));
+vi.mock('@/hooks/useMarketplaceOrdersAttention/useMarketplaceOrdersAttention', () => ({
+  useMarketplaceOrdersAttention: () => 0,
+}));
+vi.mock('@/hooks/useChatUnread/useChatUnread', () => ({ useChatUnread: () => 0 }));
+
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getShop: async (pubky: string) => (pubky === SELLER ? { record: { name: 'Boot Barn' } } : null),
@@ -74,8 +90,10 @@ vi.mock('@/hooks/useRelativeTime/useRelativeTime', () => {
   return { useRelativeTime: () => result };
 });
 
-vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
-  ContentLayout: ({ children }: { children: React.ReactNode }) => <main className="w-full py-6">{children}</main>,
+vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
+  MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => (
+    <main className="w-full py-6">{children}</main>
+  ),
 }));
 
 function conversation(peer: string, overrides: Partial<ChatConversationView> = {}): ChatConversationView {

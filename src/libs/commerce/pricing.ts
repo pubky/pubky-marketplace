@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import {
-  BASE_UNITS_PER_BITCOIN as REGISTRY_BASE_UNITS_PER_BITCOIN,
   BITCOIN_CURRENCY_CODE,
   BITCOIN_EXPONENT,
   LISTING_CURRENCY_REGISTRY,
@@ -27,8 +26,6 @@ import type { CommerceMoney } from './transaction-contracts';
  * and indicative conversion live in `@/pipes/money/*`; the rate-at-payment
  * question is answered by the service at checkout, see docs/ecommerce/pricing.md.
  */
-
-export const BASE_UNITS_PER_BITCOIN = REGISTRY_BASE_UNITS_PER_BITCOIN;
 
 /** 21 million bitcoin in base units — the honest upper bound for any ₿ amount. */
 export const MAX_BITCOIN_BASE_UNITS = REGISTRY_MAX_BITCOIN_BASE_UNITS;

@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { DIGITAL_ORDER_COPY } from '@/libs/commerce/digital';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -87,6 +88,44 @@ describe('MarketplaceOrderDigitalPanel (digital delivery design §3 "After payme
     expect(await screen.findByRole('alert')).toHaveTextContent(
       "The seller's homeserver didn't return the file. Try again shortly.",
     );
+  });
+
+  it('confirms the download started and offers it again (#375)', async () => {
+    const user = userEvent.setup();
+    URL.createObjectURL = vi.fn(() => 'blob:purchase');
+    URL.revokeObjectURL = vi.fn();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    vi.mocked(CommerceController.fetchOrderDigitalDelivery).mockResolvedValue({
+      orderId: base.id,
+      lines: [
+        {
+          ...common,
+          lineIndex: 0,
+          kind: 'file',
+          key: 'c'.repeat(64),
+          iv: 'd'.repeat(24),
+          ciphertextBlake3: 'e'.repeat(64),
+          plaintextBlake3: 'f'.repeat(64),
+          contentType: 'application/pdf',
+          fileName: 'Field Guide.pdf',
+          sizeBytes: 3,
+        },
+      ],
+    });
+    vi.mocked(CommerceController.openOrderDigitalFile).mockResolvedValue({
+      ok: true,
+      bytes: new Uint8Array([1, 2, 3]),
+      fileName: 'Field Guide.pdf',
+      contentType: 'application/pdf',
+    });
+    render(<MarketplaceOrderDigitalPanel order={digitalOrder('delivered', ['file'])} />);
+
+    await user.click(screen.getByRole('button', { name: 'Download' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Download started. Check your downloads.');
+    expect(screen.getByRole('button', { name: 'Download again' })).toBeEnabled();
+    expect(click).toHaveBeenCalledTimes(1);
+    click.mockRestore();
   });
 
   it('says a purchase unlocks at payment, and offers nothing to open before then (D8)', () => {
@@ -207,6 +246,33 @@ describe('MarketplaceOrderDigitalPanel (digital delivery design §3 "After payme
     expect(await screen.findByRole('status')).toHaveTextContent('Saved. The seller will use this address.');
   });
 
+  it('takes a delivery email of 254 code points that holds emoji, which a 254-unit input cap would cut', async () => {
+    const user = userEvent.setup();
+    vi.mocked(CommerceController.commitSetDeliveryEmail).mockResolvedValue({
+      ok: true,
+      version: 1,
+      commandId: '018f47d2-6a27-7c23-a62f-000000000932',
+      aggregateId: `order:${base.id}`,
+      revision: 2,
+      eventIds: [],
+      result: { kind: 'order' },
+    });
+    const order = digitalOrder('paid', ['email']);
+    render(<MarketplaceOrderDigitalPanel order={order} />);
+    const email = `${'a'.repeat(250)}\u{1F600}\u{1F600}@b`;
+    expect([...email]).toHaveLength(254);
+
+    await user.click(await screen.findByRole('button', { name: 'Change' }));
+    const input = screen.getByLabelText('Email for delivery');
+    await user.clear(input);
+    await user.click(input);
+    await user.paste(email);
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(input).not.toHaveAttribute('maxlength');
+    expect(CommerceController.commitSetDeliveryEmail).toHaveBeenCalledWith(order.id, order.revision, email);
+  });
+
   it('says when it was emailed, and offers no change after that (F12)', async () => {
     vi.mocked(CommerceController.fetchOrderDeliveryEmail).mockResolvedValue({
       orderId: base.id,
@@ -258,5 +324,19 @@ describe('MarketplaceOrderDigitalPanel (digital delivery design §3 "After payme
     render(<MarketplaceOrderDigitalPanel order={digitalOrder('delivered', ['message'])} />);
     expect(screen.getByText('The seller marked this delivered. Check your messages.')).toBeInTheDocument();
     await waitFor(() => expect(CommerceController.fetchOrderDeliveryEmail).not.toHaveBeenCalled());
+  });
+
+  it('tells the buyer of a paid purchase that waits for the seller’s release, and reads nothing', () => {
+    render(
+      <MarketplaceOrderDigitalPanel
+        order={digitalOrder('paid', ['file', 'text'], { digitalRelease: 'seller', digitalReleasedAt: null })}
+      />,
+    );
+    expect(screen.getAllByTestId('order-digital-awaiting-release')).toHaveLength(2);
+    expect(screen.getAllByTestId('order-digital-awaiting-release')[0]).toHaveTextContent(
+      DIGITAL_ORDER_COPY.awaitingRelease,
+    );
+    expect(screen.queryByRole('button', { name: DIGITAL_ORDER_COPY.download })).not.toBeInTheDocument();
+    expect(CommerceController.fetchOrderDigitalDelivery).not.toHaveBeenCalled();
   });
 });

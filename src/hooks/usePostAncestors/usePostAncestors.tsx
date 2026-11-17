@@ -220,6 +220,5 @@ export function usePostAncestors(postId: string | null | undefined): UsePostAnce
   return {
     ancestors: isResolving ? [] : (result?.ancestors ?? []),
     isLoading: isResolving,
-    hasError: hasAnyError,
   };
 }

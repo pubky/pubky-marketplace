@@ -1,4 +1,4 @@
-# Pubky Marketplace Implementation Plan
+# Pubky Market Implementation Plan
 
 Status: largely executed (historical planning document)  
 Goal: a working, feature-complete eBay/Depop-class prototype integrated with Paykit and Pubky Locks.

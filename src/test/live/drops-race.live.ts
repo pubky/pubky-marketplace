@@ -3,6 +3,7 @@
 import 'fake-indexeddb/auto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { establishMarketplaceGrantSession } from './marketplace-grant-session';
 
 /**
  * LIVE STAGING PROOF for FCFS drops (ADR 0026, phase D1) — the design
@@ -13,7 +14,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
  *     -> the seller's real shop + listing + DROP records through the real
  *        publish paths (`CommerceController.publishDrop`)
  *     -> convergent `drop.sync` registration on the DEPLOYED transaction
- *        service (Railway), which is the only clock and inventory authority
+ *        service, which is the only clock and inventory authority
  *     -> two real buyers with real signer-approved service sessions RACING
  *        the last unit with concurrent `checkout.create` commands
  *     -> exactly one winner; the loser gets the service's pinned refusal
@@ -45,8 +46,10 @@ import { beforeAll, describe, expect, it } from 'vitest';
  *   npm run test:marketplace:drops
  */
 
-const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? 'https://staging-api.pubky.app';
-const NEXUS_URL = process.env.MARKETPLACE_NEXUS_URL ?? 'https://nexusd-production-7108.up.railway.app';
+const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? '';
+if (!SERVICE_URL) throw new Error('set MARKETPLACE_SERVICE_URL: the live suites have no default service');
+const NEXUS_URL = process.env.MARKETPLACE_NEXUS_URL ?? '';
+if (!NEXUS_URL) throw new Error('set MARKETPLACE_NEXUS_URL: the live suites have no default Nexus');
 const PUBLIC_PKARR_RELAY = 'https://pkarr.pubky.app';
 const STAGING_HOMESERVER_PUBKY = 'ufibwbmed6jeq9k4p583go95wofakh9fwpp4k734trq79pd9u1uy';
 
@@ -85,7 +88,6 @@ type AppModules = {
   commerceConfig: typeof import('@/config/commerce');
   sdk: typeof import('@synonymdev/pubky');
   specs: typeof import('pubky-app-specs');
-  CAPABILITIES: typeof import('@/config/app').CAPABILITIES;
   privEntryUrl: typeof import('@/libs/commerce/priv-envelope').privEntryUrl;
 };
 
@@ -105,7 +107,6 @@ async function loadModules(): Promise<AppModules> {
     commerceConfig,
     sdk,
     specs,
-    { CAPABILITIES },
     { privEntryUrl },
   ] = await Promise.all([
     import('@/services/marketplace/marketplace-session'),
@@ -120,7 +121,6 @@ async function loadModules(): Promise<AppModules> {
     import('@/config/commerce'),
     import('@synonymdev/pubky'),
     import('pubky-app-specs'),
-    import('@/config/app'),
     import('@/libs/commerce/priv-envelope'),
   ]);
   return {
@@ -136,7 +136,6 @@ async function loadModules(): Promise<AppModules> {
     commerceConfig,
     sdk,
     specs,
-    CAPABILITIES,
     privEntryUrl,
   };
 }
@@ -231,29 +230,17 @@ function actAs(identity: StagingIdentity): void {
 }
 
 // ---------------------------------------------------------------------------
-// Marketplace service sessions (real signer-approved AuthToken flows)
+// Marketplace service sessions (live homeserver grant proofs)
 // ---------------------------------------------------------------------------
 
 type ServiceSession = NonNullable<
   ReturnType<typeof import('@/services/marketplace/marketplace-session').MarketplaceSessionService.getActiveSession>
 >;
 
-/**
- * The genuine Pubky auth flow with this test acting as the signer (what
- * Pubky Ring does interactively): begin the flow, approve the authorization
- * URL with the identity's keypair, exchange the AuthToken for a bearer
- * session on the deployed service. Returns the established session object so
- * multiple identities can hold sessions side by side.
- */
+/** Proves the live homeserver grant, retaining each actor's bearer for the race. */
 async function connectServiceSession(identity: StagingIdentity): Promise<ServiceSession> {
-  const { MarketplaceSessionService, HomeserverService, sdk, CAPABILITIES } = modules;
-  // The Shop grant, as a Ring sign-in mints it: the service releases the
-  // `/priv` data key that seals receipts only to a session covering
-  // `/priv/pubky.app/` with read and write.
-  const flow = HomeserverService.generateAuthTokenFlow(CAPABILITIES);
-  await new sdk.Pubky().signer(identity.keypair).approveAuthRequest(flow.authorizationUrl);
-  const token = await flow.awaitToken();
-  const info = await MarketplaceSessionService.establishWithAuthToken(token.toBytes(), token.publicKey.z32());
+  const { MarketplaceSessionService } = modules;
+  const info = await establishMarketplaceGrantSession({ session: identity.session, pubky: identity.pubky });
   expect(info.pubky).toBe(identity.pubky);
   const session = MarketplaceSessionService.getActiveSession();
   if (session === null) throw new Error(`No active marketplace session after ${identity.label}'s auth flow.`);
@@ -266,7 +253,7 @@ async function connectServiceSession(identity: StagingIdentity): Promise<Service
  * In the browser this is what the per-account `localStorage` restore does
  * between tabs; Node has no `window`, so the harness re-installs the real
  * session object directly. The session itself came from the real
- * signer-approved flow above — nothing here is fabricated.
+ * live grant proof above — nothing here is fabricated.
  */
 function activateServiceSession(session: ServiceSession): void {
   (modules.MarketplaceSessionService as unknown as { session: ServiceSession | null }).session = session;

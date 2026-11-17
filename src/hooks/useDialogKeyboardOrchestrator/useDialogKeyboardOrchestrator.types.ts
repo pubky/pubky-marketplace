@@ -24,7 +24,11 @@ export interface UseDialogKeyboardOrchestratorOptions {
 }
 
 export interface UseDialogKeyboardOrchestratorResult {
-  isKeyboardVisible: boolean;
   spacerHeight: number;
   contentStyle: CSSProperties | undefined;
+  /**
+   * While the keyboard is open: places the dialog's fixed layer over the visible area only, so the
+   * dialog centres (or docks) above the keyboard instead of behind it.
+   */
+  layerStyle: CSSProperties | undefined;
 }

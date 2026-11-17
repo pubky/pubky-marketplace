@@ -54,7 +54,11 @@ export const marketplaceCheckoutSchema = z
       }
       refinePostalAddressFields(data, context);
       if (!/^[A-Za-z]{2}$/.test(data.countryCode)) {
-        context.addIssue({ code: 'custom', path: ['countryCode'], message: 'Use a two-letter country code.' });
+        context.addIssue({
+          code: 'custom',
+          path: ['countryCode'],
+          message: data.countryCode === '' ? 'Choose your country.' : 'Use a two-letter country code.',
+        });
       } else {
         const destinationError = destinationCountryError(data.countryCode, data.shipsTo ?? SHIPS_TO_ANYWHERE);
         if (destinationError) context.addIssue({ code: 'custom', path: ['countryCode'], message: destinationError });
@@ -76,7 +80,11 @@ export const marketplaceCheckoutSchema = z
       }
     }
     if (data.saveAddress && !data.saveLabel) {
-      context.addIssue({ code: 'custom', path: ['saveLabel'], message: 'Give the saved address a label.' });
+      context.addIssue({
+        code: 'custom',
+        path: ['saveLabel'],
+        message: 'Add a label to save this address, or untick Save this address.',
+      });
     }
   });
 
@@ -108,5 +116,3 @@ export const MARKETPLACE_CHECKOUT_ADDRESS_FIELDS = [
   'postalCode',
   'countryCode',
 ] as const;
-
-export type MarketplaceCheckoutAddressField = (typeof MARKETPLACE_CHECKOUT_ADDRESS_FIELDS)[number];

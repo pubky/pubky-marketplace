@@ -7,5 +7,5 @@ export { default } from './opengraph-image';
 
 export const size = OG_SIZE;
 export const contentType = OG_CONTENT_TYPE;
-export const alt = 'Pubky Marketplace';
+export const alt = 'Pubky Market';
 export const revalidate = 300;

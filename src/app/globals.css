@@ -51,6 +51,20 @@ body {
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
   --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-bright-fill-foreground: var(--bright-fill-foreground);
+  --color-destructive-button: var(--destructive-button);
+  --color-destructive-button-hover: var(--destructive-button-hover);
+  --color-error-foreground: var(--error-foreground);
+  --color-foreground-strong: var(--foreground-strong);
+  --color-glass: var(--glass);
+  --color-glass-hover: var(--glass-hover);
+  --color-glass-strong: var(--glass-strong);
+  --color-button-outline: var(--button-outline);
+  --color-action-pill: var(--action-pill);
+  --color-embed: var(--embed);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-notice-foreground: var(--notice-foreground);
   --color-toast-action-muted: var(--toast-action-muted);
   --color-toast-action-muted-hover-border: var(--toast-action-muted-hover-border);
   --color-transparent: var(--transparent);
@@ -69,24 +83,6 @@ body {
   --shadow-md: 0 4px 6px 0px rgba(5, 5, 10, 0.25), 0 2px 4px 0px rgba(5, 5, 10, 0.25);
   --shadow-lg: 0 10px 15px 0px rgba(5, 5, 10, 0.25), 0 4px 6px 0px rgba(5, 5, 10, 0.25);
   --shadow-xl: 0 20px 25px 0px rgba(5, 5, 10, 0.25), 0 8px 10px 0px rgba(5, 5, 10, 0.25);
-}
-
-@property --landing-swirl-mask-hole {
-  syntax: '<percentage>';
-  inherits: true;
-  initial-value: 0%;
-}
-
-@property --landing-swirl-mask-ring-start {
-  syntax: '<percentage>';
-  inherits: true;
-  initial-value: 0%;
-}
-
-@property --landing-swirl-mask-ring-end {
-  syntax: '<percentage>';
-  inherits: true;
-  initial-value: 100%;
 }
 
 :root {
@@ -126,9 +122,63 @@ body {
   --sidebar-border: oklch(0.311 0.007 285.98);
   --sidebar-ring: oklch(0.472 0.007 274.863);
   --brand: oklch(0.928 0.23 123.978);
+  /**
+   * Text, borders and washes the dark page draws in pure white (headings, active tabs,
+   * dialog copy, step markers); the foreground in light mode. Keep Tailwind's `white`
+   * (not `--foreground`, which is `oklch(1 0 0)`) so `text-foreground-strong/80` and friends
+   * compute exactly as `text-white/80` did.
+   */
+  --foreground-strong: var(--color-white);
+  /**
+   * Translucent chrome fill for outline-style controls (nav buttons, FAB,
+   * sidebar "See all", checkbox/radio wells). Mirrors the Figma variable
+   * `custom/background dark:input\30`: a faint white wash in dark mode and
+   * the opaque card surface in light mode, so these controls read lighter
+   * than the grey light page. Hover follows `custom/accent dark:input\50`.
+   * Dark values are the `bg-white/5`, `/10` and `/12` mixes. They mix `var(--color-white)`
+   * rather than a literal so the CSS minifier cannot pre-resolve them into a different colour.
+   */
+  --glass: color-mix(in oklab, var(--color-white) 5%, transparent);
+  --glass-hover: color-mix(in oklab, var(--color-white) 10%, transparent);
+  --glass-strong: color-mix(in oklab, var(--color-white) 12%, transparent);
+  /**
+   * Surface of the `outline` Button variant. Dark mode matches `bg-input/30`.
+   * Light mode uses the card surface, so these buttons read lighter than the page.
+   */
+  --button-outline: color-mix(in oklab, var(--input) 30%, transparent);
+  /** Surface of the post action pills (tag / reply / repost / save / more): secondary in dark, page in light. */
+  --action-pill: var(--secondary);
+  /** Surface of a post or link embedded in a post (repost preview, link preview): muted in dark, page in light. */
+  --embed: var(--muted);
+  /**
+   * Shop status text. `warning` is inline alert and form error text; `notice` is the body of
+   * an amber notice panel (`border-amber-500/30 bg-amber-500/10`). Both keep the pale amber
+   * shades the dark page was designed with and darken on the light page to stay readable.
+   */
+  --warning-foreground: var(--color-amber-300);
+  --notice-foreground: var(--color-amber-200);
+  /** Label on solid brand fills: the dark page colour in dark mode, a fixed dark ink in light mode. */
+  --brand-foreground: var(--background);
+  /** Badges on bright fills retain their original primary ink in dark mode. */
+  --bright-fill-foreground: var(--primary-foreground);
+  /**
+   * Filled destructive controls and alerts. Dark mode keeps the translucent `/60` and `/90` mixes
+   * over dark surfaces; light mode needs an opaque, darker red so the pale label stays readable.
+   */
+  --destructive-button: color-mix(in oklab, var(--destructive) 60%, transparent);
+  --destructive-button-hover: color-mix(in oklab, var(--destructive) 90%, transparent);
+  /** Validation values and messages; fill colours remain independent. */
+  --error-foreground: var(--color-red-500);
   --toast-action-muted: oklch(0.218 0.006 286);
   --toast-action-muted-hover-border: oklch(0.277 0.006 286);
   --transparent: oklch(0.118 0.014 284.115 / 0);
+  --search-closed-from: #07040a;
+  --search-closed-to: #1b1820;
+  /**
+   * No dark `--search-expanded-fade`: the CSS minifier would round its alpha to 8 bits, so dark
+   * keeps the exact inline fallback in `config/search.ts`. Light mode sets it below.
+   */
+  --search-expanded-shadow: rgba(0, 0, 0, 1);
   --scrollbar-size: 10px;
   --scrollbar-radius: 100%;
   --scrollbar-thumb-color: var(--muted-foreground);
@@ -150,8 +200,8 @@ body {
   /**
    * Mobile header height (full chrome) — KNOWN STALE VALUE, do not trust without audit.
    * - Actual full-chrome MobileHeader (p-6, side buttons) is 96px; this is still 80px.
-   * - MobileTabBar `headerTop="mobile"` default is unused: Hot, Profile, and Settings all
-   *   pass `headerTop="compact"` (see --header-height-settings).
+   * - MobileTabBar uses the compact header offset for Hot, Profile, and Settings
+   *   (see --header-height-settings).
    * - ProfilePageLayout also reads this for min-height calc, but that page's header is 72px.
    * - Intentionally left as-is until a broader mobile layout refactor; changing it now
    *   would ripple through tab-bar positioning and profile feed height across the PR.
@@ -376,6 +426,15 @@ body {
   --z-sticky-subnav: 15;
 
   /**
+   * Top offset of the sticky marketplace section nav
+   * - Mobile: below the full-chrome MobileHeader (--header-offset-mobile)
+   * - Desktop (lg+): below the site header (--header-offset-main)
+   * - Embedded: no host chrome to clear, only the safe-area inset (see the
+   *   html[data-shop-embedded] rule below)
+   */
+  --marketplace-subnav-top: var(--header-offset-mobile);
+
+  /**
    * Z-index for mobile-specific UI elements
    * - Ensures mobile header and menu appear above sticky headers
    * - Used by: MobileHeader, ProfilePageMobileMenu
@@ -401,12 +460,92 @@ body {
   --container-max-width: 1200px;
 }
 
+@media (min-width: 1024px) {
+  :root {
+    --marketplace-subnav-top: var(--header-offset-main);
+  }
+}
+
+/**
+ * Light theme, shared with pubky-app: `ThemeSync` (and the pre-paint script before it)
+ * adds `light` to <html> when pubky-app's `pubky-theme` preference resolves to light.
+ * Values come from the Figma "Pubky SHADCN" library, mode "Light" (Feed - Column -
+ * 1280px (Light Mode) frame), and match pubky-app's `.light` block token for token.
+ * Tokens the frame does not exercise (primary, accent, popover, toast, search chrome)
+ * mirror the dark scale so hover/active states keep the same relative contrast.
+ */
+.light {
+  color-scheme: light;
+  --background: #eeeef6;
+  --foreground: #303034;
+  --card: #ffffff;
+  --card-foreground: #303034;
+  --popover: #ffffff;
+  --popover-foreground: #303034;
+  --primary: #48484f;
+  --primary-foreground: #eeeef6;
+  --secondary: #d4d4db;
+  --secondary-foreground: #1d1d20;
+  --muted: #d4d4db;
+  --muted-foreground: #5f5f64;
+  --accent: #c4c4cc;
+  --accent-foreground: #303034;
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0.013 17.38);
+  --border: #babac1;
+  --input: #babac1;
+  --ring: oklch(0.55 0.008 286.145);
+  --sidebar-background: #ffffff;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #303034;
+  --sidebar-primary: #88ad00;
+  --sidebar-primary-foreground: #303034;
+  --sidebar-accent: #d4d4db;
+  --sidebar-accent-foreground: #303034;
+  --sidebar-border: #babac1;
+  --sidebar-ring: oklch(0.55 0.008 274.863);
+  --brand: #88ad00;
+  /* `#88ad00` is below AA as text on the light surfaces and brand tints; fills keep it. */
+  --brand-text: #4c6300;
+  --foreground-strong: var(--foreground);
+  --glass: var(--card);
+  --glass-hover: var(--accent);
+  --glass-strong: var(--card);
+  --button-outline: var(--card);
+  --action-pill: var(--background);
+  --embed: var(--background);
+  --warning-foreground: var(--color-amber-800);
+  --notice-foreground: var(--color-amber-800);
+  --brand-foreground: #1d1d20;
+  --bright-fill-foreground: var(--brand-foreground);
+  --destructive-button: var(--color-red-700);
+  --destructive-button-hover: var(--color-red-800);
+  --error-foreground: var(--color-red-700);
+  --toast-action-muted: #f4f4f9;
+  --toast-action-muted-hover-border: #e4e4ec;
+  --transparent: rgb(255 255 255 / 0);
+  --search-closed-from: #eeeef6;
+  --search-closed-to: #dfdfe7;
+  --search-expanded-fade: rgb(238 238 246 / 0.5);
+  /* Figma `shadow/*` colour: the dark-mode solid black reads as a smudge on the light page. */
+  --search-expanded-shadow: rgb(5 5 10 / 0.25);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
+  }
+  /*
+    emoji-mart paints its search field and dividers with `--color-border`, which Tailwind
+    also defines as the opaque border token. On the white light picker that reads as a heavy
+    grey slab, so hand it the page surface (and the accent on hover) instead.
+  */
+  .light em-emoji-picker {
+    --color-border: var(--background);
+    --color-border-over: var(--accent);
   }
 }
 
@@ -422,6 +561,23 @@ body {
   }
   .hover\:bg-brand\/90:hover {
     background-color: oklch(from var(--brand) calc(l * 0.9) c h);
+  }
+
+  /**
+   * Tag chips set Night and Day values inline (`getTagPaletteStyle` in `tagPalette.ts`); this picks
+   * the set for the active theme. The values inherit, so a nested `.tag-palette` resolves the same.
+   */
+  .tag-palette {
+    --tag-fill: var(--tag-night-fill);
+    --tag-edge: var(--tag-night-edge);
+    --tag-label: var(--foreground);
+    --tag-count: color-mix(in oklab, var(--foreground) 50%, transparent);
+  }
+  .light .tag-palette {
+    --tag-fill: var(--tag-day-fill);
+    --tag-edge: var(--tag-day-edge);
+    --tag-label: var(--tag-day-label);
+    --tag-count: var(--tag-day-count);
   }
 
   /**
@@ -546,7 +702,7 @@ body {
   /* 4a. Primary button (Save) */
   .mdxeditor-popup-container [class*='linkDialogPopoverContent'] [class*='primaryButton'] {
     background-color: var(--brand) !important;
-    color: var(--background) !important;
+    color: var(--brand-foreground) !important;
     border: none !important;
     border-radius: var(--radius-sm) !important;
   }
@@ -573,6 +729,9 @@ body {
   .mdxeditor-popup-container [class*='linkDialogPreviewAnchor'] {
     color: var(--brand) !important;
   }
+  .light .mdxeditor-popup-container [class*='linkDialogPreviewAnchor'] {
+    color: var(--brand-text) !important;
+  }
 
   /* 6. Popover arrow - match dialog background */
   .mdxeditor-popup-container [class*='linkDialogPopoverContent'] [class*='popoverArrow'] polygon {
@@ -588,19 +747,25 @@ body {
     @apply pointer-events-none absolute top-full right-0 left-0 h-6 bg-linear-to-b from-background to-transparent content-[''];
   }
 
-  /* Thicker white caret for focused inputs (used by PostTagInput) */
+  /* White caret for focused inputs (used by PostTagInput) */
   .caret-white {
     caret-color: white;
-  }
-  .caret-thick::selection {
-    /* noop: selection styles kept default */
   }
   input.caret-white {
     caret-color: #fff;
   }
-  /* Some browsers allow caret-width via proprietary property */
-  input.caret-thick {
-    caret-color: #fff;
+  .light .caret-white {
+    caret-color: var(--foreground);
+  }
+
+  /* `:where` keeps these at utility specificity so state variants such as `hover:text-foreground` still win. */
+  :where(.light) .text-brand,
+  :where(.light) .hover\:text-brand:hover,
+  :where(.light) .hover\:text-brand\/80:hover {
+    color: var(--brand-text);
+  }
+  :where(.light) .\!text-brand {
+    color: var(--brand-text) !important;
   }
 
   /* Keep the document scrollbar visible and hide all nested scrollbars */
@@ -699,237 +864,6 @@ body {
    */
   img:fullscreen {
     object-fit: contain;
-  }
-
-  @keyframes landing-swirl-pulse {
-    0%,
-    100% {
-      transform: scale(1) rotate(0deg);
-    }
-    50% {
-      transform: scale(0.9) rotate(14deg);
-    }
-  }
-
-  @keyframes landing-swirl-spin {
-    from {
-      transform: translate3d(0, 0, 0) rotate(0deg);
-    }
-    to {
-      transform: translate3d(0, 0, 0) rotate(360deg);
-    }
-  }
-
-  @keyframes landing-swirl-spin-reverse {
-    from {
-      transform: translate3d(0, 0, 0) rotate(0deg);
-    }
-    to {
-      transform: translate3d(0, 0, 0) rotate(-360deg);
-    }
-  }
-
-  @keyframes landing-swirl-spin-offset {
-    from {
-      transform: translate3d(0, 0, 0) rotate(18deg);
-    }
-    to {
-      transform: translate3d(0, 0, 0) rotate(378deg);
-    }
-  }
-
-  @keyframes landing-scroll-cue-bounce {
-    0%,
-    100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(0.5rem);
-    }
-  }
-
-  @keyframes landing-carousel-progress-fill {
-    from {
-      transform: scaleY(1);
-    }
-
-    to {
-      transform: scaleY(0);
-    }
-  }
-
-  .landing-swirl-background {
-    pointer-events: none;
-    position: fixed;
-    inset: 0;
-    z-index: -10;
-    clip-path: none;
-    overflow: hidden;
-  }
-
-  .landing-swirl-background__graphic {
-    --landing-swirl-size: min(100vw, 34rem);
-    --landing-swirl-offset-x: -50px;
-    --landing-swirl-offset-y: 250px;
-    --landing-swirl-clip: circle(75% at 50% 50%);
-    --landing-swirl-mask-hole: 0%;
-    --landing-swirl-mask-ring-start: 0%;
-    --landing-swirl-mask-ring-end: 100%;
-    --landing-swirl-opacity: 1;
-
-    position: absolute;
-    right: calc((var(--landing-swirl-size) / -2) + var(--landing-swirl-offset-x));
-    bottom: calc((var(--landing-swirl-size) * -0.5) + var(--landing-swirl-offset-y));
-    width: var(--landing-swirl-size);
-    aspect-ratio: 960 / 976;
-    background-image: var(--landing-swirl-image, url('/images/bg-home.svg'));
-    background-repeat: no-repeat;
-    background-position: center;
-    background-size: contain;
-    animation: landing-swirl-pulse 6s ease-in-out infinite;
-    clip-path: var(--landing-swirl-clip);
-    mask-image: radial-gradient(
-      circle at 50% 50%,
-      transparent 0 var(--landing-swirl-mask-hole),
-      #000 var(--landing-swirl-mask-ring-start) var(--landing-swirl-mask-ring-end),
-      transparent calc(var(--landing-swirl-mask-ring-end) + 1%)
-    );
-    mask-repeat: no-repeat;
-    mask-size: 100% 100%;
-    opacity: var(--landing-swirl-opacity);
-    transition:
-      right 1000ms cubic-bezier(0.65, 0, 0.35, 1),
-      bottom 1000ms cubic-bezier(0.65, 0, 0.35, 1),
-      width 1000ms cubic-bezier(0.65, 0, 0.35, 1),
-      clip-path 1000ms cubic-bezier(0.65, 0, 0.35, 1),
-      --landing-swirl-mask-hole 1000ms cubic-bezier(0.65, 0, 0.35, 1),
-      --landing-swirl-mask-ring-start 1000ms cubic-bezier(0.65, 0, 0.35, 1),
-      --landing-swirl-mask-ring-end 1000ms cubic-bezier(0.65, 0, 0.35, 1),
-      opacity 1000ms cubic-bezier(0.65, 0, 0.35, 1);
-    transform-origin: 50% 50%;
-    will-change: transform, clip-path, opacity;
-    -webkit-mask-image: radial-gradient(
-      circle at 50% 50%,
-      transparent 0 var(--landing-swirl-mask-hole),
-      #000 var(--landing-swirl-mask-ring-start) var(--landing-swirl-mask-ring-end),
-      transparent calc(var(--landing-swirl-mask-ring-end) + 1%)
-    );
-    -webkit-mask-repeat: no-repeat;
-    -webkit-mask-size: 100% 100%;
-  }
-
-  :root[data-landing-swirl='broken'] .landing-swirl-background__graphic {
-    --landing-swirl-size: min(164vw, 88rem);
-    --landing-swirl-offset-x: 0px;
-    --landing-swirl-offset-y: 0px;
-    --landing-swirl-clip: circle(19% at 50% 50%);
-    --landing-swirl-opacity: 1;
-    animation: landing-swirl-spin-reverse 24s linear infinite;
-  }
-
-  .landing-swirl-background__graphic--secondary {
-    right: auto;
-    opacity: 0;
-    transition:
-      bottom 1000ms cubic-bezier(0.65, 0, 0.35, 1),
-      left 1000ms cubic-bezier(0.65, 0, 0.35, 1),
-      width 1000ms cubic-bezier(0.65, 0, 0.35, 1),
-      clip-path 1000ms cubic-bezier(0.65, 0, 0.35, 1),
-      opacity 1000ms cubic-bezier(0.65, 0, 0.35, 1);
-  }
-
-  :root[data-landing-swirl='how'] .landing-swirl-background__graphic {
-    --landing-swirl-size: min(200vw, 68rem);
-    --landing-swirl-offset-x: -38vw;
-    --landing-swirl-offset-y: 160px;
-    --landing-swirl-clip: circle(75% at 50% 50%);
-    --landing-swirl-opacity: 1;
-    animation: landing-swirl-spin 24s linear infinite;
-  }
-
-  :root[data-landing-swirl='freedom'] .landing-swirl-background__graphic {
-    --landing-swirl-size: min(460vw, 160rem);
-    --landing-swirl-clip: circle(75% at 50% 50%);
-    --landing-swirl-opacity: 1;
-
-    right: calc(50vw - (var(--landing-swirl-size) / 2));
-    bottom: calc(var(--landing-swirl-size) * -0.9);
-    animation: landing-swirl-spin-offset 24s linear infinite;
-  }
-
-  :root[data-landing-swirl='final'] .landing-swirl-background__graphic {
-    --landing-swirl-size: min(320vw, 80rem);
-    --landing-swirl-clip: circle(75% at 50% 50%);
-    --landing-swirl-mask-hole: 35%;
-    --landing-swirl-mask-ring-start: 36%;
-    --landing-swirl-mask-ring-end: 49%;
-    --landing-swirl-opacity: 1;
-
-    right: calc(50vw - (var(--landing-swirl-size) / 2));
-    bottom: calc(50vh - (var(--landing-swirl-size) * 0.508));
-    animation: landing-swirl-spin 18s linear infinite;
-  }
-
-  .landing-scroll-cue__icon {
-    animation: landing-scroll-cue-bounce 1.4s ease-in-out infinite;
-    will-change: transform;
-  }
-
-  @media (min-width: 1024px) {
-    .landing-swirl-background__graphic {
-      --landing-swirl-size: min(75vw, 60rem);
-      --landing-swirl-offset-x: 100px;
-      --landing-swirl-offset-y: 100px;
-    }
-
-    :root[data-landing-swirl='broken'] .landing-swirl-background__graphic {
-      --landing-swirl-size: min(104vw, 84rem);
-      --landing-swirl-offset-x: 8vw;
-      --landing-swirl-offset-y: 8vh;
-    }
-
-    :root[data-landing-swirl='how'] .landing-swirl-background__graphic {
-      --landing-swirl-size: min(150vw, 120rem);
-      --landing-swirl-offset-x: -28vw;
-      --landing-swirl-offset-y: 12vh;
-    }
-
-    :root[data-landing-swirl='freedom'] .landing-swirl-background__graphic {
-      --landing-swirl-size: min(320vw, 160rem);
-
-      bottom: calc(var(--landing-swirl-size) * -0.88);
-      animation-duration: 36s;
-    }
-
-    :root[data-landing-swirl='final'] .landing-swirl-background__graphic {
-      --landing-swirl-size: min(130vw, 90rem);
-    }
-  }
-
-  @media (min-width: 1536px) {
-    :root[data-landing-swirl='freedom'] .landing-swirl-background__graphic {
-      --landing-swirl-size: min(260vw, 170rem);
-    }
-  }
-
-  :root[data-landing-swirl='broken'] .landing-swirl-background__graphic--secondary {
-    --landing-swirl-size: min(112vw, 48rem);
-    --landing-swirl-clip: circle(19% at 50% 50%);
-    --landing-swirl-mask-hole: 0%;
-    --landing-swirl-mask-ring-start: 0%;
-    --landing-swirl-mask-ring-end: 100%;
-
-    bottom: calc(var(--landing-swirl-size) * -0.18);
-    left: calc(var(--landing-swirl-size) * -0.42);
-    opacity: 1;
-    animation: landing-swirl-spin 28s linear infinite;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .landing-swirl-background__graphic,
-    .landing-scroll-cue__icon {
-      animation: none;
-    }
   }
 
   .onboarding-nav {
@@ -1122,13 +1056,33 @@ body {
 /*
  * Embedded in a host app (see EmbeddedDocumentFlag): the host owns the page chrome, so nothing sits
  * above the content to offset sticky elements from. The two header offsets collapse, and the
- * marketplace sub-navigation's mobile offset (Tailwind `top-24`, a fixed 96px) follows.
+ * marketplace sub-navigation pins to the top of the frame, below any safe-area inset the host passes through.
  */
 html[data-shop-embedded] {
   --header-offset-main: 0px;
   --header-offset-mobile: 0px;
+  --marketplace-subnav-top: env(safe-area-inset-top, 0px);
 }
 
-html[data-shop-embedded] .sticky.top-24 {
-  top: 0;
+/*
+ * Phones: MobileHeader slides away while the page scrolls down (`data-mobile-header-collapsed`), so what
+ * sticks under it moves up into the space it leaves and follows it back on scroll up.
+ */
+@media (width < 64rem) {
+  html[data-mobile-header-collapsed] {
+    --header-offset-mobile: 0px;
+  }
+
+  /* The tab bars under the header on Hot, Profile and Settings (MobileTabBar) stick at the header's height. */
+  html[data-mobile-header-collapsed] .top-\(--header-height-settings\),
+  html[data-mobile-header-collapsed] .top-\(--header-height-mobile\) {
+    top: 0;
+  }
+
+  .top-\(--marketplace-subnav-top\),
+  .top-\(--header-offset-mobile\),
+  .top-\(--header-height-settings\),
+  .top-\(--header-height-mobile\) {
+    transition: top 200ms;
+  }
 }

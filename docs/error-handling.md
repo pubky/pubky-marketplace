@@ -10,7 +10,7 @@ Practical error handling conventions for the codebase. Based on ADR-0015.
 
 ## Core Principle
 
-**Every layer uses `AppError`** with category-based typing. No raw `Error`, no plain strings.
+**Failures use `AppError`** with category-based typing. No raw `Error` or plain strings for ordinary failures; the narrow auth cancellation exception is documented below.
 
 ```typescript
 // GOOD — Use Err.* factories
@@ -32,13 +32,13 @@ throw 'Something went wrong';
 
 **Codes** (WHICH specific error): `WRITE_FAILED`, `NOT_FOUND`, `UNAUTHORIZED`, `SESSION_EXPIRED`, etc.
 
-**Services** (WHERE it originated): `Nexus`, `Homeserver`, `Homegate`, `Local`, etc.
+**Services** (WHERE it originated): `Nexus`, `Homeserver`, `Local`, etc.
 
 ## Current Reality
 
 - `Err.*` factories currently **log automatically** (`src/libs/error/error.factories.ts`).
-- Legacy `AppError.type/statusCode/details` still exist in some paths (Phase 2 migration).
-- Sentry + traceId inheritance + log de-duplication are planned but not implemented yet (see ADR-0015 Future Work).
+- `AppError` exposes `category`, `code`, `service`, `operation`, `context`, `cause` and `traceId`. HTTP status belongs in `context.statusCode`; do not read obsolete top-level `type`, `statusCode` or `details` fields.
+- Sentry capture is implemented: each factory calls `captureAppError`, subject to the runtime enablement and expected-error filters in `src/libs/observability/`. See `docs/sentry.md` for capture, privacy and filtering rules. TraceId inheritance and general local-log de-duplication remain future work; do not assume wrapping an existing `AppError` is automatically deduplicated.
 
 ## Layer-Specific Patterns
 
@@ -53,31 +53,21 @@ Catch model exceptions only to append context (`service`, `action`).
 Re-throw the same `AppError` instance to avoid losing stack traces.
 For input validation issues, throw `Err.validation(ValidationErrorCode.*, ...)`.
 
-### Remote Services (`src/core/services/nexus/`, `homeserver/`, `homegate/`)
+### Remote Services (`src/core/services/nexus/`, `homeserver/`)
 
-```typescript
-// Real: src/core/services/homegate/homegate.ts
-class HomegateService {
-  static async verifySmsCode({ phoneNumber, code }: TVerifySmsCodeParams): Promise<TVerifySmsCodeResult> {
-    const url = homegateApi.validateSmsCode();
-
-    const response = await safeFetch(
-      url,
-      { method: HttpMethod.POST, body: JSON.stringify({ phoneNumber, code }), headers: JSON_HEADERS },
-      ErrorService.Homegate,
-      'verifySmsCode',
-    );
-
-    if (!response.ok) {
-      throw httpResponseToError(response, ErrorService.Homegate, 'verifySmsCode', url);
-    }
-
-    return await parseResponseOrThrow<TRawApiResponse>(response, ErrorService.Homegate, 'verifySmsCode', url);
-  }
-}
-```
+The Nexus boundary in `src/core/services/nexus/nexus.utils.ts` uses `safeFetch`, converts a failed HTTP response with `httpResponseToError`, and parses successful JSON with `parseResponseOrThrow`. Keep the service and operation metadata consistent through those helpers. Homegate's signup-only service has been removed; use the current Nexus implementation as the reference.
 
 Differentiate transient errors (`SERVICE_UNAVAILABLE`, `NETWORK_ERROR`) from fatal ones for smarter retries.
+
+Pubky SDK (`@synonymdev/pubky`) errors are mapped by `name` in `src/core/services/homeserver/error.utils.ts`: `InvalidInput` becomes Validation, `AuthenticationError` or HTTP 401 becomes Auth `SESSION_EXPIRED`, and `PkarrError` becomes retryable Network `CONNECTION_FAILED`. A failed PKARR lookup does not prove that a record is absent. Other errors follow the existing HTTP/status normalization.
+
+#### Homeserver write retries
+
+Use the existing `HomeserverService` write entry points and preserve their retry/session checks. `retryHomeserverWrite` in `src/core/services/homeserver/write-retry.ts` retries idempotent PUT/DELETE operations with bounded backoff for 429, 500 and 503, and for the specific GCS publish-conflict 409 identified by `HOMESERVER_PUBLISH_CONFLICT_MESSAGE`. Other 409 responses, 412 and 423 are not retried by that policy. The default permits three total attempts; a caller may request fewer with the existing single-attempt options.
+
+Owned-session writes check the captured session, auth epoch and logout state before attempts. Keep those checks when changing retries. The retry helper does not acquire a lock: callers retain ownership of any critical section or ordering guarantee.
+
+For a read-check-write operation, a publish conflict can make the earlier read stale. Market's `retryHomeserverWriteAfterReread(readAndWrite)` reruns that operation for this conflict only; `CommerceApplication.putVerifiedPublicListing` is an existing consumer. Its inner write disables publish-conflict replay so the conflict reaches the reread loop. Do not stack retry loops without checking their combined attempt budget, and do not assume this helper has App's newer write-fence API or retries every status handled by the inner write helper.
 
 When a specific HTTP status is an expected domain state, handle it before calling `httpResponseToError`.
 For example, a geoblocked availability endpoint can return `{ available: false }` for `403`. Keep these cases
@@ -111,7 +101,8 @@ Logging happens in `Err.*` factories — Application code should usually **not**
 ### Controllers
 
 Wrap entry points with a small helper that normalizes anything non-`AppError`.
-Convert `AppError` to UI/API responses (status code, toast copy) using `ErrorMessages`.
+Use `AppError` categories and codes to choose the response. UI error copy can use
+`getErrorMessage` from `@/libs/error/error.utils` or a message specific to the action.
 
 ### UI Layer (`src/components/`, `src/hooks/`)
 
@@ -135,10 +126,7 @@ See `docs/components.md` — _Toasts_ for variant usage and copy conventions.
 
 ```typescript
 // Category predicates
-isNetworkError(error);
-isServerError(error);
 isAuthError(error);
-isDatabaseError(error);
 
 // Decision helpers
 isRetryable(error); // Network, Timeout, Server, RateLimit → true
@@ -175,10 +163,13 @@ try { ... } catch (error) {
 
 ## TanStack Query Integration
 
-The QueryClient reads `error.context.statusCode` for retry decisions:
+`createQueryClient` in `src/libs/query-client/query-client.factory.ts` uses each service's retry configuration:
 
-- **Retryable**: Network, Timeout, Server, RateLimit categories
-- **Non-retryable**: Client, Auth, Validation, Database categories
+- Codes listed in `retry.nonRetryable` stop immediately.
+- HTTP 404, 429 and 5xx use their configured limits/backoff; other 4xx stop immediately.
+- Errors without one of those statuses use the configured default limit, including non-`AppError` values.
+
+This is separate from the category-based `isRetryable` helper. Preserve the service-specific policy, especially Nexus indexing retries; changing a category alone does not describe the QueryClient's actual decision.
 
 ## Migration Checklist
 
@@ -198,3 +189,9 @@ When handling errors:
 - [ ] Using `safeFetch` for HTTP requests?
 - [ ] Checking `category`/`code` instead of parsing messages?
 - [ ] Using decision helpers (`isRetryable`, `requiresLogin`, `isNotFound`)?
+
+## Narrow auth boundary exceptions
+
+`HomeserverService.restoreGrantSession` recognizes specific `ClientStateError` messages from the pinned SDK: a stored session missing for the requested record ID, an unsupported stored version, an invalid or signed-out session, and a missing delegated grant key. These map to `SESSION_EXPIRED` with the `missing-local-grant` reason. Keep this message matching at the SDK boundary and covered when updating the SDK; do not turn an arbitrary storage or network error into proof that credentials are absent. Other restore failures continue through `handleError`.
+
+`createCanceledError` in `src/core/services/homeserver/error.utils.ts` deliberately creates the plain `AuthFlowCanceled` control-flow signal. Cancellation is an expected exit, not a new failure to wrap with `Err.*`. This narrow exception does not authorize raw errors for ordinary service failures.

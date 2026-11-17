@@ -84,6 +84,5 @@ export function useHotTags({
     rawTags,
     isLoading,
     error,
-    refetch: fetchTags,
   };
 }
