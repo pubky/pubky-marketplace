@@ -300,6 +300,11 @@ describe('Marketplace seller dashboard — visual regression', () => {
     view.search = search;
 
     const screen = await renderForVRT(<MarketplaceDashboard />, { viewport });
+    if (name === 'no-match-mobile') {
+      const empty = screen.getByTestId('listing-filter-empty');
+      await expect.element(empty).toHaveTextContent('No listings match these filters.');
+      empty.element().scrollIntoView({ block: 'center', behavior: 'instant' });
+    }
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       `dashboard-listing-filters-${name}`,
       VRT_DENSE_CHROME_SCREENSHOT,
