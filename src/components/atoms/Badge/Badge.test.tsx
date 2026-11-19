@@ -16,11 +16,11 @@ describe('Badge - Rendering', () => {
     render(<Badge>Default Badge</Badge>);
     const badge = screen.getByText('Default Badge');
     expect(badge).toHaveAttribute('data-slot', 'badge');
-    expect(badge).toHaveClass('bg-primary', 'text-primary-foreground');
+    expect(badge).toHaveClass('bg-brand', 'text-bright-fill-foreground');
   });
 
   it.each([
-    ['default', ['bg-primary', 'text-primary-foreground']],
+    ['default', ['bg-brand', 'text-bright-fill-foreground']],
     ['secondary', ['bg-secondary', 'text-secondary-foreground']],
     ['destructive', ['bg-destructive/60', 'text-white']],
     ['outline', ['text-foreground', 'bg-background']],
@@ -87,7 +87,7 @@ describe('Badge - Rendering', () => {
   it('handles hover states correctly', () => {
     render(<Badge variant="default">Hover Badge</Badge>);
     const badge = screen.getByText('Hover Badge');
-    expect(badge).toHaveClass('[a&]:hover:bg-primary/90');
+    expect(badge).toHaveClass('[a&]:hover:bg-brand/90');
   });
 
   it('handles invalid states correctly', () => {
@@ -127,7 +127,7 @@ describe('Badge - Rendering', () => {
       'px-2',
       'py-0.5',
       'text-xs',
-      'font-medium',
+      'font-semibold',
       'w-fit',
       'whitespace-nowrap',
       'shrink-0',

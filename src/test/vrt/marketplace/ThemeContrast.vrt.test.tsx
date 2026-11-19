@@ -5,11 +5,48 @@ import { RadioGroup, RadioGroupItem } from '@/atoms/RadioGroup/RadioGroup';
 import { Switch } from '@/atoms/Switch/Switch';
 import { HotTagCard } from '@/molecules/HotTagCard/HotTagCard';
 import { InputField } from '@/molecules/InputField/InputField';
+import { toast } from '@/molecules/Toaster/toast';
+import { Toaster } from '@/molecules/Toaster/Toaster';
 import { WordSlot } from '@/molecules/WordSlot/WordSlot';
 import { TIMEFRAME } from '@/stores/hot/hot.types';
 import { expectGraphicContrast, expectTextContrast } from '@/test-utils/color-contrast';
 import { renderForVRT } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP } from '@/test-utils/vrt.viewports';
+
+describe('Validation contrast on profile cards', () => {
+  it.each(['dark', 'light'] as const)('keeps invalid values and messages readable in %s mode', async (theme) => {
+    const screen = await renderForVRT(
+      <main className="bg-card p-6">
+        <InputField id="profile-name" value="Invalid" status="error" message="Enter a valid name." readOnly />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP, theme },
+    );
+
+    const message = screen.getByText('Enter a valid name.');
+    await expect.element(message).toBeVisible();
+    expectTextContrast(message.element());
+    expectTextContrast(screen.getByRole('textbox').element());
+  });
+});
+
+describe('Success toast contrast', () => {
+  it.each(['dark', 'light'] as const)('keeps the dismiss action readable over cards in %s mode', async (theme) => {
+    toast({ title: 'Reply posted', dismissButton: true, persistent: true });
+    const screen = await renderForVRT(
+      <main className="h-full bg-card">
+        <Toaster />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP, theme },
+    );
+    const dismiss = screen.getByRole('button', { name: 'OK' });
+    await expect.element(dismiss).toBeVisible();
+    expectTextContrast(dismiss.element());
+    await dismiss.hover();
+    expect(dismiss.element().matches(':hover')).toBe(true);
+    expectTextContrast(dismiss.element());
+    await dismiss.click();
+  });
+});
 
 describe('Light theme contrast', () => {
   it('keeps invalid values, recovery words and pastel counts readable', async () => {
