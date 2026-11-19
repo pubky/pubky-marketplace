@@ -5,6 +5,8 @@ import { RadioGroup, RadioGroupItem } from '@/atoms/RadioGroup/RadioGroup';
 import { Switch } from '@/atoms/Switch/Switch';
 import { HotTagCard } from '@/molecules/HotTagCard/HotTagCard';
 import { InputField } from '@/molecules/InputField/InputField';
+import { toast } from '@/molecules/Toaster/toast';
+import { Toaster } from '@/molecules/Toaster/Toaster';
 import { WordSlot } from '@/molecules/WordSlot/WordSlot';
 import { TIMEFRAME } from '@/stores/hot/hot.types';
 import { expectGraphicContrast, expectTextContrast } from '@/test-utils/color-contrast';
@@ -85,6 +87,17 @@ describe('Light theme contrast', () => {
     await expect.element(screen.getByRole('checkbox')).not.toBeChecked();
     await screen.getByRole('switch').click();
     await expect.element(screen.getByRole('switch')).not.toBeChecked();
+  });
+
+  it('keeps the success toast dismiss action readable at rest and on hover', async () => {
+    toast({ title: 'Reply posted', dismissButton: true, persistent: true });
+    const screen = await renderForVRT(<Toaster />, { viewport: VRT_VIEWPORT_DESKTOP, theme: 'light' });
+    const dismiss = screen.getByRole('button', { name: 'OK' });
+    await expect.element(dismiss).toBeVisible();
+    expectTextContrast(dismiss.element());
+    await dismiss.hover();
+    expectTextContrast(dismiss.element());
+    await dismiss.click();
   });
 
   it('keeps brand links readable while hovered on cards and the page', async () => {

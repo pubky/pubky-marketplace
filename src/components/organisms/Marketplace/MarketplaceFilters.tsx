@@ -23,7 +23,7 @@ import {
   Timer,
   Wallet,
 } from 'lucide-react';
-import { Button, buttonVariants } from '@/atoms/Button/Button';
+import { Button } from '@/atoms/Button/Button';
 import { Card } from '@/atoms/Card/Card';
 import {
   DropdownMenu,
@@ -36,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from '@/atoms/DropdownMenu/DropdownMenu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
+import { secondarySelectClasses } from '@/atoms/Select/Select.variants';
 import { Typography } from '@/atoms/Typography/Typography';
 import {
   isListingCurrencyCode,
@@ -69,8 +70,8 @@ const MAX_FACET_VALUES = 10;
 
 // Match the Collections dropdown trigger using the shared secondary button style.
 const FILTER_TRIGGER_CLASS = cn(
-  buttonVariants({ variant: 'secondary', size: 'sm' }),
-  'max-w-64 text-xs font-semibold data-[size=default]:h-8 [&>svg:last-child]:size-3.5',
+  secondarySelectClasses('sm'),
+  'max-w-64 text-xs data-[size=default]:h-8 [&>svg:last-child]:size-3.5',
 );
 const CATEGORY_MENU_CLASS =
   'w-64 max-h-[min(70vh,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto border-border bg-background p-3';
