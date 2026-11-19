@@ -56,7 +56,7 @@ describe('Toast Components', () => {
 
 describe('ToastAction', () => {
   it.each([
-    ['default', ['border-brand', 'bg-brand/16', 'text-brand']],
+    ['default', ['border-brand', 'bg-toast-action-brand', 'text-brand']],
     ['error', ['bg-toast-action-muted', 'text-foreground']],
     ['warning', ['bg-toast-action-muted', 'text-foreground']],
     ['info', ['bg-toast-action-muted', 'text-foreground']],

@@ -52,7 +52,7 @@ export const toastIconVariants = cva('size-5 shrink-0', {
 
 // Brand action on success notifications.
 const toastActionDefaultButtonColors =
-  'shadow-xs border-brand bg-brand/16 text-brand hover:!bg-brand/30 [.light_&]:text-brand-foreground';
+  'shadow-xs border-brand bg-toast-action-brand text-brand hover:bg-toast-action-brand-hover [.light_&]:text-brand-foreground';
 // Muted dismiss/action button on non-default toast variants.
 const toastActionSecondaryButtonColors =
   'shadow-xs bg-toast-action-muted text-foreground hover:border-toast-action-muted-hover-border';

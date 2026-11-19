@@ -29,6 +29,25 @@ describe('Validation contrast on profile cards', () => {
   });
 });
 
+describe('Success toast contrast', () => {
+  it.each(['dark', 'light'] as const)('keeps the dismiss action readable over cards in %s mode', async (theme) => {
+    toast({ title: 'Reply posted', dismissButton: true, persistent: true });
+    const screen = await renderForVRT(
+      <main className="h-full bg-card">
+        <Toaster />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP, theme },
+    );
+    const dismiss = screen.getByRole('button', { name: 'OK' });
+    await expect.element(dismiss).toBeVisible();
+    expectTextContrast(dismiss.element());
+    await dismiss.hover();
+    expect(dismiss.element().matches(':hover')).toBe(true);
+    expectTextContrast(dismiss.element());
+    await dismiss.click();
+  });
+});
+
 describe('Light theme contrast', () => {
   it('keeps invalid values, recovery words and pastel counts readable', async () => {
     const onClear = vi.fn();
@@ -87,17 +106,6 @@ describe('Light theme contrast', () => {
     await expect.element(screen.getByRole('checkbox')).not.toBeChecked();
     await screen.getByRole('switch').click();
     await expect.element(screen.getByRole('switch')).not.toBeChecked();
-  });
-
-  it('keeps the success toast dismiss action readable at rest and on hover', async () => {
-    toast({ title: 'Reply posted', dismissButton: true, persistent: true });
-    const screen = await renderForVRT(<Toaster />, { viewport: VRT_VIEWPORT_DESKTOP, theme: 'light' });
-    const dismiss = screen.getByRole('button', { name: 'OK' });
-    await expect.element(dismiss).toBeVisible();
-    expectTextContrast(dismiss.element());
-    await dismiss.hover();
-    expectTextContrast(dismiss.element());
-    await dismiss.click();
   });
 
   it('keeps brand links readable while hovered on cards and the page', async () => {

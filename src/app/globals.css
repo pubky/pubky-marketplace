@@ -65,6 +65,8 @@ body {
   --color-embed: var(--embed);
   --color-warning-foreground: var(--warning-foreground);
   --color-notice-foreground: var(--notice-foreground);
+  --color-toast-action-brand: var(--toast-action-brand);
+  --color-toast-action-brand-hover: var(--toast-action-brand-hover);
   --color-toast-action-muted: var(--toast-action-muted);
   --color-toast-action-muted-hover-border: var(--toast-action-muted-hover-border);
   --color-transparent: var(--transparent);
@@ -171,6 +173,9 @@ body {
   --destructive-button-hover: color-mix(in oklab, var(--destructive) 90%, transparent);
   /** Validation values and messages; fill colours remain independent. */
   --error-foreground: var(--color-red-500);
+  /* The small success action needs an opaque fill when its translucent toast floats over cards or images. */
+  --toast-action-brand: color-mix(in srgb, var(--brand) 32%, var(--background));
+  --toast-action-brand-hover: color-mix(in srgb, var(--brand) 40%, var(--background));
   --toast-action-muted: oklch(0.218 0.006 286);
   --toast-action-muted-hover-border: oklch(0.277 0.006 286);
   --transparent: oklch(0.118 0.014 284.115 / 0);
