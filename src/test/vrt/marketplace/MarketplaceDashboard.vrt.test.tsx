@@ -343,7 +343,10 @@ describe('Marketplace seller dashboard — visual regression', () => {
     view.isLoading = false;
     view.shop = defaultShop;
 
-    const screen = await renderForVRT(<MarketplaceDashboard />, { viewport: VRT_VIEWPORT_DESKTOP });
+    const screen = await renderForVRT(<MarketplaceDashboard />, {
+      viewport: VRT_VIEWPORT_DESKTOP,
+      disableHover: true,
+    });
     await vi.waitFor(() => {
       if (!screen.container.textContent?.includes('Add your shipping and return policies')) {
         throw new Error('The policies prompt has not rendered yet.');
