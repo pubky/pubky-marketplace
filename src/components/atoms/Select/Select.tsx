@@ -34,7 +34,8 @@ function SelectTrigger({
         theme === 'dashed' && [FORM_FIELD_SURFACE_CLASSES, 'w-full px-5 data-[size=default]:h-12 data-[size=sm]:h-10'],
         theme === 'secondary' && [
           buttonVariants({ variant: 'secondary', size }),
-          'justify-between data-[size=default]:h-10 data-[size=sm]:h-8 data-[size=sm]:rounded-full',
+          // The filled commerce picker keeps its existing spacing and weight.
+          'justify-between gap-1.5 font-semibold data-[size=default]:h-10 data-[size=sm]:h-8 data-[size=sm]:rounded-full',
         ],
         className,
       )}
