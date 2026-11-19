@@ -15,7 +15,7 @@ import {
 import { cn } from '@/libs/utils/utils';
 
 const ANY = 'any';
-const TRIGGER_CLASS = cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'max-w-64 text-xs');
+const TRIGGER_CLASS = cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'max-w-64 text-xs font-semibold');
 
 const STATE_LABELS: Record<string, string> = { active: 'Active', paused: 'Paused', ended: 'Ended', removed: 'Removed' };
 const SORT_LABELS: Record<ListingSortKey, string> = {

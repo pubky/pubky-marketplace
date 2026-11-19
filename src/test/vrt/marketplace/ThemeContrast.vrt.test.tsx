@@ -11,6 +11,22 @@ import { expectGraphicContrast, expectTextContrast } from '@/test-utils/color-co
 import { renderForVRT } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP } from '@/test-utils/vrt.viewports';
 
+describe('Validation contrast on profile cards', () => {
+  it.each(['dark', 'light'] as const)('keeps invalid values and messages readable in %s mode', async (theme) => {
+    const screen = await renderForVRT(
+      <main className="bg-card p-6">
+        <InputField id="profile-name" value="Invalid" status="error" message="Enter a valid name." readOnly />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP, theme },
+    );
+
+    const message = screen.getByText('Enter a valid name.');
+    await expect.element(message).toBeVisible();
+    expectTextContrast(message.element());
+    expectTextContrast(screen.getByRole('textbox').element());
+  });
+});
+
 describe('Light theme contrast', () => {
   it('keeps invalid values, recovery words and pastel counts readable', async () => {
     const onClear = vi.fn();

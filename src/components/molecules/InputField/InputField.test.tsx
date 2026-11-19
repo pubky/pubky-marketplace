@@ -42,7 +42,7 @@ describe('InputField', () => {
   });
 
   it('associates the validation message with the input for assistive technology', () => {
-    render(<InputField id="amount" value="" status="error" message="Enter a valid amount." messageType="error" />);
+    render(<InputField id="amount" value="" status="error" message="Enter a valid amount." />);
 
     const input = screen.getByTestId('input');
     expect(input).toHaveAttribute('aria-invalid', 'true');

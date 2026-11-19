@@ -46,6 +46,10 @@ interface InputFieldProps {
   'aria-haspopup'?: React.AriaAttributes['aria-haspopup'];
   'aria-required'?: boolean;
 }
+// The design's destructive ink is readable on the dark page. Raised cards and the light page need different ink.
+const errorTextClasses =
+  'text-destructive [:root:not(.light)_.bg-card_&]:text-red-400 [.light_&]:text-error-foreground';
+
 export function InputField({
   id,
   name,
@@ -70,7 +74,7 @@ export function InputField({
   maxLength,
   iconPosition = 'left',
   message,
-  messageType = 'default',
+  messageType = status === 'error' ? 'error' : 'default',
   size = 'md',
   dataCy,
   inputClassName,
@@ -88,9 +92,8 @@ export function InputField({
   const containerClasses = variant === 'dashed' && 'border-dashed font-medium';
   const statusClasses = {
     default: 'focus-within:border-ring',
-    success: 'border-brand text-brand',
-    error:
-      'border-destructive text-destructive focus-within:ring-1 focus-within:ring-destructive [.light_&]:text-error-foreground',
+    success: 'border-brand text-brand focus-within:ring-1 focus-within:ring-brand',
+    error: cn('border-destructive focus-within:ring-1 focus-within:ring-destructive', errorTextClasses),
   };
   const sizeClasses = {
     sm: 'h-10 text-sm',
@@ -101,7 +104,7 @@ export function InputField({
     default: 'text-muted-foreground',
     info: 'text-blue-500',
     alert: 'text-yellow-500 [.light_&]:text-yellow-700',
-    error: 'text-destructive [.light_&]:text-error-foreground',
+    error: errorTextClasses,
     success: 'text-brand',
   } as const;
   return (

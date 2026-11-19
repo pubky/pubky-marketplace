@@ -70,7 +70,7 @@ const MAX_FACET_VALUES = 10;
 // Match the Collections dropdown trigger using the shared secondary button style.
 const FILTER_TRIGGER_CLASS = cn(
   buttonVariants({ variant: 'secondary', size: 'sm' }),
-  'max-w-64 text-xs data-[size=default]:h-8 [&>svg:last-child]:size-3.5',
+  'max-w-64 text-xs font-semibold data-[size=default]:h-8 [&>svg:last-child]:size-3.5',
 );
 const CATEGORY_MENU_CLASS =
   'w-64 max-h-[min(70vh,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto border-border bg-background p-3';

@@ -161,7 +161,7 @@ body {
   --notice-foreground: var(--color-amber-200);
   /** Label on solid brand fills: the dark page colour in dark mode, a fixed dark ink in light mode. */
   --brand-foreground: var(--background);
-  /** Badges on bright fills retain their original primary ink in dark mode. */
+  /** Ink for bright button, badge and checkbox fills: primary foreground in dark mode, dark ink in light mode. */
   --bright-fill-foreground: var(--primary-foreground);
   /**
    * Filled destructive controls and alerts. Dark mode keeps the translucent `/60` and `/90` mixes
