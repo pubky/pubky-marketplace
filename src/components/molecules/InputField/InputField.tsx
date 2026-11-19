@@ -5,7 +5,6 @@ import { Loader2 } from 'lucide-react';
 import { Container } from '@/atoms/Container/Container';
 import { Input } from '@/atoms/Input/Input';
 import { Typography } from '@/atoms/Typography/Typography';
-import { FORM_FIELD_SURFACE_CLASSES } from '@/config/forms';
 import { cn } from '@/libs/utils/utils';
 
 interface InputFieldProps {
@@ -86,11 +85,12 @@ export function InputField({
   'aria-required': ariaRequired,
 }: InputFieldProps) {
   const resolvedLoadingText = loadingText ?? 'Loading...';
-  const containerClasses = variant === 'dashed' && FORM_FIELD_SURFACE_CLASSES;
+  const containerClasses = variant === 'dashed' && 'border-dashed font-medium';
   const statusClasses = {
-    default: '',
+    default: 'focus-within:border-ring',
     success: 'border-brand text-brand',
-    error: 'border-red-500 text-error-foreground',
+    error:
+      'border-destructive text-destructive focus-within:ring-1 focus-within:ring-destructive [.light_&]:text-error-foreground',
   };
   const sizeClasses = {
     sm: 'h-10 text-sm',
@@ -101,14 +101,14 @@ export function InputField({
     default: 'text-muted-foreground',
     info: 'text-blue-500',
     alert: 'text-yellow-500 [.light_&]:text-yellow-700',
-    error: 'text-error-foreground',
+    error: 'text-destructive [.light_&]:text-error-foreground',
     success: 'text-brand',
   } as const;
   return (
     <>
       <Container
         className={cn(
-          'mx-0 mb-2 w-full cursor-pointer flex-row items-center gap-0 rounded-md border !bg-background',
+          'mx-0 mb-2 w-full cursor-pointer flex-row items-center gap-0 rounded-md border border-input !bg-background/20',
           icon && iconPosition === 'left' ? 'pl-4.5' : 'pl-2',
           containerClasses,
           statusClasses[status],
@@ -133,7 +133,10 @@ export function InputField({
           id={id}
           name={name}
           type={type}
-          className={cn('w-full border-none !bg-transparent [.light_&]:shadow-none', inputClassName)}
+          className={cn(
+            'w-full border-none !bg-transparent placeholder:text-muted-foreground [.light_&]:shadow-none',
+            inputClassName,
+          )}
           value={loading ? resolvedLoadingText : value}
           placeholder={placeholder}
           disabled={disabled || loading}

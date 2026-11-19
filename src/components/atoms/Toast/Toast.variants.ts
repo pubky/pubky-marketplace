@@ -24,7 +24,7 @@ export const toastVariants = cva(
   {
     variants: {
       variant: {
-        default: 'border-brand/32 bg-brand/8',
+        default: 'rounded-md border-brand/50 bg-brand/25',
         error: 'border-destructive/32 bg-destructive/8',
         warning: 'border-yellow-500/32 bg-yellow-500/8',
         info: 'border-accent/32 bg-accent/8',
@@ -50,7 +50,7 @@ export const toastIconVariants = cva('size-5 shrink-0', {
   },
 });
 
-// Matches Button variant="default" color classes
+// Brand action on success notifications.
 const toastActionDefaultButtonColors = 'shadow-xs border-brand bg-brand/16 text-brand hover:!bg-brand/30';
 // Muted dismiss/action button on non-default toast variants.
 const toastActionSecondaryButtonColors =

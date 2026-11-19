@@ -131,7 +131,7 @@ body {
   --foreground-strong: var(--color-white);
   /**
    * Translucent chrome fill for outline-style controls (nav buttons, FAB,
-   * sidebar "See all", checkbox/radio wells). Mirrors the Figma variable
+   * sidebar "See all"). Mirrors the Figma variable
    * `custom/background dark:input\30`: a faint white wash in dark mode and
    * the opaque card surface in light mode, so these controls read lighter
    * than the grey light page. Hover follows `custom/accent dark:input\50`.
@@ -142,10 +142,12 @@ body {
   --glass-hover: color-mix(in oklab, var(--color-white) 10%, transparent);
   --glass-strong: color-mix(in oklab, var(--color-white) 12%, transparent);
   /**
-   * Surface of the `outline` Button variant. Dark mode matches `bg-input/30`.
+   * Outline buttons and checkbox/radio wells share Figma’s 4.5% white wash.
    * Light mode uses the card surface, so these buttons read lighter than the page.
    */
-  --button-outline: color-mix(in oklab, var(--input) 30%, transparent);
+  --button-outline: color-mix(in oklab, var(--color-white) 4.5%, transparent);
+  /* Figma paints this 10% background wash on top of the default button’s 32% hover fill. */
+  --button-hover-wash: color-mix(in oklab, var(--background) 10%, transparent);
   /** Surface of the post action pills (tag / reply / repost / save / more): secondary in dark, page in light. */
   --action-pill: var(--secondary);
   /** Surface of a post or link embedded in a post (repost preview, link preview): muted in dark, page in light. */
@@ -219,11 +221,11 @@ body {
 
   /**
    * Mobile tab bar height (icon row)
-   * - Matches MobileTabBar tab cell + button + icon stack
+   * - Matches the 48px MobileTabBar stack plus its 1px bottom border
    * - Applied: Settings content top padding below header + tab bar
    * - Responsive: Mobile only (hidden on desktop via lg:hidden)
    */
-  --mobile-tab-bar-height: 48px;
+  --mobile-tab-bar-height: 49px;
 
   /**
    * Settings mobile chrome height (header + tab bar)

@@ -27,11 +27,11 @@ describe('Toast Components', () => {
     const { container } = renderToast();
     const toast = container.querySelector('[data-variant="default"]');
     expect(toast).toBeInTheDocument();
-    expect(toast).toHaveClass('border-brand/32', 'bg-brand/8');
+    expect(toast).toHaveClass('rounded-md', 'border-brand/50', 'bg-brand/25');
   });
 
   it.each([
-    ['default', ['border-brand/32', 'bg-brand/8']],
+    ['default', ['rounded-md', 'border-brand/50', 'bg-brand/25']],
     ['error', ['border-destructive/32', 'bg-destructive/8']],
     ['warning', ['border-yellow-500/32', 'bg-yellow-500/8']],
     ['info', ['border-accent/32', 'bg-accent/8']],

@@ -66,7 +66,7 @@ describe('RadioGroup - Rendering', () => {
 
   it('applies the item base classes', () => {
     renderRadioGroup();
-    expect(screen.getAllByRole('radio')[0]).toHaveClass('peer', 'size-4', 'rounded-full', 'border', 'border-input');
+    expect(screen.getAllByRole('radio')[0]).toHaveClass('peer', 'size-4', 'rounded-full', 'border', 'border-border');
   });
 
   it('sets data-state from the checked state', () => {
