@@ -526,7 +526,7 @@ export class StreamCoordinator extends Coordinator<StreamCoordinatorConfig, Stre
         return;
       }
 
-      if (!(await this.resolveStreamHead(streamId))) return;
+      if (!(await this.resolveStreamHead(streamId)) || signal.aborted) return;
 
       await StreamPostsController.getOrFetchStreamSlice({
         streamId,

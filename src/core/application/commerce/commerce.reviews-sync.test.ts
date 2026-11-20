@@ -213,6 +213,39 @@ describe.each([
       expect(deletes()).toHaveLength(2);
     });
 
+    it('a retry whose scope ends during the service withdrawal sends no DEL and leaves the job as it was', async () => {
+      homeserver.failNext(HttpMethod.DELETE, url, 500);
+      await CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id);
+      const [before] = await jobs();
+      const scope = new AbortController();
+      const readOrder = MarketplaceGatewayService.getOrder.bind(MarketplaceGatewayService);
+      vi.spyOn(MarketplaceGatewayService, 'getOrder').mockImplementationOnce(async (...args) => {
+        const read = await readOrder(...args);
+        scope.abort(new DOMException('Signed out', 'AbortError'));
+        return read;
+      });
+
+      await expect(CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, scope.signal)).resolves.toBe(0);
+
+      expect(deletes()).toHaveLength(1);
+      expect(homeserver.files.has(url)).toBe(true);
+      expect(await jobs()).toEqual([before]);
+    });
+
+    it('a retry whose scope already ended sends nothing', async () => {
+      homeserver.failNext(HttpMethod.DELETE, url, 500);
+      await CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id);
+      const getOrder = vi.spyOn(MarketplaceGatewayService, 'getOrder');
+      getOrder.mockClear();
+      const scope = new AbortController();
+      scope.abort(new DOMException('Signed out', 'AbortError'));
+
+      await expect(CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, scope.signal)).resolves.toBe(0);
+
+      expect(getOrder).not.toHaveBeenCalled();
+      expect(deletes()).toHaveLength(1);
+    });
+
     it('keeps the job and counts the attempt when the retry fails too', async () => {
       homeserver.failNext(HttpMethod.DELETE, url, 500);
       homeserver.failNext(HttpMethod.DELETE, url, 500);
@@ -300,6 +333,25 @@ describe.each([
       expect(deletes()).toHaveLength(1);
       expect(homeserver.files.has(url)).toBe(false);
       expect(await jobs()).toEqual([]);
+    });
+
+    it('a retry whose scope ends while it reads the order sends no withdrawal and no DEL', async () => {
+      service.failNext('review.withdraw');
+      await expect(CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id)).resolves.toBe('queued');
+      const [before] = await jobs();
+      const scope = new AbortController();
+      const parked = service.holdNext('getOrder', { afterAnswer: true });
+
+      const retry = CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, scope.signal);
+      await parked.reached;
+      scope.abort(new DOMException('Signed out', 'AbortError'));
+      parked.release();
+
+      await expect(retry).resolves.toBe(0);
+      expect(withdraws()).toHaveLength(1);
+      expect(service.withdrawn()).toBe(false);
+      expect(deletes()).toEqual([]);
+      expect(await jobs()).toEqual([before]);
     });
 
     it('keeps the job when the order cannot be read, and sends no DEL', async () => {

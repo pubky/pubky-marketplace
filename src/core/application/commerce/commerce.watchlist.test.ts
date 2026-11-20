@@ -516,6 +516,38 @@ describe('CommerceApplication.syncWatchlist when its auth scope ends mid-round',
     expect(LocalCommerceService.completeSyncJobIfUnchanged).not.toHaveBeenCalled();
   });
 
+  it('seals and deletes nothing when the scope ends while the merged state is applied locally', async () => {
+    const scope = new AbortController();
+    vi.mocked(LocalCommerceService.applyWatchlistState).mockImplementationOnce(async () => {
+      scope.abort(new DOMException('Signed out', 'AbortError'));
+    });
+
+    const outcome = await CommerceApplication.syncWatchlist(OWNER, scope.signal).catch((error: unknown) => error);
+
+    expect(outcome).toMatchObject({ name: 'AbortError' });
+    expect(LocalCommerceService.applyWatchlistState).toHaveBeenCalledOnce();
+    expect(writes()).toEqual([]);
+    expect(homeserver.files.has(WATCHLIST_URL)).toBe(true);
+    expect(LocalCommerceService.completeSyncJobIfUnchanged).not.toHaveBeenCalled();
+  });
+
+  it('keeps the outbox job when the scope ends during the encrypted write of a list with no v1 document', async () => {
+    homeserver.files.delete(WATCHLIST_URL);
+    vi.mocked(LocalCommerceService.getFavorites).mockResolvedValue([
+      { id: `${OWNER}|${SELLER}:boots_02`, owner_id: OWNER, listing_id: `${SELLER}:boots_02`, created_at: 300 },
+    ]);
+    const scope = new AbortController();
+    const put = homeserver.holdNext(HttpMethod.PUT, V2_URL);
+    const round = CommerceApplication.syncWatchlist(OWNER, scope.signal).catch((error: unknown) => error);
+    await put.reached;
+    scope.abort(new DOMException('Signed out', 'AbortError'));
+    put.release();
+
+    expect(await round).toMatchObject({ name: 'AbortError' });
+    expect(homeserver.log.some((entry) => entry.startsWith('DELETE '))).toBe(false);
+    expect(LocalCommerceService.completeSyncJobIfUnchanged).not.toHaveBeenCalled();
+  });
+
   it('starts no round once the scope has ended', async () => {
     const scope = new AbortController();
     scope.abort(new DOMException('Signed out', 'AbortError'));

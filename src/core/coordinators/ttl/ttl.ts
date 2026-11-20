@@ -586,7 +586,8 @@ export class TtlCoordinator {
     viewerId: Pubky | null,
     signal: AbortSignal,
   ): Promise<void> {
-    if (ops.batchQueue.size === 0) return;
+    // A scope that ended during the staleness check sends no request; the queue stays for the next tick.
+    if (ops.batchQueue.size === 0 || signal.aborted) return;
 
     // viewerId may be required for certain entity types
     if (ops.requiresViewerId && !viewerId) {
