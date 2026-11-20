@@ -11,6 +11,8 @@ import { ChatController } from '@/controllers/chat/chat';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { MuteController } from '@/controllers/mute/mute';
 import { NotificationController } from '@/controllers/notification/notification';
+import { TtlController } from '@/controllers/ttl/ttl';
+import { TtlCoordinator } from '@/coordinators/ttl/ttl';
 import { clearDatabase } from '@/database/franky/franky.helpers';
 import { chatMessageUrl } from '@/libs/chat/paths';
 import type { PrivKeyring } from '@/libs/commerce/priv-envelope';
@@ -416,6 +418,45 @@ describe('work started for an account writes nothing for it once its sign-out st
     await expect(pass).resolves.toEqual({ alertCount: 0 });
     expect(save).not.toHaveBeenCalled();
     await finishSignOut();
+  });
+
+  it('profile refresh: a TTL pass that starts while another account signs in over this one saves nothing', async () => {
+    const CAROL = 'c'.repeat(52);
+    signIn(ALICE);
+    vi.spyOn(Identity, 'keypairFromMnemonic').mockReturnValue(mockKeypair());
+    vi.spyOn(Identity, 'z32FromSession').mockReturnValue(BOB);
+    vi.spyOn(AuthApplication, 'signIn').mockResolvedValue(
+      asOpaque<Awaited<ReturnType<typeof AuthApplication.signIn>>>({ session: grantSession(BOB) }),
+    );
+    const wipe = deferred<void>();
+    vi.mocked(clearDatabase).mockReturnValue(wipe.promise);
+    vi.spyOn(TtlController, 'findStalePostsByIds').mockResolvedValue([]);
+    vi.spyOn(TtlController, 'findStaleUsersByIds').mockResolvedValue([CAROL]);
+    const users = deferred<Awaited<ReturnType<typeof NexusUserStreamService.fetchByIds>>>();
+    vi.spyOn(NexusUserStreamService, 'fetchByIds').mockReturnValue(users.promise);
+    const saveUsers = vi.spyOn(LocalStreamUsersService, 'persistUsers').mockResolvedValue([]);
+    const refresh = vi.spyOn(TtlController, 'forceRefreshUsersByIds');
+    const ttl = TtlCoordinator.getInstance();
+    ttl.configure({ batchIntervalMs: 60_000 });
+    ttl.subscribeUser({ pubky: CAROL });
+
+    try {
+      const signInFlow = AuthController.loginWithMnemonic({ mnemonic: 'test mnemonic phrase' });
+      await vi.waitFor(() => expect(clearDatabase).toHaveBeenCalled());
+      ttl.start();
+      await vi.waitFor(() =>
+        expect(NexusUserStreamService.fetchByIds).toHaveBeenCalledWith({ user_ids: [CAROL], viewer_id: ALICE }),
+      );
+      wipe.resolve();
+      await signInFlow;
+      expect(useAuthStore.getState().currentUserPubky).toBe(BOB);
+      users.resolve([]);
+      await Promise.allSettled(refresh.mock.results.map((result) => result.value));
+
+      expect(saveUsers).not.toHaveBeenCalled();
+    } finally {
+      TtlCoordinator.resetInstance();
+    }
   });
 
   it('seller confirmation: a pass that started before sign-out confirms nothing after it starts', async () => {
