@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceApplication } from '@/application/commerce/commerce';
+import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { createOrderFixture, ORDER_FIXTURE_BUYER } from '@/test/fixtures/commerce/orders';
 import { CommerceController } from './commerce';
@@ -36,6 +37,6 @@ describe('CommerceController own reviews', () => {
     await expect(CommerceController.refreshOwnMarketplaceReviews(orders)).resolves.toBe(2);
     await expect(CommerceController.resumeOwnReviewRemovals()).resolves.toBe(1);
     expect(refresh).toHaveBeenCalledWith(ORDER_FIXTURE_BUYER, orders);
-    expect(resume).toHaveBeenCalledWith(ORDER_FIXTURE_BUYER);
+    expect(resume).toHaveBeenCalledWith(ORDER_FIXTURE_BUYER, captureAuthScope());
   });
 });

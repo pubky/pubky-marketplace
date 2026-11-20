@@ -36,6 +36,7 @@ import { NexusUserService } from '@/services/nexus/user/user';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { useNotificationStore } from '@/stores/notification/notification.store';
+import { createCommerceCatalogEntryFixture } from '@/test/fixtures/commerce/commerce';
 import { createNotificationFixture } from '@/test/fixtures/commerce/notifications';
 import { createOrderFixture } from '@/test/fixtures/commerce/orders';
 import { installFakeHomeserver } from '@/test-utils/fake-homeserver';
@@ -394,6 +395,27 @@ describe('work started for an account writes nothing for it once its sign-out st
       expect(useCommerceStore.getState().watchlistSyncStatus).toBe('idle');
       expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('Watchlist sync'), expect.anything());
     });
+  });
+
+  it('watchlist detection: a pass that started before sign-out saves nothing after it', async () => {
+    signIn(ALICE);
+    const listingId = `${BOB}:boots_01`;
+    vi.spyOn(LocalCommerceService, 'getFavorites').mockResolvedValue([
+      { id: `${ALICE}|${listingId}`, owner_id: ALICE, listing_id: listingId, created_at: 1 },
+    ]);
+    vi.spyOn(LocalCommerceService, 'getWatchSnapshots').mockResolvedValue([]);
+    const entry = deferred<Awaited<ReturnType<typeof LocalCommerceService.getCatalogEntry>>>();
+    vi.spyOn(LocalCommerceService, 'getCatalogEntry').mockReturnValue(entry.promise);
+    const save = vi.spyOn(LocalCommerceService, 'saveWatchDetection').mockResolvedValue(undefined);
+
+    const pass = CommerceController.runWatchlistDetection();
+    await vi.waitFor(() => expect(LocalCommerceService.getCatalogEntry).toHaveBeenCalledWith(listingId));
+    const finishSignOut = startSignOut();
+    entry.resolve(createCommerceCatalogEntryFixture({ id: listingId, seller_id: BOB }));
+
+    await expect(pass).resolves.toEqual({ alertCount: 0 });
+    expect(save).not.toHaveBeenCalled();
+    await finishSignOut();
   });
 
   it('seller confirmation: a pass that started before sign-out confirms nothing after it starts', async () => {

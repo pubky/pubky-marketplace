@@ -3173,8 +3173,10 @@ export class CommerceApplication {
    * claim, and the baseline stays where it was. The whole pass is bounded to
    * {@link COMMERCE_WATCH_CHECK_MAX_ITEMS} items and the caller enforces
    * spacing between passes — there is no background daemon.
+   *
+   * Once `signal` aborts, the pass saves nothing and reports no alerts.
    */
-  static async runWatchlistDetection(ownerPubky: string): Promise<{ alertCount: number }> {
+  static async runWatchlistDetection(ownerPubky: string, signal?: AbortSignal): Promise<{ alertCount: number }> {
     const adapterMode = getCommerceAdapterMode();
     const favorites = await LocalCommerceService.getFavorites(ownerPubky);
     const watched = favorites.slice(-COMMERCE_WATCH_CHECK_MAX_ITEMS).reverse();
@@ -3212,8 +3214,10 @@ export class CommerceApplication {
       alerts.push(...result.alerts);
     }
 
+    if (signal?.aborted) return { alertCount: 0 };
     if (freshEntries.length > 0) {
       await LocalCommerceService.bulkUpsertCatalogEntries(freshEntries);
+      if (signal?.aborted) return { alertCount: 0 };
     }
     await LocalCommerceService.saveWatchDetection(ownerPubky, snapshots, alerts);
     return { alertCount: alerts.length };
@@ -4370,7 +4374,8 @@ export class CommerceApplication {
    * sees the withdrawal and retracts its own record. Both steps are
    * idempotent (a withdrawal already recorded and a 404 both count as done),
    * so the job simply retries from the top. Any other failure keeps the job,
-   * with its attempt count and cause recorded.
+   * with its attempt count and cause recorded. Once `signal` aborts, nothing
+   * more is sent or recorded and the job stays as it was.
    */
   private static async sendOwnReviewRemoval(
     actorPubky: string,
@@ -4378,8 +4383,11 @@ export class CommerceApplication {
     url: string,
     orderId: string,
     listingId?: string,
+    signal?: AbortSignal,
   ): Promise<boolean> {
+    if (signal?.aborted) return false;
     const withdrawal = await this.withdrawOwnReviewAtService(actorPubky, orderId, listingId);
+    if (signal?.aborted) return false;
     if (withdrawal !== null) {
       Logger.warn('Own review withdrawal failed; the outbox job stays and retries', { jobId, code: withdrawal });
       await LocalCommerceService.recordSyncJobFailure(jobId, withdrawal);
@@ -4388,12 +4396,14 @@ export class CommerceApplication {
     try {
       await CommerceHomeserverService.delete(url);
     } catch (error) {
+      if (signal?.aborted) return false;
       if (!(isAppError(error) && isNotFound(error))) {
         Logger.warn('Own review removal failed; the outbox job stays and retries', { jobId, error });
         await LocalCommerceService.recordSyncJobFailure(jobId, isAppError(error) ? String(error.code) : null);
         return false;
       }
     }
+    if (signal?.aborted) return false;
     await LocalCommerceService.completeSyncJob(jobId);
     return true;
   }
@@ -4450,12 +4460,15 @@ export class CommerceApplication {
    * Retries every removal whose service withdrawal or homeserver DEL never
    * landed. Each job is
    * re-read under its order's lock first, so two tabs retrying one job send
-   * one DEL. Returns the number of removals that completed.
+   * one DEL. Returns the number of removals that completed. Once `signal`
+   * aborts, no further job is sent and the remaining jobs stay queued.
    */
-  static async resumeOwnReviewRemovals(actorPubky: string): Promise<number> {
+  static async resumeOwnReviewRemovals(actorPubky: string, signal?: AbortSignal): Promise<number> {
+    if (signal?.aborted) return 0;
     const jobs = await LocalCommerceService.getOwnReviewRemovalJobs(actorPubky);
     let removed = 0;
     for (const queued of jobs) {
+      if (signal?.aborted) break;
       const target = ownReviewRemovalTarget(queued.payload);
       if (target === null) continue;
       const { orderId, listingId } = target;
@@ -4463,7 +4476,7 @@ export class CommerceApplication {
         const job = await LocalCommerceService.getSyncJob(queued.id);
         const url = job ? ownReviewRemovalUrl(job.payload) : null;
         if (!job || url === null) return 0;
-        return (await this.sendOwnReviewRemoval(actorPubky, job.id, url, orderId, listingId)) ? 1 : 0;
+        return (await this.sendOwnReviewRemoval(actorPubky, job.id, url, orderId, listingId, signal)) ? 1 : 0;
       });
     }
     return removed;

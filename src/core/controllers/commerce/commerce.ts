@@ -825,7 +825,7 @@ export class CommerceController {
 
   /** Retries own-review removals whose homeserver DEL never landed. */
   static async resumeOwnReviewRemovals() {
-    return await CommerceApplication.resumeOwnReviewRemovals(this.getCurrentUserPubky());
+    return await CommerceApplication.resumeOwnReviewRemovals(this.getCurrentUserPubky(), captureAuthScope());
   }
 
   /**
@@ -2147,11 +2147,12 @@ export class CommerceController {
   /**
    * Runs one bounded watchlist detection pass for the signed-in user (see
    * `CommerceApplication.runWatchlistDetection`). Returns without doing
-   * anything when signed out or when no marketplace surface exists.
+   * anything when signed out or when no marketplace surface exists, and
+   * saves nothing once a sign-out or an account switch ends the pass's scope.
    */
   static async runWatchlistDetection(): Promise<{ alertCount: number }> {
     if (!useAuthStore.getState().currentUserPubky) return { alertCount: 0 };
-    return await CommerceApplication.runWatchlistDetection(this.getCurrentUserPubky());
+    return await CommerceApplication.runWatchlistDetection(this.getCurrentUserPubky(), captureAuthScope());
   }
 
   static async getWatchAlerts() {
