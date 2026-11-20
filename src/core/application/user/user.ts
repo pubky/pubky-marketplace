@@ -306,7 +306,8 @@ export class UserApplication {
         () => null,
         (error: unknown) => ({ error }),
       );
-      if (!inSession.signal?.aborted || signal?.aborted) {
+      // A caller without a scope cannot tell whether the account that started the attempt is still signed in.
+      if (!inSession.signal?.aborted || !signal || signal.aborted) {
         if (failure) throw failure.error;
         return;
       }
