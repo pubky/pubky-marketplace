@@ -389,13 +389,41 @@ describe('work started for an account writes nothing for it once its sign-out st
       const finishSignOut = startSignOut();
       keys.resolve({ kind: 'keys', keyring: KEYRING });
       await Promise.allSettled(rounds.mock.results.map((result) => result.value));
+      // Read before the sign-out cleanup resets the commerce store.
+      expect(useCommerceStore.getState().watchlistSyncStatus).toBe('idle');
       await finishSignOut();
 
       expect(apply).not.toHaveBeenCalled();
       expect(complete).not.toHaveBeenCalled();
       expect(homeserver.log.filter((entry) => !entry.startsWith('GET ') && !entry.startsWith('LIST '))).toEqual([]);
-      expect(useCommerceStore.getState().watchlistSyncStatus).toBe('idle');
       expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('Watchlist sync'), expect.anything());
+    });
+
+    it('a round that ends without keys as sign-out starts leaves the sync status alone', async () => {
+      signIn(ALICE);
+      installFakeHomeserver();
+      const keys = deferred<Awaited<ReturnType<typeof CommercePrivKeyringApplication.get>>>();
+      vi.spyOn(CommercePrivKeyringApplication, 'get').mockReturnValue(keys.promise);
+
+      const sync = CommerceController.syncWatchlist();
+      await vi.waitFor(() => expect(CommercePrivKeyringApplication.get).toHaveBeenCalledWith(ALICE));
+      const finishSignOut = startSignOut();
+      keys.resolve({ kind: 'unavailable' });
+      await sync;
+
+      // Read before the sign-out cleanup resets the commerce store.
+      expect(useCommerceStore.getState().watchlistSyncStatus).toBe('idle');
+      await finishSignOut();
+    });
+
+    it('a round whose scope is live reports its status', async () => {
+      signIn(ALICE);
+      installFakeHomeserver();
+      vi.spyOn(CommercePrivKeyringApplication, 'get').mockResolvedValue({ kind: 'unavailable' });
+
+      await CommerceController.syncWatchlist();
+
+      expect(useCommerceStore.getState().watchlistSyncStatus).toBe('unavailable');
     });
   });
 

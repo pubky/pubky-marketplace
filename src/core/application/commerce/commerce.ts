@@ -2607,8 +2607,10 @@ export class CommerceApplication {
    * browser without the Web Locks API gets `unsupported` and a refused lock
    * gets `error`; neither touches the homeserver.
    *
-   * Once `signal` aborts, the round writes nothing more, locally or remotely,
-   * and rejects with the abort reason.
+   * Once `signal` aborts, the round writes nothing more, locally or remotely.
+   * It then either rejects with the abort reason or resolves with the status
+   * of a step that returned early (no keys, for one); callers whose scope
+   * ended ignore that status.
    */
   static async syncWatchlist(ownerPubky: string, signal?: AbortSignal): Promise<CommerceWatchlistSyncStatus> {
     signal?.throwIfAborted();
