@@ -335,6 +335,25 @@ describe.each([
       expect(await jobs()).toEqual([]);
     });
 
+    it('a retry whose scope ends while it reads the order sends no withdrawal and no DEL', async () => {
+      service.failNext('review.withdraw');
+      await expect(CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id)).resolves.toBe('queued');
+      const [before] = await jobs();
+      const scope = new AbortController();
+      const parked = service.holdNext('getOrder', { afterAnswer: true });
+
+      const retry = CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, scope.signal);
+      await parked.reached;
+      scope.abort(new DOMException('Signed out', 'AbortError'));
+      parked.release();
+
+      await expect(retry).resolves.toBe(0);
+      expect(withdraws()).toHaveLength(1);
+      expect(service.withdrawn()).toBe(false);
+      expect(deletes()).toEqual([]);
+      expect(await jobs()).toEqual([before]);
+    });
+
     it('keeps the job when the order cannot be read, and sends no DEL', async () => {
       service.failNext('getOrder');
 

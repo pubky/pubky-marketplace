@@ -3176,7 +3176,8 @@ export class CommerceApplication {
    * {@link COMMERCE_WATCH_CHECK_MAX_ITEMS} items and the caller enforces
    * spacing between passes — there is no background daemon.
    *
-   * Once `signal` aborts, the pass saves nothing and reports no alerts.
+   * Once `signal` aborts, the pass starts no observation, saves nothing and
+   * reports no alerts.
    */
   static async runWatchlistDetection(ownerPubky: string, signal?: AbortSignal): Promise<{ alertCount: number }> {
     const adapterMode = getCommerceAdapterMode();
@@ -3187,6 +3188,7 @@ export class CommerceApplication {
     const baselines = new Map(
       (await LocalCommerceService.getWatchSnapshots(ownerPubky)).map((snapshot) => [snapshot.listing_id, snapshot]),
     );
+    if (signal?.aborted) return { alertCount: 0 };
     const now = Date.now();
     const freshEntries: CommerceCatalogEntryModelSchema[] = [];
 
@@ -4388,7 +4390,7 @@ export class CommerceApplication {
     signal?: AbortSignal,
   ): Promise<boolean> {
     if (signal?.aborted) return false;
-    const withdrawal = await this.withdrawOwnReviewAtService(actorPubky, orderId, listingId);
+    const withdrawal = await this.withdrawOwnReviewAtService(actorPubky, orderId, listingId, signal);
     if (signal?.aborted) return false;
     if (withdrawal !== null) {
       Logger.warn('Own review withdrawal failed; the outbox job stays and retries', { jobId, code: withdrawal });
@@ -4418,16 +4420,19 @@ export class CommerceApplication {
    * carries the order's current revision, and a revision conflict re-reads
    * and tries again. `listing_id` is sent only when the service names the
    * listing of its review. Returns `null` when the withdrawal stands, else a
-   * short failure code.
+   * short failure code. Once `signal` aborts, no command is sent.
    */
   private static async withdrawOwnReviewAtService(
     actorPubky: string,
     orderId: string,
     listingId?: string,
+    signal?: AbortSignal,
   ): Promise<string | null> {
     try {
       for (let attempt = 0; attempt < OWN_REVIEW_WITHDRAW_ATTEMPTS; attempt += 1) {
+        if (signal?.aborted) return 'ABORTED';
         const order = await MarketplaceGatewayService.getOrder(actorPubky, orderId);
+        if (signal?.aborted) return 'ABORTED';
         if (order === null) return 'ORDER_NOT_FOUND';
         const own =
           listingId === undefined

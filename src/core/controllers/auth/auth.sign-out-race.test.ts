@@ -31,6 +31,7 @@ import { LocalStreamPostsService } from '@/services/local/stream/posts/posts';
 import { LocalStreamUsersService } from '@/services/local/stream/users/users';
 import { MarketplaceGatewayService } from '@/services/marketplace/marketplace';
 import { NexusBootstrapService } from '@/services/nexus/bootstrap/bootstrap';
+import { NexusMarketplaceService } from '@/services/nexus/marketplace/marketplace';
 import type { NexusNotification } from '@/services/nexus/nexus.types';
 import { NexusPostStreamService } from '@/services/nexus/stream/posts/postStream';
 import { NexusUserStreamService } from '@/services/nexus/stream/users/userStream';
@@ -38,7 +39,11 @@ import { NexusUserService } from '@/services/nexus/user/user';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { useNotificationStore } from '@/stores/notification/notification.store';
-import { createCommerceCatalogEntryFixture } from '@/test/fixtures/commerce/commerce';
+import {
+  COMMERCE_FIXTURE_SELLER,
+  createCommerceCatalogEntryFixture,
+  createNexusListingDetailsFixture,
+} from '@/test/fixtures/commerce/commerce';
 import { createNotificationFixture } from '@/test/fixtures/commerce/notifications';
 import { createOrderFixture } from '@/test/fixtures/commerce/orders';
 import { installFakeHomeserver } from '@/test-utils/fake-homeserver';
@@ -446,6 +451,52 @@ describe('work started for an account writes nothing for it once its sign-out st
     await expect(pass).resolves.toEqual({ alertCount: 0 });
     expect(save).not.toHaveBeenCalled();
     await finishSignOut();
+  });
+
+  describe('watchlist detection against the index and the service', () => {
+    const listingId = `${COMMERCE_FIXTURE_SELLER}:boots_01`;
+
+    beforeEach(() => {
+      commerceConfig.mode = 'transaction-service';
+      signIn(ALICE);
+      vi.spyOn(LocalCommerceService, 'getFavorites').mockResolvedValue([
+        { id: `${ALICE}|${listingId}`, owner_id: ALICE, listing_id: listingId, created_at: 1 },
+      ]);
+      vi.spyOn(MarketplaceGatewayService, 'getListing').mockResolvedValue(null);
+    });
+
+    it('a pass whose scope ends during its local reads sends no request', async () => {
+      const baselines = deferred<Awaited<ReturnType<typeof LocalCommerceService.getWatchSnapshots>>>();
+      vi.spyOn(LocalCommerceService, 'getWatchSnapshots').mockReturnValue(baselines.promise);
+      const fetchDetails = vi.spyOn(NexusMarketplaceService, 'fetchListingDetails');
+
+      const pass = CommerceController.runWatchlistDetection();
+      await vi.waitFor(() => expect(LocalCommerceService.getWatchSnapshots).toHaveBeenCalledWith(ALICE));
+      const finishSignOut = startSignOut();
+      baselines.resolve([]);
+
+      await expect(pass).resolves.toEqual({ alertCount: 0 });
+      expect(fetchDetails).not.toHaveBeenCalled();
+      expect(MarketplaceGatewayService.getListing).not.toHaveBeenCalled();
+      await finishSignOut();
+    });
+
+    it('a pass whose scope ends while it caches the index entries saves no detection', async () => {
+      vi.spyOn(LocalCommerceService, 'getWatchSnapshots').mockResolvedValue([]);
+      vi.spyOn(NexusMarketplaceService, 'fetchListingDetails').mockResolvedValue(createNexusListingDetailsFixture());
+      const cached = deferred<void>();
+      vi.spyOn(LocalCommerceService, 'bulkUpsertCatalogEntries').mockReturnValue(cached.promise);
+      const save = vi.spyOn(LocalCommerceService, 'saveWatchDetection').mockResolvedValue(undefined);
+
+      const pass = CommerceController.runWatchlistDetection();
+      await vi.waitFor(() => expect(LocalCommerceService.bulkUpsertCatalogEntries).toHaveBeenCalled());
+      const finishSignOut = startSignOut();
+      cached.resolve();
+
+      await expect(pass).resolves.toEqual({ alertCount: 0 });
+      expect(save).not.toHaveBeenCalled();
+      await finishSignOut();
+    });
   });
 
   it('profile refresh: a TTL pass that starts while another account signs in over this one saves nothing', async () => {
