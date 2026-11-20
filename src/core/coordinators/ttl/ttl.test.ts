@@ -1380,6 +1380,27 @@ describe('TtlCoordinator', () => {
       expect(forceRefreshPostsSpy).toHaveBeenCalledTimes(2);
     });
 
+    it('sends no refresh when a sign-out ends the scope during the staleness check, and keeps the entity queued', async () => {
+      setupAuthenticatedUser();
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+      const postId = createCompositePostId('author1', 'post1');
+      coordinator.subscribePost({ compositePostId: postId });
+      findStalePostsSpy.mockImplementation(async () => {
+        endAuthScope();
+        return [postId];
+      });
+
+      coordinator.start();
+      forceRefreshPostsSpy.mockClear();
+      await waitForTick();
+      expect(forceRefreshPostsSpy).not.toHaveBeenCalled();
+
+      findStalePostsSpy.mockResolvedValue([postId]);
+      await waitForTick();
+      expect(forceRefreshPostsSpy).toHaveBeenCalledWith(expect.objectContaining({ postIds: [postId] }));
+    });
+
     it('failed refresh leaves entities in queue for retry', async () => {
       setupAuthenticatedUser();
 

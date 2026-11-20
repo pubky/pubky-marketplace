@@ -1518,6 +1518,19 @@ describe('StreamCoordinator', () => {
       expect(params.signal?.aborted).toBe(true);
     });
 
+    it('requests no slice when a sign-out ends the scope while the stream head resolves', async () => {
+      const { coordinator, getStreamHeadSpy, getOrFetchStreamSliceSpy } = setupIntegrationTest();
+      getStreamHeadSpy.mockImplementation(async () => {
+        endAuthScope();
+        return 1_000_000_000;
+      });
+
+      await pollOnce(coordinator);
+
+      expect(getStreamHeadSpy).toHaveBeenCalled();
+      expect(getOrFetchStreamSliceSpy).not.toHaveBeenCalled();
+    });
+
     it('logs no error when a poll stops because the viewer signed out', async () => {
       const { coordinator, getOrFetchStreamSliceSpy } = setupIntegrationTest();
       getOrFetchStreamSliceSpy.mockImplementation(async () => {
