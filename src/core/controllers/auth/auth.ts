@@ -1163,6 +1163,9 @@ export class AuthController {
 
       // Reset all Zustand stores.
       useAuthStore.getState().reset();
+      // Until this reset the store named the departing viewer, so a pass that
+      // started during the awaits above holds the scope opened at the top.
+      endAuthScope();
       useSignInStore.getState().reset();
       useLocalFilesStore.getState().reset();
       useCommerceStore.getState().reset();

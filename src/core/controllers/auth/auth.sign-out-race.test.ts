@@ -453,6 +453,22 @@ describe('work started for an account writes nothing for it once its sign-out st
     await finishSignOut();
   });
 
+  it('a pass that starts while sign-out cleanup still names the account ends with the cleanup', async () => {
+    signIn(ALICE);
+    const chatCleanup = deferred<void>();
+    vi.spyOn(ChatController, 'clearForSignOut').mockReturnValue(chatCleanup.promise);
+    const signOut = startSignOut()();
+    await vi.waitFor(() => expect(ChatController.clearForSignOut).toHaveBeenCalledWith(ALICE));
+    expect(useAuthStore.getState().currentUserPubky).toBe(ALICE);
+    const passScope = captureAuthScope();
+
+    chatCleanup.resolve();
+    await signOut;
+
+    expect(useAuthStore.getState().currentUserPubky).toBeNull();
+    expect(passScope.aborted).toBe(true);
+  });
+
   describe('watchlist detection against the index and the service', () => {
     const listingId = `${COMMERCE_FIXTURE_SELLER}:boots_01`;
 

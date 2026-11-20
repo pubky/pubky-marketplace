@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthApplication } from '@/application/auth/auth';
 import { BootstrapApplication } from '@/application/bootstrap/bootstrap';
 import { CommerceApplication } from '@/application/commerce/commerce';
+import { ChatController } from '@/controllers/chat/chat';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { clearPrivateData } from '@/database/franky/franky.helpers';
 import { writeHostIdentity } from '@/libs/auth/host-identity';
@@ -19,6 +20,7 @@ import { AuthController } from './auth';
 import { deferred, grantSession, resetGrantTest } from './auth.grant-test-utils';
 import type { HostSessionSnapshot } from './auth.types';
 import { withAuthFinalizationLock } from './auth-finalization-lock';
+import { captureAuthScope } from './auth-scope';
 
 // The global database setup imports the factory before this file's mocks.
 vi.hoisted(() => vi.resetModules());
@@ -162,6 +164,34 @@ describe('App-owned grant consumer', () => {
     expect(useAuthStore.getState()).toMatchObject({ currentUserPubky: 'bob', hasProfile: true });
     expect(clearPrivateData).toHaveBeenCalledTimes(2);
     expect(BootstrapApplication.initialize).not.toHaveBeenCalled();
+  });
+  it('ends the scope a pass started for the leaving account during an account switch cleanup', async () => {
+    vi.mocked(AuthApplication.userIsSignedUp).mockResolvedValue(true);
+    vi.spyOn(AuthApplication, 'restoreHostSession')
+      .mockResolvedValueOnce(grantSession('alice', 'pubky.app'))
+      .mockResolvedValueOnce(grantSession('bob', 'pubky.app'));
+    await AuthController.applyHostSession(ready());
+    const chatCleanup = deferred<void>();
+    vi.spyOn(ChatController, 'clearForSignOut').mockReturnValue(chatCleanup.promise);
+    const second = AuthController.applyHostSession(ready('bob', '2'));
+    await vi.waitFor(() => expect(ChatController.clearForSignOut).toHaveBeenCalledWith('alice'));
+    expect(useAuthStore.getState().currentUserPubky).toBe('alice');
+    const passScope = captureAuthScope();
+
+    chatCleanup.resolve();
+
+    await expect(second).resolves.toBe('ready');
+    expect(clearPrivateData).toHaveBeenCalledTimes(2);
+    expect(useAuthStore.getState().currentUserPubky).toBe('bob');
+    expect(passScope.aborted).toBe(true);
+    expect(captureAuthScope().aborted).toBe(false);
+  });
+  it('keeps the scope live across a same-account generation change', async () => {
+    vi.spyOn(AuthApplication, 'restoreHostSession').mockResolvedValue(grantSession('alice', 'pubky.app'));
+    await AuthController.applyHostSession(ready());
+    const passScope = captureAuthScope();
+    await expect(AuthController.applyHostSession(ready('alice', '2'))).resolves.toBe('ready');
+    expect(passScope.aborted).toBe(false);
   });
   it.each(['restoring', 'temporary-error', 'reauth-required', 'signed-out'] as const)(
     'handles host %s without touching SDK credentials',
