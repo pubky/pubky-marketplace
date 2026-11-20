@@ -1010,6 +1010,9 @@ export class AuthController {
           replacing = true;
           endAuthScope();
           await clearDatabase();
+          // A pass started during the wipe read the leaving viewer; it must not
+          // write into the wiped database before `adopt` runs.
+          endAuthScope();
           useMigrationStore.getState().reset();
           // Reset before bootstrap can upload local fallback preferences for
           // the new account. Same-account renewal preserves these values.
