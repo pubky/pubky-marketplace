@@ -90,22 +90,29 @@ describe('CommerceController seller side in a store', () => {
     ]);
   });
 
-  it('keeps every notification for the store seller and outside store mode', async () => {
+  it('keeps the seller notifications for the store seller, scoped to their store', async () => {
     commerceConfig.mode = 'sandbox';
-    for (const storeSeller of [VIEWER, undefined]) {
-      setStoreSeller(storeSeller);
-      expect(notificationIds(await CommerceController.getMarketplaceNotifications())).toEqual(['1', '2', '3']);
-      await CommerceController.refreshMarketplaceNotificationBadge();
-      expect(useNotificationStore.getState().marketplaceUnread).toBe(3);
-    }
+    setStoreSeller(VIEWER);
+
+    expect(notificationIds(await CommerceController.getMarketplaceNotifications())).toEqual(['2', '3']);
+    await CommerceController.refreshMarketplaceNotificationBadge();
+    expect(useNotificationStore.getState().marketplaceUnread).toBe(2);
+  });
+
+  it('keeps every notification outside store mode', async () => {
+    commerceConfig.mode = 'sandbox';
+
+    expect(notificationIds(await CommerceController.getMarketplaceNotifications())).toEqual(['1', '2', '3']);
+    await CommerceController.refreshMarketplaceNotificationBadge();
+    expect(useNotificationStore.getState().marketplaceUnread).toBe(3);
     expect(CommerceApplication.getMarketplaceOrders).not.toHaveBeenCalled();
   });
 
-  it('keeps the seller side for the store seller', async () => {
+  it('keeps the seller side for the store seller, scoped to their store', async () => {
     setStoreSeller(VIEWER);
 
-    expect(ids(await CommerceController.getMarketplaceOrders())).toEqual(['order-purchase', 'order-sale']);
-    expect(ids(await CommerceController.getMarketplaceOffers())).toEqual(['offer-made', 'offer-received']);
+    expect(ids(await CommerceController.getMarketplaceOrders())).toEqual(['order-sale']);
+    expect(ids(await CommerceController.getMarketplaceOffers())).toEqual(['offer-received']);
     expect((await CommerceController.getMarketplaceOrder('order-sale'))?.id).toBe('order-sale');
   });
 
