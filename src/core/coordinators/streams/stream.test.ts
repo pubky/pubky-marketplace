@@ -24,6 +24,7 @@ import {
   type SortType,
 } from '@/stores/home/home.types';
 import { mockSession } from '@/test-utils/pubky';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { mockHomeStore } from '@/test-utils/stores';
 
 // =============================================================================
@@ -240,6 +241,25 @@ describe('StreamCoordinator', () => {
   });
 
   describe('Lifecycle Management', () => {
+    it('never polls in a store, which reads no Nexus', async () => {
+      setStoreSeller('ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u');
+      try {
+        const { getOrFetchStreamSliceSpy, getStreamHeadSpy, coordinator } = setupIntegrationTest();
+        coordinator.configure({ pollOnStart: true, intervalMs: 1_000 } as Partial<CoordinatorConfigWithBase>);
+        await coordinator.setRoute(APP_ROUTES.HOME);
+        await coordinator.start();
+
+        await flushPromises();
+        vi.advanceTimersByTime(3_000);
+        await flushPromises();
+
+        expect(getOrFetchStreamSliceSpy).not.toHaveBeenCalled();
+        expect(getStreamHeadSpy).not.toHaveBeenCalled();
+      } finally {
+        setStoreSeller(undefined);
+      }
+    });
+
     it('prevents duplicate intervals when start() called multiple times', async () => {
       const { getOrFetchStreamSliceSpy, coordinator } = setupIntegrationTest();
       coordinator.configure({ pollOnStart: false, intervalMs: 1_000 } as Partial<CoordinatorConfigWithBase>);

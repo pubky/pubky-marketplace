@@ -10,6 +10,7 @@ import { MuteListSyncCoordinator } from '@/coordinators/mute-list-sync/mute-list
 import type { Pubky } from '@/models/models.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { mockSession } from '@/test-utils/pubky';
+import { setStoreSeller } from '@/test-utils/store-mode';
 
 async function flushPromises() {
   await Promise.resolve();
@@ -66,6 +67,28 @@ describe('MuteListSyncCoordinator', () => {
     await vi.advanceTimersByTimeAsync(MUTE_SYNC_DEBOUNCE_MS);
     expect(fetchMuted).toHaveBeenCalledTimes(1);
     expect(fetchMuted).toHaveBeenCalledWith(pubky);
+  });
+
+  it('never streams the mute directory in a store, which has no social layer', async () => {
+    setStoreSeller('ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u');
+    try {
+      useAuthStore.getState().init({
+        session: mockSession(),
+        currentUserPubky: '5a1diz4pghi47ywdfyfzpit5f3bdomzt4pugpbmq4rngdd4iub4y' as Pubky,
+        hasProfile: true,
+      });
+
+      const coordinator = MuteListSyncCoordinator.getInstance();
+      coordinator.setRoute(APP_ROUTES.HOME);
+      coordinator.start();
+      await flushPromises();
+      await vi.advanceTimersByTimeAsync(MUTE_SYNC_DEBOUNCE_MS);
+
+      expect(MuteController.subscribeMuteDirectoryEventStream).not.toHaveBeenCalled();
+      expect(MuteController.fetchMutedUsers).not.toHaveBeenCalled();
+    } finally {
+      setStoreSeller(undefined);
+    }
   });
 
   it('debounces bursty PUT events into a single fetch', async () => {

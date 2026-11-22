@@ -5,6 +5,7 @@ import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
 import { UserDetailsModel } from '@/models/user/details/userDetails';
 import { HomeserverService } from '@/services/homeserver/homeserver';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { asOpaque } from '@/test-utils/type-assertions';
 
 // Avoid pulling WASM-heavy deps from type-only modules
@@ -126,6 +127,27 @@ describe('ProfileApplication', () => {
       expect(mockAuthState.setCurrentUserPubky).not.toHaveBeenCalled();
       // Ingest only fires after profile.json is actually saved
       expect(NexusBootstrapService.ingest).not.toHaveBeenCalled();
+    });
+
+    it('tells no Nexus about the new profile in a store', async () => {
+      setStoreSeller('ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u');
+      try {
+        const profile = asOpaque<PubkyAppUser>({ toJson: vi.fn(() => ({ name: 'Alice' })) });
+        const pubky = 'test-pubky' as Pubky;
+        vi.spyOn(HomeserverService, 'request').mockResolvedValue(undefined);
+
+        await ProfileApplication.commitCreate({
+          profile,
+          url: 'pubky://user/pub/pubky.app/user',
+          pubky,
+          isCurrent: () => true,
+        });
+
+        expect(NexusBootstrapService.ingest).not.toHaveBeenCalled();
+        expect(mockAuthState.setHasProfile).toHaveBeenCalledWith(true);
+      } finally {
+        setStoreSeller(undefined);
+      }
     });
   });
 

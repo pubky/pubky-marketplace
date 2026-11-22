@@ -5,6 +5,7 @@ import { MuteApplication } from '@/application/mute/mute';
 import { NotificationApplication } from '@/application/notification/notification';
 import { UserApplication } from '@/application/user/user';
 import { getModerationId } from '@/config/moderation';
+import { isStoreMode } from '@/config/store-mode';
 import { TtlCoordinator } from '@/coordinators/ttl/ttl';
 import { isAppError } from '@/libs/error/error.utils';
 import { HttpMethod } from '@/libs/http/http.types';
@@ -66,6 +67,7 @@ export class BootstrapApplication {
     onProgress?: BootstrapProgressCallback,
   ): Promise<Omit<NotificationState, 'marketplaceUnread'>> {
     this.cancelModerationFollow();
+    if (isStoreMode()) return await this.initializeStore(params, onProgress);
     const moderationFollowController = new AbortController();
     this.moderationFollowAbortController = moderationFollowController;
 
@@ -148,6 +150,30 @@ export class BootstrapApplication {
       this.clearModerationFollowController(moderationFollowController);
       throw error;
     }
+  }
+
+  /**
+   * A store's sign-in reads no Nexus: no social bootstrap or notifications, no last-read marker, mutes,
+   * feeds or moderation follow. It caches the user's own profile from their homeserver so the header
+   * can name them; a failed read leaves the name out and never fails sign-in. Market notifications
+   * come from the commerce badge poll, as in the full Market.
+   */
+  private static async initializeStore(
+    { pubky, signal }: TBootstrapParams,
+    onProgress?: BootstrapProgressCallback,
+  ): Promise<Omit<NotificationState, 'marketplaceUnread'>> {
+    onProgress?.('bootstrapFetched');
+    try {
+      await UserApplication.fetchDetails({ userId: pubky });
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      // AppError factories already report at their origin. Only unexpected raw failures need a warning.
+      if (!isAppError(error)) Logger.warn('Unexpected profile read failure during store sign-in', { error });
+    }
+    signal?.throwIfAborted();
+    onProgress?.('dataPersisted');
+    onProgress?.('homeserverSynced');
+    return { unread: 0, lastRead: 0, lastPolledTimestamp: undefined };
   }
 
   /** Keep the one-time default follow off the authentication critical path. */

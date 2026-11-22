@@ -4,6 +4,7 @@ import {
   MUTE_SYNC_DEBOUNCE_MS,
   MUTE_SYNC_RECONNECT_BACKOFF_MS,
 } from '@/config/mute-sync';
+import { isStoreMode } from '@/config/store-mode';
 import { MuteController } from '@/controllers/mute/mute';
 import type { TMuteDirectoryEvent } from '@/controllers/mute/mute.types';
 import { routeToRegex } from '@/coordinators/base/coordinators.utils';
@@ -76,6 +77,8 @@ export class MuteListSyncCoordinator {
   }
 
   public start(): void {
+    // A store has no social layer, so it keeps no mute list.
+    if (isStoreMode()) return;
     this.state.isStarted = true;
     this.evaluateStreaming();
     Logger.debug('MuteListSyncCoordinator started');

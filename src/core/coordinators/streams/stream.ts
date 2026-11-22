@@ -1,5 +1,6 @@
 import { APP_ROUTES, POST_ROUTES } from '@/app/routes';
 import { postStreamQueue } from '@/application/stream/posts/muting/post-stream-queue';
+import { isStoreMode } from '@/config/store-mode';
 import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import { FeedController } from '@/controllers/feed/feed';
 import { FORCE_FETCH_NEW_POSTS, SKIP_FETCH_NEW_POSTS } from '@/controllers/stream/posts/post.constants';
@@ -107,6 +108,12 @@ export class StreamCoordinator extends Coordinator<StreamCoordinatorConfig, Stre
       StreamCoordinator.instance.destroy();
       StreamCoordinator.instance = null;
     }
+  }
+
+  /** A store shows no post streams and never reads Nexus, so the coordinator stays off. */
+  public async start() {
+    if (isStoreMode()) return;
+    await super.start();
   }
 
   /**

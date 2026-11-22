@@ -13,6 +13,7 @@ import type {
   TDownloadDataParams,
   TProfileSeed,
 } from '@/application/profile/profile.types';
+import { isStoreMode } from '@/config/store-mode';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -46,7 +47,8 @@ export class ProfileApplication {
     try {
       await HomeserverService.request({ method: HttpMethod.PUT, url, bodyJson: profile.toJson() });
       // Tell Nexus this user exists (best-effort, never rejects; see NexusBootstrapService.ingest).
-      void NexusBootstrapService.ingest(pubky);
+      // A store reads no Nexus, so it tells none.
+      if (!isStoreMode()) void NexusBootstrapService.ingest(pubky);
       // The session can change while the PUT is in flight. Only the identity that
       // submitted is marked complete, never the one that replaced it.
       if (!isCurrent()) return;

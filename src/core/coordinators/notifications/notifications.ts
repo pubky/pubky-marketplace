@@ -1,4 +1,5 @@
 import { ACCOUNT_ROUTES, AUTH_ROUTES } from '@/app/routes';
+import { isStoreMode } from '@/config/store-mode';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { NotificationController } from '@/controllers/notification/notification';
 import { Coordinator } from '@/coordinators/base/coordinator';
@@ -94,17 +95,21 @@ export class NotificationCoordinator extends Coordinator<NotificationCoordinator
    * Execute a single poll operation
    */
   protected async poll(): Promise<void> {
-    try {
-      // Get current user ID
-      const userId = useAuthStore.getState().selectCurrentUserPubky();
+    // Social notifications come from Nexus, which a store never reads; its badge is the
+    // marketplace one below.
+    if (!isStoreMode()) {
+      try {
+        // Get current user ID
+        const userId = useAuthStore.getState().selectCurrentUserPubky();
 
-      Logger.debug('Polling notifications', { userId });
+        Logger.debug('Polling notifications', { userId });
 
-      // Coordinator calls controller to fetch notifications
-      await NotificationController.fetchNotifications({ userId });
-    } catch (error) {
-      Logger.error('Error polling notifications', { error });
-      // Don't stop polling on error - just log and continue
+        // Coordinator calls controller to fetch notifications
+        await NotificationController.fetchNotifications({ userId });
+      } catch (error) {
+        Logger.error('Error polling notifications', { error });
+        // Don't stop polling on error - just log and continue
+      }
     }
 
     // Marketplace badge refresh is isolated in its own try/catch so a commerce

@@ -1,3 +1,4 @@
+import { isStoreMode } from '@/config/store-mode';
 import {
   getTtlBatchIntervalMs,
   getTtlPostMaxBatchSize,
@@ -106,7 +107,8 @@ export class TtlCoordinator {
    * Begins the batch tick interval
    */
   public start(): void {
-    if (this.state.isStarted) {
+    // TTL refreshes re-read posts and users from Nexus, which a store never reads.
+    if (this.state.isStarted || isStoreMode()) {
       return;
     }
 

@@ -6,6 +6,7 @@ import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { mockSession } from '@/test-utils/pubky';
+import { setStoreSeller } from '@/test-utils/store-mode';
 
 // =============================================================================
 // Test Helpers
@@ -210,6 +211,25 @@ describe('TtlCoordinator', () => {
 
       // No batch tick should have occurred
       expect(findStalePostsSpy).not.toHaveBeenCalled();
+    });
+
+    it('never ticks in a store, which reads no Nexus', async () => {
+      setStoreSeller('ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u');
+      try {
+        setupAuthenticatedUser();
+        const coordinator = TtlCoordinator.getInstance();
+        coordinator.configure({ batchIntervalMs: 1_000 });
+        coordinator.subscribePost({ compositePostId: createCompositePostId('author1', 'post1') });
+        findStalePostsSpy.mockClear();
+
+        coordinator.start();
+        await advanceAndFlush(5_000);
+
+        expect(findStalePostsSpy).not.toHaveBeenCalled();
+        expect(forceRefreshPostsSpy).not.toHaveBeenCalled();
+      } finally {
+        setStoreSeller(undefined);
+      }
     });
 
     it('start() begins ticking when authenticated', async () => {

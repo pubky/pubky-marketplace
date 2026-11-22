@@ -8,7 +8,10 @@ import type { NotificationCoordinatorConfig } from '@/coordinators/notifications
 import type { Pubky } from '@/models/models.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { mockSession } from '@/test-utils/pubky';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { asInvalid, asOpaque } from '@/test-utils/type-assertions';
+
+const STORE_SELLER = 'ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u';
 
 // =============================================================================
 // Test Helpers
@@ -1335,6 +1338,26 @@ describe('NotificationCoordinator', () => {
 
       await flushPromises();
       expect(badgeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('refreshes only the marketplace badge in a store, which reads no Nexus', async () => {
+      setStoreSeller(STORE_SELLER);
+      try {
+        const badgeSpy = vi
+          .spyOn(CommerceController, 'refreshMarketplaceNotificationBadge')
+          .mockResolvedValue(undefined);
+        const { spy, coordinator } = setupAuthenticatedTest();
+        coordinator.configure({ pollOnStart: true, intervalMs: 1_000 } as Partial<CoordinatorConfigWithBase>);
+        coordinator.start();
+
+        await flushPromises();
+        vi.advanceTimersByTime(1_000);
+        await flushPromises();
+        expect(badgeSpy).toHaveBeenCalledTimes(2);
+        expect(spy).not.toHaveBeenCalled();
+      } finally {
+        setStoreSeller(undefined);
+      }
     });
   });
 

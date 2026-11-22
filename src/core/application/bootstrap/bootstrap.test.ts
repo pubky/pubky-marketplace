@@ -31,6 +31,7 @@ import { LocalUserService } from '@/services/local/user/user';
 import { NexusBootstrapService } from '@/services/nexus/bootstrap/bootstrap';
 import type { NexusBootstrapResponse } from '@/services/nexus/bootstrap/bootstrap.types';
 import { type NexusFileDetails, type NexusNotification, UserStreamTimeframe } from '@/services/nexus/nexus.types';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { BootstrapApplication } from './bootstrap';
 
@@ -811,6 +812,71 @@ describe('BootstrapApplication', () => {
       expect(loggerWarnSpy).not.toHaveBeenCalled();
       expect(upsertTtlSpy).not.toHaveBeenCalled();
       expect(mockSubscribeUser).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('store mode', () => {
+    const STORE_SELLER = 'ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u';
+
+    beforeEach(() => setStoreSeller(STORE_SELLER));
+    afterEach(() => setStoreSeller(undefined));
+
+    it('signs in without Nexus, social notifications, last read, mutes, feeds or moderation follow', async () => {
+      const mocks = setupMocks({ bootstrapData: createMockBootstrapData() });
+      const fetchDetails = vi.spyOn(UserApplication, 'fetchDetails').mockResolvedValue(null);
+      const ingest = vi.spyOn(NexusBootstrapService, 'ingest').mockResolvedValue(undefined);
+      const homeserverWrite = vi.spyOn(HomeserverService, 'request').mockResolvedValue(undefined);
+      const onProgress = vi.fn();
+
+      const result = await BootstrapApplication.initialize(getBootstrapParams(TEST_PUBKY), onProgress);
+
+      expect(result).toEqual({ unread: 0, lastRead: 0, lastPolledTimestamp: undefined });
+      expect(fetchDetails).toHaveBeenCalledWith({ userId: TEST_PUBKY });
+      expect(mocks.nexusFetch).not.toHaveBeenCalled();
+      expect(ingest).not.toHaveBeenCalled();
+      expect(mocks.homeserverRead).not.toHaveBeenCalled();
+      expect(homeserverWrite).not.toHaveBeenCalled();
+      expect(mocks.fetchMutedUsers).not.toHaveBeenCalled();
+      expect(mocks.fetchFeeds).not.toHaveBeenCalled();
+      expect(mocks.bulkSave).not.toHaveBeenCalled();
+      expect(mocks.persistUsers).not.toHaveBeenCalled();
+      expect(UserApplication.ensureModerationFollow).not.toHaveBeenCalled();
+      expect(onProgress.mock.calls.map(([step]) => step)).toEqual([
+        'bootstrapFetched',
+        'dataPersisted',
+        'homeserverSynced',
+      ]);
+    });
+
+    it('still signs in when the profile read fails', async () => {
+      setupMocks({});
+      vi.spyOn(UserApplication, 'fetchDetails').mockRejectedValue(
+        Err.server(ServerErrorCode.INVALID_RESPONSE, 'homeserver down', {
+          service: ErrorService.Homeserver,
+          operation: 'getJsonIfFound',
+        }),
+      );
+      const warn = vi.spyOn(Logger, 'warn').mockImplementation(() => {});
+
+      await expect(BootstrapApplication.initialize(getBootstrapParams(TEST_PUBKY))).resolves.toEqual({
+        unread: 0,
+        lastRead: 0,
+        lastPolledTimestamp: undefined,
+      });
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('stops when the sign-in scope ends during the profile read', async () => {
+      setupMocks({});
+      const controller = new AbortController();
+      vi.spyOn(UserApplication, 'fetchDetails').mockImplementation(async () => {
+        controller.abort();
+        throw new Error('aborted read');
+      });
+
+      await expect(
+        BootstrapApplication.initialize({ ...getBootstrapParams(TEST_PUBKY), signal: controller.signal }),
+      ).rejects.toThrow('aborted read');
     });
   });
 });
