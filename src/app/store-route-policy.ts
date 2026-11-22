@@ -182,6 +182,7 @@ export const STORE_ROUTE_HANDLER_POLICY: Readonly<Record<string, StoreRouteHandl
  * `NextResponse.rewrite(url, { status: 404 })`: the `(feeds)` `@post` catch-all matches it, so
  * without a status its 404 screen is sent with 200, and with one a production build renders some
  * paths as an error screen, without their runtime config.
+ * `scripts/store-mode-served-check.mjs` checks this against a production build.
  */
 export const STORE_NOT_FOUND_PATHNAME = '/_not-found';
 
