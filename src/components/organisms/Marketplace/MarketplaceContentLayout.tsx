@@ -5,6 +5,7 @@ import { Container } from '@/atoms/Container/Container';
 import { cn } from '@/libs/utils/utils';
 import { MobileFooter } from '@/molecules/MobileFooter/MobileFooter';
 import { MobileHeader } from '@/molecules/MobileHeader/MobileHeader';
+import { StoreFooter } from '@/molecules/StoreFooter/StoreFooter';
 
 interface MarketplaceContentLayoutProps {
   children: ReactNode;
@@ -41,6 +42,7 @@ export function MarketplaceContentLayout({
             {children}
           </Container>
         </Container>
+        <StoreFooter />
       </Container>
       <MobileFooter />
     </>

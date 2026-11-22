@@ -6,6 +6,7 @@ import { MobileHeader } from '@/molecules/MobileHeader/MobileHeader';
 import { SettingsInfo } from '@/molecules/Settings/SettingsInfo/SettingsInfo';
 import { SettingsMenu } from '@/molecules/Settings/SettingsMenu/SettingsMenu';
 import { SettingsMobileMenu } from '@/molecules/Settings/SettingsMobileMenu/SettingsMobileMenu';
+import { StoreFooter } from '@/molecules/StoreFooter/StoreFooter';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import type { SettingsProps } from './Settings.types';
 
@@ -44,6 +45,7 @@ export function Settings({ children }: SettingsProps) {
         disableWideShellLayout
       >
         {children}
+        <StoreFooter />
       </ContentLayout>
     </>
   );

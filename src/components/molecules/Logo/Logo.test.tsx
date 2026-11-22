@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LOGO_LANDING_ROUTES } from '@/app/routes';
 import { FORCE_FEED_SCROLL_TOP_KEY } from '@/config/feed';
 import { setSocialHost } from '@/test-utils/social-host';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { Logo } from './Logo';
 
 // Mock Next.js Image component
@@ -25,6 +26,12 @@ vi.mock('next/image', () => ({
 
 vi.mock('next/navigation', () => ({
   usePathname: vi.fn(),
+}));
+
+vi.mock('@/molecules/StoreLogo/StoreLogo', () => ({
+  StoreLogo: ({ noLink }: { noLink?: boolean }) => (
+    <span data-testid="store-logo">{noLink ? 'unlinked' : 'linked'}</span>
+  ),
 }));
 
 const createSessionStorageMock = () => ({
@@ -177,5 +184,18 @@ describe('Logo - social link-out', () => {
     vi.mocked(usePathname).mockReturnValue('/sign-in');
     render(<Logo />);
     expect(screen.getAllByTestId('logo-image')[0].closest('a')).toHaveAttribute('href', '/');
+  });
+
+  it("shows the store's own mark instead of the Pubky Market wordmark in a store", () => {
+    vi.mocked(usePathname).mockReturnValue('/cart');
+    setStoreSeller('s'.repeat(52));
+    try {
+      render(<Logo noLink />);
+
+      expect(screen.getByTestId('store-logo')).toHaveTextContent('unlinked');
+      expect(screen.queryByTestId('logo-image')).not.toBeInTheDocument();
+    } finally {
+      setStoreSeller(undefined);
+    }
   });
 });

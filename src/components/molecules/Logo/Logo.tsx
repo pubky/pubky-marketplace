@@ -4,8 +4,10 @@ import { usePathname } from 'next/navigation';
 import { getShopHomeRoute, isLogoLandingRoute, ROOT_ROUTES } from '@/app/routes';
 import { BasePathImage as Image } from '@/atoms/BasePathImage/BasePathImage';
 import { Link } from '@/atoms/Link/Link';
+import { isStoreMode } from '@/config/store-mode';
 import { handleFeedNavClick } from '@/libs/utils/feedScrollTop';
 import { cn } from '@/libs/utils/utils';
+import { StoreLogo } from '@/molecules/StoreLogo/StoreLogo';
 
 interface LogoProps {
   width?: number;
@@ -45,6 +47,8 @@ export function Logo({
   const homeRoute = getShopHomeRoute();
   const isHome = pathname === homeRoute;
   const href = isLandingRoute ? ROOT_ROUTES : homeRoute;
+
+  if (isStoreMode()) return <StoreLogo noLink={noLink} className={className} />;
 
   return !noLink ? (
     <Link
