@@ -13,4 +13,7 @@ export const DELIVERY_KEY_COPY = {
   addressUnavailable: 'The delivery address is not available for this order.',
   addressLoading: 'Opening the delivery address on this device…',
   sealedNote: "Encrypted to this seller's delivery key. The marketplace service cannot read it.",
+  custodyTitle: 'Your delivery key is stored in this browser',
+  custodyBody:
+    "Buyers encrypt their shipping address to your delivery key, and only this browser holds the key that opens it. If you clear this browser's site data or lose this device, you won't be able to open the addresses on orders you already have.",
 } as const;

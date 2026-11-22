@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
 import * as commerceConfig from '@/config/commerce';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
@@ -7,6 +7,7 @@ import { AUCTION_UNLIST_BLOCKED_NOTE } from '@/libs/commerce/auction-removal';
 import { toast } from '@/molecules/Toaster/toast';
 import { COMMERCE_FIXTURE_SELLER, createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { toCommerceListingModel } from '@/test/fixtures/commerce/listing-models';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { MarketplaceDashboard } from './MarketplaceDashboard';
 
 const viewport = vi.hoisted(() => ({ isMobile: false }));
@@ -37,6 +38,7 @@ const dashboardState = vi.hoisted(() => ({
     total: 0,
   },
   unfinishedDrafts: [] as Array<{ listingId: string; title: string; updatedAt: number; ageLabel: string }>,
+  hasShippedSale: false,
   needsSession: false,
   sessionError: null as string | null,
   registrationOffered: true,
@@ -103,6 +105,7 @@ vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', a
       sessionError: dashboardState.sessionError,
       metrics: dashboardState.metrics,
       actionNeeded: dashboardState.actionNeeded,
+      hasShippedSale: dashboardState.hasShippedSale,
       updateListingState: dashboardFns.updateListingState,
       duplicateListing: dashboardFns.duplicateListing,
       hasUnsavedListingDraft: dashboardFns.hasUnsavedListingDraft,
@@ -222,6 +225,53 @@ describe('MarketplaceDashboard', () => {
         expect(entry()).toBeInTheDocument();
       },
     );
+  });
+
+  describe('delivery key notice', () => {
+    const notice = () => screen.queryByRole('heading', { name: 'Your delivery key is stored in this browser' });
+
+    beforeEach(() => {
+      dashboardState.listings = [listing()];
+      dashboardState.hasShippedSale = false;
+    });
+
+    afterEach(() => {
+      setStoreSeller(undefined);
+      dashboardState.listings = [];
+    });
+
+    it("tells a store's seller, before their first shipped sale, that only this browser opens addresses", () => {
+      setStoreSeller(COMMERCE_FIXTURE_SELLER);
+      render(<MarketplaceDashboard />);
+
+      expect(notice()).toBeInTheDocument();
+      expect(screen.getByText(/won't be able to open the addresses on orders you already have/)).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Delivery privacy' })).toHaveAttribute(
+        'href',
+        MARKETPLACE_ROUTES.SETTINGS_SHIPPING,
+      );
+    });
+
+    it('is gone once a shipped sale exists', () => {
+      setStoreSeller(COMMERCE_FIXTURE_SELLER);
+      dashboardState.hasShippedSale = true;
+      render(<MarketplaceDashboard />);
+
+      expect(notice()).not.toBeInTheDocument();
+    });
+
+    it('is not shown for a store that ships nothing, or in the full Market', () => {
+      setStoreSeller(COMMERCE_FIXTURE_SELLER);
+      dashboardState.listings = [listing({ fulfillmentMethods: ['digital'] })];
+      const { unmount } = render(<MarketplaceDashboard />);
+      expect(notice()).not.toBeInTheDocument();
+      unmount();
+
+      setStoreSeller(undefined);
+      dashboardState.listings = [listing()];
+      render(<MarketplaceDashboard />);
+      expect(notice()).not.toBeInTheDocument();
+    });
   });
 
   describe('storefront prompt', () => {

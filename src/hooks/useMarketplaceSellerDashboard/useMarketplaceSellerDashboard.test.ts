@@ -34,6 +34,7 @@ const ordersState = vi.hoisted(() => ({
     order: {
       sellerPubky: string;
       state: string;
+      fulfillment?: string;
       total: { amountMinor: number; currency: string; exponent: number };
     };
   }>,
@@ -412,6 +413,23 @@ describe('useMarketplaceSellerDashboard duplicateListing', () => {
     ];
     const { result } = renderHook(() => useMarketplaceSellerDashboard());
     expect(result.current.metrics.paidOrders).toBe(1);
+  });
+
+  it("knows whether the seller has had a shipped sale, ignoring pickup and other sellers' orders", () => {
+    const total = { amountMinor: 900, currency: 'USD', exponent: 2 };
+    ordersState.orders = [
+      { order: { sellerPubky: OWNER, state: 'paid', fulfillment: 'pickup', total } },
+      { order: { sellerPubky: 'o'.repeat(52), state: 'paid', fulfillment: 'shipping', total } },
+    ];
+    const { result, rerender } = renderHook(() => useMarketplaceSellerDashboard());
+    expect(result.current.hasShippedSale).toBe(false);
+
+    ordersState.orders = [
+      ...ordersState.orders,
+      { order: { sellerPubky: OWNER, state: 'pending_payment', fulfillment: 'shipping', total } },
+    ];
+    rerender();
+    expect(result.current.hasShippedSale).toBe(true);
   });
 
   it('does not count ended auctions as active listings', () => {
