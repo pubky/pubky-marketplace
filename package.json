@@ -40,7 +40,8 @@
     "test:marketplace:inventory": "vitest run --config vitest.inventory.config.ts",
     "vrt:gallery": "node scripts/vrt-gallery.mjs",
     "test:e2e:chat": "node src/test/e2e/chat-two-accounts.mjs",
-    "test:store-mode:served": "node scripts/store-mode-served-check.mjs"
+    "test:store-mode:served": "node scripts/store-mode-served-check.mjs",
+    "test:store-mode:traffic": "node scripts/store-mode-traffic-check.mjs"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx}": [

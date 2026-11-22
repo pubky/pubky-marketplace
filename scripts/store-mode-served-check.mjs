@@ -9,7 +9,8 @@
 // and markup and still hydrate into an error screen, so Chromium opens the masked pages that a guest stays on.
 //
 // Reuses an existing build (`npm run build`); it never builds. Starts `next start` on STORE_CHECK_PORT (default 3100)
-// with store mode on and every Pubky and marketplace URL pointed at a closed loopback port, so nothing reads live data.
+// as a deployed store: store mode on, no Nexus or CDN URL (a store needs none, so it must start without them) and the
+// marketplace URL pointed at a closed loopback port. No other `PUBKY_RUNTIME_*` value is inherited.
 // Needs Playwright's Chromium (`npx playwright install chromium`). A build with NEXT_PUBLIC_BASE_PATH needs the same
 // value set here. Exit 0 only when every check passed.
 import { spawn } from 'node:child_process';
@@ -36,10 +37,7 @@ const STORE_ENV = {
   PUBKY_RUNTIME_TESTNET: 'false',
   PUBKY_RUNTIME_HOMESERVER: 'ufibwbmed6jeq9k4p583go95wofakh9fwpp4k734trq79pd9u1uy',
   PUBKY_RUNTIME_HOMESERVER_URL: 'https://homeserver.staging.pubky.app',
-  PUBKY_RUNTIME_NEXUS_URL: CLOSED,
-  PUBKY_RUNTIME_CDN_URL: `${CLOSED}/static`,
   PUBKY_RUNTIME_MARKETPLACE_URL: CLOSED,
-  PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL: CLOSED,
   PUBKY_RUNTIME_HOMEGATE_URL: 'https://homegate.staging.pubky.app',
   PUBKY_RUNTIME_PKARR_RELAYS: '["https://pkarr.pubky.app","https://pkarr.pubky.org"]',
   PUBKY_RUNTIME_DEFAULT_HTTP_RELAY: 'https://httprelay.staging.pubky.app/inbox',
@@ -133,7 +131,11 @@ if (!existsSync(join(ROOT, '.next', 'BUILD_ID'))) {
 const output = [];
 const server = spawn(process.execPath, [join(ROOT, 'node_modules/next/dist/bin/next'), 'start', '-p', String(PORT)], {
   cwd: ROOT,
-  env: { ...process.env, ...STORE_ENV, NODE_ENV: 'production' },
+  env: {
+    ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('PUBKY_RUNTIME_'))),
+    ...STORE_ENV,
+    NODE_ENV: 'production',
+  },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 server.stdout.on('data', (chunk) => output.push(chunk));
