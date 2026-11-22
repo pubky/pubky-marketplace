@@ -268,7 +268,11 @@ export const getCommercePollIntervalMs = (): number => getRuntimeConfig().commer
 export const getMarketplaceGrantFlowEnabled = (): boolean => getRuntimeConfig().marketplaceGrantFlowEnabled;
 export const getMarketplaceGrantSessionEnabled = (): boolean => getRuntimeConfig().marketplaceGrantSessionEnabled;
 export const getMarketplaceGrantPollMilliseconds = (): number => getRuntimeConfig().marketplaceGrantPollMilliseconds;
-export const getPassportSignInEnabled = (): boolean => getRuntimeConfig().passportSignIn;
+/** A store offers Passport only when it names one: without `PUBKY_RUNTIME_PASSPORT_URL` it would be Synonym's. */
+export const getPassportSignInEnabled = (): boolean => {
+  const config = getRuntimeConfig();
+  return config.passportSignIn && (config.storeSeller === undefined || config.passportUrl !== undefined);
+};
 export const getUsdtPaymentsEnabled = (): boolean => getRuntimeConfig().usdtPaymentsEnabled;
 export const getStoreSyncEnabled = (): boolean => getRuntimeConfig().storeSyncEnabled;
 /** C3 and C4 are on for the regions that are nuanced (the EU fence flag, unless the region modes say otherwise). */

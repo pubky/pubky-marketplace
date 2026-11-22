@@ -704,6 +704,7 @@ const runtimeConfigObjectSchema = networkConfigValueSchema.extend({
    * sign-in button and the Passport purchase approval. A Passport sign-in that
    * is already active stays signed in, but its purchase approval is refused
    * with the grant-session copy, as for a Bitkit sign-in with the grant flow off.
+   * A store also needs `passportUrl` (see `getPassportSignInEnabled`).
    */
   passportSignIn: z.boolean().default(APP_RUNTIME_DEFAULTS.passportSignIn),
   /**

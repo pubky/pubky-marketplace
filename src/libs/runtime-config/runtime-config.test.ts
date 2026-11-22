@@ -324,6 +324,20 @@ describe('runtime-config resolver', () => {
       expect(getPassportSignInEnabled()).toBe(false);
     });
 
+    it('offers Passport in a store only when the store names its Passport', () => {
+      vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', '');
+      vi.stubEnv(PUBKY_RUNTIME_ENV_NAMES.storeSeller, 'ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u');
+      expect(getPassportSignInEnabled()).toBe(false);
+
+      resetRuntimeConfigForTests();
+      vi.stubEnv(PUBKY_RUNTIME_ENV_NAMES.passportUrl, 'https://passport.example.com');
+      expect(getPassportSignInEnabled()).toBe(true);
+
+      resetRuntimeConfigForTests();
+      vi.stubEnv(PUBKY_RUNTIME_ENV_NAMES.passportSignIn, 'false');
+      expect(getPassportSignInEnabled()).toBe(false);
+    });
+
     it('keeps USDT payments off by default and takes the PUBKY_RUNTIME_USDT_PAYMENTS_ENABLED switch', () => {
       expect(PUBKY_RUNTIME_ENV_NAMES.usdtPaymentsEnabled).toBe('PUBKY_RUNTIME_USDT_PAYMENTS_ENABLED');
       expect(getUsdtPaymentsEnabled()).toBe(false);
