@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Start the committed Nexus fixture stub, then `next start`, then the
-# launch-critical Chromium suite. Does not run `next build` — CI downloads
+# Check the build in store mode (scripts/store-mode-served-check.mjs, its own
+# server), then start the committed Nexus fixture stub, then `next start`, then
+# the launch-critical Chromium suite. Does not run `next build` — CI downloads
 # the Build job's `.next`. Required gate never reads a live Nexus: it must be
 # the loopback fixture stub.
 # CI explicitly selects LAUNCH_E2E_MODE=synthetic (real SDK, stubbed services).
@@ -69,6 +70,8 @@ if [[ ! -d .next || ! -f .next/BUILD_ID ]]; then
   ls -la . next-build-artifact 2>/dev/null | head -80 || true
   exit 1
 fi
+
+node scripts/store-mode-served-check.mjs
 
 started_server=0
 started_stub=0

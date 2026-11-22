@@ -251,12 +251,6 @@ jobs:
             exit 1
           fi
 
-      - name: Check store mode on the production build
-        if: steps.gate.outputs.run == 'true'
-        env:
-          PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
-        run: npm run test:store-mode:served
-
       - name: Run synthetic launch-critical Chromium suite
         if: steps.gate.outputs.run == 'true'
         env:

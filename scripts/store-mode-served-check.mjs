@@ -10,7 +10,8 @@
 //
 // Reuses an existing build (`npm run build`); it never builds. Starts `next start` on STORE_CHECK_PORT (default 3100)
 // with store mode on and every Pubky and marketplace URL pointed at a closed loopback port, so nothing reads live data.
-// Needs Playwright's Chromium (`npx playwright install chromium`). Exit 0 only when every check passed.
+// Needs Playwright's Chromium (`npx playwright install chromium`). A build with NEXT_PUBLIC_BASE_PATH needs the same
+// value set here. Exit 0 only when every check passed.
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -20,6 +21,7 @@ import { chromium } from 'playwright';
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const PORT = Number(process.env.STORE_CHECK_PORT ?? 3100);
 const ORIGIN = `http://127.0.0.1:${PORT}`;
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
 const STORE_SELLER = 'ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u';
 const OTHER_SELLER = 'o'.repeat(52);
 const NOT_FOUND_TITLE = '<title>Page Not Found - Pubky Market</title>';
@@ -72,7 +74,10 @@ function check(id, ok, detail) {
 }
 
 async function get(path) {
-  const response = await fetch(`${ORIGIN}${path}`, { redirect: 'manual', signal: AbortSignal.timeout(60_000) });
+  const response = await fetch(`${ORIGIN}${BASE_PATH}${path}`, {
+    redirect: 'manual',
+    signal: AbortSignal.timeout(60_000),
+  });
   return { status: response.status, location: response.headers.get('location'), body: await response.text() };
 }
 
@@ -81,7 +86,7 @@ async function checkInBrowser() {
   try {
     const page = await browser.newPage();
     for (const path of MASKED_IN_BROWSER) {
-      const response = await page.goto(`${ORIGIN}${path}`, { waitUntil: 'load', timeout: 60_000 });
+      const response = await page.goto(`${ORIGIN}${BASE_PATH}${path}`, { waitUntil: 'load', timeout: 60_000 });
       await page
         .getByText(new RegExp(`${NOT_FOUND_COPY}|${ERROR_SCREEN}`))
         .first()
@@ -89,6 +94,7 @@ async function checkInBrowser() {
         .catch(() => {});
       await page.waitForTimeout(2_000);
       const text = await page.innerText('body');
+      const at = new URL(page.url()).pathname;
       const shown = text.includes(ERROR_SCREEN)
         ? 'the error screen'
         : text.includes(NOT_FOUND_COPY)
@@ -96,8 +102,8 @@ async function checkInBrowser() {
           : 'neither screen';
       check(
         `browser ${path}`,
-        response?.status() === 404 && shown === 'the not-found page' && new URL(page.url()).pathname === path,
-        `status ${response?.status()}, shows ${shown} at ${new URL(page.url()).pathname}`,
+        response?.status() === 404 && shown === 'the not-found page' && at === `${BASE_PATH}${path}`,
+        `status ${response?.status()}, shows ${shown} at ${at}`,
       );
     }
   } finally {
@@ -110,13 +116,13 @@ async function waitForServer(server) {
   while (Date.now() < deadline) {
     if (server.exitCode !== null) throw new Error(`next start exited with code ${server.exitCode}`);
     try {
-      if ((await fetch(`${ORIGIN}/api/build`, { signal: AbortSignal.timeout(2_000) })).ok) return;
+      if ((await fetch(`${ORIGIN}${BASE_PATH}/api/build`, { signal: AbortSignal.timeout(2_000) })).ok) return;
     } catch {
       // Not listening yet.
     }
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
-  throw new Error(`next start did not answer ${ORIGIN}/api/build within 120s`);
+  throw new Error(`next start did not answer ${ORIGIN}${BASE_PATH}/api/build within 120s`);
 }
 
 if (!existsSync(join(ROOT, '.next', 'BUILD_ID'))) {
@@ -154,7 +160,7 @@ try {
   const shop = `/marketplace/shop/${STORE_SELLER}`;
   check(
     'store home opens the store seller shop',
-    home.status === 307 && new URL(home.location ?? '', ORIGIN).pathname === shop,
+    home.status === 307 && new URL(home.location ?? '', ORIGIN).pathname === `${BASE_PATH}${shop}`,
     `status ${home.status}, location ${home.location}`,
   );
 
