@@ -3,7 +3,7 @@
 import { KeyRound } from 'lucide-react';
 import { Card, CardContent } from '@/atoms/Card/Card';
 import { Typography } from '@/atoms/Typography/Typography';
-import { type CommerceAdapterMode, isLocksPaykitCommerceMode } from '@/config/commerce';
+import { type CommerceAdapterMode, isLocksPaymentAvailable } from '@/config/commerce';
 
 /**
  * Pre-purchase notice on a Locks-guarded digital listing. Purely
@@ -23,7 +23,7 @@ export function MarketplaceDigitalDeliveryNotice({ adapterMode }: { adapterMode:
             Locks-protected digital delivery
           </Typography>
           <Typography as="p" className="text-sm text-muted-foreground">
-            {isLocksPaykitCommerceMode(adapterMode)
+            {isLocksPaymentAvailable(adapterMode)
               ? 'After checkout, approve the Bitcoin payment in your wallet. Your content unlocks once payment is confirmed. Your wallet keys stay private.'
               : 'Purchases of this digital item are unavailable here.'}
           </Typography>

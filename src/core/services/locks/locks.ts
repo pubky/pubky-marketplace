@@ -42,6 +42,18 @@ type LocksSdkModule = typeof import('@synonymdev/locks-sdk');
  * drift risk the SDK would otherwise eliminate.
  */
 
+/** A store without its own Lock Server has none to call (see `isLocksPaymentAvailable`). */
+function lockServerUrl(operation: string): string {
+  const url = getLocksUrl();
+  if (url === null) {
+    throw Err.server(ServerErrorCode.SERVICE_UNAVAILABLE, 'This store has no Lock Server.', {
+      service: ErrorService.Locks,
+      operation,
+    });
+  }
+  return url;
+}
+
 const lifecycleSchema = z.object({
   creator: z.string().min(1),
   bundle_id: z.string().min(1).max(128),
@@ -206,7 +218,7 @@ export class LocksGatewayService {
         context: { ownerMatches: false },
       });
     }
-    const url = `${getLocksUrl()}/proof-bundles`;
+    const url = `${lockServerUrl('submitPaykitProof')}/proof-bundles`;
     const lifecycle = await this.postLifecycle(url, {
       submitted_proof_bundle: {
         version: 1,
@@ -234,7 +246,7 @@ export class LocksGatewayService {
   }
 
   static async lookupVerification(creatorPubky: string, bundleId: string): Promise<LocksVerificationLifecycle> {
-    const url = `${getLocksUrl()}/verification-task-lookups`;
+    const url = `${lockServerUrl('lookupVerification')}/verification-task-lookups`;
     return await this.postLifecycle(url, {
       creator: withPubkyPrefix(creatorPubky),
       bundle_id: bundleId,
@@ -247,7 +259,7 @@ export class LocksGatewayService {
    * reached it, so the same bundle id can be submitted without a second task.
    */
   static async findVerification(creatorPubky: string, bundleId: string): Promise<LocksVerificationLifecycle | null> {
-    const url = `${getLocksUrl()}/verification-task-lookups`;
+    const url = `${lockServerUrl('findVerification')}/verification-task-lookups`;
     return await this.postLifecycle(
       url,
       { creator: withPubkyPrefix(creatorPubky), bundle_id: bundleId },
@@ -256,7 +268,7 @@ export class LocksGatewayService {
   }
 
   static async issueAccessCredential(creatorPubky: string, bundleId: string): Promise<LocksAccessCredential> {
-    const url = `${getLocksUrl()}/access-credentials`;
+    const url = `${lockServerUrl('issueAccessCredential')}/access-credentials`;
     const response = await safeFetch(
       url,
       {
@@ -287,7 +299,7 @@ export class LocksGatewayService {
       .filter(Boolean)
       .map((segment) => encodeURIComponent(segment))
       .join('/');
-    const url = `${getLocksUrl()}/priv-resources/content/${safePath}`;
+    const url = `${lockServerUrl('fetchGuardedContent')}/priv-resources/content/${safePath}`;
     const response = await safeFetch(
       url,
       { method: 'GET', headers: { authorization: `Bearer ${credential}` } },
@@ -307,7 +319,7 @@ export class LocksGatewayService {
    * its seller.
    */
   static async createFrontendSession(code: string, state: string): Promise<LocksFrontendSession> {
-    const url = `${getLocksUrl()}/frontend-sessions`;
+    const url = `${lockServerUrl('createFrontendSession')}/frontend-sessions`;
     const response = await safeFetch(
       url,
       {

@@ -19,12 +19,13 @@ vi.mock('@synonymdev/locks-sdk', () => ({
 }));
 
 const paykitSetupConfig = vi.hoisted(() => ({ creatorParam: true, setupUrl: 'https://paykit.example.com/setup' }));
+const lockServer = vi.hoisted(() => ({ url: 'https://locks.example.com' as string | null }));
 
 vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
   return {
     ...actual,
-    getLocksUrl: () => 'https://locks.example.com',
+    getLocksUrl: () => lockServer.url,
     getPaykitSetupUrl: () => paykitSetupConfig.setupUrl,
     getPaykitSetupCreatorParam: () => paykitSetupConfig.creatorParam,
   };
@@ -215,6 +216,22 @@ describe('LocksGatewayService', () => {
     expect(vi.mocked(fetch).mock.calls[0][0]).toBe('https://locks.example.com/verification-task-lookups');
     expect(vi.mocked(fetch).mock.calls[1][0]).toBe('https://locks.example.com/access-credentials');
     expect(vi.mocked(fetch).mock.calls.flatMap((call) => String(call[0]))).not.toContain(BUNDLE_ID);
+  });
+
+  it('calls no Lock Server in a store that runs none', async () => {
+    lockServer.url = null;
+    try {
+      await expect(LocksGatewayService.lookupVerification(CREATOR, BUNDLE_ID)).rejects.toMatchObject({
+        code: 'SERVICE_UNAVAILABLE',
+        message: 'This store has no Lock Server.',
+      });
+      await expect(LocksGatewayService.issueAccessCredential(CREATOR, BUNDLE_ID)).rejects.toMatchObject({
+        code: 'SERVICE_UNAVAILABLE',
+      });
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      lockServer.url = 'https://locks.example.com';
+    }
   });
 
   // `p`, `u`, `b`, `k` and `y` are z-base-32 characters, so a bare id can start with `pubky`.

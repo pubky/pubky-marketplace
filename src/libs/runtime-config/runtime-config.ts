@@ -274,7 +274,8 @@ export const getMarketplaceNexusUrl = (): string =>
 export const getInboxUrl = (): string | null => getRuntimeConfig().inboxUrl ?? null;
 /** Audience the inbox expects in session proofs; defaults to the inbox URL. */
 export const getInboxAudience = (): string | null => getRuntimeConfig().inboxAudience ?? getInboxUrl();
-export const getLocksUrl = (): string => getRuntimeConfig().locksUrl;
+/** The Lock Server; `null` in a store that runs none. */
+export const getLocksUrl = (): string | null => getRuntimeConfig().locksUrl ?? null;
 export const getPaykitSetupUrl = (): string => getRuntimeConfig().paykitSetupUrl;
 export const getPaykitSetupCreatorParam = (): boolean => getRuntimeConfig().paykitSetupCreatorParam;
 export const getPaykitServerApi = (): PaykitServerApi => getRuntimeConfig().paykitServerApi;

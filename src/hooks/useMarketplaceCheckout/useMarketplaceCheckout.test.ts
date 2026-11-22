@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { MarketplaceCartItem } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
+import { LOCKS_UNAVAILABLE_CHECKOUT_COPY } from '@/libs/commerce/locks-payment';
 import { commerceListingShippingMinor } from '@/libs/commerce/marketplace-records';
 import { createCommerceSandboxCatalog } from '@/libs/commerce/sandbox-catalog';
 import { SHIPS_TO_UNAVAILABLE_MESSAGE } from '@/libs/commerce/ships-to';
@@ -16,6 +17,7 @@ import { useClientRegionStore } from '@/stores/client-region/client-region.store
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { createOrderFixture } from '@/test/fixtures/commerce/orders';
 import { resetRegionState, setRegionModes, stubClientRegion } from '@/test-utils/region-modes';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { useMarketplaceCheckout } from './useMarketplaceCheckout';
 
 const listing = createCommerceSandboxCatalog().listings.find(({ sale }) => sale.format === 'fixed_price')!;
@@ -184,6 +186,48 @@ describe('useMarketplaceCheckout', () => {
       eventIds: ['00000000-0000-4000-8000-000000001101'],
       result: { kind: 'checkout', orders: [{ id: '018f47d2-6a27-7c23-a49d-000000001200' }] },
     });
+  });
+
+  it('creates no checkout for a Locks item in a store that runs no Lock Server', async () => {
+    config.mode = 'locks-paykit';
+    setStoreSeller(listing.ownerPubky);
+    const locked: MarketplaceCartItem = {
+      ...item,
+      listing: {
+        ...item.listing,
+        record: {
+          ...item.listing.record,
+          fulfillmentMethods: ['digital'],
+          digitalLock: {
+            policyUri: `pubky://${listing.ownerPubky}/pub/locks.app/premium.json`,
+            criterionId: 'criterion-1',
+            contentPath: 'premium.txt',
+            resourceHash: 'b'.repeat(64),
+            minimumConfirmations: 6,
+          },
+        },
+      },
+    };
+    try {
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [locked],
+          vi.fn(async () => {}),
+        ),
+      );
+
+      let succeeded = true;
+      await act(async () => {
+        succeeded = (await result.current.pay('bitcoin')).ok;
+      });
+
+      expect(succeeded).toBe(false);
+      expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+      expect(vi.mocked(toast)).toHaveBeenCalledWith({ variant: 'error', description: LOCKS_UNAVAILABLE_CHECKOUT_COPY });
+    } finally {
+      setStoreSeller(undefined);
+      config.mode = 'sandbox';
+    }
   });
 
   it('does not create a checkout when a shipped seller has no delivery key', async () => {

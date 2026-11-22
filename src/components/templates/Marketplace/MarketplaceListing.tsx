@@ -25,7 +25,12 @@ import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
-import { getCommerceAdapterMode, isDurableCommerceMode, isTransactionalCommerceMode } from '@/config/commerce';
+import {
+  getCommerceAdapterMode,
+  isDurableCommerceMode,
+  isTransactionalCommerceMode,
+  sellsLocksItems,
+} from '@/config/commerce';
 import { isStoreMode } from '@/config/store-mode';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useCommerceFavorite } from '@/hooks/useCommerceFavorite/useCommerceFavorite';
@@ -340,6 +345,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const listingSoldOut = isSoldOut || everyOfferedVariantSoldOut(record.variants, soldOutVariants, madeToOrderVariants);
   const selectedMadeToOrder = selectedVariant !== undefined && madeToOrderVariants.has(selectedVariant.id);
   const isPurchasable = record.state === 'active';
+  const locksItemUnavailable = record.digitalLock !== undefined && !sellsLocksItems(adapterMode);
   const availabilityPending = isDurable && negotiation.isLoading;
   const availabilityNeedsSession = isDurable && negotiation.needsSession;
   // Without a session the projection is unreadable, so another buyer's hold
@@ -608,6 +614,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                       className="w-fit rounded-full"
                       disabled={
                         regionBlocked ||
+                        locksItemUnavailable ||
                         (availabilityNeedsSession
                           ? isOwner ||
                             adapterMode === 'unavailable' ||

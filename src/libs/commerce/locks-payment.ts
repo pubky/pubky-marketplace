@@ -83,24 +83,31 @@ export function lockPolicyCreator(policyUri: string): string | null {
  *   page then starts the Locks payment (`beginMarketplaceLocksPayment`) and
  *   `payment.register_locks` hands the payment to the Locks adapter.
  * - `mixed`: Locks and other lines together; refused, never partly bound.
+ * - `unavailable`: a Locks line where `sellsLocksItems` is false (a store
+ *   without Locks payments); refused, in every mode.
  * - `method`: anything else, and every checkout in the other modes, which
  *   bind the chosen method as before.
  */
-export type LocksCheckoutRoute = 'locks' | 'mixed' | 'method';
+export type LocksCheckoutRoute = 'locks' | 'mixed' | 'unavailable' | 'method';
 
 export function locksCheckoutRoute(
   mode: CommerceAdapterMode,
   paykitServerApi: PaykitServerApi,
   items: ReadonlyArray<{ listing: { record: { digitalLock?: unknown } } }>,
+  sellsLocksItems: boolean,
 ): LocksCheckoutRoute {
-  if (mode !== 'locks-paykit' || paykitServerApi !== 'upstream' || items.length === 0) return 'method';
   const locked = items.filter((item) => item.listing.record.digitalLock !== undefined).length;
   if (locked === 0) return 'method';
+  if (!sellsLocksItems) return 'unavailable';
+  if (mode !== 'locks-paykit' || paykitServerApi !== 'upstream') return 'method';
   return locked === items.length ? 'locks' : 'mixed';
 }
 
 export const LOCKS_MIXED_CHECKOUT_COPY =
   'Check out digital items unlocked through Locks on their own, apart from other items.';
+
+export const LOCKS_UNAVAILABLE_CHECKOUT_COPY =
+  'This shop does not sell items unlocked through Locks. Remove them from your cart to pay.';
 
 /**
  * The payment states a buyer is shown. This is the whole vocabulary on

@@ -7,9 +7,11 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import { getMarketplaceOrderViewRoute } from '@/libs/commerce/activity-links';
 import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import { LOCKS_UNAVAILABLE_CHECKOUT_COPY } from '@/libs/commerce/locks-payment';
 import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
 import { createPaykitOrderFixture } from '@/test/fixtures/commerce/paykit-orders';
 import { setHeavySuiteBudgets } from '@/test-utils/load-budget';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { noZoneShipping } from '@/test-utils/zone-shipping';
 import { MarketplaceCheckout } from './MarketplaceCheckout';
 
@@ -1645,6 +1647,31 @@ describe('MarketplaceCheckout local pickup (Wave 7, §A2)', () => {
       'id',
       'checkout-pay-reason',
     );
+  });
+
+  it('blocks pay on a Locks item in a store that runs no Lock Server', () => {
+    view.adapterMode = 'locks-paykit';
+    view.hasMarketplaceSession = true;
+    view.items = [
+      {
+        id: 'seller:boots:variant_42',
+        listingId: listing.id,
+        variantId: 'variant_42',
+        quantity: 1,
+        listing: { ...listing, record: { ...listing.record, digitalLock: { policyUri: 'pubky://lock' } } },
+      },
+    ];
+    view.isLoading = false;
+    setStoreSeller(listing.record.ownerPubky);
+
+    try {
+      render(<MarketplaceCheckout />);
+
+      expect(screen.getByTestId('marketplace-checkout-pay')).toBeDisabled();
+      expect(screen.getByText(LOCKS_UNAVAILABLE_CHECKOUT_COPY)).toHaveAttribute('id', 'checkout-pay-reason');
+    } finally {
+      setStoreSeller(undefined);
+    }
   });
 
   it('shows a skeleton instead of pickup or conflict copy while pickup capability is loading', () => {

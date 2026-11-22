@@ -60,15 +60,22 @@ describe('locksCheckoutRoute', () => {
   const plain = { listing: { record: {} } };
 
   it('routes an all-Locks cart to Locks only in locks-paykit mode on upstream Paykit', () => {
-    expect(locksCheckoutRoute('locks-paykit', 'upstream', [locked, locked])).toBe('locks');
-    expect(locksCheckoutRoute('locks-paykit', 'fork', [locked])).toBe('method');
-    expect(locksCheckoutRoute('transaction-service', 'upstream', [locked])).toBe('method');
+    expect(locksCheckoutRoute('locks-paykit', 'upstream', [locked, locked], true)).toBe('locks');
+    expect(locksCheckoutRoute('locks-paykit', 'fork', [locked], true)).toBe('method');
+    expect(locksCheckoutRoute('transaction-service', 'upstream', [locked], true)).toBe('method');
   });
 
   it('marks a mixed cart and leaves a cart without Locks lines on the method flow', () => {
-    expect(locksCheckoutRoute('locks-paykit', 'upstream', [locked, plain])).toBe('mixed');
-    expect(locksCheckoutRoute('locks-paykit', 'upstream', [plain])).toBe('method');
-    expect(locksCheckoutRoute('locks-paykit', 'upstream', [])).toBe('method');
+    expect(locksCheckoutRoute('locks-paykit', 'upstream', [locked, plain], true)).toBe('mixed');
+    expect(locksCheckoutRoute('locks-paykit', 'upstream', [plain], true)).toBe('method');
+    expect(locksCheckoutRoute('locks-paykit', 'upstream', [], true)).toBe('method');
+  });
+
+  it('refuses any cart with a Locks line where Locks items are not sold, in every mode', () => {
+    expect(locksCheckoutRoute('locks-paykit', 'upstream', [locked], false)).toBe('unavailable');
+    expect(locksCheckoutRoute('locks-paykit', 'upstream', [locked, plain], false)).toBe('unavailable');
+    expect(locksCheckoutRoute('transaction-service', 'fork', [locked], false)).toBe('unavailable');
+    expect(locksCheckoutRoute('locks-paykit', 'upstream', [plain], false)).toBe('method');
   });
 });
 

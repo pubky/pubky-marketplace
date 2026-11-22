@@ -5,6 +5,7 @@ import { CAPABILITIES } from '@/config/app';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { CHECKOUT_HOLD_COPY } from '@/libs/commerce/checkout-hold';
 import { getMarketplaceOfferCheckoutRoute } from '@/libs/commerce/checkout-phase';
+import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
 import type { CommerceReputationSnippet } from '@/models/commerce/commerce.schema';
 import type { MarketplaceOffer } from '@/services/marketplace/marketplace';
 import type { GrantSigner } from '@/stores/auth/auth.types';
@@ -44,7 +45,7 @@ const sessionState = vi.hoisted(() => ({
 }));
 
 const view = vi.hoisted(() => ({
-  adapterMode: 'transaction-service' as 'transaction-service' | 'sandbox',
+  adapterMode: 'transaction-service' as 'transaction-service' | 'sandbox' | 'locks-paykit',
   listing: null as ReturnType<typeof toCommerceListingModel> | null,
   shop: null as ReturnType<typeof toCommerceShopModel> | null,
   projection: null as ReturnType<typeof createListingProjectionFixture> | null,
@@ -763,6 +764,53 @@ describe('MarketplaceListing', () => {
     expect(screen.queryByText('Ships from')).not.toBeInTheDocument();
     expect(screen.queryByText('Pickup location')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
+  });
+
+  describe('a Locks listing in a store', () => {
+    const LOCKS_URL_ENV = PUBKY_RUNTIME_ENV_NAMES.locksUrl;
+
+    beforeEach(() => {
+      view.adapterMode = 'locks-paykit';
+      view.projection = null;
+      view.projectionError = 'A marketplace session is required.';
+      view.needsSession = true;
+      view.listing = toCommerceListingModel(
+        createCommerceListingFixture({
+          fulfillmentMethods: ['digital'],
+          package: undefined,
+          shippingOptions: [],
+          digitalLock: {
+            policyUri: LOCKS_POLICY_URL,
+            criterionId: 'criterion-1',
+            contentPath: 'premium.txt',
+            resourceHash: 'b'.repeat(64),
+            minimumConfirmations: 6,
+          },
+        }),
+      );
+      setStoreSeller(COMMERCE_FIXTURE_SELLER);
+    });
+
+    afterEach(() => {
+      delete process.env[LOCKS_URL_ENV];
+      setStoreSeller(undefined);
+    });
+
+    it('cannot be bought where the store runs no Lock Server', () => {
+      renderListing();
+
+      expect(screen.getByRole('button', { name: 'Buy' })).toBeDisabled();
+      expect(screen.getByText('Purchases of this digital item are unavailable here.')).toBeInTheDocument();
+    });
+
+    it("can be bought through the store's own Lock Server", () => {
+      process.env[LOCKS_URL_ENV] = 'https://locks.store.example';
+      setStoreSeller(COMMERCE_FIXTURE_SELLER);
+      renderListing();
+
+      expect(screen.getByRole('button', { name: 'Buy' })).toBeEnabled();
+      expect(screen.getByText(/approve the Bitcoin payment in your wallet/)).toBeInTheDocument();
+    });
   });
 
   it('offers Make offer on a pickup-only Buy-now listing that accepts offers', () => {
