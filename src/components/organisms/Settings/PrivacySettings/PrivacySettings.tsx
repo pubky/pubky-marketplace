@@ -1,6 +1,7 @@
 'use client';
 
 import { Typography } from '@/atoms/Typography/Typography';
+import { isStoreMode } from '@/config/store-mode';
 import { useSettingsActions } from '@/hooks/useSettingsActions/useSettingsActions';
 import { SettingsSwitchGroup } from '@/molecules/Settings/SettingsSwitchGroup/SettingsSwitchGroup';
 import { SettingsSwitchItem } from '@/molecules/Settings/SettingsSwitchItem/SettingsSwitchItem';
@@ -16,21 +17,24 @@ export function PrivacySettings() {
 
   return (
     <>
-      <SettingsSwitchGroup>
-        {privacyTypes.map((type) => {
-          const { label, action, disabled } = PRIVACY_SETTINGS[type];
-          return (
-            <SettingsSwitchItem
-              key={type}
-              id={`privacy-switch-${type}`}
-              label={label}
-              checked={privacy[type]}
-              onChange={actions[action]}
-              disabled={disabled}
-            />
-          );
-        })}
-      </SettingsSwitchGroup>
+      {/* These switches govern posts, profiles and link previews, which a store does not show. */}
+      {!isStoreMode() && (
+        <SettingsSwitchGroup>
+          {privacyTypes.map((type) => {
+            const { label, action, disabled } = PRIVACY_SETTINGS[type];
+            return (
+              <SettingsSwitchItem
+                key={type}
+                id={`privacy-switch-${type}`}
+                label={label}
+                checked={privacy[type]}
+                onChange={actions[action]}
+                disabled={disabled}
+              />
+            );
+          })}
+        </SettingsSwitchGroup>
+      )}
       <Typography as="p" size="sm" overrideDefaults className="text-sm leading-5 font-medium text-secondary-foreground">
         {SELLER_FOLLOW_NOTICE}
       </Typography>

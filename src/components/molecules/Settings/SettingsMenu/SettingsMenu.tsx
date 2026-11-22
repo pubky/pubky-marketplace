@@ -11,17 +11,19 @@ import {
   FilterList,
   FilterRoot,
 } from '@/atoms/Filter/Filter';
+import { useStoreLinkServed } from '@/hooks/useStoreLinkServed/useStoreLinkServed';
 import { SETTINGS_MENU_ITEMS } from './SettingsMenu.constants';
 
 export function SettingsMenu() {
   const pathname = usePathname();
+  const isLinkServed = useStoreLinkServed();
 
   return (
     <FilterRoot>
       <FilterHeader title={'Settings'} />
 
       <FilterList>
-        {SETTINGS_MENU_ITEMS.map((item) => {
+        {SETTINGS_MENU_ITEMS.filter((item) => isLinkServed(item.path)).map((item) => {
           const Icon = item.icon;
           const isSelected = pathname
             ? isNavItemActive(pathname, { href: item.path, activePrefix: item.activePrefix })

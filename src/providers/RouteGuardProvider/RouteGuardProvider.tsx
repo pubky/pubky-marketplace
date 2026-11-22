@@ -9,7 +9,7 @@ import {
   matchesAllowedRoute,
   PUBLIC_ROUTES,
 } from '@/app/routes';
-import { isStoreSellerViewerRoute } from '@/app/store-route-policy';
+import { isStoreRouteOpenToViewer } from '@/app/store-route-policy';
 import { Spinner } from '@/atoms/Spinner/Spinner';
 import { getStoreSeller } from '@/config/store-mode';
 import { AuthController } from '@/controllers/auth/auth';
@@ -276,14 +276,14 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
     }
   }, [status, pathname, router, isLoading, isRouteAccessible]);
 
-  // A store's selling tools exist only for the store seller; the proxy cannot see who is signed in.
+  // A store's selling tools exist only for the store seller, and a buyer's only conversation is with
+  // the store seller; the proxy cannot see who is signed in.
   const storeSeller = getStoreSeller();
   if (
     storeSeller !== null &&
     status === AuthStatus.AUTHENTICATED &&
     !isLoading &&
-    currentUserPubky !== storeSeller &&
-    isStoreSellerViewerRoute(pathname)
+    !isStoreRouteOpenToViewer(pathname, storeSeller, currentUserPubky ?? null)
   ) {
     return <NotFound />;
   }

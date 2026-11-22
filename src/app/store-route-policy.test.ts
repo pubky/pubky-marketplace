@@ -4,7 +4,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   decideStoreRoute,
-  isStoreSellerViewerRoute,
+  isStoreLinkServed,
+  isStoreRouteOpenToViewer,
   matchStoreRoute,
   STORE_NOT_FOUND_PATHNAME,
   STORE_PAGE_POLICY,
@@ -164,6 +165,8 @@ describe('decideStoreRoute', () => {
     '/marketplace/sandbox',
     '/copyright',
     '/sentry-test',
+    '/settings/muted-users',
+    '/settings/notifications',
   ])('hides the Market browse, social or hosted-Market page %s', (pathname) => {
     expect(decide(pathname)).toBe('not-found');
   });
@@ -186,7 +189,7 @@ describe('decideStoreRoute', () => {
     'leaves the selling tool %s to the route guard',
     (pathname) => {
       expect(decide(pathname)).toBe('allow');
-      expect(isStoreSellerViewerRoute(pathname)).toBe(true);
+      expect(isStoreRouteOpenToViewer(pathname, STORE_SELLER, OTHER_SELLER)).toBe(false);
     },
   );
 
@@ -247,13 +250,45 @@ describe('decideStoreRoute', () => {
   });
 });
 
-describe('isStoreSellerViewerRoute', () => {
-  it('is true only for selling tools', () => {
-    expect(isStoreSellerViewerRoute(`/marketplace/listing/${STORE_SELLER}/1/edit`)).toBe(true);
-    expect(isStoreSellerViewerRoute('/marketplace/settings/shipping')).toBe(true);
-    expect(isStoreSellerViewerRoute(`/marketplace/shop/${STORE_SELLER}`)).toBe(false);
-    expect(isStoreSellerViewerRoute('/marketplace/cart')).toBe(false);
-    expect(isStoreSellerViewerRoute('/hot')).toBe(false);
-    expect(isStoreSellerViewerRoute('/not-a-page')).toBe(false);
+describe('isStoreRouteOpenToViewer', () => {
+  it('keeps selling tools to the store seller', () => {
+    for (const pathname of [`/marketplace/listing/${STORE_SELLER}/1/edit`, '/marketplace/settings/shipping']) {
+      expect(isStoreRouteOpenToViewer(pathname, STORE_SELLER, STORE_SELLER)).toBe(true);
+      expect(isStoreRouteOpenToViewer(pathname, STORE_SELLER, OTHER_SELLER)).toBe(false);
+      expect(isStoreRouteOpenToViewer(pathname, STORE_SELLER, null)).toBe(false);
+    }
+  });
+
+  it('opens a conversation with the store seller to anyone, and any conversation to the store seller', () => {
+    expect(isStoreRouteOpenToViewer(`/messages/${STORE_SELLER}`, STORE_SELLER, OTHER_SELLER)).toBe(true);
+    expect(isStoreRouteOpenToViewer(`/messages/${OTHER_SELLER}`, STORE_SELLER, STORE_SELLER)).toBe(true);
+    expect(isStoreRouteOpenToViewer(`/messages/${'c'.repeat(52)}`, STORE_SELLER, OTHER_SELLER)).toBe(false);
+  });
+
+  it('leaves other pages to the proxy', () => {
+    expect(isStoreRouteOpenToViewer(`/marketplace/shop/${STORE_SELLER}`, STORE_SELLER, OTHER_SELLER)).toBe(true);
+    expect(isStoreRouteOpenToViewer('/marketplace/cart', STORE_SELLER, null)).toBe(true);
+    expect(isStoreRouteOpenToViewer('/messages', STORE_SELLER, OTHER_SELLER)).toBe(true);
+  });
+});
+
+describe('isStoreLinkServed', () => {
+  it('drops links to pages a store does not serve', () => {
+    expect(isStoreLinkServed('/home', STORE_SELLER, null)).toBe(false);
+    expect(isStoreLinkServed('/profile', STORE_SELLER, OTHER_SELLER)).toBe(false);
+    expect(isStoreLinkServed('/settings/muted-users', STORE_SELLER, OTHER_SELLER)).toBe(false);
+    expect(isStoreLinkServed(`/marketplace/shop/${OTHER_SELLER}?tab=reviews`, STORE_SELLER, null)).toBe(false);
+  });
+
+  it('keeps links the store serves for this viewer, ignoring query and hash', () => {
+    expect(isStoreLinkServed('/marketplace', STORE_SELLER, null)).toBe(true);
+    expect(isStoreLinkServed('/marketplace/orders#latest', STORE_SELLER, OTHER_SELLER)).toBe(true);
+    expect(isStoreLinkServed('/marketplace/dashboard', STORE_SELLER, STORE_SELLER)).toBe(true);
+    expect(isStoreLinkServed('/marketplace/dashboard', STORE_SELLER, OTHER_SELLER)).toBe(false);
+  });
+
+  it('leaves links off the site alone', () => {
+    expect(isStoreLinkServed('https://pubky.app/home', STORE_SELLER, null)).toBe(true);
+    expect(isStoreLinkServed('//example.com/x', STORE_SELLER, null)).toBe(true);
   });
 });

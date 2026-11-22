@@ -8,4 +8,6 @@ export const FAQ_QUESTIONS = [
   'How is Pubky different from other social platforms?',
 ] as const;
 
+export const STORE_FAQ_QUESTIONS = ['How can I restore my account?'] as const;
+
 export const COPYRIGHT_TEXT = `© ${new Date().getFullYear()} ${LEGAL_ENTITY_NAME}`;

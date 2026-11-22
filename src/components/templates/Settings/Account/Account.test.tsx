@@ -2,6 +2,7 @@ import { act, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SIGN_OUT_COPY } from '@/hooks/useSignOutCopy/useSignOutCopy';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { Account } from './Account';
 
@@ -64,5 +65,18 @@ describe('Account sign-out copy', () => {
     expect(screen.getByText(SIGN_OUT_COPY.grant)).toBeInTheDocument();
     expect(SIGN_OUT_COPY.grant).toContain('pubky.app is not signed out');
     expect(screen.queryByText(SIGN_OUT_COPY.host)).not.toBeInTheDocument();
+  });
+});
+
+describe('Account in store mode', () => {
+  afterEach(() => setStoreSeller(undefined));
+
+  it('offers no account deletion or backup', () => {
+    setStoreSeller('s'.repeat(52));
+    render(<Account />);
+
+    expect(screen.getByText('Edit your profile')).toBeInTheDocument();
+    expect(screen.queryByText('Delete your account')).not.toBeInTheDocument();
+    expect(screen.queryByText('Backup your account')).not.toBeInTheDocument();
   });
 });

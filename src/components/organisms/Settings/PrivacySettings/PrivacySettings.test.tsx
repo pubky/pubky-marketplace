@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultPrivacyPreferences } from '@/stores/settings/settings.types';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { PrivacySettings } from './PrivacySettings';
 import { SELLER_FOLLOW_NOTICE } from './PrivacySettings.constants';
 
@@ -110,5 +111,18 @@ describe('PrivacySettings', () => {
     fireEvent.click(confirmSwitch!);
 
     expect(mockSetShowConfirm).toHaveBeenCalledWith(true);
+  });
+});
+
+describe('PrivacySettings in store mode', () => {
+  afterEach(() => setStoreSeller(undefined));
+
+  it('keeps the seller-follow notice without the social switches', () => {
+    setStoreSeller('s'.repeat(52));
+    const { container } = render(<PrivacySettings />);
+
+    expect(screen.getByText(SELLER_FOLLOW_NOTICE)).toBeInTheDocument();
+    expect(container.querySelector('#privacy-switch-showConfirm')).toBeNull();
+    expect(container.querySelector('#privacy-switch-blurCensored')).toBeNull();
   });
 });

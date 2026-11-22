@@ -6,6 +6,7 @@ import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Typography } from '@/atoms/Typography/Typography';
+import { isStoreMode } from '@/config/store-mode';
 import { DialogFeedback } from '@/organisms/DialogFeedback/DialogFeedback';
 import { DialogPrivacy } from '@/organisms/DialogPrivacy/DialogPrivacy';
 import { DialogTerms } from '@/organisms/DialogTerms/DialogTerms';
@@ -13,6 +14,8 @@ import { FAQAccordion } from '../../FAQAccordion/FAQAccordion';
 import type { FAQAccordionItem } from '../../FAQAccordion/FAQAccordion.types';
 import { SettingsDivider } from '../SettingsDivider/SettingsDivider';
 import { SUPPORT_LINKS } from './HelpContent.constants';
+
+const STORE_FAQ_SECTION_IDS = new Set(['onboarding', 'backup']);
 
 export function HelpContent() {
   const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
@@ -124,6 +127,12 @@ export function HelpContent() {
       ] as FAQAccordionItem[],
     },
   ];
+  // A store has no posts, follows or Pubky App features to explain, and no support desk to send
+  // feedback to (`/api/feedback`).
+  const storeMode = isStoreMode();
+  const visibleFaqSections = storeMode
+    ? faqSections.filter((section) => STORE_FAQ_SECTION_IDS.has(section.id))
+    : faqSections;
   return (
     <Container overrideDefaults className="flex w-full flex-col items-start gap-10">
       {/* FAQ Section */}
@@ -139,7 +148,7 @@ export function HelpContent() {
         </Typography>
 
         <Container overrideDefaults className="flex w-full flex-col items-start gap-6">
-          {faqSections.map((section) => (
+          {visibleFaqSections.map((section) => (
             <Container key={section.id} overrideDefaults className="flex w-full flex-col items-start gap-6">
               <Heading level={4} size="md" className="leading-7 font-bold">
                 {section.title}
@@ -153,25 +162,29 @@ export function HelpContent() {
       <SettingsDivider />
 
       {/* Feedback Section - Mobile only (hidden on lg screens where sidebar is visible) */}
-      <Container overrideDefaults className="flex w-full flex-col items-start gap-6 lg:hidden">
-        <Container overrideDefaults className="inline-flex items-center gap-3">
-          <MessageSquare size={24} />
-          <Heading level={2} size="lg" className="leading-8">
-            {'Feedback'}
-          </Heading>
-        </Container>
-        <Typography as="p" overrideDefaults className="text-base leading-6 font-medium text-secondary-foreground">
-          {"We'd love to hear your thoughts on Pubky. Share your feedback with us!"}
-        </Typography>
-        <Button id="feedback-btn" variant="secondary" size="default" onClick={handleFeedbackClick}>
-          <Send size={16} />
-          {'Send feedback'}
-        </Button>
-      </Container>
+      {!storeMode && (
+        <>
+          <Container overrideDefaults className="flex w-full flex-col items-start gap-6 lg:hidden">
+            <Container overrideDefaults className="inline-flex items-center gap-3">
+              <MessageSquare size={24} />
+              <Heading level={2} size="lg" className="leading-8">
+                {'Feedback'}
+              </Heading>
+            </Container>
+            <Typography as="p" overrideDefaults className="text-base leading-6 font-medium text-secondary-foreground">
+              {"We'd love to hear your thoughts on Pubky. Share your feedback with us!"}
+            </Typography>
+            <Button id="feedback-btn" variant="secondary" size="default" onClick={handleFeedbackClick}>
+              <Send size={16} />
+              {'Send feedback'}
+            </Button>
+          </Container>
 
-      <Container overrideDefaults className="w-full lg:hidden">
-        <SettingsDivider />
-      </Container>
+          <Container overrideDefaults className="w-full lg:hidden">
+            <SettingsDivider />
+          </Container>
+        </>
+      )}
 
       {/* User Guide Section */}
       <Container overrideDefaults className="flex w-full flex-col items-start gap-6">

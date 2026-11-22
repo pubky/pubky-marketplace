@@ -385,7 +385,8 @@ export function useProfileForm(props: UseProfileFormProps): UseProfileFormReturn
         toast({
           title: 'Profile updated',
         });
-        router.push(PROFILE_ROUTES.PROFILE);
+        // A store serves no profile page.
+        router.push(isStoreMode() ? SETTINGS_ROUTES.ACCOUNT : PROFILE_ROUTES.PROFILE);
       }
     } catch (error) {
       const sizeLimitMessage = getImageUploadSizeLimitToastMessage(error);

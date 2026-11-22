@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import { isNavItemActive } from '@/app/routes';
+import { useStoreLinkServed } from '@/hooks/useStoreLinkServed/useStoreLinkServed';
 import { MobileTabBar } from '../../MobileTabBar/MobileTabBar';
 import type { MobileTabBarItem } from '../../MobileTabBar/MobileTabBar.types';
 import { SETTINGS_MOBILE_ITEMS } from './SettingsMobileMenu.constants';
@@ -24,8 +25,9 @@ import { SETTINGS_MOBILE_ITEMS } from './SettingsMobileMenu.constants';
 export function SettingsMobileMenu() {
   const pathname = usePathname();
   const router = useRouter();
+  const isLinkServed = useStoreLinkServed();
 
-  const items: MobileTabBarItem[] = SETTINGS_MOBILE_ITEMS.map((item) => ({
+  const items: MobileTabBarItem[] = SETTINGS_MOBILE_ITEMS.filter((item) => isLinkServed(item.path)).map((item) => ({
     key: item.path,
     icon: item.icon,
     label: item.label,

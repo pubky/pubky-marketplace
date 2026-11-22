@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SETTINGS_ROUTES } from '@/app/routes';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { SettingsMobileMenu } from './SettingsMobileMenu';
 
 // Mock next/navigation
@@ -38,5 +39,20 @@ describe('SettingsMobileMenu', () => {
     const root = container.firstChild as HTMLElement;
     expect(root).toHaveClass('fixed', 'top-(--header-height-settings)', 'right-0', 'left-0');
     expect(root).not.toHaveClass('sticky');
+  });
+
+  describe('store mode', () => {
+    afterEach(() => setStoreSeller(undefined));
+
+    it('leaves out muting and the social notification switches', () => {
+      setStoreSeller('s'.repeat(52));
+      render(<SettingsMobileMenu />);
+
+      expect(screen.getByLabelText('Account')).toBeInTheDocument();
+      expect(screen.getByLabelText('Privacy & Safety')).toBeInTheDocument();
+      expect(screen.getByLabelText('Help')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Notifications')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Muted Users')).not.toBeInTheDocument();
+    });
   });
 });

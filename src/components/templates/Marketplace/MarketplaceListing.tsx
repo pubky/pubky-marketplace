@@ -16,7 +16,7 @@ import {
   ShoppingCart,
   Store,
 } from 'lucide-react';
-import { APP_ROUTES, getMarketplaceShopRoute, MARKETPLACE_ROUTES } from '@/app/routes';
+import { getMarketplaceHomeRoute, getMarketplaceShopRoute, MARKETPLACE_ROUTES } from '@/app/routes';
 import { TagKind } from '@/application/tag/tag.types';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
@@ -278,8 +278,8 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
               : (error ?? 'This listing is no longer in the local marketplace catalog.')}
           </Typography>
           <Button asChild className="mt-6 rounded-full">
-            <Link href={APP_ROUTES.MARKETPLACE} overrideDefaults>
-              Back to market
+            <Link href={getMarketplaceHomeRoute()} overrideDefaults>
+              {isStoreMode() ? 'Back to shop' : 'Back to market'}
             </Link>
           </Button>
         </Container>
@@ -394,12 +394,12 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
         <MarketplaceSectionNav className="mb-0 after:h-16" />
         <div className="flex w-full items-center justify-between gap-2">
           <Link
-            href={APP_ROUTES.MARKETPLACE}
+            href={getMarketplaceHomeRoute()}
             overrideDefaults
             className="inline-flex w-fit items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="size-4" />
-            Back to results
+            {isStoreMode() ? 'Back to shop' : 'Back to results'}
           </Link>
           {cart.itemCount > 0 && (
             <Link
@@ -769,7 +769,8 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                     className="rounded-full"
                     dataTestId="marketplace-listing-message-seller"
                   />
-                  {!isOwner && (
+                  {/* Reports go to the hosted Market's support desk, which a store does not reach. */}
+                  {!isOwner && !isStoreMode() && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -784,7 +785,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                 </div>
               </CardContent>
             </Card>
-            {!isOwner && (
+            {!isOwner && !isStoreMode() && (
               <DialogReportPost open={reportOpen} onOpenChange={setReportOpen} listing={{ sellerPubky, listingId }} />
             )}
             <section aria-label="Fulfillment and listing information" className="flex min-w-0 flex-col gap-5">

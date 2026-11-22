@@ -11,6 +11,7 @@ import { useMarketplaceCartCount } from '@/hooks/useMarketplaceCartCount/useMark
 import { useMarketplaceNavAttention } from '@/hooks/useMarketplaceNavAttention/useMarketplaceNavAttention';
 import { setEmbedded } from '@/test-utils/embedded';
 import { setSocialHost } from '@/test-utils/social-host';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { MobileFooter } from './MobileFooter';
 
 const collectionsDiscoveryMock = vi.hoisted(() => ({
@@ -93,6 +94,7 @@ vi.mock('@/app/routes', async () => {
     },
     SETTINGS_ROUTES: {
       ACCOUNT: '/settings/account',
+      EDIT: '/settings/edit',
     },
     UNAUTHENTICATED_ROUTES: [],
     AUTHENTICATED_ROUTES: [],
@@ -328,6 +330,33 @@ describe('MobileFooter', () => {
     expect(screen.getByRole('menuitem', { name: 'Notifications' })).toHaveAttribute('href', '/profile');
     expect(screen.getByRole('menuitem', { name: 'Profile' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'My posts' })).toBeInTheDocument();
+  });
+
+  describe('store mode', () => {
+    afterEach(() => setStoreSeller(undefined));
+
+    it('keeps only the shop in the bar and store pages in the account menu', () => {
+      setStoreSeller('s'.repeat(52));
+      const adapterMode = vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
+      try {
+        render(<MobileFooter />);
+
+        expect(screen.getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual(['/marketplace']);
+        expect(screen.getByRole('link', { name: 'Shop' })).toBeInTheDocument();
+
+        fireEvent.pointerDown(screen.getByRole('button', { name: 'Account menu' }), { button: 0, ctrlKey: false });
+        expect(screen.getByRole('menuitem', { name: 'Edit profile' })).toHaveAttribute('href', '/settings/edit');
+        expect(screen.getByRole('menuitem', { name: 'Activity' })).toHaveAttribute(
+          'href',
+          '/marketplace/notifications',
+        );
+        expect(screen.getByRole('menuitem', { name: 'Messages' })).toHaveAttribute('href', '/messages');
+        expect(screen.getByRole('menuitem', { name: 'Settings' })).toHaveAttribute('href', '/settings/account');
+        expect(screen.queryByRole('menuitem', { name: 'My posts' })).not.toBeInTheDocument();
+      } finally {
+        adapterMode.mockRestore();
+      }
+    });
   });
 
   it('contains correct icons', () => {

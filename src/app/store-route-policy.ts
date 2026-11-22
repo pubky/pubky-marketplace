@@ -19,7 +19,9 @@ type StoreRouteScope =
   /** Selling tools; only the store seller, signed in, may use them. */
   | 'seller-viewer'
   /** The store seller's own record, edited by the store seller: `seller-path` and `seller-viewer`. */
-  | 'seller-path-and-viewer';
+  | 'seller-path-and-viewer'
+  /** A conversation in its `[pubky]` segment: a buyer's with the store seller, or any of the store seller's. */
+  | 'seller-peer-or-viewer';
 
 type StoreRoutePolicy =
   | { mode: 'both' }
@@ -32,6 +34,7 @@ const STORE_HOME: StoreRoutePolicy = { mode: 'store-scoped', scope: 'store-home'
 const SELLER_PATH: StoreRoutePolicy = { mode: 'store-scoped', scope: 'seller-path' };
 const SELLER_VIEWER: StoreRoutePolicy = { mode: 'store-scoped', scope: 'seller-viewer' };
 const SELLER_PATH_AND_VIEWER: StoreRoutePolicy = { mode: 'store-scoped', scope: 'seller-path-and-viewer' };
+const SELLER_PEER_OR_VIEWER: StoreRoutePolicy = { mode: 'store-scoped', scope: 'seller-peer-or-viewer' };
 
 /** The page folders under `src/app`, with route groups `(...)` and parallel slots `@...` as on disk. */
 export const STORE_PAGE_POLICY: Readonly<Record<string, StoreRoutePolicy>> = {
@@ -79,7 +82,7 @@ export const STORE_PAGE_POLICY: Readonly<Record<string, StoreRoutePolicy>> = {
   '/marketplace/storefront': SELLER_VIEWER,
   '/marketplace/watchlist': BOTH,
   '/messages': BOTH,
-  '/messages/[pubky]': BOTH,
+  '/messages/[pubky]': SELLER_PEER_OR_VIEWER,
   '/offline': BOTH,
   '/post/[userId]/[postId]': MARKETPLACE_ONLY,
   '/profile/(own)': MARKETPLACE_ONLY,
@@ -104,8 +107,9 @@ export const STORE_PAGE_POLICY: Readonly<Record<string, StoreRoutePolicy>> = {
   '/settings': BOTH,
   '/settings/account': BOTH,
   '/settings/help': BOTH,
-  '/settings/muted-users': BOTH,
-  '/settings/notifications': BOTH,
+  // Muting and these notification switches apply to social posts and follows, which a store has none of.
+  '/settings/muted-users': MARKETPLACE_ONLY,
+  '/settings/notifications': MARKETPLACE_ONLY,
   '/settings/privacy-safety': BOTH,
   '/share': MARKETPLACE_ONLY,
   '/who-to-follow': MARKETPLACE_ONLY,
@@ -292,7 +296,8 @@ function decidePage(
   if (policy.scope === 'seller-path' || policy.scope === 'seller-path-and-viewer') {
     return params.sellerPubky === storeSeller ? { kind: 'allow' } : { kind: 'not-found' };
   }
-  // `seller-viewer`: the viewer is known only in the browser; the route guard checks it.
+  // `seller-viewer` and `seller-peer-or-viewer`: the viewer is known only in the browser; the route
+  // guard checks it with `isStoreRouteOpenToViewer`.
   return { kind: 'allow' };
 }
 
@@ -317,10 +322,25 @@ export function decideStoreRoute(pathname: string, storeSeller: string): StoreRo
   return decidePage(page, storeSeller);
 }
 
-/** Whether a store lets only the store seller, signed in, open this path (selling tools). */
-export function isStoreSellerViewerRoute(pathname: string): boolean {
-  const policy = matchStoreRoute(pathname)?.policy;
-  return (
-    policy?.mode === 'store-scoped' && (policy.scope === 'seller-viewer' || policy.scope === 'seller-path-and-viewer')
-  );
+/**
+ * Whether this signed-in viewer (`null` while signed out) may open a path the proxy let through:
+ * selling tools are the store seller's, and a buyer's only conversation is with the store seller.
+ */
+export function isStoreRouteOpenToViewer(pathname: string, storeSeller: string, viewerPubky: string | null): boolean {
+  const route = matchStoreRoute(pathname);
+  if (route?.policy.mode !== 'store-scoped' || viewerPubky === storeSeller) return true;
+  if (route.policy.scope === 'seller-viewer' || route.policy.scope === 'seller-path-and-viewer') return false;
+  if (route.policy.scope === 'seller-peer-or-viewer') return route.params.pubky === storeSeller;
+  return true;
+}
+
+/**
+ * Whether a link to `href` leads somewhere in a store for this viewer, so a store can drop or retarget
+ * links to what it does not serve. Links off the site are left alone.
+ */
+export function isStoreLinkServed(href: string, storeSeller: string, viewerPubky: string | null): boolean {
+  if (!href.startsWith('/') || href.startsWith('//')) return true;
+  const pathname = href.split(/[?#]/, 1)[0] || '/';
+  if (decideStoreRoute(pathname, storeSeller).kind === 'not-found') return false;
+  return isStoreRouteOpenToViewer(pathname, storeSeller, viewerPubky);
 }
