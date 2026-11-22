@@ -63,6 +63,11 @@ import type { CommerceIndexedReview, CommerceListingProjectionModelSchema } from
 import type { Pubky } from '@/models/models.types';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import {
+  scopeListingRowsToStore,
+  scopeNotificationsToStore,
+  scopeSellerRowsToStore,
+} from '@/pipes/commerce/store-scope';
+import {
   canSellHere,
   withoutSalesNotificationsOutsideStoreSeller,
   withoutSalesOutsideStoreSeller,
@@ -1289,9 +1294,8 @@ export class CommerceController {
   }
 
   static async getMarketplaceOffers() {
-    const viewerPubky = this.getCurrentUserPubky();
-    const offers = await CommerceApplication.getMarketplaceOffers(viewerPubky);
-    return withoutSalesOutsideStoreSeller(offers, viewerPubky, getStoreSeller());
+    const offers = await CommerceApplication.getMarketplaceOffers(this.getCurrentUserPubky());
+    return scopeSellerRowsToStore(offers, getStoreSeller());
   }
 
   static async getMarketplaceNotifications() {
@@ -1299,19 +1303,23 @@ export class CommerceController {
   }
 
   /**
-   * The viewer's marketplace notifications; in a store, a viewer other than the store seller loses
-   * those about its own selling, which needs its orders and offers to resolve.
+   * The viewer's marketplace notifications; in a store, only those about the store seller's
+   * listings, drops, orders and offers, and none about the viewer's own selling unless it is the
+   * store seller, which needs the viewer's orders and offers to resolve.
    */
   private static async getScopedMarketplaceNotifications(viewerPubky: string) {
     const storeSeller = getStoreSeller();
-    if (canSellHere(viewerPubky, storeSeller))
-      return await CommerceApplication.getMarketplaceNotifications(viewerPubky);
+    if (storeSeller === null) return await CommerceApplication.getMarketplaceNotifications(viewerPubky);
     const [notifications, orders, offers] = await Promise.all([
       CommerceApplication.getMarketplaceNotifications(viewerPubky),
       CommerceApplication.getMarketplaceOrders(viewerPubky),
       CommerceApplication.getMarketplaceOffers(viewerPubky),
     ]);
-    return withoutSalesNotificationsOutsideStoreSeller(notifications, viewerPubky, storeSeller, { orders, offers });
+    const buyerSide = withoutSalesNotificationsOutsideStoreSeller(notifications, viewerPubky, storeSeller, {
+      orders,
+      offers,
+    });
+    return scopeNotificationsToStore(buyerSide, storeSeller, { orders, offers });
   }
 
   static async getMarketplaceNotificationPreferences() {
@@ -1402,10 +1410,8 @@ export class CommerceController {
   }
 
   static async getMarketplaceOrders() {
-    const viewerPubky = this.getCurrentUserPubky();
-    const orders = withoutSalesOutsideStoreSeller(
-      await CommerceApplication.getMarketplaceOrders(viewerPubky),
-      viewerPubky,
+    const orders = scopeSellerRowsToStore(
+      await CommerceApplication.getMarketplaceOrders(this.getCurrentUserPubky()),
       getStoreSeller(),
     );
     this.noteOrderListings(orders);
@@ -1982,7 +1988,10 @@ export class CommerceController {
   }
 
   static async getCartItems() {
-    return await CommerceApplication.getCartItems(this.getCurrentUserPubky());
+    return scopeListingRowsToStore(
+      await CommerceApplication.getCartItems(this.getCurrentUserPubky()),
+      getStoreSeller(),
+    );
   }
 
   static async commitUpsertCartItem(listingCompositeId: unknown, variantId: unknown, quantity: unknown): Promise<void> {
@@ -2089,7 +2098,10 @@ export class CommerceController {
   }
 
   static async getFavorites() {
-    return await CommerceApplication.getFavorites(this.getCurrentUserPubky());
+    return scopeListingRowsToStore(
+      await CommerceApplication.getFavorites(this.getCurrentUserPubky()),
+      getStoreSeller(),
+    );
   }
 
   static async commitCreateFavorite(listingCompositeId: unknown): Promise<void> {
@@ -2168,12 +2180,18 @@ export class CommerceController {
 
   static async getWatchAlerts() {
     if (!useAuthStore.getState().currentUserPubky) return [];
-    return await CommerceApplication.getWatchAlerts(this.getCurrentUserPubky());
+    return scopeListingRowsToStore(
+      await CommerceApplication.getWatchAlerts(this.getCurrentUserPubky()),
+      getStoreSeller(),
+    );
   }
 
   static async getWatchSnapshots() {
     if (!useAuthStore.getState().currentUserPubky) return [];
-    return await CommerceApplication.getWatchSnapshots(this.getCurrentUserPubky());
+    return scopeListingRowsToStore(
+      await CommerceApplication.getWatchSnapshots(this.getCurrentUserPubky()),
+      getStoreSeller(),
+    );
   }
 
   /**
