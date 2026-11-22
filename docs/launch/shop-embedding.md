@@ -16,6 +16,7 @@ App Shop navigation always opens the embedded Shop at `/shop`; there is no App e
 | `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY` | runtime | derived | Whether this origin's old storage names (`franky`, `auth-store`, ...) are the Shop's, so they are migrated. Unset means yes when `NEXT_PUBLIC_BASE_PATH` is empty and no when it is set. |
 | `PUBKY_RUNTIME_SHOP_PUBLIC_PATH` | runtime | unset | The path people use to reach the Shop when it is not the mount path: `/shop` when the App owns `/shop` and frames this build at `/shop-embed`. Share links, canonical and Open Graph URLs and structured data use it. Unset means the mount path. See [Who owns `/shop`](#who-owns-shop). |
 | `PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID` | runtime | `shop.pubky.app` | The client ID shown by signers for standalone Shop grant sign-in (`cid=` in the `signin_grant` link): a bare host name, no scheme, port or path. Hosted Shop restores the client ID supplied by App; this setting does not relabel App grants. |
+| `PUBKY_RUNTIME_STORE_SELLER` | runtime | unset | Store mode: one seller's store on the seller's own origin. Cannot be combined with `PUBKY_RUNTIME_EMBEDDED=true` or a build with `NEXT_PUBLIC_SOCIAL_HOST`; the server refuses to start. See [Store mode](../environment.md#store-mode-runtime). |
 
 `PUBKY_RUNTIME_DEFAULT_URL` stays the site **origin** (`https://pubky.app`). The public path (or mount path when no override is set) is appended where a public URL is built (canonical links, structured data, share links).
 

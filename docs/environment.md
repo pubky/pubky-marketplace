@@ -277,6 +277,15 @@ The Shop settings (`PUBKY_RUNTIME_REGION_MODES`, or the older `PUBKY_RUNTIME_EU_
 
 Framing, embedding and storage keys (`PUBKY_RUNTIME_FRAME_ANCESTORS`, `PUBKY_RUNTIME_EMBEDDED`, `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY`, `PUBKY_RUNTIME_SHOP_PUBLIC_PATH`, `PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID`) are described in [Framing and embedded mode](#framing-and-embedded-mode-runtime) and [`launch/shop-embedding.md`](launch/shop-embedding.md).
 
+### Store mode (runtime)
+
+`PUBKY_RUNTIME_STORE_SELLER` (unset by default) turns the Shop into one seller's store, served on the seller's own origin. Its value is the seller's pubky in z-base-32 (52 characters, no `pubky:` prefix). Read it through `getStoreSeller()` and `isStoreMode()` in `@/config/store-mode`. Unset, the Shop is the full Market and nothing below applies.
+
+- **Routes.** `src/app/store-route-policy.ts` classifies every page under `src/app` as `both` (served as in the Market: sign-in, cart, checkout, orders, offers, messages, notifications, settings), `marketplace-only` (global browse, search and drops, the social pages `(feeds)`, hot, post, profile, collections, who-to-follow and share) or `store-scoped`. `src/proxy.ts` applies it per request: `/` and `/marketplace` redirect (307) to the store seller's shop, other sellers' shops, listings and drops return 404, and so do `marketplace-only` pages and any path no page in the table serves. API routes, `/_next`, the listed route handlers and files with an extension pass through. A new page has no row until someone classifies it, so `store-route-policy.test.ts` fails and the store answers 404 for it.
+- **Selling tools.** Pages that only a seller uses (studio, sell, drops, storefront, payment, shipping and store-connection settings, the listing editor) are open only to the store seller. The proxy cannot see who is signed in, so the route guard shows the not-found screen to any other signed-in user; a guest is sent to sign in as before.
+- **HTTPS.** Sign-in needs a secure context. A store opened over plain `http://` on a host other than `localhost` shows "Open this store over HTTPS" with a link to the `https://` address instead of the app, and does not open the browser database.
+- **Rejected combinations.** Store mode with `PUBKY_RUNTIME_EMBEDDED=true` fails the config parse. Store mode in a build with `NEXT_PUBLIC_SOCIAL_HOST` set fails at startup too: social link-out sends the social routes and the buyer's sign-out to the social app, which a store does not link to. A deployed server refuses to start in both cases.
+
 ### Homeserver mute list sync
 
 Cross-session mute alignment uses the `@synonymdev/pubky` homeserver **event stream** (SSE). Debouncing uses a fixed delay in [`src/config/mute-sync.ts`](../src/config/mute-sync.ts) (`MUTE_SYNC_DEBOUNCE_MS`), not an environment variable.

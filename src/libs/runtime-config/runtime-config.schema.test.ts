@@ -627,6 +627,61 @@ describe('shop grant client id runtime value', () => {
   });
 });
 
+describe('store seller runtime value', () => {
+  const STORE_SELLER = 'ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u';
+
+  it('is unset by default, so the full Market runs', () => {
+    expect(runtimeEnvInputSchema.parse(VALID_ENV_INPUT).storeSeller).toBeUndefined();
+    expect(runtimeEnvInputSchemaWithDefaults.parse({}).storeSeller).toBeUndefined();
+    expect(runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, storeSeller: '  ' }).storeSeller).toBeUndefined();
+  });
+
+  it('parses a z-base-32 pubky, trimmed', () => {
+    expect(runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, storeSeller: ` ${STORE_SELLER} ` }).storeSeller).toBe(
+      STORE_SELLER,
+    );
+    expect(runtimeEnvInputSchemaWithDefaults.parse({ storeSeller: STORE_SELLER }).storeSeller).toBe(STORE_SELLER);
+  });
+
+  it.each([
+    ['a pubky: URI', `pubky:${STORE_SELLER}`],
+    ['upper case', STORE_SELLER.toUpperCase()],
+    ['a short key', STORE_SELLER.slice(1)],
+    ['a long key', `${STORE_SELLER}y`],
+    ['a character outside z-base-32', `${STORE_SELLER.slice(1)}l`],
+  ])('rejects %s', (_label, value) => {
+    expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, storeSeller: value })).toThrow();
+    expect(() => runtimeEnvInputSchemaWithDefaults.parse({ storeSeller: value })).toThrow();
+  });
+
+  it('rejects store mode in the embedded build', () => {
+    const strict = runtimeEnvInputSchema.safeParse({ ...VALID_ENV_INPUT, storeSeller: STORE_SELLER, embedded: 'true' });
+    expect(strict.success).toBe(false);
+    expect(strict.error?.issues).toEqual([
+      expect.objectContaining({
+        path: ['storeSeller'],
+        message: expect.stringContaining('cannot be combined with PUBKY_RUNTIME_EMBEDDED=true'),
+      }),
+    ]);
+    expect(() => runtimeEnvInputSchemaWithDefaults.parse({ storeSeller: STORE_SELLER, embedded: 'true' })).toThrow(
+      'PUBKY_RUNTIME_STORE_SELLER',
+    );
+  });
+
+  it('allows store mode with embedded mode off', () => {
+    expect(
+      runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, storeSeller: STORE_SELLER, embedded: 'false' }).storeSeller,
+    ).toBe(STORE_SELLER);
+  });
+
+  it('validates the parsed value schema too', () => {
+    const base = runtimeEnvInputSchema.parse(VALID_ENV_INPUT);
+    expect(runtimeConfigValueSchema.parse({ ...base, storeSeller: STORE_SELLER }).storeSeller).toBe(STORE_SELLER);
+    expect(() => runtimeConfigValueSchema.parse({ ...base, storeSeller: '' })).toThrow();
+    expect(() => runtimeConfigValueSchema.parse({ ...base, storeSeller: `pubky:${STORE_SELLER}` })).toThrow();
+  });
+});
+
 describe('readSentryEnvironment', () => {
   it('reads PUBKY_RUNTIME_SENTRY_ENVIRONMENT as the runtime resolver parses it', () => {
     const env = { PUBKY_RUNTIME_SENTRY_ENVIRONMENT: 'staging' };
