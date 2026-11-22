@@ -7,8 +7,8 @@ import {
   isStoreSellerViewerRoute,
   matchStoreRoute,
   STORE_NOT_FOUND_PATHNAME,
-  STORE_ROUTE_HANDLER_PATHS,
-  STORE_ROUTE_POLICY,
+  STORE_PAGE_POLICY,
+  STORE_ROUTE_HANDLER_POLICY,
   storeRouteUrlSegments,
 } from '@/app/store-route-policy';
 
@@ -33,24 +33,24 @@ function folderKey(file: string): string {
 const isTest = (file: string) => /\.test\.tsx?$/.test(file);
 const appFiles = filesUnder(APP_DIR).filter((file) => !isTest(file));
 const basename = (file: string) => path.posix.basename(file);
-const isOutsideApi = (file: string) => !file.startsWith('api/');
 
 describe('store route policy table', () => {
   it('has exactly one row per page under src/app', () => {
     const pages = appFiles.filter((file) => /^page\.tsx?$/.test(basename(file))).map(folderKey);
 
     expect(new Set(pages).size).toBe(pages.length);
-    expect(pages.filter((key) => !(key in STORE_ROUTE_POLICY))).toEqual([]);
-    expect(Object.keys(STORE_ROUTE_POLICY).filter((key) => !pages.includes(key))).toEqual([]);
+    expect(pages.filter((key) => !(key in STORE_PAGE_POLICY))).toEqual([]);
+    expect(Object.keys(STORE_PAGE_POLICY).filter((key) => !pages.includes(key))).toEqual([]);
   });
 
-  it('lists every route handler outside /api', () => {
-    const handlers = appFiles
-      .filter((file) => /^route\.tsx?$/.test(basename(file)) && isOutsideApi(file))
-      .map((file) => storeRouteUrlSegments(folderKey(file)))
-      .map((segments) => `/${segments?.join('/') ?? ''}`);
+  it('has exactly one row, with a reason, per route handler under src/app, /api included', () => {
+    const handlers = appFiles.filter((file) => /^route\.tsx?$/.test(basename(file))).map(folderKey);
 
-    expect(handlers.toSorted()).toEqual([...STORE_ROUTE_HANDLER_PATHS].toSorted());
+    expect(handlers.some((key) => key.startsWith('/api/'))).toBe(true);
+    expect(new Set(handlers).size).toBe(handlers.length);
+    expect(handlers.filter((key) => !(key in STORE_ROUTE_HANDLER_POLICY))).toEqual([]);
+    expect(Object.keys(STORE_ROUTE_HANDLER_POLICY).filter((key) => !handlers.includes(key))).toEqual([]);
+    expect(Object.values(STORE_ROUTE_HANDLER_POLICY).filter((row) => row.reason.trim().length < 20)).toEqual([]);
   });
 
   it('ties every Open Graph and Twitter image to a page in the table', () => {
@@ -59,7 +59,7 @@ describe('store route policy table', () => {
       .map(folderKey);
 
     expect(imageFolders.length).toBeGreaterThan(0);
-    expect(imageFolders.filter((key) => !(key in STORE_ROUTE_POLICY))).toEqual([]);
+    expect(imageFolders.filter((key) => !(key in STORE_PAGE_POLICY))).toEqual([]);
   });
 
   it('has no metadata route the policy does not cover', () => {
@@ -72,8 +72,8 @@ describe('store route policy table', () => {
     expect(uncovered).toEqual([]);
   });
 
-  it('gives no two pages the same URL', () => {
-    const urls = Object.keys(STORE_ROUTE_POLICY)
+  it('gives no two pages or route handlers the same URL', () => {
+    const urls = [...Object.keys(STORE_PAGE_POLICY), ...Object.keys(STORE_ROUTE_HANDLER_POLICY)]
       .map(storeRouteUrlSegments)
       .filter((segments) => segments !== null)
       .map((segments) => `/${segments.join('/')}`.replace(/\[[^\]]+\]/g, '[]'));
@@ -162,7 +162,9 @@ describe('decideStoreRoute', () => {
     '/share',
     '/marketplace/drops',
     '/marketplace/sandbox',
-  ])('hides the Market browse or social page %s', (pathname) => {
+    '/copyright',
+    '/sentry-test',
+  ])('hides the Market browse, social or hosted-Market page %s', (pathname) => {
     expect(decide(pathname)).toBe('not-found');
   });
 
@@ -193,12 +195,44 @@ describe('decideStoreRoute', () => {
     expect(decide('/marketplace/shop')).toBe('not-found');
   });
 
-  it('passes through API routes, build output, route handlers and files', () => {
-    expect(decide('/api')).toBe('allow');
-    expect(decide('/api/feedback')).toBe('allow');
+  it.each([
+    '/llms.txt',
+    '/api/sentry-test',
+    '/api/report',
+    '/api/feedback',
+    '/api/copyright',
+    '/api/og-metadata',
+    '/api/cli/grant-challenges',
+    '/api/cli/grant-flows/abc/claim',
+  ])('hides the hosted-Market route handler %s', (pathname) => {
+    expect(decide(pathname)).toBe('not-found');
+  });
+
+  it.each([
+    '/api/build',
+    '/api/fx-rate',
+    '/api/import-store',
+    '/api/import-image',
+    '/api/marketplace/health',
+    '/api/marketplace/session',
+    '/api/marketplace/client-region',
+    '/api/marketplace/grant-cleanup',
+    '/api/marketplace/grant-flows',
+    '/api/marketplace/grant-flows/abc/status',
+    '/api/marketplace/bootstrap-challenges/abc/verify',
+    '/auth/passport/return',
+  ])('serves the route handler %s', (pathname) => {
+    expect(decide(pathname)).toBe('allow');
+  });
+
+  it('hides API paths no route handler serves', () => {
+    expect(decide('/api')).toBe('not-found');
+    expect(decide('/api/not-a-handler')).toBe('not-found');
+    expect(decide('/api/marketplace')).toBe('not-found');
+  });
+
+  it('passes through build output and files', () => {
     expect(decide('/_next/data/build/x.json')).toBe('allow');
-    expect(decide('/auth/passport/return')).toBe('allow');
-    expect(decide('/llms.txt')).toBe('allow');
     expect(decide('/sw.js')).toBe('allow');
     expect(decide('/images/logo.png')).toBe('allow');
     expect(decide('/favicon.ico')).toBe('allow');

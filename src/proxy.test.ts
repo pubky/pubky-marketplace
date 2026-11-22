@@ -103,6 +103,11 @@ describe('proxy in store mode', () => {
     `/marketplace/listing/${OTHER_SELLER}/1`,
     `/marketplace/drop/${OTHER_SELLER}/1`,
     '/never-classified',
+    '/llms.txt',
+    '/api/feedback',
+    '/api/report',
+    '/api/sentry-test',
+    '/api/never-classified',
   ])('rewrites %s to the not-found page', (path) => {
     runtime.storeSeller = STORE_SELLER;
     const response = proxy(request(path));
@@ -116,7 +121,9 @@ describe('proxy in store mode', () => {
     `/marketplace/listing/${STORE_SELLER}/1`,
     '/marketplace/cart',
     '/sign-in',
-    '/api/feedback',
+    '/api/marketplace/session',
+    '/api/fx-rate',
+    '/auth/passport/return',
     '/favicon.ico',
   ])('lets %s through', (path) => {
     runtime.storeSeller = STORE_SELLER;

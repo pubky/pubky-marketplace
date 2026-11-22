@@ -1,12 +1,14 @@
 /**
- * Which pages a store-mode deployment (`PUBKY_RUNTIME_STORE_SELLER`, see `@/config/store-mode`)
- * serves. Every `page.tsx` under `src/app` has one row, keyed by its folder;
- * `store-route-policy.test.ts` fails on a page without a row, and at run time a store answers 404
- * for any path that matches no row, so a new page stays hidden in store mode until it is
- * classified here. Outside store mode this table changes nothing.
+ * Which pages and route handlers a store-mode deployment (`PUBKY_RUNTIME_STORE_SELLER`, see
+ * `@/config/store-mode`) serves. Every `page.tsx` and every `route.ts` under `src/app`, `/api`
+ * included, has one row, keyed by its folder; `store-route-policy.test.ts` fails on a file without
+ * a row, and at run time a store answers 404 for any path that matches no row, so a new page or
+ * handler stays hidden in store mode until it is classified here. Outside store mode these tables
+ * change nothing.
  *
  * - `both`: served as in the full Market.
- * - `marketplace-only`: the full Market's browse, search and social pages; 404 in a store.
+ * - `marketplace-only`: the full Market's browse, search and social pages, and what only the hosted
+ *   Market runs; 404 in a store.
  * - `store-scoped`: served only for the store seller, as `scope` says.
  */
 export type StoreRouteScope =
@@ -32,7 +34,7 @@ const SELLER_VIEWER: StoreRoutePolicy = { mode: 'store-scoped', scope: 'seller-v
 const SELLER_PATH_AND_VIEWER: StoreRoutePolicy = { mode: 'store-scoped', scope: 'seller-path-and-viewer' };
 
 /** The page folders under `src/app`, with route groups `(...)` and parallel slots `@...` as on disk. */
-export const STORE_ROUTE_POLICY: Readonly<Record<string, StoreRoutePolicy>> = {
+export const STORE_PAGE_POLICY: Readonly<Record<string, StoreRoutePolicy>> = {
   '/': STORE_HOME,
   '/(auth)/logout': BOTH,
   '/(auth)/sign-in': BOTH,
@@ -46,7 +48,8 @@ export const STORE_ROUTE_POLICY: Readonly<Record<string, StoreRoutePolicy>> = {
   '/collections/[userId]/[postId]': MARKETPLACE_ONLY,
   '/collections/bookmarks': MARKETPLACE_ONLY,
   '/complete-profile': BOTH,
-  '/copyright': BOTH,
+  // Its form files notices with the hosted Market's support desk (`/api/copyright`).
+  '/copyright': MARKETPLACE_ONLY,
   '/hot': MARKETPLACE_ONLY,
   '/marketplace': STORE_HOME,
   '/marketplace/award-checkout': BOTH,
@@ -97,7 +100,7 @@ export const STORE_ROUTE_POLICY: Readonly<Record<string, StoreRoutePolicy>> = {
   '/profile/[pubky]/profile': MARKETPLACE_ONLY,
   '/profile/[pubky]/replies': MARKETPLACE_ONLY,
   '/profile/[pubky]/tagged': MARKETPLACE_ONLY,
-  '/sentry-test': BOTH,
+  '/sentry-test': MARKETPLACE_ONLY,
   '/settings': BOTH,
   '/settings/account': BOTH,
   '/settings/help': BOTH,
@@ -108,16 +111,77 @@ export const STORE_ROUTE_POLICY: Readonly<Record<string, StoreRoutePolicy>> = {
   '/who-to-follow': MARKETPLACE_ONLY,
 };
 
-/**
- * Route handlers outside `/api` that answer at a page-like path. `store-route-policy.test.ts`
- * fails on any other `route.ts` outside `src/app/api`.
- */
-export const STORE_ROUTE_HANDLER_PATHS: readonly string[] = ['/auth/passport/return', '/llms.txt'];
+export type StoreRouteHandlerRow = { policy: StoreRoutePolicy; reason: string };
+
+const GRANT_BFF = 'Marketplace grant BFF: sign-in and selling approvals for the store seller and buyers.';
+const CLI_GRANT =
+  'Headless marketplace grant for CLI tools (`SHOP_BFF_CLI_GRANT_ENABLED`); no store client uses it, and a store signs in through the browser grant flow.';
+const STUDIO_IMPORT =
+  "The store seller's studio inventory import fetches through it; it holds no credential and only reads public catalogues.";
+
+/** The route handler folders under `src/app`, `/api` included, each with why a store serves it or not. */
+export const STORE_ROUTE_HANDLER_POLICY: Readonly<Record<string, StoreRouteHandlerRow>> = {
+  '/api/build': { policy: BOTH, reason: 'The deployed commit, for release and install checks.' },
+  '/api/cli/grant-challenges': { policy: MARKETPLACE_ONLY, reason: CLI_GRANT },
+  '/api/cli/grant-challenges/[challengeId]/verify': { policy: MARKETPLACE_ONLY, reason: CLI_GRANT },
+  '/api/cli/grant-flows/[stateId]/cancel': { policy: MARKETPLACE_ONLY, reason: CLI_GRANT },
+  '/api/cli/grant-flows/[stateId]/claim': { policy: MARKETPLACE_ONLY, reason: CLI_GRANT },
+  '/api/cli/grant-flows/[stateId]/result-nonces': { policy: MARKETPLACE_ONLY, reason: CLI_GRANT },
+  '/api/cli/grant-flows/[stateId]/result-ticket': { policy: MARKETPLACE_ONLY, reason: CLI_GRANT },
+  '/api/cli/grant-flows/[stateId]/status': { policy: MARKETPLACE_ONLY, reason: CLI_GRANT },
+  '/api/copyright': {
+    policy: MARKETPLACE_ONLY,
+    reason: "Files copyright notices with the hosted Market's support desk using its server secrets.",
+  },
+  '/api/feedback': {
+    policy: MARKETPLACE_ONLY,
+    reason: "Sends feedback to the hosted Market's support desk using its server secrets.",
+  },
+  '/api/fx-rate': {
+    policy: BOTH,
+    reason: "The indicative bitcoin rate behind the store's converted price hints.",
+  },
+  '/api/import-image': { policy: BOTH, reason: STUDIO_IMPORT },
+  '/api/import-store': { policy: BOTH, reason: STUDIO_IMPORT },
+  '/api/marketplace/bootstrap-challenges': { policy: BOTH, reason: GRANT_BFF },
+  '/api/marketplace/bootstrap-challenges/[challengeId]/verify': { policy: BOTH, reason: GRANT_BFF },
+  '/api/marketplace/bootstrap-flows/[stateId]/cancel': { policy: BOTH, reason: GRANT_BFF },
+  '/api/marketplace/bootstrap-flows/[stateId]/status': { policy: BOTH, reason: GRANT_BFF },
+  '/api/marketplace/client-region': {
+    policy: BOTH,
+    reason: "The visitor's country for region modes, which apply to the store's commerce too.",
+  },
+  '/api/marketplace/grant-cleanup': {
+    policy: BOTH,
+    reason: "The scheduler's cleanup of the grant BFF's expired state.",
+  },
+  '/api/marketplace/grant-flows': { policy: BOTH, reason: GRANT_BFF },
+  '/api/marketplace/grant-flows/[stateId]/cancel': { policy: BOTH, reason: GRANT_BFF },
+  '/api/marketplace/grant-flows/[stateId]/status': { policy: BOTH, reason: GRANT_BFF },
+  '/api/marketplace/health': { policy: BOTH, reason: 'Grant BFF readiness, for deploy and install checks.' },
+  '/api/marketplace/session': { policy: BOTH, reason: GRANT_BFF },
+  '/api/og-metadata': {
+    policy: MARKETPLACE_ONLY,
+    reason: 'Link previews in social posts; no store page shows them, and it fetches arbitrary URLs.',
+  },
+  '/api/report': {
+    policy: MARKETPLACE_ONLY,
+    reason: "Reports posts, listings and reviews to the hosted Market's support desk using its server secrets.",
+  },
+  '/api/sentry-test': { policy: MARKETPLACE_ONLY, reason: 'Development and preview error-reporting check.' },
+  '/auth/passport/return': { policy: BOTH, reason: 'The Pubky Passport sign-in popup returns here.' },
+  '/llms.txt': {
+    policy: MARKETPLACE_ONLY,
+    reason: "Agent guide to the hosted Market's shared index; a store is one seller's shop.",
+  },
+};
 
 /**
  * Where the proxy rewrites a path a store does not serve: the route Next.js builds from
- * `src/app/not-found.tsx`, which answers 404. An unmatched path is no substitute: the `(feeds)`
- * `@post` catch-all matches it, and its 404 screen is then sent with status 200.
+ * `src/app/not-found.tsx`, which answers 404. Another path is no substitute, even with
+ * `NextResponse.rewrite(url, { status: 404 })`: the `(feeds)` `@post` catch-all matches it, so
+ * without a status its 404 screen is sent with 200, and with one a production build renders some
+ * paths as an error screen, without their runtime config.
  */
 export const STORE_NOT_FOUND_PATHNAME = '/_not-found';
 
@@ -132,7 +196,12 @@ type Segment =
 
 type RoutePattern = { key: string; segments: Segment[]; policy: StoreRoutePolicy };
 
-/** URL segments of a page folder key, or `null` for a parallel-slot page that never owns a URL. */
+const ROUTE_POLICY_ROWS: readonly [string, StoreRoutePolicy][] = [
+  ...Object.entries(STORE_PAGE_POLICY),
+  ...Object.entries(STORE_ROUTE_HANDLER_POLICY).map(([key, row]): [string, StoreRoutePolicy] => [key, row.policy]),
+];
+
+/** URL segments of a folder key, or `null` for a parallel-slot page that never owns a URL. */
 export function storeRouteUrlSegments(key: string): string[] | null {
   const parts = key.split('/').filter(Boolean);
   if (parts.some((part) => part.startsWith('@'))) return null;
@@ -149,7 +218,7 @@ function parseSegment(part: string): Segment {
   return { kind: 'static', value: part };
 }
 
-const ROUTE_PATTERNS: readonly RoutePattern[] = Object.entries(STORE_ROUTE_POLICY).flatMap(([key, policy]) => {
+const ROUTE_PATTERNS: readonly RoutePattern[] = ROUTE_POLICY_ROWS.flatMap(([key, policy]) => {
   const parts = storeRouteUrlSegments(key);
   return parts === null ? [] : [{ key, segments: parts.map(parseSegment), policy }];
 });
@@ -191,8 +260,8 @@ function compareRank(left: number[], right: number[]): number {
 }
 
 /**
- * The policy row for a URL path (without the base path) and the params the page would receive,
- * or `null` when no page serves the path. Static segments win over dynamic ones, as in Next.js.
+ * The policy row for a URL path (without the base path) and the params the page or handler would
+ * receive, or `null` when none serves the path. Static segments win over dynamic ones, as in Next.js.
  */
 export function matchStoreRoute(
   pathname: string,
@@ -227,14 +296,13 @@ function decidePage(
 }
 
 /**
- * What a store serves at a URL path (without the base path). Paths no page serves are 404,
- * except `/_next` and `/api`, the listed route handlers, and files with an extension (the
- * `public/` assets and the service worker). A page's Open Graph and Twitter images follow
- * their page, and never open the store home.
+ * What a store serves at a URL path (without the base path). Paths no page or route handler
+ * serves are 404, except `/_next` and files with an extension (the `public/` assets and the
+ * service worker). A page's Open Graph and Twitter images follow their page, and never open the
+ * store home.
  */
 export function decideStoreRoute(pathname: string, storeSeller: string): StoreRouteDecision {
-  if (pathname.startsWith('/_next/') || pathname === '/api' || pathname.startsWith('/api/')) return { kind: 'allow' };
-  if (STORE_ROUTE_HANDLER_PATHS.includes(pathname)) return { kind: 'allow' };
+  if (pathname.startsWith('/_next/')) return { kind: 'allow' };
 
   const segments = pathname.split('/').filter(Boolean);
   const last = segments.at(-1);
