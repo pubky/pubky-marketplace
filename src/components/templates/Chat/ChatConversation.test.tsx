@@ -1,9 +1,12 @@
 import { render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { ChatConversation } from './ChatConversation';
 
 const PEER = 's'.repeat(52);
 const commerce = vi.hoisted(() => ({ mode: 'transaction-service' }));
+const inbox = vi.hoisted(() => ({ status: 'ready' }));
+const ME = 'm'.repeat(52);
 
 vi.mock('@/config/commerce', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/config/commerce')>()),
@@ -16,7 +19,7 @@ vi.mock('next/navigation', () => ({
 }));
 vi.mock('@/stores/auth/auth.store', () => ({
   useAuthStore: (selector: (state: { currentUserPubky: string; setShowSignInDialog: () => void }) => unknown) =>
-    selector({ currentUserPubky: 'm'.repeat(52), setShowSignInDialog: vi.fn() }),
+    selector({ currentUserPubky: ME, setShowSignInDialog: vi.fn() }),
 }));
 vi.mock('@/hooks/useChatConversation/useChatConversation', () => ({
   useChatConversation: () => ({
@@ -31,7 +34,7 @@ vi.mock('@/hooks/useChatConversation/useChatConversation', () => ({
   }),
 }));
 vi.mock('@/hooks/useChatIdentity/useChatIdentity', () => ({
-  useChatIdentity: () => ({ identityState: 'ready', inboxStatus: 'ready', retry: async () => {} }),
+  useChatIdentity: () => ({ identityState: 'ready', inboxStatus: inbox.status, retry: async () => {} }),
 }));
 vi.mock('@/organisms/Chat/ChatPeerIdentity', () => ({
   ChatPeerIdentity: () => <span>Boot Barn</span>,
@@ -47,6 +50,8 @@ vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
 describe('ChatConversation', () => {
   afterEach(() => {
     commerce.mode = 'transaction-service';
+    inbox.status = 'ready';
+    setStoreSeller(undefined);
   });
 
   it("links to the peer's storefront when commerce is on", () => {
@@ -61,5 +66,25 @@ describe('ChatConversation', () => {
 
     expect(screen.queryByRole('link', { name: /Storefront/ })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'All messages' })).toBeInTheDocument();
+  });
+
+  it('tells a store buyer without an inbox that the seller finds their message through an order', () => {
+    setStoreSeller(PEER);
+    inbox.status = 'disabled';
+    render(<ChatConversation peerPubky={PEER} />);
+
+    expect(screen.getByTestId('chat-no-inbox-note')).toHaveTextContent(
+      'This shop has no message inbox set up, so the seller may not see your message until you have an order with them.',
+    );
+    expect(screen.getByRole('link', { name: /Storefront/ })).toBeInTheDocument();
+  });
+
+  it("leaves out a buyer's storefront link for the store seller, as the store serves only its own shop", () => {
+    setStoreSeller(ME);
+    inbox.status = 'disabled';
+    render(<ChatConversation peerPubky={PEER} />);
+
+    expect(screen.queryByRole('link', { name: /Storefront/ })).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-no-inbox-note')).toHaveTextContent('No message inbox is set up here');
   });
 });

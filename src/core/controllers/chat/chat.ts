@@ -3,6 +3,7 @@ import type { ChatOpenResult, ChatSyncOutcome, ChatSyncReason } from '@/applicat
 import { CommerceApplication } from '@/application/commerce/commerce';
 import { UserApplication } from '@/application/user/user';
 import { CHAT_PING_MAX_HANDLING_ATTEMPTS } from '@/config/chat';
+import { getStoreSeller } from '@/config/store-mode';
 import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import { isChatPingSlot } from '@/libs/chat/paths';
 import { isChatPing } from '@/libs/chat/schemas';
@@ -63,9 +64,24 @@ export class ChatController {
 
   // ----------------------------------------------------------- local reads
 
-  /** The inbox list; `includeEmpty` also returns threads that were only opened (the coordinator streams them). */
+  /**
+   * The one peer a store lets this user talk to: the store seller, for everyone but the store seller.
+   * `null` outside store mode and for the store seller, whose every conversation is with their shop.
+   */
+  private static storePeerFor(me: string): string | null {
+    const storeSeller = getStoreSeller();
+    return storeSeller !== null && me !== storeSeller ? storeSeller : null;
+  }
+
+  /**
+   * The inbox list; `includeEmpty` also returns threads that were only opened (the coordinator streams
+   * them). In a store, a buyer's list holds only the conversation with the store seller.
+   */
   static async getConversations(options: { includeEmpty?: boolean } = {}): Promise<ChatConversationView[]> {
-    return await ChatApplication.getConversations(this.me(), options);
+    const me = this.me();
+    const conversations = await ChatApplication.getConversations(me, options);
+    const storePeer = this.storePeerFor(me);
+    return storePeer === null ? conversations : conversations.filter((row) => row.peer_pubky === storePeer);
   }
 
   static async getConversation(peerPubky: string): Promise<ChatConversationView | null> {
@@ -87,6 +103,11 @@ export class ChatController {
   static async getUnreadConversationCount(): Promise<number> {
     const pubky = useAuthStore.getState().currentUserPubky;
     if (!pubky) return 0;
+    const storePeer = this.storePeerFor(pubky);
+    if (storePeer !== null) {
+      const conversation = await ChatApplication.getConversation(pubky, storePeer);
+      return conversation !== null && conversation.unreadCount > 0 ? 1 : 0;
+    }
     return await ChatApplication.getUnreadConversationCount(pubky);
   }
 

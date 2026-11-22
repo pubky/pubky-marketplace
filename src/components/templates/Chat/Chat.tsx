@@ -9,11 +9,13 @@ import { Link } from '@/atoms/Link/Link';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode } from '@/config/commerce';
+import { getStoreSeller } from '@/config/store-mode';
 import { useChatConversations } from '@/hooks/useChatConversations/useChatConversations';
 import { useChatIdentity } from '@/hooks/useChatIdentity/useChatIdentity';
 import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
 import { CHAT_COPY } from '@/libs/chat/copy';
 import { ChatConversationRow } from '@/organisms/Chat/ChatConversationRow';
+import { ChatEntryButton } from '@/organisms/Chat/ChatEntryButton';
 import { ChatIdentityNotice } from '@/organisms/Chat/ChatIdentityNotice';
 import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
@@ -28,6 +30,10 @@ export function Chat() {
   // Without commerce the Market pages lead nowhere: no tab bar, no Browse market link. The header and the
   // mobile footer leave Market out then too.
   const commerceAvailable = getCommerceAdapterMode() !== 'unavailable';
+  // A store's buyer has one conversation, with the store seller, and no market to browse.
+  const storeSeller = getStoreSeller();
+  const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
+  const storeBuyerPeer = storeSeller !== null && currentUserPubky !== storeSeller ? storeSeller : null;
 
   return (
     <MarketplaceContentLayout
@@ -44,7 +50,7 @@ export function Chat() {
             {CHAT_COPY.inboxTitle}
           </Heading>
           <Typography as="p" className="text-muted-foreground">
-            {CHAT_COPY.inboxSubtitle}
+            {storeBuyerPeer ? CHAT_COPY.storeInboxSubtitle : CHAT_COPY.inboxSubtitle}
           </Typography>
         </div>
 
@@ -79,9 +85,17 @@ export function Chat() {
                   {CHAT_COPY.inboxEmptyTitle}
                 </Heading>
                 <Typography as="p" className="max-w-sm text-muted-foreground">
-                  {CHAT_COPY.inboxEmptyBody}
+                  {storeBuyerPeer ? CHAT_COPY.storeInboxEmptyBody : CHAT_COPY.inboxEmptyBody}
                 </Typography>
-                {commerceAvailable ? (
+                {storeBuyerPeer ? (
+                  <ChatEntryButton
+                    peerPubky={storeBuyerPeer}
+                    label={CHAT_COPY.listingCta}
+                    size="default"
+                    className="mt-2 rounded-full"
+                    dataTestId="chat-inbox-message-seller"
+                  />
+                ) : commerceAvailable && storeSeller === null ? (
                   <Button asChild variant="secondary" className="mt-2 rounded-full">
                     <Link href={APP_ROUTES.MARKETPLACE} overrideDefaults>
                       Browse market
