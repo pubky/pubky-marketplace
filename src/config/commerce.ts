@@ -1,3 +1,4 @@
+import { isStoreMode } from '@/config/store-mode';
 import { attestorProfileKeyWindows, narrowTrustedAttestors } from '@/libs/commerce/attestor-key-windows';
 import {
   getAuctionDurationsMinutes,
@@ -65,6 +66,23 @@ export function isDurableCommerceMode(mode: CommerceAdapterMode): boolean {
 /** True when the real Locks/Paykit buyer payment rails are active. */
 export function isLocksPaykitCommerceMode(mode: CommerceAdapterMode): boolean {
   return mode === 'locks-paykit';
+}
+
+/**
+ * True when Locks items can be bought: the Locks/Paykit rails are active and a Lock Server is
+ * configured. Outside a store `locks-paykit` mode always has one; a store may take Paykit
+ * payments without running a Lock Server, and then sells no Locks items.
+ */
+export function isLocksPaymentAvailable(mode: CommerceAdapterMode): boolean {
+  return isLocksPaykitCommerceMode(mode) && getLocksUrl() !== null;
+}
+
+/**
+ * Whether Locks items may be bought here. The full Market keeps its behavior in every mode; a
+ * store sells them only while Locks payments are available.
+ */
+export function sellsLocksItems(mode: CommerceAdapterMode): boolean {
+  return !isStoreMode() || isLocksPaymentAvailable(mode);
 }
 
 export const COMMERCE_CONTRACT_VERSION = 1 as const;

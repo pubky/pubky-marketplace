@@ -23,6 +23,7 @@ import {
   getPaykitServerApi,
   isDurableCommerceMode,
   isLocksPaykitCommerceMode,
+  sellsLocksItems,
 } from '@/config/commerce';
 import { MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE } from '@/config/commerce-copy';
 import { CommerceController } from '@/controllers/commerce/commerce';
@@ -63,7 +64,11 @@ import { marketplaceOfferCheckoutFailureMessage } from '@/libs/commerce/failure-
 import { trustedFiatCheckoutUrl } from '@/libs/commerce/fiat-checkout-url';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { tracksVariantStock } from '@/libs/commerce/listing-variants';
-import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/locks-payment';
+import {
+  LOCKS_MIXED_CHECKOUT_COPY,
+  LOCKS_UNAVAILABLE_CHECKOUT_COPY,
+  locksCheckoutRoute,
+} from '@/libs/commerce/locks-payment';
 import { commerceVariantUnitPrice } from '@/libs/commerce/marketplace-records';
 import { PAYKIT_OUTAGE_COPY } from '@/libs/commerce/paykit-rail';
 import {
@@ -366,8 +371,11 @@ function MarketplaceCartCheckout() {
       ? loadedMethods
       : null;
   // A Locks checkout on upstream Paykit pays in Bitcoin from the order page,
-  // whatever rails the seller configured, and binds no method here.
-  const locksRoute = isOfferCheckout ? 'method' : locksCheckoutRoute(adapterMode, getPaykitServerApi(), checkoutItems);
+  // whatever rails the seller configured, and binds no method here. A store
+  // without Locks payments sells no Locks items.
+  const locksRoute = isOfferCheckout
+    ? 'method'
+    : locksCheckoutRoute(adapterMode, getPaykitServerApi(), checkoutItems, sellsLocksItems(adapterMode));
   const isLocksCheckout = locksRoute === 'locks';
   // A failed config read says nothing about the seller's rails; sandbox offers every rail regardless.
   const railsFailed = loadedForCart !== null && loadedForCart.methods === null && !isSandbox && !isLocksCheckout;
@@ -555,6 +563,7 @@ function MarketplaceCartCheckout() {
     !region.blocked &&
     !checkout.hasFulfillmentConflict &&
     locksRoute !== 'mixed' &&
+    locksRoute !== 'unavailable' &&
     checkout.isDigitalReady &&
     !isPaying &&
     !buyerWalletMissing &&
@@ -620,9 +629,11 @@ function MarketplaceCartCheckout() {
   const payDisabledReason =
     locksRoute === 'mixed'
       ? LOCKS_MIXED_CHECKOUT_COPY
-      : region.blocked
-        ? (region.refusal ?? 'Tell us the country you live in to continue.')
-        : checkoutPayDisabledReason;
+      : locksRoute === 'unavailable'
+        ? LOCKS_UNAVAILABLE_CHECKOUT_COPY
+        : region.blocked
+          ? (region.refusal ?? 'Tell us the country you live in to continue.')
+          : checkoutPayDisabledReason;
 
   const removeAwardLine = async () => {
     const line = cart.awardItems.find((item) => item.awardId === award?.id);

@@ -757,6 +757,52 @@ describe('index URLs and store mode', () => {
   });
 });
 
+describe('Lock Server URL and store mode', () => {
+  const STORE_SELLER = 'ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u';
+  const PAYMENT_RAILS = {
+    marketplaceUrl: 'https://marketplace.store.example',
+    paykitSetupUrl: 'https://paykit.store.example/setup',
+    commerceAdapterMode: 'locks-paykit',
+  };
+
+  it('keeps the local default outside a store', () => {
+    expect(runtimeEnvInputSchema.parse(VALID_ENV_INPUT).locksUrl).toBe(APP_RUNTIME_DEFAULTS.locksUrl);
+    expect(runtimeEnvInputSchemaWithDefaults.parse({}).locksUrl).toBe(APP_RUNTIME_DEFAULTS.locksUrl);
+    expect(runtimeConfigValueSchema.parse(NETWORK_RUNTIME_DEFAULTS).locksUrl).toBe(APP_RUNTIME_DEFAULTS.locksUrl);
+  });
+
+  it('gives a store no Lock Server unless one is set, in the strict, lenient and value parses', () => {
+    const strict = runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, storeSeller: STORE_SELLER });
+    const lenient = runtimeEnvInputSchemaWithDefaults.parse({ storeSeller: STORE_SELLER });
+    const injected = runtimeConfigValueSchema.parse({ ...NETWORK_RUNTIME_DEFAULTS, storeSeller: STORE_SELLER });
+    for (const config of [strict, lenient, injected]) expect(config.locksUrl).toBeUndefined();
+
+    expect(
+      runtimeEnvInputSchema.parse({
+        ...VALID_ENV_INPUT,
+        storeSeller: STORE_SELLER,
+        locksUrl: 'https://locks.store.example',
+      }).locksUrl,
+    ).toBe('https://locks.store.example');
+  });
+
+  it('lets a store take Paykit payments in locks-paykit mode without a Lock Server', () => {
+    const parsed = runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, ...PAYMENT_RAILS, storeSeller: STORE_SELLER });
+    expect(parsed.commerceAdapterMode).toBe('locks-paykit');
+    expect(parsed.locksUrl).toBeUndefined();
+  });
+
+  it('still requires the Lock Server for locks-paykit mode outside a store, and the other rails in a store', () => {
+    expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, ...PAYMENT_RAILS })).toThrow(
+      /PUBKY_RUNTIME_LOCKS_URL/,
+    );
+    const { paykitSetupUrl: _omitted, ...withoutPaykit } = PAYMENT_RAILS;
+    expect(() =>
+      runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, ...withoutPaykit, storeSeller: STORE_SELLER }),
+    ).toThrow(/PUBKY_RUNTIME_PAYKIT_SETUP_URL/);
+  });
+});
+
 describe('readSentryEnvironment', () => {
   it('reads PUBKY_RUNTIME_SENTRY_ENVIRONMENT as the runtime resolver parses it', () => {
     const env = { PUBKY_RUNTIME_SENTRY_ENVIRONMENT: 'staging' };

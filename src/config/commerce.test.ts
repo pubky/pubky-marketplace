@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   isDurableCommerceMode,
+  isLocksPaymentAvailable,
   MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS,
   marketplaceTrustedAttestors,
+  sellsLocksItems,
   trustedMarketplaceAttestorAt,
   trustedMarketplaceAttestorAtRecordTime,
 } from '@/config/commerce';
@@ -10,6 +12,7 @@ import { resetAttestorKeyWindows, setAttestorProfileKeyWindows } from '@/libs/co
 import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
 import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
 import { TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
+import { setStoreSeller } from '@/test-utils/store-mode';
 
 const ENV_NAME = PUBKY_RUNTIME_ENV_NAMES.marketplaceTrustedAttestors;
 const SUITE_VALUE = process.env[ENV_NAME];
@@ -190,5 +193,41 @@ describe('trustedMarketplaceAttestorAtRecordTime', () => {
     expect(trustedMarketplaceAttestorAtRecordTime('x'.repeat(52), new Date('2026-10-20T00:00:00Z'))).toBeNull();
     expect(trustedMarketplaceAttestorAtRecordTime(null, new Date('2026-10-20T00:00:00Z'))).toBeNull();
     expect(trustedMarketplaceAttestorAtRecordTime(CURRENT, new Date('not a date'))).toBeNull();
+  });
+});
+
+describe('isLocksPaymentAvailable', () => {
+  const LOCKS_URL_ENV = PUBKY_RUNTIME_ENV_NAMES.locksUrl;
+
+  afterEach(() => {
+    delete process.env[LOCKS_URL_ENV];
+    setStoreSeller(undefined);
+  });
+
+  it('follows locks-paykit mode in the full Market, which always has a Lock Server', () => {
+    expect(isLocksPaymentAvailable('locks-paykit')).toBe(true);
+    expect(isLocksPaymentAvailable('transaction-service')).toBe(false);
+  });
+
+  it("needs the store's own Lock Server in a store", () => {
+    setStoreSeller('s'.repeat(52));
+    expect(isLocksPaymentAvailable('locks-paykit')).toBe(false);
+
+    process.env[LOCKS_URL_ENV] = 'https://locks.store.example';
+    setStoreSeller('s'.repeat(52));
+    expect(isLocksPaymentAvailable('locks-paykit')).toBe(true);
+    expect(isLocksPaymentAvailable('transaction-service')).toBe(false);
+  });
+
+  it('keeps Locks items on sale in the full Market in every mode, and in a store only with Locks payments', () => {
+    expect(sellsLocksItems('transaction-service')).toBe(true);
+
+    setStoreSeller('s'.repeat(52));
+    expect(sellsLocksItems('locks-paykit')).toBe(false);
+
+    process.env[LOCKS_URL_ENV] = 'https://locks.store.example';
+    setStoreSeller('s'.repeat(52));
+    expect(sellsLocksItems('locks-paykit')).toBe(true);
+    expect(sellsLocksItems('transaction-service')).toBe(false);
   });
 });

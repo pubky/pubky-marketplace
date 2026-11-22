@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getCommerceAdapterMode, getCommercePollIntervalMs, isLocksPaykitCommerceMode } from '@/config/commerce';
+import { getCommerceAdapterMode, getCommercePollIntervalMs, isLocksPaymentAvailable } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { MARKETPLACE_FAILURE_MESSAGES, marketplaceFailureMessage } from '@/libs/commerce/failure-messages';
 import type { LocksAdmissionView } from '@/libs/commerce/locks-lifecycle';
@@ -67,7 +67,7 @@ export function useMarketplaceLocksPayment({
   onPaymentChanged: () => void | Promise<void>;
 }) {
   const adapterMode = getCommerceAdapterMode();
-  const enabled = isLocksPaykitCommerceMode(adapterMode) && isBuyer && Boolean(digitalLock) && payment !== null;
+  const enabled = isLocksPaymentAvailable(adapterMode) && isBuyer && Boolean(digitalLock) && payment !== null;
 
   const [correlation, setCorrelation] = useState<CommerceLocksCorrelationModelSchema | null>(null);
   const [isStarting, setIsStarting] = useState(false);

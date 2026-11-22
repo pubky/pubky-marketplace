@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useForm, type UseFormReturn, useWatch } from 'react-hook-form';
-import { getCommerceAdapterMode, getPaykitServerApi, isDurableCommerceMode } from '@/config/commerce';
+import { getCommerceAdapterMode, getPaykitServerApi, isDurableCommerceMode, sellsLocksItems } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useConnectorStoreShare } from '@/hooks/useConnectorStoreShare/useConnectorStoreShare';
 import { useDefaultAddressCountry } from '@/hooks/useDefaultAddressCountry/useDefaultAddressCountry';
@@ -44,7 +44,11 @@ import {
   marketplaceShippingRefusalMessage,
 } from '@/libs/commerce/failure-messages';
 import { tracksVariantStock } from '@/libs/commerce/listing-variants';
-import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/locks-payment';
+import {
+  LOCKS_MIXED_CHECKOUT_COPY,
+  LOCKS_UNAVAILABLE_CHECKOUT_COPY,
+  locksCheckoutRoute,
+} from '@/libs/commerce/locks-payment';
 import {
   commerceListingFulfillmentMethods,
   commerceListingProjectionChargesRecordTerms,
@@ -903,9 +907,13 @@ export function useMarketplaceCheckout(
   const pay = async (method: PaymentMethodKind | null, onRetry?: () => void): Promise<MarketplacePayResult> => {
     const empty: MarketplacePayResult = { ok: false, orderIds: [], boundOrders: [] };
     if (!items.length || isPaying || checkoutInFlight.current) return empty;
-    const route = locksCheckoutRoute(getCommerceAdapterMode(), getPaykitServerApi(), items);
-    if (route === 'mixed') {
-      toast({ variant: 'error', description: LOCKS_MIXED_CHECKOUT_COPY });
+    const adapterMode = getCommerceAdapterMode();
+    const route = locksCheckoutRoute(adapterMode, getPaykitServerApi(), items, sellsLocksItems(adapterMode));
+    if (route === 'mixed' || route === 'unavailable') {
+      toast({
+        variant: 'error',
+        description: route === 'mixed' ? LOCKS_MIXED_CHECKOUT_COPY : LOCKS_UNAVAILABLE_CHECKOUT_COPY,
+      });
       return empty;
     }
     let outcome = empty;

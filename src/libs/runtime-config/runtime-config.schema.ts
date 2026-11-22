@@ -381,6 +381,8 @@ const sampleRateFromString = z
  * The runtime values `locks-paykit` mode depends on. The mode may only activate when every
  * one of them is EXPLICITLY configured — the localhost defaults exist for local development
  * of the other modes and must never silently become a real payment deployment's endpoints.
+ * A store needs `locksUrl` only if it runs its own Lock Server: without one it takes Paykit
+ * payments and sells no Locks items.
  */
 export const LOCKS_PAYKIT_REQUIRED_CONFIG_KEYS = ['marketplaceUrl', 'locksUrl', 'paykitSetupUrl'] as const;
 
@@ -399,11 +401,13 @@ export const LOCKS_PAYKIT_REQUIRED_CONFIG_KEYS = ['marketplaceUrl', 'locksUrl', 
 function validateLocksPaykitEnvInput(
   input: Partial<Record<(typeof LOCKS_PAYKIT_REQUIRED_CONFIG_KEYS)[number], unknown>> & {
     commerceAdapterMode?: CommerceAdapterMode;
+    storeSeller?: string;
   },
   ctx: z.RefinementCtx,
 ): void {
   if (input.commerceAdapterMode !== 'locks-paykit') return;
   for (const key of LOCKS_PAYKIT_REQUIRED_CONFIG_KEYS) {
+    if (key === 'locksUrl' && input.storeSeller !== undefined) continue;
     const value = input[key];
     if (typeof value !== 'string' || value.trim() === '') {
       ctx.addIssue({
@@ -674,7 +678,11 @@ const runtimeConfigObjectSchema = networkConfigValueSchema.extend({
    */
   inboxUrl: urlValue.optional(),
   inboxAudience: nonEmptyStringValue.optional(),
-  locksUrl: urlValue.default(APP_RUNTIME_DEFAULTS.locksUrl),
+  /**
+   * The Lock Server. Absent means the local default, except in a store, which keeps it only
+   * when set (see {@link defaultLocksUrlOutsideStore}).
+   */
+  locksUrl: urlValue.optional(),
   paykitSetupUrl: urlValue.default(APP_RUNTIME_DEFAULTS.paykitSetupUrl),
   /**
    * Whether the Paykit `/setup` iframe URL carries `creator`. The
@@ -874,13 +882,23 @@ function dropIndexUrlsInStore<T extends IndexUrlFields>(config: T): WithoutIndex
 }
 
 /**
+ * A store sells Locks items only through its own Lock Server, so it gets no Lock Server URL by
+ * default; the full Market keeps the local development default.
+ */
+function defaultLocksUrlOutsideStore<T extends { storeSeller?: string; locksUrl?: string }>(config: T): T {
+  if (config.storeSeller !== undefined || config.locksUrl !== undefined) return config;
+  return { ...config, locksUrl: APP_RUNTIME_DEFAULTS.locksUrl };
+}
+
+/**
  * Parsed runtime config (required network tier + optional/defaulted public tiers).
  * Validates `window.__PUBKY_CONFIG__`. The Nexus and CDN URLs are required for the full Market;
  * a store (`storeSeller` set) never holds them, nor the marketplace Nexus URL.
  */
 export const runtimeConfigValueSchema = runtimeConfigObjectSchema
   .superRefine(requireIndexUrlsOutsideStore)
-  .transform(dropIndexUrlsInStore);
+  .transform(dropIndexUrlsInStore)
+  .transform(defaultLocksUrlOutsideStore);
 
 const lenientRuntimeConfigValueSchema = runtimeConfigObjectSchema
   .extend({
@@ -891,7 +909,8 @@ const lenientRuntimeConfigValueSchema = runtimeConfigObjectSchema
     moderationId: pubkyValue.prefault(APP_RUNTIME_DEFAULTS.moderationId),
   })
   .superRefine(requireIndexUrlsOutsideStore)
-  .transform(dropIndexUrlsInStore);
+  .transform(dropIndexUrlsInStore)
+  .transform(defaultLocksUrlOutsideStore);
 
 export type RuntimeConfig = z.infer<typeof runtimeConfigValueSchema>;
 
