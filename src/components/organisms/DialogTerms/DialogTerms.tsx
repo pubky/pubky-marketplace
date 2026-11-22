@@ -5,11 +5,17 @@ import { LinkButton } from '@/atoms/LinkButton/LinkButton';
 import { List } from '@/atoms/List/List';
 import { Typography } from '@/atoms/Typography/Typography';
 import { LEGAL_ENTITY_NAME } from '@/config/legal';
+import { isStoreMode } from '@/config/store-mode';
 
 const EMAIL_URL = 'mailto:info@synonym.to';
 const EMAIL_REPORT_URL = 'mailto:report@synonym.to';
 const COPYRIGHT_URL = '/copyright';
 const PRIVACY_URL = '/settings/privacy-safety';
+
+/** The notice form files with the hosted Market's support desk; a store serves no `/copyright` page. */
+function CopyrightNoticeLink({ children }: { children: React.ReactNode }) {
+  return isStoreMode() ? <>{children}</> : <Link href={COPYRIGHT_URL}>{children}</Link>;
+}
 
 interface DialogTermsProps {
   trigger?: React.ReactNode;
@@ -430,13 +436,13 @@ export function DialogTerms({ trigger }: DialogTermsProps) {
             </Typography>
             <Typography className={baseCSS}>
               If you believe your copyright has been infringed on the Platform, please send us a{' '}
-              <Link href={COPYRIGHT_URL}>Takedown Notice</Link>. We respond to notices of alleged copyright infringement
-              according to the process laid out in
-              <Link href={COPYRIGHT_URL}> Takedown Notice</Link>.
+              <CopyrightNoticeLink>Takedown Notice</CopyrightNoticeLink>. We respond to notices of alleged copyright
+              infringement according to the process laid out in
+              <CopyrightNoticeLink> Takedown Notice</CopyrightNoticeLink>.
             </Typography>
             <Typography className={baseCSS}>
               If you believe your Content has been wrongfully removed from the Platform, please send us a{' '}
-              <Link href={COPYRIGHT_URL}>Counter Notification</Link>. Please note that any person who knowingly
+              <CopyrightNoticeLink>Counter Notification</CopyrightNoticeLink>. Please note that any person who knowingly
               materially misrepresents that material or activity was removed or disabled by mistake or misidentification
               may be subject to liability.
             </Typography>

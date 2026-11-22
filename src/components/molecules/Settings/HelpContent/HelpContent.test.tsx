@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { setHeavySuiteBudgets } from '@/test-utils/load-budget';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { HelpContent } from './HelpContent';
 
 setHeavySuiteBudgets();
@@ -79,5 +80,20 @@ describe('HelpContent', () => {
     const button = screen.getByText('Support (Telegram)');
     fireEvent.click(button);
     expect(mockWindowOpen).toHaveBeenCalledWith('https://t.me/pubkychat', '_blank', 'noopener,noreferrer');
+  });
+});
+
+describe('HelpContent in store mode', () => {
+  afterEach(() => setStoreSeller(undefined));
+
+  it('keeps the account sections and drops feedback and the social FAQ', () => {
+    setStoreSeller('s'.repeat(52));
+    render(<HelpContent />);
+
+    expect(screen.getByText('1. Getting Started & Onboarding')).toBeInTheDocument();
+    expect(screen.getByText('2. Backups & Account Recovery')).toBeInTheDocument();
+    expect(screen.queryByText('3. Profile & Social Features')).not.toBeInTheDocument();
+    expect(screen.queryByText('4. How Pubky App Works')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Send feedback/ })).not.toBeInTheDocument();
   });
 });

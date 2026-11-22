@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { DialogTerms } from './DialogTerms';
 
 vi.mock('@/atoms/Dialog/Dialog', () => {
@@ -177,5 +178,17 @@ describe('DialogTerms - regional availability', () => {
     expect(text).toContain('Pubky Market is not a separate product or a second set of Terms.');
     expect(text).not.toMatch(/Pubky Marketplace/i);
     expect(text).not.toContain('PUBKY MARKETPLACE');
+  });
+});
+
+describe('DialogTerms in store mode', () => {
+  afterEach(() => setStoreSeller(undefined));
+
+  it('names the copyright notices without linking to a page the store does not serve', () => {
+    setStoreSeller('s'.repeat(52));
+    render(<DialogTerms />);
+
+    expect(screen.getByText(/Counter Notification/)).toBeInTheDocument();
+    expect(document.querySelector('a[href="/copyright"]')).toBeNull();
   });
 });

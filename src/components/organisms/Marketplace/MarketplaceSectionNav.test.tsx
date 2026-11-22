@@ -1,8 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
+import { useAuthStore } from '@/stores/auth/auth.store';
 import { setEmbedded } from '@/test-utils/embedded';
 import { setSocialHost } from '@/test-utils/social-host';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { MarketplaceSectionNav } from './MarketplaceSectionNav';
 
 const state = vi.hoisted(() => ({
@@ -205,5 +207,45 @@ describe('MarketplaceSectionNav', () => {
     screen.getByRole('link', { name: 'Orders' }).click();
 
     expect(onNavigate).toHaveBeenCalledWith('/marketplace/orders');
+  });
+
+  describe('store mode', () => {
+    const STORE_SELLER = 's'.repeat(52);
+    const labels = () =>
+      screen.getAllByRole('link').map((link) => [link.textContent?.replace(/\d+\+?$/, ''), link.getAttribute('href')]);
+
+    afterEach(() => {
+      setStoreSeller(undefined);
+      useAuthStore.setState({ currentUserPubky: null });
+    });
+
+    it('opens the store shop and hides the selling tools from buyers', () => {
+      setStoreSeller(STORE_SELLER);
+      useAuthStore.setState({ currentUserPubky: 'b'.repeat(52) });
+      render(<MarketplaceSectionNav />);
+
+      expect(labels()).toEqual([
+        ['Shop', `/marketplace/shop/${STORE_SELLER}`],
+        ['Messages', '/messages'],
+        ['Watchlist', '/marketplace/watchlist'],
+        ['Cart', '/marketplace/cart'],
+        ['Offers', '/marketplace/offers'],
+        ['Orders', '/marketplace/orders'],
+        ['Activity', '/marketplace/notifications'],
+      ]);
+    });
+
+    it('keeps My shop for the store seller and marks Shop active on its listings', () => {
+      setStoreSeller(STORE_SELLER);
+      useAuthStore.setState({ currentUserPubky: STORE_SELLER });
+      state.pathname = `/marketplace/listing/${STORE_SELLER}/1`;
+      render(<MarketplaceSectionNav />);
+
+      expect(screen.getByRole('link', { name: /My shop/ })).toHaveAttribute('href', '/marketplace/dashboard');
+      expect(screen.getByRole('link', { name: /Shop/, current: 'page' })).toHaveAttribute(
+        'href',
+        `/marketplace/shop/${STORE_SELLER}`,
+      );
+    });
   });
 });

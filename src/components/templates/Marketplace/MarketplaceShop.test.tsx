@@ -13,7 +13,10 @@ import {
   createCommerceListingFixture,
   createCommerceShopFixture,
 } from '@/test/fixtures/commerce/commerce';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { MarketplaceShop } from './MarketplaceShop';
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }), usePathname: () => '/' }));
 
 vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
   MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
@@ -92,5 +95,31 @@ describe('MarketplaceShop storefront grid', () => {
     await waitFor(() => expect(screen.getByText('No listings from this seller yet')).toBeInTheDocument());
     expect(screen.queryByTestId('shop-listing-card')).not.toBeInTheDocument();
     expect(listingCount()).toBe('0');
+  });
+
+  describe('store mode', () => {
+    afterEach(() => setStoreSeller(undefined));
+
+    it('reaches the seller through Messages, with no profile link or Market back link', async () => {
+      setStoreSeller(COMMERCE_FIXTURE_SELLER);
+      render(<MarketplaceShop sellerPubky={COMMERCE_FIXTURE_SELLER} />);
+
+      await waitFor(() => expect(screen.getByTestId('store-message-seller')).toBeInTheDocument());
+      expect(screen.queryByRole('link', { name: 'Market' })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('link', { name: /Contact seller|View seller profile|profile/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('does not send a buyer of an empty store to browse a market', async () => {
+      setStoreSeller(COMMERCE_FIXTURE_SELLER);
+      await LocalCommerceService.bulkUpsertCatalogEntries([
+        createCommerceCatalogEntryFixture({ state: 'paused', revision: 2 }),
+      ]);
+      render(<MarketplaceShop sellerPubky={COMMERCE_FIXTURE_SELLER} />);
+
+      await waitFor(() => expect(screen.getByText('Check back later.')).toBeInTheDocument());
+      expect(screen.queryByRole('link', { name: 'Browse the market' })).not.toBeInTheDocument();
+    });
   });
 });

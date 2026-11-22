@@ -9,6 +9,7 @@ import { useMarketplaceNavAttention } from '@/hooks/useMarketplaceNavAttention/u
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useNotificationStore } from '@/stores/notification/notification.store';
 import { setSocialHost } from '@/test-utils/social-host';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { HeaderButtonSignIn } from '../HeaderButtonSignIn/HeaderButtonSignIn';
 import { HeaderHome } from '../HeaderHome/HeaderHome';
 import { HeaderSignIn } from '../HeaderSignIn/HeaderSignIn';
@@ -698,6 +699,54 @@ describe('Header Components', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
       expect(mockPush).not.toHaveBeenCalled();
       expect(mockSetShowSignInDialog).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('store mode', () => {
+    const STORE_SELLER = 's'.repeat(52);
+    let adapterMode: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      setStoreSeller(STORE_SELLER);
+      adapterMode = vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
+    });
+
+    afterEach(() => {
+      adapterMode.mockRestore();
+      setStoreSeller(undefined);
+    });
+
+    it('links only to pages the store serves, with no search and the avatar on the profile editor', () => {
+      render(<HeaderSignIn />);
+
+      expect(screen.getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual([
+        '/marketplace',
+        '/messages',
+        '/settings/account',
+        '/settings/edit',
+      ]);
+      expect(screen.getByRole('button', { name: 'Shop' })).toBeInTheDocument();
+      expect(screen.queryByTestId('search-input')).not.toBeInTheDocument();
+    });
+
+    it('shows no notification counter on the avatar', () => {
+      render(<HeaderNavigationButtons avatarName="TU" counter={4} />);
+
+      expect(document.querySelector('[data-cy="header-notification-counter"]')).toBeNull();
+    });
+
+    it('gives guests the store pages and no search', () => {
+      render(<HeaderExploreNavigationButtons />);
+
+      expect(screen.getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual(['/marketplace']);
+      expect(screen.getByRole('button', { name: 'Messages' })).toBeInTheDocument();
+      expect(screen.queryByTestId('search-input')).not.toBeInTheDocument();
+    });
+
+    it('does not point at Pubky social channels', () => {
+      render(<HeaderSocialLinks />);
+
+      expect(screen.queryByTestId('header-social-links')).not.toBeInTheDocument();
     });
   });
 

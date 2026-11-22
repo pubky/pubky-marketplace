@@ -13,11 +13,13 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode } from '@/config/commerce';
 import { getGithubLink, getTelegramLink, getTwitterGetpubkyLink } from '@/config/externalLinks';
 import { getSocialHostUrl, isSocialLinkOutEnabled } from '@/config/social';
+import { isStoreMode } from '@/config/store-mode';
 import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
 import { useCollectionsNavDiscovery } from '@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery';
 import { useMarketplaceCartCount } from '@/hooks/useMarketplaceCartCount/useMarketplaceCartCount';
 import { useMarketplaceNavAttention } from '@/hooks/useMarketplaceNavAttention/useMarketplaceNavAttention';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
+import { useStoreLinkServed } from '@/hooks/useStoreLinkServed/useStoreLinkServed';
 import { Github2, Telegram, XTwitter } from '@/icons';
 import { marketplaceNavAccessibleName } from '@/libs/commerce/marketplace-attention';
 import { handleFeedNavClick } from '@/libs/utils/feedScrollTop';
@@ -69,6 +71,8 @@ export const HeaderTitle = ({ currentTitle }: { currentTitle: string }) => {
   );
 };
 export function HeaderSocialLinks({ ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  // A store is the seller's site; it does not point visitors at Pubky's own channels.
+  if (isStoreMode()) return null;
   return (
     <Container
       data-testid="header-social-links"
@@ -156,8 +160,13 @@ const getSocialNavigationItems = (): NavigationItemConfig[] => [
     activePrefix: APP_ROUTES.SETTINGS,
   },
 ];
-const getNavigationItems = (): NavigationItemConfig[] => {
+const getNavigationItems = (isLinkServed: (href: string) => boolean): NavigationItemConfig[] => {
   const items = getSocialNavigationItems();
+  if (isStoreMode()) {
+    return items
+      .filter((item) => isLinkServed(item.href))
+      .map((item) => (item.href === APP_ROUTES.MARKETPLACE ? { ...item, label: 'Shop' } : item));
+  }
   if (!isSocialLinkOutEnabled()) return items;
   // Shop messages remain in the marketplace section nav. Global items mirror Pubky App.
   return items
@@ -293,11 +302,15 @@ export function HeaderNavigationButtons({
   const unreadMessages = useChatUnread({ enabled: !isSocialLinkOutEnabled() });
   const marketplaceCartCount = useMarketplaceCartCount();
   const marketplaceAttention = useMarketplaceNavAttention();
+  const isLinkServed = useStoreLinkServed();
   const counterString = counter > 21 ? '21+' : counter.toString();
-  const profileHref = getSocialHostUrl(APP_ROUTES.PROFILE) ?? APP_ROUTES.PROFILE;
+  // A store has no profile page; the avatar opens the profile editor, and the Activity badge in the
+  // marketplace section nav carries what the profile's notifications would.
+  const storeMode = isStoreMode();
+  const profileHref = storeMode ? SETTINGS_ROUTES.EDIT : (getSocialHostUrl(APP_ROUTES.PROFILE) ?? APP_ROUTES.PROFILE);
   return (
     <Container className={cn('hidden w-auto flex-row items-center justify-start gap-3 lg:flex', className)}>
-      {getNavigationItems().map((item) => {
+      {getNavigationItems(isLinkServed).map((item) => {
         const isCollectionsItem = item.href === APP_ROUTES.COLLECTIONS;
         const isMessagesItem = item.href === APP_ROUTES.MESSAGES;
         const isMarketplaceItem = item.href === APP_ROUTES.MARKETPLACE;
@@ -334,7 +347,7 @@ export function HeaderNavigationButtons({
           className="cursor-pointer"
           alt={'Profile'}
         />
-        {!isSocialLinkOutEnabled() && counter > 0 && (
+        {!isSocialLinkOutEnabled() && !storeMode && counter > 0 && (
           <Badge
             data-cy="header-notification-counter"
             className="absolute right-0 bottom-0 h-5 w-5 rounded-full bg-brand shadow-sm"
@@ -366,11 +379,12 @@ export function HeaderExploreNavigationButtons({
   const router = useRouter();
   const { requireAuth } = useRequireAuth();
   const setShowSignInDialog = useAuthStore((state) => state.setShowSignInDialog);
+  const isLinkServed = useStoreLinkServed();
 
   return (
     <Container className={cn('hidden min-w-0 flex-1 flex-row items-center justify-end gap-3 lg:flex', className)}>
-      {showSearch && <SearchInput />}
-      {getNavigationItems().map((item) => {
+      {showSearch && !isStoreMode() && <SearchInput />}
+      {getNavigationItems(isLinkServed).map((item) => {
         // Core explore routes and the social host navigate freely; Settings and Messages require an account.
         const requiresAuth = !item.external && !isCoreExploreRoute(item.href);
         return (

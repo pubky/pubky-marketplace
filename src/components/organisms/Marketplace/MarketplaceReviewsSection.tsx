@@ -23,6 +23,7 @@ import {
   REVIEW_SORT_COPY,
 } from '@/config/commerce-copy';
 import { isSocialLinkOutEnabled } from '@/config/social';
+import { isStoreMode } from '@/config/store-mode';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useAttestorKeyWindowsVersion } from '@/hooks/useAttestorKeyWindows/useAttestorKeyWindows';
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
@@ -302,17 +303,24 @@ function MarketplaceReviewItem({
       {showListing && <MarketplaceReviewListing sellerPubky={review.listingOwnerId} listingId={review.listingId} />}
       <div className="flex flex-wrap items-center gap-2">
         <MarketplaceStarRating rating={review.ratingOverall} size="sm" />
-        <Link
-          href={
-            isSocialLinkOutEnabled()
-              ? getMarketplaceShopRoute(review.reviewerId)
-              : getProfileRoute(PROFILE_ROUTES.PROFILE, review.reviewerId)
-          }
-          overrideDefaults
-          className="text-xs font-medium text-foreground hover:underline"
-        >
-          {review.reviewerId.slice(0, 8)}…
-        </Link>
+        {/* A store serves no profile pages and only its own seller's shop. */}
+        {isStoreMode() ? (
+          <Typography as="span" overrideDefaults className="text-xs font-medium text-foreground">
+            {review.reviewerId.slice(0, 8)}…
+          </Typography>
+        ) : (
+          <Link
+            href={
+              isSocialLinkOutEnabled()
+                ? getMarketplaceShopRoute(review.reviewerId)
+                : getProfileRoute(PROFILE_ROUTES.PROFILE, review.reviewerId)
+            }
+            overrideDefaults
+            className="text-xs font-medium text-foreground hover:underline"
+          >
+            {review.reviewerId.slice(0, 8)}…
+          </Link>
+        )}
         <ProfileOnPubkyLink pubky={review.reviewerId} />
         <Typography as="span" overrideDefaults className="text-xs text-muted-foreground">
           {formatReviewDate(review.createdAt)}
@@ -329,7 +337,8 @@ function MarketplaceReviewItem({
         )}
         <MarketplaceReviewVerificationBadge review={review} />
         <MarketplaceReviewOutcomes review={review} outcomes={outcomes} />
-        {!isReviewer && <MarketplaceReviewMenu review={review} />}
+        {/* Reports go to the hosted Market's support desk, which a store does not reach. */}
+        {!isReviewer && !isStoreMode() && <MarketplaceReviewMenu review={review} />}
       </div>
       {moderation !== null ? (
         <Typography

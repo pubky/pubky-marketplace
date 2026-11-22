@@ -13,17 +13,19 @@ import {
   ShoppingCart,
   Store,
 } from 'lucide-react';
-import { APP_ROUTES, MARKETPLACE_ROUTES } from '@/app/routes';
+import { APP_ROUTES, getMarketplaceHomeRoute, MARKETPLACE_ROUTES } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { isSocialLinkOutEnabled } from '@/config/social';
+import { isStoreMode } from '@/config/store-mode';
 import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
 import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
 import { useMarketplaceActivityUnread } from '@/hooks/useMarketplaceActivityUnread/useMarketplaceActivityUnread';
 import { useMarketplaceCartCount } from '@/hooks/useMarketplaceCartCount/useMarketplaceCartCount';
 import { useMarketplaceNavSwipeHint } from '@/hooks/useMarketplaceNavSwipeHint/useMarketplaceNavSwipeHint';
 import { useMarketplaceOrdersAttention } from '@/hooks/useMarketplaceOrdersAttention/useMarketplaceOrdersAttention';
+import { useStoreLinkServed } from '@/hooks/useStoreLinkServed/useStoreLinkServed';
 import { cn } from '@/libs/utils/utils';
 
 type MarketplaceSectionItem = {
@@ -34,18 +36,28 @@ type MarketplaceSectionItem = {
   activePrefixes?: readonly string[];
 };
 
+const marketItem = (): MarketplaceSectionItem =>
+  isStoreMode()
+    ? {
+        label: 'Shop',
+        href: getMarketplaceHomeRoute(),
+        icon: Store,
+        activePrefixes: [getMarketplaceHomeRoute(), MARKETPLACE_ROUTES.LISTING, MARKETPLACE_ROUTES.DROP],
+      }
+    : {
+        label: 'Market',
+        href: APP_ROUTES.MARKETPLACE,
+        icon: Store,
+        activePrefixes: [
+          APP_ROUTES.MARKETPLACE,
+          MARKETPLACE_ROUTES.LISTING,
+          MARKETPLACE_ROUTES.DROP,
+          MARKETPLACE_ROUTES.DROPS,
+        ],
+      };
+
 const getItems = (socialLinkOut: boolean): readonly MarketplaceSectionItem[] => [
-  {
-    label: 'Market',
-    href: APP_ROUTES.MARKETPLACE,
-    icon: Store,
-    activePrefixes: [
-      APP_ROUTES.MARKETPLACE,
-      MARKETPLACE_ROUTES.LISTING,
-      MARKETPLACE_ROUTES.DROP,
-      MARKETPLACE_ROUTES.DROPS,
-    ],
-  },
+  marketItem(),
   { label: 'Messages', href: APP_ROUTES.MESSAGES, icon: MessageCircle, badge: 'messages' },
   { label: 'Watchlist', href: MARKETPLACE_ROUTES.WATCHLIST, icon: Heart },
   {
@@ -89,6 +101,7 @@ export function MarketplaceSectionNav({
   const activityUnreadCount = useMarketplaceActivityUnread();
   const ordersAttentionCount = useMarketplaceOrdersAttention();
   const { scrollRef, onScroll, onInteract, showSwipeHint } = useMarketplaceNavSwipeHint(pathname);
+  const isLinkServed = useStoreLinkServed();
 
   return (
     <div
@@ -110,70 +123,72 @@ export function MarketplaceSectionNav({
         className="w-full min-w-0 overflow-x-auto sm:overflow-visible"
       >
         <div className="flex w-full min-w-max flex-nowrap sm:min-w-0 sm:flex-wrap">
-          {getItems(socialLinkOut).map(({ label, href, icon: Icon, badge, activePrefixes }) => {
-            const prefixes = activePrefixes ?? [href];
-            const active =
-              typeof pathname === 'string' &&
-              prefixes.some(
-                (prefix) =>
-                  pathname === prefix || (prefix !== APP_ROUTES.MARKETPLACE && pathname.startsWith(`${prefix}/`)),
-              );
-            const count =
-              badge === 'cart'
-                ? cartCount
-                : badge === 'activity'
-                  ? activityUnreadCount
+          {getItems(socialLinkOut)
+            .filter((item) => isLinkServed(item.href))
+            .map(({ label, href, icon: Icon, badge, activePrefixes }) => {
+              const prefixes = activePrefixes ?? [href];
+              const active =
+                typeof pathname === 'string' &&
+                prefixes.some(
+                  (prefix) =>
+                    pathname === prefix || (prefix !== APP_ROUTES.MARKETPLACE && pathname.startsWith(`${prefix}/`)),
+                );
+              const count =
+                badge === 'cart'
+                  ? cartCount
+                  : badge === 'activity'
+                    ? activityUnreadCount
+                    : badge === 'orders'
+                      ? ordersAttentionCount
+                      : badge === 'messages'
+                        ? messagesCount
+                        : 0;
+              const badgeNoun =
+                badge === 'cart'
+                  ? 'cart items'
                   : badge === 'orders'
-                    ? ordersAttentionCount
+                    ? 'orders needing you'
                     : badge === 'messages'
-                      ? messagesCount
-                      : 0;
-            const badgeNoun =
-              badge === 'cart'
-                ? 'cart items'
-                : badge === 'orders'
-                  ? 'orders needing you'
-                  : badge === 'messages'
-                    ? 'unread messages'
-                    : 'activity needing you';
-            return (
-              <Link
-                key={label}
-                href={href}
-                prefetch={false}
-                overrideDefaults
-                aria-current={active ? 'page' : undefined}
-                onClick={(event) => {
-                  if (onNavigate) {
-                    event.preventDefault();
-                    onNavigate(href);
-                  }
-                }}
-                className={cn(
-                  'relative inline-flex min-h-12 flex-1 shrink-0 items-center justify-center gap-2 border-b px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors hover:text-foreground-strong',
-                  active ? 'border-foreground-strong text-foreground-strong' : 'border-border text-muted-foreground',
-                )}
-              >
-                <Icon className="size-5 shrink-0" aria-hidden="true" />
-                <span className={cn(!active && 'sr-only sm:not-sr-only')}>{label}</span>
-                {count > 0 && (
-                  <Badge
-                    data-testid={`marketplace-section-nav-${badge}-badge`}
-                    aria-label={`${count} ${badgeNoun}`}
-                    className="h-5 min-w-5 rounded-full bg-brand px-1.5 shadow-sm"
-                    variant="secondary"
-                  >
-                    <Typography
-                      className={cn('font-semibold text-bright-fill-foreground', count > 21 && 'text-xs')}
-                      size="xs"
+                      ? 'unread messages'
+                      : 'activity needing you';
+              return (
+                <Link
+                  key={label}
+                  href={href}
+                  prefetch={false}
+                  overrideDefaults
+                  aria-current={active ? 'page' : undefined}
+                  onClick={(event) => {
+                    if (onNavigate) {
+                      event.preventDefault();
+                      onNavigate(href);
+                    }
+                  }}
+                  className={cn(
+                    'relative inline-flex min-h-12 flex-1 shrink-0 items-center justify-center gap-2 border-b px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors hover:text-foreground-strong',
+                    active ? 'border-foreground-strong text-foreground-strong' : 'border-border text-muted-foreground',
+                  )}
+                >
+                  <Icon className="size-5 shrink-0" aria-hidden="true" />
+                  <span className={cn(!active && 'sr-only sm:not-sr-only')}>{label}</span>
+                  {count > 0 && (
+                    <Badge
+                      data-testid={`marketplace-section-nav-${badge}-badge`}
+                      aria-label={`${count} ${badgeNoun}`}
+                      className="h-5 min-w-5 rounded-full bg-brand px-1.5 shadow-sm"
+                      variant="secondary"
                     >
-                      {count > 21 ? '21+' : count}
-                    </Typography>
-                  </Badge>
-                )}
-              </Link>
-            );
-          })}
+                      <Typography
+                        className={cn('font-semibold text-bright-fill-foreground', count > 21 && 'text-xs')}
+                        size="xs"
+                      >
+                        {count > 21 ? '21+' : count}
+                      </Typography>
+                    </Badge>
+                  )}
+                </Link>
+              );
+            })}
         </div>
       </nav>
       {showSwipeHint && (

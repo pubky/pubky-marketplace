@@ -14,6 +14,7 @@ import { useAuthStore } from '@/stores/auth/auth.store';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
 import { setSocialHost } from '@/test-utils/social-host';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { MarketplaceReviewsSection } from './MarketplaceReviewsSection';
 
 const SELLER = 's'.repeat(52);
@@ -742,6 +743,19 @@ describe('MarketplaceReviewsSection Report review', () => {
     render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
 
     expect(screen.queryByRole('button', { name: 'Review actions' })).not.toBeInTheDocument();
+  });
+
+  it('offers no report and no reviewer profile link in a store, which serves neither', () => {
+    setStoreSeller(SELLER);
+    try {
+      useAuthStore.setState({ currentUserPubky: 'r'.repeat(52) });
+      render(<MarketplaceReviewsSection reviews={listedState()} listingId="rangefinder_camera" />);
+
+      expect(screen.queryByRole('button', { name: 'Review actions' })).not.toBeInTheDocument();
+      expect(screen.getByText(`${REVIEWER.slice(0, 8)}…`).closest('a')).toBeNull();
+    } finally {
+      setStoreSeller(undefined);
+    }
   });
 });
 

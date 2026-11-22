@@ -27,10 +27,12 @@ import { useMarketplaceMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarket
 import { useMarketplaceReviews } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
 import { useSellerPaymentBadges } from '@/hooks/useSellerPaymentBadges/useSellerPaymentBadges';
 import { useSellingAvailability } from '@/hooks/useSellingAvailability/useSellingAvailability';
+import { CHAT_COPY } from '@/libs/chat/copy';
 import { sellerDeclaration } from '@/libs/commerce/eu-region';
 import { resolveSellerDeliveryTerms, sellerDeliveryTermsCopy } from '@/libs/commerce/seller-delivery-terms';
 import { formatShipsToCountries, shopShipsToCountries } from '@/libs/commerce/ships-to';
 import { MarketplacePaymentMethodBadges } from '@/molecules/MarketplacePaymentMethodBadges/MarketplacePaymentMethodBadges';
+import { ChatEntryButton } from '@/organisms/Chat/ChatEntryButton';
 import { MarketplaceCommunityTags } from '@/organisms/Marketplace/MarketplaceCommunityTags';
 import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceListingCard } from '@/organisms/Marketplace/MarketplaceListingCard';
@@ -50,6 +52,9 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
   const profileRoute = getProfileRoute(PROFILE_ROUTES.PROFILE, sellerPubky);
   // With social link-out on, profiles live on the social host; plain <a>, same tab.
   const socialProfileUrl = getSocialHostUrl(profileRoute);
+  // A store has no profile pages and is its own home: the seller is reached through Messages, and
+  // there is no catalogue to go back to.
+  const storeMode = isStoreMode();
   // Embedded in the host app, the profile link must replace the whole page, not just this frame.
   const isEmbedded = useIsEmbedded();
   // The shop record lives on the seller's homeserver; a visitor's local cache
@@ -91,14 +96,16 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
   return (
     <MarketplaceContentLayout className="pb-28 lg:pb-16">
       <Container overrideDefaults className="flex w-full flex-col gap-6">
-        <Link
-          href={APP_ROUTES.MARKETPLACE}
-          overrideDefaults
-          className="inline-flex w-fit items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" />
-          Market
-        </Link>
+        {!storeMode && (
+          <Link
+            href={APP_ROUTES.MARKETPLACE}
+            overrideDefaults
+            className="inline-flex w-fit items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="size-4" />
+            Market
+          </Link>
+        )}
 
         {isLoading ? (
           <MarketplaceSkeleton count={4} />
@@ -150,23 +157,33 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
                         {follow.isFollowing ? 'Following' : 'Follow shop'}
                       </Button>
                     )}
-                    <Button asChild variant="secondary" className="rounded-full">
-                      {socialProfileUrl ? (
-                        <a
-                          href={socialProfileUrl}
-                          target={isEmbedded ? '_top' : undefined}
-                          data-cy="profile-on-pubky-link"
-                        >
-                          <User className="size-4" />
-                          {isOwner ? 'My profile on Pubky' : 'Profile on Pubky'}
-                        </a>
-                      ) : (
-                        <Link href={profileRoute} overrideDefaults>
-                          <User className="size-4" />
-                          {isOwner ? 'My profile' : 'Contact seller'}
-                        </Link>
-                      )}
-                    </Button>
+                    {storeMode ? (
+                      <ChatEntryButton
+                        peerPubky={sellerPubky}
+                        label={CHAT_COPY.listingCta}
+                        size="default"
+                        className="rounded-full"
+                        dataTestId="store-message-seller"
+                      />
+                    ) : (
+                      <Button asChild variant="secondary" className="rounded-full">
+                        {socialProfileUrl ? (
+                          <a
+                            href={socialProfileUrl}
+                            target={isEmbedded ? '_top' : undefined}
+                            data-cy="profile-on-pubky-link"
+                          >
+                            <User className="size-4" />
+                            {isOwner ? 'My profile on Pubky' : 'Profile on Pubky'}
+                          </a>
+                        ) : (
+                          <Link href={profileRoute} overrideDefaults>
+                            <User className="size-4" />
+                            {isOwner ? 'My profile' : 'Contact seller'}
+                          </Link>
+                        )}
+                      </Button>
+                    )}
                   </div>
                   <div className="flex gap-6 text-sm">
                     <div>
@@ -237,6 +254,14 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
                 <div className="flex flex-wrap gap-2">
                   {isOwner ? (
                     <StorefrontOwnerActions />
+                  ) : storeMode ? (
+                    <ChatEntryButton
+                      peerPubky={sellerPubky}
+                      label={CHAT_COPY.listingCta}
+                      size="default"
+                      className="rounded-full"
+                      dataTestId="store-message-seller"
+                    />
                   ) : (
                     <Button asChild variant="secondary" className="rounded-full">
                       {socialProfileUrl ? (
@@ -282,6 +307,8 @@ function ShopListingsGrid({
   const selling = useSellingAvailability();
   // An owner who can't sell from here is not pointed at Sell: it only leads to the block page.
   const canPublish = isOwner && !selling.held;
+  // A store has no wider market to browse.
+  const showBrowseMarket = !canPublish && !isStoreMode();
   if (listings.length === 0) {
     return (
       <div className="flex min-h-64 flex-col items-center justify-center rounded-md bg-card/40 p-6 text-center">
@@ -294,13 +321,17 @@ function ShopListingsGrid({
             ? 'Publish your first item to fill this page.'
             : isOwner && selling.sellingMessage
               ? selling.sellingMessage
-              : 'Check back later or browse the marketplace.'}
+              : showBrowseMarket
+                ? 'Check back later or browse the marketplace.'
+                : 'Check back later.'}
         </Typography>
-        <Button asChild className="mt-6 rounded-full">
-          <Link href={canPublish ? MARKETPLACE_ROUTES.SELL : APP_ROUTES.MARKETPLACE} overrideDefaults>
-            {canPublish ? 'Sell an item' : 'Browse the market'}
-          </Link>
-        </Button>
+        {(canPublish || showBrowseMarket) && (
+          <Button asChild className="mt-6 rounded-full">
+            <Link href={canPublish ? MARKETPLACE_ROUTES.SELL : APP_ROUTES.MARKETPLACE} overrideDefaults>
+              {canPublish ? 'Sell an item' : 'Browse the market'}
+            </Link>
+          </Button>
+        )}
       </div>
     );
   }

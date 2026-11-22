@@ -1173,6 +1173,23 @@ describe('MarketplaceListing', () => {
 
       expect(screen.queryByRole('button', { name: 'Report listing' })).not.toBeInTheDocument();
     });
+
+    it('offers no report in a store, which reaches no support desk, and leads back to the shop', () => {
+      const listing = renderListing();
+      cleanup();
+      setStoreSeller(listing.seller_id);
+      try {
+        render(<MarketplaceListing sellerPubky={listing.seller_id} listingId={listing.listing_id} />);
+
+        expect(screen.queryByRole('button', { name: 'Report listing' })).not.toBeInTheDocument();
+        expect(screen.getByRole('link', { name: 'Back to shop' })).toHaveAttribute(
+          'href',
+          `/marketplace/shop/${listing.seller_id}`,
+        );
+      } finally {
+        setStoreSeller(undefined);
+      }
+    });
   });
 
   it('adds the selected variant to cart when the marketplace session is ready', async () => {

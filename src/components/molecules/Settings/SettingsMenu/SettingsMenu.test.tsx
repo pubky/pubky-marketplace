@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { SettingsMenu } from './SettingsMenu';
 
 describe('SettingsMenu', () => {
@@ -25,5 +26,21 @@ describe('SettingsMenu', () => {
       'href',
       '/marketplace/settings/addresses',
     );
+  });
+
+  describe('store mode', () => {
+    afterEach(() => setStoreSeller(undefined));
+
+    it('leaves out the social settings a store does not serve', () => {
+      setStoreSeller('s'.repeat(52));
+      render(<SettingsMenu />);
+
+      expect(screen.getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual([
+        '/settings/account',
+        '/settings/privacy-safety',
+        '/settings/help',
+        '/marketplace/settings/addresses',
+      ]);
+    });
   });
 });

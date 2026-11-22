@@ -2,7 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { Archive, ArrowLeft, Bell, CalendarClock, Search, ShieldCheck, Store, Users } from 'lucide-react';
-import { APP_ROUTES, getMarketplaceDropRoute, getMarketplaceShopRoute, MARKETPLACE_ROUTES } from '@/app/routes';
+import {
+  getMarketplaceDropRoute,
+  getMarketplaceHomeRoute,
+  getMarketplaceShopRoute,
+  MARKETPLACE_ROUTES,
+} from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
@@ -12,6 +17,7 @@ import { Link } from '@/atoms/Link/Link';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
 import { withPublicPath } from '@/config/base-path';
+import { isStoreMode } from '@/config/store-mode';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useCommerceShopFollow } from '@/hooks/useCommerceShopFollow/useCommerceShopFollow';
 import {
@@ -46,6 +52,15 @@ const DISPLAY_STATE_BADGES: Record<string, { label: string; variant: 'default' |
   ended_closed: { label: 'Ended', variant: 'outline' },
   ended_cancelled: { label: 'Cancelled by seller', variant: 'outline' },
 };
+
+/** A store lists no drops page; its drops are reached from the shop. */
+function dropsBackHref(): string {
+  return isStoreMode() ? getMarketplaceHomeRoute() : MARKETPLACE_ROUTES.DROPS;
+}
+
+function dropsBackLabel(): string {
+  return isStoreMode() ? 'Back to shop' : 'Back to drops';
+}
 
 /**
  * The shopper drop page (drops design, "The shopper experience"). Every
@@ -105,8 +120,8 @@ export function MarketplaceDrop({ sellerPubky, dropId }: MarketplaceDropProps) {
             {drop.recordError ?? 'This drop could not be loaded.'}
           </Typography>
           <Button asChild className="mt-6 rounded-full">
-            <Link href={MARKETPLACE_ROUTES.DROPS} overrideDefaults>
-              Back to drops
+            <Link href={dropsBackHref()} overrideDefaults>
+              {dropsBackLabel()}
             </Link>
           </Button>
         </Container>
@@ -126,12 +141,12 @@ export function MarketplaceDrop({ sellerPubky, dropId }: MarketplaceDropProps) {
   return (
     <DropPageShell>
       <Link
-        href={MARKETPLACE_ROUTES.DROPS}
+        href={dropsBackHref()}
         overrideDefaults
         className="inline-flex w-fit items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-4" />
-        Drops
+        {isStoreMode() ? 'Shop' : 'Drops'}
       </Link>
 
       {teaserUrl ? (
@@ -287,9 +302,9 @@ export function MarketplaceDrop({ sellerPubky, dropId }: MarketplaceDropProps) {
                 {shopFollow.isFollowing ? 'Watching seller' : 'Watch this seller'}
               </Button>
               <Button asChild className="rounded-full">
-                <Link href={APP_ROUTES.MARKETPLACE} overrideDefaults>
+                <Link href={getMarketplaceHomeRoute()} overrideDefaults>
                   <Search className="size-4" />
-                  Browse similar
+                  {isStoreMode() ? 'Browse the shop' : 'Browse similar'}
                 </Link>
               </Button>
             </div>

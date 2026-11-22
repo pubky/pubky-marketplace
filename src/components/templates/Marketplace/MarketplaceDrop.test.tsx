@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { APP_ROUTES, getMarketplaceShopRoute } from '@/app/routes';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { MarketplaceDrop } from './MarketplaceDrop';
 
 const SELLER = 's'.repeat(52);
@@ -85,5 +86,21 @@ describe('MarketplaceDrop', () => {
     expect(toggleShopFollow).toHaveBeenCalledOnce();
     expect(screen.getByRole('link', { name: 'Browse similar' })).toHaveAttribute('href', APP_ROUTES.MARKETPLACE);
     expect(screen.getByRole('link', { name: /View shop/i })).toHaveAttribute('href', getMarketplaceShopRoute(SELLER));
+  });
+
+  describe('store mode', () => {
+    afterEach(() => setStoreSeller(undefined));
+
+    it('leads back to the store shop instead of the drops and market pages it does not serve', () => {
+      setStoreSeller(SELLER);
+      render(<MarketplaceDrop sellerPubky={SELLER} dropId="vol1" />);
+
+      expect(screen.getByRole('link', { name: 'Shop' })).toHaveAttribute('href', getMarketplaceShopRoute(SELLER));
+      expect(screen.getByRole('link', { name: 'Browse the shop' })).toHaveAttribute(
+        'href',
+        getMarketplaceShopRoute(SELLER),
+      );
+      expect(document.querySelector('a[href="/marketplace/drops"]')).toBeNull();
+    });
   });
 });

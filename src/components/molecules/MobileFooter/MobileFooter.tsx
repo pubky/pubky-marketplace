@@ -15,7 +15,7 @@ import {
   UserRound,
   UserRoundPlus,
 } from 'lucide-react';
-import { APP_ROUTES, isNavItemActive, PROFILE_ROUTES, SETTINGS_ROUTES } from '@/app/routes';
+import { APP_ROUTES, isNavItemActive, MARKETPLACE_ROUTES, PROFILE_ROUTES, SETTINGS_ROUTES } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
@@ -28,6 +28,7 @@ import {
 import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode } from '@/config/commerce';
 import { getSocialHostUrl } from '@/config/social';
+import { isStoreMode } from '@/config/store-mode';
 import { useAvatarUrl } from '@/hooks/useAvatarUrl/useAvatarUrl';
 import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
 import { useCollectionsNavDiscovery } from '@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery';
@@ -37,6 +38,7 @@ import { useKeyboardOffset } from '@/hooks/useKeyboardOffset/useKeyboardOffset';
 import { useMarketplaceCartCount } from '@/hooks/useMarketplaceCartCount/useMarketplaceCartCount';
 import { useMarketplaceNavAttention } from '@/hooks/useMarketplaceNavAttention/useMarketplaceNavAttention';
 import { usePublicRoute } from '@/hooks/usePublicRoute/usePublicRoute';
+import { useStoreLinkServed } from '@/hooks/useStoreLinkServed/useStoreLinkServed';
 import { marketplaceNavAccessibleName } from '@/libs/commerce/marketplace-attention';
 import { handleFeedNavClick } from '@/libs/utils/feedScrollTop';
 import { cn } from '@/libs/utils/utils';
@@ -82,6 +84,8 @@ export function MobileFooter({ className }: MobileFooterProps) {
   const { isKeyboardVisible } = useKeyboardOffset();
   const { markCollectionsNavSeen } = useCollectionsNavDiscovery();
   const isEmbedded = useIsEmbedded();
+  const isLinkServed = useStoreLinkServed();
+  const storeMode = isStoreMode();
 
   // Get avatar URL and fallback initial - same logic as desktop header
   const profileAvatarUrl = useAvatarUrl(currentUserPubky ? userDetails : null, userDetails?.indexed_at);
@@ -96,7 +100,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
             href: APP_ROUTES.MARKETPLACE,
             activePrefix: APP_ROUTES.MARKETPLACE,
             icon: Store,
-            label: socialHostUrl ? 'Shop' : 'Market',
+            label: socialHostUrl || storeMode ? 'Shop' : 'Market',
           },
         ]
       : [];
@@ -126,9 +130,11 @@ export function MobileFooter({ className }: MobileFooterProps) {
       label: 'Collections',
     },
   ];
-  const navItems = socialHostUrl
-    ? [...socialNavItems, { href: SETTINGS_ROUTES.ACCOUNT, icon: Settings, label: 'Settings' }]
-    : socialNavItems;
+  const navItems = (
+    socialHostUrl
+      ? [...socialNavItems, { href: SETTINGS_ROUTES.ACCOUNT, icon: Settings, label: 'Settings' }]
+      : socialNavItems
+  ).filter((item) => isLinkServed(item.href));
   // Hide footer for guests only on non-explore routes. Core explore and dynamic public
   // routes (/home, /post/..., /profile/...) use the public explore footer.
   // While typing the nav would float on the keyboard and take the space the input needs.
@@ -256,16 +262,24 @@ export function MobileFooter({ className }: MobileFooterProps) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" align="end" sideOffset={12} className="w-72 p-2">
+              {/* A store has no profile page or posts: the profile editor and the marketplace
+                  Activity page stand in for the profile and its notifications. */}
               <DropdownMenuItem asChild>
-                <Link href={PROFILE_ROUTES.PROFILE_PAGE} className="min-h-12 gap-2 px-4 py-2 text-sm font-medium">
+                <Link
+                  href={storeMode ? SETTINGS_ROUTES.EDIT : PROFILE_ROUTES.PROFILE_PAGE}
+                  className="min-h-12 gap-2 px-4 py-2 text-sm font-medium"
+                >
                   <UserRound className="size-5 shrink-0" aria-hidden="true" />
-                  Profile
+                  {storeMode ? 'Edit profile' : 'Profile'}
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href={APP_ROUTES.PROFILE} className="min-h-12 gap-2 px-4 py-2 text-sm font-medium">
+                <Link
+                  href={storeMode ? MARKETPLACE_ROUTES.NOTIFICATIONS : APP_ROUTES.PROFILE}
+                  className="min-h-12 gap-2 px-4 py-2 text-sm font-medium"
+                >
                   <Bell className="size-5 shrink-0" aria-hidden="true" />
-                  <span className="flex-1">Notifications</span>
+                  <span className="flex-1">{storeMode ? 'Activity' : 'Notifications'}</span>
                   {unreadNotifications > 0 && (
                     <span className="text-brand">{unreadNotifications > 21 ? '21+' : unreadNotifications}</span>
                   )}
@@ -280,12 +294,14 @@ export function MobileFooter({ className }: MobileFooterProps) {
                   )}
                 </Link>
               </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href={PROFILE_ROUTES.POSTS} className="min-h-12 gap-2 px-4 py-2 text-sm font-medium">
-                  <FileText className="size-5 shrink-0" aria-hidden="true" />
-                  My posts
-                </Link>
-              </DropdownMenuItem>
+              {!storeMode && (
+                <DropdownMenuItem asChild>
+                  <Link href={PROFILE_ROUTES.POSTS} className="min-h-12 gap-2 px-4 py-2 text-sm font-medium">
+                    <FileText className="size-5 shrink-0" aria-hidden="true" />
+                    My posts
+                  </Link>
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem asChild>
                 <Link href={SETTINGS_ROUTES.ACCOUNT} className="min-h-12 gap-2 px-4 py-2 text-sm font-medium">
                   <Settings className="size-5 shrink-0" aria-hidden="true" />

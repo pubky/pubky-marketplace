@@ -1,10 +1,15 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { SettingsInfo } from './SettingsInfo';
 
 vi.mock('@/config/app', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/config/app')>()),
   APP_VERSION: '1.2.3',
+}));
+
+vi.mock('@/organisms/FeedbackCard/FeedbackCard', () => ({
+  FeedbackCard: () => <div data-testid="feedback-card" />,
 }));
 
 vi.mock('@/config/externalLinks', () => ({
@@ -22,6 +27,11 @@ describe('SettingsInfo', () => {
 
     expect(screen.getByText('Terms of Service & Privacy')).toBeInTheDocument();
     expect(screen.getByText('FAQ')).toBeInTheDocument();
+  });
+
+  it('renders the feedback card', () => {
+    render(<SettingsInfo />);
+    expect(screen.getByTestId('feedback-card')).toBeInTheDocument();
   });
 
   it('renders subtitle for Terms section', () => {
@@ -45,5 +55,18 @@ describe('SettingsInfo', () => {
   it('renders copyright text', () => {
     render(<SettingsInfo />);
     expect(screen.getByText(new RegExp(`© ${new Date().getFullYear()} Synonym Software`))).toBeInTheDocument();
+  });
+});
+
+describe('SettingsInfo in store mode', () => {
+  afterEach(() => setStoreSeller(undefined));
+
+  it('asks no feedback and lists only the account FAQ', () => {
+    setStoreSeller('s'.repeat(52));
+    render(<SettingsInfo />);
+
+    expect(screen.getByText('How can I restore my account?')).toBeInTheDocument();
+    expect(screen.queryByText('How can I delete my post?')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('feedback-card')).not.toBeInTheDocument();
   });
 });

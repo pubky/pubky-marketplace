@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LockKeyhole, LogOut, Pencil, Trash2, UserRound } from 'lucide-react';
 import { SETTINGS_ROUTES } from '@/app/routes';
+import { isStoreMode } from '@/config/store-mode';
 import { useSignOut } from '@/hooks/useSignOut/useSignOut';
 import { useSignOutCopy } from '@/hooks/useSignOutCopy/useSignOutCopy';
 import { SettingsDivider } from '@/molecules/Settings/SettingsDivider/SettingsDivider';
@@ -46,33 +47,39 @@ export function Account() {
           buttonOnClick={handleEditProfile}
         />
 
-        <SettingsDivider />
+        {/* A store is one seller's shop on the seller's site: it does not delete the visitor's whole
+            Pubky account, which other apps share, and has no backup to offer. */}
+        {!isStoreMode() && (
+          <>
+            <SettingsDivider />
 
-        <SettingsSection
-          title={'Backup your account'}
-          description={
-            'You have already completed the backup, or closed your browser before doing so. Your recovery file and seed phrase have been deleted.'
-          }
-          buttonText={'Back up'}
-          buttonIcon={LockKeyhole}
-          buttonId="backup-account-btn"
-          buttonDisabled
-          buttonOnClick={() => {}}
-        />
+            <SettingsSection
+              title={'Backup your account'}
+              description={
+                'You have already completed the backup, or closed your browser before doing so. Your recovery file and seed phrase have been deleted.'
+              }
+              buttonText={'Back up'}
+              buttonIcon={LockKeyhole}
+              buttonId="backup-account-btn"
+              buttonDisabled
+              buttonOnClick={() => {}}
+            />
 
-        <SettingsDivider />
+            <SettingsDivider />
 
-        <SettingsSection
-          title={'Delete your account'}
-          description={
-            'Deleting your account will remove all of your posts, tags, profile information, contacts, custom streams, and settings or preferences.'
-          }
-          buttonText={'Delete Account'}
-          buttonIcon={Trash2}
-          buttonId="delete-account-btn"
-          buttonVariant="destructive"
-          buttonOnClick={handleOpenDeleteDialog}
-        />
+            <SettingsSection
+              title={'Delete your account'}
+              description={
+                'Deleting your account will remove all of your posts, tags, profile information, contacts, custom streams, and settings or preferences.'
+              }
+              buttonText={'Delete Account'}
+              buttonIcon={Trash2}
+              buttonId="delete-account-btn"
+              buttonVariant="destructive"
+              buttonOnClick={handleOpenDeleteDialog}
+            />
+          </>
+        )}
       </SettingsSectionCard>
 
       <DialogDeleteAccount isOpen={showDeleteDialog} onOpenChangeAction={setShowDeleteDialog} />

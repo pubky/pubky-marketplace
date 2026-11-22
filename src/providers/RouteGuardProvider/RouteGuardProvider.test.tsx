@@ -1048,6 +1048,27 @@ describe('RouteGuardProvider — store mode', () => {
     expect(screen.getByText('Selling tools')).toBeInTheDocument();
   });
 
+  it('opens a buyer conversation only with the store seller', () => {
+    setStoreSeller(STORE_SELLER);
+    mocks.currentUserPubky = 'b'.repeat(52);
+    mocks.pathname = `/messages/${STORE_SELLER}`;
+    const { unmount } = renderGuard();
+    expect(screen.queryByRole('heading', { name: 'Not Found' })).not.toBeInTheDocument();
+    unmount();
+
+    mocks.pathname = `/messages/${'c'.repeat(52)}`;
+    renderGuard();
+    expect(screen.getByRole('heading', { name: 'Not Found' })).toBeInTheDocument();
+  });
+
+  it('opens every conversation of the store seller', () => {
+    setStoreSeller(STORE_SELLER);
+    mocks.pathname = `/messages/${'b'.repeat(52)}`;
+    renderGuard();
+
+    expect(screen.queryByRole('heading', { name: 'Not Found' })).not.toBeInTheDocument();
+  });
+
   it('keeps the selling tools open to every seller outside store mode', () => {
     mocks.currentUserPubky = 'b'.repeat(52);
     renderGuard();

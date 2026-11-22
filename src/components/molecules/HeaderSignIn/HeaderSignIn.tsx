@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { Container } from '@/atoms/Container/Container';
+import { isStoreMode } from '@/config/store-mode';
 import { useAvatarUrl } from '@/hooks/useAvatarUrl/useAvatarUrl';
 import { useCurrentUserProfile } from '@/hooks/useCurrentUserProfile/useCurrentUserProfile';
 import { SearchInput } from '@/organisms/SearchInput/SearchInput';
@@ -16,8 +17,9 @@ export const HeaderSignIn = ({ ...props }: React.HTMLAttributes<HTMLDivElement>)
 
   return (
     <Container className="min-w-0 flex-1 flex-row items-center justify-end gap-3" {...props}>
-      {/* Social search (posts, people, tags) lives on the social host once link-out is on. */}
-      <SearchInput />
+      {/* Social search (posts, people, tags) lives on the social host once link-out is on. A store
+          searches nothing: its one shop is the catalogue. */}
+      {!isStoreMode() && <SearchInput />}
       <HeaderNavigationButtons
         avatarImage={avatarImage}
         avatarName={userDetails?.name}

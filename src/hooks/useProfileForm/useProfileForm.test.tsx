@@ -8,6 +8,7 @@ import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import type { NexusUserDetails } from '@/services/nexus/nexus.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { mockSession } from '@/test-utils/pubky';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { useProfileForm } from './useProfileForm';
 import { WRITE_PATH_NOT_ALLOWED_MESSAGE } from './useProfileForm.types';
 
@@ -284,5 +285,29 @@ describe('existing-account profile completion authority', () => {
     await act(async () => result.current.handlers.handleSubmit());
     expect(ProfileController.commitUpdate).toHaveBeenCalled();
     expect(mockPush).toHaveBeenCalledExactlyOnceWith('/profile');
+  });
+  it('returns to the account settings in a store, which serves no profile page', async () => {
+    setStoreSeller('s'.repeat(52));
+    try {
+      const { result } = renderHook(() =>
+        useProfileForm({
+          mode: 'edit',
+          pubky,
+          userDetails: {
+            id: pubky,
+            name: 'Fictional Seller',
+            bio: '',
+            links: [],
+            status: null,
+            image: null,
+            indexed_at: 1,
+          },
+        }),
+      );
+      await act(async () => result.current.handlers.handleSubmit());
+      expect(mockPush).toHaveBeenCalledExactlyOnceWith('/settings/account');
+    } finally {
+      setStoreSeller(undefined);
+    }
   });
 });

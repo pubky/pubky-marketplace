@@ -11,14 +11,18 @@ import { SidebarButton } from '@/atoms/SidebarButton/SidebarButton';
 import { Typography } from '@/atoms/Typography/Typography';
 import { APP_VERSION } from '@/config/app';
 import { APP_RELEASE_URL } from '@/config/externalLinks';
+import { isStoreMode } from '@/config/store-mode';
 import { cn } from '@/libs/utils/utils';
 import { DialogPrivacy } from '@/organisms/DialogPrivacy/DialogPrivacy';
 import { DialogTerms } from '@/organisms/DialogTerms/DialogTerms';
 import { FeedbackCard } from '@/organisms/FeedbackCard/FeedbackCard';
-import { COPYRIGHT_TEXT, FAQ_QUESTIONS } from './SettingsInfo.constants';
+import { COPYRIGHT_TEXT, FAQ_QUESTIONS, STORE_FAQ_QUESTIONS } from './SettingsInfo.constants';
 import type { SettingsInfoProps } from './SettingsInfo.types';
 
 export function SettingsInfo({ className, hideFAQ = false }: SettingsInfoProps) {
+  // A store answers only the account questions its help page keeps, and has no support desk for feedback.
+  const storeMode = isStoreMode();
+  const faqQuestions = storeMode ? STORE_FAQ_QUESTIONS : FAQ_QUESTIONS;
   return (
     <Container overrideDefaults className={cn('flex w-full min-w-0 flex-col gap-6', className)}>
       {/* Terms of Service & Privacy Section */}
@@ -35,7 +39,7 @@ export function SettingsInfo({ className, hideFAQ = false }: SettingsInfoProps) 
         <FilterRoot>
           <FilterHeader title={'FAQ'} />
           <FilterList className="gap-2">
-            {FAQ_QUESTIONS.map((question) => (
+            {faqQuestions.map((question) => (
               <Link key={question} href={SETTINGS_ROUTES.HELP}>
                 <Container
                   overrideDefaults
@@ -63,7 +67,7 @@ export function SettingsInfo({ className, hideFAQ = false }: SettingsInfoProps) 
       )}
 
       {/* Feedback Section */}
-      <FeedbackCard />
+      {!storeMode && <FeedbackCard />}
 
       {/* Version Section */}
       <Container overrideDefaults className="flex flex-col gap-2">
