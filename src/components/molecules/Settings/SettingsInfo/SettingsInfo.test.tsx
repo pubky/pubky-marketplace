@@ -2,7 +2,8 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { SettingsInfo } from './SettingsInfo';
 
-vi.mock('@/config/app', () => ({
+vi.mock('@/config/app', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/config/app')>()),
   APP_VERSION: '1.2.3',
 }));
 

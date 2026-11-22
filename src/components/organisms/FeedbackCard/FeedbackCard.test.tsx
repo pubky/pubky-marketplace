@@ -333,7 +333,7 @@ describe('FeedbackCard', () => {
       render(<FeedbackCard />);
 
       await waitFor(() => {
-        expect(mockGetAvatarUrl).toHaveBeenCalledWith(mockPubky);
+        expect(mockGetAvatarUrl).toHaveBeenCalledWith(mockPubky, undefined);
       });
     });
 
