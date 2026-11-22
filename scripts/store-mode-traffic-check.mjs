@@ -12,7 +12,7 @@
 // sandbox commerce mode, so no transaction service is needed. Exit 0 only when every check passed.
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -43,6 +43,7 @@ const ATTRIBUTED = new Map([
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
 const ARTIFACTS = process.env.STORE_TRAFFIC_ARTIFACTS ?? mkdtempSync(join(tmpdir(), 'store-traffic-artifacts-'));
+mkdirSync(ARTIFACTS, { recursive: true });
 const results = [];
 function check(id, ok, detail) {
   results.push(ok);

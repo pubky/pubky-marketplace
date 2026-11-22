@@ -2,7 +2,11 @@
 # Run the two-account chat proof (src/test/e2e/chat-two-accounts.mjs) against
 # a disposable local Pubky stack: the pubky-docker testnet (homeserver, pkarr
 # and HTTP relays, Nexus, Homegate), a pubky/inbox container on the same
-# network, and the Shop's production build served by `next start`.
+# network, and the Shop's production build served by `next start`. Then, on
+# the same stack, the store-mode traffic check
+# (scripts/store-mode-traffic-check.mjs): the same build as one seller's store
+# with no Nexus or CDN URL, which fails on any request to the stack's Nexus or
+# any other host it cannot attribute.
 #
 # Needs: Docker with Compose, a `.next` production build in the working
 # directory, `npm ci` done, and Playwright's Chromium (CHROMIUM_PATH or the
@@ -17,6 +21,9 @@
 #   CHAT_E2E_KEEP_STACK=1  leave the stack running for inspection
 #   PORT                   Shop port (default 3000; the inbox CORS list and
 #                          the e2e's SHOP_URL follow it)
+#   STORE_TRAFFIC_PORT     store port for the traffic check (default 3101)
+#   SCREENSHOT_DIR         chat screenshots; the traffic check's go in its
+#                          store-traffic subdirectory (default .chat-e2e)
 set -euo pipefail
 
 INBOX_IMAGE="${CHAT_E2E_INBOX_IMAGE:-synonymsoft/pubky-inbox:v0.4.1}"
@@ -175,3 +182,11 @@ SHOP_URL="$SHOP_URL" \
 HOMESERVER_ADMIN_URL=http://localhost:6288/generate_signup_token \
 HOMESERVER_ADMIN_PASSWORD=admin \
 node src/test/e2e/chat-two-accounts.mjs
+
+# 5. A store reaches no Nexus or CDN host. The script starts its own `next start`
+#    in store mode with no index URL, on its own port, against the same stack.
+log "store-mode traffic check"
+STORE_TRAFFIC_ARTIFACTS="${SCREENSHOT_DIR:-.chat-e2e}/store-traffic" \
+HOMESERVER_ADMIN_URL=http://localhost:6288/generate_signup_token \
+HOMESERVER_ADMIN_PASSWORD=admin \
+npm run --silent test:store-mode:traffic
