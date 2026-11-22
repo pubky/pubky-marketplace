@@ -70,7 +70,6 @@ describe('proxy in store mode', () => {
 
   afterEach(() => {
     runtime.storeSeller = undefined;
-    runtime.frameAncestors = [];
   });
 
   it('passes every path through when store mode is off', () => {
@@ -135,11 +134,12 @@ describe('proxy in store mode', () => {
 
   it('sets the framing headers on redirects and not-found rewrites', () => {
     runtime.storeSeller = STORE_SELLER;
-    runtime.frameAncestors = ['https://pubky.app'];
+    runtime.frameAncestors = [];
 
     for (const path of ['/', '/hot']) {
       const response = proxy(request(path));
-      expect(response.headers.get('content-security-policy')).toBe('frame-ancestors https://pubky.app');
+      expect(response.headers.get('content-security-policy')).toBe("frame-ancestors 'none'");
+      expect(response.headers.get('x-frame-options')).toBe('DENY');
       expect(response.headers.get('cross-origin-opener-policy')).toBe('same-origin-allow-popups');
     }
   });

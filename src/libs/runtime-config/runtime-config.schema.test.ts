@@ -668,6 +668,24 @@ describe('store seller runtime value', () => {
     );
   });
 
+  it('rejects store mode with framing allowed', () => {
+    const strict = runtimeEnvInputSchema.safeParse({
+      ...VALID_ENV_INPUT,
+      storeSeller: STORE_SELLER,
+      frameAncestors: 'https://seller.example',
+    });
+    expect(strict.success).toBe(false);
+    expect(strict.error?.issues).toEqual([
+      expect.objectContaining({
+        path: ['storeSeller'],
+        message: expect.stringContaining('cannot be combined with PUBKY_RUNTIME_FRAME_ANCESTORS'),
+      }),
+    ]);
+    expect(() =>
+      runtimeEnvInputSchemaWithDefaults.parse({ storeSeller: STORE_SELLER, frameAncestors: 'self' }),
+    ).toThrow('PUBKY_RUNTIME_FRAME_ANCESTORS');
+  });
+
   it('allows store mode with embedded mode off', () => {
     expect(
       runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, storeSeller: STORE_SELLER, embedded: 'false' }).storeSeller,

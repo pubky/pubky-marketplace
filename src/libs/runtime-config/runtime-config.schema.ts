@@ -469,16 +469,29 @@ function validatePaykitServerApiEnvInput(
 }
 
 /**
- * Store mode serves one seller's shop on the seller's own origin. The embedded build
- * runs inside pubky.app's chrome as the whole Market, so the two cannot be combined.
+ * Store mode serves one seller's shop, top level, on the seller's own origin. The embedded build
+ * runs inside pubky.app's chrome as the whole Market, and allowing framers turns a framed page
+ * into an embedded one, so store mode takes neither.
  */
-function validateStoreModeEnvInput(input: { storeSeller?: string; embedded?: boolean }, ctx: z.RefinementCtx): void {
-  if (input.storeSeller === undefined || input.embedded !== true) return;
-  ctx.addIssue({
-    code: 'custom',
-    path: ['storeSeller'],
-    message: `${PUBKY_RUNTIME_ENV_NAMES.storeSeller} (store mode) cannot be combined with ${PUBKY_RUNTIME_ENV_NAMES.embedded}=true.`,
-  });
+function validateStoreModeEnvInput(
+  input: { storeSeller?: string; embedded?: boolean; frameAncestors?: string[] },
+  ctx: z.RefinementCtx,
+): void {
+  if (input.storeSeller === undefined) return;
+  if (input.embedded === true) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['storeSeller'],
+      message: `${PUBKY_RUNTIME_ENV_NAMES.storeSeller} (store mode) cannot be combined with ${PUBKY_RUNTIME_ENV_NAMES.embedded}=true.`,
+    });
+  }
+  if (input.frameAncestors !== undefined && input.frameAncestors.length > 0) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['storeSeller'],
+      message: `${PUBKY_RUNTIME_ENV_NAMES.storeSeller} (store mode) cannot be combined with ${PUBKY_RUNTIME_ENV_NAMES.frameAncestors}; a store is not framed.`,
+    });
+  }
 }
 
 /** Production Pubky HTTP relay host. A staging deploy never hands it to a signer. */
