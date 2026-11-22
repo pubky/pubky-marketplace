@@ -108,7 +108,7 @@ describe('proxy in store mode', () => {
     const response = proxy(request(path));
 
     expect(response.headers.get('location')).toBeNull();
-    expect(response.headers.get('x-middleware-rewrite')).toBe('https://store.example/_store-not-found');
+    expect(response.headers.get('x-middleware-rewrite')).toBe('https://store.example/_not-found');
   });
 
   it.each([

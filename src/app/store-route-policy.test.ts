@@ -85,9 +85,11 @@ describe('store route policy table', () => {
     expect(filesUnder(PUBLIC_DIR).filter((file) => !basename(file).includes('.'))).toEqual([]);
   });
 
-  it('keeps the not-found target unroutable', () => {
-    expect(STORE_NOT_FOUND_PATHNAME.startsWith('/_')).toBe(true);
+  it('rewrites to the not-found route Next.js builds from src/app/not-found.tsx', () => {
+    expect(STORE_NOT_FOUND_PATHNAME).toBe('/_not-found');
+    expect(appFiles).toContain('not-found.tsx');
     expect(matchStoreRoute(STORE_NOT_FOUND_PATHNAME)).toBeNull();
+    expect(decideStoreRoute(STORE_NOT_FOUND_PATHNAME, STORE_SELLER).kind).toBe('not-found');
   });
 });
 

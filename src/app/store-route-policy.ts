@@ -114,8 +114,12 @@ export const STORE_ROUTE_POLICY: Readonly<Record<string, StoreRoutePolicy>> = {
  */
 export const STORE_ROUTE_HANDLER_PATHS: readonly string[] = ['/auth/passport/return', '/llms.txt'];
 
-/** Where the proxy rewrites a path a store does not serve. A `_` folder is never routable, so this always 404s. */
-export const STORE_NOT_FOUND_PATHNAME = '/_store-not-found';
+/**
+ * Where the proxy rewrites a path a store does not serve: the route Next.js builds from
+ * `src/app/not-found.tsx`, which answers 404. An unmatched path is no substitute: the `(feeds)`
+ * `@post` catch-all matches it, and its 404 screen is then sent with status 200.
+ */
+export const STORE_NOT_FOUND_PATHNAME = '/_not-found';
 
 /** The route segment Next.js generates for a page's `opengraph-image` / `twitter-image` file. */
 const METADATA_IMAGE_SEGMENT = /^(?:opengraph|twitter)-image(?:-[\w-]+)?$/;
