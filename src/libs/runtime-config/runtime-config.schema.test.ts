@@ -700,6 +700,63 @@ describe('store seller runtime value', () => {
   });
 });
 
+describe('index URLs and store mode', () => {
+  const STORE_SELLER = 'ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u';
+  const { nexusUrl: _nexusUrl, cdnUrl: _cdnUrl, ...WITHOUT_INDEX } = VALID_ENV_INPUT;
+
+  it.each([
+    ['nexusUrl', 'PUBKY_RUNTIME_NEXUS_URL'],
+    ['cdnUrl', 'PUBKY_RUNTIME_CDN_URL'],
+  ] as const)('requires %s outside store mode', (key, envName) => {
+    const { [key]: _omitted, ...partial } = VALID_ENV_INPUT;
+    const result = runtimeEnvInputSchema.safeParse(partial);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toEqual([
+      expect.objectContaining({ path: [key], message: expect.stringContaining(envName) }),
+    ]);
+    expect(() => runtimeEnvInputSchema.parse({ ...partial, [key]: '' })).toThrow(envName);
+  });
+
+  it('accepts a store with no index URL set', () => {
+    const parsed = runtimeEnvInputSchema.parse({ ...WITHOUT_INDEX, storeSeller: STORE_SELLER });
+    expect(parsed.storeSeller).toBe(STORE_SELLER);
+    expect('nexusUrl' in parsed || 'cdnUrl' in parsed || 'marketplaceNexusUrl' in parsed).toBe(false);
+  });
+
+  it('ignores the index URLs a store sets, in the strict, lenient and value parses', () => {
+    const indexUrls = { marketplaceNexusUrl: 'https://marketplace-nexus.example.com' };
+    const strict = runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, ...indexUrls, storeSeller: STORE_SELLER });
+    const lenient = runtimeEnvInputSchemaWithDefaults.parse({ ...indexUrls, storeSeller: STORE_SELLER });
+    const injected = runtimeConfigValueSchema.parse({
+      ...runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, ...indexUrls }),
+      storeSeller: STORE_SELLER,
+    });
+    for (const config of [strict, lenient, injected]) {
+      expect(config).not.toHaveProperty('nexusUrl');
+      expect(config).not.toHaveProperty('cdnUrl');
+      expect(config).not.toHaveProperty('marketplaceNexusUrl');
+      expect(JSON.stringify(config)).not.toMatch(/nexus\.example\.com|marketplace-nexus|nexus\.staging\.pubky\.app/);
+    }
+  });
+
+  it('keeps the index URLs outside store mode', () => {
+    const parsed = runtimeEnvInputSchema.parse({
+      ...VALID_ENV_INPUT,
+      marketplaceNexusUrl: 'https://marketplace-nexus.example.com',
+    });
+    expect(parsed.nexusUrl).toBe(VALID_ENV_INPUT.nexusUrl);
+    expect(parsed.cdnUrl).toBe(VALID_ENV_INPUT.cdnUrl);
+    expect(parsed.marketplaceNexusUrl).toBe('https://marketplace-nexus.example.com');
+    expect(runtimeEnvInputSchemaWithDefaults.parse({}).nexusUrl).toBe(NETWORK_RUNTIME_DEFAULTS.nexusUrl);
+  });
+
+  it('rejects an injected full-Market config without its index URLs', () => {
+    const base = runtimeEnvInputSchema.parse(VALID_ENV_INPUT);
+    const { nexusUrl: _omitted, ...withoutNexus } = base;
+    expect(() => runtimeConfigValueSchema.parse(withoutNexus)).toThrow('PUBKY_RUNTIME_NEXUS_URL');
+  });
+});
+
 describe('readSentryEnvironment', () => {
   it('reads PUBKY_RUNTIME_SENTRY_ENVIRONMENT as the runtime resolver parses it', () => {
     const env = { PUBKY_RUNTIME_SENTRY_ENVIRONMENT: 'staging' };

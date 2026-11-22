@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   escapeForInlineScript,
+  getCdnUrl,
   getClientRegionHeader,
   getCommerceAdapterMode,
   getCommercePollIntervalMs,
@@ -8,6 +9,7 @@ import {
   getLocksUrl,
   getMarketplaceNexusUrl,
   getMarketplaceUrl,
+  getNexusUrl,
   getPassportOrigin,
   getPassportPrivEncryptionKeysEnabled,
   getPassportSignInEnabled,
@@ -170,6 +172,33 @@ describe('runtime-config resolver', () => {
       it('keeps the social host allowed outside store mode', () => {
         vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', 'https://pubky.app');
         expect(readServerConfig().storeSeller).toBeUndefined();
+      });
+      it('starts a deployed store with no index URL and builds none from its config', () => {
+        simulateDeployedEnv();
+        setNetworkRuntimeEnv();
+        delete process.env.PUBKY_RUNTIME_NEXUS_URL;
+        delete process.env.PUBKY_RUNTIME_CDN_URL;
+        vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', '');
+        vi.stubEnv('PUBKY_RUNTIME_STORE_SELLER', STORE_SELLER);
+        window[RUNTIME_CONFIG_WINDOW_KEY] = JSON.parse(JSON.stringify(readServerConfig()));
+        expect(getRuntimeConfig().storeSeller).toBe(STORE_SELLER);
+        expect(() => getNexusUrl()).toThrow('PUBKY_RUNTIME_NEXUS_URL');
+        expect(() => getCdnUrl()).toThrow('PUBKY_RUNTIME_CDN_URL');
+        expect(() => getMarketplaceNexusUrl()).toThrow('PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL');
+      });
+      it('ignores the index URLs a store sets, also in the injected config', () => {
+        setAllRuntimeEnv();
+        vi.stubEnv('PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL', 'https://marketplace-nexus.runtime.example.com');
+        vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', '');
+        vi.stubEnv('PUBKY_RUNTIME_STORE_SELLER', STORE_SELLER);
+        expect(() => getNexusUrl()).toThrow('PUBKY_RUNTIME_NEXUS_URL');
+        expect(serializeRuntimeConfig()).not.toContain('nexus.runtime.example.com');
+      });
+      it('refuses a deployed full Market without the Nexus URL', () => {
+        simulateDeployedEnv();
+        setNetworkRuntimeEnv();
+        delete process.env.PUBKY_RUNTIME_NEXUS_URL;
+        expect(() => readServerConfig()).toThrow('Runtime config is incomplete or invalid');
       });
     });
 

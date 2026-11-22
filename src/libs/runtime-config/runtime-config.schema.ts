@@ -605,11 +605,12 @@ export const APP_RUNTIME_DEFAULTS = {
 
 /**
  * REQUIRED tier: environment-specific network values. A deployed container must set all of
- * them (see `runtimeEnvInputSchema`).
+ * them (see `runtimeEnvInputSchema`), except that a store needs no Nexus or CDN URL (see
+ * {@link runtimeConfigValueSchema}).
  */
 export const networkConfigValueSchema = z.object({
-  nexusUrl: urlValue,
-  cdnUrl: urlValue,
+  nexusUrl: urlValue.optional(),
+  cdnUrl: urlValue.optional(),
   homeserver: homeserverValue,
   /** Homeserver HTTP base URL: the homeserver pubkey has no resolvable HTTPS endpoint (pubky-core#410) */
   homeserverUrl: urlValue,
@@ -622,11 +623,7 @@ export const networkConfigValueSchema = z.object({
 
 export type NetworkRuntimeConfig = z.infer<typeof networkConfigValueSchema>;
 
-/**
- * Parsed runtime config (required network tier + optional/defaulted public tiers).
- * Validates `window.__PUBKY_CONFIG__`.
- */
-export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
+const runtimeConfigObjectSchema = networkConfigValueSchema.extend({
   /** Sentry DSN shared by browser/server/edge. Absent/empty disables Sentry entirely. */
   sentryDsn: urlValue.optional(),
   /** Environment tag attached to every Sentry event. Absent falls back to NODE_ENV (see sentry.ts). */
@@ -845,10 +842,55 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
   playStoreUrl: urlValue.default(APP_RUNTIME_DEFAULTS.playStoreUrl),
 });
 
-const lenientRuntimeConfigValueSchema = runtimeConfigValueSchema.extend({
-  // Zod v4 `.default()` bypasses validation; `.prefault()` sends the staging fallback through pubkyValue.
-  moderationId: pubkyValue.prefault(APP_RUNTIME_DEFAULTS.moderationId),
-});
+type IndexUrlFields = { storeSeller?: string; nexusUrl?: string; cdnUrl?: string; marketplaceNexusUrl?: string };
+
+const INDEX_URL_KEYS = ['nexusUrl', 'cdnUrl', 'marketplaceNexusUrl'] as const;
+
+type WithoutIndexUrls<T> = Omit<T, (typeof INDEX_URL_KEYS)[number]> &
+  Partial<Pick<T, Extract<keyof T, (typeof INDEX_URL_KEYS)[number]>>>;
+
+function requireIndexUrlsOutsideStore(config: IndexUrlFields, ctx: z.RefinementCtx): void {
+  if (config.storeSeller !== undefined) return;
+  for (const key of ['nexusUrl', 'cdnUrl'] as const) {
+    if (config[key] !== undefined) continue;
+    ctx.addIssue({
+      code: 'custom',
+      path: [key],
+      message: `${PUBKY_RUNTIME_ENV_NAMES[key]} is required unless ${PUBKY_RUNTIME_ENV_NAMES.storeSeller} (store mode) is set.`,
+    });
+  }
+}
+
+/**
+ * A store reads every profile, shop and listing from its owner's homeserver, so it drops the
+ * index URLs even when they are set: no Nexus or CDN URL can be built from a store's config.
+ */
+function dropIndexUrlsInStore<T extends IndexUrlFields>(config: T): WithoutIndexUrls<T> {
+  if (config.storeSeller === undefined) return config;
+  const stripped: WithoutIndexUrls<T> = { ...config };
+  for (const key of INDEX_URL_KEYS) delete stripped[key];
+  return stripped;
+}
+
+/**
+ * Parsed runtime config (required network tier + optional/defaulted public tiers).
+ * Validates `window.__PUBKY_CONFIG__`. The Nexus and CDN URLs are required for the full Market;
+ * a store (`storeSeller` set) never holds them, nor the marketplace Nexus URL.
+ */
+export const runtimeConfigValueSchema = runtimeConfigObjectSchema
+  .superRefine(requireIndexUrlsOutsideStore)
+  .transform(dropIndexUrlsInStore);
+
+const lenientRuntimeConfigValueSchema = runtimeConfigObjectSchema
+  .extend({
+    // The lenient env parse always fills them with staging defaults; a store still drops them.
+    nexusUrl: urlValue,
+    cdnUrl: urlValue,
+    // Zod v4 `.default()` bypasses validation; `.prefault()` sends the staging fallback through pubkyValue.
+    moderationId: pubkyValue.prefault(APP_RUNTIME_DEFAULTS.moderationId),
+  })
+  .superRefine(requireIndexUrlsOutsideStore)
+  .transform(dropIndexUrlsInStore);
 
 export type RuntimeConfig = z.infer<typeof runtimeConfigValueSchema>;
 
@@ -861,8 +903,8 @@ export type RuntimeConfig = z.infer<typeof runtimeConfigValueSchema>;
  */
 export const runtimeEnvInputSchema = z
   .object({
-    nexusUrl: urlValue,
-    cdnUrl: urlValue,
+    nexusUrl: optionalUrlFromString,
+    cdnUrl: optionalUrlFromString,
     homeserver: homeserverValue,
     homeserverUrl: urlValue,
     homegateUrl: urlValue,
@@ -957,7 +999,7 @@ export const runtimeEnvInputSchema = z
 /**
  * Canonical staging defaults for the required network tier (single source of truth, parsed shape).
  */
-export const NETWORK_RUNTIME_DEFAULTS: NetworkRuntimeConfig = {
+export const NETWORK_RUNTIME_DEFAULTS: Required<NetworkRuntimeConfig> = {
   nexusUrl: 'https://nexus.staging.pubky.app',
   cdnUrl: 'https://nexus.staging.pubky.app/static',
   homeserver: 'ufibwbmed6jeq9k4p583go95wofakh9fwpp4k734trq79pd9u1uy',

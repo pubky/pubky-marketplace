@@ -43,6 +43,7 @@ const REQUIRED_NETWORK_ENV_MESSAGE =
   'PUBKY_RUNTIME_HOMESERVER_URL, PUBKY_RUNTIME_HOMEGATE_URL, PUBKY_RUNTIME_DEFAULT_HTTP_RELAY, ' +
   'PUBKY_RUNTIME_PKARR_RELAYS, PUBKY_RUNTIME_TESTNET, and PUBKY_RUNTIME_ENV ' +
   '("production" or "staging"). ' +
+  'A store (PUBKY_RUNTIME_STORE_SELLER) needs neither PUBKY_RUNTIME_NEXUS_URL nor PUBKY_RUNTIME_CDN_URL. ' +
   'Optional/defaulted PUBKY_RUNTIME_* values may be set independently.';
 
 /**
@@ -193,9 +194,20 @@ export function resetRuntimeConfigForTests(): void {
   didWarnModerationDisabled = false;
 }
 
+/**
+ * A store's config never holds an index URL (see `runtimeConfigValueSchema`), so a read that
+ * would reach Nexus or its CDN in a store fails here instead of leaving the store's origin.
+ */
+function requireIndexUrl(value: string | undefined, envName: string): string {
+  if (value === undefined) {
+    throw new Error(`${envName} is not part of a store's config; a store reads no Nexus or CDN.`);
+  }
+  return value;
+}
+
 // Lazy getters: read the resolved config at call time (never captured at module load).
-export const getNexusUrl = (): string => getRuntimeConfig().nexusUrl;
-export const getCdnUrl = (): string => getRuntimeConfig().cdnUrl;
+export const getNexusUrl = (): string => requireIndexUrl(getRuntimeConfig().nexusUrl, PUBKY_RUNTIME_ENV_NAMES.nexusUrl);
+export const getCdnUrl = (): string => requireIndexUrl(getRuntimeConfig().cdnUrl, PUBKY_RUNTIME_ENV_NAMES.cdnUrl);
 export const getHomeserver = (): string => getRuntimeConfig().homeserver;
 export const getHomeserverUrl = (): string => getRuntimeConfig().homeserverUrl;
 export const getHomegateUrl = (): string => getRuntimeConfig().homegateUrl;
@@ -239,7 +251,10 @@ export const getMarketplaceUrl = (): string => getRuntimeConfig().marketplaceUrl
  * `getNexusUrl`.
  */
 export const getMarketplaceNexusUrl = (): string =>
-  getRuntimeConfig().marketplaceNexusUrl ?? getRuntimeConfig().nexusUrl;
+  requireIndexUrl(
+    getRuntimeConfig().marketplaceNexusUrl ?? getRuntimeConfig().nexusUrl,
+    PUBKY_RUNTIME_ENV_NAMES.marketplaceNexusUrl,
+  );
 /** The chat inbox ping service; `null` when the deployment has none. */
 export const getInboxUrl = (): string | null => getRuntimeConfig().inboxUrl ?? null;
 /** Audience the inbox expects in session proofs; defaults to the inbox URL. */
