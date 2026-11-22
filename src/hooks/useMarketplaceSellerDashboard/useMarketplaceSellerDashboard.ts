@@ -410,6 +410,7 @@ export function useMarketplaceSellerDashboard() {
       revenue,
       openOffers: sellerOffers.filter(({ state }) => state === 'pending' || state === 'countered').length,
     },
+    hasShippedSale: sellerOrders.some(({ order }) => order.fulfillment === 'shipping'),
     actionNeeded: {
       ordersToShip,
       offersAwaitingReply,

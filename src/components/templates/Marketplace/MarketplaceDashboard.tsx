@@ -38,6 +38,7 @@ import { Link } from '@/atoms/Link/Link';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
+import { isStoreMode } from '@/config/store-mode';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useDeleteMarketplaceListings } from '@/hooks/useDeleteMarketplaceListings/useDeleteMarketplaceListings';
 import { useIsMobile } from '@/hooks/useIsMobile/useIsMobile';
@@ -60,6 +61,8 @@ import {
   paginateListingRows,
   sortListingRows,
 } from '@/libs/commerce/listing-table';
+import { commerceListingFulfillmentMethods } from '@/libs/commerce/marketplace-records';
+import { DeliveryKeyCustodyNotice } from '@/molecules/Marketplace/DeliveryKeyCustodyNotice';
 import { SellingUnavailableNotice } from '@/molecules/Marketplace/SellingUnavailableNotice';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { toast } from '@/molecules/Toaster/toast';
@@ -236,6 +239,13 @@ export function MarketplaceDashboard() {
     await runDuplicate(listingId);
   };
 
+  const showDeliveryKeyCustody =
+    isStoreMode() &&
+    !dashboard.hasShippedSale &&
+    dashboard.listings.some(({ record }) =>
+      commerceListingFulfillmentMethods(record.fulfillmentMethods).includes('shipping'),
+    );
+
   const exportCsv = async () => {
     const csv = await dashboard.exportCsv();
     if (!csv) return;
@@ -355,6 +365,7 @@ export function MarketplaceDashboard() {
                 </CardContent>
               </Card>
             )}
+            {showDeliveryKeyCustody && <DeliveryKeyCustodyNotice />}
             {dashboard.unfinishedDrafts.length > 1 && (
               <Card data-surface="listing-drafts-list" className="rounded-md bg-brand/5 p-0 shadow-lg">
                 <CardContent className="grid gap-6 p-6">
