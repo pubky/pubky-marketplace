@@ -2,8 +2,16 @@
 
 import { type ReactNode, useEffect, useMemo, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { APP_ROUTES, isDynamicPublicRoute, matchesAllowedRoute, PUBLIC_ROUTES } from '@/app/routes';
+import {
+  APP_ROUTES,
+  getMarketplaceHomeRoute,
+  isDynamicPublicRoute,
+  matchesAllowedRoute,
+  PUBLIC_ROUTES,
+} from '@/app/routes';
+import { isStoreSellerViewerRoute } from '@/app/store-route-policy';
 import { Spinner } from '@/atoms/Spinner/Spinner';
+import { getStoreSeller } from '@/config/store-mode';
 import { AuthController } from '@/controllers/auth/auth';
 import { MigrationController } from '@/controllers/migration/migration';
 import { useAuthStatus } from '@/hooks/useAuthStatus/useAuthStatus';
@@ -26,6 +34,7 @@ import {
 import { useIsShopHosted } from '@/providers/ShopHostSessionProvider/ShopHostSessionProvider';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useMigrationStore } from '@/stores/migration/migration.store';
+import { NotFound } from '@/templates/Public/NotFound/NotFound';
 
 // Migration resync timeout in milliseconds
 const MIGRATION_RESYNC_TIMEOUT_MS = 10_000;
@@ -239,7 +248,7 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
       status === AuthStatus.UNAUTHENTICATED &&
       isMarketplaceDeepLink &&
       isRouteGuardReturnToAllowed(pathname, authenticatedRouteAccess.allowedRoutes);
-    const redirectTo = shouldOpenMarketplaceSignIn ? APP_ROUTES.MARKETPLACE : routeAccess.redirectTo;
+    const redirectTo = shouldOpenMarketplaceSignIn ? getMarketplaceHomeRoute() : routeAccess.redirectTo;
 
     // Runtime validation: ensure redirect target is actually in allowed routes
     if (redirectTo && !routeAccess.allowedRoutes.some((route) => matchesAllowedRoute(redirectTo, route))) {
@@ -266,6 +275,18 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
       router.push(redirectTo);
     }
   }, [status, pathname, router, isLoading, isRouteAccessible]);
+
+  // A store's selling tools exist only for the store seller; the proxy cannot see who is signed in.
+  const storeSeller = getStoreSeller();
+  if (
+    storeSeller !== null &&
+    status === AuthStatus.AUTHENTICATED &&
+    !isLoading &&
+    currentUserPubky !== storeSeller &&
+    isStoreSellerViewerRoute(pathname)
+  ) {
+    return <NotFound />;
+  }
 
   // Show loading spinner while:
   // 1. Authentication status is being determined (isLoading = true)
