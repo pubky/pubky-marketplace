@@ -1,0 +1,1 @@
+A Locks payment that confirms after its one-hour marketplace window, while the marketplace still holds the order for the Lock Server's task, now shows as paid without a reload: the order page keeps checking, every 30 seconds, for as long as the marketplace holds it.

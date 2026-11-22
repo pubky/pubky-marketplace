@@ -11,6 +11,8 @@ import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commer
 import { useMarketplaceLocksPayment } from './useMarketplaceLocksPayment';
 
 const SELLER = 's'.repeat(52);
+// The transaction service's default LOCKS_LIVE_TASK_HOLD_SECONDS.
+const LIVE_TASK_HOLD_MS = 94_200 * 1_000;
 
 const config = vi.hoisted(() => ({ mode: 'locks-paykit' as string }));
 
@@ -266,10 +268,10 @@ describe('useMarketplaceLocksPayment', () => {
     expect(onPaymentChanged.mock.calls.length).toBe(callsAtUnmount);
   });
 
-  it('stops polling once the payment window bound has elapsed and resumes on request', async () => {
+  it('stops polling once the live-task hold past the window has elapsed and resumes on request', async () => {
     vi.mocked(CommerceController.getMarketplaceLocksCorrelation).mockResolvedValue(
-      // A window that elapsed long ago (beyond the one-minute grace).
-      makeCorrelation(true, new Date(Date.now() - 3_600_000).toISOString()) as never,
+      // A window whose live-task hold (and one-minute grace) elapsed long ago.
+      makeCorrelation(true, new Date(Date.now() - LIVE_TASK_HOLD_MS - 3_600_000).toISOString()) as never,
     );
     const onPaymentChanged = vi.fn();
 
@@ -284,6 +286,20 @@ describe('useMarketplaceLocksPayment', () => {
     expect(result.current.pollExhausted).toBe(false);
     await waitFor(() => expect(onPaymentChanged).toHaveBeenCalled());
     expect(CommerceController.beginMarketplaceLocksPayment).not.toHaveBeenCalled();
+  });
+
+  it('stops at the window for a correlation that never registered', async () => {
+    vi.mocked(CommerceController.getMarketplaceLocksCorrelation).mockResolvedValue(
+      makeCorrelation(false, new Date(Date.now() - 3_600_000).toISOString()) as never,
+    );
+    const onPaymentChanged = vi.fn();
+
+    const { result } = renderHook(() =>
+      useMarketplaceLocksPayment({ order, payment, digitalLock, isBuyer: true, onPaymentChanged }),
+    );
+
+    await waitFor(() => expect(result.current.pollExhausted).toBe(true));
+    expect(onPaymentChanged).not.toHaveBeenCalled();
   });
 
   it('polls the Lock Server task after a pending submit, shows wallet setup, and never resubmits (pubky/locks#72)', async () => {
@@ -402,9 +418,42 @@ describe('useMarketplaceLocksPayment', () => {
       expect(CommerceController.beginMarketplaceLocksPayment).not.toHaveBeenCalled();
     });
 
+    it('keeps polling a registered payment past its window every 30 s until the live-task hold ends', async () => {
+      const windowExpiresAt = Date.now() + 60_000;
+      vi.mocked(CommerceController.getMarketplaceLocksCorrelation).mockResolvedValue(
+        makeCorrelation(true, new Date(windowExpiresAt).toISOString()),
+      );
+      const onPaymentChanged = vi.fn();
+      const { result } = renderHook(() =>
+        useMarketplaceLocksPayment({ order, payment, digitalLock, isBuyer: true, onPaymentChanged }),
+      );
+      await act(async () => {});
+
+      // Past the window and its one-minute grace the service still holds the order.
+      vi.setSystemTime(windowExpiresAt + 60_000 + 3_600_000);
+      await act(async () => vi.advanceTimersByTimeAsync(50));
+      expect(result.current.pollExhausted).toBe(false);
+      const readsPastWindow = onPaymentChanged.mock.calls.length;
+      expect(readsPastWindow).toBeGreaterThan(0);
+      await act(async () => vi.advanceTimersByTimeAsync(1_000));
+      expect(onPaymentChanged).toHaveBeenCalledTimes(readsPastWindow);
+      await act(async () => vi.advanceTimersByTimeAsync(30_000));
+      expect(onPaymentChanged).toHaveBeenCalledTimes(readsPastWindow + 1);
+
+      // Check the bound without replaying a day of polling ticks.
+      vi.setSystemTime(windowExpiresAt + 60_000 + LIVE_TASK_HOLD_MS - 50);
+      await act(async () => vi.advanceTimersByTimeAsync(50));
+      expect(result.current.pollExhausted).toBe(false);
+      expect(onPaymentChanged).toHaveBeenCalledTimes(readsPastWindow + 2);
+      await act(async () => vi.advanceTimersByTimeAsync(50));
+      expect(result.current.pollExhausted).toBe(true);
+      await act(async () => vi.advanceTimersByTimeAsync(60_000));
+      expect(onPaymentChanged).toHaveBeenCalledTimes(readsPastWindow + 2);
+    });
+
     it('bounds explicitly resumed polling and allows another bounded resume', async () => {
       vi.mocked(CommerceController.getMarketplaceLocksCorrelation).mockResolvedValue(
-        makeCorrelation(true, new Date(Date.now() - 3_600_000).toISOString()),
+        makeCorrelation(true, new Date(Date.now() - LIVE_TASK_HOLD_MS - 3_600_000).toISOString()),
       );
       const onPaymentChanged = vi.fn();
       const { result } = renderHook(() =>
