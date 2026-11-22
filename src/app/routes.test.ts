@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { setSocialHost } from '@/test-utils/social-host';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import {
   ACCOUNT_ROUTES,
   APP_ROUTES,
@@ -7,6 +8,7 @@ import {
   AUTHENTICATED_ROUTES,
   getCollectionRoute,
   getMarketplaceAddressSettingsRoute,
+  getMarketplaceHomeRoute,
   getMarketplaceListingEditRoute,
   getMarketplaceListingRoute,
   getMarketplacePaymentSettingsRoute,
@@ -562,6 +564,28 @@ describe('getShopHomeRoute', () => {
       true,
     );
     setSocialHost('https://pubky.app');
+    expect(AUTHENTICATED_ROUTES.allowedRoutes.some((route) => matchesAllowedRoute(getShopHomeRoute(), route))).toBe(
+      true,
+    );
+  });
+});
+
+describe('store mode home routes', () => {
+  const STORE_SELLER = 'ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u';
+
+  afterEach(() => {
+    setStoreSeller(undefined);
+  });
+
+  it('is the marketplace catalog outside store mode', () => {
+    expect(getMarketplaceHomeRoute()).toBe(APP_ROUTES.MARKETPLACE);
+  });
+
+  it('is the store seller shop in store mode, for signed-in users too', () => {
+    setStoreSeller(STORE_SELLER);
+    expect(getMarketplaceHomeRoute()).toBe(getMarketplaceShopRoute(STORE_SELLER));
+    expect(getShopHomeRoute()).toBe(getMarketplaceShopRoute(STORE_SELLER));
+    expect(AUTHENTICATED_ROUTES.redirectTo).toBe(getMarketplaceShopRoute(STORE_SELLER));
     expect(AUTHENTICATED_ROUTES.allowedRoutes.some((route) => matchesAllowedRoute(getShopHomeRoute(), route))).toBe(
       true,
     );

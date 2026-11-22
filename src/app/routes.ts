@@ -1,4 +1,5 @@
 import { isSocialLinkOutEnabled } from '@/config/social';
+import { getStoreSeller, isStoreMode } from '@/config/store-mode';
 import { isPubkyIdentifier } from '@/libs/utils/utils';
 
 export const ROOT_ROUTES = '/';
@@ -199,10 +200,17 @@ export const NEEDS_PROFILE_CREATION_ROUTES = {
  * Where the Shop sends a user when it navigates "home" on its own (route guard,
  * logo, post-completion, not-found fallbacks). With social link-out on, `/home`
  * belongs to the social host, where a Shop session does not carry over, so the
- * Shop stays on its catalog instead.
+ * Shop stays on its catalog instead. A store (store mode) goes to its own shop.
  */
-export function getShopHomeRoute(): APP_ROUTES.HOME | APP_ROUTES.MARKETPLACE {
+export function getShopHomeRoute(): string {
+  if (isStoreMode()) return getMarketplaceHomeRoute();
   return isSocialLinkOutEnabled() ? APP_ROUTES.MARKETPLACE : APP_ROUTES.HOME;
+}
+
+/** The Market's landing page: the catalog, or in store mode the store seller's shop. */
+export function getMarketplaceHomeRoute(): string {
+  const storeSeller = getStoreSeller();
+  return storeSeller === null ? APP_ROUTES.MARKETPLACE : getMarketplaceShopRoute(storeSeller);
 }
 
 export const AUTHENTICATED_ROUTES = {
