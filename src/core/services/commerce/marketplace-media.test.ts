@@ -74,4 +74,33 @@ describe('MarketplaceMediaService', () => {
       `https://resolved.example/pubky://${owner}/pub/pubky.app/marketplace/v1/media/image`,
     );
   });
+
+  describe('fetchProfileImage', () => {
+    const blobUri = `pubky://${owner}/pub/pubky.app/blobs/0034A0X7NJ52H`;
+
+    it("reads a Pubky App blob from its owner's homeserver", async () => {
+      await expect(MarketplaceMediaService.fetchProfileImage(blobUri)).resolves.toBeInstanceOf(Blob);
+      expect(fetchMock).toHaveBeenCalledWith(`https://resolved.example/${blobUri}`);
+    });
+
+    it('refuses anything but a Pubky App blob before any request', async () => {
+      for (const other of [uri, `pubky://${owner}/pub/pubky.app/profile.json`, 'https://cdn.example/avatar']) {
+        await expect(MarketplaceMediaService.fetchProfileImage(other)).rejects.toMatchObject({
+          code: ServerErrorCode.INVALID_RESPONSE,
+        });
+      }
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('answers a removed image without reporting it', async () => {
+      fetchMock.mockResolvedValue(new Response('missing', { status: 404 }));
+      const reportClient = vi.spyOn(Err, 'client');
+
+      await expect(MarketplaceMediaService.fetchProfileImage(blobUri)).rejects.toMatchObject({
+        code: ClientErrorCode.NOT_FOUND,
+        message: 'Profile image was not found.',
+      });
+      expect(reportClient).not.toHaveBeenCalled();
+    });
+  });
 });

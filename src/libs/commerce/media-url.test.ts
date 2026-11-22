@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { resolveMarketplaceMediaUrl } from './media-url';
+import {
+  getProfileImageBlobOwner,
+  getProfileImageFileOwner,
+  isProfileImageBlobUri,
+  resolveMarketplaceMediaUrl,
+  resolveProfileImageBlobUrl,
+} from './media-url';
 
 const SELLER = 'y'.repeat(52);
 
@@ -54,5 +60,34 @@ describe('resolveMarketplaceMediaUrl', () => {
     ['/pub/pubky.app/marketplace/ok\x7f.jpg', 'DEL'],
   ])('rejects %s (%s)', (path) => {
     expect(resolveMarketplaceMediaUrl(`pubky://${SELLER}${path}`)).toBeNull();
+  });
+});
+
+describe('profile image URIs', () => {
+  const OTHER = 'o'.repeat(52);
+
+  it('reads the owner of a Pubky App file record or blob and nothing else', () => {
+    expect(getProfileImageFileOwner(`pubky://${SELLER}/pub/pubky.app/files/0034A0X7NJ52G`)).toBe(SELLER);
+    expect(getProfileImageBlobOwner(`pubky://${SELLER}/pub/pubky.app/blobs/0034A0X7NJ52G`)).toBe(SELLER);
+    for (const uri of [
+      `pubky://${SELLER}/pub/pubky.app/blobs/0034A0X7NJ52G`,
+      `pubky://${SELLER}/pub/pubky.app/files/0034A0X7NJ52G/x`,
+      `pubky://${SELLER}/pub/pubky.app/files/..`,
+      `pubky://${SELLER}/pub/pubky.app/files/0034A0X7NJ52G?x=1`,
+      `pubky://${SELLER}/pub/pubky.app/marketplace/v1/media/1`,
+      `https://cdn.example/pub/pubky.app/files/0034A0X7NJ52G`,
+      `pubky://${'0'.repeat(52)}/pub/pubky.app/files/0034A0X7NJ52G`,
+    ]) {
+      expect(getProfileImageFileOwner(uri)).toBeNull();
+    }
+    expect(getProfileImageBlobOwner(`pubky://${SELLER}/pub/pubky.app/files/0034A0X7NJ52G`)).toBeNull();
+    expect(isProfileImageBlobUri(`pubky://${SELLER}/pub/pubky.app/blobs/0034A0X7NJ52G`, OTHER)).toBe(false);
+  });
+
+  it('addresses a blob on a homeserver like marketplace media', () => {
+    expect(
+      resolveProfileImageBlobUrl(`pubky://${SELLER}/pub/pubky.app/blobs/0034A0X7NJ52G`, 'https://hs.example/'),
+    ).toBe(`https://hs.example/pub/pubky.app/blobs/0034A0X7NJ52G?pubky-host=${SELLER}`);
+    expect(resolveProfileImageBlobUrl(`pubky://${SELLER}/pub/pubky.app/profile.json`, 'https://hs.example')).toBeNull();
   });
 });

@@ -44,6 +44,16 @@ export class FileController {
     return FileApplication.getAvatarUrl(pubky, version);
   }
 
+  /** A store's avatar source: the image blob a profile's file record points at, from its owner's homeserver. */
+  static async fetchProfileImageBlobUri(fileUri: string): Promise<string | null> {
+    return await FileApplication.fetchProfileImageBlobUri(fileUri);
+  }
+
+  /** The bytes of a profile image blob, from its owner's homeserver. */
+  static async fetchProfileImage(blobUri: string): Promise<Blob> {
+    return await FileApplication.fetchProfileImage(blobUri);
+  }
+
   /**
    * Gets the CDN URL for a file with a specific variant.
    *

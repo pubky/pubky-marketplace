@@ -3,7 +3,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Typography } from '@/atoms/Typography/Typography';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { FileController } from '@/controllers/file/file';
+import { useAvatarUrl } from '@/hooks/useAvatarUrl/useAvatarUrl';
 import { useUserDetails } from '@/hooks/useUserDetails/useUserDetails';
 import { cn } from '@/libs/utils/utils';
 import { AvatarWithFallback } from '@/organisms/AvatarWithFallback/AvatarWithFallback';
@@ -17,7 +17,7 @@ export function useChatPeerName(peerPubky: string): {
   const { userDetails, isLoading } = useUserDetails(peerPubky);
   const shop = useLiveQuery(() => CommerceController.getShop(peerPubky), [peerPubky]);
   const name = shop?.record.name ?? userDetails?.name ?? `${peerPubky.slice(0, 8)}…${peerPubky.slice(-4)}`;
-  const avatarUrl = userDetails?.image ? FileController.getAvatarUrl(peerPubky) : undefined;
+  const avatarUrl = useAvatarUrl(userDetails);
   return { name, avatarUrl, isLoading: isLoading && !shop };
 }
 

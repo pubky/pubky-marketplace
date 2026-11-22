@@ -3,10 +3,13 @@
 import { type MutableRefObject, useEffect, useRef, useState } from 'react';
 import { getHomeserver, getHomeserverUrl } from '@/config/network';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { FileController } from '@/controllers/file/file';
 import {
   getMarketplaceMediaOwner,
+  getProfileImageFileOwner,
   isValidMarketplaceMediaUri,
   resolveMarketplaceMediaUrl,
+  resolveProfileImageBlobUrl,
 } from '@/libs/commerce/media-url';
 
 const OWNER_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -168,10 +171,66 @@ export async function resolveMarketplaceMediaUrlAsync(uri: string): Promise<stri
   return await request;
 }
 
+/**
+ * A profile image (`profile.json` `image`, a Pubky App file record URI) as a URL the browser can
+ * load, read from the owner's homeserver where the Nexus CDN avatar is not available (a store): the
+ * record's image blob, addressed directly on the configured homeserver and fetched into an object URL
+ * from any other.
+ */
+export async function resolveProfileImageUrlAsync(fileUri: string): Promise<string | null> {
+  const owner = getProfileImageFileOwner(fileUri);
+  if (!owner) return null;
+
+  const cached = getCached(mediaCache, fileUri);
+  if (cached !== undefined) return cached;
+  const existing = mediaRequests.get(fileUri);
+  if (existing) return await existing;
+
+  const request = Promise.all([FileController.fetchProfileImageBlobUri(fileUri), getOwnerHomeserver(owner)])
+    .then(async ([blobUri, ownerHomeserver]) => {
+      if (!blobUri || !ownerHomeserver) {
+        cacheMedia(fileUri, null);
+        return null;
+      }
+
+      if (ownerHomeserver === getHomeserver()) {
+        const url = resolveProfileImageBlobUrl(blobUri, getHomeserverUrl());
+        cacheMedia(fileUri, url);
+        return url;
+      }
+
+      const blob = await FileController.fetchProfileImage(blobUri);
+      const objectUrl = URL.createObjectURL(blob);
+      cacheMedia(fileUri, objectUrl);
+      return objectUrl;
+    })
+    .catch((error) => {
+      cacheMedia(fileUri, null);
+      throw error;
+    })
+    .finally(() => mediaRequests.delete(fileUri));
+  mediaRequests.set(fileUri, request);
+  return await request;
+}
+
 export function useMarketplaceMediaUrl(uri: string | null | undefined): string | null {
+  return useResolvedMediaUrl(uri, getSynchronousMediaUrl, resolveMarketplaceMediaUrlAsync);
+}
+
+/** {@link resolveProfileImageUrlAsync} as a hook; null while it resolves and for no image. */
+export function useProfileImageUrl(fileUri: string | null | undefined): string | null {
+  return useResolvedMediaUrl(fileUri, (uri) => getCached(mediaCache, uri) ?? null, resolveProfileImageUrlAsync);
+}
+
+function useResolvedMediaUrl(
+  uri: string | null | undefined,
+  getSynchronous: (uri: string) => string | null,
+  resolve: (uri: string) => Promise<string | null>,
+): string | null {
   const uriKey = uri ?? '';
-  const [url, setUrl] = useState(() => (uri ? getSynchronousMediaUrl(uri) : null));
+  const [url, setUrl] = useState(() => (uri ? getSynchronous(uri) : null));
   useRetainedBlobUrls([url]);
+  const resolveRef = useLatest(resolve);
 
   useEffect(() => {
     const currentUri = uriKey || null;
@@ -181,7 +240,8 @@ export function useMarketplaceMediaUrl(uri: string | null | undefined): string |
     }
 
     let active = true;
-    void resolveMarketplaceMediaUrlAsync(currentUri)
+    void resolveRef
+      .current(currentUri)
       .then((resolvedUrl) => {
         if (active) setUrl(resolvedUrl);
       })
@@ -192,7 +252,7 @@ export function useMarketplaceMediaUrl(uri: string | null | undefined): string |
     return () => {
       active = false;
     };
-  }, [uriKey]);
+  }, [uriKey, resolveRef]);
 
   return url;
 }

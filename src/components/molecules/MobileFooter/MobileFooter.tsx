@@ -28,7 +28,7 @@ import {
 import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode } from '@/config/commerce';
 import { getSocialHostUrl } from '@/config/social';
-import { FileController } from '@/controllers/file/file';
+import { useAvatarUrl } from '@/hooks/useAvatarUrl/useAvatarUrl';
 import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
 import { useCollectionsNavDiscovery } from '@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery';
 import { useCurrentUserProfile } from '@/hooks/useCurrentUserProfile/useCurrentUserProfile';
@@ -84,11 +84,8 @@ export function MobileFooter({ className }: MobileFooterProps) {
   const isEmbedded = useIsEmbedded();
 
   // Get avatar URL and fallback initial - same logic as desktop header
-  const avatarUrl =
-    localAvatarUrl ??
-    (currentUserPubky && userDetails?.image
-      ? FileController.getAvatarUrl(currentUserPubky, userDetails.indexed_at)
-      : undefined);
+  const profileAvatarUrl = useAvatarUrl(currentUserPubky ? userDetails : null, userDetails?.indexed_at);
+  const avatarUrl = localAvatarUrl ?? profileAvatarUrl;
   const avatarName = userDetails?.name || 'U';
   // Marketplace stays out of primary navigation until the commerce adapter is
   // explicitly configured; production defaults to 'unavailable' (ADR 0019).

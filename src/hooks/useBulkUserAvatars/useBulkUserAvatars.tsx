@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { isStoreMode } from '@/config/store-mode';
 import { FileController } from '@/controllers/file/file';
 import { StreamUserController } from '@/controllers/stream/users/users';
 import { UserController } from '@/controllers/user/user';
@@ -55,7 +56,8 @@ export function useBulkUserAvatars(userIds: Pubky[]): UseBulkUserAvatarsResult {
     const map = new Map<Pubky, UserWithAvatar>();
     for (const id of uniqueUserIds) {
       const details = userDetailsMap.get(id);
-      const avatarUrl = details?.image ? FileController.getAvatarUrl(id) : undefined;
+      // A store has no CDN; its rows show the fallback avatar.
+      const avatarUrl = details?.image && !isStoreMode() ? FileController.getAvatarUrl(id) : undefined;
       map.set(id, {
         id,
         name: details?.name,

@@ -1,5 +1,6 @@
 import type { FilesListParams } from '@/application/file/file.types';
 import type { TGetFileUrlParams, TGetMetadataParams, TUploadFileParams } from '@/controllers/file/file.types';
+import { getProfileImageFileOwner } from '@/libs/commerce/media-url';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -14,11 +15,16 @@ import { CompositeIdDomain, type Pubky } from '@/models/models.types';
 import { buildCompositeIdFromPubkyUri, parseCompositeId } from '@/models/models.utils';
 import { FileNormalizer } from '@/pipes/file/file.normalizer';
 import type { TFileAttachmentResult } from '@/pipes/file/file.types';
+import { profileImageBlobFromFileRecord } from '@/pipes/user/homeserver-profile';
+import { MarketplaceMediaService } from '@/services/commerce/marketplace-media';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import { LocalFileService } from '@/services/local/file/file';
 import { NexusFileService } from '@/services/nexus/file/file';
 import { filesApi } from '@/services/nexus/file/file.api';
 import type { NexusFileDetails, NexusFileUrls } from '@/services/nexus/nexus.types';
+
+/** A Pubky App file record is a few hundred bytes; anything far larger is not one. */
+const FILE_RECORD_MAX_BYTES = 8 * 1024;
 
 /**
  * File Application
@@ -136,6 +142,27 @@ export class FileApplication {
    */
   static getAvatarUrl(pubky: Pubky, version?: string | number): string {
     return filesApi.getAvatarUrl(pubky, version);
+  }
+
+  /**
+   * A store's avatar source: the image blob a profile's file record (`profile.json` `image`) points
+   * at, read from the owner's homeserver instead of the Nexus CDN. Null when the record is missing
+   * or is not an image blob of the same user.
+   */
+  static async fetchProfileImageBlobUri(fileUri: string): Promise<string | null> {
+    const owner = getProfileImageFileOwner(fileUri);
+    if (!owner) return null;
+    const stored = await HomeserverService.getJsonIfFound<unknown>({
+      url: fileUri,
+      maxBytes: FILE_RECORD_MAX_BYTES,
+      publicRead: true,
+    });
+    return stored.found ? profileImageBlobFromFileRecord(stored.json, owner) : null;
+  }
+
+  /** The bytes of a profile image blob, from its owner's homeserver. */
+  static async fetchProfileImage(blobUri: string): Promise<Blob> {
+    return await MarketplaceMediaService.fetchProfileImage(blobUri);
   }
 
   /**

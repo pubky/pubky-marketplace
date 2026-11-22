@@ -1,4 +1,5 @@
 import { getCdnUrl } from '@/config/nexus';
+import { isStoreMode } from '@/config/store-mode';
 import { extractInitials } from '@/libs/utils/utils';
 import type { ResolveAvatarFallbackInitialProps, ResolveAvatarFallbackSeedProps } from './AvatarWithFallback.types';
 
@@ -24,7 +25,8 @@ const USER_ID_PATTERN = /^[a-z0-9]{52}$/;
  * ```
  */
 export function extractUserIdFromAvatarUrl(avatarUrl: string | undefined | null): string | null {
-  if (!avatarUrl) return null;
+  // A store has no CDN, so none of its avatar URLs is a CDN avatar.
+  if (!avatarUrl || isStoreMode()) return null;
 
   const expectedPrefix = `${getCdnUrl()}/avatar/`;
 

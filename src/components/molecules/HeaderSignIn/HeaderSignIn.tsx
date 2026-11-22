@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { Container } from '@/atoms/Container/Container';
-import { FileController } from '@/controllers/file/file';
+import { useAvatarUrl } from '@/hooks/useAvatarUrl/useAvatarUrl';
 import { useCurrentUserProfile } from '@/hooks/useCurrentUserProfile/useCurrentUserProfile';
 import { SearchInput } from '@/organisms/SearchInput/SearchInput';
 import { useNotificationStore } from '@/stores/notification/notification.store';
@@ -10,6 +10,7 @@ import { HeaderNavigationButtons } from '../Header/Header';
 
 export const HeaderSignIn = ({ ...props }: React.HTMLAttributes<HTMLDivElement>) => {
   const { userDetails, currentUserPubky } = useCurrentUserProfile();
+  const avatarImage = useAvatarUrl(currentUserPubky ? userDetails : null, userDetails?.indexed_at);
   // Social unread plus marketplace unread — one badge for the whole surface.
   const unreadNotifications = useNotificationStore((state) => state.selectTotalUnread());
 
@@ -18,11 +19,7 @@ export const HeaderSignIn = ({ ...props }: React.HTMLAttributes<HTMLDivElement>)
       {/* Social search (posts, people, tags) lives on the social host once link-out is on. */}
       <SearchInput />
       <HeaderNavigationButtons
-        avatarImage={
-          currentUserPubky && userDetails?.image
-            ? FileController.getAvatarUrl(currentUserPubky, userDetails.indexed_at)
-            : undefined
-        }
+        avatarImage={avatarImage}
         avatarName={userDetails?.name}
         avatarSeed={currentUserPubky || userDetails?.name || 'user'}
         counter={unreadNotifications}

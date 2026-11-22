@@ -1,12 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UserStreamApplication } from '@/application/stream/users/users';
+import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
 import { buildUserCompositeId } from '@/models/stream/user/userStream.helper';
 import { UserStreamTypes } from '@/models/stream/user/userStream.types';
 import { UserDetailsModel } from '@/models/user/details/userDetails';
+import { HomeserverService } from '@/services/homeserver/homeserver';
+import { LocalProfileService } from '@/services/local/profile/profile';
 import { LocalStreamUsersService } from '@/services/local/stream/users/users';
 import type { NexusUser } from '@/services/nexus/nexus.types';
 import { NexusUserStreamService } from '@/services/nexus/stream/users/userStream';
+import { setStoreSeller } from '@/test-utils/store-mode';
 
 describe('UserStreamApplication', () => {
   const DEFAULT_USER_ID = 'user-1' as Pubky;
@@ -561,5 +565,33 @@ describe('UserStreamApplication', () => {
         viewer_id: undefined,
       });
     });
+  });
+});
+
+describe('UserStreamApplication.fetchMissingUsersFromNexus in store mode', () => {
+  const ALICE = 'ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u' as Pubky;
+  const BOB = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo' as Pubky;
+
+  beforeEach(() => setStoreSeller(ALICE));
+  afterEach(() => {
+    setStoreSeller(undefined);
+    vi.restoreAllMocks();
+  });
+
+  it('reads each missing user from their own homeserver; one failure hides only that user', async () => {
+    const nexus = vi.spyOn(NexusUserStreamService, 'fetchByIds');
+    vi.spyOn(HomeserverService, 'getJsonIfFound').mockImplementation(async ({ url }) => {
+      if (url.includes(BOB)) throw new Error('unreachable');
+      return { found: true, json: { name: 'Alice Example' } };
+    });
+    const upsert = vi.spyOn(LocalProfileService, 'upsertDetails').mockResolvedValue(undefined);
+    const warn = vi.spyOn(Logger, 'warn').mockImplementation(() => {});
+
+    await UserStreamApplication.fetchMissingUsersFromNexus({ cacheMissUserIds: [ALICE, BOB] });
+
+    expect(nexus).not.toHaveBeenCalled();
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ id: ALICE, name: 'Alice Example' }));
+    expect(warn).toHaveBeenCalledWith(expect.any(String), { failed: 1 });
   });
 });

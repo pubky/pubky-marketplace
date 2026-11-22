@@ -1,10 +1,12 @@
 import { baseUriBuilder, followUriBuilder } from 'pubky-app-specs';
+import { fetchHomeserverUserDetails } from '@/application/user/user.homeserver';
 import type {
   TEnsureModerationFollowParams,
   TEnsureSellerFollowParams,
   TUserApplicationFollowParams,
 } from '@/application/user/user.types';
 import { getModerationId } from '@/config/moderation';
+import { isStoreMode } from '@/config/store-mode';
 import type { TReadProfileParams } from '@/controllers/profile/profile.types';
 import type { TPubkyListParams } from '@/controllers/user/user.type';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
@@ -79,6 +81,7 @@ export class UserApplication {
     if (userDetails) {
       return userDetails;
     }
+    if (isStoreMode()) return await this.fetchStoreDetails(userId);
     const nexusUserDetails = await NexusUserService.details({ user_id: userId });
     await LocalProfileService.upsertDetails(nexusUserDetails);
     return await LocalUserService.readDetails({ userId });
@@ -92,6 +95,7 @@ export class UserApplication {
    * @returns Promise resolving to user details or null if not found
    */
   static async fetchDetails({ userId }: TReadProfileParams) {
+    if (isStoreMode()) return await this.fetchStoreDetails(userId);
     const nexusUserDetails = await NexusUserService.details({ user_id: userId });
     await LocalProfileService.upsertDetails(nexusUserDetails);
     return await LocalUserService.readDetails({ userId });
@@ -106,6 +110,14 @@ export class UserApplication {
    * @returns Promise resolving to user details or null if not found on Nexus
    */
   static async fetch({ userId }: TReadProfileParams): Promise<NexusUserDetails | null> {
+    if (isStoreMode()) {
+      try {
+        return await this.fetchStoreDetails(userId);
+      } catch (error) {
+        Logger.warn('Failed to fetch user profile from their homeserver', { userId, error });
+        return null;
+      }
+    }
     try {
       const users = await NexusUserStreamService.fetchByIds({ user_ids: [userId] });
 
@@ -120,6 +132,12 @@ export class UserApplication {
       return null;
     }
 
+    return await LocalUserService.readDetails({ userId });
+  }
+
+  /** A store reads profiles from each user's own homeserver, never from Nexus. */
+  private static async fetchStoreDetails(userId: Pubky): Promise<NexusUserDetails | null> {
+    await fetchHomeserverUserDetails(userId);
     return await LocalUserService.readDetails({ userId });
   }
 
@@ -141,6 +159,8 @@ export class UserApplication {
    * @returns Promise resolving to user counts or null if fetch fails
    */
   static async fetchCounts({ userId }: TReadProfileParams): Promise<NexusUserCounts | null> {
+    // Counts are aggregates of the social index; a store has none.
+    if (isStoreMode()) return null;
     try {
       const nexusUserCounts = await NexusUserService.counts({ user_id: userId });
       await LocalProfileService.upsertCounts(userId, nexusUserCounts);
@@ -201,6 +221,8 @@ export class UserApplication {
    * @returns Promise resolving to an array of tags
    */
   static async fetchTags(params: TUserTagsParams): Promise<NexusTag[]> {
+    // Tags come from the social index; a store shows none.
+    if (isStoreMode()) return [];
     return await NexusUserService.tags(params);
   }
 
@@ -371,8 +393,8 @@ export class UserApplication {
     // 1. Find users without cached tags
     const cacheMissUserIds = await LocalUserTagService.getNotPersistedUserTagsInCache(userIds);
 
-    // 2. Fetch missing from API (parallel requests)
-    if (cacheMissUserIds.length > 0) {
+    // 2. Fetch missing from API (parallel requests). A store reads no Nexus, so it shows no tags.
+    if (cacheMissUserIds.length > 0 && !isStoreMode()) {
       await this.fetchMissingUserTagsFromNexus(cacheMissUserIds);
     }
 

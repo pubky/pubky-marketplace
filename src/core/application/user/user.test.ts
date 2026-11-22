@@ -4,6 +4,7 @@ import { AppError } from '@/libs/error/error';
 import { ClientErrorCode, ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { HttpMethod, HttpStatusCode } from '@/libs/http/http.types';
+import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
 import type { UserCountsModel } from '@/models/user/counts/userCounts';
 import { FollowNormalizer } from '@/pipes/follow/follow.normalizer';
@@ -11,10 +12,12 @@ import { HomeserverService } from '@/services/homeserver/homeserver';
 import { LocalFollowService } from '@/services/local/follow/follow';
 import { LocalProfileService } from '@/services/local/profile/profile';
 import { LocalStreamUsersService } from '@/services/local/stream/users/users';
+import { LocalUserTagService } from '@/services/local/tag/user/tag.user';
 import { LocalUserService } from '@/services/local/user/user';
 import type { NexusTag, NexusUser, NexusUserCounts, NexusUserDetails } from '@/services/nexus/nexus.types';
 import { NexusUserStreamService } from '@/services/nexus/stream/users/userStream';
 import { NexusUserService } from '@/services/nexus/user/user';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { asInvalid, asOpaque } from '@/test-utils/type-assertions';
 import { UserApplication } from './user';
 
@@ -1146,5 +1149,88 @@ describe('UserApplication.ensureSellerFollow', () => {
       url: markerUrlOf(seller),
       bodyJson: { seller, completedAt: expect.any(Number) },
     });
+  });
+});
+
+describe('UserApplication in store mode', () => {
+  const STORE_SELLER = 'ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u';
+  const BUYER = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo' as Pubky;
+  const profileUrl = `pubky://${BUYER}/pub/pubky.app/profile.json`;
+
+  beforeEach(() => setStoreSeller(STORE_SELLER));
+  afterEach(() => setStoreSeller(undefined));
+
+  function homeserverProfile(json: unknown, found = true) {
+    return vi
+      .spyOn(HomeserverService, 'getJsonIfFound')
+      .mockResolvedValue(found ? { found: true, json } : { found: false });
+  }
+
+  function nexusSpies() {
+    return [
+      vi.spyOn(NexusUserService, 'details'),
+      vi.spyOn(NexusUserService, 'counts'),
+      vi.spyOn(NexusUserService, 'tags'),
+      vi.spyOn(NexusUserStreamService, 'fetchByIds'),
+    ];
+  }
+
+  it("reads details from the user's own homeserver and caches them", async () => {
+    const nexus = nexusSpies();
+    const read = homeserverProfile({ name: 'Bob Example', bio: 'Buys prints.' });
+    const upsert = vi.spyOn(LocalProfileService, 'upsertDetails').mockResolvedValue(undefined);
+    const cached = asOpaque<NexusUserDetails>({ id: BUYER, name: 'Bob Example' });
+    vi.spyOn(LocalUserService, 'readDetails').mockResolvedValue(cached);
+
+    await expect(UserApplication.fetchDetails({ userId: BUYER })).resolves.toBe(cached);
+
+    expect(read).toHaveBeenCalledWith(expect.objectContaining({ url: profileUrl, publicRead: true }));
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ id: BUYER, name: 'Bob Example', bio: 'Buys prints.', image: null }),
+    );
+    for (const spy of nexus) expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('reads the homeserver only on a cache miss in getOrFetchDetails', async () => {
+    const read = homeserverProfile({ name: 'Bob Example' });
+    vi.spyOn(LocalProfileService, 'upsertDetails').mockResolvedValue(undefined);
+    const cached = asOpaque<NexusUserDetails>({ id: BUYER, name: 'Bob Example' });
+    vi.spyOn(LocalUserService, 'readDetails').mockResolvedValueOnce(cached);
+
+    await expect(UserApplication.getOrFetchDetails({ userId: BUYER })).resolves.toBe(cached);
+    expect(read).not.toHaveBeenCalled();
+
+    vi.spyOn(LocalUserService, 'readDetails').mockResolvedValueOnce(null).mockResolvedValueOnce(cached);
+    await expect(UserApplication.getOrFetchDetails({ userId: BUYER })).resolves.toBe(cached);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('caches nothing for a missing or unusable profile', async () => {
+    const upsert = vi.spyOn(LocalProfileService, 'upsertDetails').mockResolvedValue(undefined);
+    vi.spyOn(LocalUserService, 'readDetails').mockResolvedValue(null);
+
+    homeserverProfile(undefined, false);
+    await expect(UserApplication.fetchDetails({ userId: BUYER })).resolves.toBeNull();
+    homeserverProfile({ bio: 'no name' });
+    await expect(UserApplication.fetchDetails({ userId: BUYER })).resolves.toBeNull();
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it('fetch returns null instead of throwing when the homeserver is unreachable', async () => {
+    vi.spyOn(HomeserverService, 'getJsonIfFound').mockRejectedValue(new Error('unreachable'));
+    vi.spyOn(Logger, 'warn').mockImplementation(() => {});
+
+    await expect(UserApplication.fetch({ userId: BUYER })).resolves.toBeNull();
+  });
+
+  it('has no counts or tags, and never asks Nexus for them', async () => {
+    const nexus = nexusSpies();
+    vi.spyOn(LocalUserTagService, 'getNotPersistedUserTagsInCache').mockResolvedValue([BUYER]);
+    vi.spyOn(LocalUserService, 'readBulkTags').mockResolvedValue(new Map());
+
+    await expect(UserApplication.fetchCounts({ userId: BUYER })).resolves.toBeNull();
+    await expect(UserApplication.fetchTags({ user_id: BUYER })).resolves.toEqual([]);
+    await expect(UserApplication.getManyTagsOrFetch({ userIds: [BUYER] })).resolves.toEqual(new Map());
+    for (const spy of nexus) expect(spy).not.toHaveBeenCalled();
   });
 });

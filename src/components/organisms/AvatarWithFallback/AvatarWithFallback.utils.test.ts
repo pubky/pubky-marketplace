@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import {
   extractUserIdFromAvatarUrl,
   resolveAvatarFallbackInitial,
@@ -14,6 +15,16 @@ describe('extractUserIdFromAvatarUrl', () => {
   // Valid 52-character lowercase alphanumeric userId
   const VALID_USER_ID = '6mfxozzqmb36rc9rgy3rykoyfghfao74n8igt5tf1boehproahoy';
   const CDN_URL = 'https://nexus.staging.pubky.app/static';
+
+  it('reads no CDN avatar in a store, which has no CDN', () => {
+    setStoreSeller('ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u');
+    try {
+      expect(extractUserIdFromAvatarUrl(`${CDN_URL}/avatar/${VALID_USER_ID}`)).toBeNull();
+      expect(extractUserIdFromAvatarUrl('blob:avatar')).toBeNull();
+    } finally {
+      setStoreSeller(undefined);
+    }
+  });
 
   describe('valid URLs', () => {
     it('extracts userId from a valid avatar URL', () => {

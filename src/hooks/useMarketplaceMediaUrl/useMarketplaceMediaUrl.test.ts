@@ -1,17 +1,21 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FileController } from '@/controllers/file/file';
 import { MarketplaceMediaService } from '@/core/services/commerce/marketplace-media';
 import {
   clearMarketplaceMediaCache,
   resolveMarketplaceMediaUrlAsync,
+  resolveProfileImageUrlAsync,
   useMarketplaceMediaUrl,
   useMarketplaceMediaUrls,
+  useProfileImageUrl,
 } from './useMarketplaceMediaUrl';
 
 vi.mock('@/core/services/commerce/marketplace-media', () => ({
   MarketplaceMediaService: {
     getOwnerHomeserver: vi.fn(),
     fetchMedia: vi.fn(),
+    fetchProfileImage: vi.fn(),
   },
 }));
 
@@ -178,5 +182,59 @@ describe('marketplace media resolution', () => {
     unmount();
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:marketplace-media-2');
     vi.useRealTimers();
+  });
+});
+
+describe('profile image resolution', () => {
+  const fileUri = `pubky://${owner}/pub/pubky.app/files/0034A0X7NJ52G`;
+  const blobUri = `pubky://${owner}/pub/pubky.app/blobs/0034A0X7NJ52H`;
+
+  beforeEach(() => {
+    clearMarketplaceMediaCache();
+    vi.clearAllMocks();
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:profile-image');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("addresses the file record's blob directly on the configured homeserver", async () => {
+    const recordRead = vi.spyOn(FileController, 'fetchProfileImageBlobUri').mockResolvedValue(blobUri);
+    vi.mocked(MarketplaceMediaService.getOwnerHomeserver).mockResolvedValue('configured-homeserver');
+
+    await expect(resolveProfileImageUrlAsync(fileUri)).resolves.toBe(
+      `https://configured.example/pub/pubky.app/blobs/0034A0X7NJ52H?pubky-host=${owner}`,
+    );
+    expect(recordRead).toHaveBeenCalledWith(fileUri);
+    expect(MarketplaceMediaService.fetchProfileImage).not.toHaveBeenCalled();
+  });
+
+  it('fetches a blob on another homeserver into an object URL, once', async () => {
+    const recordRead = vi.spyOn(FileController, 'fetchProfileImageBlobUri').mockResolvedValue(blobUri);
+    vi.mocked(MarketplaceMediaService.getOwnerHomeserver).mockResolvedValue('other-homeserver');
+    vi.mocked(MarketplaceMediaService.fetchProfileImage).mockResolvedValue(new Blob(['avatar']));
+
+    const { result } = renderHook(() => useProfileImageUrl(fileUri));
+    await waitFor(() => expect(result.current).toBe('blob:profile-image'));
+    await expect(resolveProfileImageUrlAsync(fileUri)).resolves.toBe('blob:profile-image');
+
+    expect(MarketplaceMediaService.fetchProfileImage).toHaveBeenCalledWith(blobUri);
+    expect(recordRead).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows no image for a record without an image blob, an unresolved owner or a non-file URI', async () => {
+    vi.spyOn(FileController, 'fetchProfileImageBlobUri').mockResolvedValue(null);
+    vi.mocked(MarketplaceMediaService.getOwnerHomeserver).mockResolvedValue('configured-homeserver');
+    await expect(resolveProfileImageUrlAsync(fileUri)).resolves.toBeNull();
+
+    clearMarketplaceMediaCache();
+    vi.spyOn(FileController, 'fetchProfileImageBlobUri').mockResolvedValue(blobUri);
+    vi.mocked(MarketplaceMediaService.getOwnerHomeserver).mockResolvedValue(null);
+    await expect(resolveProfileImageUrlAsync(fileUri)).resolves.toBeNull();
+
+    await expect(resolveProfileImageUrlAsync(blobUri)).resolves.toBeNull();
+    await expect(resolveProfileImageUrlAsync('https://cdn.example/avatar')).resolves.toBeNull();
+    const { result } = renderHook(() => useProfileImageUrl(null));
+    expect(result.current).toBeNull();
   });
 });

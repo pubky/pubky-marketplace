@@ -37,6 +37,7 @@ vi.mock('@/services/homeserver/homeserver', () => ({
     putBlob: vi.fn(),
     request: vi.fn(),
     delete: vi.fn(),
+    getJsonIfFound: vi.fn(),
   },
 }));
 
@@ -781,5 +782,39 @@ describe('FileApplication', () => {
       expect(requestSpy).toHaveBeenCalledWith({ method: HttpMethod.GET, url: fileUri });
       expect(HomeserverService.delete).toHaveBeenCalledTimes(1); // Blob deletion not reached
     });
+  });
+});
+
+describe('FileApplication.fetchProfileImageBlobUri', () => {
+  const owner = 'ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u';
+  const fileUri = `pubky://${owner}/pub/pubky.app/files/0034A0X7NJ52G`;
+  const blobUri = `pubky://${owner}/pub/pubky.app/blobs/0034A0X7NJ52H`;
+
+  beforeEach(() => vi.mocked(HomeserverService.getJsonIfFound).mockReset());
+
+  it("reads the record from the owner's homeserver and returns its image blob", async () => {
+    vi.mocked(HomeserverService.getJsonIfFound).mockResolvedValue({
+      found: true,
+      json: { src: blobUri, content_type: 'image/webp' },
+    });
+
+    await expect(FileApplication.fetchProfileImageBlobUri(fileUri)).resolves.toBe(blobUri);
+    expect(HomeserverService.getJsonIfFound).toHaveBeenCalledWith(
+      expect.objectContaining({ url: fileUri, publicRead: true, maxBytes: expect.any(Number) }),
+    );
+  });
+
+  it('returns null for a missing record, a foreign blob or a URI that is not a file record', async () => {
+    vi.mocked(HomeserverService.getJsonIfFound).mockResolvedValueOnce({ found: false });
+    await expect(FileApplication.fetchProfileImageBlobUri(fileUri)).resolves.toBeNull();
+
+    vi.mocked(HomeserverService.getJsonIfFound).mockResolvedValueOnce({
+      found: true,
+      json: { src: `pubky://${'o'.repeat(52)}/pub/pubky.app/blobs/0034A0X7NJ52H`, content_type: 'image/png' },
+    });
+    await expect(FileApplication.fetchProfileImageBlobUri(fileUri)).resolves.toBeNull();
+
+    await expect(FileApplication.fetchProfileImageBlobUri(blobUri)).resolves.toBeNull();
+    expect(HomeserverService.getJsonIfFound).toHaveBeenCalledTimes(2);
   });
 });

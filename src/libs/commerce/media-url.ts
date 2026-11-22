@@ -61,3 +61,34 @@ export function isValidMarketplaceMediaUri(uri: string): boolean {
   const normalizedPath = new URL(`https://media.invalid${path}`).pathname;
   return normalizedPath.startsWith(MARKETPLACE_MEDIA_PATH_PREFIX);
 }
+
+const PROFILE_FILE_URI_PATTERN =
+  /^pubky:\/\/([ybndrfg8ejkmcpqxot1uwisza345h769]{52})\/pub\/pubky\.app\/files\/[0-9A-Za-z]{1,64}$/;
+const PROFILE_BLOB_URI_PATTERN =
+  /^pubky:\/\/([ybndrfg8ejkmcpqxot1uwisza345h769]{52})\/pub\/pubky\.app\/blobs\/[0-9A-Za-z]{1,64}$/;
+
+/** The owner of a Pubky App file record URI (`pubky://<owner>/pub/pubky.app/files/<id>`), or null. */
+export function getProfileImageFileOwner(uri: string): string | null {
+  return PROFILE_FILE_URI_PATTERN.exec(uri)?.[1] ?? null;
+}
+
+/** The owner of a Pubky App blob URI (`pubky://<owner>/pub/pubky.app/blobs/<id>`), or null. */
+export function getProfileImageBlobOwner(uri: string): string | null {
+  return PROFILE_BLOB_URI_PATTERN.exec(uri)?.[1] ?? null;
+}
+
+/** Whether `uri` is a Pubky App blob of `owner`. */
+export function isProfileImageBlobUri(uri: string, owner: string): boolean {
+  return getProfileImageBlobOwner(uri) === owner;
+}
+
+/**
+ * The plain HTTPS URL of a profile image blob on its owner's homeserver, addressed like marketplace
+ * media (`?pubky-host=<owner>`), or null for anything but a Pubky App blob URI.
+ */
+export function resolveProfileImageBlobUrl(uri: string, homeserverBase: string): string | null {
+  const owner = getProfileImageBlobOwner(uri);
+  if (!owner) return null;
+  const path = uri.slice(PUBKY_PROTOCOL.length + PUBKY_Z32_LENGTH);
+  return `${homeserverBase.replace(/\/$/, '')}${path}?pubky-host=${owner}`;
+}

@@ -4,10 +4,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { z } from 'zod';
 import { PROFILE_ROUTES, SETTINGS_ROUTES } from '@/app/routes';
+import { isStoreMode } from '@/config/store-mode';
 import { USER_BIO_MAX_LENGTH, USER_NAME_MAX_LENGTH, USER_NAME_MIN_LENGTH } from '@/config/user';
 import { AuthController } from '@/controllers/auth/auth';
 import { FileController } from '@/controllers/file/file';
 import { ProfileController } from '@/controllers/profile/profile';
+import { useAvatarUrl } from '@/hooks/useAvatarUrl/useAvatarUrl';
 import { AppError } from '@/libs/error/error';
 import { isAuthError, isWritePathNotAllowedError, requiresLogin } from '@/libs/error/error.utils';
 import { getImageUploadSizeLimitToastMessage } from '@/libs/image/imageUploadSizeLimit';
@@ -64,6 +66,7 @@ export function useProfileForm(props: UseProfileFormProps): UseProfileFormReturn
   // Edit mode specific state
   const [originalAvatarUrl, setOriginalAvatarUrl] = useState<string | null>(null);
   const [avatarChanged, setAvatarChanged] = useState(false);
+  const homeserverAvatarUrl = useAvatarUrl(mode === 'edit' && isStoreMode() ? userDetails : null);
 
   // Crop dialog state
   const [cropDialogOpen, setCropDialogOpen] = useState(false);
@@ -95,7 +98,11 @@ export function useProfileForm(props: UseProfileFormProps): UseProfileFormReturn
       // 1. Blob URLs are ephemeral and can be revoked/invalidated
       // 2. The cleanup effect may revoke avatarPreview when unmounting
       // 3. The local store is for immediate display, not form state restoration
-      if (userDetails.image && pubky) {
+      if (userDetails.image && pubky && isStoreMode()) {
+        // A store has no CDN avatar: keep the existing image and preview it from the homeserver
+        // (`homeserverAvatarUrl`), which this form never revokes.
+        setOriginalAvatarUrl(userDetails.image);
+      } else if (userDetails.image && pubky) {
         let avatarUrl = FileController.getAvatarUrl(pubky, userDetails.indexed_at);
         // TODO: Has to be fixed with the ServiceWorker
         // Assign a random number (0-100000) as a query parameter to avatarUrl for cache busting
@@ -462,7 +469,7 @@ export function useProfileForm(props: UseProfileFormProps): UseProfileFormReturn
       bio,
       links,
       avatarFile,
-      avatarPreview,
+      avatarPreview: avatarPreview ?? (avatarChanged ? null : (homeserverAvatarUrl ?? null)),
       isSaving,
       isLoading,
       submitText,
