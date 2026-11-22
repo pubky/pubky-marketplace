@@ -14,11 +14,17 @@ export const CHAT_COPY = {
   inboxSignedOutBody: 'Messages belong to the pubky signed in on this device.',
   inboxEmptyTitle: 'No messages yet.',
   inboxEmptyBody: 'Open a listing or an order and message the other party to begin.',
+  /** A store's buyer talks only to the store seller. */
+  storeInboxSubtitle: 'Your conversation with this shop.',
+  storeInboxEmptyBody: 'Message the seller about an item or an order.',
   inboxRetry: 'Try again',
   /** Honest about the v0 key custody: encrypted, but the private key sits unsealed on the homeserver. */
   /** Shown while this deployment has no inbox and the peer has not written yet: first contact is not noticed without pings. */
   noInboxFirstContact:
     'No message inbox is set up here, so someone you have not chatted with may not notice your message until they open this chat.',
+  /** The store version for a buyer: without pings the seller finds a buyer's messages through their orders. */
+  storeNoInboxFirstContact:
+    'This shop has no message inbox set up, so the seller may not see your message until you have an order with them.',
   privacyNote:
     'Messages are encrypted but stored on your homeserver. Keep payment details, passwords and ID numbers out of chat.',
 } as const;

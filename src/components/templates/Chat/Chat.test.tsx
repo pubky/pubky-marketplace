@@ -1,6 +1,9 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { Chat } from './Chat';
+
+const auth = vi.hoisted(() => ({ currentUserPubky: null as string | null }));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
@@ -15,8 +18,8 @@ vi.mock('@/hooks/useChatIdentity/useChatIdentity', () => ({
 }));
 vi.mock('@/hooks/useIsEmbedded/useIsEmbedded', () => ({ useIsEmbedded: () => false }));
 vi.mock('@/stores/auth/auth.store', () => ({
-  useAuthStore: (selector: (state: { setShowSignInDialog: () => void }) => unknown) =>
-    selector({ setShowSignInDialog: vi.fn() }),
+  useAuthStore: (selector: (state: { currentUserPubky: string | null; setShowSignInDialog: () => void }) => unknown) =>
+    selector({ currentUserPubky: auth.currentUserPubky, setShowSignInDialog: vi.fn() }),
 }));
 vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
   MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
@@ -54,5 +57,34 @@ describe('Chat inbox', () => {
     } finally {
       commerce.mode = 'transaction-service';
     }
+  });
+
+  describe('store mode', () => {
+    const STORE_SELLER = 's'.repeat(52);
+
+    afterEach(() => {
+      setStoreSeller(undefined);
+      auth.currentUserPubky = null;
+    });
+
+    it("offers a buyer's empty inbox a message to the store seller instead of a market to browse", () => {
+      setStoreSeller(STORE_SELLER);
+      auth.currentUserPubky = 'b'.repeat(52);
+      render(<Chat />);
+
+      expect(screen.getByText('Your conversation with this shop.')).toBeInTheDocument();
+      expect(screen.getByTestId('chat-inbox-message-seller')).toHaveTextContent('Message seller');
+      expect(screen.queryByRole('link', { name: 'Browse market' })).not.toBeInTheDocument();
+    });
+
+    it("gives the store seller's empty inbox neither", () => {
+      setStoreSeller(STORE_SELLER);
+      auth.currentUserPubky = STORE_SELLER;
+      render(<Chat />);
+
+      expect(screen.getByText('Your conversations with buyers and sellers.')).toBeInTheDocument();
+      expect(screen.queryByTestId('chat-inbox-message-seller')).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Browse market' })).not.toBeInTheDocument();
+    });
   });
 });

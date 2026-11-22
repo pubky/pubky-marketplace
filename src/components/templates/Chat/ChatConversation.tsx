@@ -9,11 +9,13 @@ import { Container } from '@/atoms/Container/Container';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode } from '@/config/commerce';
+import { getStoreSeller } from '@/config/store-mode';
 import { useChatConversation } from '@/hooks/useChatConversation/useChatConversation';
 import { useChatIdentity } from '@/hooks/useChatIdentity/useChatIdentity';
 import { useFillViewport } from '@/hooks/useFillViewport/useFillViewport';
 import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
 import { useKeyboardViewport } from '@/hooks/useKeyboardViewport/useKeyboardViewport';
+import { useStoreLinkServed } from '@/hooks/useStoreLinkServed/useStoreLinkServed';
 import { CHAT_COPY } from '@/libs/chat/copy';
 import { cn } from '@/libs/utils/utils';
 import type { ChatContext } from '@/models/chat/chat.schema';
@@ -58,6 +60,9 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
 
   const peerNotEnabled = thread.openState === 'peer_not_enabled';
   const awaitingFirstReply = !thread.messages.some((message) => message.direction === 'received');
+  const isLinkServed = useStoreLinkServed();
+  const storeSeller = getStoreSeller();
+  const isStoreBuyer = storeSeller !== null && currentUserPubky !== storeSeller;
   const composerDisabled = !currentUserPubky || identityState === 'needs_reauth' || thread.isSelf;
   const disabledReason = thread.isSelf
     ? 'This is you.'
@@ -111,8 +116,9 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
             </Link>
           </Button>
           <ChatPeerIdentity peerPubky={peerPubky} className="min-w-0 flex-1" />
-          {/* Without commerce the storefront leads nowhere; the header and the mobile footer drop Market then too. */}
-          {getCommerceAdapterMode() !== 'unavailable' ? (
+          {/* Without commerce the storefront leads nowhere; the header and the mobile footer drop Market then too.
+              A store serves only its own seller's storefront. */}
+          {getCommerceAdapterMode() !== 'unavailable' && isLinkServed(getMarketplaceShopRoute(peerPubky)) ? (
             <Button asChild variant="ghost" size="sm" className="rounded-full text-muted-foreground">
               <Link href={getMarketplaceShopRoute(peerPubky)} overrideDefaults>
                 <Store className="size-4" aria-hidden="true" />
@@ -165,7 +171,7 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
             />
             {!pinned && inboxStatus === 'disabled' && awaitingFirstReply && !peerNotEnabled ? (
               <Typography as="p" size="xs" className="px-1 text-muted-foreground" data-testid="chat-no-inbox-note">
-                {CHAT_COPY.noInboxFirstContact}
+                {isStoreBuyer ? CHAT_COPY.storeNoInboxFirstContact : CHAT_COPY.noInboxFirstContact}
               </Typography>
             ) : null}
             {pinned ? null : <ChatPrivacyNote />}

@@ -5,6 +5,7 @@ import { UserApplication } from '@/application/user/user';
 import { CHAT_PING_MAX_HANDLING_ATTEMPTS } from '@/config/chat';
 import { ChatController } from '@/controllers/chat/chat';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { setStoreSeller } from '@/test-utils/store-mode';
 
 const BUYER = 'b'.repeat(52);
 const SELLER = 's'.repeat(52);
@@ -123,5 +124,48 @@ describe('ChatController.handleInboxPings', () => {
       outcomes.push((await ChatController.handleInboxPings([failing])).length);
     }
     expect(outcomes).toEqual([...Array.from({ length: CHAT_PING_MAX_HANDLING_ATTEMPTS - 1 }, () => 0), 1]);
+  });
+});
+
+describe('ChatController conversations in a store', () => {
+  const OTHER = 'o'.repeat(52);
+  const conversation = (peer: string, unreadCount = 0) =>
+    ({ id: `${BUYER}|${peer}`, peer_pubky: peer, unreadCount }) as never;
+
+  beforeEach(() => {
+    vi.spyOn(ChatApplication, 'getConversations').mockResolvedValue([conversation(SELLER), conversation(OTHER)]);
+    vi.spyOn(ChatApplication, 'getUnreadConversationCount').mockResolvedValue(2);
+    vi.spyOn(ChatApplication, 'getConversation').mockImplementation(async (_me, peer) =>
+      peer === SELLER ? conversation(SELLER, 3) : null,
+    );
+  });
+
+  afterEach(() => {
+    setStoreSeller(undefined);
+    useAuthStore.setState({ currentUserPubky: null });
+    vi.restoreAllMocks();
+  });
+
+  it('lists only the conversation with the store seller for a buyer', async () => {
+    setStoreSeller(SELLER);
+    useAuthStore.setState({ currentUserPubky: BUYER });
+
+    expect((await ChatController.getConversations()).map((row) => row.peer_pubky)).toEqual([SELLER]);
+    expect(await ChatController.getUnreadConversationCount()).toBe(1);
+  });
+
+  it('lists every conversation for the store seller', async () => {
+    setStoreSeller(SELLER);
+    useAuthStore.setState({ currentUserPubky: SELLER });
+
+    expect(await ChatController.getConversations()).toHaveLength(2);
+    expect(await ChatController.getUnreadConversationCount()).toBe(2);
+  });
+
+  it('lists every conversation outside store mode', async () => {
+    useAuthStore.setState({ currentUserPubky: BUYER });
+
+    expect(await ChatController.getConversations()).toHaveLength(2);
+    expect(await ChatController.getUnreadConversationCount()).toBe(2);
   });
 });
