@@ -1,8 +1,9 @@
 import { Pubky, PublicKey } from '@synonymdev/pubky';
 import { z } from 'zod';
-import { getHomeserver, getHomeserverUrl } from '@/libs/runtime-config/runtime-config';
+import { getHomeserver, getHomeserverUrl, getPkarrRelays, getStoreSeller } from '@/libs/runtime-config/runtime-config';
 import type { CliGrantConfig } from './config';
 import { canonicalJson, encodeBase64Url, sha256Bytes } from './crypto';
+import { resolveHomeserverHttpsOrigin } from './homeserver-endpoint';
 import { assertSafeHomeserverTarget, HomeserverFetchDenied, proofPath } from './ssrf';
 
 const PROOF_BODY_LIMIT = 16 * 1024;
@@ -77,6 +78,10 @@ export type HomeserverProofDeps = {
   resolveHomeserverZ32: (pubky: string) => Promise<string | null>;
   homeserverHttpsOrigin: () => string;
   configuredHomeserverZ32: () => string;
+  /** Whether a user on another homeserver than the configured one may prove a session (store mode). */
+  acceptsUserHomeserver: () => boolean;
+  /** The HTTPS origin a homeserver key publishes in its own signed Pkarr record. */
+  resolveHomeserverHttpsOrigin: (homeserverZ32: string, timeoutMs: number) => Promise<string | null>;
   fetchProof: (url: URL, init: RequestInit) => Promise<Response>;
   checkTarget: (url: URL) => Promise<void>;
 };
@@ -89,10 +94,26 @@ const defaultDeps: HomeserverProofDeps = {
   },
   homeserverHttpsOrigin: () => getHomeserverUrl(),
   configuredHomeserverZ32: () => getHomeserver(),
+  acceptsUserHomeserver: () => getStoreSeller() !== undefined,
+  resolveHomeserverHttpsOrigin: (homeserverZ32, timeoutMs) =>
+    resolveHomeserverHttpsOrigin(homeserverZ32, {
+      relays: getPkarrRelays(),
+      fetchRelay: (url, init) => fetch(url, init),
+      timeoutMs,
+    }),
   fetchProof: (url, init) => fetch(url, init),
   checkTarget: assertSafeHomeserverTarget,
 };
 
+/**
+ * Reads the proof document from the homeserver the user's own signed Pkarr record names.
+ *
+ * The full Market accepts only its configured homeserver, at its configured URL. A store also
+ * accepts any other homeserver the user's record names, at the origin that homeserver's own
+ * signed record publishes (`resolveHomeserverHttpsOrigin`). Either way the request goes over
+ * HTTPS on port 443 to a public address (`checkTarget`), names the user in `pubky-host`, follows
+ * no redirect and reads at most {@link PROOF_BODY_LIMIT} bytes; every failure is a denial.
+ */
 export async function fetchHomeserverProofDocument(
   config: CliGrantConfig,
   pubky: string,
@@ -101,10 +122,17 @@ export async function fetchHomeserverProofDocument(
 ): Promise<unknown> {
   try {
     const resolved = await deps.resolveHomeserverZ32(pubky);
-    if (!resolved || resolved !== deps.configuredHomeserverZ32()) {
+    if (!resolved) throw new HomeserverFetchDenied();
+    let originHref: string | null;
+    if (resolved === deps.configuredHomeserverZ32()) {
+      originHref = deps.homeserverHttpsOrigin();
+    } else if (deps.acceptsUserHomeserver()) {
+      originHref = await deps.resolveHomeserverHttpsOrigin(resolved, config.homeserverFetchTimeoutMs);
+    } else {
       throw new HomeserverFetchDenied();
     }
-    const origin = new URL(deps.homeserverHttpsOrigin());
+    if (!originHref) throw new HomeserverFetchDenied();
+    const origin = new URL(originHref);
     origin.pathname = '/';
     origin.search = '';
     origin.hash = '';
