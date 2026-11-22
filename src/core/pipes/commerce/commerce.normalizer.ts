@@ -619,6 +619,45 @@ export class CommerceRecordNormalizer {
     };
   }
 
+  /**
+   * A canonical listing record as the catalog entry the index serves for it, for a store, which
+   * reads its seller's homeserver instead of the index. The index echoes the record, so every field
+   * maps one to one; the record carries no aggregate, so both reputations are null.
+   */
+  static catalogEntryFromListingRecord(record: CommerceListingRecord): CommerceCatalogEntryModelSchema {
+    const { sale } = record;
+    return {
+      id: `${record.ownerPubky}:${record.listingId}`,
+      seller_id: record.ownerPubky,
+      listing_id: record.listingId,
+      state: record.state,
+      title: record.title,
+      description: record.description,
+      category_id: record.categoryId,
+      condition: record.condition,
+      tags: [...record.tags],
+      country_code: record.location.countryCode,
+      region: record.location.region ?? null,
+      media_urls: record.media.map(({ url }) => url),
+      sale_format: sale.format,
+      price: sale.format === 'fixed_price' ? sale.unitPrice : sale.startingPrice,
+      auction:
+        sale.format === 'auction'
+          ? {
+              startsAt: sale.startsAt,
+              endsAt: sale.endsAt,
+              buyNowPrice: sale.buyNowPrice ?? null,
+              minimumIncrement: sale.minimumIncrement,
+            }
+          : null,
+      fulfillment_methods: [...record.fulfillmentMethods],
+      reputation: null,
+      listing_reputation: null,
+      revision: record.revision,
+      updated_at: Date.parse(record.updatedAt),
+    };
+  }
+
   private static toCatalogEntry(listing: NexusListingDetails): CommerceCatalogEntryModelSchema {
     return {
       id: `${listing.owner_id}:${listing.id}`,
@@ -723,6 +762,11 @@ export class CommerceRecordNormalizer {
 
   static listingUri(ownerPubky: unknown, listingId: unknown): string {
     return listingUriBuilder(this.pubky(ownerPubky), this.entityId(listingId));
+  }
+
+  /** The owner's public listing directory; each entry is named by its listing id. */
+  static listingDirectoryUri(ownerPubky: unknown): string {
+    return `pubky://${this.pubky(ownerPubky)}${MARKETPLACE_BASE_PATH}/listings/`;
   }
 
   static auctionReserveUri(ownerPubky: unknown, listingId: unknown): string {

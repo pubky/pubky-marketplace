@@ -6,6 +6,7 @@ import { TagKind } from '@/application/tag/tag.types';
 import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Typography } from '@/atoms/Typography/Typography';
+import { isStoreMode } from '@/config/store-mode';
 import { type MarketplaceTagTarget, useMarketplaceTags } from '@/hooks/useMarketplaceTags/useMarketplaceTags';
 import { ClickableTagsList } from '@/organisms/ClickableTagsList/ClickableTagsList';
 
@@ -35,9 +36,14 @@ export interface MarketplaceCommunityTagsProps {
  *
  * This is the community layer, deliberately separate from the seller-declared
  * keywords in the listing record (`record.tags`), which stay labeled as the
- * seller's own metadata.
+ * seller's own metadata. A store reads no index and shows none.
  */
-export function MarketplaceCommunityTags({ target, variant = 'card' }: MarketplaceCommunityTagsProps) {
+export function MarketplaceCommunityTags(props: MarketplaceCommunityTagsProps) {
+  if (isStoreMode()) return null;
+  return <CommunityTags {...props} />;
+}
+
+function CommunityTags({ target, variant = 'card' }: MarketplaceCommunityTagsProps) {
   const { tags, handleTagAdd, handleTagToggle } = useMarketplaceTags(target);
   const taggedId = target.kind === TagKind.LISTING ? `${target.sellerPubky}:${target.listingId}` : target.ownerPubky;
 

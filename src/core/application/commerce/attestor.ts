@@ -6,6 +6,7 @@ import {
   MARKETPLACE_ATTESTOR_PROFILE_TTL_MS,
   MARKETPLACE_ATTESTOR_PROFILE_WAIT_MS,
 } from '@/config/commerce';
+import { isStoreMode } from '@/config/store-mode';
 import { setAttestorProfileKeyWindows } from '@/libs/commerce/attestor-key-windows';
 import {
   type ReviewOutcome,
@@ -39,7 +40,8 @@ interface AttestorProfileRead {
  * Both are optional enrichments on top of the configured trust list. Until an
  * attestor publishes (and on an index without the routes) every read here
  * answers "nothing" without an error: the configured windows stay, and no
- * note shows. Neither read ever throws.
+ * note shows. Neither read ever throws. A store reads no index, so there both
+ * always answer "nothing".
  */
 export class CommerceAttestorApplication {
   private static profileReads = new Map<string, AttestorProfileRead>();
@@ -66,7 +68,7 @@ export class CommerceAttestorApplication {
    * a failed read leaves the configured windows as they are.
    */
   static async loadKeyWindows(): Promise<void> {
-    if (getCommerceAdapterMode() === 'sandbox') return;
+    if (getCommerceAdapterMode() === 'sandbox' || isStoreMode()) return;
     const attestorIds = [...new Set(configuredMarketplaceTrustedAttestors().map(({ pubky }) => pubky))];
     const reads = Promise.all(attestorIds.map((attestorId) => this.readProfile(attestorId)));
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -126,7 +128,7 @@ export class CommerceAttestorApplication {
    */
   static async fetchOutcomes(orders: readonly CommerceAttestorOrderRef[]): Promise<Map<string, ReviewOutcome[]>> {
     const outcomes = new Map<string, ReviewOutcome[]>();
-    if (getCommerceAdapterMode() === 'sandbox' || this.annotationsUnsupported) return outcomes;
+    if (getCommerceAdapterMode() === 'sandbox' || isStoreMode() || this.annotationsUnsupported) return outcomes;
 
     const refsByAttestor = new Map<string, Set<string>>();
     for (const { attestorId, orderRef } of orders) {

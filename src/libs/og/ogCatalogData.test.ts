@@ -3,6 +3,7 @@ import { getMarketplaceNexusUrl } from '@/config/nexus';
 import { Logger } from '@/libs/logger/logger';
 import { getCommerceAdapterMode } from '@/libs/runtime-config/runtime-config';
 import { createCommerceShopFixture, createNexusListingDetailsFixture } from '@/test/fixtures/commerce/commerce';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { CATALOG_SHOP_FETCH_TIMEOUT_MS, fetchMarketplaceCatalogForSsr } from './ogCatalogData';
 import { OG_COMMERCE_REVALIDATE } from './ogCommerceData';
 
@@ -64,6 +65,18 @@ describe('fetchMarketplaceCatalogForSsr', () => {
 
     await expect(fetchMarketplaceCatalogForSsr()).resolves.toEqual({ listings: [], shops: [] });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("skips Nexus in a store, which opens its seller's shop instead of the catalog", async () => {
+    setStoreSeller('y'.repeat(52));
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+    try {
+      await expect(fetchMarketplaceCatalogForSsr()).resolves.toEqual({ listings: [], shops: [] });
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      setStoreSeller(undefined);
+    }
   });
 
   it('returns an empty catalog when the stream is not ok', async () => {

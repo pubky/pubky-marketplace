@@ -18,6 +18,7 @@ import {
   signedAttestorAnnotation,
   signedAttestorProfile,
 } from '@/test/fixtures/commerce/attestor-records';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { CommerceAttestorApplication } from './attestor';
 
 const trusted = vi.hoisted(() => ({ entries: [] as MarketplaceTrustedAttestor[] }));
@@ -333,5 +334,31 @@ describe('CommerceAttestorApplication.fetchOutcomes', () => {
     await expect(CommerceAttestorApplication.fetchOutcomes([])).resolves.toEqual(new Map());
 
     expect(read).not.toHaveBeenCalled();
+  });
+});
+
+describe('CommerceAttestorApplication in a store', () => {
+  beforeEach(() => {
+    CommerceAttestorApplication.resetSession();
+    trust(attestor);
+    setStoreSeller('y'.repeat(52));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    setStoreSeller(undefined);
+  });
+
+  it('reads no attestor profile or annotation, and answers nothing', async () => {
+    const profile = vi.spyOn(NexusMarketplaceService, 'fetchAttestorProfile');
+    const annotations = vi.spyOn(NexusMarketplaceService, 'fetchAttestorAnnotations');
+
+    await CommerceAttestorApplication.loadKeyWindows();
+    await expect(
+      CommerceAttestorApplication.fetchOutcomes([{ attestorId: attestor.pubky, orderRef: refOf(1) }]),
+    ).resolves.toEqual(new Map());
+
+    expect(profile).not.toHaveBeenCalled();
+    expect(annotations).not.toHaveBeenCalled();
   });
 });

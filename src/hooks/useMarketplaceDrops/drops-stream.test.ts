@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { estimateDropBucket, fetchDropsStream, type NexusDropStreamEntry, placeDropEntry } from './drops-stream';
 
 vi.mock('@/config/nexus', () => ({
@@ -31,6 +32,16 @@ describe('fetchDropsStream', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('returns null in a store without asking the index', async () => {
+    setStoreSeller(SELLER);
+    try {
+      await expect(fetchDropsStream()).resolves.toBeNull();
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      setStoreSeller(undefined);
+    }
   });
 
   it('returns null on 404 — the honest "not indexed on this deployment" outcome', async () => {

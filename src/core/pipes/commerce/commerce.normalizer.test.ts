@@ -18,6 +18,61 @@ describe('CommerceRecordNormalizer', () => {
     expect(CommerceRecordNormalizer.listing(listing)).toEqual(listing);
   });
 
+  describe('catalogEntryFromListingRecord', () => {
+    it('maps a fixed-price record to the entry the index serves, with no reputation', () => {
+      const record = createCommerceListingFixture();
+
+      expect(CommerceRecordNormalizer.catalogEntryFromListingRecord(record)).toEqual({
+        id: `${COMMERCE_FIXTURE_SELLER}:boots_01`,
+        seller_id: COMMERCE_FIXTURE_SELLER,
+        listing_id: 'boots_01',
+        state: 'active',
+        title: record.title,
+        description: record.description,
+        category_id: record.categoryId,
+        condition: record.condition,
+        tags: record.tags,
+        country_code: 'US',
+        region: 'NY',
+        media_urls: record.media.map(({ url }) => url),
+        sale_format: 'fixed_price',
+        price: record.sale.format === 'fixed_price' ? record.sale.unitPrice : null,
+        auction: null,
+        fulfillment_methods: record.fulfillmentMethods,
+        reputation: null,
+        listing_reputation: null,
+        revision: record.revision,
+        updated_at: Date.parse(record.updatedAt),
+      });
+    });
+
+    it('carries the auction terms and starting price, and a missing region as null', () => {
+      const sale = {
+        format: 'auction' as const,
+        startingPrice: { amountMinor: 1_000, currency: 'USD', exponent: 2 },
+        minimumIncrement: { amountMinor: 100, currency: 'USD', exponent: 2 },
+        startsAt: '2026-08-19T20:00:00.000Z',
+        endsAt: '2026-08-29T20:00:00.000Z',
+        antiSnipingWindowSeconds: 120,
+        antiSnipingExtensionSeconds: 120,
+      };
+      const record = createCommerceListingFixture({ sale, location: { countryCode: 'DE' } });
+
+      expect(CommerceRecordNormalizer.catalogEntryFromListingRecord(record)).toMatchObject({
+        sale_format: 'auction',
+        price: sale.startingPrice,
+        auction: {
+          startsAt: sale.startsAt,
+          endsAt: sale.endsAt,
+          buyNowPrice: null,
+          minimumIncrement: sale.minimumIncrement,
+        },
+        country_code: 'DE',
+        region: null,
+      });
+    });
+  });
+
   it('loads an existing saved search that uses the pre-drops sale-format value', () => {
     const existing = {
       query: 'camera',

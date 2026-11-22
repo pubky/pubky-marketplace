@@ -21,6 +21,7 @@ import {
 import { CONNECTOR_SHARE_CONSENT_VERSION } from '@/config/commerce-copy';
 import { BASE_UNITS_PER_BITCOIN } from '@/config/currencies';
 import { NEXUS_LISTINGS_PER_PAGE } from '@/config/nexus';
+import { getStoreSeller, isStoreMode } from '@/config/store-mode';
 import { readAuthEpoch } from '@/controllers/auth/auth-epoch';
 import { withExclusiveLock } from '@/libs/chat/web-locks';
 import {
@@ -170,7 +171,11 @@ import {
   orderIdFromMarketplaceAggregateId,
   type ShippingChoice,
 } from '@/libs/commerce/transaction-commands';
-import type { CommerceJsonValue, CommerceMoney } from '@/libs/commerce/transaction-contracts';
+import {
+  commerceEntityIdSchema,
+  type CommerceJsonValue,
+  type CommerceMoney,
+} from '@/libs/commerce/transaction-contracts';
 import { assertPublishableListingStock } from '@/libs/commerce/unlimited-stock';
 import { variantRefusalMessage } from '@/libs/commerce/variant-refusals';
 import { AppError } from '@/libs/error/error';
@@ -681,6 +686,8 @@ function applyInventoryProjection(
 }
 
 const SELLER_REFRESH_MAX_PAGES = 100;
+/** Listing records a store reads from its seller's homeserver at once. */
+const HOMESERVER_LISTING_READ_CONCURRENCY = 8;
 
 /**
  * The states a seller's own refresh reads from the index. The discovery stream
@@ -835,7 +842,8 @@ export class CommerceApplication {
    * Nexus deploys tag aggregation. A 404 means "aggregation not available",
    * so this returns an empty array WITHOUT touching the local cache — the
    * viewer's own locally written tags keep rendering, and nothing fake is
-   * shown. Any other error propagates.
+   * shown. Any other error propagates. A store reads no index, so it has no
+   * aggregate to show and returns an empty array the same way.
    *
    * @param params.kind - `TagKind.LISTING` or `TagKind.SHOP`
    * @param params.taggedId - Composite `seller:listingId` for listings, owner pubky for shops
@@ -857,6 +865,7 @@ export class CommerceApplication {
     skip?: number;
     limit?: number;
   }): Promise<NexusTag[]> {
+    if (isStoreMode()) return [];
     let nexusTags: NexusTag[];
     try {
       if (kind === TagKind.LISTING) {
@@ -920,8 +929,9 @@ export class CommerceApplication {
     // Sandbox catalogs are seeded locally and stay self-contained (same
     // invariant as fetchCatalogListings / fetchSellerCatalogListings):
     // sandbox mode never reads from Nexus, so the refresh is a no-op and
-    // the cached rows keep rendering.
-    if (getCommerceAdapterMode() === 'sandbox') return;
+    // the cached rows keep rendering. A store reads its seller's homeserver,
+    // not Nexus, in every mode.
+    if (getCommerceAdapterMode() === 'sandbox' && !isStoreMode()) return;
 
     const inFlight = this.sellerListingsRefreshInFlight.get(sellerPubky);
     if (inFlight) {
@@ -941,6 +951,10 @@ export class CommerceApplication {
   }
 
   private static async runSellerListingsRefresh(sellerPubky: string): Promise<void> {
+    if (isStoreMode()) {
+      await this.runHomeserverSellerListingsRefresh(sellerPubky);
+      return;
+    }
     const entries = await this.collectSellerCatalogEntries(sellerPubky, {
       strictIdentity: true,
       paginate: true,
@@ -979,6 +993,25 @@ export class CommerceApplication {
       entries.filter((entry) => !deleted.has(entry.listing_id)),
       recordsToCommit,
       { sellerPubky, deletedListingIds: deleted },
+    );
+  }
+
+  /**
+   * A store's refresh: the seller's listing directory is the discovery read and the canonical read
+   * at once, so each record it serves is committed when it is newer than the cache, and none needs
+   * confirming as deleted. A record no longer listed stays cached, as with the index.
+   */
+  private static async runHomeserverSellerListingsRefresh(sellerPubky: string): Promise<void> {
+    const records = await this.collectHomeserverSellerListings(sellerPubky, {
+      strictIdentity: true,
+      paginate: true,
+      states: SELLER_OWN_LISTING_STATES,
+    });
+    const localListings = await LocalCommerceService.getListingsBySeller(sellerPubky);
+    const localRevisions = new Map(localListings.map((listing) => [listing.listing_id, listing.revision]));
+    await LocalCommerceService.commitSellerCatalogRefresh(
+      records.map((record) => CommerceRecordNormalizer.catalogEntryFromListingRecord(record)),
+      records.filter((record) => (localRevisions.get(record.listingId) ?? 0) < record.revision),
     );
   }
 
@@ -3226,6 +3259,27 @@ export class CommerceApplication {
     listingId: string,
     freshEntries: CommerceCatalogEntryModelSchema[],
   ): Promise<WatchIndexObservation | null> {
+    if (isStoreMode()) {
+      // A store reads no index: the seller's record carries the same fields.
+      try {
+        const record = await this.fetchListingIfFound(sellerId, id);
+        if (!record) return null;
+        const entry = CommerceRecordNormalizer.catalogEntryFromListingRecord(record);
+        freshEntries.push(entry);
+        return {
+          revision: entry.revision,
+          state: entry.state,
+          priceMinor: entry.price.amountMinor,
+          currency: entry.price.currency,
+          exponent: entry.price.exponent,
+          auctionEndsAt: entry.auction?.endsAt ?? null,
+          title: entry.title,
+        };
+      } catch (error) {
+        Logger.warn('Failed to observe a watched listing on its homeserver', { listing: listingId, error });
+        return null;
+      }
+    }
     if (adapterMode === 'sandbox') {
       // The sandbox catalog is seeded locally and never queries Nexus; its
       // local rows are the only index-shaped source that exists in this mode.
@@ -3425,6 +3479,14 @@ export class CommerceApplication {
    * seller's pubky until the shop record is reachable).
    */
   static async fetchCatalogListings(filters: CommerceCatalogStreamFilters = {}): Promise<void> {
+    const storeSeller = getStoreSeller();
+    if (storeSeller !== null) {
+      // A store's catalog is its seller's; the grid applies the filters locally.
+      if (filters.sellerId === undefined || filters.sellerId === storeSeller) {
+        await this.fetchSellerCatalogListings(storeSeller);
+      }
+      return;
+    }
     if (getCommerceAdapterMode() === 'sandbox') return;
 
     const payload = await NexusMarketplaceService.fetchListingStream({
@@ -3480,12 +3542,20 @@ export class CommerceApplication {
    * the Nexus index — what a direct visit to a shop page needs when the
    * visitor never browsed the main catalog. Sandbox catalogs are seeded
    * locally, so (as with {@link fetchCatalogListings}) sandbox mode never
-   * reads from Nexus.
+   * reads from Nexus. A store reads the seller's homeserver instead, in every
+   * mode, and caches the same entries the index would serve.
    */
   static async fetchSellerCatalogListings(
     sellerPubky: string,
     options: { strictIdentity?: boolean; paginate?: boolean } = {},
   ): Promise<void> {
+    if (isStoreMode()) {
+      const records = await this.collectHomeserverSellerListings(sellerPubky, options);
+      await LocalCommerceService.bulkUpsertCatalogEntries(
+        records.map((record) => CommerceRecordNormalizer.catalogEntryFromListingRecord(record)),
+      );
+      return;
+    }
     if (getCommerceAdapterMode() === 'sandbox') return;
 
     const entries = await this.collectSellerCatalogEntries(sellerPubky, options);
@@ -3535,6 +3605,85 @@ export class CommerceApplication {
     return [...entriesById.values()];
   }
 
+  /**
+   * A store's seller catalog, read from the seller's homeserver because a store reads no index: the
+   * listing directory page by page up to the index path's page bound, then each record as a canonical
+   * read, kept when its state is one of `states`. The directory is ordered by listing id rather than
+   * recency, so even a shop-page read takes every page; past the bound, `paginate` (the seller's
+   * refresh, which must see the whole inventory) rejects and a shop-page read keeps what it read.
+   * A record deleted between the listing and the read, or one that fails validation, is skipped so
+   * one bad record never hides the shop; with `strictIdentity`, a record naming another seller or
+   * listing than its path rejects instead.
+   */
+  private static async collectHomeserverSellerListings(
+    sellerPubky: string,
+    options: { strictIdentity?: boolean; paginate?: boolean; states?: readonly NexusListingState[] } = {},
+  ): Promise<CommerceListingRecord[]> {
+    const directory = CommerceRecordNormalizer.listingDirectoryUri(sellerPubky);
+    const listingIds: string[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < SELLER_REFRESH_MAX_PAGES; page += 1) {
+      const urls = await CommerceHomeserverService.listPage(directory, NEXUS_LISTINGS_PER_PAGE, cursor);
+      for (const url of urls) {
+        const listingId = url.slice(url.lastIndexOf('/') + 1);
+        if (commerceEntityIdSchema.safeParse(listingId).success) listingIds.push(listingId);
+      }
+      if (urls.length < NEXUS_LISTINGS_PER_PAGE) break;
+      if (page === SELLER_REFRESH_MAX_PAGES - 1) {
+        if (!options.paginate) {
+          Logger.warn('Seller catalog read stopped at its bounded page limit', { maxPages: SELLER_REFRESH_MAX_PAGES });
+          break;
+        }
+        throw Err.validation(
+          ValidationErrorCode.INVALID_INPUT,
+          'Seller catalog refresh exceeded its bounded page limit.',
+          {
+            service: ErrorService.Homeserver,
+            operation: 'fetchSellerCatalogListings',
+            context: { maxPages: SELLER_REFRESH_MAX_PAGES },
+          },
+        );
+      }
+      cursor = urls[urls.length - 1];
+    }
+
+    const states = new Set<string>(options.states ?? ['active']);
+    const records: CommerceListingRecord[] = [];
+    for (let start = 0; start < listingIds.length; start += HOMESERVER_LISTING_READ_CONCURRENCY) {
+      const batch = await Promise.all(
+        listingIds
+          .slice(start, start + HOMESERVER_LISTING_READ_CONCURRENCY)
+          .map((listingId) => this.readHomeserverCatalogListing(sellerPubky, listingId, options.strictIdentity)),
+      );
+      for (const record of batch) {
+        if (record && states.has(record.state)) records.push(record);
+      }
+    }
+    return records;
+  }
+
+  private static async readHomeserverCatalogListing(
+    sellerPubky: string,
+    listingId: string,
+    strictIdentity = false,
+  ): Promise<CommerceListingRecord | null> {
+    const stored = await CommerceHomeserverService.fetchJsonIfFound(
+      CommerceRecordNormalizer.listingUri(sellerPubky, listingId),
+    );
+    if (!stored.found) return null;
+    let record: CommerceListingRecord;
+    try {
+      record = CommerceRecordNormalizer.listing(stored.json);
+    } catch (error) {
+      Logger.warn('Skipping an unreadable listing record in the seller catalog', { listingId, error });
+      return null;
+    }
+    if (record.ownerPubky === sellerPubky && record.listingId === listingId) return record;
+    if (strictIdentity) throw this.invalidSellerCatalogIdentity(ErrorService.Homeserver);
+    Logger.warn('Skipping a listing record whose identity does not match its path', { listingId });
+    return null;
+  }
+
   private static validateSellerCatalogPage(
     payload: NexusListingDetails[],
     sellerPubky: string,
@@ -3554,9 +3703,9 @@ export class CommerceApplication {
     }
   }
 
-  private static invalidSellerCatalogIdentity() {
+  private static invalidSellerCatalogIdentity(service: ErrorService = ErrorService.Nexus) {
     return Err.validation(ValidationErrorCode.INVALID_INPUT, 'Seller catalog contains an invalid listing identity.', {
-      service: ErrorService.Nexus,
+      service,
       operation: 'fetchSellerCatalogListings',
       context: { ownerMatches: false },
     });
@@ -3582,10 +3731,11 @@ export class CommerceApplication {
    * sellers; failed per-seller refreshes are logged and skipped
    * (`allSettled`) so one unreachable seller cannot empty the shelf; when
    * everything fails the shelf renders whatever the cache honestly holds.
-   * Sandbox catalogs are seeded locally and never read from Nexus.
+   * Sandbox catalogs are seeded locally and never read from Nexus. A store
+   * has no followed-sellers shelf: its catalog is one seller's.
    */
   static async fetchFollowedSellerCatalogListings(followedPubkys: string[]): Promise<void> {
-    if (getCommerceAdapterMode() === 'sandbox') return;
+    if (getCommerceAdapterMode() === 'sandbox' || isStoreMode()) return;
     if (followedPubkys.length === 0) return;
 
     try {
@@ -3756,12 +3906,14 @@ export class CommerceApplication {
    * retry, also answers 404. Every other outcome (transport failure, 5xx,
    * a homeserver 404 while Nexus still lists the record, a Nexus failure)
    * is unknown and returns `false`, so callers keep their generic
-   * "could not be loaded" copy. Never throws.
+   * "could not be loaded" copy. Never throws. A store reads no index, so
+   * there the homeserver's 404 alone confirms it.
    */
   static async isListingConfirmedRemoved(ownerPubky: string, listingId: string, fetchError: unknown): Promise<boolean> {
     if (!isAppError(fetchError) || fetchError.service !== ErrorService.Homeserver || !isNotFound(fetchError)) {
       return false;
     }
+    if (isStoreMode()) return true;
     try {
       await NexusMarketplaceService.fetchListingDetailsOnce({ seller_id: ownerPubky, listing_id: listingId });
       return false;
@@ -5050,13 +5202,14 @@ export class CommerceApplication {
    *
    * The request names the effective trust list's windows (`attestors=`), so
    * an index with trust buckets also serves the exact counted figure, carried
-   * on the snippet as `scoped`; older indexes ignore the parameter.
+   * on the snippet as `scoped`; older indexes ignore the parameter. A store
+   * reads no index, so it is always `unavailable` there.
    */
   static async fetchListingRating(
     sellerPubky: string,
     listingId: string,
   ): Promise<CommerceReputationSnippet | null | 'unavailable'> {
-    if (getCommerceAdapterMode() === 'sandbox') return 'unavailable';
+    if (getCommerceAdapterMode() === 'sandbox' || isStoreMode()) return 'unavailable';
     try {
       const attestors = attestorWindowsParam();
       const details = await NexusMarketplaceService.fetchListingDetailsOnce({
@@ -5085,10 +5238,11 @@ export class CommerceApplication {
    *
    * The request names the effective trust list's windows (`attestors=`), so
    * an index with trust buckets also serves the exact counted figure
-   * (`scoped`); older indexes ignore the parameter.
+   * (`scoped`); older indexes ignore the parameter. A store reads no index,
+   * so it is always `unavailable` there.
    */
   static async fetchSellerReputationOverview(sellerPubky: string): Promise<CommerceSellerReputationOverview> {
-    if (getCommerceAdapterMode() === 'sandbox') return { status: 'unavailable' };
+    if (getCommerceAdapterMode() === 'sandbox' || isStoreMode()) return { status: 'unavailable' };
 
     try {
       const attestors = attestorWindowsParam();
@@ -5117,13 +5271,14 @@ export class CommerceApplication {
    * A page of indexed reviews about a seller (with joined seller responses),
    * newest-indexed first unless the page names a sort. `unavailable` means
    * the index does not serve review routes (old deployment or unreachable) —
-   * callers render no review section rather than an empty one.
+   * callers render no review section rather than an empty one. A store reads
+   * no index, so both review reads are always `unavailable` there.
    */
   static async fetchSellerReviews(
     sellerPubky: string,
     page: CommerceReviewsPage = {},
   ): Promise<CommerceIndexedReviewsResult> {
-    if (getCommerceAdapterMode() === 'sandbox') return { status: 'unavailable' };
+    if (getCommerceAdapterMode() === 'sandbox' || isStoreMode()) return { status: 'unavailable' };
     try {
       const payload = await NexusMarketplaceService.fetchShopReviews({
         seller_id: sellerPubky,
@@ -5143,7 +5298,7 @@ export class CommerceApplication {
     listingId: string,
     page: CommerceReviewsPage = {},
   ): Promise<CommerceIndexedReviewsResult> {
-    if (getCommerceAdapterMode() === 'sandbox') return { status: 'unavailable' };
+    if (getCommerceAdapterMode() === 'sandbox' || isStoreMode()) return { status: 'unavailable' };
     try {
       const payload = await NexusMarketplaceService.fetchListingReviews({
         seller_id: sellerPubky,

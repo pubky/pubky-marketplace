@@ -63,6 +63,19 @@ describe('CommerceHomeserverService', () => {
     });
   });
 
+  it('lists one directory page after a cursor', async () => {
+    const directory = URL.slice(0, URL.lastIndexOf('/') + 1);
+    const list = vi.spyOn(HomeserverService, 'list').mockResolvedValue([URL]);
+
+    await expect(CommerceHomeserverService.listPage(directory, 30)).resolves.toEqual([URL]);
+    await CommerceHomeserverService.listPage(directory, 30, URL);
+
+    expect(list.mock.calls).toEqual([
+      [{ baseDirectory: directory, limit: 30, cursor: undefined }],
+      [{ baseDirectory: directory, limit: 30, cursor: URL }],
+    ]);
+  });
+
   it('deletes only through the authenticated homeserver request boundary', async () => {
     const request = vi.spyOn(HomeserverService, 'request').mockResolvedValue(undefined);
 

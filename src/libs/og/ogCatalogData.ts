@@ -1,4 +1,5 @@
 import { NEXUS_LISTINGS_PER_PAGE } from '@/config/nexus';
+import { isStoreMode } from '@/config/store-mode';
 import {
   catalogItemFromCatalogEntry,
   type MarketplaceCatalogItem,
@@ -23,10 +24,11 @@ export interface MarketplaceCatalogSsrPayload {
  * public index projections and public `shop.json` records, cached with the
  * listing/shop OG revalidate window.
  *
- * Sandbox deployments never query Nexus (seeded local catalogs only).
+ * Sandbox deployments never query Nexus (seeded local catalogs only), and
+ * neither does a store, which opens its seller's shop instead of the catalog.
  */
 export async function fetchMarketplaceCatalogForSsr(): Promise<MarketplaceCatalogSsrPayload> {
-  if (getCommerceAdapterMode() === 'sandbox') return { listings: [], shops: [] };
+  if (getCommerceAdapterMode() === 'sandbox' || isStoreMode()) return { listings: [], shops: [] };
 
   const query = new URLSearchParams({
     state: 'active',

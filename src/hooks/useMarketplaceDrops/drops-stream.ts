@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { getMarketplaceNexusUrl } from '@/config/nexus';
+import { isStoreMode } from '@/config/store-mode';
 import { dropTransitions } from '@/libs/commerce/state-machines';
 import type { DropState } from '@/libs/commerce/transaction-contracts';
 
@@ -48,8 +49,10 @@ export interface DropsStreamParams {
  * Fetches the indexed drops stream, or `null` when the deployment does not
  * serve it (404). Individually malformed entries are dropped rather than
  * failing the page — the stream is best-effort discovery, never authority.
+ * A store reads no index, so it is served no stream either.
  */
 export async function fetchDropsStream(params: DropsStreamParams = {}): Promise<NexusDropStreamEntry[] | null> {
+  if (isStoreMode()) return null;
   const query = new URLSearchParams();
   if (params.skip !== undefined) query.set('skip', String(params.skip));
   if (params.limit !== undefined) query.set('limit', String(params.limit));
