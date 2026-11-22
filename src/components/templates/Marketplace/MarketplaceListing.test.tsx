@@ -18,6 +18,7 @@ import { parseContractFaithfulOffer } from '@/test/fixtures/commerce/offer-award
 import { createOrderFixture } from '@/test/fixtures/commerce/orders';
 import { createListingProjectionFixture } from '@/test/fixtures/commerce/projections';
 import { setEmbedded } from '@/test-utils/embedded';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { MarketplaceListing } from './MarketplaceListing';
 
 const LOCKS_POLICY_URL = `pubky://${COMMERCE_FIXTURE_SELLER}/pub/locks.app/boots_01.json`;
@@ -43,6 +44,7 @@ const sessionState = vi.hoisted(() => ({
 }));
 
 const view = vi.hoisted(() => ({
+  adapterMode: 'transaction-service' as 'transaction-service' | 'sandbox',
   listing: null as ReturnType<typeof toCommerceListingModel> | null,
   shop: null as ReturnType<typeof toCommerceShopModel> | null,
   projection: null as ReturnType<typeof createListingProjectionFixture> | null,
@@ -77,7 +79,7 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/config/commerce', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/config/commerce')>();
-  return { ...actual, getCommerceAdapterMode: () => 'transaction-service' };
+  return { ...actual, getCommerceAdapterMode: () => view.adapterMode };
 });
 
 vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => ({
@@ -239,6 +241,7 @@ beforeAll(() => {
 
 describe('MarketplaceListing', () => {
   beforeEach(() => {
+    view.adapterMode = 'transaction-service';
     view.listing = toCommerceListingModel(createCommerceListingFixture());
     view.shop = toCommerceShopModel(createCommerceShopFixture());
     view.projection = createListingProjectionFixture();
@@ -324,6 +327,31 @@ describe('MarketplaceListing', () => {
       render(<MarketplaceListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots_01" />);
 
       expect(await screen.findByText('This listing could not be loaded.')).toBeInTheDocument();
+    });
+
+    it('reads only the seeded catalog in sandbox mode', async () => {
+      view.adapterMode = 'sandbox';
+      view.fetchFailure = new Error('homeserver unreachable');
+
+      render(<MarketplaceListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots_01" />);
+
+      expect(
+        await screen.findByText('This listing is no longer in the local marketplace catalog.'),
+      ).toBeInTheDocument();
+    });
+
+    it("reads the listing from the seller's homeserver in a sandbox store", async () => {
+      view.adapterMode = 'sandbox';
+      view.fetchFailure = new Error('homeserver unreachable');
+      setStoreSeller(COMMERCE_FIXTURE_SELLER);
+
+      try {
+        render(<MarketplaceListing sellerPubky={COMMERCE_FIXTURE_SELLER} listingId="boots_01" />);
+
+        expect(await screen.findByText('This listing could not be loaded.')).toBeInTheDocument();
+      } finally {
+        setStoreSeller(undefined);
+      }
     });
 
     it('keeps the generic copy when the failure is transient or unconfirmed', async () => {

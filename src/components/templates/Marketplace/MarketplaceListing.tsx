@@ -26,6 +26,7 @@ import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode, isDurableCommerceMode, isTransactionalCommerceMode } from '@/config/commerce';
+import { isStoreMode } from '@/config/store-mode';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useCommerceFavorite } from '@/hooks/useCommerceFavorite/useCommerceFavorite';
 import { useDefaultAddressCountry } from '@/hooks/useDefaultAddressCountry/useDefaultAddressCountry';
@@ -133,6 +134,8 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const [reportOpen, setReportOpen] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const adapterMode = getCommerceAdapterMode();
+  // The sandbox serves only its seeded catalog; a store reads its real seller's homeserver in every mode.
+  const readsLocalCatalogOnly = adapterMode === 'sandbox' && !isStoreMode();
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const { requireAuth } = useRequireAuth();
   const isOwner = currentUserPubky === sellerPubky;
@@ -152,7 +155,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const aggregateId = buildMarketplaceListingAggregateId(sellerPubky, listingId);
 
   useEffect(() => {
-    if (adapterMode === 'sandbox') {
+    if (readsLocalCatalogOnly) {
       setIsFetchSettled(true);
       return;
     }
@@ -178,12 +181,12 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     return () => {
       active = false;
     };
-  }, [adapterMode, listingId, sellerPubky]);
+  }, [readsLocalCatalogOnly, listingId, sellerPubky]);
 
   // Best-effort: a direct visit may not have the seller's shop cached, and it carries the shop
   // name, vacation notice and destination countries. A seller's later change (seller type,
   // country) repaints the shop below and lifts or sets the EU fence.
-  useLiveSellerShop(sellerPubky, { enabled: adapterMode !== 'sandbox' });
+  useLiveSellerShop(sellerPubky, { enabled: !readsLocalCatalogOnly });
 
   const listing = useLiveQuery(() => CommerceController.getListing(sellerPubky, listingId), [sellerPubky, listingId]);
   const madeToOrderVariants = madeToOrderVariantIds(

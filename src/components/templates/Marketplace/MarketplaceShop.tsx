@@ -13,6 +13,7 @@ import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode } from '@/config/commerce';
 import { getSocialHostUrl } from '@/config/social';
+import { isStoreMode } from '@/config/store-mode';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useCommerceShopFollow } from '@/hooks/useCommerceShopFollow/useCommerceShopFollow';
 import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
@@ -55,11 +56,14 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
   // may not hold it yet, so resolve network-first and only then treat a
   // missing record as "this seller has no shop". The hook also keeps it
   // current while the page is open.
-  const shopFetchSettled = useLiveSellerShop(sellerPubky, { live: getCommerceAdapterMode() !== 'sandbox' });
+  const shopFetchSettled = useLiveSellerShop(sellerPubky, {
+    live: getCommerceAdapterMode() !== 'sandbox' || isStoreMode(),
+  });
 
   useEffect(() => {
-    // Best-effort: hydrate this seller's listings from the Nexus index so a
-    // direct shop visit is not limited to what this device already cached.
+    // Best-effort: hydrate this seller's listings from the Nexus index (in a
+    // store, the seller's homeserver) so a direct shop visit is not limited to
+    // what this device already cached.
     void CommerceController.fetchSellerCatalogListings(sellerPubky).catch(() => undefined);
   }, [sellerPubky]);
 
