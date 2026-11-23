@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Gavel, HandCoins, type LucideIcon, MessageCircle } from 'lucide-react';
 import { Container } from '@/atoms/Container/Container';
 import { useRelativeTime } from '@/hooks/useRelativeTime/useRelativeTime';
+import { useStoreLinkServed } from '@/hooks/useStoreLinkServed/useStoreLinkServed';
 import { useUserProfile } from '@/hooks/useUserProfile/useUserProfile';
 import {
   NotificationActorAvatar,
@@ -40,6 +41,7 @@ export function MarketplaceNotificationItem({ notification, isMobile = false }: 
   // Marketplace actors are pubky users, so the same profile lookup the
   // social rows use resolves their display name and avatar.
   const { profile } = useUserProfile(actorPubky);
+  const isLinkServed = useStoreLinkServed();
 
   if ('kind' in notification) {
     const label = marketplaceActivityLabel(notification.type);
@@ -79,10 +81,11 @@ export function MarketplaceNotificationItem({ notification, isMobile = false }: 
       : notification.actorPubky === 'paypal-ipn'
         ? 'PayPal'
         : profile?.name || 'User';
-  const userProfileLink =
+  const actorProfileLink =
     notification.actorPubky === 'system' || notification.actorPubky === 'paypal-ipn'
       ? null
       : getUserProfileLink(notification.actorPubky);
+  const userProfileLink = actorProfileLink !== null && isLinkServed(actorProfileLink) ? actorProfileLink : null;
   const actionText = getMarketplaceNotificationActionText(notification);
   const timestampDate = new Date(notification.timestamp);
 
