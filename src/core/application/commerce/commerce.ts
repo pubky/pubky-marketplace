@@ -426,6 +426,8 @@ const WATCHLIST_PRIV_ENTRY_ID = 'watchlist';
 
 /** Plaintext receipts moved per orders load; the rest move on later loads. */
 const RECEIPT_MIGRATION_BATCH = 100;
+/** Pages one migration pass may list past the seller receipts a store leaves in place. */
+const RECEIPT_MIGRATION_MAX_PAGES = 5;
 
 /**
  * Read-back retries for an acked listing write (see
@@ -2835,9 +2837,17 @@ export class CommerceApplication {
    */
   private static publishedReceiptUrls = new Set<string>();
 
-  /** Test support: clears the session-scoped published-receipt memo. */
+  /** Plaintext seller receipts a pass without the seller side left in place, so later passes skip them unread. */
+  private static plaintextSellerReceiptUrls = new Set<string>();
+
+  /** Where the last pass without the seller side stopped listing plaintext receipts, by owner. */
+  private static receiptMigrationCursors = new Map<string, string>();
+
+  /** Test support: clears the session-scoped published-receipt and migration memos. */
   static resetReceiptPublicationMemo(): void {
     this.publishedReceiptUrls.clear();
+    this.plaintextSellerReceiptUrls.clear();
+    this.receiptMigrationCursors.clear();
   }
 
   /**
@@ -2849,29 +2859,64 @@ export class CommerceApplication {
    * overwritten, and both copies stay. One bounded batch per call; a file
    * that does not parse, or names another receipt than its path, stays in
    * place and leaves the pass incomplete.
+   *
+   * Without `sellerSide`, seller receipts stay in place and do not count
+   * toward the batch: the pass lists on past them (up to
+   * RECEIPT_MIGRATION_MAX_PAGES pages) and the next pass resumes where it
+   * stopped, so buyer receipts behind any number of seller receipts move. It
+   * is done only after a pass from the start reaches the end.
    */
   private static async migratePlaintextReceipts(
     ownerPubky: string,
     keyring: PrivKeyring,
     sellerSide: boolean,
   ): Promise<'done' | 'incomplete' | 'needs_reauth'> {
-    let urls: string[];
-    try {
-      urls = await CommerceHomeserverService.list(
-        CommerceRecordNormalizer.orderReceiptDirectoryUri(ownerPubky),
-        RECEIPT_MIGRATION_BATCH,
-        PRIV_V1_LOG_PATH,
-      );
-    } catch (error) {
-      if (this.isPrivateAccessDenied(error)) return 'needs_reauth';
-      Logger.warn(
-        'Listing plaintext order receipts failed; the move retries on the next orders load',
-        privErrorSummary(error),
-      );
-      return 'incomplete';
+    const directory = CommerceRecordNormalizer.orderReceiptDirectoryUri(ownerPubky);
+    let cursor = sellerSide ? undefined : this.receiptMigrationCursors.get(ownerPubky);
+    let incomplete = cursor !== undefined;
+    let moved = 0;
+    for (let page = 1; ; page += 1) {
+      let urls: string[];
+      try {
+        urls = await CommerceHomeserverService.list(directory, RECEIPT_MIGRATION_BATCH, PRIV_V1_LOG_PATH, cursor);
+      } catch (error) {
+        if (this.isPrivateAccessDenied(error)) return 'needs_reauth';
+        Logger.warn(
+          'Listing plaintext order receipts failed; the move retries on the next orders load',
+          privErrorSummary(error),
+        );
+        return 'incomplete';
+      }
+      const result = await this.migratePlaintextReceiptPage(ownerPubky, keyring, sellerSide, urls);
+      if (result === 'needs_reauth') return 'needs_reauth';
+      if (result === 'revoked') return 'incomplete';
+      moved += result.moved;
+      incomplete ||= result.incomplete;
+      if (urls.length < RECEIPT_MIGRATION_BATCH) {
+        this.receiptMigrationCursors.delete(ownerPubky);
+        break;
+      }
+      cursor = urls[urls.length - 1];
+      if (sellerSide || moved >= RECEIPT_MIGRATION_BATCH || page >= RECEIPT_MIGRATION_MAX_PAGES) {
+        if (!sellerSide) this.receiptMigrationCursors.set(ownerPubky, cursor);
+        incomplete = true;
+        break;
+      }
     }
-    let incomplete = urls.length >= RECEIPT_MIGRATION_BATCH;
+    return incomplete ? 'incomplete' : 'done';
+  }
+
+  /** One listed page of {@link migratePlaintextReceipts}: how many receipts it moved, and whether one stayed. */
+  private static async migratePlaintextReceiptPage(
+    ownerPubky: string,
+    keyring: PrivKeyring,
+    sellerSide: boolean,
+    urls: string[],
+  ): Promise<{ moved: number; incomplete: boolean } | 'needs_reauth' | 'revoked'> {
+    let moved = 0;
+    let incomplete = false;
     for (const url of urls) {
+      if (!sellerSide && this.plaintextSellerReceiptUrls.has(url)) continue;
       const receiptId = url.slice(url.lastIndexOf('/') + 1);
       try {
         const sealedUrl = privEntryUrl(keyring, 'order_receipt', receiptId);
@@ -2882,7 +2927,11 @@ export class CommerceApplication {
           incomplete = true;
           continue;
         }
-        if (!sellerSide && legacy.role === 'seller') continue;
+        if (!sellerSide && legacy.role === 'seller') {
+          this.plaintextSellerReceiptUrls.add(url);
+          continue;
+        }
+        moved += 1;
         const sealed = await CommercePrivStoreService.read(keyring, 'order_receipt', receiptId);
         if (sealed === null) {
           await CommercePrivStoreService.write(keyring, 'order_receipt', receiptId, { ...legacy });
@@ -2898,7 +2947,7 @@ export class CommerceApplication {
         }
       } catch (error) {
         if (this.isPrivateAccessDenied(error)) return 'needs_reauth';
-        if (isPrivKeyringRevoked(error)) return 'incomplete';
+        if (isPrivKeyringRevoked(error)) return 'revoked';
         Logger.warn(
           'Moving a plaintext order receipt failed; it retries on the next orders load',
           privErrorSummary(error),
@@ -2906,7 +2955,7 @@ export class CommerceApplication {
         incomplete = true;
       }
     }
-    return incomplete ? 'incomplete' : 'done';
+    return { moved, incomplete };
   }
 
   /** Whether a decrypted sealed receipt is exactly the validated plaintext one. */

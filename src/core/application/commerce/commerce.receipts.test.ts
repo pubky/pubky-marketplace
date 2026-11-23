@@ -889,6 +889,34 @@ describe('CommerceApplication.publishOrderReceipts without the seller side', () 
     expect(homeserver.files.has(sealedUrl(BUYER, SOLD_RECEIPT))).toBe(false);
   });
 
+  it('moves a purchase receipt behind more than a batch of seller receipts, reading those once', async () => {
+    const record = await publishedRecord();
+    CommerceApplication.resetReceiptPublicationMemo();
+    homeserver.files.clear();
+    const sold = Array.from({ length: 150 }, (_, n) => `018f47d2-6a27-7c23-a49d-6b21bb${String(n).padStart(6, '0')}`);
+    for (const receiptId of sold) {
+      homeserver.files.set(legacyUrl(BUYER, receiptId), {
+        ...record,
+        receiptId,
+        role: 'seller',
+        buyerPubky: SELLER,
+        sellerPubky: BUYER,
+      });
+    }
+    homeserver.files.set(legacyUrl(BUYER, RECEIPT_ID), record);
+
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [], { sellerSide: false })).resolves.toBe('published');
+    expect(homeserver.files.has(legacyUrl(BUYER, RECEIPT_ID))).toBe(false);
+    expect(storedReceipt(BUYER, RECEIPT_ID)).toEqual(record);
+    expect(sold.every((receiptId) => homeserver.files.has(legacyUrl(BUYER, receiptId)))).toBe(true);
+
+    const reads = vi.spyOn(CommerceHomeserverService, 'fetchJson');
+    await CommerceApplication.publishOrderReceipts(BUYER, [], { sellerSide: false });
+    expect(reads.mock.calls.filter(([url]) => sold.some((receiptId) => url === legacyUrl(BUYER, receiptId)))).toEqual(
+      [],
+    );
+  });
+
   it('publishes receipts of purchases and leaves those of sales, which the seller side publishes', async () => {
     grantCapableSession();
     const fetchAttestation = vi
