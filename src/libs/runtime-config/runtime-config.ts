@@ -1,9 +1,9 @@
 import { PHASE_PRODUCTION_BUILD } from 'next/constants';
 import { normalizeBasePath } from '@/libs/base-path/base-path';
 import { type RegionPolicy, resolveRegionPolicy } from '@/libs/commerce/region-modes';
+import { AppError } from '@/libs/error/error';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
-import { Err } from '@/libs/error/error.factories';
-import { ErrorService } from '@/libs/error/error.types';
+import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import {
   type CommerceAdapterMode,
   type DeployEnv,
@@ -203,11 +203,16 @@ export function resetRuntimeConfigForTests(): void {
  */
 function requireIndexUrl(value: string | undefined, envName: string, operation: string): string {
   if (value === undefined) {
-    throw Err.validation(
-      ValidationErrorCode.MISSING_FIELD,
-      `${envName} is not part of a store's config; a store reads no Nexus or CDN.`,
-      { service: ErrorService.Nexus, operation, context: { envName } },
-    );
+    // Not `Err.validation`: the factories report through Sentry, which reads this module, and a
+    // test mock of this module that awaits its original then never resolves in browser mode.
+    throw new AppError({
+      category: ErrorCategory.Validation,
+      code: ValidationErrorCode.MISSING_FIELD,
+      message: `${envName} is not part of a store's config; a store reads no Nexus or CDN.`,
+      service: ErrorService.Nexus,
+      operation,
+      context: { envName },
+    });
   }
   return value;
 }
