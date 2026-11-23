@@ -8,11 +8,13 @@ import { DeliveryKeyCustodyNotice } from '@/molecules/Marketplace/DeliveryKeyCus
 import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { Header } from '@/organisms/Header/Header';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
+import { StoreReportListingDialog } from '@/organisms/Marketplace/StoreReportListingDialog';
 
 // One seller's store (`PUBKY_RUNTIME_STORE_SELLER`) as a signed-in buyer sees it: the real root-layout
 // Header and the real MarketplaceContentLayout around the section bar. The header carries the shop's
 // own name instead of the Pubky Market wordmark and no search, the bars keep only what a store
-// serves, and the page ends with the store footer.
+// serves, and the page ends with the store footer naming the shop as the seller. Report listing
+// sends the buyer to the seller and, for a seller on Synonym's homeserver, to Synonym's notice route.
 
 const STORE_SELLER = vi.hoisted(() => 'ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u');
 const BUYER = vi.hoisted(() => 'y'.repeat(52));
@@ -45,6 +47,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     ...createMarketplaceVrtCommerceController(),
     getShop: async () => ({ record: { name: 'Satoshi Vintage' } }),
     refreshShop: async () => undefined,
+    getMarketplaceMediaOwnerHomeserver: async () => '8um71us3fyw6h8wbcxb5ar3rwusy1a6u49956ikzojg3gcwd1dty',
   },
 }));
 
@@ -149,6 +152,26 @@ describe('One seller’s store — visual regression', () => {
     await waitForStoreChrome(screen.container);
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('store-shell-mobile');
   });
+
+  it.each([
+    ['desktop', VRT_VIEWPORT_DESKTOP],
+    ['mobile', VRT_VIEWPORT_MOBILE],
+  ] as const)(
+    'reports a listing to the seller and to Synonym, which hosts them, at %s viewport',
+    async (label, viewport) => {
+      const screen = await renderForVRT(
+        <StoreReportListingDialog open onOpenChange={() => {}} sellerPubky={STORE_SELLER} listingId="0034ABCDEFGHJ" />,
+        { viewport, disableHover: true },
+      );
+
+      await vi.waitFor(() => {
+        if (!document.querySelector('[data-testid="store-report-synonym-notice"]')) {
+          throw new Error("The dialog has not resolved the seller's homeserver yet.");
+        }
+      });
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(`store-report-listing-${label}`);
+    },
+  );
 
   it('shows the studio notice that the delivery key is stored in this browser at desktop viewport', async () => {
     await renderForVRT(<DeliveryKeyCustodyNotice onDismiss={() => {}} />, {
