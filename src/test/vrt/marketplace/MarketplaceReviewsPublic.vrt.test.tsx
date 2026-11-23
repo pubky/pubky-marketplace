@@ -435,7 +435,7 @@ describe('Marketplace public reviews — visual regression', () => {
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
-    await waitForText('verified by the marketplace attestor');
+    await waitForText('verified by an attestor this app trusts');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reputation-header-rated-full-desktop');
   });
 
