@@ -549,7 +549,7 @@ describe('own reviews a double-blind window withholds', () => {
       await settleRetries(retry);
 
       expect(retry).toHaveBeenCalledTimes(1);
-      expect(retry).toHaveBeenCalledWith(ORDER_FIXTURE_BUYER, order.id);
+      expect(retry).toHaveBeenCalledWith(ORDER_FIXTURE_BUYER, order.id, { sellerSide: true });
       expect(puts()).toHaveLength(3);
       expect(await jobs()).toEqual([]);
     });
@@ -567,9 +567,33 @@ describe('own reviews a double-blind window withholds', () => {
       await settleRetries(retry);
 
       expect(retry.mock.calls).toEqual([
-        [ORDER_FIXTURE_BUYER, order.id],
-        [ORDER_FIXTURE_BUYER, 'another-order'],
+        [ORDER_FIXTURE_BUYER, order.id, { sellerSide: true }],
+        [ORDER_FIXTURE_BUYER, 'another-order', { sellerSide: true }],
       ]);
+    });
+
+    it('without the seller side, publishes a released review held as the buyer and leaves one held as the seller', async () => {
+      await hold();
+      release();
+      const [held] = await awaitingJobs();
+      await CommerceSyncJobModel.table.update(held.id, {
+        payload: { ...(held.payload as Record<string, unknown>), sellerPubky: ORDER_FIXTURE_BUYER },
+      });
+      const retry = vi.spyOn(CommerceApplication, 'resumeAwaitingReleaseReviews');
+      notify([released('018f47d2-6a27-7c23-a49d-000000000206')]);
+
+      await CommerceApplication.getMarketplaceNotifications(ORDER_FIXTURE_BUYER, { sellerSide: false });
+      await settleRetries(retry);
+      expect(retry).toHaveBeenCalledWith(ORDER_FIXTURE_BUYER, order.id, { sellerSide: false });
+      expect(attestationReads).not.toHaveBeenCalled();
+      expect(await awaitingJobs()).toHaveLength(1);
+
+      await CommerceSyncJobModel.table.update(held.id, { payload: held.payload });
+      notify([released('018f47d2-6a27-7c23-a49d-000000000207')]);
+      await CommerceApplication.getMarketplaceNotifications(ORDER_FIXTURE_BUYER, { sellerSide: false });
+      await settleRetries(retry);
+      expect(puts()).toHaveLength(3);
+      expect(await jobs()).toEqual([]);
     });
 
     it('retries nothing for other notification kinds or in the sandbox', async () => {

@@ -1379,11 +1379,13 @@ export class CommerceController {
 
   /**
    * The viewer's marketplace notifications; in a store, a viewer other than the store seller keeps
-   * only its buyer side (`withoutSalesNotificationsOutsideStoreSeller`).
+   * only its buyer side (`withoutSalesNotificationsOutsideStoreSeller`), and the read retries only
+   * the released reviews it wrote as a buyer.
    */
   private static async getScopedMarketplaceNotifications(viewerPubky: string) {
-    const notifications = await CommerceApplication.getMarketplaceNotifications(viewerPubky);
-    if (StoreSellerGate.canSellHere(viewerPubky)) return notifications;
+    const sellsHere = StoreSellerGate.canSellHere(viewerPubky);
+    const notifications = await CommerceApplication.getMarketplaceNotifications(viewerPubky, { sellerSide: sellsHere });
+    if (sellsHere) return notifications;
     const roles = await this.resolveStoreNotificationRoles(viewerPubky, storeNotificationSubjects(notifications));
     return withoutSalesNotificationsOutsideStoreSeller(notifications, viewerPubky, getStoreSeller(), roles);
   }

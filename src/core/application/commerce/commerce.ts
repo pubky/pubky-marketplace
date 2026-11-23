@@ -1907,11 +1907,13 @@ export class CommerceApplication {
    * end-to-end encrypted, no service writer can attest them, and a row naming
    * a sender would show who wrote without the mute list being consulted.
    * Durable messaging is surfaced only by the inbox, which applies it.
+   * Without `sellerSide`, a released review is retried only when the actor
+   * wrote it as the buyer.
    */
-  static async getMarketplaceNotifications(actorPubky: string) {
+  static async getMarketplaceNotifications(actorPubky: string, { sellerSide = true }: { sellerSide?: boolean } = {}) {
     const notifications = await MarketplaceGatewayService.getNotifications(actorPubky);
     if (!isDurableCommerceMode(getCommerceAdapterMode())) return notifications;
-    this.retryReleasedReviews(actorPubky, notifications);
+    this.retryReleasedReviews(actorPubky, notifications, { sellerSide });
     return notifications.filter((notification) => notification.type !== 'message_received');
   }
 
@@ -1930,14 +1932,18 @@ export class CommerceApplication {
    * next orders load. The retry runs beside the notification read, never in
    * front of it, and a failure is logged inside the retry.
    */
-  private static retryReleasedReviews(actorPubky: string, notifications: MarketplaceNotificationEntry[]): void {
+  private static retryReleasedReviews(
+    actorPubky: string,
+    notifications: MarketplaceNotificationEntry[],
+    { sellerSide }: { sellerSide: boolean },
+  ): void {
     for (const notification of notifications) {
       if (!isRecognizedMarketplaceNotification(notification) || notification.type !== 'review_released') continue;
       const orderId = orderIdFromMarketplaceAggregateId(notification.aggregateId);
       const seen = `${actorPubky}|${notification.id}`;
       if (orderId === null || this.releaseNotificationsSeen.has(seen)) continue;
       this.releaseNotificationsSeen.add(seen);
-      void this.resumeAwaitingReleaseReviews(actorPubky, orderId).catch((error) => {
+      void this.resumeAwaitingReleaseReviews(actorPubky, orderId, { sellerSide }).catch((error) => {
         Logger.warn('Retrying a released review failed', { orderId, error });
       });
     }

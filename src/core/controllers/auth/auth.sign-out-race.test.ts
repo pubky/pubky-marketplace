@@ -290,7 +290,9 @@ describe('work started for an account writes nothing for it once its sign-out st
     vi.spyOn(CommerceApplication, 'getMarketplaceNotifications').mockReturnValue(notifications.promise);
 
     const refresh = CommerceController.refreshMarketplaceNotificationBadge().catch((error: unknown) => error);
-    await vi.waitFor(() => expect(CommerceApplication.getMarketplaceNotifications).toHaveBeenCalledWith(ALICE));
+    await vi.waitFor(() =>
+      expect(CommerceApplication.getMarketplaceNotifications).toHaveBeenCalledWith(ALICE, { sellerSide: true }),
+    );
     const finishSignOut = startSignOut();
     notifications.resolve([createNotificationFixture('order_shipped', { readAt: null })]);
     const outcome = await refresh;

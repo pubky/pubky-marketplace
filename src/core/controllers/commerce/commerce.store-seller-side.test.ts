@@ -85,6 +85,10 @@ describe('CommerceController seller side in a store', () => {
 
     expect(notificationIds(await CommerceController.getMarketplaceNotifications())).toEqual(['1']);
     expect(notificationIds(await CommerceController.getMarketplaceFeedNotifications())).toEqual(['1']);
+    expect(vi.mocked(CommerceApplication.getMarketplaceNotifications).mock.calls).toEqual([
+      [VIEWER, { sellerSide: false }],
+      [VIEWER, { sellerSide: false }],
+    ]);
 
     commerceConfig.mode = 'sandbox';
     await CommerceController.refreshMarketplaceNotificationBadge();
@@ -171,6 +175,7 @@ describe('CommerceController seller side in a store', () => {
       expect(useNotificationStore.getState().marketplaceUnread).toBe(3);
     }
     expect(CommerceApplication.getMarketplaceOrders).not.toHaveBeenCalled();
+    expect(CommerceApplication.getMarketplaceNotifications).not.toHaveBeenCalledWith(VIEWER, { sellerSide: false });
   });
 
   it('keeps the seller side for the store seller', async () => {
