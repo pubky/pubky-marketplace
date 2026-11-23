@@ -2155,10 +2155,25 @@ export class CommerceApplication {
     return await MarketplaceGatewayService.getOrder(actorPubky, orderId);
   }
 
+  /**
+   * The buyer and seller of one of the actor's orders, or null when the actor has no such order. The
+   * durable service reads it by id; sandbox has no single-order read, so it is found in the actor's
+   * orders.
+   */
+  static async getMarketplaceOrderParties(
+    actorPubky: string,
+    orderId: string,
+  ): Promise<{ buyerPubky: string; sellerPubky: string } | null> {
+    if (getCommerceAdapterMode() === 'sandbox') {
+      return (await MarketplaceGatewayService.getOrders(actorPubky)).find(({ id }) => id === orderId) ?? null;
+    }
+    return await MarketplaceGatewayService.getOrder(actorPubky, orderId);
+  }
+
   /** Whether the actor is the buyer of an order; false when the order does not read. */
   private static async boughtOrder(actorPubky: string, orderId: string): Promise<boolean> {
     try {
-      return (await MarketplaceGatewayService.getOrder(actorPubky, orderId))?.buyerPubky === actorPubky;
+      return (await this.getMarketplaceOrderParties(actorPubky, orderId))?.buyerPubky === actorPubky;
     } catch (error) {
       Logger.warn('An order did not read; its review removal waits for the next orders load', { orderId, error });
       return false;

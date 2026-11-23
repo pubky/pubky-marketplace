@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceApplication } from '@/application/commerce/commerce';
 import type { CommerceAdapterMode } from '@/config/commerce';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
+import { MarketplaceGatewayService } from '@/services/marketplace/marketplace';
+import { MarketplaceTransactionService } from '@/services/marketplace/marketplace-transaction';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useNotificationStore } from '@/stores/notification/notification.store';
 import { COMMERCE_FIXTURE_BUYER, COMMERCE_FIXTURE_SELLER } from '@/test/fixtures/commerce/commerce';
@@ -49,6 +51,10 @@ describe('CommerceController seller side in a store', () => {
     vi.spyOn(CommerceApplication, 'getMarketplaceNotifications').mockResolvedValue(notifications);
     vi.spyOn(CommerceApplication, 'getMarketplaceOrders').mockResolvedValue([purchase, sale] as never);
     vi.spyOn(CommerceApplication, 'getMarketplaceOrder').mockImplementation(
+      async (_actor, orderId) => ([purchase, sale].find(({ id }) => id === orderId) ?? null) as never,
+    );
+    vi.spyOn(MarketplaceGatewayService, 'getOrders').mockResolvedValue([purchase, sale] as never);
+    vi.spyOn(MarketplaceTransactionService, 'getOrder').mockImplementation(
       async (_actor, orderId) => ([purchase, sale].find(({ id }) => id === orderId) ?? null) as never,
     );
     vi.spyOn(CommerceApplication, 'getMarketplaceOffers').mockResolvedValue([
@@ -109,7 +115,7 @@ describe('CommerceController seller side in a store', () => {
     expect(CommerceApplication.getMarketplaceOrder).not.toHaveBeenCalled();
   });
 
-  it('reads an order the list does not name by id, keeping it when the viewer bought it', async () => {
+  it('reads an order the list does not name by id in durable modes, keeping it when the viewer bought it', async () => {
     setStoreSeller(STORE_SELLER);
     vi.mocked(CommerceApplication.getMarketplaceOrders).mockResolvedValue([] as never);
 
@@ -118,6 +124,11 @@ describe('CommerceController seller side in a store', () => {
       'order-purchase',
       'order-sale',
     ]);
+
+    vi.mocked(CommerceApplication.getMarketplaceOrder).mockClear();
+    commerceConfig.mode = 'sandbox';
+    expect(notificationIds(await CommerceController.getMarketplaceNotifications())).toEqual([]);
+    expect(CommerceApplication.getMarketplaceOrder).not.toHaveBeenCalled();
   });
 
   it('keeps moderation of a review the viewer wrote as a buyer, and nothing about its selling', async () => {
@@ -213,6 +224,33 @@ describe('CommerceController seller side in a store', () => {
       CommerceController.executeMarketplaceCommand(offerCommand('offer.accept', OFFER_SOLD)),
     ).resolves.toEqual({ ok: true });
   });
+
+  it.each(['sandbox', 'transaction-service'])(
+    'runs order commands on a purchase and refuses those on a sale in a %s store',
+    async (mode) => {
+      commerceConfig.mode = mode;
+      const execute = vi
+        .spyOn(CommerceApplication, 'executeMarketplaceCommand')
+        .mockResolvedValue({ ok: true } as never);
+      const orderCommand = (orderId: string) => ({
+        ...offerCommand('fulfillment.confirm_delivery', orderId),
+        aggregateId: `order:${orderId}`,
+        payload: { orderId: '00000000-0000-4000-8000-000000000920' },
+      });
+      setStoreSeller(STORE_SELLER);
+
+      await expect(CommerceController.executeMarketplaceCommand(orderCommand('order-purchase'))).resolves.toEqual({
+        ok: true,
+      });
+      for (const orderId of ['order-sale', 'order-unknown']) {
+        await expect(CommerceController.executeMarketplaceCommand(orderCommand(orderId))).rejects.toMatchObject(
+          refused,
+        );
+      }
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(MarketplaceTransactionService.getOrder).toHaveBeenCalledTimes(mode === 'sandbox' ? 0 : 3);
+    },
+  );
 
   it('confirms the pickup and reads the delivery email of a purchase, not of a sale', async () => {
     const confirm = vi.spyOn(CommerceApplication, 'commitConfirmPickup').mockResolvedValue({ ok: true } as never);

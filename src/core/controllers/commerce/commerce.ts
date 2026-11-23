@@ -1390,9 +1390,10 @@ export class CommerceController {
 
   /**
    * Who sells the orders and offers, and which role wrote the moderated own reviews, that a
-   * notification list names. Each list is read only when the notifications need it, and an order the
-   * list does not name is read by id. A read that fails leaves its entries unknown, so their
-   * notifications are hidden instead of failing the whole read.
+   * notification list names. Each list is read only when the notifications need it. In durable modes
+   * an order the list does not name is read by id; sandbox has no single-order read. A read that
+   * fails leaves its entries unknown, so their notifications are hidden instead of failing the whole
+   * read.
    */
   private static async resolveStoreNotificationRoles(
     viewerPubky: string,
@@ -1406,7 +1407,10 @@ export class CommerceController {
     const orderSellers = new Map<string, string | null>(
       orders.status === 'fulfilled' ? orders.value.map(({ id, sellerPubky }) => [id, sellerPubky]) : [],
     );
-    const unlisted = orders.status === 'fulfilled' ? orderIds.filter((id) => !orderSellers.has(id)) : [];
+    const unlisted =
+      orders.status === 'fulfilled' && isDurableCommerceMode(getCommerceAdapterMode())
+        ? orderIds.filter((id) => !orderSellers.has(id))
+        : [];
     const reads = await Promise.allSettled(
       unlisted.map((id) => CommerceApplication.getMarketplaceOrder(viewerPubky, id)),
     );
@@ -2583,7 +2587,8 @@ export class CommerceController {
     const subject = subjectOfAggregate(aggregateId);
     let sellerPubky: string | null = null;
     if (subject.kind === 'order') {
-      sellerPubky = (await CommerceApplication.getMarketplaceOrder(viewerPubky, subject.id))?.sellerPubky ?? null;
+      sellerPubky =
+        (await CommerceApplication.getMarketplaceOrderParties(viewerPubky, subject.id))?.sellerPubky ?? null;
     } else if (subject.kind === 'offer') {
       const offers = await CommerceApplication.getMarketplaceOffers(viewerPubky);
       sellerPubky = offers.find(({ id }) => id === subject.id)?.sellerPubky ?? null;
