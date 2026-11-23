@@ -62,7 +62,11 @@ import { getMarketplaceGrantSessionEnabled, getRegionPolicy } from '@/libs/runti
 import type { CommerceIndexedReview, CommerceListingProjectionModelSchema } from '@/models/commerce/commerce.schema';
 import type { Pubky } from '@/models/models.types';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
-import { canSellHere, withoutSalesOutsideStoreSeller } from '@/pipes/commerce/store-seller-side';
+import {
+  canSellHere,
+  withoutSalesNotificationsOutsideStoreSeller,
+  withoutSalesOutsideStoreSeller,
+} from '@/pipes/commerce/store-seller-side';
 import { MarketplaceNotificationNormalizer } from '@/pipes/marketplaceNotification/marketplaceNotification.normalizer';
 import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
 import { isRecognizedMarketplaceNotification } from '@/services/marketplace/marketplace-projections';
@@ -1291,7 +1295,23 @@ export class CommerceController {
   }
 
   static async getMarketplaceNotifications() {
-    return await CommerceApplication.getMarketplaceNotifications(this.getCurrentUserPubky());
+    return await this.getScopedMarketplaceNotifications(this.getCurrentUserPubky());
+  }
+
+  /**
+   * The viewer's marketplace notifications; in a store, a viewer other than the store seller loses
+   * those about its own selling, which needs its orders and offers to resolve.
+   */
+  private static async getScopedMarketplaceNotifications(viewerPubky: string) {
+    const storeSeller = getStoreSeller();
+    if (canSellHere(viewerPubky, storeSeller))
+      return await CommerceApplication.getMarketplaceNotifications(viewerPubky);
+    const [notifications, orders, offers] = await Promise.all([
+      CommerceApplication.getMarketplaceNotifications(viewerPubky),
+      CommerceApplication.getMarketplaceOrders(viewerPubky),
+      CommerceApplication.getMarketplaceOffers(viewerPubky),
+    ]);
+    return withoutSalesNotificationsOutsideStoreSeller(notifications, viewerPubky, storeSeller, { orders, offers });
   }
 
   static async getMarketplaceNotificationPreferences() {
@@ -1311,7 +1331,7 @@ export class CommerceController {
     if (!isTransactionalCommerceMode(adapterMode) || !useAuthStore.getState().currentUserPubky) {
       return [];
     }
-    const notifications = await CommerceApplication.getMarketplaceNotifications(this.getCurrentUserPubky());
+    const notifications = await this.getScopedMarketplaceNotifications(this.getCurrentUserPubky());
     return notifications.map((notification) =>
       MarketplaceNotificationNormalizer.toFeedNotification(notification, adapterMode),
     );
@@ -1335,7 +1355,7 @@ export class CommerceController {
       return;
     }
     const signal = captureAuthScope();
-    const notifications = await CommerceApplication.getMarketplaceNotifications(this.getCurrentUserPubky());
+    const notifications = await this.getScopedMarketplaceNotifications(this.getCurrentUserPubky());
     signal.throwIfAborted();
     notificationStore.setMarketplaceUnread(
       notifications.filter((notification) => isRecognizedMarketplaceNotification(notification) && !notification.readAt)
@@ -1357,7 +1377,7 @@ export class CommerceController {
    */
   static async markAllMarketplaceNotificationsRead(): Promise<void> {
     if (getCommerceAdapterMode() !== 'sandbox' || !useAuthStore.getState().currentUserPubky) return;
-    const notifications = await CommerceApplication.getMarketplaceNotifications(this.getCurrentUserPubky());
+    const notifications = await this.getScopedMarketplaceNotifications(this.getCurrentUserPubky());
     const unread = notifications.filter(isRecognizedMarketplaceNotification).filter(({ readAt }) => !readAt);
     if (unread.length === 0) {
       useNotificationStore.getState().setMarketplaceUnread(0);
