@@ -901,8 +901,8 @@ describe('MarketplaceListing', () => {
 
     renderListing();
 
-    expect(screen.getByRole('img', { name: 'Rated 4.7 out of 5 from 12 reviews' })).toBeInTheDocument();
-    expect(screen.getByTitle('12 reviews')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Rated 4.7 out of 5' })).toBeInTheDocument();
+    expect(screen.queryByTitle('12 reviews')).not.toBeInTheDocument();
     expect(screen.queryByText('No rating yet')).not.toBeInTheDocument();
   });
 

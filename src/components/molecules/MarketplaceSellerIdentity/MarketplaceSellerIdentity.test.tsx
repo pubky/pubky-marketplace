@@ -19,15 +19,15 @@ describe('MarketplaceSellerIdentity', () => {
     expect(screen.queryByText(/Seller-stated/)).not.toBeInTheDocument();
   });
 
-  it('counts only reviews from trusted attestors as verified purchases', () => {
-    render(
+  it('keeps legacy stars unchanged when the unfiltered total rises', () => {
+    const identity = (count: number) => (
       <MarketplaceSellerIdentity
         sellerPubky={'s'.repeat(52)}
-        displayName="Satoshi Vintage"
+        displayName="Example Shop"
         reputation={{
           status: 'rated',
           summary: {
-            count: 8,
+            count,
             verifiedCount: 7,
             avg: 4.2,
             histogram: [0, 1, 1, 2, 4],
@@ -37,10 +37,43 @@ describe('MarketplaceSellerIdentity', () => {
             lastReviewedAt: null,
           },
         }}
+      />
+    );
+    const { container, rerender } = render(identity(8));
+    const before = container.textContent;
+
+    expect(screen.getByRole('img', { name: 'Rated 4.2 out of 5, 3 verified purchases' })).toBeVisible();
+    expect(before).not.toContain('8');
+
+    rerender(identity(80));
+
+    expect(container.textContent).toBe(before);
+    expect(container.textContent).not.toContain('80');
+  });
+
+  it('shows "No rating yet" for a legacy summary with reviews but no trusted attestor', () => {
+    render(
+      <MarketplaceSellerIdentity
+        sellerPubky={'s'.repeat(52)}
+        displayName="Example Shop"
+        reputation={{
+          status: 'rated',
+          summary: {
+            count: 8,
+            verifiedCount: 7,
+            avg: 4.2,
+            histogram: [0, 1, 1, 2, 4],
+            responseCount: 0,
+            editedLateCount: 0,
+            attestors: { ['x'.repeat(52)]: 7 },
+            lastReviewedAt: null,
+          },
+        }}
       />,
     );
 
-    expect(screen.getByRole('img', { name: 'Rated 4.2 out of 5 from 8 reviews, 3 verified purchases' })).toBeVisible();
+    expect(screen.getByText('No rating yet')).toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 
   it('shows counted item stars as a per-buyer mean once the index serves trust buckets', () => {

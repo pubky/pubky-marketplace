@@ -142,8 +142,8 @@ describe('MarketplaceListingCard', () => {
 
     render(<MarketplaceListingCard listing={listing} shopName="Satoshi Vintage" />);
 
-    expect(screen.getByRole('img', { name: 'Rated 4.6 out of 5 from 17 reviews' })).toBeInTheDocument();
-    expect(screen.getByTitle('17 reviews')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Rated 4.6 out of 5' })).toBeInTheDocument();
+    expect(screen.queryByTitle('17 reviews')).not.toBeInTheDocument();
     expect(screen.queryByText('No rating yet')).not.toBeInTheDocument();
   });
 
@@ -199,7 +199,7 @@ describe('MarketplaceListingCard', () => {
 
     render(<MarketplaceListingCard listing={listing} shopName="Satoshi Vintage" />);
 
-    expect(screen.getByRole('img', { name: 'Rated 4.6 out of 5 from 17 reviews' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Rated 4.6 out of 5' })).toBeInTheDocument();
     expect(screen.queryByTitle(/verified purchase/)).not.toBeInTheDocument();
     expect(screen.queryByRole('img', { name: /verified/ })).not.toBeInTheDocument();
   });

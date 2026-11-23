@@ -23,11 +23,20 @@ function bucket(overrides: Partial<CommerceReputationBucket> = {}): CommerceRepu
 }
 
 describe('MarketplaceSnippetRating', () => {
-  it('keeps the index stars and count for a snippet without trust buckets', () => {
-    render(<MarketplaceSnippetRating snippet={{ avg: 4.8, count: 23, verifiedCount: 19 }} />);
+  it('keeps legacy snippet stars unchanged when the unfiltered count rises', () => {
+    const { container, rerender } = render(
+      <MarketplaceSnippetRating snippet={{ avg: 4.8, count: 23, verifiedCount: 19 }} />,
+    );
+    const before = container.textContent;
 
-    expect(screen.getByRole('img', { name: 'Rated 4.8 out of 5 from 23 reviews' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Rated 4.8 out of 5' })).toBeInTheDocument();
     expect(screen.queryByText(/buyers/)).not.toBeInTheDocument();
+    expect(before).not.toContain('23');
+
+    rerender(<MarketplaceSnippetRating snippet={{ avg: 4.8, count: 230, verifiedCount: 19 }} />);
+
+    expect(container.textContent).toBe(before);
+    expect(container.textContent).not.toContain('230');
   });
 
   it('shows the per-buyer mean of trusted buckets with its basis', () => {

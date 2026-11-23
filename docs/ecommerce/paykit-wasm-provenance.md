@@ -9,7 +9,7 @@ Vendored: 2026-09-05 (rc50, picking up the homeserver write-abort fixes and addi
 | Field           | Value                                                                          |
 | --------------- | ------------------------------------------------------------------------------ |
 | Repository      | `https://github.com/BitcoinErrorLog/paykit-rs-official`                        |
-| Branch          | `fix/wasm-homeserver-write-abort`                                              |
+| Branch          | `master`                                                                       |
 | Commit          | `d4a73a5765e1f0b18ed451d78f98dab97c611a8c`                                     |
 | Upstream        | `https://github.com/pubky/paykit-rs`                                           |
 | Upstream pin    | `c8892f638951f033acbcd12804a31667a81ddc14` (tag anchor v0.1.0-rc43)            |
@@ -126,6 +126,12 @@ npm symlinks `node_modules/paykit-wasm` to the vendored directory, so a fresh cl
 ## What the binding is used for here
 
 `PaykitReceiverService` (`src/core/services/paykit/paykit-receiver.ts`) uses the binding for one public read: whether a pubky publishes a Paykit receiver that accepts private payments and Payment Requests, the buyer's Bitcoin wallet check at checkout. It needs no session. The WASM module is loaded lazily via dynamic import on first use, never at module scope, mirroring the Locks SDK loading pattern. The Encrypted Link messaging surface (receiver enrollment, Noise XX links, Private Application Messages) was used by the retired `PaykitMessagingService` and is no longer called: chat runs on homeserver files ([`../chat/README.md`](../chat/README.md)). The rc50 additions (payment endpoints, SB2, X25519, public storage, sign-out) are NOT used by this app today.
+
+## Known differences from paykit-rs v0.1.0
+
+Some parser error messages in this build include the input text. Upstream changed that in [pubky/paykit-rs#155](https://github.com/pubky/paykit-rs/pull/155), [#196](https://github.com/pubky/paykit-rs/pull/196), and [#133](https://github.com/pubky/paykit-rs/pull/133).
+
+The Shop calls only `listPaykitReceiverPaths` and `getReceiverMarker` (`src/core/services/paykit/paykit-receiver.ts`). These upstream changes are to be taken at the next re-vendor.
 
 ## Known limitations inherited from the binding
 

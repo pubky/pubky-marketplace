@@ -27,6 +27,8 @@ export function MarketplaceSellerIdentity({
   variant = 'default',
 }: MarketplaceSellerIdentityProps) {
   const counted = reputation?.status === 'rated' ? countedSummaryReputation(reputation.summary) : null;
+  const trustedVerifiedCount =
+    reputation?.status === 'rated' ? trustedAttestedReviewCount(reputation.summary.attestors) : 0;
   return (
     <div className="flex min-w-0 items-center gap-3">
       {avatarUrl ? (
@@ -51,11 +53,10 @@ export function MarketplaceSellerIdentity({
         </Typography>
         {reputation === undefined ? null : counted !== null && counted.itemRating !== null ? (
           <MarketplaceStarRating rating={counted.itemRating} basis={counted} size="sm" className="mt-1" />
-        ) : counted === null && reputation.status === 'rated' && reputation.summary.count > 0 ? (
+        ) : counted === null && reputation.status === 'rated' && trustedVerifiedCount > 0 ? (
           <MarketplaceStarRating
             rating={reputation.summary.avg}
-            count={reputation.summary.count}
-            verifiedCount={trustedAttestedReviewCount(reputation.summary.attestors)}
+            verifiedCount={trustedVerifiedCount}
             size="sm"
             className="mt-1"
           />
