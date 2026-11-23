@@ -1,8 +1,8 @@
 'use client';
 
 import { getShopBaseUrl } from '@/config/base-path';
-import { FileController } from '@/controllers/file/file';
 import { UserController } from '@/controllers/user/user';
+import { useAvatarUrl } from '@/hooks/useAvatarUrl/useAvatarUrl';
 import { isLocalFirstQueryEnabled, useLocalFirstQuery } from '@/hooks/useLocalFirstQuery/useLocalFirstQuery';
 import { withPubkyPrefix } from '@/libs/utils/utils';
 import type { NexusUserDetails, NexusUserLink } from '@/services/nexus/nexus.types';
@@ -53,12 +53,12 @@ export function useUserProfile(userId: string, options?: UseUserProfileOptions):
     deps: [userId, enabled],
     enabled,
   });
+  // The CDN avatar in the Market, the homeserver image in a store, where there is no CDN.
+  const avatarUrl = useAvatarUrl(userDetails, userDetails?.indexed_at);
 
   if (!userDetails) {
     return { profile: null, isLoading };
   }
-
-  const avatarUrl = userDetails.image ? FileController.getAvatarUrl(userDetails.id, userDetails.indexed_at) : undefined;
 
   // Build public key with proper format
   const publicKey = withPubkyPrefix(userId);

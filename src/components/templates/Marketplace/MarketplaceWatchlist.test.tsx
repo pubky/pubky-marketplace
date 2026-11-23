@@ -1,12 +1,15 @@
 import { render, screen, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/atoms/Tooltip/Tooltip';
 import { catalogItemFromCatalogEntry } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import type { MarketplaceWatchlistEntry } from '@/hooks/useMarketplaceWatchlist/useMarketplaceWatchlist';
+import type { Pubky } from '@/models/models.types';
+import { UserDetailsModel } from '@/models/user/details/userDetails';
 import type { MarketplaceFeedNotification } from '@/pipes/marketplaceNotification/marketplaceNotification.types';
 import type { MarketplaceWatchAlertFeedItem } from '@/pipes/marketplaceWatch/marketplaceWatchAlert.types';
 import { createCommerceCatalogEntryFixture } from '@/test/fixtures/commerce/commerce';
 import { createWatchAlertFeedItemFixture } from '@/test/fixtures/commerce/watch-alerts';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { MarketplaceWatchlist } from './MarketplaceWatchlist';
 
 const relativeTime = vi.hoisted(() => ({ value: '11s' }));
@@ -58,9 +61,16 @@ vi.mock('@/hooks/useMarketplaceLiveBid/useMarketplaceLiveBid', () => ({
   useMarketplaceLiveBid: () => ({ ref: () => {}, bid: null }),
 }));
 
-vi.mock('@/hooks/useUserProfile/useUserProfile', () => ({
-  useUserProfile: () => ({ profile: { name: 'Rival Bidder' } }),
-}));
+// A fixed profile unless a scene reads the real one from the local database.
+const profileView = vi.hoisted(() => ({ real: false }));
+
+vi.mock('@/hooks/useUserProfile/useUserProfile', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/hooks/useUserProfile/useUserProfile')>();
+  return {
+    useUserProfile: (...args: Parameters<typeof actual.useUserProfile>) =>
+      profileView.real ? actual.useUserProfile(...args) : { profile: { name: 'Rival Bidder' }, isLoading: false },
+  };
+});
 
 const sellerSummaryCalls = vi.hoisted(() => ({ options: [] as Array<{ includeReputation?: boolean } | undefined> }));
 
@@ -259,5 +269,52 @@ describe('MarketplaceWatchlist', () => {
 
     expect(screen.queryByText('Private sync is unavailable right now')).not.toBeInTheDocument();
     expect(screen.queryByText('This browser cannot sync your watchlist')).not.toBeInTheDocument();
+  });
+
+  describe('in a store', () => {
+    const bidder = 'a'.repeat(52) as Pubky;
+
+    beforeEach(async () => {
+      profileView.real = true;
+      setStoreSeller('n'.repeat(52));
+      await UserDetailsModel.create({
+        id: bidder,
+        name: 'Alice Example',
+        bio: '',
+        image: `pubky://${bidder}/pub/pubky.app/files/0000000000000`,
+        status: null,
+        links: null,
+        indexed_at: Date.now(),
+      });
+    });
+
+    afterEach(async () => {
+      profileView.real = false;
+      setStoreSeller(undefined);
+      await UserDetailsModel.table.clear();
+    });
+
+    it('shows an outbid row from a bidder with an avatar, which a store reads without a CDN', async () => {
+      view.notifications = [
+        {
+          id: 'marketplace:outbid',
+          source: 'marketplace',
+          type: 'outbid',
+          actorPubky: bidder,
+          aggregateId: 'listing:auction',
+          timestamp: 100,
+          isUnread: false,
+          href: '/marketplace/listing/auction',
+        },
+      ];
+
+      render(
+        <TooltipProvider>
+          <MarketplaceWatchlist />
+        </TooltipProvider>,
+      );
+
+      expect(await screen.findByText('Alice Example')).toBeInTheDocument();
+    });
   });
 });

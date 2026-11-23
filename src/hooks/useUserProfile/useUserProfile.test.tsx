@@ -1,7 +1,8 @@
 import { renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Pubky } from '@/models/models.types';
 import type { NexusUserDetails } from '@/services/nexus/nexus.types';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { useUserProfile } from './useUserProfile';
 
 // Hoist mock data using vi.hoisted
@@ -42,6 +43,10 @@ vi.mock('@/controllers/file/file', () => ({
     getAvatarUrl: mockMocks.mockGetAvatarUrl,
   },
 }));
+
+vi.mock('@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl', async () => {
+  return await import('@/test/mocks/marketplace-media-hooks');
+});
 
 // Mock Config to provide default URL
 vi.mock('@/config/metadata', async (importOriginal) => {
@@ -322,6 +327,32 @@ describe('useUserProfile', () => {
 
       expect(mockMocks.mockGetDetails).not.toHaveBeenCalled();
       expect(mockMocks.mockFetchDetails).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('in a store', () => {
+    afterEach(() => setStoreSeller(undefined));
+
+    it('reads the avatar from the homeserver image, never the CDN a store does not have', () => {
+      setStoreSeller('s'.repeat(52));
+      const buyer = 'b'.repeat(52) as Pubky;
+      const image = `pubky://${buyer}/pub/pubky.app/files/0000000000000`;
+      mockMocks.mockUserDetails.current = {
+        id: buyer,
+        name: 'Bob Example',
+        bio: '',
+        image,
+        status: null,
+        links: null,
+        indexed_at: Date.now(),
+      };
+
+      const { result } = renderHook(() => useUserProfile(buyer));
+
+      expect(result.current.profile?.avatarUrl).toBe(
+        `https://homeserver.example/pub/pubky.app/files/0000000000000?pubky-host=${buyer}`,
+      );
+      expect(mockMocks.mockGetAvatarUrl).not.toHaveBeenCalled();
     });
   });
 });
