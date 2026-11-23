@@ -79,7 +79,13 @@ describe('MarketplaceMediaService', () => {
   describe('fetchProfileImage', () => {
     const blobUri = `pubky://${owner}/pub/pubky.app/blobs/0034A0X7NJ52H`;
 
-    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d]);
+    const png = Uint8Array.from(
+      atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='),
+      (char) => char.charCodeAt(0),
+    );
+    const avifHeader = new Uint8Array([0, 0, 0, 0x1c, ...new TextEncoder().encode('ftypavif'), 0, 0, 0, 0]);
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>';
+    const html = '<!doctype html><script>alert(1)</script>';
     const image = (body: BodyInit, contentType: string) =>
       new Response(body, { status: 200, headers: { 'content-type': contentType } });
 
@@ -93,21 +99,24 @@ describe('MarketplaceMediaService', () => {
       expect(fetchMock).toHaveBeenCalledWith(`https://resolved.example/${blobUri}`);
     });
 
-    it('types the image by its bytes, whatever the homeserver declares', async () => {
-      fetchMock.mockResolvedValue(image(png, 'text/html'));
+    it.each([
+      ['a valid PNG declared as HTML', png, 'text/html', 'image/png'],
+      ['an AVIF declared as an untyped file', avifHeader, 'application/octet-stream', 'image/avif'],
+    ])('types %s by its bytes', async (_label, body, contentType, type) => {
+      fetchMock.mockResolvedValue(image(body, contentType));
 
-      await expect(MarketplaceMediaService.fetchProfileImage(blobUri)).resolves.toMatchObject({ type: 'image/png' });
-    });
-
-    it('keeps a declared image type it cannot recognize, without parameters', async () => {
-      fetchMock.mockResolvedValue(image('avif bytes', 'Image/AVIF; charset=binary'));
-
-      await expect(MarketplaceMediaService.fetchProfileImage(blobUri)).resolves.toMatchObject({ type: 'image/avif' });
+      await expect(MarketplaceMediaService.fetchProfileImage(blobUri)).resolves.toMatchObject({ type });
     });
 
     it.each([
-      ['an SVG', '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>', 'image/svg+xml'],
-      ['HTML', '<!doctype html><script>alert(1)</script>', 'text/html'],
+      ['an SVG', svg, 'image/svg+xml'],
+      ['an SVG declared with a charset', svg, 'image/svg+xml;charset=utf-8'],
+      ['an SVG declared in upper case', svg, 'IMAGE/SVG+XML'],
+      ['an SVG declared as a PNG', svg, 'image/png'],
+      ['an SVG declared as a list ending in SVG', svg, 'image/x,image/svg+xml'],
+      ['HTML', html, 'text/html'],
+      ['HTML declared as a list starting with PNG', html, 'image/png,text/html'],
+      ['bytes declared as an image type they do not show', 'avif bytes', 'Image/AVIF; charset=binary'],
       ['an untyped file', 'bytes', 'application/octet-stream'],
     ])('refuses %s', async (_label, body, contentType) => {
       fetchMock.mockResolvedValue(image(body, contentType));
