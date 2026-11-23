@@ -11,7 +11,7 @@
  *   Market runs; 404 in a store.
  * - `store-scoped`: served only for the store seller, as `scope` says.
  */
-export type StoreRouteScope =
+type StoreRouteScope =
   /** The Market's entry routes; a store opens the store seller's shop instead. */
   | 'store-home'
   /** A page of the seller in its `[sellerPubky]` segment; only the store seller's pages exist. */
@@ -21,7 +21,7 @@ export type StoreRouteScope =
   /** The store seller's own record, edited by the store seller: `seller-path` and `seller-viewer`. */
   | 'seller-path-and-viewer';
 
-export type StoreRoutePolicy =
+type StoreRoutePolicy =
   | { mode: 'both' }
   | { mode: 'marketplace-only' }
   | { mode: 'store-scoped'; scope: StoreRouteScope };
@@ -111,7 +111,7 @@ export const STORE_PAGE_POLICY: Readonly<Record<string, StoreRoutePolicy>> = {
   '/who-to-follow': MARKETPLACE_ONLY,
 };
 
-export type StoreRouteHandlerRow = { policy: StoreRoutePolicy; reason: string };
+type StoreRouteHandlerRow = { policy: StoreRoutePolicy; reason: string };
 
 const GRANT_BFF = 'Marketplace grant BFF: sign-in and selling approvals for the store seller and buyers.';
 const CLI_GRANT =
@@ -276,7 +276,7 @@ export function matchStoreRoute(
   return best ? { key: best.pattern.key, policy: best.pattern.policy, params: best.params } : null;
 }
 
-export type StoreRouteDecision =
+type StoreRouteDecision =
   | { kind: 'allow' }
   | { kind: 'not-found' }
   /** Open the store seller's shop. */
