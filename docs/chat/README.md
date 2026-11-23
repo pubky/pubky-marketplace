@@ -50,10 +50,13 @@ background loops and every tab renders through Dexie live queries.
 | UI/coordinator entry point           | `src/core/controllers/chat/chat.ts` (`ChatController`)                        |
 | Background loops, leader election    | `src/core/coordinators/chat-sync/chat-sync.ts` (`ChatSyncCoordinator`)        |
 | Status store (identity, inbox, sync) | `src/core/stores/chat/`                                                       |
-| Hooks                                | `src/hooks/useChat*`                                                          |
+| Hooks                                | `src/hooks/useChat*`, `src/hooks/useStoreThreadRoles/`                        |
 | Components                           | `src/components/organisms/Chat/`, `src/components/templates/Chat/`            |
 | Pages                                | `src/app/messages/page.tsx`, `src/app/messages/[pubky]/page.tsx`              |
 | Two-account live proof               | `src/test/e2e/chat-two-accounts.mjs` (`npm run test:e2e:chat`)                |
+
+In store mode, `ChatController` hides the sale threads of a signed-in seller who is not the store seller, using roles
+kept in the chat store; see [Store mode](../environment.md#store-mode-runtime).
 
 Session capabilities: `CAPABILITIES` in `src/config/app.ts`. Runtime config:
 `inboxUrl` / `inboxAudience` in `src/libs/runtime-config/runtime-config.schema.ts`.
