@@ -323,6 +323,53 @@ describe('CommerceController seller side in a store', () => {
     expect(await CommerceController.getOwnMarketplaceReviews()).toHaveLength(2);
   });
 
+  it('reads, publishes and refreshes only the reviews of purchases for another seller in a store', async () => {
+    const readOne = vi.spyOn(CommerceApplication, 'getOwnMarketplaceReview').mockResolvedValue('review' as never);
+    const readOrder = vi
+      .spyOn(CommerceApplication, 'getOwnMarketplaceOrderReviews')
+      .mockResolvedValue(['row'] as never);
+    const publish = vi.spyOn(CommerceApplication, 'commitPublishOwnReviews').mockResolvedValue([] as never);
+    const refresh = vi.spyOn(CommerceApplication, 'refreshOwnReviews').mockResolvedValue(undefined as never);
+    const orders = [purchase, sale] as never[];
+    setStoreSeller(STORE_SELLER);
+
+    expect(await CommerceController.getOwnMarketplaceReview(purchase as never)).toBe('review');
+    expect(await CommerceController.getOwnMarketplaceReview(sale as never)).toBeNull();
+    expect(await CommerceController.getOwnMarketplaceOrderReviews(purchase as never)).toEqual(['row']);
+    expect(await CommerceController.getOwnMarketplaceOrderReviews(sale as never)).toEqual([]);
+    await CommerceController.publishOwnMarketplaceReviews(purchase as never, {});
+    await expect(CommerceController.publishOwnMarketplaceReviews(sale as never, {})).rejects.toMatchObject(refused);
+    await CommerceController.refreshOwnMarketplaceReviews(orders);
+
+    expect(readOne.mock.calls.map(([, order]) => order.id)).toEqual(['order-purchase']);
+    expect(readOrder.mock.calls.map(([, order]) => order.id)).toEqual(['order-purchase']);
+    expect(publish.mock.calls.map(([{ order }]) => order.id)).toEqual(['order-purchase']);
+    expect(refresh).toHaveBeenLastCalledWith(VIEWER, [purchase]);
+
+    setStoreSeller(undefined);
+    expect(await CommerceController.getOwnMarketplaceReview(sale as never)).toBe('review');
+    expect(await CommerceController.getOwnMarketplaceOrderReviews(sale as never)).toEqual(['row']);
+    await CommerceController.publishOwnMarketplaceReviews(sale as never, {});
+    await CommerceController.refreshOwnMarketplaceReviews(orders);
+    expect(publish).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenLastCalledWith(VIEWER, orders);
+  });
+
+  it('keeps only the conversations of purchases for another seller in a store', async () => {
+    vi.spyOn(CommerceApplication, 'getMarketplaceConversations').mockResolvedValue([
+      { id: 'thread-purchase', sellerPubky: STORE_SELLER, buyerPubky: VIEWER },
+      { id: 'thread-sale', sellerPubky: VIEWER, buyerPubky: OTHER_BUYER },
+    ] as never);
+    setStoreSeller(STORE_SELLER);
+
+    expect(ids(await CommerceController.getMarketplaceConversations())).toEqual(['thread-purchase']);
+
+    for (const storeSeller of [VIEWER, undefined]) {
+      setStoreSeller(storeSeller);
+      expect(ids(await CommerceController.getMarketplaceConversations())).toEqual(['thread-purchase', 'thread-sale']);
+    }
+  });
+
   it('runs only the buyer side of the orders loader for another seller in a store', async () => {
     const publications = vi.spyOn(CommerceApplication, 'resumeOwnReviewPublications').mockResolvedValue(0);
     const removals = vi.spyOn(CommerceApplication, 'resumeOwnReviewRemovals').mockResolvedValue(0);
