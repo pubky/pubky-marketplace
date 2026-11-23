@@ -7,6 +7,7 @@ import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
 import { Typography } from '@/atoms/Typography/Typography';
 import { composeShareContent, getSharedFiles } from '@/libs/share/shareTarget';
+import { toast } from '@/molecules/Toaster/toast';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { PostInput } from '@/organisms/PostInput/PostInput';
 import { POST_INPUT_VARIANT } from '@/organisms/PostInput/PostInput.constants';
@@ -25,9 +26,20 @@ export function ShareTarget() {
     const text = searchParams.get('text') ?? undefined;
     const url = searchParams.get('url') ?? undefined;
     const hasFiles = searchParams.get('hasFiles') === 'true';
+    const refusedFiles = Number(searchParams.get('refusedFiles') ?? 0);
 
     const content = composeShareContent({ title, text, url });
     setInitialContent(content);
+
+    if (refusedFiles > 0) {
+      toast({
+        variant: 'error',
+        description:
+          refusedFiles === 1
+            ? 'A shared file was not added. You can share JPEG, PNG, GIF and WebP images, audio and video.'
+            : `${refusedFiles} shared files were not added. You can share JPEG, PNG, GIF and WebP images, audio and video.`,
+      });
+    }
 
     if (hasFiles) {
       getSharedFiles()

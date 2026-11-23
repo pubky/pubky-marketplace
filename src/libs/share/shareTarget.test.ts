@@ -1,72 +1,254 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mockResponse } from '@/test-utils/dom';
+/** @vitest-environment node */
+// FormData, File and Request must come from one implementation for a multipart POST to parse.
+import sharp from 'sharp';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { asOpaque } from '@/test-utils/type-assertions';
-import { composeShareContent, getSharedFiles } from './shareTarget';
+import { composeShareContent, getSharedFiles, handleShareTarget, sharedFileType } from './shareTarget';
 
-function createMockResponse(blob: Blob, headers: Headers): Response {
-  return mockResponse({
-    blob: () => Promise.resolve(blob),
-    headers,
+const SVG = '<svg xmlns="http://www.w3.org/2000/svg" onload="document.title=1"><rect width="1" height="1"/></svg>';
+const HTML = '<!doctype html><html><body><script>document.title = 1</script></body></html>';
+
+function cacheKey(request: RequestInfo | URL): string {
+  const url = typeof request === 'string' ? request : request instanceof URL ? request.href : request.url;
+  return new URL(url, 'http://localhost').href;
+}
+
+/** The parts of the Cache API the share target uses, kept in memory. */
+class MemoryCache {
+  readonly entries = new Map<string, Response>();
+
+  async keys(): Promise<Request[]> {
+    return [...this.entries.keys()].map((url) => new Request(url));
+  }
+
+  async match(request: RequestInfo | URL): Promise<Response | undefined> {
+    return this.entries.get(cacheKey(request))?.clone();
+  }
+
+  async put(request: RequestInfo | URL, response: Response): Promise<void> {
+    this.entries.set(cacheKey(request), response);
+  }
+
+  async delete(request: RequestInfo | URL): Promise<boolean> {
+    return this.entries.delete(cacheKey(request));
+  }
+}
+
+class MemoryCacheStorage {
+  readonly stores = new Map<string, MemoryCache>();
+  failOpen = false;
+
+  async open(name: string): Promise<MemoryCache> {
+    if (this.failOpen) throw new Error('Cache unavailable');
+    const existing = this.stores.get(name);
+    if (existing) return existing;
+    const cache = new MemoryCache();
+    this.stores.set(name, cache);
+    return cache;
+  }
+
+  async delete(name: string): Promise<boolean> {
+    return this.stores.delete(name);
+  }
+}
+
+async function image(format: 'png' | 'jpeg' | 'gif' | 'webp' | 'avif'): Promise<Uint8Array<ArrayBuffer>> {
+  const buffer = await sharp({ create: { width: 3, height: 2, channels: 3, background: '#0a78c8' } })
+    .toFormat(format)
+    .toBuffer();
+  return new Uint8Array(buffer);
+}
+
+/** A complete 8 kHz mono 16-bit PCM WAV file holding 8 samples of silence. */
+function wavFile(): Uint8Array<ArrayBuffer> {
+  const file = new Uint8Array(60);
+  const view = new DataView(file.buffer);
+  const ascii = (text: string, offset: number) => file.set(new TextEncoder().encode(text), offset);
+  ascii('RIFF', 0);
+  view.setUint32(4, file.length - 8, true);
+  ascii('WAVEfmt ', 8);
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, 8000, true);
+  view.setUint32(28, 16000, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  ascii('data', 36);
+  view.setUint32(40, 16, true);
+  return file;
+}
+
+/** A multipart POST to /share, as a share sheet or any other page's form would send it. */
+function sharePost(files: readonly File[], fields: Record<string, string> = {}, origin?: string): Request {
+  const form = new FormData();
+  for (const [name, value] of Object.entries(fields)) form.set(name, value);
+  for (const file of files) form.append('media', file);
+  return new Request('http://localhost:3000/share', {
+    method: 'POST',
+    body: form,
+    headers: origin ? { origin } : {},
   });
 }
 
-// Store original caches
-const originalCaches = global.caches;
-
-// Mock Cache API
-const mockCacheMatch = vi.fn();
-const mockCacheKeys = vi.fn();
-const mockCacheOpen = vi.fn();
-const mockCachesDelete = vi.fn();
-
-const mockCache = {
-  match: mockCacheMatch,
-  keys: mockCacheKeys,
-};
-
 describe('shareTarget utilities', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  let storage: MemoryCacheStorage;
+  const originalCaches = globalThis.caches;
 
-    // Setup caches mock
-    Object.defineProperty(global, 'caches', {
-      value: {
-        open: mockCacheOpen.mockResolvedValue(mockCache),
-        delete: mockCachesDelete.mockResolvedValue(true),
-      },
-      writable: true,
-    });
+  beforeEach(() => {
+    storage = new MemoryCacheStorage();
+    Object.defineProperty(globalThis, 'caches', { value: storage, writable: true, configurable: true });
   });
 
   afterEach(() => {
-    // Restore original caches
-    Object.defineProperty(global, 'caches', {
-      value: originalCaches,
-      writable: true,
+    Object.defineProperty(globalThis, 'caches', { value: originalCaches, writable: true, configurable: true });
+  });
+
+  const cacheStorage = () => asOpaque<CacheStorage>(storage);
+  const cachedTypes = () =>
+    Promise.all(
+      [...(storage.stores.get('share-target-files')?.entries.values() ?? [])].map((response) =>
+        response.headers.get('Content-Type'),
+      ),
+    );
+
+  describe('sharedFileType', () => {
+    it.each([
+      ['png', 'image/png'],
+      ['jpeg', 'image/jpeg'],
+      ['gif', 'image/gif'],
+      ['webp', 'image/webp'],
+      ['avif', 'image/avif'],
+    ] as const)('types a real %s image from its bytes, whatever was declared', async (format, type) => {
+      await expect(sharedFileType(new Blob([await image(format)], { type: 'text/html' }))).resolves.toBe(type);
+    });
+
+    it.each([
+      ['image/svg+xml', SVG],
+      ['image/png', SVG],
+      ['image/png,text/html', HTML],
+      ['image/x,image/svg+xml', SVG],
+      ['text/html', HTML],
+      ['application/xml', '<?xml version="1.0"?><root/>'],
+      ['text/xml', '<?xml version="1.0"?><root/>'],
+      ['application/octet-stream', HTML],
+      ['video/mp4,text/html', HTML],
+      ['audio/x-unknown', HTML],
+    ])('refuses a file declared as %s whose bytes are not a raster image', async (type, body) => {
+      await expect(sharedFileType(new Blob([body], { type }))).resolves.toBeNull();
+    });
+
+    it.each(['audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm', 'video/mp4', 'video/webm', 'video/ogg'])(
+      'keeps the manifest media type %s',
+      async (type) => {
+        await expect(sharedFileType(new Blob([wavFile()], { type }))).resolves.toBe(type);
+      },
+    );
+  });
+
+  describe('handleShareTarget', () => {
+    it('caches a real image under the type of its bytes and redirects to /share', async () => {
+      const png = await image('png');
+
+      const response = await handleShareTarget(
+        sharePost([new File([png], 'photo.png', { type: 'text/html' })], { text: 'Look' }),
+        cacheStorage(),
+      );
+
+      expect(response.status).toBe(303);
+      expect(response.headers.get('location')).toBe('http://localhost:3000/share?text=Look&hasFiles=true');
+      await expect(cachedTypes()).resolves.toEqual(['image/png']);
+    });
+
+    it('refuses SVG, HTML and XML POSTed from another site before caching them', async () => {
+      const response = await handleShareTarget(
+        sharePost(
+          [
+            new File([SVG], 'cat.svg', { type: 'image/svg+xml' }),
+            new File([HTML], 'page.html', { type: 'text/html' }),
+            new File(['<?xml version="1.0"?><root/>'], 'data.xml', { type: 'application/xml' }),
+          ],
+          {},
+          'https://other.example',
+        ),
+        cacheStorage(),
+      );
+
+      expect(response.headers.get('location')).toBe('http://localhost:3000/share?refusedFiles=3');
+      await expect(cachedTypes()).resolves.toEqual([]);
+    });
+
+    it('keeps the images and media of a mixed share and counts what it refused', async () => {
+      const response = await handleShareTarget(
+        sharePost([
+          new File([await image('jpeg')], 'a.jpg', { type: 'image/jpeg' }),
+          new File([SVG], 'b.svg', { type: 'image/svg+xml' }),
+          new File([wavFile()], 'c.wav', { type: 'audio/wav' }),
+        ]),
+        cacheStorage(),
+      );
+
+      expect(response.headers.get('location')).toBe('http://localhost:3000/share?hasFiles=true&refusedFiles=1');
+      await expect(cachedTypes()).resolves.toEqual(['image/jpeg', 'audio/wav']);
+      expect([...(storage.stores.get('share-target-files')?.entries.keys() ?? [])]).toEqual([
+        'http://localhost/share-target-file/0',
+        'http://localhost/share-target-file/1',
+      ]);
+    });
+
+    it('drops the files of an earlier share', async () => {
+      await handleShareTarget(
+        sharePost([new File([await image('png')], 'old.png'), new File([await image('jpeg')], 'old.jpg')]),
+        cacheStorage(),
+      );
+      await handleShareTarget(sharePost([new File([await image('gif')], 'new.gif')]), cacheStorage());
+
+      await expect(cachedTypes()).resolves.toEqual(['image/gif']);
+    });
+
+    it('redirects a text-only share without opening the cache', async () => {
+      const response = await handleShareTarget(
+        sharePost([], { title: 'T', url: 'https://example.com' }),
+        cacheStorage(),
+      );
+
+      expect(response.headers.get('location')).toBe(
+        'http://localhost:3000/share?title=T&url=https%3A%2F%2Fexample.com',
+      );
+      expect(storage.stores.size).toBe(0);
+    });
+
+    it('hands the share page only files typed from their bytes', async () => {
+      const png = await image('png');
+      await handleShareTarget(
+        sharePost(
+          [new File([png], 'photo.png', { type: 'image/png' }), new File([SVG], 'cat.svg', { type: 'image/svg+xml' })],
+          {},
+          'https://other.example',
+        ),
+        cacheStorage(),
+      );
+
+      const files = await getSharedFiles();
+
+      expect(files.map((file) => [file.name, file.type])).toEqual([['photo.png', 'image/png']]);
+      expect(new Uint8Array(await files[0].arrayBuffer())).toEqual(png);
+      expect(storage.stores.has('share-target-files')).toBe(false);
     });
   });
 
   describe('getSharedFiles', () => {
+    async function cacheEntry(body: BodyInit, headers: Record<string, string>) {
+      const cache = await storage.open('share-target-files');
+      await cache.put(`/share-target-file/${cache.entries.size}`, new Response(body, { headers }));
+    }
+
     it('returns empty array when cache has no files', async () => {
-      mockCacheKeys.mockResolvedValue([]);
-
-      const files = await getSharedFiles();
-
-      expect(files).toEqual([]);
-      expect(mockCacheOpen).toHaveBeenCalledWith('share-target-files');
+      await expect(getSharedFiles()).resolves.toEqual([]);
     });
 
     it('retrieves files from cache and returns them', async () => {
-      const mockRequest = new Request('http://localhost/file-0');
-      const mockBlob = new Blob(['test content'], { type: 'image/png' });
-      const mockHeaders = new Headers({
-        'X-Share-Filename': 'test-image.png',
-        'Content-Type': 'image/png',
-      });
-      const mockResponse = createMockResponse(mockBlob, mockHeaders);
-
-      mockCacheKeys.mockResolvedValue([mockRequest]);
-      mockCacheMatch.mockResolvedValue(mockResponse);
+      await cacheEntry(await image('png'), { 'X-Share-Filename': 'test-image.png', 'Content-Type': 'image/png' });
 
       const files = await getSharedFiles();
 
@@ -77,130 +259,55 @@ describe('shareTarget utilities', () => {
     });
 
     it('uses fallback filename when X-Share-Filename header is missing', async () => {
-      const mockRequest = new Request('http://localhost/file-0');
-      const mockBlob = new Blob(['test content'], { type: 'image/jpeg' });
-      const mockHeaders = new Headers({
-        'Content-Type': 'image/jpeg',
-      });
-      const mockResponse = createMockResponse(mockBlob, mockHeaders);
-
-      mockCacheKeys.mockResolvedValue([mockRequest]);
-      mockCacheMatch.mockResolvedValue(mockResponse);
+      await cacheEntry(await image('jpeg'), { 'Content-Type': 'image/jpeg' });
 
       const files = await getSharedFiles();
 
-      expect(files).toHaveLength(1);
-      expect(files[0].name).toBe('shared-file');
+      expect(files.map((file) => file.name)).toEqual(['shared-file']);
     });
 
-    it('uses blob type when Content-Type header is missing', async () => {
-      const mockRequest = new Request('http://localhost/file-0');
-      // Create a mock blob object that will return the expected type
-      const mockBlob = asOpaque<Blob>({
-        type: 'video/mp4',
-        arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
-        text: () => Promise.resolve(''),
-        slice: () => new Blob([]),
-        stream: () => new ReadableStream(),
-        size: 0,
-      });
-      const mockHeaders = new Headers({
-        'X-Share-Filename': 'video.mp4',
-      });
-
-      const mockResponseValue = mockResponse({
-        blob: () => Promise.resolve(mockBlob),
-        headers: mockHeaders,
-      });
-
-      mockCacheKeys.mockResolvedValue([mockRequest]);
-      mockCacheMatch.mockResolvedValue(mockResponseValue);
+    it('types an image from its bytes when the Content-Type header is missing', async () => {
+      await cacheEntry(await image('webp'), { 'X-Share-Filename': 'photo.webp' });
 
       const files = await getSharedFiles();
 
-      expect(files).toHaveLength(1);
-      expect(files[0].type).toBe('video/mp4');
+      expect(files.map((file) => file.type)).toEqual(['image/webp']);
+    });
+
+    it('refuses an SVG or HTML entry an older service worker cached', async () => {
+      await cacheEntry(SVG, { 'X-Share-Filename': 'cat.svg', 'Content-Type': 'image/svg+xml' });
+      await cacheEntry(HTML, { 'X-Share-Filename': 'page.png', 'Content-Type': 'image/png' });
+      await cacheEntry(await image('gif'), { 'X-Share-Filename': 'ok.gif', 'Content-Type': 'image/gif' });
+
+      const files = await getSharedFiles();
+
+      expect(files.map((file) => [file.name, file.type])).toEqual([['ok.gif', 'image/gif']]);
     });
 
     it('handles multiple files in cache', async () => {
-      const mockRequest1 = new Request('http://localhost/file-0');
-      const mockRequest2 = new Request('http://localhost/file-1');
-
-      const mockBlob1 = new Blob(['image content'], { type: 'image/png' });
-      const mockBlob2 = new Blob(['video content'], { type: 'video/mp4' });
-
-      const mockResponse1 = createMockResponse(
-        mockBlob1,
-        new Headers({ 'X-Share-Filename': 'image.png', 'Content-Type': 'image/png' }),
-      );
-      const mockResponse2 = createMockResponse(
-        mockBlob2,
-        new Headers({ 'X-Share-Filename': 'video.mp4', 'Content-Type': 'video/mp4' }),
-      );
-
-      mockCacheKeys.mockResolvedValue([mockRequest1, mockRequest2]);
-      mockCacheMatch.mockResolvedValueOnce(mockResponse1).mockResolvedValueOnce(mockResponse2);
+      await cacheEntry(await image('png'), { 'X-Share-Filename': 'image.png', 'Content-Type': 'image/png' });
+      await cacheEntry(wavFile(), { 'X-Share-Filename': 'clip.wav', 'Content-Type': 'audio/wav' });
 
       const files = await getSharedFiles();
 
-      expect(files).toHaveLength(2);
-      expect(files[0].name).toBe('image.png');
-      expect(files[1].name).toBe('video.mp4');
-    });
-
-    it('skips entries where cache.match returns null', async () => {
-      const mockRequest1 = new Request('http://localhost/file-0');
-      const mockRequest2 = new Request('http://localhost/file-1');
-
-      const mockBlob = new Blob(['content'], { type: 'image/png' });
-      const mockResponse = createMockResponse(
-        mockBlob,
-        new Headers({ 'X-Share-Filename': 'valid.png', 'Content-Type': 'image/png' }),
-      );
-
-      mockCacheKeys.mockResolvedValue([mockRequest1, mockRequest2]);
-      mockCacheMatch
-        .mockResolvedValueOnce(null) // First entry missing
-        .mockResolvedValueOnce(mockResponse);
-
-      const files = await getSharedFiles();
-
-      expect(files).toHaveLength(1);
-      expect(files[0].name).toBe('valid.png');
+      expect(files.map((file) => [file.name, file.type])).toEqual([
+        ['image.png', 'image/png'],
+        ['clip.wav', 'audio/wav'],
+      ]);
     });
 
     it('clears cache after retrieval', async () => {
-      const mockRequest = new Request('http://localhost/file-0');
-      const mockBlob = new Blob(['content'], { type: 'image/png' });
-      const mockResponse = createMockResponse(
-        mockBlob,
-        new Headers({ 'X-Share-Filename': 'test.png', 'Content-Type': 'image/png' }),
-      );
-
-      mockCacheKeys.mockResolvedValue([mockRequest]);
-      mockCacheMatch.mockResolvedValue(mockResponse);
+      await cacheEntry(await image('png'), { 'X-Share-Filename': 'test.png', 'Content-Type': 'image/png' });
 
       await getSharedFiles();
 
-      expect(mockCachesDelete).toHaveBeenCalledWith('share-target-files');
+      expect(storage.stores.has('share-target-files')).toBe(false);
     });
 
     it('returns empty array on error', async () => {
-      mockCacheOpen.mockRejectedValue(new Error('Cache error'));
+      storage.failOpen = true;
 
-      const files = await getSharedFiles();
-
-      expect(files).toEqual([]);
-    });
-
-    it('clears cache even when no files are present', async () => {
-      mockCacheKeys.mockResolvedValue([]);
-
-      await getSharedFiles();
-
-      // Cache delete should not be called when there are no files
-      // because the function returns early
-      expect(mockCachesDelete).not.toHaveBeenCalled();
+      await expect(getSharedFiles()).resolves.toEqual([]);
     });
   });
 

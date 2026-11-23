@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ElementType } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { toast } from '@/molecules/Toaster/toast';
 import { setSocialHost } from '@/test-utils/social-host';
 import { ShareTarget } from './ShareTarget';
 
@@ -28,6 +29,8 @@ vi.mock('@/libs/share/shareTarget', async () => {
     getSharedFiles: () => mockGetSharedFiles(),
   };
 });
+
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 // Mock Atoms
 vi.mock('@/atoms/Button/Button', () => {
@@ -275,5 +278,49 @@ describe('ShareTarget', () => {
       const postInput = screen.getByTestId('post-input');
       expect(postInput).toHaveAttribute('data-has-attachments', 'true');
     });
+  });
+
+  it('tells the user how many shared files were not added', async () => {
+    mockSearchParams.set('hasFiles', 'true');
+    mockSearchParams.set('refusedFiles', '2');
+    mockGetSharedFiles.mockResolvedValue([new File(['test'], 'test.png', { type: 'image/png' })]);
+
+    render(<ShareTarget />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('post-input')).toHaveAttribute('data-has-attachments', 'true');
+    });
+    expect(toast).toHaveBeenCalledWith({
+      variant: 'error',
+      description: '2 shared files were not added. You can share JPEG, PNG, GIF and WebP images, audio and video.',
+    });
+  });
+
+  it('tells the user when the only shared file was not added', async () => {
+    mockSearchParams.set('refusedFiles', '1');
+
+    render(<ShareTarget />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('post-input')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('post-input')).not.toHaveAttribute('data-has-attachments', 'true');
+    expect(mockGetSharedFiles).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith({
+      variant: 'error',
+      description: 'A shared file was not added. You can share JPEG, PNG, GIF and WebP images, audio and video.',
+    });
+  });
+
+  it('shows no toast when every shared file was added', async () => {
+    mockSearchParams.set('hasFiles', 'true');
+    mockGetSharedFiles.mockResolvedValue([new File(['test'], 'test.png', { type: 'image/png' })]);
+
+    render(<ShareTarget />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('post-input')).toHaveAttribute('data-has-attachments', 'true');
+    });
+    expect(toast).not.toHaveBeenCalled();
   });
 });
