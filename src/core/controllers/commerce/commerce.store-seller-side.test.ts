@@ -114,4 +114,141 @@ describe('CommerceController seller side in a store', () => {
     expect(ids(await CommerceController.getMarketplaceOffers())).toEqual(['offer-made', 'offer-received']);
     expect((await CommerceController.getMarketplaceOrder('order-sale'))?.id).toBe('order-sale');
   });
+
+  const OFFER_BOUGHT = '00000000-0000-4000-8000-000000000901';
+  const OFFER_SOLD = '00000000-0000-4000-8000-000000000902';
+  const OFFER_UNKNOWN = '00000000-0000-4000-8000-000000000903';
+  const offerCommand = (kind: string, offerId: string) => ({
+    version: 1,
+    commandId: '00000000-0000-4000-8000-000000000910',
+    expectedRevision: 1,
+    issuedAt: '2026-08-19T23:00:00.000Z',
+    aggregateId: `offer:${offerId}`,
+    kind,
+    payload: { offerId },
+  });
+  const refused = { code: 'FORBIDDEN', operation: 'assertCanSellHere' };
+
+  it('runs commands on what another seller buys in a store, and refuses those on what it sells', async () => {
+    vi.mocked(CommerceApplication.getMarketplaceOffers).mockResolvedValue([
+      { id: OFFER_BOUGHT, sellerPubky: STORE_SELLER, buyerPubky: VIEWER },
+      { id: OFFER_SOLD, sellerPubky: VIEWER, buyerPubky: OTHER_BUYER },
+    ] as never);
+    const execute = vi.spyOn(CommerceApplication, 'executeMarketplaceCommand').mockResolvedValue({ ok: true } as never);
+    setStoreSeller(STORE_SELLER);
+
+    await expect(
+      CommerceController.executeMarketplaceCommand(offerCommand('offer.withdraw', OFFER_BOUGHT)),
+    ).resolves.toEqual({ ok: true });
+    for (const offerId of [OFFER_SOLD, OFFER_UNKNOWN]) {
+      await expect(
+        CommerceController.executeMarketplaceCommand(offerCommand('offer.accept', offerId)),
+      ).rejects.toMatchObject(refused);
+    }
+    expect(execute).toHaveBeenCalledTimes(1);
+
+    setStoreSeller(undefined);
+    await expect(
+      CommerceController.executeMarketplaceCommand(offerCommand('offer.accept', OFFER_SOLD)),
+    ).resolves.toEqual({ ok: true });
+  });
+
+  it('confirms the pickup and reads the delivery email of a purchase, not of a sale', async () => {
+    const confirm = vi.spyOn(CommerceApplication, 'commitConfirmPickup').mockResolvedValue({ ok: true } as never);
+    const email = vi.spyOn(CommerceApplication, 'fetchOrderDeliveryEmail').mockResolvedValue(null as never);
+    setStoreSeller(STORE_SELLER);
+
+    await CommerceController.commitConfirmPickup('order-purchase', 1);
+    await CommerceController.fetchOrderDeliveryEmail('order-purchase');
+    await expect(CommerceController.commitConfirmPickup('order-sale', 1)).rejects.toMatchObject(refused);
+    await expect(CommerceController.fetchOrderDeliveryEmail('order-sale')).rejects.toMatchObject(refused);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(email).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the payment and receipt of a sale from another seller in a store', async () => {
+    vi.spyOn(CommerceApplication, 'getMarketplacePayment').mockImplementation(
+      async (_actor, id) => ({ id, sellerPubky: id === 'payment-sale' ? VIEWER : STORE_SELLER }) as never,
+    );
+    vi.spyOn(CommerceApplication, 'getMarketplaceReceipt').mockImplementation(
+      async (_actor, id) => ({ id, issuerPubky: id === 'receipt-sale' ? VIEWER : STORE_SELLER }) as never,
+    );
+    setStoreSeller(STORE_SELLER);
+
+    expect(await CommerceController.getMarketplacePayment('payment-sale')).toBeNull();
+    expect(await CommerceController.getMarketplacePayment('payment-purchase')).toMatchObject({
+      id: 'payment-purchase',
+    });
+    expect(await CommerceController.getMarketplaceReceipt('receipt-sale')).toBeNull();
+    expect(await CommerceController.getMarketplaceReceipt('receipt-purchase')).toMatchObject({
+      id: 'receipt-purchase',
+    });
+
+    setStoreSeller(undefined);
+    expect(await CommerceController.getMarketplacePayment('payment-sale')).toMatchObject({ id: 'payment-sale' });
+    expect(await CommerceController.getMarketplaceReceipt('receipt-sale')).toMatchObject({ id: 'receipt-sale' });
+  });
+
+  it('keeps only the reviews another seller wrote as a buyer, and lets it withdraw only those', async () => {
+    const review = (orderId: string, role: string) => ({ order_id: orderId, record: { role } });
+    vi.spyOn(CommerceApplication, 'getOwnReviews').mockResolvedValue([
+      review('order-purchase', 'buyer_reviewing_seller'),
+      review('order-sale', 'seller_reviewing_buyer'),
+    ] as never);
+    vi.spyOn(CommerceApplication, 'getAwaitingReleaseReviews').mockResolvedValue([
+      { orderId: 'order-held-sale', reviewerRole: 'seller', releaseAt: null, items: [] },
+      { orderId: 'order-held-purchase', reviewerRole: 'buyer', releaseAt: null, items: [] },
+    ]);
+    const remove = vi.spyOn(CommerceApplication, 'commitDeleteOwnReview').mockResolvedValue('removed');
+    setStoreSeller(STORE_SELLER);
+
+    expect((await CommerceController.getOwnMarketplaceReviews()).map(({ order_id }) => order_id)).toEqual([
+      'order-purchase',
+    ]);
+    expect((await CommerceController.getAwaitingReleaseOwnMarketplaceReviews()).map(({ orderId }) => orderId)).toEqual([
+      'order-held-purchase',
+    ]);
+    await CommerceController.commitDeleteOwnMarketplaceReview('order-purchase');
+    await CommerceController.commitDeleteOwnMarketplaceReview('order-held-purchase');
+    for (const orderId of ['order-sale', 'order-held-sale']) {
+      await expect(CommerceController.commitDeleteOwnMarketplaceReview(orderId)).rejects.toMatchObject(refused);
+    }
+    expect(remove.mock.calls.map(([, orderId]) => orderId)).toEqual(['order-purchase', 'order-held-purchase']);
+
+    setStoreSeller(undefined);
+    expect(await CommerceController.getOwnMarketplaceReviews()).toHaveLength(2);
+  });
+
+  it('runs only the buyer side of the orders loader for another seller in a store', async () => {
+    const publications = vi.spyOn(CommerceApplication, 'resumeOwnReviewPublications').mockResolvedValue(0);
+    const removals = vi.spyOn(CommerceApplication, 'resumeOwnReviewRemovals').mockResolvedValue(0);
+    const receipts = vi.spyOn(CommerceApplication, 'publishOrderReceipts').mockResolvedValue('published');
+    const reserves = vi.spyOn(CommerceApplication, 'sweepOwnAuctionReserves').mockResolvedValue(2);
+    const responses = vi.spyOn(CommerceApplication, 'resumeOwnReviewResponsePublications').mockResolvedValue(1);
+    const run = async () => {
+      await CommerceController.resumeOwnReviewPublications();
+      await CommerceController.resumeOwnReviewRemovals();
+      await CommerceController.publishOrderReceipts([]);
+      return [
+        await CommerceController.sweepOwnAuctionReserves(),
+        await CommerceController.resumeOwnReviewResponsePublications(),
+      ];
+    };
+
+    setStoreSeller(STORE_SELLER);
+    expect(await run()).toEqual([0, 0]);
+    expect(publications).toHaveBeenLastCalledWith(VIEWER, { sellerSide: false });
+    expect(removals).toHaveBeenLastCalledWith(VIEWER, { sellerSide: false });
+    expect(receipts).toHaveBeenLastCalledWith(VIEWER, [], { sellerSide: false });
+    expect(reserves).not.toHaveBeenCalled();
+    expect(responses).not.toHaveBeenCalled();
+
+    for (const storeSeller of [VIEWER, undefined]) {
+      setStoreSeller(storeSeller);
+      expect(await run()).toEqual([2, 1]);
+      expect(publications).toHaveBeenLastCalledWith(VIEWER, { sellerSide: true });
+      expect(removals).toHaveBeenLastCalledWith(VIEWER, { sellerSide: true });
+      expect(receipts).toHaveBeenLastCalledWith(VIEWER, [], { sellerSide: true });
+    }
+  });
 });

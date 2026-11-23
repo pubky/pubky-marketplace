@@ -2155,6 +2155,16 @@ export class CommerceApplication {
     return await MarketplaceGatewayService.getOrder(actorPubky, orderId);
   }
 
+  /** Whether the actor is the buyer of an order; false when the order does not read. */
+  private static async boughtOrder(actorPubky: string, orderId: string): Promise<boolean> {
+    try {
+      return (await MarketplaceGatewayService.getOrder(actorPubky, orderId))?.buyerPubky === actorPubky;
+    } catch (error) {
+      Logger.warn('An order did not read; its review removal waits for the next orders load', { orderId, error });
+      return false;
+    }
+  }
+
   static async uploadMarketplaceAttachment(actorPubky: string, recipientPubky: string, file: File) {
     return await MarketplaceGatewayService.uploadAttachment(actorPubky, recipientPubky, file);
   }
@@ -2822,6 +2832,7 @@ export class CommerceApplication {
   private static async migratePlaintextReceipts(
     ownerPubky: string,
     keyring: PrivKeyring,
+    sellerSide: boolean,
   ): Promise<'done' | 'incomplete' | 'needs_reauth'> {
     let urls: string[];
     try {
@@ -2850,6 +2861,7 @@ export class CommerceApplication {
           incomplete = true;
           continue;
         }
+        if (!sellerSide && legacy.role === 'seller') continue;
         const sealed = await CommercePrivStoreService.read(keyring, 'order_receipt', receiptId);
         if (sealed === null) {
           await CommercePrivStoreService.write(keyring, 'order_receipt', receiptId, { ...legacy });
@@ -2931,10 +2943,14 @@ export class CommerceApplication {
    * `needs_reauth` instead of returning without a trace. Without a key
    * nothing is written; a sealed entry that does not decrypt is never
    * overwritten.
+   *
+   * Without `sellerSide` (a store the owner does not sell in) only receipts of
+   * its purchases are published or moved; those of its sales stay as they are.
    */
   static async publishOrderReceipts(
     ownerPubky: string,
     orders: MarketplaceOrder[],
+    { sellerSide = true }: { sellerSide?: boolean } = {},
   ): Promise<CommerceReceiptPublicationStatus> {
     if (!isDurableCommerceMode(getCommerceAdapterMode())) return 'skipped';
     if (!HomeserverService.hasActiveSession()) return 'skipped';
@@ -2952,12 +2968,13 @@ export class CommerceApplication {
     }
     if (keys.kind !== 'keys') return keys.kind === 'needs_reauth' ? 'needs_marketplace_approval' : keys.kind;
     const { keyring } = keys;
-    const migration = await this.migratePlaintextReceipts(ownerPubky, keyring);
+    const migration = await this.migratePlaintextReceipts(ownerPubky, keyring, sellerSide);
     if (migration === 'needs_reauth') return 'needs_reauth';
 
     const eligible = orders.filter(
       (order) =>
-        typeof order.receiptId === 'string' && (order.buyerPubky === ownerPubky || order.sellerPubky === ownerPubky),
+        typeof order.receiptId === 'string' &&
+        (order.buyerPubky === ownerPubky || (sellerSide && order.sellerPubky === ownerPubky)),
     );
 
     // Derived now, while the keyring is known live; a revoked keyring stops here.
@@ -4450,15 +4467,21 @@ export class CommerceApplication {
    * Retries every removal whose service withdrawal or homeserver DEL never
    * landed. Each job is
    * re-read under its order's lock first, so two tabs retrying one job send
-   * one DEL. Returns the number of removals that completed.
+   * one DEL. Returns the number of removals that completed. Without
+   * `sellerSide` only removals of reviews written as the order's buyer run;
+   * the order is read to tell, and one that does not read waits.
    */
-  static async resumeOwnReviewRemovals(actorPubky: string): Promise<number> {
+  static async resumeOwnReviewRemovals(
+    actorPubky: string,
+    { sellerSide = true }: { sellerSide?: boolean } = {},
+  ): Promise<number> {
     const jobs = await LocalCommerceService.getOwnReviewRemovalJobs(actorPubky);
     let removed = 0;
     for (const queued of jobs) {
       const target = ownReviewRemovalTarget(queued.payload);
       if (target === null) continue;
       const { orderId, listingId } = target;
+      if (!sellerSide && !(await this.boughtOrder(actorPubky, orderId))) continue;
       removed += await this.withOwnReviewLock(actorPubky, orderId, async () => {
         const job = await LocalCommerceService.getSyncJob(queued.id);
         const url = job ? ownReviewRemovalUrl(job.payload) : null;
@@ -4737,11 +4760,17 @@ export class CommerceApplication {
    * marks it synced, and re-reads the attestations of reviews a double-blind
    * window still withheld ({@link resumeAwaitingReleaseReviews}). Called when
    * the orders surface loads, so a failed publication heals on the next visit
-   * instead of rotting silently.
+   * instead of rotting silently. Without `sellerSide` only reviews written as
+   * the order's buyer are retried.
    */
-  static async resumeOwnReviewPublications(actorPubky: string): Promise<number> {
-    const pending = await LocalCommerceService.getPendingOwnReviews(actorPubky);
-    let published = await this.resumeAwaitingReleaseReviews(actorPubky);
+  static async resumeOwnReviewPublications(
+    actorPubky: string,
+    { sellerSide = true }: { sellerSide?: boolean } = {},
+  ): Promise<number> {
+    const pending = (await LocalCommerceService.getPendingOwnReviews(actorPubky)).filter(
+      (row) => sellerSide || row.record.role === 'buyer_reviewing_seller',
+    );
+    let published = await this.resumeAwaitingReleaseReviews(actorPubky, undefined, { sellerSide });
     for (const queued of pending) {
       const url = CommerceRecordNormalizer.reviewUri(queued.owner_id, queued.review_id);
       published += await this.withOwnReviewLock(queued.owner_id, queued.order_id, async () => {
@@ -4880,11 +4909,20 @@ export class CommerceApplication {
    * set of records), and the attestations are asked for again. Still
    * withheld leaves the job as it is, a released answer publishes the item
    * records in line order, and a review the user removed meanwhile never
-   * publishes. With `orderId` only that order is retried. Returns the number
-   * of records published.
+   * publishes. With `orderId` only that order is retried; without `sellerSide`
+   * only reviews held for an order the actor bought. Returns the number of
+   * records published.
    */
-  static async resumeAwaitingReleaseReviews(actorPubky: string, orderId?: string): Promise<number> {
-    const jobs = await LocalCommerceService.getAwaitingReleaseReviewJobs(actorPubky, orderId);
+  static async resumeAwaitingReleaseReviews(
+    actorPubky: string,
+    orderId?: string,
+    { sellerSide = true }: { sellerSide?: boolean } = {},
+  ): Promise<number> {
+    const jobs = (await LocalCommerceService.getAwaitingReleaseReviewJobs(actorPubky, orderId)).filter((job) => {
+      if (sellerSide) return true;
+      const held = awaitingReleasePayloadSchema.safeParse(job.payload);
+      return held.success && held.data.sellerPubky !== actorPubky;
+    });
     let published = 0;
     for (const queued of jobs) {
       if (!this.liveIdentityMatches(actorPubky)) break;

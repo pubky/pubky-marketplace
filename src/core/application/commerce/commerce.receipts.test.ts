@@ -858,3 +858,50 @@ describe('CommerceApplication.publishOrderReceipts when the marketplace session 
     },
   );
 });
+
+describe('CommerceApplication.publishOrderReceipts without the seller side', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    CommerceApplication.resetReceiptPublicationMemo();
+  });
+
+  const SOLD_RECEIPT = '018f47d2-6a27-7c23-a49d-6b21bb770240';
+  const sale = () => ({ receiptId: SOLD_RECEIPT, buyerPubky: SELLER, sellerPubky: BUYER }) as never;
+
+  it('moves only the plaintext receipts of purchases', async () => {
+    const record = await publishedRecord();
+    CommerceApplication.resetReceiptPublicationMemo();
+    homeserver.files.clear();
+    homeserver.files.set(legacyUrl(BUYER, RECEIPT_ID), record);
+    homeserver.files.set(legacyUrl(BUYER, SOLD_RECEIPT), {
+      ...record,
+      receiptId: SOLD_RECEIPT,
+      role: 'seller',
+      buyerPubky: SELLER,
+      sellerPubky: BUYER,
+    });
+
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [], { sellerSide: false })).resolves.toBe('published');
+
+    expect(homeserver.files.has(legacyUrl(BUYER, RECEIPT_ID))).toBe(false);
+    expect(storedReceipt(BUYER, RECEIPT_ID)).toEqual(record);
+    expect(homeserver.files.has(legacyUrl(BUYER, SOLD_RECEIPT))).toBe(true);
+    expect(homeserver.files.has(sealedUrl(BUYER, SOLD_RECEIPT))).toBe(false);
+  });
+
+  it('publishes receipts of purchases and leaves those of sales, which the seller side publishes', async () => {
+    grantCapableSession();
+    const fetchAttestation = vi
+      .spyOn(MarketplaceGatewayService, 'getReceiptAttestation')
+      .mockResolvedValue(attestation());
+
+    await CommerceApplication.publishOrderReceipts(BUYER, [paidOrder(), sale()], { sellerSide: false });
+    expect(fetchAttestation.mock.calls.map(([, receiptId]) => receiptId)).toEqual([RECEIPT_ID]);
+
+    fetchAttestation.mockClear();
+    CommerceApplication.resetReceiptPublicationMemo();
+    vi.spyOn(Logger, 'warn').mockImplementation(() => {});
+    await CommerceApplication.publishOrderReceipts(BUYER, [sale()]);
+    expect(fetchAttestation.mock.calls.map(([, receiptId]) => receiptId)).toEqual([SOLD_RECEIPT]);
+  });
+});

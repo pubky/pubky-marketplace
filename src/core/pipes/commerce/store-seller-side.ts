@@ -2,11 +2,10 @@ import { parseListingAggregateId } from '@/libs/commerce/listing-aggregate';
 
 /**
  * A store's selling tools belong to the store seller. Any other account signed in to a store sees
- * and runs only its buyer side: its offers, orders and notifications as a seller are dropped here,
- * and its background seller work does not run. `storeSeller` is `null` outside store mode, where
- * everyone sells as before.
+ * and runs only its buyer side. `storeSeller` is `null` outside store mode, where everyone sells as
+ * before. Controllers ask through `StoreSellerGate`, never here directly.
  */
-export function canSellHere(viewerPubky: string, storeSeller: string | null): boolean {
+export function canSellHere(viewerPubky: string | null, storeSeller: string | null): boolean {
   return storeSeller === null || viewerPubky === storeSeller;
 }
 
@@ -20,6 +19,70 @@ export function withoutSalesOutsideStoreSeller<T extends { sellerPubky: string }
   return rows.filter((row) => row.sellerPubky !== viewerPubky);
 }
 
+/**
+ * What an aggregate id names, for telling the viewer's buyer side from its seller side. Listings,
+ * drops and conversations carry their seller (`listing:<seller>_<id>`, `drop:<seller>_<id>`,
+ * `conversation:<seller>_<buyer>_<listing>`). Orders and offers carry only their id, so the caller
+ * resolves their seller from the viewer's rows. Checkouts, payments and the viewer's own
+ * notification rows have no seller side. Any other aggregate is `unknown`.
+ */
+type MarketplaceSubject =
+  | { kind: 'seller'; sellerPubky: string }
+  | { kind: 'order' | 'offer'; id: string }
+  | { kind: 'none' }
+  | { kind: 'unknown' };
+
+const SUBJECTLESS_PREFIXES = ['checkout:', 'payment:', 'notification:', 'notification_preferences:'];
+
+/** The pubky before the first `_` of what follows `prefix`; pubkys never contain `_`. */
+function leadingPubky(aggregateId: string, prefix: string): string | null {
+  const rest = aggregateId.slice(prefix.length);
+  const separator = rest.indexOf('_');
+  return separator > 0 ? rest.slice(0, separator) : null;
+}
+
+export function subjectOfAggregate(aggregateId: string): MarketplaceSubject {
+  const listing = parseListingAggregateId(aggregateId);
+  if (listing) return { kind: 'seller', sellerPubky: listing.sellerPubky };
+  for (const prefix of ['drop:', 'conversation:']) {
+    if (!aggregateId.startsWith(prefix)) continue;
+    const sellerPubky = leadingPubky(aggregateId, prefix);
+    return sellerPubky ? { kind: 'seller', sellerPubky } : { kind: 'unknown' };
+  }
+  for (const kind of ['order', 'offer'] as const) {
+    const prefix = `${kind}:`;
+    if (aggregateId.startsWith(prefix) && aggregateId.length > prefix.length) {
+      return { kind, id: aggregateId.slice(prefix.length) };
+    }
+  }
+  if (SUBJECTLESS_PREFIXES.some((prefix) => aggregateId.startsWith(prefix))) return { kind: 'none' };
+  return { kind: 'unknown' };
+}
+
+/**
+ * Whether a subject is the viewer's sale. `sellerOf` resolves an order or offer id to its seller,
+ * or `null` when the viewer's rows do not name it. Unresolved and unknown subjects count as sales,
+ * so a caller that cannot tell the side keeps it from a viewer who cannot sell here.
+ */
+export function isSaleSubject(
+  subject: MarketplaceSubject,
+  viewerPubky: string,
+  sellerOf: (kind: 'order' | 'offer', id: string) => string | null,
+): boolean {
+  switch (subject.kind) {
+    case 'seller':
+      return subject.sellerPubky === viewerPubky;
+    case 'order':
+    case 'offer': {
+      const sellerPubky = sellerOf(subject.kind, subject.id);
+      return sellerPubky === null || sellerPubky === viewerPubky;
+    }
+    case 'none':
+      return false;
+    case 'unknown':
+      return true;
+  }
+}
 /** A notification row; one this build does not recognize carries no subject. */
 type SubjectNotification = {
   id: string;

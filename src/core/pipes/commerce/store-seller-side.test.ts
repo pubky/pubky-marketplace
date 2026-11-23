@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   canSellHere,
+  isSaleSubject,
+  subjectOfAggregate,
   withoutSalesNotificationsOutsideStoreSeller,
   withoutSalesOutsideStoreSeller,
 } from './store-seller-side';
@@ -18,10 +20,69 @@ const rows = [
 const ids = (list: { id: string }[]) => list.map(({ id }) => id);
 
 describe('canSellHere', () => {
+  it('lets nobody signed out sell in a store, and everyone outside store mode', () => {
+    expect(canSellHere(null, STORE_SELLER)).toBe(false);
+    expect(canSellHere(null, null)).toBe(true);
+  });
+
   it('lets only the store seller sell in a store, and everyone outside store mode', () => {
     expect(canSellHere(VIEWER, STORE_SELLER)).toBe(false);
     expect(canSellHere(STORE_SELLER, STORE_SELLER)).toBe(true);
     expect(canSellHere(VIEWER, null)).toBe(true);
+  });
+});
+
+describe('subjectOfAggregate', () => {
+  it('names the seller of listings, drops and conversations', () => {
+    for (const aggregateId of [
+      `listing:${VIEWER}_boots`,
+      `drop:${VIEWER}_summer`,
+      `conversation:${VIEWER}_${OTHER}_boots`,
+    ]) {
+      expect(subjectOfAggregate(aggregateId)).toEqual({ kind: 'seller', sellerPubky: VIEWER });
+    }
+  });
+
+  it('names the id of orders and offers, nothing for checkouts, payments and notifications', () => {
+    expect(subjectOfAggregate('order:o-1')).toEqual({ kind: 'order', id: 'o-1' });
+    expect(subjectOfAggregate('offer:f-1')).toEqual({ kind: 'offer', id: 'f-1' });
+    for (const aggregateId of ['checkout:c', 'payment:p', 'notification:n', 'notification_preferences:x']) {
+      expect(subjectOfAggregate(aggregateId)).toEqual({ kind: 'none' });
+    }
+  });
+
+  it('is unknown for anything else, or a malformed id', () => {
+    for (const aggregateId of ['moderation_decision:m', 'seller_settings:x', 'drop:summer', 'order:', 'shop']) {
+      expect(subjectOfAggregate(aggregateId)).toEqual({ kind: 'unknown' });
+    }
+  });
+});
+
+describe('isSaleSubject', () => {
+  const sellers = new Map([
+    ['sold', VIEWER],
+    ['bought', STORE_SELLER],
+  ]);
+  const sellerOf = (_kind: 'order' | 'offer', id: string) => sellers.get(id) ?? null;
+  const isSale = (aggregateId: string) => isSaleSubject(subjectOfAggregate(aggregateId), VIEWER, sellerOf);
+
+  it('is a sale when the viewer sells the subject', () => {
+    expect(isSale(`listing:${VIEWER}_boots`)).toBe(true);
+    expect(isSale(`conversation:${VIEWER}_${OTHER}_boots`)).toBe(true);
+    expect(isSale('order:sold')).toBe(true);
+    expect(isSale('offer:sold')).toBe(true);
+  });
+
+  it('is not a sale when another seller sells it, or it has no seller side', () => {
+    expect(isSale(`listing:${STORE_SELLER}_boots`)).toBe(false);
+    expect(isSale(`conversation:${STORE_SELLER}_${VIEWER}_boots`)).toBe(false);
+    expect(isSale('order:bought')).toBe(false);
+    expect(isSale('payment:p')).toBe(false);
+  });
+
+  it('counts what it cannot tell as a sale', () => {
+    expect(isSale('order:missing')).toBe(true);
+    expect(isSale('moderation_decision:m')).toBe(true);
   });
 });
 

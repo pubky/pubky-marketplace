@@ -226,6 +226,48 @@ describe('own reviews a double-blind window withholds', () => {
     });
   });
 
+  describe('without the seller side', () => {
+    it('releases a review held for an order the user bought', async () => {
+      await hold();
+      release();
+
+      await expect(
+        CommerceApplication.resumeOwnReviewPublications(ORDER_FIXTURE_BUYER, { sellerSide: false }),
+      ).resolves.toBe(3);
+      expect(await jobs()).toEqual([]);
+    });
+
+    it('leaves a review held for an order the user sold, and a pending review written as its seller', async () => {
+      await hold();
+      release();
+      const [held] = await awaitingJobs();
+      await CommerceSyncJobModel.table.update(held.id, {
+        payload: { ...(held.payload as Record<string, unknown>), sellerPubky: ORDER_FIXTURE_BUYER },
+      });
+
+      await expect(
+        CommerceApplication.resumeOwnReviewPublications(ORDER_FIXTURE_BUYER, { sellerSide: false }),
+      ).resolves.toBe(0);
+      expect(attestationReads).not.toHaveBeenCalled();
+      expect(await awaitingJobs()).toHaveLength(1);
+
+      await CommerceSyncJobModel.table.update(held.id, { payload: held.payload });
+      homeserver.failNext(HttpMethod.PUT, /./, 500);
+      await CommerceApplication.resumeOwnReviewPublications(ORDER_FIXTURE_BUYER);
+      const [pending] = (await localRows()).filter(({ sync_status }) => sync_status === 'pending');
+      await db
+        .table(CommerceReviewModel.table.name)
+        .update(pending.id, { record: { ...pending.record, role: 'seller_reviewing_buyer' } });
+      homeserver.log.length = 0;
+
+      await expect(
+        CommerceApplication.resumeOwnReviewPublications(ORDER_FIXTURE_BUYER, { sellerSide: false }),
+      ).resolves.toBe(0);
+      expect(puts()).toEqual([]);
+      await expect(CommerceApplication.resumeOwnReviewPublications(ORDER_FIXTURE_BUYER)).resolves.toBe(1);
+    });
+  });
+
   describe('retrying while the window holds the review', () => {
     it('leaves the job as it is, without a failure or a growing backoff, and publishes nothing', async () => {
       await hold();
