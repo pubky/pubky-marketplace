@@ -417,6 +417,12 @@ These are project-wide hard limits; do not tune them per component.
 | `PUBKY_RUNTIME_INBOX_AUDIENCE` | the inbox URL | Audience string the inbox expects in session proofs (`INBOX_AUTH__AUDIENCE` on the service).                                                              |
 | `NEXT_PUBLIC_DB_VERSION`       | `9`           | Must be 9 or higher: the chat tables arrive at Dexie version 9.                                                                                           |
 
+A store (`PUBKY_RUNTIME_STORE_SELLER`, see [Store mode](../environment.md#store-mode-runtime)) uses only the inbox its
+operator sets: there is no hosted default. A buyer there talks only to the store seller. The inbox list shows only
+that conversation, the empty inbox offers "Message seller", and without an inbox the first-contact warning says the
+seller may not see the message until there is an order, because the seller then finds it only through
+order counterparty discovery (see [Delivery triggers](#delivery-triggers)) or by opening the thread. The store seller sees every buyer's conversation.
+
 The sign-in grant (`CAPABILITIES`) now includes `/pub/chat/v0/:rw,/priv/chat/v0/:rw`. A session approved before
 this change lacks them and gets the `needs_reauth` notice until the user signs in again. The inbox deployment must allow the Shop's origin in `INBOX_SERVER__CORS_ALLOWED_ORIGINS`.
 
