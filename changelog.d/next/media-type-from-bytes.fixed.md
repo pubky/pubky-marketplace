@@ -1,0 +1,1 @@
+Listing and shop images from another homeserver are now typed from their own bytes and capped at the 5 MB image upload limit. Media that is not a JPEG, PNG, GIF, WebP or AVIF image, or is larger, shows the usual no-image placeholder. Purchased digital files and unlocked Locks content are saved as plain downloads.
