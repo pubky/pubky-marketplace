@@ -97,19 +97,54 @@ describe('CommerceApplication store catalog', () => {
     }
   });
 
-  it("caches a shop's active listings from the seller's homeserver, sandbox included", async () => {
+  it("caches a shop's listings in every state from the seller's homeserver, sandbox included", async () => {
     vi.mocked(commerceConfig.getCommerceAdapterMode).mockReturnValue('sandbox');
     serveHomeserver([listing('boots_01'), listing('paused_01', { state: 'paused' }), listing('hat_01')]);
 
     await CommerceApplication.fetchSellerCatalogListings(SELLER);
 
     const entries = await CommerceCatalogEntryModel.table.toArray();
-    expect(entries.map(({ listing_id }) => listing_id).sort()).toEqual(['boots_01', 'hat_01']);
+    expect(entries.map(({ listing_id }) => listing_id).sort()).toEqual(['boots_01', 'hat_01', 'paused_01']);
+    expect(entries.find(({ listing_id }) => listing_id === 'paused_01')?.state).toBe('paused');
     expect(entries.find(({ listing_id }) => listing_id === 'boots_01')).toEqual(
       CommerceRecordNormalizer.catalogEntryFromListingRecord(listing('boots_01')),
     );
     // Discovery caches index-shaped entries only, as the index path does.
     expect(await CommerceListingModel.table.count()).toBe(0);
+  });
+
+  it('turns a card cached as active paused once its record is paused', async () => {
+    await LocalCommerceService.bulkUpsertCatalogEntries([
+      CommerceRecordNormalizer.catalogEntryFromListingRecord(listing('boots_01', { revision: 1 })),
+    ]);
+    serveHomeserver([listing('boots_01', { revision: 2, state: 'paused' })]);
+
+    await CommerceApplication.fetchSellerCatalogListings(SELLER);
+
+    expect(await LocalCommerceService.getCatalogEntry(`${SELLER}:boots_01`)).toMatchObject({
+      state: 'paused',
+      revision: 2,
+    });
+  });
+
+  it("drops the seller's cached cards the directory no longer lists, and no one else's", async () => {
+    const otherSellers = CommerceRecordNormalizer.catalogEntryFromListingRecord(
+      listing('gone_01', { ownerPubky: OTHER_SELLER }),
+    );
+    await LocalCommerceService.bulkUpsertCatalogEntries([
+      CommerceRecordNormalizer.catalogEntryFromListingRecord(listing('gone_01')),
+      CommerceRecordNormalizer.catalogEntryFromListingRecord(listing('broken_01')),
+      otherSellers,
+    ]);
+    serveHomeserver([listing('boots_01')], { broken_01: { recordType: 'listing', title: 'Not a listing' } });
+
+    await CommerceApplication.fetchSellerCatalogListings(SELLER);
+
+    // A listed record that fails to read keeps its card; only an unlisted one is gone.
+    expect(
+      (await LocalCommerceService.getCatalogEntriesBySeller(SELLER)).map(({ listing_id }) => listing_id).sort(),
+    ).toEqual(['boots_01', 'broken_01']);
+    expect(await LocalCommerceService.getCatalogEntry(otherSellers.id)).toEqual(otherSellers);
   });
 
   it('reads every directory page after the last URL of the one before', async () => {
@@ -198,8 +233,12 @@ describe('CommerceApplication store catalog', () => {
     expect(page).toBe(100);
 
     page = 0;
+    const cached = CommerceRecordNormalizer.catalogEntryFromListingRecord(listing('boots_01'));
+    await LocalCommerceService.bulkUpsertCatalogEntries([cached]);
     await expect(CommerceApplication.fetchSellerCatalogListings(SELLER)).resolves.toBeUndefined();
     expect(page).toBe(100);
+    // A cut-short directory proves nothing is gone.
+    expect(await LocalCommerceService.getCatalogEntry(cached.id)).toEqual(cached);
   });
 
   it("reads only the store seller's catalog for the catalog grid", async () => {

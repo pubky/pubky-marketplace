@@ -555,6 +555,36 @@ export class LocalCommerceService {
     await CommerceCatalogEntryModel.bulkSave(entries);
   }
 
+  /**
+   * One seller's catalog entries after a read of their whole listing directory: entries for
+   * listings the directory no longer names are dropped and `entries` are upserted, in one
+   * transaction.
+   */
+  static async replaceSellerCatalogEntries(
+    sellerPubky: string,
+    entries: CommerceCatalogEntryModelSchema[],
+    listedIds: ReadonlySet<string>,
+  ): Promise<void> {
+    try {
+      await db.transaction('rw', CommerceCatalogEntryModel.table, async () => {
+        await CommerceCatalogEntryModel.table
+          .where('seller_id')
+          .equals(sellerPubky)
+          .filter((entry) => !listedIds.has(entry.listing_id))
+          .delete();
+        await CommerceCatalogEntryModel.table.bulkPut(entries);
+      });
+    } catch (error) {
+      if (isAppError(error)) throw error;
+      throw Err.database(DatabaseErrorCode.WRITE_FAILED, 'Failed to replace seller catalog entries', {
+        service: ErrorService.Local,
+        operation: 'replaceSellerCatalogEntries',
+        context: { table: CommerceCatalogEntryModel.table.name },
+        cause: error,
+      });
+    }
+  }
+
   static async commitSellerCatalogRefresh(
     entries: CommerceCatalogEntryModelSchema[],
     records: CommerceListingRecord[],

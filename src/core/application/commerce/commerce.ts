@@ -697,6 +697,13 @@ const HOMESERVER_LISTING_READ_CONCURRENCY = 8;
  * nothing left to manage.
  */
 const SELLER_OWN_LISTING_STATES = ['active', 'paused', 'ended'] as const satisfies readonly NexusListingState[];
+/** Every state, so a guest's cached card follows its listing out of `active`; the grids filter by state. */
+const STORE_DISCOVERY_LISTING_STATES = [
+  'active',
+  'paused',
+  'ended',
+  'removed',
+] as const satisfies readonly NexusListingState[];
 
 export class CommerceApplication {
   private constructor() {}
@@ -1002,7 +1009,7 @@ export class CommerceApplication {
    * confirming as deleted. A record no longer listed stays cached, as with the index.
    */
   private static async runHomeserverSellerListingsRefresh(sellerPubky: string): Promise<void> {
-    const records = await this.collectHomeserverSellerListings(sellerPubky, {
+    const { records } = await this.collectHomeserverSellerListings(sellerPubky, {
       strictIdentity: true,
       paginate: true,
       states: SELLER_OWN_LISTING_STATES,
@@ -3543,17 +3550,22 @@ export class CommerceApplication {
    * visitor never browsed the main catalog. Sandbox catalogs are seeded
    * locally, so (as with {@link fetchCatalogListings}) sandbox mode never
    * reads from Nexus. A store reads the seller's homeserver instead, in every
-   * mode, and caches the same entries the index would serve.
+   * mode. It caches every record it reads, whatever its state, and after reading the whole
+   * directory drops the seller's cached entries the directory no longer lists.
    */
   static async fetchSellerCatalogListings(
     sellerPubky: string,
     options: { strictIdentity?: boolean; paginate?: boolean } = {},
   ): Promise<void> {
     if (isStoreMode()) {
-      const records = await this.collectHomeserverSellerListings(sellerPubky, options);
-      await LocalCommerceService.bulkUpsertCatalogEntries(
-        records.map((record) => CommerceRecordNormalizer.catalogEntryFromListingRecord(record)),
-      );
+      const { records, listedIds, complete } = await this.collectHomeserverSellerListings(sellerPubky, {
+        ...options,
+        states: STORE_DISCOVERY_LISTING_STATES,
+      });
+      const entries = records.map((record) => CommerceRecordNormalizer.catalogEntryFromListingRecord(record));
+      // Only a read of the whole directory proves a listing is gone.
+      if (complete) await LocalCommerceService.replaceSellerCatalogEntries(sellerPubky, entries, listedIds);
+      else await LocalCommerceService.bulkUpsertCatalogEntries(entries);
       return;
     }
     if (getCommerceAdapterMode() === 'sandbox') return;
@@ -3613,22 +3625,27 @@ export class CommerceApplication {
    * refresh, which must see the whole inventory) rejects and a shop-page read keeps what it read.
    * A record deleted between the listing and the read, or one that fails validation, is skipped so
    * one bad record never hides the shop; with `strictIdentity`, a record naming another seller or
-   * listing than its path rejects instead.
+   * listing than its path rejects instead. `listedIds` is every listing the directory named, and
+   * `complete` is false when the page bound cut the directory short.
    */
   private static async collectHomeserverSellerListings(
     sellerPubky: string,
     options: { strictIdentity?: boolean; paginate?: boolean; states?: readonly NexusListingState[] } = {},
-  ): Promise<CommerceListingRecord[]> {
+  ): Promise<{ records: CommerceListingRecord[]; listedIds: ReadonlySet<string>; complete: boolean }> {
     const directory = CommerceRecordNormalizer.listingDirectoryUri(sellerPubky);
     const listingIds: string[] = [];
     let cursor: string | undefined;
+    let complete = false;
     for (let page = 0; page < SELLER_REFRESH_MAX_PAGES; page += 1) {
       const urls = await CommerceHomeserverService.listPage(directory, NEXUS_LISTINGS_PER_PAGE, cursor);
       for (const url of urls) {
         const listingId = url.slice(url.lastIndexOf('/') + 1);
         if (commerceEntityIdSchema.safeParse(listingId).success) listingIds.push(listingId);
       }
-      if (urls.length < NEXUS_LISTINGS_PER_PAGE) break;
+      if (urls.length < NEXUS_LISTINGS_PER_PAGE) {
+        complete = true;
+        break;
+      }
       if (page === SELLER_REFRESH_MAX_PAGES - 1) {
         if (!options.paginate) {
           Logger.warn('Seller catalog read stopped at its bounded page limit', { maxPages: SELLER_REFRESH_MAX_PAGES });
@@ -3659,7 +3676,7 @@ export class CommerceApplication {
         if (record && states.has(record.state)) records.push(record);
       }
     }
-    return records;
+    return { records, listedIds: new Set(listingIds), complete };
   }
 
   private static async readHomeserverCatalogListing(
