@@ -129,9 +129,9 @@ npm symlinks `node_modules/paykit-wasm` to the vendored directory, so a fresh cl
 
 ## Known differences from paykit-rs v0.1.0
 
-Some parser error messages in this build include the input text. Upstream changed that in [pubky/paykit-rs#155](https://github.com/pubky/paykit-rs/pull/155), [#196](https://github.com/pubky/paykit-rs/pull/196), and [#133](https://github.com/pubky/paykit-rs/pull/133).
+Some parser error messages in this build include the input text. Upstream changed that in [pubky/paykit-rs#155](https://github.com/pubky/paykit-rs/issues/155), [#196](https://github.com/pubky/paykit-rs/issues/196), and [#133](https://github.com/pubky/paykit-rs/issues/133).
 
-The Shop calls only `listPaykitReceiverPaths` and `getReceiverMarker` (`src/core/services/paykit/paykit-receiver.ts`). These upstream changes are to be taken at the next re-vendor.
+The Shop calls only `listPaykitReceiverPaths` and `getReceiverMarker` (`src/core/services/paykit/paykit-receiver.ts`). These upstream changes are to be taken at the next re-vendor. #133 also removes receiver folders and markers, which both of those calls read, so check the buyer's wallet check against it at that re-vendor.
 
 ## Known limitations inherited from the binding
 

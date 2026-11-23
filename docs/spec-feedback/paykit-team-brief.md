@@ -45,7 +45,7 @@ Payments-related repos:
 | --- | --- | --- | --- |
 | Paykit Server (deployed) | `BitcoinErrorLog/paykit-server` | branch `marketplace-rails`; **deployed** `98f7c2251e5eabf1d7b14704dcdababf25499c53` | Fork of `pubky/paykit-server` @ `f38c7915e6b9b104e040773e78438f8aa984c46c` (“Initial public release”). Wallet-interop fixes plus two marketplace extensions. Branch HEAD is one docs commit later (`651d428`); staging is pinned at `98f7c22`. |
 | paykit-rs (wasm binding) | `BitcoinErrorLog/paykit-rs-official` | `feat/wasm-binding` HEAD `24ed3a0e85067d3416e1a7085ed8b7ff9f241267` | Fork of `pubky/paykit-rs` @ `c8892f638951f033acbcd12804a31667a81ddc14` (merge of #130, one commit after tag `v0.1.0-rc43` / `6b24187`; `paykit-lib` version at that commit is still `0.1.0-rc43`). |
-| paykit-rs (pubky wasm patches) | same repo | `fix/wasm-homeserver-write-abort` HEAD `d4a73a5765e1f0b18ed451d78f98dab97c611a8c` (`paykit-wasm` 0.1.0-rc50) | Same line plus a vendored `pubky` 0.8.0 with the wasm write/pkarr patches in §5. |
+| paykit-rs (pubky wasm patches) | same repo | `master` at `d4a73a5765e1f0b18ed451d78f98dab97c611a8c` (`paykit-wasm` 0.1.0-rc50; the former `fix/wasm-homeserver-write-abort` head) | Same line plus a vendored `pubky` 0.8.0 with the wasm write/pkarr patches in §5. |
 | paykit-rs (chat FFI) | same repo, second clone tracking `origin/feat/chat-ffi` | `feat/chat-ffi` HEAD `4b2c495cb01a705d7858d1815b2bc170055d64ea` | Separate line from `0a6c6e4`. Not vendored into the web client. The wasm-binding working copy does not have this branch fetched; a fresh clone of the fork does. |
 | Client-vendored wasm | inside `BitcoinErrorLog/pubky-app` | `paykit-wasm` **0.1.0-rc44** built from `0a6c6e4521fd41f5081ad9f074020f4813d8a03e` | Behind the wasm-binding HEAD and the write-abort line above. The write-abort tip is 0.1.0-rc50; the web client still runs this rc44 build. Provenance: `vendor/paykit-wasm/PROVENANCE.md`. |
 | Fiat verifier | `pubky/pubky-fiat-verifier` | new service, no upstream | Sits at Lock Server `[paykit] server_url`. Proxies `asset: "BTC"` verbatim to paykit-server; settles `USD` itself. |
@@ -176,9 +176,10 @@ about the exception.
 
 The fork remote of `BitcoinErrorLog/paykit-rs-official` has `master`,
 `badges`, `feat/homeserver-migration`, `feat/sb2-encrypt-export`,
-`feat/wasm-binding`, `fix/wasm-homeserver-write-abort`, and
-`feat/chat-ffi`. This document covers three of those heads. They are easy
-to conflate.
+`feat/wasm-binding`, and `feat/chat-ffi`; the write-abort line is merged
+into `master`, whose history holds its head `d4a73a5`. This document covers
+three lines: `feat/wasm-binding`, the write-abort line and `feat/chat-ffi`.
+They are easy to conflate.
 
 ### 4.1 `feat/wasm-binding` (the binding)
 
@@ -232,7 +233,7 @@ attributed to relay/DHT publish timing rather than to the binding. An
 earlier 16-check suite existed at `847f505`, before the cookie-resume
 checks.
 
-### 4.2 `fix/wasm-homeserver-write-abort` (vendored pubky)
+### 4.2 Write-abort line, `d4a73a5` on `master` (vendored pubky)
 
 Based on `feat/wasm-binding` (`merge-base` = `24ed3a0`). 11 further commits;
 23 commits over `c8892f6` in total. HEAD `d4a73a5` (`paykit-wasm`
@@ -268,7 +269,7 @@ will collide on `Cargo.lock`, generated FFI bindings, and the pubky 0.8.0 →
 
 They were found through paykit-wasm’s homeserver writes. The code lives in
 vendored crates.io `pubky` 0.8.0. Rationale is in
-`vendor/pubky/PATCHES.md` on `fix/wasm-homeserver-write-abort`. Recommend
+`vendor/pubky/PATCHES.md` at `d4a73a5` on `master`. Recommend
 routing to **pubky-core** maintainers rather than a paykit-rs-only PR;
 paykit-rs just depends on pubky. Whether current pubky 0.11 already
 contains any of this is **unproven** here — the patches were written
