@@ -6,6 +6,8 @@ export const MARKETPLACE_PROMO_STORAGE_ID = 'marketplace-promo-v1';
 export const MARKETPLACE_NAV_SWIPE_STORAGE_ID = 'marketplace-nav-swipe-v1';
 /** The chat privacy note: shown until the account dismisses it once. */
 export const CHAT_PRIVACY_NOTE_STORAGE_ID = 'chat-privacy-note-v1';
+/** A store seller's delivery key notice: shown until the account dismisses it once. */
+export const DELIVERY_KEY_CUSTODY_NOTICE_STORAGE_ID = 'delivery-key-custody-notice-v1';
 /** Namespaced: the App defines the same prefix and its own flag ids. */
 export const FEATURE_DISCOVERY_STORAGE_PREFIX = shopStorageKey('pubky-feature-discovery');
 /** The prefix before it was namespaced; read only by the one-time storage migration. */

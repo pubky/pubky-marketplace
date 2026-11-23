@@ -41,6 +41,7 @@ import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce
 import { isStoreMode } from '@/config/store-mode';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useDeleteMarketplaceListings } from '@/hooks/useDeleteMarketplaceListings/useDeleteMarketplaceListings';
+import { useDeliveryKeyCustodyNotice } from '@/hooks/useDeliveryKeyCustodyNotice/useDeliveryKeyCustodyNotice';
 import { useIsMobile } from '@/hooks/useIsMobile/useIsMobile';
 import { useListingTableQuery } from '@/hooks/useListingTableQuery/useListingTableQuery';
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
@@ -81,6 +82,7 @@ import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
 export function MarketplaceDashboard() {
   const dashboard = useMarketplaceSellerDashboard();
+  const deliveryKeyNotice = useDeliveryKeyCustodyNotice();
   const isMobile = useIsMobile({ breakpoint: 'md' });
   const router = useRouter();
   const selling = useSellingAvailability();
@@ -241,7 +243,7 @@ export function MarketplaceDashboard() {
 
   const showDeliveryKeyCustody =
     isStoreMode() &&
-    !dashboard.hasShippedSale &&
+    deliveryKeyNotice.showNotice &&
     dashboard.listings.some(({ record }) =>
       commerceListingFulfillmentMethods(record.fulfillmentMethods).includes('shipping'),
     );
@@ -365,7 +367,7 @@ export function MarketplaceDashboard() {
                 </CardContent>
               </Card>
             )}
-            {showDeliveryKeyCustody && <DeliveryKeyCustodyNotice />}
+            {showDeliveryKeyCustody && <DeliveryKeyCustodyNotice onDismiss={deliveryKeyNotice.dismissNotice} />}
             {dashboard.unfinishedDrafts.length > 1 && (
               <Card data-surface="listing-drafts-list" className="rounded-md bg-brand/5 p-0 shadow-lg">
                 <CardContent className="grid gap-6 p-6">

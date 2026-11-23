@@ -38,7 +38,6 @@ const dashboardState = vi.hoisted(() => ({
     total: 0,
   },
   unfinishedDrafts: [] as Array<{ listingId: string; title: string; updatedAt: number; ageLabel: string }>,
-  hasShippedSale: false,
   needsSession: false,
   sessionError: null as string | null,
   registrationOffered: true,
@@ -105,7 +104,6 @@ vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', a
       sessionError: dashboardState.sessionError,
       metrics: dashboardState.metrics,
       actionNeeded: dashboardState.actionNeeded,
-      hasShippedSale: dashboardState.hasShippedSale,
       updateListingState: dashboardFns.updateListingState,
       duplicateListing: dashboardFns.duplicateListing,
       hasUnsavedListingDraft: dashboardFns.hasUnsavedListingDraft,
@@ -232,7 +230,7 @@ describe('MarketplaceDashboard', () => {
 
     beforeEach(() => {
       dashboardState.listings = [listing()];
-      dashboardState.hasShippedSale = false;
+      window.localStorage.clear();
     });
 
     afterEach(() => {
@@ -240,9 +238,9 @@ describe('MarketplaceDashboard', () => {
       dashboardState.listings = [];
     });
 
-    it("tells a store's seller, before their first shipped sale, that only this browser opens addresses", () => {
+    it("tells a store's seller that only this browser opens addresses, until they dismiss it", async () => {
       setStoreSeller(COMMERCE_FIXTURE_SELLER);
-      render(<MarketplaceDashboard />);
+      const { unmount } = render(<MarketplaceDashboard />);
 
       expect(notice()).toBeInTheDocument();
       expect(screen.getByText(/won't be able to open the addresses on orders you already have/)).toBeInTheDocument();
@@ -250,13 +248,12 @@ describe('MarketplaceDashboard', () => {
         'href',
         MARKETPLACE_ROUTES.SETTINGS_SHIPPING,
       );
-    });
 
-    it('is gone once a shipped sale exists', () => {
-      setStoreSeller(COMMERCE_FIXTURE_SELLER);
-      dashboardState.hasShippedSale = true;
+      fireEvent.click(screen.getByRole('button', { name: 'Dismiss delivery key notice' }));
+      await waitFor(() => expect(notice()).not.toBeInTheDocument());
+      unmount();
+
       render(<MarketplaceDashboard />);
-
       expect(notice()).not.toBeInTheDocument();
     });
 

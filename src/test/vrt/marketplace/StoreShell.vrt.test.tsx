@@ -151,7 +151,10 @@ describe('One seller’s store — visual regression', () => {
   });
 
   it('shows the studio notice that the delivery key is stored in this browser at desktop viewport', async () => {
-    await renderForVRT(<DeliveryKeyCustodyNotice />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
+    await renderForVRT(<DeliveryKeyCustodyNotice onDismiss={() => {}} />, {
+      viewport: VRT_VIEWPORT_DESKTOP,
+      disableHover: true,
+    });
 
     await expect(await expectVrtSurface('delivery-key-custody-notice')).toMatchScreenshot(
       'store-delivery-key-notice-desktop',
@@ -159,7 +162,10 @@ describe('One seller’s store — visual regression', () => {
   });
 
   it('shows the studio notice that the delivery key is stored in this browser at mobile viewport', async () => {
-    await renderForVRT(<DeliveryKeyCustodyNotice />, { viewport: VRT_VIEWPORT_MOBILE, disableHover: true });
+    await renderForVRT(<DeliveryKeyCustodyNotice onDismiss={() => {}} />, {
+      viewport: VRT_VIEWPORT_MOBILE,
+      disableHover: true,
+    });
 
     await expect(await expectVrtSurface('delivery-key-custody-notice')).toMatchScreenshot(
       'store-delivery-key-notice-mobile',

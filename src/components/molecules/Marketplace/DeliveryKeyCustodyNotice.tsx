@@ -1,6 +1,6 @@
 'use client';
 
-import { KeyRound } from 'lucide-react';
+import { KeyRound, X } from 'lucide-react';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
 import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
@@ -12,7 +12,7 @@ import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
  * Seller studio notice that the delivery key's private half stays in this browser, so losing it
  * leaves earlier orders' addresses unopenable. Links to Delivery privacy in Shipping settings.
  */
-export function DeliveryKeyCustodyNotice() {
+export function DeliveryKeyCustodyNotice({ onDismiss }: { onDismiss: () => void }) {
   return (
     <Card
       className="rounded-md bg-card p-0"
@@ -31,11 +31,23 @@ export function DeliveryKeyCustodyNotice() {
             </Typography>
           </div>
         </div>
-        <Button asChild variant="secondary" className="shrink-0 rounded-full">
-          <Link href={MARKETPLACE_ROUTES.SETTINGS_SHIPPING} overrideDefaults>
-            Delivery privacy
-          </Link>
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button asChild variant="secondary" className="rounded-full">
+            <Link href={MARKETPLACE_ROUTES.SETTINGS_SHIPPING} overrideDefaults>
+              Delivery privacy
+            </Link>
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Dismiss delivery key notice"
+            onClick={onDismiss}
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+          >
+            <X className="size-4" aria-hidden="true" />
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
