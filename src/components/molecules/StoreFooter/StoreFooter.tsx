@@ -5,19 +5,22 @@ import { Button } from '@/atoms/Button/Button';
 import { Typography } from '@/atoms/Typography/Typography';
 import { getStoreSeller } from '@/config/store-mode';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard/useCopyToClipboard';
+import { useStoreShop } from '@/hooks/useStoreShop/useStoreShop';
 import { formatPublicKey, withPubkyPrefix } from '@/libs/utils/utils';
 
 /** Long enough that a look-alike key differs visibly at both ends, short enough for one line. */
 const STORE_SELLER_KEY_DISPLAY_LENGTH = 16;
 
 /**
- * A store's footer: who runs the software, and the seller's pubky in a short form a buyer can copy
- * and compare, so a look-alike store on another domain shows a different key. Renders nothing
- * outside a store.
+ * A store's footer: who runs the software, who sells here (the shop's name from the seller's shop
+ * record) and the seller's pubky in a short form a buyer can copy and compare, so a look-alike
+ * store on another domain shows a different key. The shop record has no terms or contact field, so
+ * the footer links neither. Renders nothing outside a store.
  */
 export function StoreFooter() {
   const storeSeller = getStoreSeller();
   const { copyToClipboard } = useCopyToClipboard({ successTitle: "Seller's pubky copied to clipboard" });
+  const shopName = useStoreShop()?.record.name.trim();
   if (storeSeller === null) return null;
 
   const pubky = withPubkyPrefix(storeSeller);
@@ -31,9 +34,15 @@ export function StoreFooter() {
       <Typography as="p" size="sm" className="text-muted-foreground">
         Powered by Pubky Market
       </Typography>
-      <div className="flex items-center gap-2">
-        <Typography as="span" size="sm" className="text-muted-foreground">
-          Seller
+      <div className="flex max-w-full flex-wrap items-center justify-center gap-2">
+        <Typography as="span" size="sm" className="max-w-full truncate text-muted-foreground">
+          {shopName ? (
+            <>
+              Sold by <span className="font-medium text-foreground">{shopName}</span>
+            </>
+          ) : (
+            'Seller'
+          )}
         </Typography>
         <Button
           variant="secondary"

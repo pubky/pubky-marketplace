@@ -4,10 +4,8 @@ import { Store } from 'lucide-react';
 import { getShopHomeRoute } from '@/app/routes';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
-import { getStoreSeller } from '@/config/store-mode';
-import { CommerceController } from '@/controllers/commerce/commerce';
-import { useLocalFirstQuery } from '@/hooks/useLocalFirstQuery/useLocalFirstQuery';
 import { useMarketplaceMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
+import { useStoreShop } from '@/hooks/useStoreShop/useStoreShop';
 import { cn } from '@/libs/utils/utils';
 
 interface StoreLogoProps {
@@ -21,13 +19,7 @@ interface StoreLogoProps {
  * shows the shop icon and "Shop".
  */
 export function StoreLogo({ noLink = false, className }: StoreLogoProps) {
-  const storeSeller = getStoreSeller();
-  const { data: shop } = useLocalFirstQuery({
-    queryFn: () => CommerceController.getShop(storeSeller),
-    fetchFn: () => CommerceController.refreshShop(storeSeller),
-    deps: [storeSeller],
-    enabled: storeSeller !== null,
-  });
+  const shop = useStoreShop();
   const avatarUrl = useMarketplaceMediaUrl(shop?.record.avatarUrl);
   const name = shop?.record.name.trim() || 'Shop';
 
