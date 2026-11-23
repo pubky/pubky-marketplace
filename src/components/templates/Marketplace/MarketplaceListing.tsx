@@ -115,6 +115,7 @@ import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectio
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
 import { MarketplaceSimilarItems } from '@/organisms/Marketplace/MarketplaceSimilarItems';
 import { MarketplaceVariantPicker } from '@/organisms/Marketplace/MarketplaceVariantPicker';
+import { StoreReportListingDialog } from '@/organisms/Marketplace/StoreReportListingDialog';
 import { MarketplaceSessionService } from '@/services/marketplace/marketplace-session';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { MarketplaceListingDetailSkeleton } from './Marketplace.skeleton';
@@ -776,14 +777,13 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                     className="rounded-full"
                     dataTestId="marketplace-listing-message-seller"
                   />
-                  {/* Reports go to the hosted Market's support desk, which a store does not reach. */}
-                  {!isOwner && !isStoreMode() && (
+                  {!isOwner && (
                     <Button
                       variant="ghost"
                       size="sm"
                       className="rounded-full text-muted-foreground"
                       data-testid="marketplace-listing-report"
-                      onClick={() => requireAuth(() => setReportOpen(true))}
+                      onClick={() => (isStoreMode() ? setReportOpen(true) : requireAuth(() => setReportOpen(true)))}
                     >
                       <Flag className="size-4" aria-hidden="true" />
                       Report listing
@@ -792,9 +792,18 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                 </div>
               </CardContent>
             </Card>
-            {!isOwner && !isStoreMode() && (
-              <DialogReportPost open={reportOpen} onOpenChange={setReportOpen} listing={{ sellerPubky, listingId }} />
-            )}
+            {/* Reports in the Market go to its support desk, which a store does not reach. */}
+            {!isOwner &&
+              (isStoreMode() ? (
+                <StoreReportListingDialog
+                  open={reportOpen}
+                  onOpenChange={setReportOpen}
+                  sellerPubky={sellerPubky}
+                  listingId={listingId}
+                />
+              ) : (
+                <DialogReportPost open={reportOpen} onOpenChange={setReportOpen} listing={{ sellerPubky, listingId }} />
+              ))}
             <section aria-label="Fulfillment and listing information" className="flex min-w-0 flex-col gap-5">
               <div className="grid gap-3 sm:grid-cols-2">
                 <MarketplaceListingSpecifics record={record} />

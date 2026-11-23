@@ -110,6 +110,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     hasFullHomeserverGrant: () => view.hasFullHomeserverGrant,
     canRegisterListings: () => false,
     ensureListingRegistered: vi.fn(async () => {}),
+    getMarketplaceMediaOwnerHomeserver: () => Promise.resolve('8um71us3fyw6h8wbcxb5ar3rwusy1a6u49956ikzojg3gcwd1dty'),
   },
 }));
 
@@ -1222,18 +1223,30 @@ describe('MarketplaceListing', () => {
       expect(screen.queryByRole('button', { name: 'Report listing' })).not.toBeInTheDocument();
     });
 
-    it('offers no report in a store, which reaches no support desk, and leads back to the shop', () => {
+    it('reports to the seller in a store, and to Synonym when it hosts them, and leads back to the shop', async () => {
       const listing = renderListing();
       cleanup();
       setStoreSeller(listing.seller_id);
+      authState.currentUserPubky = null;
       try {
+        const user = userEvent.setup();
         render(<MarketplaceListing sellerPubky={listing.seller_id} listingId={listing.listing_id} />);
 
-        expect(screen.queryByRole('button', { name: 'Report listing' })).not.toBeInTheDocument();
         expect(screen.getByRole('link', { name: 'Back to shop' })).toHaveAttribute(
           'href',
           `/marketplace/shop/${listing.seller_id}`,
         );
+        await user.click(screen.getByRole('button', { name: 'Report listing' }));
+
+        const dialog = await screen.findByTestId('store-report-listing-dialog');
+        expect(dialog).toHaveTextContent('This store is run by its seller.');
+        expect(screen.getByTestId('store-report-message-seller')).toHaveTextContent('Message the seller');
+        expect(await screen.findByRole('link', { name: 'Email Synonym a notice' })).toHaveAttribute(
+          'href',
+          expect.stringMatching(/^mailto:report@synonym\.to\?subject=Complaint/),
+        );
+        expect(screen.queryByText('What sort of issue are you reporting?')).not.toBeInTheDocument();
+        expect(authState.setShowSignInDialog).not.toHaveBeenCalled();
       } finally {
         setStoreSeller(undefined);
       }
