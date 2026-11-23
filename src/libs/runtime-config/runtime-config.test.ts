@@ -1,17 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ValidationErrorCode } from '@/libs/error/error.codes';
-import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import {
   escapeForInlineScript,
-  getCdnUrl,
+  getCdnUrlIfConfigured,
   getClientRegionHeader,
   getCommerceAdapterMode,
   getCommercePollIntervalMs,
   getEuFenceEnabled,
   getLocksUrl,
-  getMarketplaceNexusUrl,
+  getMarketplaceNexusUrlIfConfigured,
   getMarketplaceUrl,
-  getNexusUrl,
+  getNexusUrlIfConfigured,
   getPassportOrigin,
   getPassportPrivEncryptionKeysEnabled,
   getPassportSignInEnabled,
@@ -184,25 +182,17 @@ describe('runtime-config resolver', () => {
         vi.stubEnv('PUBKY_RUNTIME_STORE_SELLER', STORE_SELLER);
         window[RUNTIME_CONFIG_WINDOW_KEY] = JSON.parse(JSON.stringify(readServerConfig()));
         expect(getRuntimeConfig().storeSeller).toBe(STORE_SELLER);
-        expect(() => getNexusUrl()).toThrow('PUBKY_RUNTIME_NEXUS_URL');
-        expect(() => getCdnUrl()).toThrow('PUBKY_RUNTIME_CDN_URL');
-        expect(() => getMarketplaceNexusUrl()).toThrow('PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL');
-        expect(() => getNexusUrl()).toThrow(
-          expect.objectContaining({
-            name: 'AppError',
-            category: ErrorCategory.Validation,
-            code: ValidationErrorCode.MISSING_FIELD,
-            service: ErrorService.Nexus,
-            operation: 'getNexusUrl',
-          }),
-        );
+        expect(getNexusUrlIfConfigured()).toBeUndefined();
+        expect(getCdnUrlIfConfigured()).toBeUndefined();
+        expect(getMarketplaceNexusUrlIfConfigured()).toBeUndefined();
       });
       it('ignores the index URLs a store sets, also in the injected config', () => {
         setAllRuntimeEnv();
         vi.stubEnv('PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL', 'https://marketplace-nexus.runtime.example.com');
         vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', '');
         vi.stubEnv('PUBKY_RUNTIME_STORE_SELLER', STORE_SELLER);
-        expect(() => getNexusUrl()).toThrow('PUBKY_RUNTIME_NEXUS_URL');
+        expect(getNexusUrlIfConfigured()).toBeUndefined();
+        expect(getMarketplaceNexusUrlIfConfigured()).toBeUndefined();
         expect(serializeRuntimeConfig()).not.toContain('nexus.runtime.example.com');
       });
       it('refuses a deployed full Market without the Nexus URL', () => {
@@ -304,12 +294,12 @@ describe('runtime-config resolver', () => {
 
     it('routes marketplace Nexus reads through the override and falls back to nexusUrl when unset', () => {
       setAllRuntimeEnv();
-      expect(getMarketplaceNexusUrl()).toBe('https://nexus.runtime.example.com');
+      expect(getMarketplaceNexusUrlIfConfigured()).toBe('https://nexus.runtime.example.com');
 
       // Set: ONLY the marketplace accessor changes; the main nexusUrl is untouched.
       resetRuntimeConfigForTests();
       process.env[PUBKY_RUNTIME_ENV_NAMES.marketplaceNexusUrl] = 'https://marketplace-nexus.runtime.example.com';
-      expect(getMarketplaceNexusUrl()).toBe('https://marketplace-nexus.runtime.example.com');
+      expect(getMarketplaceNexusUrlIfConfigured()).toBe('https://marketplace-nexus.runtime.example.com');
       expect(getRuntimeConfig().nexusUrl).toBe('https://nexus.runtime.example.com');
     });
 

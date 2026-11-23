@@ -1,4 +1,4 @@
-import { NEXUS_LISTINGS_PER_PAGE } from '@/config/nexus';
+import { getMarketplaceNexusUrl, NEXUS_LISTINGS_PER_PAGE } from '@/config/nexus';
 import { isStoreMode } from '@/config/store-mode';
 import {
   catalogItemFromCatalogEntry,
@@ -7,7 +7,7 @@ import {
 import type { CommerceShopRecord } from '@/libs/commerce/marketplace-records';
 import { NEXUS_STREAM_LISTINGS_ROUTE } from '@/libs/commerce/nexus-routes';
 import { Logger } from '@/libs/logger/logger';
-import { getCommerceAdapterMode, getMarketplaceNexusUrl } from '@/libs/runtime-config/runtime-config';
+import { getCommerceAdapterMode } from '@/libs/runtime-config/runtime-config';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import { fetchShopForMetadata, OG_COMMERCE_REVALIDATE } from './ogCommerceData';
 

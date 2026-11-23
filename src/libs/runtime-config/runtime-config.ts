@@ -1,9 +1,6 @@
 import { PHASE_PRODUCTION_BUILD } from 'next/constants';
 import { normalizeBasePath } from '@/libs/base-path/base-path';
 import { type RegionPolicy, resolveRegionPolicy } from '@/libs/commerce/region-modes';
-import { AppError } from '@/libs/error/error';
-import { ValidationErrorCode } from '@/libs/error/error.codes';
-import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import {
   type CommerceAdapterMode,
   type DeployEnv,
@@ -197,31 +194,13 @@ export function resetRuntimeConfigForTests(): void {
   didWarnModerationDisabled = false;
 }
 
-/**
- * A store's config never holds an index URL (see `runtimeConfigValueSchema`), so a read that
- * would reach Nexus or its CDN in a store fails here instead of leaving the store's origin.
- */
-function requireIndexUrl(value: string | undefined, envName: string, operation: string): string {
-  if (value === undefined) {
-    // Not `Err.validation`: the factories report through Sentry, which reads this module, and a
-    // test mock of this module that awaits its original then never resolves in browser mode.
-    throw new AppError({
-      category: ErrorCategory.Validation,
-      code: ValidationErrorCode.MISSING_FIELD,
-      message: `${envName} is not part of a store's config; a store reads no Nexus or CDN.`,
-      service: ErrorService.Nexus,
-      operation,
-      context: { envName },
-    });
-  }
-  return value;
-}
-
 // Lazy getters: read the resolved config at call time (never captured at module load).
-export const getNexusUrl = (): string =>
-  requireIndexUrl(getRuntimeConfig().nexusUrl, PUBKY_RUNTIME_ENV_NAMES.nexusUrl, 'getNexusUrl');
-export const getCdnUrl = (): string =>
-  requireIndexUrl(getRuntimeConfig().cdnUrl, PUBKY_RUNTIME_ENV_NAMES.cdnUrl, 'getCdnUrl');
+/**
+ * The index URLs, `undefined` in a store: its config never holds them (see `runtimeConfigValueSchema`).
+ * Read them through `@/config/nexus`, which refuses the read in a store.
+ */
+export const getNexusUrlIfConfigured = (): string | undefined => getRuntimeConfig().nexusUrl;
+export const getCdnUrlIfConfigured = (): string | undefined => getRuntimeConfig().cdnUrl;
 export const getHomeserver = (): string => getRuntimeConfig().homeserver;
 export const getHomeserverUrl = (): string => getRuntimeConfig().homeserverUrl;
 export const getHomegateUrl = (): string => getRuntimeConfig().homegateUrl;
@@ -264,12 +243,8 @@ export const getMarketplaceUrl = (): string => getRuntimeConfig().marketplaceUrl
  * marketplace index endpoints yet. Social surfaces must keep using
  * `getNexusUrl`.
  */
-export const getMarketplaceNexusUrl = (): string =>
-  requireIndexUrl(
-    getRuntimeConfig().marketplaceNexusUrl ?? getRuntimeConfig().nexusUrl,
-    PUBKY_RUNTIME_ENV_NAMES.marketplaceNexusUrl,
-    'getMarketplaceNexusUrl',
-  );
+export const getMarketplaceNexusUrlIfConfigured = (): string | undefined =>
+  getRuntimeConfig().marketplaceNexusUrl ?? getRuntimeConfig().nexusUrl;
 /** The chat inbox ping service; `null` when the deployment has none. */
 export const getInboxUrl = (): string | null => getRuntimeConfig().inboxUrl ?? null;
 /** Audience the inbox expects in session proofs; defaults to the inbox URL. */
