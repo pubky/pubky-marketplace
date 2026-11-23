@@ -5,7 +5,7 @@ import { TagKind } from '@/application/tag/tag.types';
 import * as commerceConfig from '@/config/commerce';
 import { NEXUS_LISTINGS_PER_PAGE } from '@/config/nexus';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
-import { ClientErrorCode } from '@/libs/error/error.codes';
+import { ClientErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { CommerceCatalogEntryModel, CommerceListingModel } from '@/models/commerce/commerce.models';
@@ -239,6 +239,43 @@ describe('CommerceApplication store catalog', () => {
     expect(page).toBe(100);
     // A cut-short directory proves nothing is gone.
     expect(await LocalCommerceService.getCatalogEntry(cached.id)).toEqual(cached);
+  });
+
+  it('drops and writes nothing when a directory page or a record read fails', async () => {
+    const cached = CommerceRecordNormalizer.catalogEntryFromListingRecord(listing('gone_01'));
+    const unavailable = Err.server(ServerErrorCode.SERVICE_UNAVAILABLE, 'Unavailable', {
+      service: ErrorService.Homeserver,
+      operation: 'list',
+    });
+    const records = Array.from({ length: NEXUS_LISTINGS_PER_PAGE + 1 }, (_, i) =>
+      listing(`item_${String(i).padStart(3, '0')}`),
+    );
+
+    await LocalCommerceService.bulkUpsertCatalogEntries([cached]);
+    const { listPage } = serveHomeserver(records);
+    listPage.mockImplementationOnce(async (_directory, limit) =>
+      records.slice(0, limit).map(({ listingId }) => `${LISTINGS_DIR}${listingId}`),
+    );
+    listPage.mockRejectedValueOnce(unavailable);
+    await expect(CommerceApplication.fetchSellerCatalogListings(SELLER)).rejects.toBe(unavailable);
+    expect(await CommerceCatalogEntryModel.table.toArray()).toEqual([cached]);
+
+    const { fetchJsonIfFound } = serveHomeserver([listing('boots_01'), listing('hat_01')]);
+    fetchJsonIfFound.mockRejectedValueOnce(unavailable);
+    await expect(CommerceApplication.fetchSellerCatalogListings(SELLER)).rejects.toBe(unavailable);
+    expect(await CommerceCatalogEntryModel.table.toArray()).toEqual([cached]);
+  });
+
+  it("counts a directory the homeserver answers with 404 as an empty shop, dropping the seller's cards", async () => {
+    await LocalCommerceService.bulkUpsertCatalogEntries([
+      CommerceRecordNormalizer.catalogEntryFromListingRecord(listing('gone_01')),
+    ]);
+    // `HomeserverService.list` answers a 404 directory with [], as for a seller with no listings left.
+    vi.spyOn(CommerceHomeserverService, 'listPage').mockResolvedValue([]);
+
+    await CommerceApplication.fetchSellerCatalogListings(SELLER);
+
+    expect(await LocalCommerceService.getCatalogEntriesBySeller(SELLER)).toEqual([]);
   });
 
   it("reads only the store seller's catalog for the catalog grid", async () => {
