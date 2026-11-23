@@ -1,4 +1,5 @@
 import { CommerceOrderTrackingApplication } from '@/application/commerce/order-tracking';
+import { StoreSellerGate } from '@/controllers/store-seller-gate/store-seller-gate';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -15,6 +16,7 @@ export class CommerceOrderTrackingController {
     carrier: unknown,
     trackingNumber: unknown,
   ) {
+    StoreSellerGate.assertCurrentUserCanSellHere();
     return await CommerceOrderTrackingApplication.commitUpdateTracking(
       useAuthStore.getState().selectCurrentUserPubky(),
       {
