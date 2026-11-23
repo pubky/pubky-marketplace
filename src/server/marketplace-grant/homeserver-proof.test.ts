@@ -1,7 +1,9 @@
 /** @vitest-environment node */
 import { randomUUID } from 'node:crypto';
+import { Keypair } from '@synonymdev/pubky';
 import { describe, expect, it, vi } from 'vitest';
 import { getPkarrRelays } from '@/libs/runtime-config/runtime-config';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import type { CliGrantConfig } from './config';
 import { encodeBase64Url, sha256Bytes } from './crypto';
 import {
@@ -14,7 +16,7 @@ import {
 } from './homeserver-proof';
 import { assertSafeHomeserverTarget, HomeserverFetchDenied } from './ssrf';
 
-const sdk = vi.hoisted(() => ({ clientConfigs: [] as unknown[] }));
+const sdk = vi.hoisted(() => ({ clientConfigs: [] as unknown[], homeserverOf: undefined as string | undefined }));
 
 vi.mock('@synonymdev/pubky', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@synonymdev/pubky')>();
@@ -23,7 +25,8 @@ vi.mock('@synonymdev/pubky', async (importOriginal) => {
       sdk.clientConfigs.push(clientConfig);
     }
   }
-  return { ...actual, Client, Pubky: { withClient: () => ({ getHomeserverOf: async () => undefined }) } };
+  const getHomeserverOf = async () => (sdk.homeserverOf ? { z32: () => sdk.homeserverOf } : undefined);
+  return { ...actual, Client, Pubky: { withClient: () => ({ getHomeserverOf }) } };
 });
 
 const dnsAnswers = vi.hoisted(() => ({ resolve4: vi.fn<(hostname: string) => Promise<string[]>>() }));
@@ -335,6 +338,31 @@ describe('store-mode homeserver-session proof fetch', () => {
       HomeserverFetchDenied,
     );
     expect(sdk.clientConfigs).toEqual([{ pkarr: { relays: getPkarrRelays(), requestTimeout: 5000 } }]);
+  });
+
+  it('takes store mode from the real config when the user names another homeserver', async () => {
+    const otherHomeserver = Keypair.random().publicKey.z32();
+    sdk.homeserverOf = otherHomeserver;
+    const relayFetch = vi.fn(async (_url: URL, _init: RequestInit) => new Response(null, { status: 404 }));
+    vi.stubGlobal('fetch', relayFetch);
+    try {
+      await expect(fetchHomeserverProofDocument(config, pubky, challengeId)).rejects.toBeInstanceOf(
+        HomeserverFetchDenied,
+      );
+      // The full Market refuses before it asks any relay about that homeserver.
+      expect(relayFetch).not.toHaveBeenCalled();
+
+      setStoreSeller('s'.repeat(52));
+      await expect(fetchHomeserverProofDocument(config, pubky, challengeId)).rejects.toBeInstanceOf(
+        HomeserverFetchDenied,
+      );
+      expect(relayFetch).toHaveBeenCalledTimes(getPkarrRelays().length);
+      expect(String(relayFetch.mock.calls[0]?.[0])).toContain(otherHomeserver);
+    } finally {
+      setStoreSeller(undefined);
+      vi.unstubAllGlobals();
+      sdk.homeserverOf = undefined;
+    }
   });
 
   it('looks the user up with the fetch timeout', async () => {
