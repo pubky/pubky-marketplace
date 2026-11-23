@@ -1,6 +1,6 @@
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { PublicKey } from '@synonymdev/pubky';
-import { readBodyWithin } from './capped-body';
+import { readBodyWithin } from '@/libs/http/capped-body';
 
 const SIGNATURE_BYTES = 64;
 const TIMESTAMP_BYTES = 8;
