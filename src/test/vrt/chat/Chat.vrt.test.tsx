@@ -26,6 +26,14 @@ const scene = vi.hoisted(() => ({
   isLoading: false,
   isSignedIn: true,
   identityState: 'ready' as ChatStore['identityState'],
+  // Null keeps the Market; a seller turns the scene into that seller's store.
+  storeSeller: null as string | null,
+}));
+
+vi.mock('@/config/store-mode', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/config/store-mode')>()),
+  getStoreSeller: () => scene.storeSeller,
+  isStoreMode: () => scene.storeSeller !== null,
 }));
 
 vi.mock('next/navigation', () => ({
@@ -146,6 +154,7 @@ describe('Chat inbox — visual regression', () => {
     scene.isLoading = false;
     scene.isSignedIn = true;
     scene.identityState = 'ready';
+    scene.storeSeller = null;
   });
 
   it('renders conversations with unread, read and waiting peers at desktop viewport', async () => {
@@ -197,5 +206,20 @@ describe('Chat inbox — visual regression', () => {
     await expect.element(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
     await expect.element(screen.getByTestId('chat-inbox-empty')).not.toBeInTheDocument();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-inbox-needs-reauth-desktop');
+  });
+
+  it('renders a store buyer’s conversation with the store seller at desktop viewport', async () => {
+    scene.storeSeller = SELLER;
+    scene.conversations = [conversation(SELLER, { unreadCount: 1 })];
+    const screen = await renderForVRT(<Chat />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
+    await expect.element(screen.getByText('Your conversation with this shop.')).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-inbox-store-desktop');
+  });
+
+  it('renders a store buyer’s empty inbox at desktop viewport', async () => {
+    scene.storeSeller = SELLER;
+    const screen = await renderForVRT(<Chat />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
+    await expect.element(screen.getByTestId('chat-inbox-message-seller')).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-inbox-store-empty-desktop');
   });
 });

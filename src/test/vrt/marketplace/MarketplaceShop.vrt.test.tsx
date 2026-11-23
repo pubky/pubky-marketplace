@@ -94,6 +94,14 @@ const view = vi.hoisted(() => ({
   // Null keeps the deployment's own adapter mode, so existing scenes are unchanged.
   adapterMode: null as 'transaction-service' | null,
   paymentBadges: [] as Array<'bitcoin' | 'usdt' | 'paypal'>,
+  // Null keeps the Market; a seller turns the scene into that seller's store.
+  storeSeller: null as string | null,
+}));
+
+vi.mock('@/config/store-mode', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/config/store-mode')>()),
+  getStoreSeller: () => view.storeSeller,
+  isStoreMode: () => view.storeSeller !== null,
 }));
 
 vi.mock('@/config/commerce', async (importOriginal) => {
@@ -488,5 +496,24 @@ describe('Marketplace shop — visual regression', () => {
       }
     });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('shop-no-record-visitor-mobile');
+  });
+
+  it('renders the store seller’s shop in a store at desktop viewport', async () => {
+    const { seller, shop, listings } = await fixtures;
+    view.currentUserPubky = 'u'.repeat(52);
+    view.shop = shop;
+    view.listings = listings;
+    view.catalogEntries = [];
+    view.storeSeller = seller;
+    try {
+      const screen = await renderForVRT(<MarketplaceShop sellerPubky={seller} />, {
+        viewport: VRT_VIEWPORT_DESKTOP,
+        disableHover: true,
+      });
+      await expect.element(screen.getByRole('button', { name: 'Message seller' })).toBeInTheDocument();
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('shop-store-desktop');
+    } finally {
+      view.storeSeller = null;
+    }
   });
 });

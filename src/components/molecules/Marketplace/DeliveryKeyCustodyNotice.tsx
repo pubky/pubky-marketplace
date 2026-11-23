@@ -14,7 +14,11 @@ import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
  */
 export function DeliveryKeyCustodyNotice() {
   return (
-    <Card className="rounded-md bg-card p-0" data-testid="delivery-key-custody-notice">
+    <Card
+      className="rounded-md bg-card p-0"
+      data-testid="delivery-key-custody-notice"
+      data-surface="delivery-key-custody-notice"
+    >
       <CardContent className="flex flex-col gap-3 p-6 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
           <KeyRound className="mt-1 size-5 shrink-0 text-brand" aria-hidden="true" />
