@@ -6,7 +6,8 @@
 # the same stack, the store-mode traffic check
 # (scripts/store-mode-traffic-check.mjs): the same build as one seller's store
 # with no Nexus or CDN URL, which fails on any request to the stack's Nexus or
-# any other host it cannot attribute.
+# any other host it cannot attribute. Its grant BFF keeps state in a scratch
+# database on the stack's Postgres.
 #
 # Needs: Docker with Compose, a `.next` production build in the working
 # directory, `npm ci` done, and Playwright's Chromium (CHROMIUM_PATH or the

@@ -1,23 +1,33 @@
 #!/usr/bin/env node
 // Which hosts a store (`PUBKY_RUNTIME_STORE_SELLER`) reaches, from the browser and from its Next.js server, while a
-// guest browses, a buyer signs in for the first time and the seller signs in to their selling tools. A store reads no
-// Nexus and no CDN, so the check starts a production build in store mode with no Nexus, marketplace-Nexus or CDN URL
-// set, and fails on any request to a host it cannot attribute, to a Nexus or CDN host, or on an error naming one of
-// their URLs. It also fails unless the store shows its seller's catalog, read from the seller's homeserver.
+// guest browses, a buyer signs in for the first time, the seller signs in to their selling tools and the grant BFF
+// checks the homeserver proof of a user on the configured homeserver and of one on another homeserver. A store reads
+// no Nexus and no CDN, so the check starts a production build in store mode with no Nexus, marketplace-Nexus or CDN
+// URL set, and fails on any request to a host it cannot attribute, to a Nexus or CDN host, or on an error naming one
+// of their URLs. It also fails unless the store shows its seller's catalog, read from the seller's homeserver.
+//
+// The BFF proof needs HTTPS on port 443 to a public address, which no testnet homeserver serves, so both proofs must
+// be refused. The store's Pkarr relay is a recording proxy in front of the testnet relay, which shows how far each
+// proof got: the user lookup through the configured relays, and for the other homeserver its own signed record. That
+// homeserver is a key with a record published to the testnet relay, naming a host that does not resolve.
 //
 // Needs a production build (`npm run build`; this check never builds), the pubky-docker testnet (homeserver on
-// :6286 with its admin API on :6288, Pkarr relay on :15411, HTTP relay on :15412; see scripts/ci-chat-e2e.sh) and
-// Playwright's Chromium. Server connections are read through scripts/lib/connection-log.mjs, browser requests
-// (service worker included) through Playwright. Starts `next start` on STORE_TRAFFIC_PORT (default 3101) with the
-// sandbox commerce mode, so no transaction service is needed. Exit 0 only when every check passed.
+// :6286 with its admin API on :6288, Pkarr relay on :15411, HTTP relay on :15412, Postgres on :5432 for the BFF's
+// state; see scripts/ci-chat-e2e.sh) and Playwright's Chromium. Server connections are read through
+// scripts/lib/connection-log.mjs, browser requests (service worker included) through Playwright. Starts `next start`
+// on STORE_TRAFFIC_PORT (default 3101) with the sandbox commerce mode, so no transaction service is needed, and the
+// relay proxy on STORE_TRAFFIC_RELAY_PROXY_PORT (default 15499). Exit 0 only when every check passed.
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ed25519 } from '@noble/curves/ed25519.js';
 import { blake3 } from '@noble/hashes/blake3.js';
 import { chromium } from 'playwright';
+import postgres from 'postgres';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const PORT = Number(process.env.STORE_TRAFFIC_PORT ?? 3101);
@@ -28,6 +38,11 @@ const ADMIN_PASSWORD = process.env.HOMESERVER_ADMIN_PASSWORD ?? 'admin';
 const EXCHANGE_RATE_API = 'https://api1.blocktank.to/api/fx/rates/btc';
 const MARKETPLACE_URL = 'https://marketplace.invalid';
 const SHOP_DATABASE = 'shop-franky';
+const RELAY_URL = 'http://localhost:15411';
+const RELAY_PROXY_PORT = Number(process.env.STORE_TRAFFIC_RELAY_PROXY_PORT ?? 15499);
+const POSTGRES_URL = process.env.STORE_TRAFFIC_POSTGRES_URL ?? 'postgres://test_user:test_pass@localhost:5432';
+const BFF_DATABASE = 'store_traffic_bff';
+const OTHER_HOMESERVER_HOST = 'homeserver.other-homeserver.invalid';
 const INDEX_URL_NAMES = ['PUBKY_RUNTIME_NEXUS_URL', 'PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL', 'PUBKY_RUNTIME_CDN_URL'];
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -36,6 +51,8 @@ const ATTRIBUTED = new Map([
   [`localhost:${PORT}`, 'the store itself'],
   ['localhost:6286', 'homeserver (profiles, shop, listings, media, sessions)'],
   ['localhost:15411', 'Pkarr relay (homeserver resolution)'],
+  [`localhost:${RELAY_PROXY_PORT}`, "Pkarr relay through this check's recording proxy, PUBKY_RUNTIME_PKARR_RELAYS"],
+  ['localhost:5432', 'grant BFF state, SHOP_BFF_GRANT_STATE_DATABASE_URL (server only)'],
   ['localhost:15412', 'HTTP relay (grant sign-in link)'],
   ['api1.blocktank.to:443', 'price feed, PUBKY_RUNTIME_EXCHANGE_RATE_API (server only)'],
   ['marketplace.invalid:443', "the store's marketplace service, PUBKY_RUNTIME_MARKETPLACE_URL (unreachable here)"],
@@ -290,6 +307,130 @@ async function signIn(page, events, account, profileName) {
   }
 }
 
+// The grant BFF's state lives in a scratch database on the testnet's Postgres, migrated as a deployment would be.
+async function prepareBffDatabase() {
+  const admin = postgres(`${POSTGRES_URL}/postgres`, { max: 1, onnotice: () => {} });
+  try {
+    await admin.unsafe(`DROP DATABASE IF EXISTS ${BFF_DATABASE}`);
+    await admin.unsafe(`CREATE DATABASE ${BFF_DATABASE}`);
+  } finally {
+    await admin.end();
+  }
+  const database = postgres(`${POSTGRES_URL}/${BFF_DATABASE}`, { max: 1, onnotice: () => {} });
+  try {
+    for (const file of ['0001_shop_grant_bff.sql', '0002_shop_grant_bff_cli.sql']) {
+      await database.unsafe(readFileSync(join(ROOT, 'db/bff', file), 'utf8'));
+    }
+  } finally {
+    await database.end();
+  }
+}
+
+function bffEnv() {
+  const seed = () => randomBytes(32).toString('hex');
+  return {
+    SHOP_BFF_GRANT_FLOW_ENABLED: 'true',
+    SHOP_ALLOWED_ORIGINS: JSON.stringify([ORIGIN]),
+    SHOP_PUBLIC_ORIGIN: ORIGIN,
+    MARKETPLACE_SERVICE_URL: MARKETPLACE_URL,
+    SHOP_BFF_GRANT_STATE_DATABASE_URL: `${POSTGRES_URL}/${BFF_DATABASE}`,
+    CRON_SECRET: randomBytes(32).toString('hex'),
+    SHOP_GRANT_ASSERTION_ISSUER: ORIGIN,
+    SHOP_GRANT_ASSERTION_KEY_ID: 'store-traffic-assertion',
+    SHOP_GRANT_ASSERTION_KEY_EPOCH: '1',
+    SHOP_GRANT_ASSERTION_SIGNING_KEY: seed(),
+    MARKETPLACE_SERVICE_REQUEST_KEY_ID: 'store-traffic-request',
+    MARKETPLACE_SERVICE_REQUEST_KEY_EPOCH: '1',
+    MARKETPLACE_SERVICE_REQUEST_SIGNING_KEY: seed(),
+    SHOP_BFF_GRANT_STATE_ENCRYPTION_KEY_B64: randomBytes(32).toString('base64'),
+    SHOP_BFF_GRANT_STATE_KEY_EPOCH: '1',
+  };
+}
+
+// Every request the store makes to its configured Pkarr relay, forwarded to the testnet relay.
+const relayRequests = [];
+const relayProxy = createServer(async (request, response) => {
+  relayRequests.push(`${request.method} ${new URL(request.url, RELAY_URL).pathname}`);
+  const chunks = [];
+  for await (const chunk of request) chunks.push(chunk);
+  const headers = Object.fromEntries(
+    Object.entries(request.headers).filter(([name]) => !['host', 'connection', 'content-length'].includes(name)),
+  );
+  try {
+    const upstream = await fetch(`${RELAY_URL}${request.url}`, {
+      method: request.method,
+      headers,
+      body: chunks.length > 0 ? Buffer.concat(chunks) : undefined,
+    });
+    const body = Buffer.from(await upstream.arrayBuffer());
+    response.writeHead(
+      upstream.status,
+      Object.fromEntries(
+        [...upstream.headers].filter(
+          ([name]) => !['content-encoding', 'content-length', 'transfer-encoding', 'connection'].includes(name),
+        ),
+      ),
+    );
+    response.end(body);
+  } catch {
+    response.writeHead(502).end();
+  }
+});
+
+// Another homeserver: a key whose own Pkarr record names an HTTPS host that does not resolve.
+function encodeName(name) {
+  return [...name.split('.').flatMap((label) => [label.length, ...Buffer.from(label)]), 0];
+}
+
+function u16(value) {
+  return [value >> 8, value & 0xff];
+}
+
+async function publishOtherHomeserver() {
+  const keypair = sdk.Keypair.random();
+  const z32 = keypair.publicKey.z32();
+  const data = [...u16(1), ...encodeName(OTHER_HOMESERVER_HOST)];
+  const packet = Uint8Array.from([
+    ...[...u16(0), ...u16(0x8000), ...u16(0), ...u16(1), ...u16(0), ...u16(0)],
+    ...encodeName(z32),
+    ...[...u16(65), ...u16(1), 0, 0, 0x0e, 0x10],
+    ...[...u16(data.length), ...data],
+  ]);
+  const timestamp = BigInt(Date.now()) * 1_000n;
+  const signable = Buffer.concat([Buffer.from(`3:seqi${timestamp}e1:v${packet.length}:`), packet]);
+  const time = Buffer.alloc(8);
+  time.writeBigUInt64BE(timestamp);
+  const payload = Buffer.concat([ed25519.sign(signable, keypair.secret()), time, packet]);
+  const response = await fetch(`${RELAY_URL}/${z32}`, { method: 'PUT', body: payload });
+  if (!response.ok) throw new Error(`the testnet relay refused the other homeserver's record: ${response.status}`);
+  return { keypair, z32 };
+}
+
+// The browser bootstrap's challenge and verify calls, made from a store page so the browser sets Origin and
+// Sec-Fetch-Site itself.
+async function bffPost(page, path, body) {
+  return await page.evaluate(
+    async ({ path, body }) => {
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const text = await response.text();
+      try {
+        return { status: response.status, json: JSON.parse(text) };
+      } catch {
+        return { status: response.status, json: null, text: text.slice(0, 200) };
+      }
+    },
+    { path, body },
+  );
+}
+
+function described(result) {
+  return `${result.status} ${JSON.stringify(result.json ?? result.text ?? null).slice(0, 200)}`;
+}
+
 // 3. Browser traffic and errors, per context.
 const browserRequests = [];
 const indexErrors = [];
@@ -359,7 +500,13 @@ if (!existsSync(join(ROOT, '.next', 'BUILD_ID'))) {
 const seller = await createAccount('seller');
 const buyer = await createAccount('buyer');
 await seedSeller(seller);
-console.log(`seller ${seller.id}, buyer ${buyer.id}`);
+const otherHomeserver = await publishOtherHomeserver();
+const traveler = { keypair: sdk.Keypair.random() };
+traveler.id = traveler.keypair.publicKey.z32();
+await pubky.signer(traveler.keypair).pkdns.publishHomeserverForce(otherHomeserver.keypair.publicKey);
+await prepareBffDatabase();
+await new Promise((resolve) => relayProxy.listen(RELAY_PROXY_PORT, 'localhost', resolve));
+console.log(`seller ${seller.id}, buyer ${buyer.id}, other-homeserver user ${traveler.id} on ${otherHomeserver.z32}`);
 
 const connectionLog = join(mkdtempSync(join(tmpdir(), 'store-traffic-')), 'connections.jsonl');
 writeFileSync(connectionLog, '');
@@ -378,12 +525,13 @@ const server = spawn(process.execPath, [join(ROOT, 'node_modules/next/dist/bin/n
     PUBKY_RUNTIME_HOMESERVER: HOMESERVER,
     PUBKY_RUNTIME_HOMESERVER_URL: 'http://localhost:6286',
     PUBKY_RUNTIME_HOMEGATE_URL: 'http://localhost:6300',
-    PUBKY_RUNTIME_PKARR_RELAYS: '["http://localhost:15411"]',
+    PUBKY_RUNTIME_PKARR_RELAYS: JSON.stringify([`http://localhost:${RELAY_PROXY_PORT}`]),
     PUBKY_RUNTIME_DEFAULT_HTTP_RELAY: 'http://localhost:15412/link/',
     PUBKY_RUNTIME_EXCHANGE_RATE_API: EXCHANGE_RATE_API,
     PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE: 'sandbox',
     PUBKY_RUNTIME_MARKETPLACE_URL: MARKETPLACE_URL,
     PUBKY_RUNTIME_STORE_SELLER: seller.id,
+    ...bffEnv(),
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -454,11 +602,67 @@ try {
   check('the dashboard lists the paused listing too', await shows(sellerPage, 'Traffic check paused lamp'));
   await visit(sellerPage, '/marketplace/storefront');
   await sellerContext.close();
+
+  // The grant BFF checks a homeserver proof: the buyer's, published on the configured homeserver, which serves plain
+  // HTTP; then that of a user on another homeserver, which a store accepts as a candidate and must resolve through
+  // that homeserver's own record. Both must be refused, each only after its lookups went through the configured relay.
+  const bffContext = await browser.newContext();
+  watch(bffContext, 'bff');
+  const bffPage = await bffContext.newPage();
+  await visit(bffPage, '/');
+  const buyerChallenge = await bffPost(bffPage, '/api/marketplace/bootstrap-challenges', { pubky: buyer.id });
+  check('the grant BFF issues a challenge in a store', buyerChallenge.status === 201, described(buyerChallenge));
+  if (buyerChallenge.status === 201) {
+    const {
+      challenge_id: challengeId,
+      nonce,
+      proof_document: proofDocument,
+      proof_uri: proofUri,
+    } = buyerChallenge.json;
+    const session = await pubky.signer(buyer.keypair).signin('store-traffic-check.invalid');
+    await session.storage.putJson(proofUri.slice(`pubky://${buyer.id}`.length), proofDocument);
+    const before = relayRequests.length;
+    const verify = await bffPost(bffPage, `/api/marketplace/bootstrap-challenges/${challengeId}/verify`, { nonce });
+    check(
+      "the BFF refuses a proof on the testnet's plain-HTTP homeserver",
+      verify.status === 401 && verify.json?.error === 'homeserver_proof_invalid',
+      described(verify),
+    );
+    check(
+      "the BFF looks the buyer's homeserver up through the configured relay",
+      relayRequests.slice(before).includes(`GET /${buyer.id}`),
+      relayRequests.slice(before).join(', '),
+    );
+  }
+  const travelerChallenge = await bffPost(bffPage, '/api/marketplace/bootstrap-challenges', { pubky: traveler.id });
+  if (travelerChallenge.status !== 201) {
+    check('the grant BFF issues a challenge to a user on another homeserver', false, described(travelerChallenge));
+  } else {
+    const before = relayRequests.length;
+    const verify = await bffPost(
+      bffPage,
+      `/api/marketplace/bootstrap-challenges/${travelerChallenge.json.challenge_id}/verify`,
+      { nonce: travelerChallenge.json.nonce },
+    );
+    const lookups = relayRequests.slice(before);
+    check(
+      'the BFF refuses a proof on another homeserver whose host does not resolve',
+      verify.status === 401 && verify.json?.error === 'homeserver_proof_invalid',
+      described(verify),
+    );
+    check(
+      'the BFF resolves the other homeserver through its own record on the configured relay',
+      lookups.includes(`GET /${traveler.id}`) && lookups.includes(`GET /${otherHomeserver.z32}`),
+      lookups.join(', '),
+    );
+  }
+  await bffContext.close();
 } catch (error) {
   check('store traffic run', false, error instanceof Error ? error.message : String(error));
 } finally {
   await browser?.close();
   server.kill('SIGTERM');
+  relayProxy.close();
 }
 
 // 4. The verdict: every host attributed, none an index, no error naming an index URL.
