@@ -96,4 +96,12 @@ describe('HelpContent in store mode', () => {
     expect(screen.queryByText('4. How Pubky App Works')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Send feedback/ })).not.toBeInTheDocument();
   });
+
+  it("drops Synonym's terms and privacy policy", () => {
+    setStoreSeller('s'.repeat(52));
+    render(<HelpContent />);
+
+    expect(screen.queryByText('Terms of Service & Privacy')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('dialog-terms')).not.toBeInTheDocument();
+  });
 });

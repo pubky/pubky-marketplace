@@ -224,39 +224,41 @@ export function HelpContent() {
         </Button>
       </Container>
 
-      {/* Terms of Service & Privacy - Mobile only (hidden on lg screens where sidebar is visible) */}
-      <Container overrideDefaults className="flex w-full flex-col items-start gap-6 lg:hidden">
-        <SettingsDivider />
-        <Container overrideDefaults className="flex w-full flex-col items-start gap-6">
-          <Container overrideDefaults className="inline-flex items-center gap-3">
-            <LockKeyhole size={24} />
-            <Heading level={2} size="lg" className="leading-8">
-              {'Terms of Service & Privacy'}
-            </Heading>
-          </Container>
-          <Typography as="p" overrideDefaults className="text-base leading-6 font-medium text-secondary-foreground">
-            {'Please read our terms carefully.'}
-          </Typography>
-          <Container overrideDefaults className="flex flex-wrap gap-2">
-            <DialogTerms
-              trigger={
-                <Button id="tos-btn" variant="secondary" size="default">
-                  <FileText size={16} />
-                  {'Terms of service'}
-                </Button>
-              }
-            />
-            <DialogPrivacy
-              trigger={
-                <Button id="privacy-btn" variant="secondary" size="default">
-                  <LockKeyhole size={16} />
-                  {'Privacy policy'}
-                </Button>
-              }
-            />
+      {/* Terms of Service & Privacy - Mobile only (hidden on lg screens where sidebar is visible); not in a store */}
+      {!storeMode && (
+        <Container overrideDefaults className="flex w-full flex-col items-start gap-6 lg:hidden">
+          <SettingsDivider />
+          <Container overrideDefaults className="flex w-full flex-col items-start gap-6">
+            <Container overrideDefaults className="inline-flex items-center gap-3">
+              <LockKeyhole size={24} />
+              <Heading level={2} size="lg" className="leading-8">
+                {'Terms of Service & Privacy'}
+              </Heading>
+            </Container>
+            <Typography as="p" overrideDefaults className="text-base leading-6 font-medium text-secondary-foreground">
+              {'Please read our terms carefully.'}
+            </Typography>
+            <Container overrideDefaults className="flex flex-wrap gap-2">
+              <DialogTerms
+                trigger={
+                  <Button id="tos-btn" variant="secondary" size="default">
+                    <FileText size={16} />
+                    {'Terms of service'}
+                  </Button>
+                }
+              />
+              <DialogPrivacy
+                trigger={
+                  <Button id="privacy-btn" variant="secondary" size="default">
+                    <LockKeyhole size={16} />
+                    {'Privacy policy'}
+                  </Button>
+                }
+              />
+            </Container>
           </Container>
         </Container>
-      </Container>
+      )}
 
       {/* Feedback Dialog */}
       <DialogFeedback open={isFeedbackDialogOpen} onOpenChange={setIsFeedbackDialogOpen} />

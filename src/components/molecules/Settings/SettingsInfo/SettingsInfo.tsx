@@ -20,19 +20,22 @@ import { COPYRIGHT_TEXT, FAQ_QUESTIONS, STORE_FAQ_QUESTIONS } from './SettingsIn
 import type { SettingsInfoProps } from './SettingsInfo.types';
 
 export function SettingsInfo({ className, hideFAQ = false }: SettingsInfoProps) {
-  // A store answers only the account questions its help page keeps, and has no support desk for feedback.
+  // A store answers only the account questions its help page keeps, and has no support desk for
+  // feedback. It is the seller's own site, so it shows none of Synonym's terms, policy or copyright.
   const storeMode = isStoreMode();
   const faqQuestions = storeMode ? STORE_FAQ_QUESTIONS : FAQ_QUESTIONS;
   return (
     <Container overrideDefaults className={cn('flex w-full min-w-0 flex-col gap-6', className)}>
       {/* Terms of Service & Privacy Section */}
-      <FilterRoot>
-        <FilterHeader title={'Terms of Service & Privacy'} subtitle={'Please read our terms carefully.'} />
-        <FilterList className="gap-2">
-          <DialogTerms trigger={<SidebarButton icon={FileText}>{'Terms of service'}</SidebarButton>} />
-          <DialogPrivacy trigger={<SidebarButton icon={LockKeyhole}>{'Privacy policy'}</SidebarButton>} />
-        </FilterList>
-      </FilterRoot>
+      {!storeMode && (
+        <FilterRoot>
+          <FilterHeader title={'Terms of Service & Privacy'} subtitle={'Please read our terms carefully.'} />
+          <FilterList className="gap-2">
+            <DialogTerms trigger={<SidebarButton icon={FileText}>{'Terms of service'}</SidebarButton>} />
+            <DialogPrivacy trigger={<SidebarButton icon={LockKeyhole}>{'Privacy policy'}</SidebarButton>} />
+          </FilterList>
+        </FilterRoot>
+      )}
 
       {/* FAQ Section - Hidden when on FAQ page */}
       {!hideFAQ && (
@@ -83,30 +86,37 @@ export function SettingsInfo({ className, hideFAQ = false }: SettingsInfoProps) 
       </Container>
 
       {/* Copyright & Branding Section */}
-      <Container overrideDefaults className="flex flex-col gap-4">
-        <Typography as="p" size="md" overrideDefaults className="leading-normal font-medium text-secondary-foreground">
-          {COPYRIGHT_TEXT}
-        </Typography>
-        {/* Synonym Logo with Tether tagline */}
-        <Container overrideDefaults className="flex flex-col items-start">
-          <AtomsLink href="https://synonym.to" target="_blank" className="block" aria-label="Synonym">
+      {!storeMode && (
+        <Container overrideDefaults className="flex flex-col gap-4">
+          <Typography
+            as="p"
+            size="md"
+            overrideDefaults
+            className="leading-normal font-medium text-secondary-foreground"
+          >
+            {COPYRIGHT_TEXT}
+          </Typography>
+          {/* Synonym Logo with Tether tagline */}
+          <Container overrideDefaults className="flex flex-col items-start">
+            <AtomsLink href="https://synonym.to" target="_blank" className="block" aria-label="Synonym">
+              <Image
+                src="/images/synonym-white-logo.svg"
+                alt="Synonym"
+                width={96}
+                height={24}
+                className="[.light_&]:invert"
+              />
+            </AtomsLink>
             <Image
-              src="/images/synonym-white-logo.svg"
-              alt="Synonym"
-              width={96}
-              height={24}
+              src="/images/a-tether-company.svg"
+              alt="a tether company"
+              width={109}
+              height={16}
               className="[.light_&]:invert"
             />
-          </AtomsLink>
-          <Image
-            src="/images/a-tether-company.svg"
-            alt="a tether company"
-            width={109}
-            height={16}
-            className="[.light_&]:invert"
-          />
+          </Container>
         </Container>
-      </Container>
+      )}
     </Container>
   );
 }

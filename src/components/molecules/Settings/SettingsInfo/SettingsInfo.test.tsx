@@ -69,4 +69,16 @@ describe('SettingsInfo in store mode', () => {
     expect(screen.queryByText('How can I delete my post?')).not.toBeInTheDocument();
     expect(screen.queryByTestId('feedback-card')).not.toBeInTheDocument();
   });
+
+  it("shows none of Synonym's terms, privacy policy, copyright or logo", () => {
+    setStoreSeller('s'.repeat(52));
+    render(<SettingsInfo />);
+
+    expect(screen.queryByText('Terms of Service & Privacy')).not.toBeInTheDocument();
+    expect(screen.queryByText('Terms of service')).not.toBeInTheDocument();
+    expect(screen.queryByText('Privacy policy')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Synonym Software/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Synonym' })).not.toBeInTheDocument();
+    expect(screen.getByText('Version')).toBeInTheDocument();
+  });
 });
