@@ -30,6 +30,7 @@ import {
   isTransactionalCommerceMode,
 } from '@/config/commerce';
 import { IMAGE_MAX_UPLOAD_SIZE } from '@/config/images';
+import { getStoreSeller } from '@/config/store-mode';
 import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import type { SellerDeliveryKey } from '@/libs/commerce/delivery-envelope';
 import {
@@ -61,6 +62,7 @@ import { getMarketplaceGrantSessionEnabled, getRegionPolicy } from '@/libs/runti
 import type { CommerceIndexedReview, CommerceListingProjectionModelSchema } from '@/models/commerce/commerce.schema';
 import type { Pubky } from '@/models/models.types';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
+import { withoutSalesOutsideStoreSeller } from '@/pipes/commerce/store-seller-side';
 import { MarketplaceNotificationNormalizer } from '@/pipes/marketplaceNotification/marketplaceNotification.normalizer';
 import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
 import { isRecognizedMarketplaceNotification } from '@/services/marketplace/marketplace-projections';
@@ -1283,7 +1285,9 @@ export class CommerceController {
   }
 
   static async getMarketplaceOffers() {
-    return await CommerceApplication.getMarketplaceOffers(this.getCurrentUserPubky());
+    const viewerPubky = this.getCurrentUserPubky();
+    const offers = await CommerceApplication.getMarketplaceOffers(viewerPubky);
+    return withoutSalesOutsideStoreSeller(offers, viewerPubky, getStoreSeller());
   }
 
   static async getMarketplaceNotifications() {
@@ -1378,7 +1382,12 @@ export class CommerceController {
   }
 
   static async getMarketplaceOrders() {
-    const orders = await CommerceApplication.getMarketplaceOrders(this.getCurrentUserPubky());
+    const viewerPubky = this.getCurrentUserPubky();
+    const orders = withoutSalesOutsideStoreSeller(
+      await CommerceApplication.getMarketplaceOrders(viewerPubky),
+      viewerPubky,
+      getStoreSeller(),
+    );
     this.noteOrderListings(orders);
     return orders;
   }
@@ -1424,10 +1433,9 @@ export class CommerceController {
   }
 
   static async getMarketplaceOrder(orderId: unknown) {
-    const order = await CommerceApplication.getMarketplaceOrder(
-      this.getCurrentUserPubky(),
-      CommerceRecordNormalizer.entityId(orderId),
-    );
+    const viewerPubky = this.getCurrentUserPubky();
+    const read = await CommerceApplication.getMarketplaceOrder(viewerPubky, CommerceRecordNormalizer.entityId(orderId));
+    const [order = null] = read ? withoutSalesOutsideStoreSeller([read], viewerPubky, getStoreSeller()) : [];
     if (order) this.noteOrderListings([order]);
     return order;
   }
