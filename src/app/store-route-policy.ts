@@ -1,3 +1,5 @@
+import { stripPubkyPrefix } from '@/libs/utils/utils';
+
 /**
  * Which pages and route handlers a store-mode deployment (`PUBKY_RUNTIME_STORE_SELLER`, see
  * `@/config/store-mode`) serves. Every `page.tsx` and every `route.ts` under `src/app`, `/api`
@@ -330,8 +332,17 @@ export function isStoreRouteOpenToViewer(pathname: string, storeSeller: string, 
   const route = matchStoreRoute(pathname);
   if (route?.policy.mode !== 'store-scoped' || viewerPubky === storeSeller) return true;
   if (route.policy.scope === 'seller-viewer' || route.policy.scope === 'seller-path-and-viewer') return false;
-  if (route.policy.scope === 'seller-peer-or-viewer') return route.params.pubky === storeSeller;
+  if (route.policy.scope === 'seller-peer-or-viewer') return messageThreadPeer(route.params.pubky) === storeSeller;
   return true;
+}
+
+/** The peer a `/messages/[pubky]` page opens, read from its segment as the page reads it. */
+function messageThreadPeer(segment: string): string | null {
+  try {
+    return stripPubkyPrefix(decodeURIComponent(segment));
+  } catch {
+    return null;
+  }
 }
 
 /**

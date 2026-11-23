@@ -265,6 +265,20 @@ describe('isStoreRouteOpenToViewer', () => {
     expect(isStoreRouteOpenToViewer(`/messages/${'c'.repeat(52)}`, STORE_SELLER, OTHER_SELLER)).toBe(false);
   });
 
+  it('reads the conversation peer as the page does, prefixed or percent-encoded', () => {
+    for (const segment of [
+      `pubky${STORE_SELLER}`,
+      `pk:${STORE_SELLER}`,
+      `pk%3A${STORE_SELLER}`,
+      `%70ubky${STORE_SELLER}`,
+    ]) {
+      expect(isStoreRouteOpenToViewer(`/messages/${segment}`, STORE_SELLER, OTHER_SELLER)).toBe(true);
+    }
+    for (const segment of [`pubky${OTHER_SELLER}`, `pk%3A${OTHER_SELLER}`, `%E0${STORE_SELLER}`]) {
+      expect(isStoreRouteOpenToViewer(`/messages/${segment}`, STORE_SELLER, OTHER_SELLER)).toBe(false);
+    }
+  });
+
   it('leaves other pages to the proxy', () => {
     expect(isStoreRouteOpenToViewer(`/marketplace/shop/${STORE_SELLER}`, STORE_SELLER, OTHER_SELLER)).toBe(true);
     expect(isStoreRouteOpenToViewer('/marketplace/cart', STORE_SELLER, null)).toBe(true);
