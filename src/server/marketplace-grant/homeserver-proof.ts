@@ -1,5 +1,7 @@
 import { Pubky, PublicKey } from '@synonymdev/pubky';
+import { Agent, fetch as undiciFetch } from 'undici';
 import { z } from 'zod';
+import { importImageSafeLookup } from '@/core/services/nextjs/import-image/import-image';
 import { getHomeserver, getHomeserverUrl, getPkarrRelays, getStoreSeller } from '@/libs/runtime-config/runtime-config';
 import { readBodyWithin } from './capped-body';
 import type { CliGrantConfig } from './config';
@@ -87,6 +89,23 @@ export type HomeserverProofDeps = {
   checkTarget: (url: URL) => Promise<void>;
 };
 
+/**
+ * Connects only to addresses that pass the SSRF check at connect time, so a hostname that answered
+ * the preflight check with a public address cannot rebind to an internal one for the request.
+ */
+const PINNED_DISPATCHER = new Agent({ connect: { lookup: importImageSafeLookup } });
+
+/** `fetch` through {@link PINNED_DISPATCHER}. */
+export async function fetchPinned(url: URL, init: RequestInit): Promise<Response> {
+  return (await undiciFetch(url, {
+    method: init.method,
+    headers: init.headers as Record<string, string>,
+    redirect: init.redirect,
+    signal: init.signal,
+    dispatcher: PINNED_DISPATCHER,
+  })) as unknown as Response;
+}
+
 const defaultDeps: HomeserverProofDeps = {
   async resolveHomeserverZ32(pubky) {
     const user = PublicKey.from(pubky);
@@ -102,7 +121,7 @@ const defaultDeps: HomeserverProofDeps = {
       fetchRelay: (url, init) => fetch(url, init),
       timeoutMs,
     }),
-  fetchProof: (url, init) => fetch(url, init),
+  fetchProof: fetchPinned,
   checkTarget: assertSafeHomeserverTarget,
 };
 
@@ -112,9 +131,9 @@ const defaultDeps: HomeserverProofDeps = {
  * The full Market accepts only its configured homeserver, at its configured URL. A store also
  * accepts any other homeserver the user's record names, at the origin that homeserver's own
  * signed record publishes (`resolveHomeserverHttpsOrigin`). Either way the request goes over
- * HTTPS on port 443 to a public address (`checkTarget`), names the user in `pubky-host`, follows
- * no redirect and reads at most {@link PROOF_BODY_LIMIT} bytes, stopping the stream there; every
- * failure is a denial.
+ * HTTPS on port 443 to a public address (`checkTarget`, and again for the address it connects to),
+ * names the user in `pubky-host`, follows no redirect and reads at most {@link PROOF_BODY_LIMIT}
+ * bytes, stopping the stream there; every failure is a denial.
  */
 export async function fetchHomeserverProofDocument(
   config: CliGrantConfig,

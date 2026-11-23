@@ -7,10 +7,24 @@ import {
   assertProofMatches,
   expectedProofDocument,
   fetchHomeserverProofDocument,
+  fetchPinned,
   type HomeserverProofDeps,
   parseProofDocument,
 } from './homeserver-proof';
-import { HomeserverFetchDenied } from './ssrf';
+import { assertSafeHomeserverTarget, HomeserverFetchDenied } from './ssrf';
+
+const dnsAnswers = vi.hoisted(() => ({ resolve4: vi.fn<(hostname: string) => Promise<string[]>>() }));
+
+vi.mock('dns/promises', () => {
+  const resolve6 = async () => {
+    throw Object.assign(new Error('no AAAA'), { code: 'ENODATA' });
+  };
+  return {
+    default: { resolve4: dnsAnswers.resolve4, resolve6 },
+    resolve4: dnsAnswers.resolve4,
+    resolve6,
+  };
+});
 
 const config = {
   homeserverFetchTimeoutMs: 5000,
@@ -286,6 +300,20 @@ describe('store-mode homeserver-session proof fetch', () => {
       expect(pulledBytes).toBeLessThanOrEqual(17 * 1024);
       expect(cancelled).toBe(true);
     }
+  });
+
+  it('refuses to connect when the proof host rebinds to an internal address after the check', async () => {
+    const url = new URL('https://rebind.example/pub/pubky.app/marketplace/v1/cli-grant-proofs/x');
+    dnsAnswers.resolve4.mockResolvedValueOnce(['93.184.216.34']).mockResolvedValueOnce(['10.0.0.7']);
+
+    await expect(assertSafeHomeserverTarget(url)).resolves.toBeUndefined();
+    const failure = await fetchPinned(url, { method: 'GET' }).then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    expect((failure as { cause?: Error } | null)?.cause?.name).toBe('ImportImageTransportError');
+    expect(dnsAnswers.resolve4).toHaveBeenCalledTimes(2);
   });
 
   it('stays closed to other homeservers outside store mode', async () => {
