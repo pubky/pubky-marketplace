@@ -5,11 +5,12 @@ import type {
   TMissingUsersParams,
   TUserStreamChunkResponse,
 } from '@/application/stream/users/users.types';
-import { fetchHomeserverUserDetails } from '@/application/user/user.homeserver';
 import { NEXUS_USERS_PER_PAGE } from '@/config/nexus';
 import { isStoreMode } from '@/config/store-mode';
 import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
+import { UserHomeserverService } from '@/services/homeserver/user/user';
+import { LocalProfileService } from '@/services/local/profile/profile';
 import { LocalStreamUsersService } from '@/services/local/stream/users/users';
 import type { TCacheUserStreamParams } from '@/services/local/stream/users/users.types';
 import { NexusUserStreamService } from '@/services/nexus/stream/users/userStream';
@@ -101,7 +102,12 @@ export class UserStreamApplication {
 
     if (isStoreMode()) {
       // A store reads each profile from its owner's homeserver; one unreachable user hides only their name.
-      const results = await Promise.allSettled(cacheMissUserIds.map((userId) => fetchHomeserverUserDetails(userId)));
+      const results = await Promise.allSettled(
+        cacheMissUserIds.map(async (userId) => {
+          const details = await UserHomeserverService.fetchDetails(userId);
+          if (details) await LocalProfileService.upsertDetails(details);
+        }),
+      );
       signal?.throwIfAborted();
       const failed = results.filter((result) => result.status === 'rejected').length;
       if (failed > 0) Logger.warn('Failed to fetch some user profiles from their homeservers', { failed });

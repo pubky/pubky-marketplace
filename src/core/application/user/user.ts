@@ -1,5 +1,4 @@
 import { baseUriBuilder, followUriBuilder } from 'pubky-app-specs';
-import { fetchHomeserverUserDetails } from '@/application/user/user.homeserver';
 import type {
   TEnsureModerationFollowParams,
   TEnsureSellerFollowParams,
@@ -20,6 +19,7 @@ import type { UserCountsModel } from '@/models/user/counts/userCounts';
 import type { UserRelationshipsModelSchema } from '@/models/user/relationships/userRelationships.schema';
 import { FollowNormalizer } from '@/pipes/follow/follow.normalizer';
 import { HomeserverService } from '@/services/homeserver/homeserver';
+import { UserHomeserverService } from '@/services/homeserver/user/user';
 import { LocalFollowService } from '@/services/local/follow/follow';
 import { LocalProfileService } from '@/services/local/profile/profile';
 import { LocalStreamUsersService } from '@/services/local/stream/users/users';
@@ -137,7 +137,8 @@ export class UserApplication {
 
   /** A store reads profiles from each user's own homeserver, never from Nexus. */
   private static async fetchStoreDetails(userId: Pubky): Promise<NexusUserDetails | null> {
-    await fetchHomeserverUserDetails(userId);
+    const details = await UserHomeserverService.fetchDetails(userId);
+    if (details) await LocalProfileService.upsertDetails(details);
     return await LocalUserService.readDetails({ userId });
   }
 
