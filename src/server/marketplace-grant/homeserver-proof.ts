@@ -1,4 +1,4 @@
-import { Pubky, PublicKey } from '@synonymdev/pubky';
+import { Client, Pubky, PublicKey } from '@synonymdev/pubky';
 import { Agent, fetch as undiciFetch } from 'undici';
 import { z } from 'zod';
 import { importImageSafeLookup } from '@/core/services/nextjs/import-image/import-image';
@@ -78,7 +78,8 @@ export function assertProofMatches(parsed: unknown, expected: ExpectedProof): vo
 }
 
 export type HomeserverProofDeps = {
-  resolveHomeserverZ32: (pubky: string) => Promise<string | null>;
+  /** The homeserver the user's own signed Pkarr record names, read through the configured relays. */
+  resolveHomeserverZ32: (pubky: string, timeoutMs: number) => Promise<string | null>;
   homeserverHttpsOrigin: () => string;
   configuredHomeserverZ32: () => string;
   /** Whether a user on another homeserver than the configured one may prove a session (store mode). */
@@ -107,9 +108,10 @@ export async function fetchPinned(url: URL, init: RequestInit): Promise<Response
 }
 
 const defaultDeps: HomeserverProofDeps = {
-  async resolveHomeserverZ32(pubky) {
+  async resolveHomeserverZ32(pubky, timeoutMs) {
     const user = PublicKey.from(pubky);
-    const resolved = await new Pubky().getHomeserverOf(user);
+    const client = new Client({ pkarr: { relays: getPkarrRelays(), requestTimeout: timeoutMs } });
+    const resolved = await Pubky.withClient(client).getHomeserverOf(user);
     return resolved?.z32() ?? null;
   },
   homeserverHttpsOrigin: () => getHomeserverUrl(),
@@ -142,7 +144,7 @@ export async function fetchHomeserverProofDocument(
   deps: HomeserverProofDeps = defaultDeps,
 ): Promise<unknown> {
   try {
-    const resolved = await deps.resolveHomeserverZ32(pubky);
+    const resolved = await deps.resolveHomeserverZ32(pubky, config.homeserverFetchTimeoutMs);
     if (!resolved) throw new HomeserverFetchDenied();
     let originHref: string | null;
     if (resolved === deps.configuredHomeserverZ32()) {

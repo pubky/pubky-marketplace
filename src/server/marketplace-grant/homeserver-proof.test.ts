@@ -1,6 +1,7 @@
 /** @vitest-environment node */
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
+import { getPkarrRelays } from '@/libs/runtime-config/runtime-config';
 import type { CliGrantConfig } from './config';
 import { encodeBase64Url, sha256Bytes } from './crypto';
 import {
@@ -12,6 +13,18 @@ import {
   parseProofDocument,
 } from './homeserver-proof';
 import { assertSafeHomeserverTarget, HomeserverFetchDenied } from './ssrf';
+
+const sdk = vi.hoisted(() => ({ clientConfigs: [] as unknown[] }));
+
+vi.mock('@synonymdev/pubky', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@synonymdev/pubky')>();
+  class Client {
+    constructor(clientConfig: unknown) {
+      sdk.clientConfigs.push(clientConfig);
+    }
+  }
+  return { ...actual, Client, Pubky: { withClient: () => ({ getHomeserverOf: async () => undefined }) } };
+});
 
 const dnsAnswers = vi.hoisted(() => ({ resolve4: vi.fn<(hostname: string) => Promise<string[]>>() }));
 
@@ -314,6 +327,20 @@ describe('store-mode homeserver-session proof fetch', () => {
 
     expect((failure as { cause?: Error } | null)?.cause?.name).toBe('ImportImageTransportError');
     expect(dnsAnswers.resolve4).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads the user's record through the configured relays, within the fetch timeout", async () => {
+    sdk.clientConfigs.length = 0;
+    await expect(fetchHomeserverProofDocument(config, pubky, challengeId)).rejects.toBeInstanceOf(
+      HomeserverFetchDenied,
+    );
+    expect(sdk.clientConfigs).toEqual([{ pkarr: { relays: getPkarrRelays(), requestTimeout: 5000 } }]);
+  });
+
+  it('looks the user up with the fetch timeout', async () => {
+    const resolveHomeserverZ32 = vi.fn(async () => 'ufibwbmed6jeq9k4p583go95wofakh9fwpp4k734trq79pd9u1uy');
+    await fetchHomeserverProofDocument(config, pubky, challengeId, deps({ resolveHomeserverZ32 }));
+    expect(resolveHomeserverZ32).toHaveBeenCalledWith(pubky, config.homeserverFetchTimeoutMs);
   });
 
   it('stays closed to other homeservers outside store mode', async () => {
