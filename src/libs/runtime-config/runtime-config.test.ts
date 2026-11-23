@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ValidationErrorCode } from '@/libs/error/error.codes';
+import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import {
   escapeForInlineScript,
   getCdnUrl,
@@ -185,6 +187,15 @@ describe('runtime-config resolver', () => {
         expect(() => getNexusUrl()).toThrow('PUBKY_RUNTIME_NEXUS_URL');
         expect(() => getCdnUrl()).toThrow('PUBKY_RUNTIME_CDN_URL');
         expect(() => getMarketplaceNexusUrl()).toThrow('PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL');
+        expect(() => getNexusUrl()).toThrow(
+          expect.objectContaining({
+            name: 'AppError',
+            category: ErrorCategory.Validation,
+            code: ValidationErrorCode.MISSING_FIELD,
+            service: ErrorService.Nexus,
+            operation: 'getNexusUrl',
+          }),
+        );
       });
       it('ignores the index URLs a store sets, also in the injected config', () => {
         setAllRuntimeEnv();
