@@ -115,7 +115,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
 // The composer form hook only talks to the controller on submit; the thread
 // never submits in these captures, so the controller is a stub.
 vi.mock('@/controllers/chat/chat', () => ({
-  ChatController: { commitSendMessage: async () => 'id' },
+  ChatController: { commitSendMessage: async () => 'id', fetchStoreThreadRoles: async () => null },
 }));
 
 // The real shell renders the app header above the page (96px on phones, 144px
