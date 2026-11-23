@@ -291,8 +291,6 @@ const COMMERCE_INVENTORY: Record<string, Entry> = {
 const CHAT_INVENTORY: Record<string, Entry> = {
   normalizePeer: none,
   getOrFetchIdentity: none,
-  commitRetryMessage: none,
-  commitFlushOutbox: none,
   commitMarkRead: none,
   fetchConversationUpdates: none,
   fetchAllConversationUpdates: none,
@@ -306,7 +304,7 @@ const CHAT_INVENTORY: Record<string, Entry> = {
   fetchPeerHomeserver: none,
   clearForSignOut: none,
   clearSessionsOfOtherAccounts: none,
-  // Buyer threads stay; sale threads are hidden and closed to writing
+  // Buyer threads stay; sale threads are hidden, closed to writing and left unsent
   getConversations: split,
   getConversation: split,
   getMessages: split,
@@ -315,6 +313,8 @@ const CHAT_INVENTORY: Record<string, Entry> = {
   commitOpenConversation: split,
   commitSendMessage: split,
   fetchStoreThreadRoles: split,
+  commitRetryMessage: split,
+  commitFlushOutbox: split,
 };
 
 /** Every controller with a seller side, its source, and how each public method meets the gate. */

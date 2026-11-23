@@ -155,17 +155,29 @@ export function withoutSalesNotificationsOutsideStoreSeller<T extends SubjectNot
   return notifications.filter(isBuyerSide);
 }
 
-/** Which chat peers the viewer sold to or bought from, and which order ids are its sales or purchases. */
+/** Whose listing a chat context names: the peer's (the viewer asks as a buyer) or the viewer's own. */
+export type ListingSide = 'peer' | 'viewer';
+
+/**
+ * Which chat peers the viewer sold to or bought from, which order ids are its sales or purchases, and
+ * whose listing each resolved listing context names, keyed by {@link listingContextKey}.
+ */
 export type StoreThreadRoles = {
   soldTo: readonly string[];
   boughtFrom: readonly string[];
   soldOrderIds: readonly string[];
   boughtOrderIds: readonly string[];
+  listingSides: Readonly<Record<string, ListingSide>>;
 };
+
+export function listingContextKey(peerPubky: string, listingId: string): string {
+  return `${peerPubky}:${listingId}`;
+}
 
 export function storeThreadRoles(
   orders: readonly { id: string; buyerPubky: string; sellerPubky: string }[],
   viewerPubky: string,
+  listingSides: Readonly<Record<string, ListingSide>> = {},
 ): StoreThreadRoles {
   const sold = orders.filter(({ sellerPubky }) => sellerPubky === viewerPubky);
   const bought = orders.filter(({ buyerPubky }) => buyerPubky === viewerPubky);
@@ -174,29 +186,36 @@ export function storeThreadRoles(
     boughtFrom: bought.map(({ sellerPubky }) => sellerPubky),
     soldOrderIds: sold.map(({ id }) => id),
     boughtOrderIds: bought.map(({ id }) => id),
+    listingSides,
   };
 }
 
 /**
- * Whether a chat thread is the viewer's sale, for a viewer who cannot sell here. A thread is per
+ * Whether a chat thread is the viewer's sale, for a viewer who cannot sell in `storeSeller`'s store.
+ * Before the roles are read, only the thread with the store seller is shown. After, a thread is per
  * peer, so it stays whenever anything makes it a purchase: the peer sold to the viewer, or its latest
- * context is an order the viewer bought or a listing of the peer (`contextListingOfPeer`). Otherwise
- * it is a sale when the peer bought from the viewer, or its latest context is an order the viewer
- * sold or cannot be told apart: an order the roles do not name, a listing that is not the peer's, or
- * any order while `roles` is still unread. A thread with no order between them and no context stays.
+ * context is an order the viewer bought or a listing of the peer. Otherwise it is a sale when the peer
+ * bought from the viewer, or its latest context is an order the viewer sold or a listing of the
+ * viewer's. Anything else stays: a plain thread, an order neither list names, and a listing context
+ * `listingSide` could not resolve.
  */
 export function isSaleThread(
   thread: { peer_pubky: string; last_context: ChatContext | null },
   roles: StoreThreadRoles | null,
-  contextListingOfPeer: boolean,
+  storeSeller: string | null,
+  listingSide: ListingSide | null,
 ): boolean {
   const { peer_pubky: peer, last_context: context } = thread;
+  if (roles === null) return peer !== storeSeller;
   const orderId = context?.orderId;
   const purchase =
-    (roles?.boughtFrom.includes(peer) ?? false) ||
-    (orderId
-      ? (roles?.boughtOrderIds.includes(orderId) ?? false)
-      : Boolean(context?.listingId) && contextListingOfPeer);
+    roles.boughtFrom.includes(peer) ||
+    (orderId !== undefined && roles.boughtOrderIds.includes(orderId)) ||
+    listingSide === 'peer';
   if (purchase) return false;
-  return (roles?.soldTo.includes(peer) ?? false) || Boolean(orderId) || Boolean(context?.listingId);
+  return (
+    roles.soldTo.includes(peer) ||
+    (orderId !== undefined && roles.soldOrderIds.includes(orderId)) ||
+    listingSide === 'viewer'
+  );
 }

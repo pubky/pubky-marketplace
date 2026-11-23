@@ -67,6 +67,7 @@ import { LocalChatService } from '@/services/local/chat/chat';
 import type {
   ChatIdentityState,
   ChatOpenResult,
+  ChatOutboxSends,
   ChatPeerKeyResult,
   ChatPeerKeys,
   ChatQueueParams,
@@ -425,10 +426,16 @@ export class ChatApplication {
     return row.id;
   }
 
-  /** Puts a failed message back in the queue for the next flush. */
-  static async retryMessage(me: string, id: string, signal?: AbortSignal): Promise<void> {
+  /** Puts a failed message back in the queue for the next flush, unless `sends` refuses it. */
+  static async retryMessage(
+    me: string,
+    id: string,
+    signal?: AbortSignal,
+    { sends }: { sends?: ChatOutboxSends } = {},
+  ): Promise<void> {
     const row = await LocalChatService.getMessage(id);
     if (!row || row.owner_id !== me || row.status !== 'failed') return;
+    if (sends && !(await sends(row))) return;
     signal?.throwIfAborted();
     await LocalChatService.updateMessage(id, { status: 'queued', next_attempt_at: null, last_error: null });
   }
@@ -437,20 +444,27 @@ export class ChatApplication {
    * Sends every due queued message in file order: encrypt, PUT to my folder,
    * mark sent, then ping the inbox for every conversation that is owed one.
    * Exclusive per account across tabs. Retryable failures back off; permanent
-   * ones mark the message `failed`.
+   * ones mark the message `failed`. A message `sends` refuses stays queued.
    */
-  static async flushOutbox(me: string, signal?: AbortSignal): Promise<void> {
+  static async flushOutbox(
+    me: string,
+    signal?: AbortSignal,
+    { sends }: { sends?: ChatOutboxSends } = {},
+  ): Promise<void> {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     signal?.throwIfAborted();
     await withExclusiveLock(CHAT_LOCKS.outbox(me), async () => {
       signal?.throwIfAborted();
-      await this.sendDueMessages(me, signal);
+      await this.sendDueMessages(me, signal, sends);
       await this.flushPings(me, signal);
     });
   }
 
-  private static async sendDueMessages(me: string, signal?: AbortSignal): Promise<void> {
-    const due = await LocalChatService.listDueOutbox(me, Date.now());
+  private static async sendDueMessages(me: string, signal?: AbortSignal, sends?: ChatOutboxSends): Promise<void> {
+    const due: ChatMessageModelSchema[] = [];
+    for (const row of await LocalChatService.listDueOutbox(me, Date.now())) {
+      if (!sends || (await sends(row))) due.push(row);
+    }
     if (due.length === 0) return;
     const identity = await this.requireIdentity(me, signal);
     const keysByPeer = new Map<string, ChatPeerKeyResult>();

@@ -236,6 +236,25 @@ describe('ChatApplication', () => {
       expect((await LocalChatService.getMessage(id))?.status).toBe('sent');
     });
 
+    it('leaves a message the sends filter refuses as it is, queued or failed', async () => {
+      await ChatApplication.ensureIdentity(ALICE);
+      await ChatApplication.ensureIdentity(BOB);
+      await ChatApplication.openConversation(ALICE, BOB);
+      const id = await ChatApplication.queueMessage(ALICE, { peer: BOB, body: 'about a sale' });
+      const refuse = async () => false;
+
+      await ChatApplication.flushOutbox(ALICE, undefined, { sends: refuse });
+      expect(await LocalChatService.getMessage(id)).toMatchObject({ status: 'queued', attempts: 0 });
+
+      await LocalChatService.updateMessage(id, { status: 'failed' });
+      await ChatApplication.retryMessage(ALICE, id, undefined, { sends: refuse });
+      expect((await LocalChatService.getMessage(id))?.status).toBe('failed');
+
+      await ChatApplication.retryMessage(ALICE, id, undefined, { sends: async () => true });
+      await ChatApplication.flushOutbox(ALICE, undefined, { sends: async () => true });
+      expect((await LocalChatService.getMessage(id))?.status).toBe('sent');
+    });
+
     it('keeps a message queued while the peer has no key', async () => {
       await ChatApplication.ensureIdentity(ALICE);
       await ChatApplication.openConversation(ALICE, BOB);
