@@ -1,10 +1,13 @@
 'use client';
 
 import { getShopBaseUrl } from '@/config/base-path';
+import { isStoreMode } from '@/config/store-mode';
+import { getTtlUserMs } from '@/config/sync';
 import { UserController } from '@/controllers/user/user';
 import { useAvatarUrl } from '@/hooks/useAvatarUrl/useAvatarUrl';
 import { isLocalFirstQueryEnabled, useLocalFirstQuery } from '@/hooks/useLocalFirstQuery/useLocalFirstQuery';
 import { withPubkyPrefix } from '@/libs/utils/utils';
+import { isHomeserverProfileStale } from '@/pipes/user/homeserver-profile';
 import type { NexusUserDetails, NexusUserLink } from '@/services/nexus/nexus.types';
 
 export interface UserProfile {
@@ -52,6 +55,8 @@ export function useUserProfile(userId: string, options?: UseUserProfileOptions):
     fetchFn: () => UserController.fetchDetails({ userId }),
     deps: [userId, enabled],
     enabled,
+    // A store has no TTL coordinator, so a profile past the user TTL is re-read from its homeserver.
+    isStale: isStoreMode() ? (details) => isHomeserverProfileStale(details, getTtlUserMs(), Date.now()) : undefined,
   });
   // The CDN avatar in the Market, the homeserver image in a store, where there is no CDN.
   const avatarUrl = useAvatarUrl(userDetails, userDetails?.indexed_at);

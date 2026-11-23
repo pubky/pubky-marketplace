@@ -1191,6 +1191,21 @@ describe('UserApplication in store mode', () => {
     for (const spy of nexus) expect(spy).not.toHaveBeenCalled();
   });
 
+  it('shares one homeserver read among concurrent readers of the same user', async () => {
+    const read = homeserverProfile({ name: 'Bob Example' });
+
+    const results = await Promise.all([
+      UserApplication.fetchDetails({ userId: BUYER }),
+      UserApplication.fetchDetails({ userId: BUYER }),
+      UserApplication.fetch({ userId: BUYER }),
+    ]);
+
+    expect(read).toHaveBeenCalledOnce();
+    expect(results.map((details) => details?.name)).toEqual(['Bob Example', 'Bob Example', 'Bob Example']);
+    await UserApplication.fetchDetails({ userId: BUYER });
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
   it('reads the homeserver only on a cache miss in getOrFetchDetails', async () => {
     const read = homeserverProfile({ name: 'Bob Example' });
     vi.spyOn(LocalProfileService, 'upsertDetails').mockResolvedValue(undefined);

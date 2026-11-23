@@ -17,7 +17,7 @@ export function isLocalFirstQueryEnabled(entityId: string | null | undefined, op
  * - `fetchFn` runs inside `useEffect` — calls a `fetch*` controller method that
  *   fetches from Nexus and persists to IndexedDB (network-only, no local read)
  * - The effect skips `fetchFn` when `data` is already available locally (non-null),
- *   avoiding a redundant network call
+ *   avoiding a redundant network call, unless the optional `isStale` reports that hit
  * - When `fetchFn` writes to IndexedDB, `useLiveQuery` automatically re-fires and
  *   picks up the new data
  *
@@ -50,6 +50,7 @@ export function useLocalFirstQuery<T>({
   fetchFn,
   deps,
   enabled = true,
+  isStale,
 }: UseLocalFirstQueryParams<T>): UseLocalFirstQueryResult<T> {
   // Tracks whether `fetchFn` is currently in-flight. Used together with `data`
   // to derive `isLoading` — when local data is `null` (cache miss) and a fetch
@@ -80,7 +81,7 @@ export function useLocalFirstQuery<T>({
   //
   // Early-return logic avoids redundant fetches:
   // - `data === undefined` → useLiveQuery hasn't resolved yet, wait
-  // - `data !== null` → cache hit, no fetch needed
+  // - `data !== null` → cache hit, no fetch needed unless `isStale` reports it
   // - `data === null` → cache miss, proceed with fetch
   //
   // No infinite loop on fetch failure: a failed fetch doesn't write to
@@ -103,7 +104,19 @@ export function useLocalFirstQuery<T>({
     // `isFetching` when `data` is non-null, stale state is a latent bug.
     if (data !== null) {
       setIsFetching(false);
-      return;
+      if (!isStale?.(data)) return;
+
+      // A stale hit keeps rendering while it is re-read. A failed re-read writes nothing, so
+      // `data` stays the same and the effect does not run again.
+      let cancelled = false;
+      fetchFn().catch((error) => {
+        if (!cancelled) {
+          Logger.error('[useLocalFirstQuery] fetchFn failed', { error });
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
     }
 
     // Cache miss (data === null) — fetch from network and persist.

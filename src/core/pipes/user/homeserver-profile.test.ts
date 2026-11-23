@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { USER_BIO_MAX_LENGTH, USER_MAX_LINKS, USER_NAME_MAX_LENGTH, USER_STATUS_MAX_LENGTH } from '@/config/user';
 import type { Pubky } from '@/models/models.types';
-import { profileImageBlobFromFileRecord, userDetailsFromHomeserverProfile } from '@/pipes/user/homeserver-profile';
+import {
+  isHomeserverProfileStale,
+  profileImageBlobFromFileRecord,
+  userDetailsFromHomeserverProfile,
+} from '@/pipes/user/homeserver-profile';
 
 const USER = 'ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u' as Pubky;
 const OTHER = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo' as Pubky;
@@ -79,6 +83,16 @@ describe('userDetailsFromHomeserverProfile', () => {
     expect(image(`pubky://${USER}/pub/pubky.app/files/../profile.json`)).toBeNull();
     expect(image('https://cdn.example/avatar.png')).toBeNull();
     expect(image(42)).toBeNull();
+  });
+});
+
+describe('isHomeserverProfileStale', () => {
+  const readAt = 1_000_000;
+  const details = userDetailsFromHomeserverProfile({ name: 'Bob Example' }, 'u'.repeat(52) as Pubky, readAt)!;
+
+  it('turns stale only once the read is older than the TTL', () => {
+    expect(isHomeserverProfileStale(details, 600_000, readAt + 600_000)).toBe(false);
+    expect(isHomeserverProfileStale(details, 600_000, readAt + 600_001)).toBe(true);
   });
 });
 

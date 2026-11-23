@@ -1,7 +1,10 @@
 'use client';
 
+import { isStoreMode } from '@/config/store-mode';
+import { getTtlUserMs } from '@/config/sync';
 import { UserController } from '@/controllers/user/user';
 import { useLocalFirstQuery } from '@/hooks/useLocalFirstQuery/useLocalFirstQuery';
+import { isHomeserverProfileStale } from '@/pipes/user/homeserver-profile';
 import type { NexusUserDetails } from '@/services/nexus/nexus.types';
 import type { UseUserDetailsResult } from './useUserDetails.types';
 
@@ -29,6 +32,8 @@ export function useUserDetails(userId: string | null | undefined): UseUserDetail
     fetchFn: () => UserController.fetchDetails({ userId: userId! }),
     deps: [userId],
     enabled: !!userId,
+    // A store has no TTL coordinator, so a profile past the user TTL is re-read from its homeserver.
+    isStale: isStoreMode() ? (details) => isHomeserverProfileStale(details, getTtlUserMs(), Date.now()) : undefined,
   });
 
   return {

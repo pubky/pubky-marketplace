@@ -31,6 +31,8 @@ import { NexusUserService } from '@/services/nexus/user/user';
 import type { TUserTagsParams } from '@/services/nexus/user/user.types';
 
 export class UserApplication {
+  /** A store's in-flight profile reads, one per user. */
+  private static storeDetailsReads = new Map<Pubky, Promise<NexusUserDetails | null>>();
   /**
    * Per account and seller, settled or in-flight auto-follows of this session. Failed and cancelled
    * attempts are dropped, so the next trigger tries again.
@@ -135,11 +137,20 @@ export class UserApplication {
     return await LocalUserService.readDetails({ userId });
   }
 
-  /** A store reads profiles from each user's own homeserver, never from Nexus. */
+  /**
+   * A store reads profiles from each user's own homeserver, never from Nexus. Every component
+   * showing the same user shares one read.
+   */
   private static async fetchStoreDetails(userId: Pubky): Promise<NexusUserDetails | null> {
-    const details = await UserHomeserverService.fetchDetails(userId);
-    if (details) await LocalProfileService.upsertDetails(details);
-    return await LocalUserService.readDetails({ userId });
+    const pending = this.storeDetailsReads.get(userId);
+    if (pending) return await pending;
+    const read = (async () => {
+      const details = await UserHomeserverService.fetchDetails(userId);
+      if (details) await LocalProfileService.upsertDetails(details);
+      return await LocalUserService.readDetails({ userId });
+    })().finally(() => this.storeDetailsReads.delete(userId));
+    this.storeDetailsReads.set(userId, read);
+    return await read;
   }
 
   /**

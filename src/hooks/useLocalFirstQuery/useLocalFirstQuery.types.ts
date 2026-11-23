@@ -12,7 +12,8 @@ export interface UseLocalFirstQueryParams<T> {
   queryFn: () => Promise<T | null>;
 
   /**
-   * Network fetch function — runs inside `useEffect` only on cache miss (`data === null`).
+   * Network fetch function — runs inside `useEffect` on cache miss (`data === null`), or on a
+   * hit that `isStale` reports.
    * Should call a `fetch*` controller method — network-only, no local read — that
    * fetches from Nexus and persists to IndexedDB.
    * The return value is ignored — the write to IndexedDB is what triggers
@@ -20,7 +21,7 @@ export interface UseLocalFirstQueryParams<T> {
    *
    * The hook skips calling this function when:
    * - `data === undefined` (useLiveQuery hasn't resolved yet)
-   * - `data !== null` (cache hit — data already exists locally)
+   * - `data !== null` (cache hit — data already exists locally), unless `isStale` reports it
    */
   fetchFn: () => Promise<unknown>;
 
@@ -37,6 +38,14 @@ export interface UseLocalFirstQueryParams<T> {
    * @default true
    */
   enabled?: boolean;
+
+  /**
+   * Whether a local hit is too old to keep without a re-read. When it returns true, `fetchFn`
+   * also runs for that hit, in the background: the hit keeps rendering and `isLoading` stays
+   * false. Only for reads no TTL coordinator keeps fresh, such as a store's profiles. Checked
+   * when the local data or `deps` change, not on a timer.
+   */
+  isStale?: (data: T) => boolean;
 }
 
 /**

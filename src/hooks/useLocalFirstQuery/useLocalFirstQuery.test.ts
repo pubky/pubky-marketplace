@@ -52,12 +52,14 @@ function createParams(overrides: {
   fetchFn?: ReturnType<typeof vi.fn>;
   deps?: readonly unknown[];
   enabled?: boolean;
+  isStale?: (data: unknown) => boolean;
 }): UseLocalFirstQueryParams<unknown> {
   return {
     queryFn: asOpaque<() => Promise<unknown | null>>(overrides.queryFn),
     fetchFn: asOpaque<() => Promise<unknown>>(overrides.fetchFn),
     deps: overrides.deps ?? ['default-dep'],
     enabled: overrides.enabled,
+    isStale: overrides.isStale,
   };
 }
 
@@ -212,6 +214,47 @@ describe('useLocalFirstQuery', () => {
 
     // data === null → cache miss, fetchFn is called
     expect(fetchFn).toHaveBeenCalled();
+  });
+
+  it('re-reads a hit that isStale reports, while still rendering it', async () => {
+    queryResult = mockData;
+    queryFn.mockReturnValue(mockData);
+    const isStale = vi.fn(() => true);
+
+    const { result } = renderHook(() => useLocalFirstQuery(createParams({ queryFn, fetchFn, isStale })));
+    await act(async () => {
+      lastEffectCallback!();
+    });
+
+    expect(isStale).toHaveBeenCalledWith(mockData);
+    expect(fetchFn).toHaveBeenCalledOnce();
+    expect(result.current).toEqual({ data: mockData, isLoading: false });
+  });
+
+  it('keeps a hit that isStale accepts without a re-read', async () => {
+    queryResult = mockData;
+    queryFn.mockReturnValue(mockData);
+
+    renderHook(() => useLocalFirstQuery(createParams({ queryFn, fetchFn, isStale: () => false })));
+    await act(async () => {
+      lastEffectCallback!();
+    });
+
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it('logs a failed re-read of a stale hit and keeps the hit', async () => {
+    queryResult = mockData;
+    queryFn.mockReturnValue(mockData);
+    fetchFn.mockRejectedValue(new Error('unreachable'));
+
+    const { result } = renderHook(() => useLocalFirstQuery(createParams({ queryFn, fetchFn, isStale: () => true })));
+    await act(async () => {
+      lastEffectCallback!();
+    });
+
+    expect(mockLoggerError).toHaveBeenCalledWith('[useLocalFirstQuery] fetchFn failed', expect.anything());
+    expect(result.current).toEqual({ data: mockData, isLoading: false });
   });
 
   // ---------------------------------------------------------------------------

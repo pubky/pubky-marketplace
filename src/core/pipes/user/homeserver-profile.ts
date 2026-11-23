@@ -67,6 +67,14 @@ export function userDetailsFromHomeserverProfile(
   };
 }
 
+/**
+ * Whether a profile read from its owner's homeserver is older than `ttlMs`. A store has no index
+ * or TTL coordinator to keep cached profiles fresh, so it re-reads them past this age.
+ */
+export function isHomeserverProfileStale(details: NexusUserDetails, ttlMs: number, now: number): boolean {
+  return now - details.indexed_at > ttlMs;
+}
+
 const fileRecordSchema = z.object({ src: z.string(), content_type: z.string() });
 
 /** The blob a profile image file record of `owner` points at, or null unless it is an image blob of `owner`. */

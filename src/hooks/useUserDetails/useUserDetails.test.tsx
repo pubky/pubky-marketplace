@@ -1,5 +1,7 @@
 import { renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getTtlUserMs } from '@/config/sync';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { useUserDetails } from './useUserDetails';
 
 // Mock direct dependencies
@@ -80,5 +82,38 @@ describe('useUserDetails', () => {
 
     // enabled=false so queryFn is not called, getDetails is never invoked
     expect(mockGetDetails).not.toHaveBeenCalled();
+  });
+
+  describe('in a store', () => {
+    const userAt = (indexedAt: number) => ({ id: 'user-123', name: 'Bob Example', indexed_at: indexedAt });
+
+    afterEach(() => setStoreSeller(undefined));
+
+    it('re-reads a profile older than the user TTL from its homeserver', () => {
+      setStoreSeller('s'.repeat(52));
+      mockGetDetails.mockReturnValue(userAt(Date.now() - getTtlUserMs() - 1_000));
+
+      const { result } = renderHook(() => useUserDetails('user-123'));
+
+      expect(mockFetchDetails).toHaveBeenCalledWith({ userId: 'user-123' });
+      expect(result.current.userDetails?.name).toBe('Bob Example');
+    });
+
+    it('keeps a profile read within the user TTL', () => {
+      setStoreSeller('s'.repeat(52));
+      mockGetDetails.mockReturnValue(userAt(Date.now()));
+
+      renderHook(() => useUserDetails('user-123'));
+
+      expect(mockFetchDetails).not.toHaveBeenCalled();
+    });
+
+    it('leaves freshness to the TTL coordinator outside a store', () => {
+      mockGetDetails.mockReturnValue(userAt(0));
+
+      renderHook(() => useUserDetails('user-123'));
+
+      expect(mockFetchDetails).not.toHaveBeenCalled();
+    });
   });
 });
