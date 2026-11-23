@@ -55,8 +55,10 @@ background loops and every tab renders through Dexie live queries.
 | Pages                                | `src/app/messages/page.tsx`, `src/app/messages/[pubky]/page.tsx`              |
 | Two-account live proof               | `src/test/e2e/chat-two-accounts.mjs` (`npm run test:e2e:chat`)                |
 
-In store mode, `ChatController` hides the sale threads of a signed-in seller who is not the store seller, using roles
-kept in the chat store; see [Store mode](../environment.md#store-mode-runtime).
+In store mode, `ChatController` hides the sale threads of a signed-in user other than the store seller and refuses to
+send, retry or flush messages to them. It places threads with roles read from the user's orders, conversations and
+listing contexts, kept in the chat store per account; `useStoreThreadRoles` reads them and retries a failed read. Until
+they arrive, only the thread with the store seller is shown. See [Store mode](../environment.md#store-mode-runtime).
 
 Session capabilities: `CAPABILITIES` in `src/config/app.ts`. Runtime config:
 `inboxUrl` / `inboxAudience` in `src/libs/runtime-config/runtime-config.schema.ts`.
