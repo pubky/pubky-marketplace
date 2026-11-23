@@ -1,4 +1,5 @@
 import { parseListingAggregateId } from '@/libs/commerce/listing-aggregate';
+import type { ChatContext } from '@/models/chat/chat.schema';
 
 /**
  * A store's selling tools belong to the store seller. Any other account signed in to a store sees
@@ -152,4 +153,50 @@ export function withoutSalesNotificationsOutsideStoreSeller<T extends SubjectNot
     return !isSaleSubject(subjectOfAggregate(aggregateId ?? ''), viewerPubky, sellerOf);
   };
   return notifications.filter(isBuyerSide);
+}
+
+/** Which chat peers the viewer sold to or bought from, and which order ids are its sales or purchases. */
+export type StoreThreadRoles = {
+  soldTo: readonly string[];
+  boughtFrom: readonly string[];
+  soldOrderIds: readonly string[];
+  boughtOrderIds: readonly string[];
+};
+
+export function storeThreadRoles(
+  orders: readonly { id: string; buyerPubky: string; sellerPubky: string }[],
+  viewerPubky: string,
+): StoreThreadRoles {
+  const sold = orders.filter(({ sellerPubky }) => sellerPubky === viewerPubky);
+  const bought = orders.filter(({ buyerPubky }) => buyerPubky === viewerPubky);
+  return {
+    soldTo: sold.map(({ buyerPubky }) => buyerPubky),
+    boughtFrom: bought.map(({ sellerPubky }) => sellerPubky),
+    soldOrderIds: sold.map(({ id }) => id),
+    boughtOrderIds: bought.map(({ id }) => id),
+  };
+}
+
+/**
+ * Whether a chat thread is the viewer's sale, for a viewer who cannot sell here. A thread is per
+ * peer, so it stays whenever anything makes it a purchase: the peer sold to the viewer, or its latest
+ * context is an order the viewer bought or a listing of the peer (`contextListingOfPeer`). Otherwise
+ * it is a sale when the peer bought from the viewer, or its latest context is an order the viewer
+ * sold or cannot be told apart: an order the roles do not name, a listing that is not the peer's, or
+ * any order while `roles` is still unread. A thread with no order between them and no context stays.
+ */
+export function isSaleThread(
+  thread: { peer_pubky: string; last_context: ChatContext | null },
+  roles: StoreThreadRoles | null,
+  contextListingOfPeer: boolean,
+): boolean {
+  const { peer_pubky: peer, last_context: context } = thread;
+  const orderId = context?.orderId;
+  const purchase =
+    (roles?.boughtFrom.includes(peer) ?? false) ||
+    (orderId
+      ? (roles?.boughtOrderIds.includes(orderId) ?? false)
+      : Boolean(context?.listingId) && contextListingOfPeer);
+  if (purchase) return false;
+  return (roles?.soldTo.includes(peer) ?? false) || Boolean(orderId) || Boolean(context?.listingId);
 }

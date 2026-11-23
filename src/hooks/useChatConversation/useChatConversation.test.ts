@@ -16,6 +16,7 @@ vi.mock('@/controllers/chat/chat', () => ({
     fetchConversationUpdates: vi.fn().mockResolvedValue(undefined),
     commitFlushOutbox: vi.fn().mockResolvedValue(undefined),
     commitMarkRead: vi.fn().mockResolvedValue(undefined),
+    fetchStoreThreadRoles: vi.fn().mockResolvedValue(null),
   },
 }));
 vi.mock('dexie-react-hooks', () => ({ useLiveQuery: () => undefined }));

@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
+import { ChatApplication } from '@/application/chat/chat';
 import { CommerceAttestorApplication } from '@/application/commerce/attestor';
 import { CommerceApplication } from '@/application/commerce/commerce';
 import { CommerceDeliveryKeysApplication } from '@/application/commerce/delivery-keys';
@@ -16,6 +17,7 @@ import { ImportStoreCatalogApplication } from '@/application/import-store/import
 import { ProfileApplication } from '@/application/profile/profile';
 import { UserApplication } from '@/application/user/user';
 import type { CommerceAdapterMode } from '@/config/commerce';
+import { ChatController } from '@/controllers/chat/chat';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import { ImportImageUploadController } from '@/controllers/import-image/import-image-upload';
@@ -286,6 +288,35 @@ const COMMERCE_INVENTORY: Record<string, Entry> = {
   commitConfirmPickup: split,
 };
 
+const CHAT_INVENTORY: Record<string, Entry> = {
+  normalizePeer: none,
+  getOrFetchIdentity: none,
+  commitRetryMessage: none,
+  commitFlushOutbox: none,
+  commitMarkRead: none,
+  fetchConversationUpdates: none,
+  fetchAllConversationUpdates: none,
+  fetchRebuild: none,
+  fetchSeededConversations: none,
+  fetchInboxAvailability: none,
+  fetchInboxPings: none,
+  handleInboxPings: none,
+  commitAckInboxPings: none,
+  subscribeChatEventStream: none,
+  fetchPeerHomeserver: none,
+  clearForSignOut: none,
+  clearSessionsOfOtherAccounts: none,
+  // Buyer threads stay; sale threads are hidden and closed to writing
+  getConversations: split,
+  getConversation: split,
+  getMessages: split,
+  getMessageCount: split,
+  getUnreadConversationCount: split,
+  commitOpenConversation: split,
+  commitSendMessage: split,
+  fetchStoreThreadRoles: split,
+};
+
 /** Every controller with a seller side, its source, and how each public method meets the gate. */
 const CONTROLLERS = [
   {
@@ -293,6 +324,12 @@ const CONTROLLERS = [
     controller: CommerceController,
     source: 'commerce/commerce.ts',
     inventory: COMMERCE_INVENTORY,
+  },
+  {
+    name: 'ChatController',
+    controller: ChatController,
+    source: 'chat/chat.ts',
+    inventory: CHAT_INVENTORY,
   },
   {
     name: 'ConnectorsController',
@@ -316,6 +353,7 @@ const CONTROLLERS = [
 
 /** The application classes those controllers call; each is stubbed so a reached call is recorded. */
 const APPLICATIONS: Record<string, object> = {
+  ChatApplication,
   CommerceAttestorApplication,
   CommerceApplication,
   CommerceDeliveryKeysApplication,
@@ -426,7 +464,8 @@ describe('store seller gate inventory', () => {
   });
 
   it('leaves the controllers as the only way from the Shop to the selling applications', () => {
-    const selling = /^import \{([^}]*)\} from '@\/application\/(commerce|connectors|import-image|import-store)\//gm;
+    const selling =
+      /^import \{([^}]*)\} from '@\/application\/(chat|commerce|connectors|import-image|import-store)\//gm;
     const offenders: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {

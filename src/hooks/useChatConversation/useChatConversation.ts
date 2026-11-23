@@ -6,6 +6,7 @@ import type { ChatOpenResult } from '@/application/chat/chat.types';
 import { CHAT_OPEN_THREAD_POLL_MS, CHAT_THREAD_PAGE } from '@/config/chat';
 import { ChatController } from '@/controllers/chat/chat';
 import type { ChatMessageView } from '@/controllers/chat/chat.types';
+import { useStoreThreadRoles } from '@/hooks/useStoreThreadRoles/useStoreThreadRoles';
 import { isAbortError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
 import type { ChatContext } from '@/models/chat/chat.schema';
@@ -28,6 +29,7 @@ export type UseChatConversationResult = {
  */
 export function useChatConversation(peerPubky: string, context?: ChatContext): UseChatConversationResult {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
+  const storeThreadRoles = useStoreThreadRoles();
   const [limit, setLimit] = useState(CHAT_THREAD_PAGE);
   const [openState, setOpenState] = useState<UseChatConversationResult['openState']>('opening');
   const isSelf = currentUserPubky === peerPubky;
@@ -78,7 +80,7 @@ export function useChatConversation(peerPubky: string, context?: ChatContext): U
   const conversation = useLiveQuery(async () => {
     if (!currentUserPubky) return null;
     return await ChatController.getConversation(peerPubky);
-  }, [currentUserPubky, peerPubky]);
+  }, [currentUserPubky, peerPubky, storeThreadRoles]);
 
   const page = useLiveQuery(async () => {
     if (!currentUserPubky) return { messages: [] as ChatMessageView[], total: 0 };
@@ -87,7 +89,7 @@ export function useChatConversation(peerPubky: string, context?: ChatContext): U
       ChatController.getMessageCount(peerPubky),
     ]);
     return { messages, total };
-  }, [currentUserPubky, peerPubky, limit]);
+  }, [currentUserPubky, peerPubky, limit, storeThreadRoles]);
 
   const messages = page?.messages ?? [];
   const newestReceived = [...messages].reverse().find((row) => row.direction === 'received');

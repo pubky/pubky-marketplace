@@ -4,6 +4,7 @@ import { CommerceApplication } from '@/application/commerce/commerce';
 import { UserApplication } from '@/application/user/user';
 import { CHAT_PING_MAX_HANDLING_ATTEMPTS } from '@/config/chat';
 import { captureAuthScope } from '@/controllers/auth/auth-scope';
+import { StoreSellerGate } from '@/controllers/store-seller-gate/store-seller-gate';
 import { isChatPingSlot } from '@/libs/chat/paths';
 import { isChatPing } from '@/libs/chat/schemas';
 import { isAppError } from '@/libs/error/error';
@@ -14,6 +15,7 @@ import { Logger } from '@/libs/logger/logger';
 import { isPubkyIdentifier, stripPubkyPrefix } from '@/libs/utils/utils';
 import type { ChatContext } from '@/models/chat/chat.schema';
 import type { Pubky } from '@/models/models.types';
+import { isSaleThread, type StoreThreadRoles, storeThreadRoles } from '@/pipes/commerce/store-seller-side';
 import type { THomeserverResourceEvent } from '@/services/homeserver/homeserver.types';
 import type { InboxAvailability, InboxPing, InboxPingRef } from '@/services/inbox/inbox.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -26,6 +28,8 @@ import type { ChatConversationView, ChatMessageView, ChatSendParams } from './ch
  * syncs after. The signed-in pubky is implicit; every method throws when
  * nobody is signed in. Every write path captures the auth scope on entry, so
  * work still running when that pubky signs out stops before its next write.
+ * In a store the viewer does not sell in, its sale threads are hidden and
+ * closed to writing (`isSaleThread`); its buyer threads stay.
  */
 export class ChatController {
   private constructor() {}
@@ -65,46 +69,123 @@ export class ChatController {
 
   /** The inbox list; `includeEmpty` also returns threads that were only opened (the coordinator streams them). */
   static async getConversations(options: { includeEmpty?: boolean } = {}): Promise<ChatConversationView[]> {
-    return await ChatApplication.getConversations(this.me(), options);
+    const me = this.me();
+    const sellsHere = StoreSellerGate.canSellHere(me);
+    const conversations = await ChatApplication.getConversations(me, options);
+    if (sellsHere) return conversations;
+    const roles = useChatStore.getState().storeThreadRoles;
+    const shown = await Promise.all(conversations.map((thread) => this.isBuyerThread(roles, thread)));
+    return conversations.filter((_, index) => shown[index]);
   }
 
   static async getConversation(peerPubky: string): Promise<ChatConversationView | null> {
-    return await ChatApplication.getConversation(this.me(), peerPubky);
+    const me = this.me();
+    const sellsHere = StoreSellerGate.canSellHere(me);
+    const conversation = await ChatApplication.getConversation(me, peerPubky);
+    if (sellsHere || conversation === null) return conversation;
+    return (await this.isBuyerThread(useChatStore.getState().storeThreadRoles, conversation)) ? conversation : null;
   }
 
   static async getMessages(
     peerPubky: string,
     options: { before?: string; limit?: number } = {},
   ): Promise<ChatMessageView[]> {
-    return await ChatApplication.getMessages(this.me(), peerPubky, options);
+    const me = this.me();
+    if (!(await this.showsThread(me, peerPubky))) return [];
+    return await ChatApplication.getMessages(me, peerPubky, options);
   }
 
   static async getMessageCount(peerPubky: string): Promise<number> {
-    return await ChatApplication.getMessageCount(this.me(), peerPubky);
+    const me = this.me();
+    if (!(await this.showsThread(me, peerPubky))) return 0;
+    return await ChatApplication.getMessageCount(me, peerPubky);
   }
 
   /** Conversations with unread messages, for the nav badge. */
   static async getUnreadConversationCount(): Promise<number> {
     const pubky = useAuthStore.getState().currentUserPubky;
     if (!pubky) return 0;
-    return await ChatApplication.getUnreadConversationCount(pubky);
+    if (StoreSellerGate.canSellHere(pubky)) return await ChatApplication.getUnreadConversationCount(pubky);
+    const conversations = await this.getConversations({ includeEmpty: true });
+    return conversations.filter(({ unreadCount }) => unreadCount > 0).length;
+  }
+
+  /**
+   * In a store the viewer does not sell in, reads which chat peers it sold to or bought from, so its
+   * sale threads can be told apart. Nothing to read for a viewer who sells here.
+   */
+  static async fetchStoreThreadRoles(): Promise<StoreThreadRoles | null> {
+    const me = useAuthStore.getState().currentUserPubky;
+    if (!me || StoreSellerGate.canSellHere(me)) return null;
+    this.storeThreadRolesRead ??= this.readStoreThreadRoles(me).finally(() => {
+      this.storeThreadRolesRead = null;
+    });
+    return await this.storeThreadRolesRead;
+  }
+
+  /** One read at a time: every chat surface asks on mount. */
+  private static storeThreadRolesRead: Promise<StoreThreadRoles> | null = null;
+
+  private static async readStoreThreadRoles(me: string): Promise<StoreThreadRoles> {
+    const signal = captureAuthScope();
+    const roles = storeThreadRoles(await CommerceApplication.getMarketplaceOrders(me), me);
+    signal.throwIfAborted();
+    useChatStore.getState().setStoreThreadRoles(roles);
+    return roles;
+  }
+
+  /** Whether the thread with a peer is shown; one with no local row yet has nothing to hide. */
+  private static async showsThread(me: string, peer: string): Promise<boolean> {
+    if (StoreSellerGate.canSellHere(me)) return true;
+    const conversation = await ChatApplication.getConversation(me, peer);
+    return conversation === null || (await this.isBuyerThread(useChatStore.getState().storeThreadRoles, conversation));
+  }
+
+  private static async isBuyerThread(
+    roles: StoreThreadRoles | null,
+    thread: { peer_pubky: string; last_context: ChatContext | null },
+  ): Promise<boolean> {
+    return !isSaleThread(thread, roles, await this.isListingOfPeer(thread.peer_pubky, thread.last_context));
+  }
+
+  /** Whether a context names a listing of the peer; a listing is cached under its seller's composite id. */
+  private static async isListingOfPeer(peer: string, context: ChatContext | null | undefined): Promise<boolean> {
+    if (!context?.listingId) return false;
+    return Boolean(await CommerceApplication.getListing(`${peer}:${context.listingId}`));
+  }
+
+  /**
+   * Refuses a write in a sale thread, or about a sale, for a viewer who cannot sell here. The roles
+   * are read first when this tab has none yet.
+   */
+  private static async assertNotSaleThread(me: string, peer: string, context: ChatContext | undefined): Promise<void> {
+    const roles = useChatStore.getState().storeThreadRoles ?? (await this.fetchStoreThreadRoles());
+    const existing = await ChatApplication.getConversation(me, peer);
+    const threads = [
+      ...(existing ? [existing] : []),
+      ...(context ? [{ peer_pubky: peer, last_context: context }] : []),
+    ];
+    for (const thread of threads) {
+      if (!(await this.isBuyerThread(roles, thread))) StoreSellerGate.assertCanSellHere(me);
+    }
   }
 
   // ------------------------------------------------------------------ writes
 
   static async commitOpenConversation(peerPubky: string, context?: ChatContext): Promise<ChatOpenResult> {
-    return await ChatApplication.openConversation(
-      this.me(),
-      this.normalizePeer(peerPubky),
-      context,
-      captureAuthScope(),
-    );
+    const me = this.me();
+    const sellsHere = StoreSellerGate.canSellHere(me);
+    const peer = this.normalizePeer(peerPubky);
+    if (!sellsHere) await this.assertNotSaleThread(me, peer, context);
+    return await ChatApplication.openConversation(me, peer, context, captureAuthScope());
   }
 
   /** Queues locally (the UI updates at once), then starts delivery. Returns the message row id. */
   static async commitSendMessage(params: ChatSendParams): Promise<string> {
     const me = this.me();
+    const sellsHere = StoreSellerGate.canSellHere(me);
     const peer = this.normalizePeer(params.peerPubky);
+    if (!sellsHere) await this.assertNotSaleThread(me, peer, params.context);
     const signal = captureAuthScope();
     const id = await ChatApplication.queueMessage(me, { peer, body: params.body, context: params.context }, signal);
     void this.flushOutboxFor(me, signal);

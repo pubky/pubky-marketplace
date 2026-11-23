@@ -1,4 +1,5 @@
 import type { ChatIdentityState } from '@/application/chat/chat.types';
+import type { StoreThreadRoles } from '@/pipes/commerce/store-seller-side';
 import type { InboxAvailability } from '@/services/inbox/inbox.types';
 
 export type ChatInboxStatus = InboxAvailability | 'unknown' | 'connecting';
@@ -10,6 +11,8 @@ export interface ChatState {
   syncStatus: ChatSyncStatus;
   lastSyncAt: number | null;
   isLeaderTab: boolean;
+  /** In a store the viewer does not sell in: which chat peers it sold to or bought from; null until read. */
+  storeThreadRoles: StoreThreadRoles | null;
 }
 
 export interface ChatActions {
@@ -17,6 +20,7 @@ export interface ChatActions {
   setInboxStatus: (status: ChatInboxStatus) => void;
   setSyncStatus: (status: ChatSyncStatus, at?: number) => void;
   setLeaderTab: (isLeader: boolean) => void;
+  setStoreThreadRoles: (roles: StoreThreadRoles | null) => void;
   reset: () => void;
 }
 
@@ -28,4 +32,5 @@ export const chatInitialState: ChatState = {
   syncStatus: 'idle',
   lastSyncAt: null,
   isLeaderTab: false,
+  storeThreadRoles: null,
 };

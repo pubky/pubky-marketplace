@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   canSellHere,
   isSaleSubject,
+  isSaleThread,
   storeNotificationSubjects,
+  storeThreadRoles,
   subjectOfAggregate,
   withoutSalesNotificationsOutsideStoreSeller,
   withoutSalesOutsideStoreSeller,
@@ -200,5 +202,42 @@ describe('withoutSalesNotificationsOutsideStoreSeller', () => {
 
   it('keeps every notification outside store mode', () => {
     expect(withoutSalesNotificationsOutsideStoreSeller(notifications, VIEWER, null, roles)).toBe(notifications);
+  });
+});
+
+describe('isSaleThread', () => {
+  const BUYER = 'b'.repeat(52);
+  const roles = storeThreadRoles(
+    [
+      { id: 'bought', buyerPubky: VIEWER, sellerPubky: STORE_SELLER },
+      { id: 'sold', buyerPubky: BUYER, sellerPubky: VIEWER },
+      { id: 'sold-to-store-seller', buyerPubky: STORE_SELLER, sellerPubky: VIEWER },
+    ],
+    VIEWER,
+  );
+  const isSale = (peer: string, context: { orderId?: string; listingId?: string } | null, listingOfPeer = false) =>
+    isSaleThread({ peer_pubky: peer, last_context: context }, roles, listingOfPeer);
+
+  it('is a sale thread with a buyer of the viewer, or about an order it sold', () => {
+    expect(isSale(BUYER, null)).toBe(true);
+    expect(isSale(OTHER, { orderId: 'sold' })).toBe(true);
+  });
+
+  it('stays a buyer thread whenever anything makes it a purchase', () => {
+    expect(isSale(STORE_SELLER, null)).toBe(false);
+    expect(isSale(STORE_SELLER, { orderId: 'sold-to-store-seller' })).toBe(false);
+    expect(isSale(BUYER, { orderId: 'bought' })).toBe(false);
+    expect(isSale(OTHER, { listingId: 'boots' }, true)).toBe(false);
+  });
+
+  it('keeps a thread with no order between them and no context', () => {
+    expect(isSale(OTHER, null)).toBe(false);
+  });
+
+  it('counts a context it cannot tell as a sale, and every order context before the roles are read', () => {
+    expect(isSale(OTHER, { orderId: 'unknown' })).toBe(true);
+    expect(isSale(OTHER, { listingId: 'boots' })).toBe(true);
+    expect(isSaleThread({ peer_pubky: STORE_SELLER, last_context: { orderId: 'bought' } }, null, false)).toBe(true);
+    expect(isSaleThread({ peer_pubky: OTHER, last_context: null }, null, false)).toBe(false);
   });
 });
