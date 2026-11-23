@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { withoutSalesOutsideStoreSeller } from './store-seller-side';
+import { canSellHere, withoutSalesOutsideStoreSeller } from './store-seller-side';
 
 const STORE_SELLER = 's'.repeat(52);
 const VIEWER = 'v'.repeat(52);
@@ -12,6 +12,14 @@ const rows = [
 ];
 
 const ids = (list: { id: string }[]) => list.map(({ id }) => id);
+
+describe('canSellHere', () => {
+  it('lets only the store seller sell in a store, and everyone outside store mode', () => {
+    expect(canSellHere(VIEWER, STORE_SELLER)).toBe(false);
+    expect(canSellHere(STORE_SELLER, STORE_SELLER)).toBe(true);
+    expect(canSellHere(VIEWER, null)).toBe(true);
+  });
+});
 
 describe('withoutSalesOutsideStoreSeller', () => {
   it('drops the rows another signed-in seller sold in a store', () => {

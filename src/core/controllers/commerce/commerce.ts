@@ -62,7 +62,7 @@ import { getMarketplaceGrantSessionEnabled, getRegionPolicy } from '@/libs/runti
 import type { CommerceIndexedReview, CommerceListingProjectionModelSchema } from '@/models/commerce/commerce.schema';
 import type { Pubky } from '@/models/models.types';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
-import { withoutSalesOutsideStoreSeller } from '@/pipes/commerce/store-seller-side';
+import { canSellHere, withoutSalesOutsideStoreSeller } from '@/pipes/commerce/store-seller-side';
 import { MarketplaceNotificationNormalizer } from '@/pipes/marketplaceNotification/marketplaceNotification.normalizer';
 import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
 import { isRecognizedMarketplaceNotification } from '@/services/marketplace/marketplace-projections';
@@ -1487,7 +1487,8 @@ export class CommerceController {
   /**
    * One pass of the seller's automatic confirmation, when the signed-in seller
    * turned it on in this browser and the durable service is in use. Returns the
-   * order ids it confirmed; a signed-out or opted-out session confirms nothing.
+   * order ids it confirmed; a signed-out or opted-out session confirms nothing,
+   * and so does any seller other than the store seller signed in to a store.
    */
   static async autoConfirmSellerPayments(): Promise<string[]> {
     if (!isDurableCommerceMode(getCommerceAdapterMode())) return [];
@@ -1498,7 +1499,7 @@ export class CommerceController {
       !scope.aborted &&
       useAuthStore.getState().currentUserPubky === pubky &&
       useSellerPaymentConfirmStore.getState().autoConfirmByPubky[pubky] !== false;
-    if (!pubky || !isEnabled()) return [];
+    if (!pubky || !isEnabled() || !canSellHere(pubky, getStoreSeller())) return [];
     const pass = new AbortController();
     const deadline = setTimeout(() => pass.abort(), SELLER_AUTO_CONFIRM_PASS_TIMEOUT_MS);
     const endPass = () => pass.abort();
