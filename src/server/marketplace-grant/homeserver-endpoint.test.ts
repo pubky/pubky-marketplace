@@ -119,6 +119,36 @@ describe('homeserver endpoint from Pkarr', () => {
     await expect(resolveHomeserverHttpsOrigin('not-a-key', deps)).resolves.toBeNull();
   });
 
+  it("stops reading a relay's endless answer at the record size and cancels it", async () => {
+    let pulledBytes = 0;
+    let cancelled = false;
+    const deps: HomeserverEndpointDeps = {
+      relays: ['https://relay-a.example'],
+      timeoutMs: 1000,
+      fetchRelay: async () =>
+        new Response(
+          new ReadableStream<Uint8Array>(
+            {
+              pull(controller) {
+                pulledBytes += 256;
+                controller.enqueue(new Uint8Array(256));
+              },
+              cancel() {
+                cancelled = true;
+              },
+            },
+            { highWaterMark: 0 },
+          ),
+          { status: 200, headers: { 'content-length': '100' } },
+        ),
+    };
+
+    await expect(resolveHomeserverHttpsOrigin(Keypair.random().publicKey.z32(), deps)).resolves.toBeNull();
+
+    expect(pulledBytes).toBeLessThanOrEqual(1072 + 256);
+    expect(cancelled).toBe(true);
+  });
+
   it('picks the lowest-priority usable service record', () => {
     const z32 = Keypair.random().publicKey.z32();
     const packet = dnsPacket(z32, [

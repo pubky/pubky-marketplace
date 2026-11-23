@@ -1,5 +1,6 @@
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { PublicKey } from '@synonymdev/pubky';
+import { readBodyWithin } from './capped-body';
 
 const SIGNATURE_BYTES = 64;
 const TIMESTAMP_BYTES = 8;
@@ -57,11 +58,11 @@ async function readRelay(relay: string, z32: string, deps: HomeserverEndpointDep
     cache: 'no-store',
     signal: AbortSignal.timeout(deps.timeoutMs),
   });
-  if (response.status !== 200) return null;
-  const declared = Number(response.headers.get('content-length'));
-  if (Number.isFinite(declared) && declared > MAX_RELAY_BODY_BYTES) return null;
-  const body = new Uint8Array(await response.arrayBuffer());
-  return body.length <= MAX_RELAY_BODY_BYTES ? body : null;
+  if (response.status !== 200) {
+    await response.body?.cancel().catch(() => undefined);
+    return null;
+  }
+  return await readBodyWithin(response, MAX_RELAY_BODY_BYTES);
 }
 
 /**

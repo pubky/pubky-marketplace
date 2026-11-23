@@ -252,6 +252,42 @@ describe('store-mode homeserver-session proof fetch', () => {
     }
   });
 
+  it("stops reading a host's endless proof body at the limit, whatever length it declares", async () => {
+    const declaredLengths: Record<string, string>[] = [
+      {},
+      { 'content-length': '512' },
+      { 'content-length': String(64 * 1024 * 1024) },
+    ];
+    for (const headers of declaredLengths) {
+      let pulledBytes = 0;
+      let cancelled = false;
+      const body = new ReadableStream<Uint8Array>(
+        {
+          pull(controller) {
+            pulledBytes += 1024;
+            controller.enqueue(new Uint8Array(1024).fill(120));
+          },
+          cancel() {
+            cancelled = true;
+          },
+        },
+        { highWaterMark: 0 },
+      );
+
+      await expect(
+        fetchHomeserverProofDocument(
+          config,
+          pubky,
+          challengeId,
+          storeDeps({ fetchProof: async () => new Response(body, { status: 200, headers }) }),
+        ),
+      ).rejects.toBeInstanceOf(HomeserverFetchDenied);
+
+      expect(pulledBytes).toBeLessThanOrEqual(17 * 1024);
+      expect(cancelled).toBe(true);
+    }
+  });
+
   it('stays closed to other homeservers outside store mode', async () => {
     const fetchProof = vi.fn();
     const resolveHomeserverHttpsOrigin = vi.fn(async () => 'https://own-homeserver.example');

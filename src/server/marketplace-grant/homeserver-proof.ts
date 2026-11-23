@@ -1,6 +1,7 @@
 import { Pubky, PublicKey } from '@synonymdev/pubky';
 import { z } from 'zod';
 import { getHomeserver, getHomeserverUrl, getPkarrRelays, getStoreSeller } from '@/libs/runtime-config/runtime-config';
+import { readBodyWithin } from './capped-body';
 import type { CliGrantConfig } from './config';
 import { canonicalJson, encodeBase64Url, sha256Bytes } from './crypto';
 import { resolveHomeserverHttpsOrigin } from './homeserver-endpoint';
@@ -112,7 +113,8 @@ const defaultDeps: HomeserverProofDeps = {
  * accepts any other homeserver the user's record names, at the origin that homeserver's own
  * signed record publishes (`resolveHomeserverHttpsOrigin`). Either way the request goes over
  * HTTPS on port 443 to a public address (`checkTarget`), names the user in `pubky-host`, follows
- * no redirect and reads at most {@link PROOF_BODY_LIMIT} bytes; every failure is a denial.
+ * no redirect and reads at most {@link PROOF_BODY_LIMIT} bytes, stopping the stream there; every
+ * failure is a denial.
  */
 export async function fetchHomeserverProofDocument(
   config: CliGrantConfig,
@@ -145,11 +147,14 @@ export async function fetchHomeserverProofDocument(
       cache: 'no-store',
       signal: AbortSignal.timeout(config.homeserverFetchTimeoutMs),
     });
-    if (response.status !== 200) throw new HomeserverFetchDenied();
-    const text = await response.text();
-    if (Buffer.byteLength(text) > PROOF_BODY_LIMIT) throw new HomeserverFetchDenied();
+    if (response.status !== 200) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new HomeserverFetchDenied();
+    }
+    const body = await readBodyWithin(response, PROOF_BODY_LIMIT);
+    if (!body) throw new HomeserverFetchDenied();
     try {
-      return JSON.parse(text) as unknown;
+      return JSON.parse(new TextDecoder().decode(body)) as unknown;
     } catch {
       throw new HomeserverFetchDenied();
     }
