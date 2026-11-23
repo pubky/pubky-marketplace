@@ -6,7 +6,7 @@
  * host that lies about the length or streams without one never gets more than one chunk past
  * the limit into memory.
  */
-export async function readBodyWithin(response: Response, limit: number): Promise<Uint8Array | null> {
+export async function readBodyWithin(response: Response, limit: number): Promise<Uint8Array<ArrayBuffer> | null> {
   const declared = response.headers.get('content-length')?.trim();
   if (declared && /^\d+$/.test(declared) && Number(declared) > limit) {
     await response.body?.cancel().catch(() => undefined);

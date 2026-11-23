@@ -1,11 +1,14 @@
 import { Client, Pubky, PublicKey, resolvePubky } from '@synonymdev/pubky';
+import { IMAGE_MAX_RAW_SIZE } from '@/config/images';
 import { getPkarrRelays } from '@/config/network';
 import { getProfileImageBlobOwner, isValidMarketplaceMediaUri } from '@/libs/commerce/media-url';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
+import { readBodyWithin } from '@/libs/http/capped-body';
 import { HttpStatusCode } from '@/libs/http/http.types';
+import { sniffImageMimeType } from '@/pipes/import-image/import-image.sniff';
 
 const mediaClient = new Client({ pkarr: { relays: getPkarrRelays() } });
 const mediaSdk = Pubky.withClient(mediaClient);
@@ -27,11 +30,12 @@ export class MarketplaceMediaService {
         operation: 'fetchMedia',
       });
     }
-    return await this.fetchPublicBlob(uri, {
+    const response = await this.fetchPublicResponse(uri, {
       operation: 'fetchMedia',
       label: 'Marketplace media',
       service: ErrorService.Marketplace,
     });
+    return await response.blob();
   }
 
   /** A profile image blob (`/pub/pubky.app/blobs/<id>`) from its owner's homeserver. */
@@ -42,14 +46,28 @@ export class MarketplaceMediaService {
         operation: 'fetchProfileImage',
       });
     }
-    return await this.fetchPublicBlob(uri, {
-      operation: 'fetchProfileImage',
-      label: 'Profile image',
-      service: ErrorService.Homeserver,
-    });
+    const read = { operation: 'fetchProfileImage', label: 'Profile image', service: ErrorService.Homeserver };
+    const response = await this.fetchPublicResponse(uri, read);
+    // Any user's homeserver chooses these bytes and their declared type, and the
+    // resulting `blob:` URL is same-origin with the app.
+    const bytes = await readBodyWithin(response, IMAGE_MAX_RAW_SIZE);
+    if (!bytes) {
+      throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Profile image is too large.', {
+        ...read,
+        context: { limitBytes: IMAGE_MAX_RAW_SIZE },
+      });
+    }
+    const type = profileImageType(bytes, response.headers.get('content-type'));
+    if (!type) {
+      throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Profile image is not a supported image.', read);
+    }
+    return new Blob([bytes], { type });
   }
 
-  private static async fetchPublicBlob(uri: string, { operation, label, service }: PublicBlobRead): Promise<Blob> {
+  private static async fetchPublicResponse(
+    uri: string,
+    { operation, label, service }: PublicBlobRead,
+  ): Promise<Response> {
     const response = await mediaClient.fetch(resolvePubky(uri));
     // A listing or profile can name an image its owner has since deleted; the UI
     // shows no image for it, so a missing file is not a failure worth reporting.
@@ -70,6 +88,18 @@ export class MarketplaceMediaService {
         context: { statusCode: response.status },
       });
     }
-    return await response.blob();
+    return response;
   }
+}
+
+/**
+ * The type the bytes themselves show (JPEG, PNG, GIF or WebP); otherwise the declared
+ * type when it is an image other than SVG, which is active content. Null for anything else.
+ */
+function profileImageType(bytes: Uint8Array, declared: string | null): string | null {
+  const sniffed = sniffImageMimeType(bytes);
+  if (sniffed) return sniffed;
+  const type = declared?.split(';')[0].trim().toLowerCase();
+  if (!type?.startsWith('image/') || type === 'image/svg+xml') return null;
+  return type;
 }

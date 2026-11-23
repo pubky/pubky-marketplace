@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { IMAGE_MAX_RAW_SIZE } from '@/config/images';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -78,11 +79,84 @@ describe('MarketplaceMediaService', () => {
   describe('fetchProfileImage', () => {
     const blobUri = `pubky://${owner}/pub/pubky.app/blobs/0034A0X7NJ52H`;
 
-    it("reads a Pubky App blob from its owner's homeserver", async () => {
-      const image = await MarketplaceMediaService.fetchProfileImage(blobUri);
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d]);
+    const image = (body: BodyInit, contentType: string) =>
+      new Response(body, { status: 200, headers: { 'content-type': contentType } });
 
-      expect(await image.text()).toBe('media');
+    it("reads a Pubky App blob from its owner's homeserver", async () => {
+      fetchMock.mockResolvedValue(image(png, 'image/png'));
+
+      const blob = await MarketplaceMediaService.fetchProfileImage(blobUri);
+
+      expect(new Uint8Array(await blob.arrayBuffer())).toEqual(png);
+      expect(blob.type).toBe('image/png');
       expect(fetchMock).toHaveBeenCalledWith(`https://resolved.example/${blobUri}`);
+    });
+
+    it('types the image by its bytes, whatever the homeserver declares', async () => {
+      fetchMock.mockResolvedValue(image(png, 'text/html'));
+
+      await expect(MarketplaceMediaService.fetchProfileImage(blobUri)).resolves.toMatchObject({ type: 'image/png' });
+    });
+
+    it('keeps a declared image type it cannot recognize, without parameters', async () => {
+      fetchMock.mockResolvedValue(image('avif bytes', 'Image/AVIF; charset=binary'));
+
+      await expect(MarketplaceMediaService.fetchProfileImage(blobUri)).resolves.toMatchObject({ type: 'image/avif' });
+    });
+
+    it.each([
+      ['an SVG', '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>', 'image/svg+xml'],
+      ['HTML', '<!doctype html><script>alert(1)</script>', 'text/html'],
+      ['an untyped file', 'bytes', 'application/octet-stream'],
+    ])('refuses %s', async (_label, body, contentType) => {
+      fetchMock.mockResolvedValue(image(body, contentType));
+
+      await expect(MarketplaceMediaService.fetchProfileImage(blobUri)).rejects.toMatchObject({
+        code: ServerErrorCode.INVALID_RESPONSE,
+        message: 'Profile image is not a supported image.',
+      });
+    });
+
+    it.each([
+      ['without a length', {}],
+      ['under a false length', { 'content-length': '12' }],
+    ])('stops reading an oversized image %s at the limit', async (_label, headers: Record<string, string>) => {
+      const chunk = new Uint8Array(1024 * 1024);
+      let pulled = 0;
+      let cancelled = false;
+      const endless = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulled += chunk.byteLength;
+          controller.enqueue(chunk);
+        },
+        cancel() {
+          cancelled = true;
+        },
+      });
+      fetchMock.mockResolvedValue(
+        new Response(endless, { status: 200, headers: { 'content-type': 'image/png', ...headers } }),
+      );
+
+      await expect(MarketplaceMediaService.fetchProfileImage(blobUri)).rejects.toMatchObject({
+        code: ServerErrorCode.INVALID_RESPONSE,
+        message: 'Profile image is too large.',
+      });
+      expect(cancelled).toBe(true);
+      expect(pulled).toBeLessThanOrEqual(IMAGE_MAX_RAW_SIZE + 2 * chunk.byteLength);
+    });
+
+    it('refuses an image declared over the limit without reading it', async () => {
+      fetchMock.mockResolvedValue(
+        new Response(png, {
+          status: 200,
+          headers: { 'content-type': 'image/png', 'content-length': String(IMAGE_MAX_RAW_SIZE + 1) },
+        }),
+      );
+
+      await expect(MarketplaceMediaService.fetchProfileImage(blobUri)).rejects.toMatchObject({
+        message: 'Profile image is too large.',
+      });
     });
 
     it('refuses anything but a Pubky App blob before any request', async () => {
