@@ -66,6 +66,8 @@ import type { Pubky } from '@/models/models.types';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import {
   isSaleSubject,
+  type StoreNotificationRoles,
+  storeNotificationSubjects,
   subjectOfAggregate,
   withoutSalesNotificationsOutsideStoreSeller,
   withoutSalesOutsideStoreSeller,
@@ -1376,20 +1378,53 @@ export class CommerceController {
   }
 
   /**
-   * The viewer's marketplace notifications; in a store, a viewer other than the store seller loses
-   * those about its own selling, which needs its orders and offers to resolve.
+   * The viewer's marketplace notifications; in a store, a viewer other than the store seller keeps
+   * only its buyer side (`withoutSalesNotificationsOutsideStoreSeller`).
    */
   private static async getScopedMarketplaceNotifications(viewerPubky: string) {
-    if (StoreSellerGate.canSellHere(viewerPubky)) {
-      return await CommerceApplication.getMarketplaceNotifications(viewerPubky);
-    }
-    const storeSeller = getStoreSeller();
-    const [notifications, orders, offers] = await Promise.all([
-      CommerceApplication.getMarketplaceNotifications(viewerPubky),
-      CommerceApplication.getMarketplaceOrders(viewerPubky),
-      CommerceApplication.getMarketplaceOffers(viewerPubky),
+    const notifications = await CommerceApplication.getMarketplaceNotifications(viewerPubky);
+    if (StoreSellerGate.canSellHere(viewerPubky)) return notifications;
+    const roles = await this.resolveStoreNotificationRoles(viewerPubky, storeNotificationSubjects(notifications));
+    return withoutSalesNotificationsOutsideStoreSeller(notifications, viewerPubky, getStoreSeller(), roles);
+  }
+
+  /**
+   * Who sells the orders and offers, and which role wrote the moderated own reviews, that a
+   * notification list names. Each list is read only when the notifications need it, and an order the
+   * list does not name is read by id. A read that fails leaves its entries unknown, so their
+   * notifications are hidden instead of failing the whole read.
+   */
+  private static async resolveStoreNotificationRoles(
+    viewerPubky: string,
+    { orderIds, offerIds, reviewUris }: ReturnType<typeof storeNotificationSubjects>,
+  ): Promise<StoreNotificationRoles> {
+    const [orders, offers, reviews] = await Promise.allSettled([
+      orderIds.length > 0 ? CommerceApplication.getMarketplaceOrders(viewerPubky) : [],
+      offerIds.length > 0 ? CommerceApplication.getMarketplaceOffers(viewerPubky) : [],
+      reviewUris.length > 0 ? CommerceApplication.getOwnReviews(viewerPubky) : [],
     ]);
-    return withoutSalesNotificationsOutsideStoreSeller(notifications, viewerPubky, storeSeller, { orders, offers });
+    const orderSellers = new Map<string, string | null>(
+      orders.status === 'fulfilled' ? orders.value.map(({ id, sellerPubky }) => [id, sellerPubky]) : [],
+    );
+    const unlisted = orders.status === 'fulfilled' ? orderIds.filter((id) => !orderSellers.has(id)) : [];
+    const reads = await Promise.allSettled(
+      unlisted.map((id) => CommerceApplication.getMarketplaceOrder(viewerPubky, id)),
+    );
+    reads.forEach((read, index) => {
+      orderSellers.set(unlisted[index], read.status === 'fulfilled' ? (read.value?.sellerPubky ?? null) : null);
+    });
+    const offerSellers = new Map<string, string | null>(
+      offers.status === 'fulfilled' ? offers.value.map(({ id, sellerPubky }) => [id, sellerPubky]) : [],
+    );
+    const reviewRoles = new Map<string, 'buyer' | 'seller' | null>(
+      reviews.status === 'fulfilled'
+        ? reviews.value.map(({ owner_id, review_id, record }) => [
+            CommerceRecordNormalizer.reviewUri(owner_id, review_id),
+            record.role === 'buyer_reviewing_seller' ? 'buyer' : 'seller',
+          ])
+        : [],
+    );
+    return { orderSellers, offerSellers, reviewRoles };
   }
 
   static async getMarketplaceNotificationPreferences() {

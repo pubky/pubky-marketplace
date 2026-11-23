@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceApplication } from '@/application/commerce/commerce';
 import type { CommerceAdapterMode } from '@/config/commerce';
+import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useNotificationStore } from '@/stores/notification/notification.store';
 import { COMMERCE_FIXTURE_BUYER, COMMERCE_FIXTURE_SELLER } from '@/test/fixtures/commerce/commerce';
-import { createNotificationFixture } from '@/test/fixtures/commerce/notifications';
+import { createModerationDecisionFixture, createNotificationFixture } from '@/test/fixtures/commerce/notifications';
 import { setStoreSeller } from '@/test-utils/store-mode';
 import { CommerceController } from './commerce';
 
@@ -88,6 +89,66 @@ describe('CommerceController seller side in a store', () => {
     expect(markRead.mock.calls).toEqual([
       [expect.objectContaining({ payload: { notificationId: notifications[0].id } })],
     ]);
+  });
+
+  it('reads only the lists the notifications need, and survives one that fails', async () => {
+    setStoreSeller(STORE_SELLER);
+    const outbid = createNotificationFixture('outbid', {
+      ...unread,
+      id: '018f47d2-6a27-7c23-a62f-000000000004',
+      aggregateId: `listing:${STORE_SELLER}_boots`,
+    });
+    vi.mocked(CommerceApplication.getMarketplaceNotifications).mockResolvedValue([outbid]);
+    expect(notificationIds(await CommerceController.getMarketplaceNotifications())).toEqual(['4']);
+    expect(CommerceApplication.getMarketplaceOrders).not.toHaveBeenCalled();
+    expect(CommerceApplication.getMarketplaceOffers).not.toHaveBeenCalled();
+
+    vi.mocked(CommerceApplication.getMarketplaceNotifications).mockResolvedValue([...notifications, outbid]);
+    vi.mocked(CommerceApplication.getMarketplaceOrders).mockRejectedValue(new Error('orders are down'));
+    expect(notificationIds(await CommerceController.getMarketplaceNotifications())).toEqual(['4']);
+    expect(CommerceApplication.getMarketplaceOrder).not.toHaveBeenCalled();
+  });
+
+  it('reads an order the list does not name by id, keeping it when the viewer bought it', async () => {
+    setStoreSeller(STORE_SELLER);
+    vi.mocked(CommerceApplication.getMarketplaceOrders).mockResolvedValue([] as never);
+
+    expect(notificationIds(await CommerceController.getMarketplaceNotifications())).toEqual(['1']);
+    expect(vi.mocked(CommerceApplication.getMarketplaceOrder).mock.calls.map(([, id]) => id)).toEqual([
+      'order-purchase',
+      'order-sale',
+    ]);
+  });
+
+  it('keeps moderation of a review the viewer wrote as a buyer, and nothing about its selling', async () => {
+    setStoreSeller(STORE_SELLER);
+    const review = (reviewId: string, role: string) => ({ owner_id: VIEWER, review_id: reviewId, record: { role } });
+    const asBuyer = '018f47d2-6a27-7c23-a62f-0000000000b1';
+    const asSeller = '018f47d2-6a27-7c23-a62f-0000000000b2';
+    vi.spyOn(CommerceApplication, 'getOwnReviews').mockResolvedValue([
+      review(asBuyer, 'buyer_reviewing_seller'),
+      review(asSeller, 'seller_reviewing_buyer'),
+    ] as never);
+    const decision = (
+      id: string,
+      restriction: 'review_text_hidden' | 'review_excluded' | 'listing_removed',
+      reviewId: string,
+    ) =>
+      createNotificationFixture('moderation_decision', {
+        ...unread,
+        id: `018f47d2-6a27-7c23-a62f-00000000000${id}`,
+        moderationDecision: createModerationDecisionFixture({
+          restriction,
+          targetUri: CommerceRecordNormalizer.reviewUri(VIEWER, reviewId),
+        }),
+      });
+    vi.mocked(CommerceApplication.getMarketplaceNotifications).mockResolvedValue([
+      decision('5', 'review_text_hidden', asBuyer),
+      decision('6', 'review_excluded', asSeller),
+      decision('7', 'listing_removed', asBuyer),
+    ]);
+
+    expect(notificationIds(await CommerceController.getMarketplaceNotifications())).toEqual(['5']);
   });
 
   it('keeps every notification for the store seller and outside store mode', async () => {

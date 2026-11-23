@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   canSellHere,
   isSaleSubject,
+  storeNotificationSubjects,
   subjectOfAggregate,
   withoutSalesNotificationsOutsideStoreSeller,
   withoutSalesOutsideStoreSeller,
@@ -104,63 +105,100 @@ describe('withoutSalesOutsideStoreSeller', () => {
   });
 });
 
+describe('storeNotificationSubjects', () => {
+  it('names the orders, offers and moderated reviews a notification list needs resolved, once each', () => {
+    expect(
+      storeNotificationSubjects([
+        { type: 'order_created', aggregateId: 'order:o-1' },
+        { type: 'order_shipped', aggregateId: 'order:o-1' },
+        { type: 'offer_received', aggregateId: 'offer:f-1' },
+        { type: 'outbid', aggregateId: `listing:${OTHER}_boots` },
+        {
+          type: 'moderation_decision',
+          aggregateId: 'moderation_decision:1',
+          moderationDecision: { restriction: 'review_excluded', targetUri: 'pubky://review' },
+        },
+        {
+          type: 'moderation_decision',
+          aggregateId: 'moderation_decision:2',
+          moderationDecision: { restriction: 'listing_removed', targetUri: 'pubky://listing' },
+        },
+        { kind: 'unrecognized', type: 'order_created', aggregateId: 'order:o-2' },
+      ]),
+    ).toEqual({ orderIds: ['o-1'], offerIds: ['f-1'], reviewUris: ['pubky://review'] });
+  });
+});
+
 describe('withoutSalesNotificationsOutsideStoreSeller', () => {
-  const context = {
-    orders: [
-      { id: 'bought', sellerPubky: STORE_SELLER },
-      { id: 'sold', sellerPubky: VIEWER },
-    ],
-    offers: [
-      { id: 'made', sellerPubky: OTHER },
-      { id: 'received', sellerPubky: VIEWER },
-    ],
+  const roles = {
+    orderSellers: new Map<string, string | null>([
+      ['bought', STORE_SELLER],
+      ['sold', VIEWER],
+      ['unreadable', null],
+    ]),
+    offerSellers: new Map<string, string | null>([
+      ['made', OTHER],
+      ['received', VIEWER],
+    ]),
+    reviewRoles: new Map<string, 'buyer' | 'seller' | null>([
+      ['pubky://review-as-buyer', 'buyer'],
+      ['pubky://review-as-seller', 'seller'],
+    ]),
   };
+  const decision = (id: string, restriction: string, targetUri = 'pubky://target') => ({
+    id,
+    type: 'moderation_decision',
+    aggregateId: `moderation_decision:${id}`,
+    moderationDecision: { restriction, targetUri },
+  });
   const notifications = [
-    { id: 'order-bought', aggregateId: 'order:bought' },
-    { id: 'order-sold', aggregateId: 'order:sold' },
-    { id: 'order-unknown', aggregateId: 'order:unknown' },
-    { id: 'offer-made', aggregateId: 'offer:made' },
-    { id: 'offer-received', aggregateId: 'offer:received' },
-    { id: 'outbid', aggregateId: `listing:${STORE_SELLER}_boots` },
-    { id: 'auction-ended', aggregateId: `listing:${VIEWER}_boots` },
-    { id: 'drop-sold-out', aggregateId: `drop:${VIEWER}_spring` },
-    { id: 'message', aggregateId: 'conversation:1' },
+    { id: 'order-bought', type: 'payment_confirmed', aggregateId: 'order:bought' },
+    { id: 'order-sold', type: 'order_created', aggregateId: 'order:sold' },
+    { id: 'order-unreadable', type: 'bitcoin_payment_seen', aggregateId: 'order:unreadable' },
+    { id: 'order-unknown', type: 'order_created', aggregateId: 'order:unknown' },
+    { id: 'offer-made', type: 'offer_accepted', aggregateId: 'offer:made' },
+    { id: 'offer-received', type: 'offer_received', aggregateId: 'offer:received' },
+    { id: 'outbid', type: 'outbid', aggregateId: `listing:${STORE_SELLER}_boots` },
+    { id: 'auction-ended', type: 'auction_ended', aggregateId: `listing:${VIEWER}_boots` },
+    { id: 'drop-sold-out', type: 'drop_sold_out', aggregateId: `drop:${VIEWER}_spring` },
+    { id: 'message-bought', type: 'message_received', aggregateId: `conversation:${STORE_SELLER}_${VIEWER}_boots` },
+    { id: 'message-sold', type: 'message_received', aggregateId: `conversation:${VIEWER}_${OTHER}_boots` },
+    { id: 'checkout', type: 'payment_method_bound', aggregateId: 'checkout:1' },
+    decision('listing-removed', 'listing_removed'),
+    decision('shop-suspended', 'shop_suspended'),
+    decision('review-hidden-as-buyer', 'review_text_hidden', 'pubky://review-as-buyer'),
+    decision('review-excluded-as-buyer', 'review_excluded', 'pubky://review-as-buyer'),
+    decision('review-hidden-as-seller', 'review_text_hidden', 'pubky://review-as-seller'),
+    decision('review-excluded-unknown', 'review_excluded', 'pubky://someone-else'),
     {
-      id: 'listing-removed',
-      aggregateId: 'moderation_decision:1',
-      moderationDecision: { restriction: 'listing_removed' },
+      id: 'decision-unreadable',
+      type: 'moderation_decision',
+      aggregateId: 'moderation_decision:9',
+      moderationDecision: null,
     },
-    {
-      id: 'shop-suspended',
-      aggregateId: 'moderation_decision:2',
-      moderationDecision: { restriction: 'shop_suspended' },
-    },
-    {
-      id: 'review-hidden',
-      aggregateId: 'moderation_decision:3',
-      moderationDecision: { restriction: 'review_text_hidden' },
-    },
-    { id: 'unrecognized' },
+    { id: 'quarantined', kind: 'unrecognized', type: 'payment_confirmed' },
+    { id: 'unknown-aggregate', type: 'payment_confirmed', aggregateId: 'shop:1' },
   ];
 
-  it('drops the notifications about another signed-in seller selling in a store', () => {
-    expect(ids(withoutSalesNotificationsOutsideStoreSeller(notifications, VIEWER, STORE_SELLER, context))).toEqual([
+  it('keeps only what another signed-in seller bought in a store, and hides what it cannot tell', () => {
+    expect(ids(withoutSalesNotificationsOutsideStoreSeller(notifications, VIEWER, STORE_SELLER, roles))).toEqual([
       'order-bought',
       'offer-made',
       'outbid',
-      'message',
-      'review-hidden',
-      'unrecognized',
+      'message-bought',
+      'checkout',
+      'review-hidden-as-buyer',
+      'review-excluded-as-buyer',
     ]);
   });
 
   it('keeps every notification for the store seller', () => {
-    expect(withoutSalesNotificationsOutsideStoreSeller(notifications, STORE_SELLER, STORE_SELLER, context)).toBe(
+    expect(withoutSalesNotificationsOutsideStoreSeller(notifications, STORE_SELLER, STORE_SELLER, roles)).toBe(
       notifications,
     );
   });
 
   it('keeps every notification outside store mode', () => {
-    expect(withoutSalesNotificationsOutsideStoreSeller(notifications, VIEWER, null, context)).toBe(notifications);
+    expect(withoutSalesNotificationsOutsideStoreSeller(notifications, VIEWER, null, roles)).toBe(notifications);
   });
 });

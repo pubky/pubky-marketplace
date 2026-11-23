@@ -83,56 +83,73 @@ export function isSaleSubject(
       return true;
   }
 }
-/** A notification row; one this build does not recognize carries no subject. */
+
+/** A notification row: recognized rows carry a subject; rows that failed the schema carry `kind`. */
 type SubjectNotification = {
-  id: string;
+  kind?: string;
+  type?: string;
   aggregateId?: string;
-  moderationDecision?: { restriction: string } | null;
+  moderationDecision?: { restriction: string; targetUri: string } | null;
 };
 
-const SELLER_MODERATION_RESTRICTIONS: ReadonlySet<string> = new Set(['listing_removed', 'shop_suspended']);
+const REVIEW_MODERATION_RESTRICTIONS: ReadonlySet<string> = new Set(['review_text_hidden', 'review_excluded']);
 
-function aggregateSuffix(aggregateId: string, prefix: string): string | null {
-  return aggregateId.startsWith(prefix) ? aggregateId.slice(prefix.length) : null;
+/** The order and offer ids and the moderated own-review URIs a notification list needs resolved. */
+export function storeNotificationSubjects(notifications: readonly SubjectNotification[]): {
+  orderIds: string[];
+  offerIds: string[];
+  reviewUris: string[];
+} {
+  const orderIds = new Set<string>();
+  const offerIds = new Set<string>();
+  const reviewUris = new Set<string>();
+  for (const { kind, type, aggregateId, moderationDecision } of notifications) {
+    if (kind !== undefined) continue;
+    if (type === 'moderation_decision') {
+      if (moderationDecision && REVIEW_MODERATION_RESTRICTIONS.has(moderationDecision.restriction)) {
+        reviewUris.add(moderationDecision.targetUri);
+      }
+      continue;
+    }
+    const subject = subjectOfAggregate(aggregateId ?? '');
+    if (subject.kind === 'order') orderIds.add(subject.id);
+    if (subject.kind === 'offer') offerIds.add(subject.id);
+  }
+  return { orderIds: [...orderIds], offerIds: [...offerIds], reviewUris: [...reviewUris] };
 }
 
-/** `drop:<seller>_<dropId>`; pubkys never contain `_`. */
-function sellerOfDropAggregateId(aggregateId: string): string | null {
-  const rest = aggregateSuffix(aggregateId, 'drop:');
-  if (rest === null) return null;
-  const separator = rest.indexOf('_');
-  return separator > 0 ? rest.slice(0, separator) : null;
-}
+/** What the controller resolved for {@link storeNotificationSubjects}; a missing or null entry is unknown. */
+export type StoreNotificationRoles = {
+  orderSellers: ReadonlyMap<string, string | null>;
+  offerSellers: ReadonlyMap<string, string | null>;
+  /** The role the viewer wrote each moderated review in, by review URI. */
+  reviewRoles: ReadonlyMap<string, 'buyer' | 'seller' | null>;
+};
 
 /**
- * Marketplace notifications without those about the viewer's selling where it cannot sell: an order
- * or offer it is the seller of, its own listing or drop, or a moderation decision on its listing or
- * shop. A notification names an order or offer only by id, so they are resolved through the viewer's
- * unfiltered `orders` and `offers`; one they do not name is dropped too, as its link opens nothing.
- * Conversations, review decisions and rows this build does not recognize are kept.
+ * Marketplace notifications without those about the viewer's selling where it cannot sell. Kept:
+ * notifications about a listing, drop, conversation, order or offer the viewer buys, checkouts and
+ * payments, and moderation of a review the viewer wrote as a buyer. Dropped: everything about the
+ * viewer's sales, moderation of its listings or shop, and whatever cannot be told apart: a row that
+ * failed the schema, an unreadable moderation statement, an unknown aggregate, and an order, offer or
+ * review the resolved roles do not name.
  */
 export function withoutSalesNotificationsOutsideStoreSeller<T extends SubjectNotification>(
   notifications: T[],
   viewerPubky: string,
   storeSeller: string | null,
-  context: {
-    orders: readonly { id: string; sellerPubky: string }[];
-    offers: readonly { id: string; sellerPubky: string }[];
-  },
+  roles: StoreNotificationRoles,
 ): T[] {
   if (canSellHere(viewerPubky, storeSeller)) return notifications;
-  const orderSellers = new Map(context.orders.map((order) => [order.id, order.sellerPubky]));
-  const offerSellers = new Map(context.offers.map((offer) => [offer.id, offer.sellerPubky]));
-  const isSellerSide = ({ aggregateId, moderationDecision }: T): boolean => {
-    if (moderationDecision && SELLER_MODERATION_RESTRICTIONS.has(moderationDecision.restriction)) return true;
-    if (aggregateId === undefined) return false;
-    const orderId = aggregateSuffix(aggregateId, 'order:');
-    if (orderId !== null) return (orderSellers.get(orderId) ?? viewerPubky) === viewerPubky;
-    const offerId = aggregateSuffix(aggregateId, 'offer:');
-    if (offerId !== null) return (offerSellers.get(offerId) ?? viewerPubky) === viewerPubky;
-    const listing = parseListingAggregateId(aggregateId);
-    if (listing) return listing.sellerPubky === viewerPubky;
-    return sellerOfDropAggregateId(aggregateId) === viewerPubky;
+  const sellerOf = (kind: 'order' | 'offer', id: string) =>
+    (kind === 'order' ? roles.orderSellers : roles.offerSellers).get(id) ?? null;
+  const isBuyerSide = ({ kind, type, aggregateId, moderationDecision }: T): boolean => {
+    if (kind !== undefined) return false;
+    if (type === 'moderation_decision') {
+      if (!moderationDecision || !REVIEW_MODERATION_RESTRICTIONS.has(moderationDecision.restriction)) return false;
+      return roles.reviewRoles.get(moderationDecision.targetUri) === 'buyer';
+    }
+    return !isSaleSubject(subjectOfAggregate(aggregateId ?? ''), viewerPubky, sellerOf);
   };
-  return notifications.filter((notification) => !isSellerSide(notification));
+  return notifications.filter(isBuyerSide);
 }
