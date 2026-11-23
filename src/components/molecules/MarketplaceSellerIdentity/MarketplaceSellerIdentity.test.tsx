@@ -19,8 +19,8 @@ describe('MarketplaceSellerIdentity', () => {
     expect(screen.queryByText(/Seller-stated/)).not.toBeInTheDocument();
   });
 
-  it('keeps legacy stars unchanged when the unfiltered total rises', () => {
-    const identity = (count: number) => (
+  it('shows no stars for a legacy summary, even with a trusted attestor, whatever its unfiltered figures', () => {
+    const identity = (count: number, avg: number) => (
       <MarketplaceSellerIdentity
         sellerPubky={'s'.repeat(52)}
         displayName="Example Shop"
@@ -29,7 +29,7 @@ describe('MarketplaceSellerIdentity', () => {
           summary: {
             count,
             verifiedCount: 7,
-            avg: 4.2,
+            avg,
             histogram: [0, 1, 1, 2, 4],
             responseCount: 0,
             editedLateCount: 0,
@@ -39,16 +39,17 @@ describe('MarketplaceSellerIdentity', () => {
         }}
       />
     );
-    const { container, rerender } = render(identity(8));
+    const { container, rerender } = render(identity(8, 4.2));
     const before = container.textContent;
 
-    expect(screen.getByRole('img', { name: 'Rated 4.2 out of 5, 3 verified purchases' })).toBeVisible();
-    expect(before).not.toContain('8');
+    expect(screen.getByText('No rating yet')).toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(before).not.toContain('4.2');
 
-    rerender(identity(80));
+    rerender(identity(80, 4.9));
 
     expect(container.textContent).toBe(before);
-    expect(container.textContent).not.toContain('80');
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 
   it('shows "No rating yet" for a legacy summary with reviews but no trusted attestor', () => {

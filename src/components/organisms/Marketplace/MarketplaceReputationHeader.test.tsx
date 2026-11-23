@@ -43,14 +43,27 @@ describe('MarketplaceReputationHeader', () => {
     reputation.ratedListings = 0;
   });
 
-  it('counts only trusted-attestor reviews in the star row and the basis line', () => {
+  it('shows no stars on a legacy index and counts only trusted-attestor reviews in its line', () => {
     reputation.value = rated({ attestors: { [TEST_TRUSTED_ATTESTOR.pubky]: 2, [UNKNOWN_ATTESTOR]: 3 } });
 
     render(<MarketplaceReputationHeader sellerPubky={SELLER} variant="full" />);
 
-    expect(screen.getByRole('img', { name: 'Rated 4.5 out of 5, 2 verified purchases' })).toBeVisible();
-    expect(screen.getByTitle('2 verified purchases')).toBeInTheDocument();
-    expect(screen.getByText('2 reviews verified by attestors this app trusts')).toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(screen.getByTestId('marketplace-reputation-seller-rating')).toHaveTextContent('No rating yet');
+    expect(screen.getByTestId('marketplace-reputation-header').textContent).not.toContain('4.5');
+    expect(
+      screen.getByText('2 reviews verified by attestors this app trusts, not yet rated on their own'),
+    ).toBeInTheDocument();
+  });
+
+  it('words the legacy line for a single trusted verified review', () => {
+    reputation.value = rated({ attestors: { [TEST_TRUSTED_ATTESTOR.pubky]: 1, [UNKNOWN_ATTESTOR]: 4 } });
+
+    render(<MarketplaceReputationHeader sellerPubky={SELLER} variant="full" />);
+
+    expect(
+      screen.getByText('1 review verified by an attestor this app trusts, not yet rated on its own'),
+    ).toBeInTheDocument();
   });
 
   it('shows no stars when every attestation comes from an unrecognized key', () => {
@@ -64,12 +77,13 @@ describe('MarketplaceReputationHeader', () => {
     expect(screen.getByText('No reviews verified by an attestor this app trusts')).toBeInTheDocument();
   });
 
-  it('applies the same trusted-only count to the compact listing-page variant', () => {
+  it('shows "No rating yet" and no stars on the compact listing-page variant of a legacy index', () => {
     reputation.value = rated({ attestors: { [TEST_TRUSTED_ATTESTOR.pubky]: 1, [UNKNOWN_ATTESTOR]: 4 } });
 
     render(<MarketplaceReputationHeader sellerPubky={SELLER} />);
 
-    expect(screen.getByRole('img', { name: 'Rated 4.5 out of 5, 1 verified purchase' })).toBeVisible();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(screen.getByTestId('marketplace-reputation-header')).toHaveTextContent(/^No rating yet$/);
   });
 });
 
@@ -185,10 +199,34 @@ describe('MarketplaceReputationHeader counted figures', () => {
       expect(after).toBe('2 reviews counted: verified purchases from attestors this app trusts');
     });
 
-    it('keeps legacy text unchanged when unfiltered reviews raise the total', () => {
-      function legacyText(count: number): string | null {
+    it('words the count line for a single counted review', () => {
+      const oneReview = bucket({
+        orders: 1,
+        buyers: 1,
+        sumBuyerMeans: 5,
+        weightedSum: 5,
+        weightTotal: 1,
+        histogram: [0, 0, 0, 0, 1],
+        sellerBuyers: 1,
+        sumSellerBuyerMeans: 5,
+      });
+
+      expect(
+        basisLine({
+          buckets: { [TEST_TRUSTED_ATTESTOR.pubky]: oneReview },
+          scoped: oneReview,
+          count: 9,
+          verifiedCount: 1,
+          unverifiedCount: 8,
+        }),
+      ).toBe('1 review counted: a verified purchase from an attestor this app trusts');
+    });
+
+    it('keeps legacy text unchanged when unfiltered reviews raise the total and move the average', () => {
+      function legacyText(count: number, avg: number): string | null {
         reputation.value = rated({
           count,
+          avg,
           verifiedCount: 3,
           histogram: [0, 0, 0, 0, count],
           attestors: { [TEST_TRUSTED_ATTESTOR.pubky]: 3 },
@@ -199,12 +237,13 @@ describe('MarketplaceReputationHeader counted figures', () => {
         return text;
       }
 
-      const before = legacyText(3);
-      const after = legacyText(300);
+      const before = legacyText(3, 3.1);
+      const after = legacyText(300, 4.9);
 
       expect(after).toBe(before);
       expect(after).not.toContain('300');
-      expect(after).toContain('3 reviews verified by attestors this app trusts');
+      expect(after).not.toContain('4.9');
+      expect(after).toBe('No rating yet3 reviews verified by attestors this app trusts, not yet rated on their own');
     });
 
     it('shows no legacy rating without a trusted attestor', () => {
@@ -318,14 +357,15 @@ describe('MarketplaceReputationHeader counted figures', () => {
     expect(screen.queryByText(/counted: verified purchases/)).not.toBeInTheDocument();
   });
 
-  it('keeps the legacy display, with no counted claim, for an index without buckets', () => {
+  it('shows no stars and no counted claim for an index without buckets', () => {
     reputation.value = rated({ attestors: { [TEST_TRUSTED_ATTESTOR.pubky]: 5 } });
 
     render(<MarketplaceReputationHeader sellerPubky={SELLER} variant="full" />);
 
-    expect(screen.getByRole('img', { name: 'Rated 4.5 out of 5, 5 verified purchases' })).toBeVisible();
-    expect(screen.queryByTestId('marketplace-reputation-seller-rating')).not.toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(screen.getByTestId('marketplace-reputation-seller-rating')).toHaveTextContent('No rating yet');
     expect(screen.queryByText(/buyers/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/counted:/)).not.toBeInTheDocument();
   });
 });
 
