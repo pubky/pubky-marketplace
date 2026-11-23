@@ -1,4 +1,4 @@
-import { parseListingAggregateId } from '@/libs/commerce/listing-aggregate';
+import { aggregateSuffix, parseListingAggregateId, sellerOfDropAggregateId } from '@/libs/commerce/listing-aggregate';
 
 /**
  * A store (store mode) shows a buyer only what they have with the store seller. The same account's
@@ -28,18 +28,6 @@ export function scopeSellerRowsToStore<T extends { sellerPubky: string }>(rows: 
 
 /** A notification row; one this build does not recognize carries no subject or parties. */
 type ScopedNotification = { id: string; aggregateId?: string; actorPubky?: string; recipientPubky?: string };
-
-function aggregateSuffix(aggregateId: string, prefix: string): string | null {
-  return aggregateId.startsWith(prefix) ? aggregateId.slice(prefix.length) : null;
-}
-
-/** `drop:<seller>_<dropId>`; pubkys never contain `_`. */
-function sellerOfDropAggregateId(aggregateId: string): string | null {
-  const rest = aggregateSuffix(aggregateId, 'drop:');
-  if (rest === null) return null;
-  const separator = rest.indexOf('_');
-  return separator > 0 ? rest.slice(0, separator) : null;
-}
 
 /**
  * Marketplace notifications about the store seller's listings, drops, orders and offers. A

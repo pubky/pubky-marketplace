@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { listingIdFromOrder, parseListingAggregateId } from './listing-aggregate';
+import {
+  aggregateSuffix,
+  listingIdFromOrder,
+  parseListingAggregateId,
+  sellerOfDropAggregateId,
+} from './listing-aggregate';
 
 const SELLER = 's'.repeat(52);
 
@@ -22,5 +27,21 @@ describe('listingIdFromOrder', () => {
       listingIdFromOrder({ sellerPubky: SELLER, lines: [{ listingAggregateId: `listing:${SELLER}_boots` }] }),
     ).toBe('boots');
     expect(listingIdFromOrder({ sellerPubky: SELLER, lines: [] })).toBeNull();
+  });
+});
+
+describe('aggregateSuffix', () => {
+  it('reads the id after its prefix only', () => {
+    expect(aggregateSuffix('order:o_1', 'order:')).toBe('o_1');
+    expect(aggregateSuffix('offer:o_1', 'order:')).toBeNull();
+  });
+});
+
+describe('sellerOfDropAggregateId', () => {
+  it('reads the seller before the first underscore of a drop id', () => {
+    expect(sellerOfDropAggregateId(`drop:${SELLER}_spring_01`)).toBe(SELLER);
+    expect(sellerOfDropAggregateId(`listing:${SELLER}_boots`)).toBeNull();
+    expect(sellerOfDropAggregateId('drop:_spring')).toBeNull();
+    expect(sellerOfDropAggregateId(`drop:${SELLER}`)).toBeNull();
   });
 });

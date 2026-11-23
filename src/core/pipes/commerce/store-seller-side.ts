@@ -1,4 +1,4 @@
-import { parseListingAggregateId } from '@/libs/commerce/listing-aggregate';
+import { aggregateSuffix, parseListingAggregateId, sellerOfDropAggregateId } from '@/libs/commerce/listing-aggregate';
 
 /**
  * A store's selling tools belong to the store seller. Any other account signed in to a store sees
@@ -28,18 +28,6 @@ type SubjectNotification = {
 };
 
 const SELLER_MODERATION_RESTRICTIONS: ReadonlySet<string> = new Set(['listing_removed', 'shop_suspended']);
-
-function aggregateSuffix(aggregateId: string, prefix: string): string | null {
-  return aggregateId.startsWith(prefix) ? aggregateId.slice(prefix.length) : null;
-}
-
-/** `drop:<seller>_<dropId>`; pubkys never contain `_`. */
-function sellerOfDropAggregateId(aggregateId: string): string | null {
-  const rest = aggregateSuffix(aggregateId, 'drop:');
-  if (rest === null) return null;
-  const separator = rest.indexOf('_');
-  return separator > 0 ? rest.slice(0, separator) : null;
-}
 
 /**
  * Marketplace notifications without those about the viewer's selling where it cannot sell: an order

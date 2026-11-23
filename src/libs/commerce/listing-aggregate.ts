@@ -17,3 +17,16 @@ export function listingIdFromOrder(order: {
   if (!line) return null;
   return parseListingAggregateId(line.listingAggregateId)?.listingId ?? null;
 }
+
+/** The id after `prefix` in an aggregate id such as `order:<id>` or `offer:<id>`, or `null` without that prefix. */
+export function aggregateSuffix(aggregateId: string, prefix: string): string | null {
+  return aggregateId.startsWith(prefix) ? aggregateId.slice(prefix.length) : null;
+}
+
+/** The seller of a `drop:<seller>_<dropId>` aggregate id; pubkys never contain `_`. */
+export function sellerOfDropAggregateId(aggregateId: string): string | null {
+  const rest = aggregateSuffix(aggregateId, 'drop:');
+  if (rest === null) return null;
+  const separator = rest.indexOf('_');
+  return separator > 0 ? rest.slice(0, separator) : null;
+}
