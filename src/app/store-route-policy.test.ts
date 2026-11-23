@@ -9,6 +9,7 @@ import {
   STORE_NOT_FOUND_PATHNAME,
   STORE_PAGE_POLICY,
   STORE_ROUTE_HANDLER_POLICY,
+  STORE_STATIC_FILES,
   storeRouteUrlSegments,
 } from '@/app/store-route-policy';
 
@@ -81,8 +82,10 @@ describe('store route policy table', () => {
     expect(new Set(urls).size).toBe(urls.length);
   });
 
-  it('serves only files with an extension from public/', () => {
-    expect(filesUnder(PUBLIC_DIR).filter((file) => !basename(file).includes('.'))).toEqual([]);
+  it('lists exactly the files public/ holds, the service worker build output and the app favicon', () => {
+    expect(appFiles).toContain('favicon.ico');
+    const onDisk = filesUnder(PUBLIC_DIR).map((file) => `/${file}`);
+    expect(new Set([...onDisk, '/sw.js', '/sw.js.map', '/favicon.ico'])).toEqual(STORE_STATIC_FILES);
   });
 
   it('rewrites to the not-found route Next.js builds from src/app/not-found.tsx', () => {
@@ -231,18 +234,40 @@ describe('decideStoreRoute', () => {
     expect(decide('/api/marketplace')).toBe('not-found');
   });
 
-  it('passes through build output and files', () => {
+  it('passes through build output and the files it serves', () => {
     expect(decide('/_next/data/build/x.json')).toBe('allow');
     expect(decide('/sw.js')).toBe('allow');
-    expect(decide('/images/logo.png')).toBe('allow');
+    expect(decide('/images/marketplace/marketplace-icon.png')).toBe('allow');
+    expect(decide('/manifest.json')).toBe('allow');
     expect(decide('/favicon.ico')).toBe('allow');
   });
 
-  it('serves page images only where the page is served', () => {
+  it.each([
+    '/a.b',
+    '/robots.txt',
+    '/sitemap.xml',
+    '/hot.txt',
+    '/images/no-such.png',
+    `/marketplace/shop/${OTHER_SELLER}/x.y`,
+  ])('hides the unknown file %s', (pathname) => {
+    expect(decide(pathname)).toBe('not-found');
+  });
+
+  it('decides React Server Components requests as their page', () => {
+    expect(decide(`/marketplace/shop/${STORE_SELLER}.rsc`)).toBe('allow');
+    expect(decide('/marketplace/cart.prefetch.rsc')).toBe('allow');
+    expect(decide('/marketplace/orders.segments/_tree.segment.rsc')).toBe('allow');
+    expect(decide('/hot.rsc')).toBe('not-found');
+    expect(decide(`/marketplace/shop/${OTHER_SELLER}.segments/_tree.segment.rsc`)).toBe('not-found');
+    expect(decide('/marketplace.rsc')).toBe('not-found');
+  });
+
+  it('serves page images where the page is served, and the Market image the store pages point at', () => {
     expect(decide(`/marketplace/shop/${STORE_SELLER}/opengraph-image`)).toBe('allow');
     expect(decide(`/marketplace/listing/${STORE_SELLER}/1/twitter-image-abc123`)).toBe('allow');
+    expect(decide('/marketplace/opengraph-image')).toBe('allow');
+    expect(decide('/marketplace/twitter-image')).toBe('allow');
     expect(decide(`/marketplace/shop/${OTHER_SELLER}/opengraph-image`)).toBe('not-found');
-    expect(decide('/marketplace/opengraph-image')).toBe('not-found');
     expect(decide(`/profile/${STORE_SELLER}/twitter-image`)).toBe('not-found');
   });
 });

@@ -33,6 +33,7 @@ const SELLER_PATH: StoreRoutePolicy = { mode: 'store-scoped', scope: 'seller-pat
 const SELLER_VIEWER: StoreRoutePolicy = { mode: 'store-scoped', scope: 'seller-viewer' };
 const SELLER_PATH_AND_VIEWER: StoreRoutePolicy = { mode: 'store-scoped', scope: 'seller-path-and-viewer' };
 
+// exported for tests
 /** The page folders under `src/app`, with route groups `(...)` and parallel slots `@...` as on disk. */
 export const STORE_PAGE_POLICY: Readonly<Record<string, StoreRoutePolicy>> = {
   '/': STORE_HOME,
@@ -119,6 +120,7 @@ const CLI_GRANT =
 const STUDIO_IMPORT =
   "The store seller's studio inventory import fetches through it; it holds no credential and only reads public catalogues.";
 
+// exported for tests
 /** The route handler folders under `src/app`, `/api` included, each with why a store serves it or not. */
 export const STORE_ROUTE_HANDLER_POLICY: Readonly<Record<string, StoreRouteHandlerRow>> = {
   '/api/build': { policy: BOTH, reason: 'The deployed commit, for release and install checks.' },
@@ -189,6 +191,70 @@ export const STORE_NOT_FOUND_PATHNAME = '/_not-found';
 /** The route segment Next.js generates for a page's `opengraph-image` / `twitter-image` file. */
 const METADATA_IMAGE_SEGMENT = /^(?:opengraph|twitter)-image(?:-[\w-]+)?$/;
 
+// exported for tests
+/**
+ * The files a store serves by name: everything under `public/`, the service worker Serwist writes
+ * there at build time, and the favicon from `src/app/favicon.ico`. `store-route-policy.test.ts` fails
+ * when this differs from what is on disk; any other path with an extension is 404 in a store.
+ */
+export const STORE_STATIC_FILES: ReadonlySet<string> = new Set([
+  '/franky.png',
+  '/images/a-tether-company.svg',
+  '/images/bg-home-mobile.svg',
+  '/images/bitkit/app-store.png',
+  '/images/bitkit/google-play.png',
+  '/images/bitkit/logo.svg',
+  '/images/collections-onboarding.webp',
+  '/images/connections-empty-state.webp',
+  '/images/key.webp',
+  '/images/keyring.webp',
+  '/images/landing-experience2.png',
+  '/images/landing-experience4.png',
+  '/images/landing-experience5.png',
+  '/images/landing-move.png',
+  '/images/logo-pubky-ring.svg',
+  '/images/manifest/web-app-manifest-1280x720.png',
+  '/images/manifest/web-app-manifest-128x128.png',
+  '/images/manifest/web-app-manifest-144x144.png',
+  '/images/manifest/web-app-manifest-152x152.png',
+  '/images/manifest/web-app-manifest-180x180.png',
+  '/images/manifest/web-app-manifest-192x192.png',
+  '/images/manifest/web-app-manifest-384x384.png',
+  '/images/manifest/web-app-manifest-48x48.png',
+  '/images/manifest/web-app-manifest-512x512.png',
+  '/images/manifest/web-app-manifest-640x1136.png',
+  '/images/manifest/web-app-manifest-72x72.png',
+  '/images/manifest/web-app-manifest-96x96.png',
+  '/images/marketplace/marketplace-icon.png',
+  '/images/note.webp',
+  '/images/notifications-empty-state.webp',
+  '/images/post-not-found-empty-state.webp',
+  '/images/posts-replies-empty-state.webp',
+  '/images/pubky-ring-qr-example.webp',
+  '/images/qr-blurred.png',
+  '/images/ring-logo.svg',
+  '/images/scan.webp',
+  '/images/sign-in.webp',
+  '/images/sign-in/cloud.webp',
+  '/images/sign-in/google.svg',
+  '/images/synonym-grey-logo.svg',
+  '/images/synonym-white-logo.svg',
+  '/images/tag.webp',
+  '/images/tagged-empty-state.webp',
+  '/images/tether-text.svg',
+  '/manifest.json',
+  '/preview.webp',
+  '/pubky-favicon.svg',
+  '/pubky-logo-on-light.svg',
+  '/pubky-logo.svg',
+  '/sw.js',
+  '/sw.js.map',
+  '/favicon.ico',
+]);
+
+/** A React Server Components request for a page: `<page>.rsc`, `<page>.prefetch.rsc`, `<page>.segments/...`. */
+const RSC_REQUEST_SUFFIX = /(?:\.prefetch)?\.rsc$|\.segments\/.*$/;
+
 type Segment =
   | { kind: 'static'; value: string }
   | { kind: 'dynamic'; name: string }
@@ -202,6 +268,7 @@ const ROUTE_POLICY_ROWS: readonly [string, StoreRoutePolicy][] = [
   ...Object.entries(STORE_ROUTE_HANDLER_POLICY).map(([key, row]): [string, StoreRoutePolicy] => [key, row.policy]),
 ];
 
+// exported for tests
 /** URL segments of a folder key, or `null` for a parallel-slot page that never owns a URL. */
 export function storeRouteUrlSegments(key: string): string[] | null {
   const parts = key.split('/').filter(Boolean);
@@ -260,6 +327,7 @@ function compareRank(left: number[], right: number[]): number {
   return 0;
 }
 
+// exported for tests
 /**
  * The policy row for a URL path (without the base path) and the params the page or handler would
  * receive, or `null` when none serves the path. Static segments win over dynamic ones, as in Next.js.
@@ -298,22 +366,28 @@ function decidePage(
 
 /**
  * What a store serves at a URL path (without the base path). Paths no page or route handler
- * serves are 404, except `/_next` and files with an extension (the `public/` assets and the
- * service worker). A page's Open Graph and Twitter images follow their page, and never open the
- * store home.
+ * serves are 404, except `/_next` and {@link STORE_STATIC_FILES}. A page's React Server Components
+ * requests follow their page. A page's Open Graph and Twitter images are served when their page is,
+ * or when it is an entry route (the Market's image, which the store's other pages point at), and
+ * never open the store home.
  */
 export function decideStoreRoute(pathname: string, storeSeller: string): StoreRouteDecision {
-  if (pathname.startsWith('/_next/')) return { kind: 'allow' };
+  if (pathname.startsWith('/_next/') || STORE_STATIC_FILES.has(pathname)) return { kind: 'allow' };
+  if (RSC_REQUEST_SUFFIX.test(pathname)) {
+    const decision = decideStoreRoute(pathname.replace(RSC_REQUEST_SUFFIX, '') || '/', storeSeller);
+    return decision.kind === 'allow' ? decision : { kind: 'not-found' };
+  }
 
   const segments = pathname.split('/').filter(Boolean);
   const last = segments.at(-1);
   if (last !== undefined && METADATA_IMAGE_SEGMENT.test(last)) {
     const page = matchStoreRoute(`/${segments.slice(0, -1).join('/')}`);
-    return page && decidePage(page, storeSeller).kind === 'allow' ? { kind: 'allow' } : { kind: 'not-found' };
+    const kind = page ? decidePage(page, storeSeller).kind : 'not-found';
+    return kind === 'allow' || kind === 'store-home' ? { kind: 'allow' } : { kind: 'not-found' };
   }
 
   const page = matchStoreRoute(pathname);
-  if (!page) return last?.includes('.') ? { kind: 'allow' } : { kind: 'not-found' };
+  if (!page) return { kind: 'not-found' };
   return decidePage(page, storeSeller);
 }
 

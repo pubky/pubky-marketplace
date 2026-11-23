@@ -55,6 +55,9 @@ const MASKED = [
   `/marketplace/shop/${OTHER_SELLER}`,
   `/profile/${STORE_SELLER}`,
   '/llms.txt',
+  '/a.b',
+  '/robots.txt',
+  '/hot.txt',
   '/api',
   '/api/feedback',
   '/api/report',
@@ -66,6 +69,9 @@ const MASKED = [
 // The route guard sends a guest away from paths it does not know, so only pages it lets a guest stay on show the
 // not-found screen in a browser.
 const MASKED_IN_BROWSER = ['/hot', '/marketplace/drops', `/marketplace/shop/${OTHER_SELLER}`];
+
+// Files a store serves by name, and the Market preview image its cart and orders pages point at.
+const KEPT_FILES = ['/pubky-logo.svg', '/manifest.json', '/favicon.ico', '/sw.js', '/marketplace/opengraph-image'];
 
 const results = [];
 function check(id, ok, detail) {
@@ -148,6 +154,11 @@ try {
     const config = body.includes(RUNTIME_CONFIG);
     const problems = [!page && 'not the not-found page', !config && 'no runtime config'].filter(Boolean);
     check(`masked ${path}`, status === 404 && page && config, [`status ${status}`, ...problems].join(', '));
+  }
+
+  for (const path of KEPT_FILES) {
+    const { status } = await get(path);
+    check(`kept ${path}`, status === 200, `status ${status}`);
   }
 
   const build = await get('/api/build');
