@@ -1,8 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
+import { useAuthStore } from '@/stores/auth/auth.store';
 import { setEmbedded } from '@/test-utils/embedded';
 import { setSocialHost } from '@/test-utils/social-host';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { MarketplaceSectionNav } from './MarketplaceSectionNav';
 
 const state = vi.hoisted(() => ({
@@ -43,7 +45,39 @@ describe('MarketplaceSectionNav', () => {
 
   afterEach(() => {
     setSocialHost(undefined);
+    setStoreSeller(undefined);
+    useAuthStore.setState({ currentUserPubky: null });
     vi.restoreAllMocks();
+  });
+
+  describe('in store mode', () => {
+    const STORE_SELLER = 'ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u';
+    const BUYER = 'o'.repeat(52);
+
+    beforeEach(() => {
+      setStoreSeller(STORE_SELLER);
+      setSocialHost('https://pubky.app');
+    });
+
+    it.each([
+      ['a buyer', BUYER],
+      ['a guest', null],
+    ])('hides the selling tools from %s', (_, viewer) => {
+      useAuthStore.setState({ currentUserPubky: viewer });
+      render(<MarketplaceSectionNav />);
+
+      expect(screen.queryByRole('link', { name: 'My shop' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Shop settings' })).not.toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /Orders/ })).toBeInTheDocument();
+    });
+
+    it('shows the selling tools to the store seller', () => {
+      useAuthStore.setState({ currentUserPubky: STORE_SELLER });
+      render(<MarketplaceSectionNav />);
+
+      expect(screen.getByRole('link', { name: 'My shop' })).toHaveAttribute('href', '/marketplace/dashboard');
+      expect(screen.getByRole('link', { name: 'Shop settings' })).toBeInTheDocument();
+    });
   });
 
   it('dismisses the overflow hint after scrolling and remembers the gesture across pages', () => {
