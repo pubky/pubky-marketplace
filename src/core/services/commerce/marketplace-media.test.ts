@@ -79,7 +79,9 @@ describe('MarketplaceMediaService', () => {
     const blobUri = `pubky://${owner}/pub/pubky.app/blobs/0034A0X7NJ52H`;
 
     it("reads a Pubky App blob from its owner's homeserver", async () => {
-      await expect(MarketplaceMediaService.fetchProfileImage(blobUri)).resolves.toBeInstanceOf(Blob);
+      const image = await MarketplaceMediaService.fetchProfileImage(blobUri);
+
+      expect(await image.text()).toBe('media');
       expect(fetchMock).toHaveBeenCalledWith(`https://resolved.example/${blobUri}`);
     });
 
