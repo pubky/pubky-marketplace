@@ -5,7 +5,7 @@ import { MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS } from '@/config/commerce';
 import { attestorWindowsParam } from '@/libs/commerce/review-counting';
 import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
 import { renderAgentGuide } from './agent-guide';
-import { GET } from './route';
+import { dynamic, GET } from './route';
 
 const indexLine = (body: string) => body.split('\n').find((line) => line.startsWith('INDEX = '));
 
@@ -25,6 +25,7 @@ const GUIDE_COPY_CHANGES = [
   ],
   ['"under 20,000 sats"', '"under ₿20,000"'],
   ['for BTC is sats.', 'for BTC is in bitcoin base units (₿1 = 0.00000001 BTC).'],
+  ['a trimmed real response', 'a trimmed example response'],
 ];
 
 const OLD_ATTESTOR_KEY = 'szhtpayftdz3mpkoyyk3zesuad11ufuudqqrc73s35w1tfju7gxy';
@@ -58,6 +59,10 @@ describe('GET /llms.txt', () => {
     expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
     expect(indexLine(body)).toBe('INDEX = https://index.runtime.example.com');
     expect(body).not.toMatch(/nexusd-production-[0-9a-f]+/);
+  });
+
+  it('renders per request, so runtime trust entries apply without a rebuild', () => {
+    expect(dynamic).toBe('force-dynamic');
   });
 
   it('caches like the static file it replaces', () => {

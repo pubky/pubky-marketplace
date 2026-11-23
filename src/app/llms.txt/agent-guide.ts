@@ -40,7 +40,7 @@ fine. Page with \`skip\`; keep requests modest.
 
 ## Recipes
 
-Each recipe is a full URL and a trimmed real response (fields omitted are marked …).
+Each recipe is a full URL and a trimmed example response (fields omitted are marked …).
 
 ### 1. Listings under a price
 
@@ -197,11 +197,11 @@ Without \`scoped\`, sum only buckets of trusted attestors whose window covers th
 seller rating = \`sum_seller_buyer_means / seller_buyers\`; basis = "N buyers · M orders".
 With no counted buyers, say "no counted reviews yet", never 0.0.
 
-\`count\`, \`avg\`, \`histogram\`, \`verified_count\` and \`attestors\` are unfiltered fields. The
-aggregate includes reviews whose attestation did not verify and reviews signed by any key. Do not
-quote them as a rating or as a number of verified purchases. A response without \`buckets\` comes
-from an older index: report only the reviews whose attestor is in the trusted list, and say the
-rating is not filtered.
+\`count\`, \`avg\` and \`histogram\` are unfiltered: they include reviews whose attestation did not
+verify and reviews signed by any key. \`verified_count\` and \`attestors\` count verified reviews
+from any signer, trusted or not. Do not quote any of them as a rating or as a number of verified
+purchases. A response without \`buckets\` comes from an older index: give no rating, and report only
+how many verified reviews the trusted attestors signed (their entries in \`attestors\`).
 
 404 = no indexed reviews yet; say "no reviews yet", not "bad seller".
 One review is thin evidence; read the reviews and the reviewed listings before calling a seller
@@ -231,8 +231,8 @@ Reviews: GET INDEX/v0/shop/{seller_id}/reviews?limit=30&skip=0
   }
 ]
 
-A review counts only when \`verified\` is true, \`attestor_id\` is a trusted attestor, and its
-\`iat\` falls inside that attestor's window.
+A review counts only when \`verified\` is true, \`attestor_id\` is a trusted attestor, its \`iat\`
+falls inside that attestor's window, and \`moderation.state\` is not \`"excluded"\`.
 
 Shop record and a page of the seller's listings, all states included:
 INDEX/v0/shop/{seller_id}?limit=30&skip=0 (404 = the seller has not published a shop record;
