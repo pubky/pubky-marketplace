@@ -229,8 +229,9 @@ GET INDEX/v0/shop/gujx6qd8ksydh1makdphd3bxu351d9b8waqka8hfg6q7hnqkxexo/reputatio
 
 Prefer \`scoped\`: it is the index's figure over the trusted windows, with one buyer counted once.
 Without \`scoped\`, sum only buckets of trusted attestors whose window covers the bucket's whole
-\`[first_iat, last_iat]\`; skip every other bucket. Item rating = \`sum_buyer_means / buyers\`;
-seller rating = \`sum_seller_buyer_means / seller_buyers\`; basis = "N buyers · M orders".
+\`[first_iat, last_iat]\`; skip every other bucket. Item rating = \`sum_buyer_means / buyers\`.
+Report seller rating = \`sum_seller_buyer_means / seller_buyers\` only when \`seller_buyers\` is positive;
+when it is 0 or missing, say "no seller rating yet" and never compute it. Basis = "N buyers · M orders".
 With no counted buyers, say "no counted reviews yet", never 0.0.
 
 \`count\`, \`avg\` and \`histogram\` are unfiltered: they include reviews whose attestation did not

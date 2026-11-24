@@ -216,6 +216,14 @@ describe('GET /llms.txt', () => {
     expect(body).not.toContain('Configured bounds, profile not verified:');
   });
 
+  it('reports a seller rating only when seller_buyers is positive', () => {
+    const copy = renderAgentGuide('https://index.example.test', []).replace(/\s+/g, ' ');
+
+    expect(copy).toContain(
+      'Report seller rating = `sum_seller_buyer_means / seller_buyers` only when `seller_buyers` is positive; when it is 0 or missing, say "no seller rating yet" and never compute it.',
+    );
+  });
+
   it('limits legacy per-signer counts to effective windows open now', () => {
     const copy = renderAgentGuide('https://index.example.test', []).replace(/\s+/g, ' ');
 
