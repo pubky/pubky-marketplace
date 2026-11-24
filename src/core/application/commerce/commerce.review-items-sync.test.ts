@@ -4,7 +4,6 @@ import { HttpMethod } from '@/libs/http/http.types';
 import { CommerceReviewModel, CommerceSyncJobModel } from '@/models/commerce/commerce.models';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
-import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
 import { LocalCommerceService } from '@/services/local/commerce/commerce';
 import { MarketplaceGatewayService, type MarketplaceOrder } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -461,46 +460,6 @@ describe('own item reviews on the reviewer homeserver', () => {
         await expect(CommerceApplication.refreshOwnReviews(ORDER_FIXTURE_BUYER, [flagged])).resolves.toBe(0);
 
         expect(listingsOf(await localRows())).toEqual(['belt', 'boots', 'wallet']);
-      });
-
-      it('withdrawn cleanup republishes an edited non-first item with its own attestation', async () => {
-        const belt = published[1];
-        const parked = homeserver.holdNext(HttpMethod.DELETE, urlOf(belt));
-        const hydration = CommerceApplication.getOwnMarketplaceOrderReviews(
-          ORDER_FIXTURE_BUYER,
-          service.order(),
-          new AbortController().signal,
-        );
-        await parked.reached;
-        const own = order.reviews![1];
-        Object.assign(own, {
-          text: 'Belt edited on another device.',
-          rating: 2,
-          shipping: 4,
-          communication: 3,
-          updatedAt: '2026-08-22T10:00:00.000Z',
-        });
-        service.reinstate('belt');
-        await CommerceHomeserverService.putJson(urlOf(belt), {
-          ...belt.record,
-          revision: 2,
-          text: own.text,
-          ratings: { overall: own.rating, shipping: own.shipping, communication: own.communication },
-          updatedAt: own.updatedAt,
-        });
-        parked.release();
-
-        await hydration;
-
-        const current = service.order().reviews![1];
-        expect(homeserver.files.get(urlOf(belt))).toMatchObject({
-          text: current.text,
-          ratings: { overall: current.rating, shipping: 4, communication: 3 },
-          updatedAt: current.updatedAt,
-          eligibilityAttestation: attestations[1].jws,
-        });
-        expect(service.log.filter((entry) => entry === 'review.withdraw')).toEqual([]);
-        expect((await localRows()).find((row) => row.record.listingId === 'belt')?.sync_status).toBe('synced');
       });
     });
 

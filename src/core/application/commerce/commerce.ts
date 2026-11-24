@@ -95,7 +95,6 @@ import {
   stripForbiddenPublicReserveKeys,
 } from '@/libs/commerce/marketplace-records';
 import {
-  buyerSellerRatings,
   listingIdFromAggregate,
   orderReviewListings,
   reviewListingAggregateId,
@@ -3892,11 +3891,11 @@ export class CommerceApplication {
 
   /**
    * Rebuilds the local own-review row from the reviewer's homeserver after
-   * a cache miss. Homeserver writes are limited to repair republications,
-   * deletion of a record the service holds withdrawn, and restoration of an
-   * edit that deletion overtook. A 404 or identity
-   * mismatch stays unresolved (the order card's waiting copy), never a false
-   * published or unpublished claim.
+   * a cache miss. Homeserver writes are limited to the overwrite repair
+   * ({@link republishOverwrittenOwnReview}) and deletion of a record the
+   * service freshly holds withdrawn. A 404 or identity mismatch stays
+   * unresolved (the order card's waiting copy), never a false published or
+   * unpublished claim.
    */
   private static async hydrateOwnReviewFromHomeserver(
     actorPubky: string,
@@ -3921,7 +3920,13 @@ export class CommerceApplication {
     try {
       // The user removed this review: a record still served (a DEL owed, or
       // not yet visible) must not be shown again.
-      if (await this.ownReviewWithdrawn(actorPubky, order, read.model.record.listingId, signal)) {
+      const withdrawalState = await this.ownReviewWithdrawalState(
+        actorPubky,
+        order,
+        read.model.record.listingId,
+        signal,
+      );
+      if (withdrawalState !== 'live') {
         const retracted = await this.retractWithdrawnOwnReview(
           actorPubky,
           order.id,
@@ -3931,8 +3936,8 @@ export class CommerceApplication {
         );
         if (
           retracted ||
-          read.model.record.orderRef === undefined ||
-          (await LocalCommerceService.hasOwedOwnReviewRemoval(actorPubky, order.id, read.model.record.listingId))
+          withdrawalState === 'owed' ||
+          (read.model.record.orderRef === undefined && withdrawalState === 'removed')
         ) {
           this.ownReviewHomeserverMisses.add(this.ownReviewMissKey(actorPubky, order.id));
         }
@@ -4034,21 +4039,29 @@ export class CommerceApplication {
   }
 
   /**
-   * True when the user removed their review of this listing of the order: an
-   * owed removal on this device, or a withdrawal the service holds for that
-   * listing (confirmed fresh when the order data says so, since that data may
-   * predate a later edit). An old service sends no flag, which reads as not
-   * removed.
+   * The withdrawal state of this listing: an owed removal on this device, a
+   * freshly confirmed service withdrawal, an unreadable fresh order, or a
+   * live review. An old service sends no flag, which reads as live.
    */
+  private static async ownReviewWithdrawalState(
+    actorPubky: string,
+    order: MarketplaceOrder,
+    listingId: string,
+    signal?: AbortSignal,
+  ): Promise<'owed' | 'removed' | 'unknown' | 'live'> {
+    if (await LocalCommerceService.hasOwedOwnReviewRemoval(actorPubky, order.id, listingId)) return 'owed';
+    if (reviewOfListing(order, actorPubky, listingId)?.publicRemoved !== true) return 'live';
+    return await this.fetchOwnReviewRemovalState(actorPubky, order.id, listingId, signal);
+  }
+
+  /** True unless this listing's review is live; an unreadable fresh order stays hidden. */
   private static async ownReviewWithdrawn(
     actorPubky: string,
     order: MarketplaceOrder,
     listingId: string,
     signal?: AbortSignal,
   ): Promise<boolean> {
-    if (await LocalCommerceService.hasOwedOwnReviewRemoval(actorPubky, order.id, listingId)) return true;
-    if (reviewOfListing(order, actorPubky, listingId)?.publicRemoved !== true) return false;
-    return (await this.fetchOwnReviewRemovalState(actorPubky, order.id, listingId, signal)) !== 'live';
+    return (await this.ownReviewWithdrawalState(actorPubky, order, listingId, signal)) !== 'live';
   }
 
   /**
@@ -4173,8 +4186,9 @@ export class CommerceApplication {
    * from another device) is hydrated from the reviewer's homeserver: the
    * order's per-listing attestations name each `order_ref`, and each record
    * is read from its deterministic path. A missing record stays unresolved
-   * instead of claiming unpublished. Homeserver writes are limited to repair
-   * republications and deletion of records the service holds withdrawn.
+   * instead of claiming unpublished. Homeserver writes are limited to the
+   * overwrite repair ({@link republishOverwrittenOwnReview}) and deletion of
+   * a record the service freshly holds withdrawn.
    */
   static async getOwnMarketplaceOrderReviews(
     actorPubky: string,
@@ -4214,7 +4228,8 @@ export class CommerceApplication {
   /**
    * Rebuilds the local rows of the listings that have none, from one read of
    * the order's review attestations and one GET per record. Homeserver writes
-   * are limited to repair republications and deletion of withdrawn records.
+   * are limited to the overwrite repair ({@link republishOverwrittenOwnReview})
+   * and deletion of a record the service freshly holds withdrawn.
    */
   private static async hydrateOwnReviewItemsFromHomeserver(
     actorPubky: string,
@@ -4266,19 +4281,13 @@ export class CommerceApplication {
         }
         // The user removed this item's review: a record still served (a DEL
         // owed, or not yet visible) must not be shown again.
-        if (await this.ownReviewWithdrawn(actorPubky, order, listingId, signal)) {
-          const retracted = await this.retractWithdrawnOwnReview(
-            actorPubky,
-            order.id,
-            listingId,
-            read.model,
-            signal,
-            attestations.find((candidate) => candidate.listingId === listingId),
-          );
+        const withdrawalState = await this.ownReviewWithdrawalState(actorPubky, order, listingId, signal);
+        if (withdrawalState !== 'live') {
+          const retracted = await this.retractWithdrawnOwnReview(actorPubky, order.id, listingId, read.model, signal);
           if (
             retracted ||
-            read.model.record.orderRef === undefined ||
-            (await LocalCommerceService.hasOwedOwnReviewRemoval(actorPubky, order.id, listingId))
+            withdrawalState === 'owed' ||
+            (read.model.record.orderRef === undefined && withdrawalState === 'removed')
           ) {
             this.ownReviewHomeserverMisses.add(this.ownReviewItemMissKey(actorPubky, order.id, listingId));
           }
@@ -4300,14 +4309,14 @@ export class CommerceApplication {
   /**
    * Deletes the owner's per-order record only while the service freshly holds
    * that item withdrawn. A legacy per-listing record (no `orderRef`) can be
-   * another order's replacement and is never deleted; its caller memoizes the
-   * hidden record instead. The order lock excludes publications and outbox
-   * removals. An owed removal or a local row owns the next action instead.
-   * After a DEL or 404, a still-withdrawn service state finishes the cleanup.
-   * Any other fresh state means an edit may have been deleted, so the repair
-   * route may stage a local pending row and publish job and republish the
-   * service's current terms, only for the live account. False sets no miss
-   * memo and leaves cleanup for a later hydration. No service command is sent.
+   * another order's record and is never deleted. The order lock excludes
+   * publications and outbox removals on this account. An owed removal or a
+   * local row owns the next action. This sends no service command and writes
+   * no outbox job or local row. The homeserver has no conditional DELETE: an
+   * edit another device publishes between the fresh service read and the DEL
+   * is deleted, the same window {@link sendOwnReviewRemoval} has between its
+   * withdrawal and its DEL. False sets no miss memo and leaves cleanup for a
+   * later hydration.
    */
   private static async retractWithdrawnOwnReview(
     actorPubky: string,
@@ -4315,7 +4324,6 @@ export class CommerceApplication {
     listingId: string,
     model: CommerceReviewModelSchema,
     signal?: AbortSignal,
-    attestation?: MarketplaceAttestation,
   ): Promise<boolean> {
     if (model.record.orderRef === undefined) return false;
     return await this.withOwnReviewLock(actorPubky, orderId, async () => {
@@ -4328,69 +4336,16 @@ export class CommerceApplication {
 
       try {
         await CommerceHomeserverService.delete(CommerceRecordNormalizer.reviewUri(actorPubky, model.review_id));
+        return true;
       } catch (error) {
-        if (!(isAppError(error) && isNotFound(error))) {
-          Logger.warn('Could not delete a withdrawn own review; a later hydration retries', {
-            orderId,
-            reviewId: model.review_id,
-            error,
-          });
-          return false;
-        }
-      }
-
-      const fresh = await this.fetchOwnReviewOrder(actorPubky, orderId, listingId, signal);
-      if (fresh === null) return false;
-      const serviceReview = reviewOfListing(fresh, actorPubky, listingId);
-      if (serviceReview?.publicRemoved === true) return true;
-      if (
-        serviceReview === undefined ||
-        serviceReview.text.trim().length === 0 ||
-        signal?.aborted ||
-        !this.liveIdentityMatches(actorPubky)
-      ) {
+        if (isAppError(error) && isNotFound(error)) return true;
+        Logger.warn('Could not delete a withdrawn own review; a later hydration retries', {
+          orderId,
+          reviewId: model.review_id,
+          error,
+        });
         return false;
       }
-
-      let repairAttestation = attestation;
-      if (repairAttestation === undefined) {
-        try {
-          if (signal?.aborted || !this.liveIdentityMatches(actorPubky)) return false;
-          const parsed = marketplaceAttestationSchema.safeParse(
-            await MarketplaceGatewayService.getReviewAttestation(actorPubky, orderId),
-          );
-          if (!parsed.success) return false;
-          repairAttestation = parsed.data;
-        } catch (error) {
-          Logger.warn('Could not read the attestation to restore an edited own review', { orderId, listingId, error });
-          return false;
-        }
-      }
-      if (repairAttestation === undefined) return false;
-
-      const isBuyer = actorPubky === fresh.buyerPubky;
-      const isSeller = actorPubky === fresh.sellerPubky;
-      if (!isBuyer && !isSeller) return false;
-      const sellerRatings = isBuyer ? buyerSellerRatings(fresh) : null;
-      await this.publishReviewRecord({
-        actorPubky,
-        order: fresh,
-        listingId,
-        review: {
-          reviewerPubky: actorPubky,
-          reviewerRole: isBuyer ? 'buyer' : 'seller',
-          subjectPubky: isBuyer ? fresh.sellerPubky : fresh.buyerPubky,
-          rating: serviceReview.rating,
-          text: serviceReview.text,
-          createdAt: serviceReview.createdAt,
-          updatedAt: serviceReview.updatedAt ?? serviceReview.createdAt,
-          ...(sellerRatings ?? {}),
-        },
-        attestation: repairAttestation,
-        repair: true,
-        stillCurrent: () => !signal?.aborted && this.liveIdentityMatches(actorPubky),
-      });
-      return false;
     });
   }
 

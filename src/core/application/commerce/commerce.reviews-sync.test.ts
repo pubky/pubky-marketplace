@@ -683,6 +683,20 @@ describe.each([
       vi.spyOn(MarketplaceGatewayService, 'getReviewAttestations').mockResolvedValue([{ listingId: 'boots', ...wire }]);
     };
 
+    const leaveLegacyRecordWithdrawnAfterWipe = async () => {
+      await leaveRecordWithdrawnAfterWipe();
+      const { orderRef: _orderRef, ...unscoped } = published.record;
+      const { PubkySpecsBuilder } = await import('pubky-app-specs');
+      const legacy = new PubkySpecsBuilder(ORDER_FIXTURE_BUYER).createMarketplaceReview({
+        ...unscoped,
+        reviewId: '',
+      });
+      const legacyUrl = CommerceRecordNormalizer.reviewUri(ORDER_FIXTURE_BUYER, legacy.meta.id);
+      homeserver.files.delete(url);
+      homeserver.files.set(legacyUrl, legacy.marketplace_review.toJson());
+      return legacyUrl;
+    };
+
     const parkRemovalStateRead = (callToPark: number, afterAnswer: boolean) => {
       const readOrder = vi.mocked(MarketplaceGatewayService.getOrder).getMockImplementation()!;
       let calls = 0;
@@ -916,54 +930,45 @@ describe.each([
       expect(await jobs()).toEqual([]);
     });
 
-    it('withdrawn cleanup republishes an edit that lands between its fresh read and DEL', async () => {
-      await leaveRecordWithdrawnAfterWipe();
-      const parked = homeserver.holdNext(HttpMethod.DELETE, url);
-      const hydration = CommerceApplication.getOwnMarketplaceReview(
-        ORDER_FIXTURE_BUYER,
-        service.order(),
-        new AbortController().signal,
-      );
-      await parked.reached;
-      const own = order.reviews![0];
-      Object.assign(own, {
-        text: 'Edited on another device.',
-        rating: 2,
-        shipping: 4,
-        communication: 3,
-        updatedAt: '2026-08-22T10:00:00.000Z',
-      });
-      service.reinstate();
-      await CommerceHomeserverService.putJson(url, {
-        ...otherDeviceEdit(2, own.text, own.rating),
-        ratings: { overall: own.rating, shipping: own.shipping, communication: own.communication },
-      });
-      parked.release();
-
-      await expect(hydration).resolves.toBeNull();
-
-      const current = service.order().reviews![0];
-      expect(homeserver.files.get(url)).toMatchObject({
-        text: current.text,
-        ratings: { overall: current.rating, shipping: 4, communication: 3 },
-        updatedAt: current.updatedAt,
-        eligibilityAttestation: published.record.eligibilityAttestation,
-      });
-      expect(service.log.filter((entry) => entry === 'review.withdraw')).toHaveLength(1);
-      expect((await localRow())?.sync_status).toBe('synced');
-    });
-
-    it('withdrawn cleanup does not republish while the post-DEL read still says removed', async () => {
-      await leaveRecordWithdrawnAfterWipe();
+    it('does not memoize a legacy record as hidden when the removal state cannot be read', async () => {
+      const legacyUrl = await leaveLegacyRecordWithdrawnAfterWipe();
+      const reads = () => homeserver.log.filter((entry) => entry === `${HttpMethod.GET} ${legacyUrl}`);
+      const anyDeletes = () => homeserver.log.filter((entry) => entry.startsWith(`${HttpMethod.DELETE} `));
+      service.failNext('getOrder');
 
       await expect(
         CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, service.order(), new AbortController().signal),
       ).resolves.toBeNull();
 
-      expect(homeserver.files.has(url)).toBe(false);
-      expect(homeserver.log.filter((entry) => entry.startsWith(`${HttpMethod.PUT} `))).toEqual([]);
-      expect(await localRow()).toBeUndefined();
-      expect(await jobs()).toEqual([]);
+      expect(reads()).toHaveLength(1);
+      expect(anyDeletes()).toEqual([]);
+
+      await expect(
+        CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, service.order(), new AbortController().signal),
+      ).resolves.toBeNull();
+
+      expect(reads()).toHaveLength(2);
+      expect(anyDeletes()).toEqual([]);
+      expect(homeserver.files.has(legacyUrl)).toBe(true);
+    });
+
+    it('memoizes a legacy record as hidden once the service confirms the withdrawal', async () => {
+      const legacyUrl = await leaveLegacyRecordWithdrawnAfterWipe();
+      const reads = () => homeserver.log.filter((entry) => entry === `${HttpMethod.GET} ${legacyUrl}`);
+
+      await expect(
+        CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, service.order(), new AbortController().signal),
+      ).resolves.toBeNull();
+
+      expect(reads()).toHaveLength(1);
+
+      await expect(
+        CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, service.order(), new AbortController().signal),
+      ).resolves.toBeNull();
+
+      expect(reads()).toHaveLength(1);
+      expect(homeserver.log.filter((entry) => entry.startsWith(`${HttpMethod.DELETE} `))).toEqual([]);
+      expect(homeserver.files.has(legacyUrl)).toBe(true);
     });
 
     it('withdrawn cleanup leaves a legacy per-listing record in place', async () => {

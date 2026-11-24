@@ -14,7 +14,6 @@ export type OrderReviewSource = {
         shipping?: number | null;
         communication?: number | null;
         createdAt: string;
-        updatedAt?: string;
         /** Only the author's own view carries it: the reviewer withdrew this public review. */
         publicRemoved?: boolean;
       }[]
