@@ -72,6 +72,28 @@ const PAYKIT_SETUP_TIMEOUT_MS = 6 * 60 * 1_000;
  */
 type PaykitSetupOutcome = 'finished' | 'error' | 'timeout';
 
+/**
+ * Why a first setup failed. `expired` is paykit-server's five-minute flow ending, which a fresh setup fixes; `held`
+ * means Paykit already holds the creator and refuses `/setup`, which only a reconnect fixes; `unknown` is anything
+ * else, including a creator-held check that could not answer (429, 503): that says nothing about the creator.
+ */
+type PaykitSetupFailure = 'expired' | 'held' | 'unknown';
+
+/**
+ * Reads the failure from the callback's `reason` (pubky/paykit-server#146) when it has one; without one, from
+ * whether Paykit holds the creator. Never throws.
+ */
+async function classifyPaykitSetupFailure(reason: string | undefined, creator: string): Promise<PaykitSetupFailure> {
+  if (reason === 'expired') return 'expired';
+  if (reason === 'creator_held') return 'held';
+  if (reason) return 'unknown';
+  try {
+    return (await CommerceController.isPaykitCreatorHeld(creator)) ? 'held' : 'expired';
+  } catch {
+    return 'unknown';
+  }
+}
+
 function paykitKeyLabel(pubky: string | null): string {
   return pubky ? ` (${truncateMiddle(pubky, 16)})` : '';
 }
@@ -108,9 +130,8 @@ const PAYKIT_BITCOIN_RECONNECT_EXPLANATION =
 const PAYKIT_SETUP_FAILED_COPY =
   'Bitkit setup failed. If this pubky already has a Paykit setup, for example from Locks or another Shop, reconnect it instead.';
 /**
- * A failed first setup for a seller the service does not say Paykit holds. paykit-server ends a setup flow after five
- * minutes and the failure callback carries no reason, so this is the likeliest cause; reconnecting cannot help because
- * Paykit has no account to reconnect.
+ * A failed first setup that really expired: the callback says `expired`, or it gives no reason and Paykit does not
+ * hold the creator. Reconnecting cannot help because Paykit has no account to reconnect.
  */
 const PAYKIT_SETUP_EXPIRED_COPY =
   'The Bitkit setup request ran out of time, so nothing was set up yet. Connect Bitkit to start again, and approve it in Bitkit within 5 minutes.';
@@ -200,6 +221,8 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
   const paykitIframeRef = useRef<HTMLIFrameElement>(null);
   const paykitSetupGenerationRef = useRef<string | null>(null);
   const paykitSetupOutcomeRef = useRef<PaykitSetupOutcome>('finished');
+  /** The `reason` of the last failure callback, when paykit-server sends one. */
+  const paykitSetupReasonRef = useRef<string | undefined>(undefined);
   const [paykitSetupOpen, setPaykitSetupOpen] = useState(false);
   const [paykitSetupUrl, setPaykitSetupUrl] = useState<string | null>(null);
   const [paykitSetupState, setPaykitSetupState] = useState<string | null>(null);
@@ -211,6 +234,8 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
     pubky: string | null;
     /** The flow that failed, for an `error` problem. */
     failedMode?: PaykitSetupMode;
+    /** Why a first setup failed, for an `error` problem on upstream Paykit. */
+    failure?: PaykitSetupFailure;
   } | null>(null);
   const [isRetryingUsdt, setIsRetryingUsdt] = useState(false);
   const [paypalTouched, setPaypalTouched] = useState(false);
@@ -242,10 +267,10 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
     setRailDraft({ bitcoin: null, paypal: null, usdt: null });
   }
 
-  function showSetupFailure(outcome: 'error' | 'timeout') {
+  function showSetupFailure(outcome: 'error' | 'timeout', failure?: PaykitSetupFailure) {
     setPaykitSetupStatus(outcome);
     if (outcome === 'error') {
-      setPaykitSetupProblem({ problem: 'error', pubky: currentUserPubky, failedMode: paykitSetupMode });
+      setPaykitSetupProblem({ problem: 'error', pubky: currentUserPubky, failedMode: paykitSetupMode, failure });
     }
   }
 
@@ -269,6 +294,19 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
       // or an expiry it means the setup really did not complete. `null` is no answer, which must not accuse the seller
       // of a wrong key or of a failed setup.
       if (claimed === false && outcome !== 'finished') {
+        // A refused first setup and an expired one look the same to the iframe; tell them apart before offering a
+        // fresh setup (which Paykit refuses for a creator it holds) or a reconnect (which it refuses otherwise).
+        if (
+          outcome === 'error' &&
+          paykitSetupMode === 'setup' &&
+          getPaykitServerApi() === 'upstream' &&
+          currentUserPubky
+        ) {
+          void classifyPaykitSetupFailure(paykitSetupReasonRef.current, currentUserPubky).then((failure) => {
+            if (paykitSetupGenerationRef.current === state) showSetupFailure('error', failure);
+          });
+          return;
+        }
         showSetupFailure(outcome);
         return;
       }
@@ -328,6 +366,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
         setPaykitSetupProblem({ problem: 'mismatch', pubky: currentUserPubky });
         return;
       }
+      paykitSetupReasonRef.current = typeof event.data.reason === 'string' ? event.data.reason : undefined;
       onSetupSettled(event.data.state, event.data.error ? 'error' : 'finished');
     };
     window.addEventListener('message', onMessage);
@@ -359,6 +398,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
             mode === 'reconnect' ? 'USDT' : undefined,
           );
     paykitSetupGenerationRef.current = state;
+    paykitSetupReasonRef.current = undefined;
     setPaykitSetupMode(mode);
     setPaykitSetupState(state);
     setPaykitSetupUrl(url);
@@ -444,8 +484,13 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
       ? paykitSetupProblemState.problem
       : null;
   const paykitCodeExpired = paykitSetupStatus === 'error' || paykitSetupStatus === 'timeout';
+  const setupFailure = paykitSetupProblem === 'error' ? paykitSetupProblemState?.failure : undefined;
+  // Paykit itself said it holds the creator after a first setup failed: only a reconnect can work.
+  const paykitHoldsSellerPerPaykit = upstreamPaykit && setupFailure === 'held';
   const step2Mode: PaykitSetupMode =
-    upstreamPaykit && (payments.accountClaimed === true || bitcoinNeedsReconnect) ? 'bitcoin-reconnect' : 'setup';
+    upstreamPaykit && (payments.accountClaimed === true || bitcoinNeedsReconnect || paykitHoldsSellerPerPaykit)
+      ? 'bitcoin-reconnect'
+      : 'setup';
   // The service's `reconnect` is its record that Paykit once held the seller. A Paykit that no longer holds the creator
   // refuses `/setup/reconnect` before serving its page, so nothing calls back and the reconnect only expires; an expired
   // one falls back to initial setup. An `error` callback means Paykit found the creator, so it keeps the reconnect.
@@ -453,14 +498,16 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
     upstreamPaykit &&
     payments.accountClaimed === false &&
     (payments.config?.bitcoinSetupAction === 'reconnect' || payments.config?.usdtSetupAction === 'reconnect');
-  // A failed initial setup offers Reconnect Bitkit only for a seller Paykit holds: the service says so, or the wallet
-  // is already connected. Otherwise Paykit has no account to reconnect (`/setup/reconnect` answers 400), and the way
-  // back is a fresh setup.
-  const reconnectFixesFailedSetup = payments.accountClaimed === true || paykitHoldsSellerPerService;
+  // A failed initial setup offers Reconnect Bitkit only for a seller Paykit holds: the service or Paykit says so, or the
+  // wallet is already connected. Otherwise Paykit has no account to reconnect (`/setup/reconnect` answers 400). Only a
+  // real expiry gets the ran-out-of-time copy and a fresh setup; any other failure says it failed and offers Retry.
+  const reconnectFixesFailedSetup =
+    payments.accountClaimed === true || paykitHoldsSellerPerService || paykitHoldsSellerPerPaykit;
   const setupDialogFailed = upstreamPaykit && paykitSetupStatus === 'error' && paykitSetupMode === 'setup';
   const failedSetupInDialog = setupDialogFailed && reconnectFixesFailedSetup;
-  const expiredSetupInDialog = setupDialogFailed && !reconnectFixesFailedSetup && payments.accountClaimed === false;
-  const expiredSetupOnCard = upstreamPaykit && step2Mode === 'setup' && paykitSetupProblem === 'error';
+  const expiredSetupInDialog =
+    setupDialogFailed && !reconnectFixesFailedSetup && payments.accountClaimed === false && setupFailure === 'expired';
+  const expiredSetupOnCard = upstreamPaykit && step2Mode === 'setup' && setupFailure === 'expired';
   const expiredServiceReconnectInDialog =
     paykitHoldsSellerPerService && paykitSetupMode !== 'setup' && paykitSetupStatus === 'timeout';
   // Only the missing-step reason is explained here; without a session the

@@ -1900,6 +1900,14 @@ export class CommerceController {
     );
   }
 
+  /**
+   * Whether the Paykit Server already holds this creator, so only `/setup/reconnect` can set it up again.
+   * Throws when Paykit cannot answer (rate limited, unavailable); never read that as "not held".
+   */
+  static async isPaykitCreatorHeld(creator: unknown): Promise<boolean> {
+    return await CommerceApplication.isPaykitCreatorHeld(CommerceRecordNormalizer.pubky(creator));
+  }
+
   private static paykitSetupArguments(
     operation: string,
     flow: 'setup' | 'reconnect',

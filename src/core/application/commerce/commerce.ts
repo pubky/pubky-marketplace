@@ -2405,6 +2405,11 @@ export class CommerceApplication {
     return LocksGatewayService.buildPaykitReconnectUrl(returnTo, state, creator, asset);
   }
 
+  /** Whether the Paykit Server holds `creator`; throws when it cannot say. */
+  static async isPaykitCreatorHeld(creator: string): Promise<boolean> {
+    return await LocksGatewayService.isPaykitCreatorHeld(creator);
+  }
+
   /**
    * The bitcoin price in every listing currency, from one Blocktank snapshot,
    * for the indicative "≈" price hints shown beside listing prices.

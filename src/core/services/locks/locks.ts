@@ -2,6 +2,7 @@
 // loaded through the dynamic import in loadLocksSdk(), never at module scope, so this
 // file stays safe to pull into server-rendered module graphs.
 import { z } from 'zod';
+import { withBasePath } from '@/config/base-path';
 import { getLocksUrl, getPaykitSetupCreatorParam, getPaykitSetupUrl } from '@/config/commerce';
 import { LOCKS_SUBMIT_REFUSAL_CODES, type LocksSubmitRefusalCode } from '@/libs/commerce/locks-submit-refusal';
 import { isAppError } from '@/libs/error/error';
@@ -362,6 +363,33 @@ export class LocksGatewayService {
     url.searchParams.set('state', state);
     if (asset) url.searchParams.set('asset', asset);
     return url.toString();
+  }
+
+  /**
+   * Whether the Paykit Server already holds this creator, read through the Shop's own `/api/paykit-creator`
+   * (the Paykit Server sends no CORS headers, so a browser cannot ask it). Throws when the answer is
+   * unavailable (a 429 or 503 included): that says nothing about the creator.
+   */
+  static async isPaykitCreatorHeld(creator: string): Promise<boolean> {
+    const operation = 'LocksGatewayService.isPaykitCreatorHeld';
+    const url = `${withBasePath('/api/paykit-creator')}?${new URLSearchParams({ creator: `pubky${creator}` })}`;
+    const response = await safeFetch(
+      url,
+      { method: 'GET', credentials: 'omit', cache: 'no-store' },
+      ErrorService.Paykit,
+      operation,
+    );
+    if (!response.ok) throw httpResponseToError(response, ErrorService.Paykit, operation, url);
+    const body = z
+      .object({ held: z.boolean() })
+      .safeParse(await parseResponseOrThrow<unknown>(response, ErrorService.Paykit, operation, url));
+    if (!body.success) {
+      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Paykit creator-held response is invalid', {
+        service: ErrorService.Paykit,
+        operation,
+      });
+    }
+    return body.data.held;
   }
 
   private static async postLifecycle(url: string, body: Record<string, unknown>): Promise<LocksVerificationLifecycle>;
