@@ -437,7 +437,7 @@ describe('fetchAttachmentImageAsDataUri', () => {
   });
 
   it('uses the feed variant when it is available', async () => {
-    const fetcher = vi.fn(async () => imageResponse());
+    const fetcher = vi.fn(async (_url: string) => imageResponse());
 
     await expect(fetchAttachmentImageAsDataUri(attachmentUri, fetcher)).resolves.toMatch(/^data:image\/png;base64,/);
     expect(fetcher.mock.calls.map(([url]) => url)).toEqual([feedUrl]);
@@ -453,14 +453,14 @@ describe('fetchAttachmentImageAsDataUri', () => {
   });
 
   it('returns null when both variants are unavailable', async () => {
-    const fetcher = vi.fn(async () => new Response('missing', { status: 404 }));
+    const fetcher = vi.fn(async (_url: string) => new Response('missing', { status: 404 }));
 
     await expect(fetchAttachmentImageAsDataUri(attachmentUri, fetcher)).resolves.toBeNull();
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
   it('fetches nothing for a non-pubky reference', async () => {
-    const fetcher = vi.fn(async () => imageResponse());
+    const fetcher = vi.fn(async (_url: string) => imageResponse());
 
     await expect(fetchAttachmentImageAsDataUri('https://example.com/a.svg', fetcher)).resolves.toBeNull();
     expect(fetcher).not.toHaveBeenCalled();
