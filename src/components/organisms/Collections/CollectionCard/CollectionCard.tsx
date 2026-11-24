@@ -5,12 +5,14 @@ import { getCollectionRoute } from '@/app/routes';
 import type { EnrichedPostDetails } from '@/application/moderation/moderation.types';
 import { Card, CardContent } from '@/atoms/Card/Card';
 import { Container } from '@/atoms/Container/Container';
+import { Image } from '@/atoms/Image/Image';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useEffectiveTagsLayout } from '@/hooks/useEffectiveTagsLayout/useEffectiveTagsLayout';
 import { useIsMobile } from '@/hooks/useIsMobile/useIsMobile';
 import { usePostDetails } from '@/hooks/usePostDetails/usePostDetails';
 import { useUserProfile } from '@/hooks/useUserProfile/useUserProfile';
+import { useVariantImageFallback } from '@/hooks/useVariantImageFallback/useVariantImageFallback';
 import { parseCollectionContent } from '@/libs/post/collectionContent';
 import { resolveCollectionCoverImage } from '@/libs/post/collectionCoverImage';
 import { cn, isPostDeleted } from '@/libs/utils/utils';
@@ -23,6 +25,7 @@ import { AvatarWithFallback } from '@/organisms/AvatarWithFallback/AvatarWithFal
 import { CollectionCardSkeleton } from '@/organisms/Collections/CollectionCard/CollectionCard.skeleton';
 import { CollectionCardBlurred } from '@/organisms/Collections/CollectionCard/CollectionCardBlurred';
 import { PostTagsExpandableRow } from '@/organisms/PostTagsExpandableRow/PostTagsExpandableRow';
+import { FileVariant } from '@/services/nexus/file/file.types';
 import { useLocalFilesStore } from '@/stores/localFiles/localFiles.store';
 
 type CollectionCardPresentation = 'landing' | 'embed';
@@ -151,7 +154,16 @@ function CollectionCardContent({
   // Prefer a recently-uploaded blob URL stashed in the local-files store so the
   // cover renders instantly after create/edit while the CDN catches up.
   const localCoverUrl = useLocalFilesStore((s) => s.collections[compositeId]);
-  const coverImage = localCoverUrl ?? resolveCollectionCoverImage(collection?.cover_image);
+  const remoteFeedCoverImage = localCoverUrl
+    ? null
+    : resolveCollectionCoverImage(collection?.cover_image, FileVariant.FEED);
+  const remoteMainCoverImage = localCoverUrl
+    ? null
+    : resolveCollectionCoverImage(collection?.cover_image, FileVariant.MAIN);
+  const { src: coverImage, onError: handleCoverError } = useVariantImageFallback(
+    localCoverUrl ? undefined : (remoteFeedCoverImage ?? undefined),
+    localCoverUrl ?? remoteMainCoverImage ?? '',
+  );
   // Elevated count pill contrast for embed chrome without a cover.
   const embeddedOnMuted = isEmbed && !coverImage;
 
@@ -186,6 +198,20 @@ function CollectionCardContent({
           isEmbed && !coverImage && 'bg-muted',
         )}
       >
+        {!localCoverUrl && remoteFeedCoverImage && remoteFeedCoverImage !== remoteMainCoverImage ? (
+          <Image
+            data-testid="collection-cover-probe"
+            src={remoteFeedCoverImage}
+            alt=""
+            aria-hidden="true"
+            width={1}
+            height={1}
+            loading="eager"
+            className="pointer-events-none absolute size-0"
+            onError={handleCoverError}
+          />
+        ) : null}
+
         {coverImage && (
           <Container
             overrideDefaults

@@ -146,6 +146,23 @@ describe('PostListMediaThumbnail', () => {
     expect(image).toHaveAttribute('src', 'blob:http://localhost/photo-feed');
   });
 
+  it('renders an SVG thumbnail from its main URL', async () => {
+    selectLocalFiles({
+      'pk:test:post': [
+        {
+          type: 'image/svg+xml',
+          name: 'icon.svg',
+          urls: { main: 'https://example.com/icon.svg', feed: 'https://example.com/icon-feed.svg' },
+        },
+      ],
+    });
+
+    render(<PostListMediaThumbnail postId="pk:test:post" />);
+
+    const image = await screen.findByTestId('image');
+    expect(image).toHaveAttribute('src', 'https://example.com/icon.svg');
+  });
+
   it('renders a video thumbnail from local attachments', async () => {
     selectLocalFiles({
       'pk:test:post': [

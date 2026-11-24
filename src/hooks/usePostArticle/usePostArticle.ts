@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import { FileController } from '@/controllers/file/file';
+import { resolveFileVariant } from '@/libs/file/fileVariant';
 import { parseArticleContent } from '@/libs/post/articleContent';
 import type { PostDetailsModel } from '@/models/post/details/postDetails';
 import { toast } from '@/molecules/Toaster/toast';
-import type { FileVariant } from '@/services/nexus/file/file.types';
+import { FileVariant } from '@/services/nexus/file/file.types';
 
 interface CoverImage {
   src: string;
+  mainSrc?: string;
   alt: string;
 }
 
@@ -78,9 +80,11 @@ export function usePostArticle({
         if (cancelled) return;
 
         if (attachment && attachment.content_type.startsWith('image')) {
-          const src = FileController.getFileUrl({ fileId: attachment.id, variant: coverImageVariant });
-          const coverImage = { src, alt: attachment.name };
-          setCoverImage(coverImage);
+          const mainSrc = FileController.getFileUrl({ fileId: attachment.id, variant: FileVariant.MAIN });
+          const variant = resolveFileVariant(attachment.content_type, coverImageVariant);
+          const src =
+            variant === FileVariant.MAIN ? mainSrc : FileController.getFileUrl({ fileId: attachment.id, variant });
+          setCoverImage({ src, mainSrc, alt: attachment.name });
         }
       } catch {
         if (cancelled) return;

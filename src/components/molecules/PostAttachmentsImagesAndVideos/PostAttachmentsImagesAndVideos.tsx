@@ -15,6 +15,8 @@ import { Dialog, DialogClose, DialogContent, DialogTrigger } from '@/atoms/Dialo
 import { Image } from '@/atoms/Image/Image';
 import { Typography } from '@/atoms/Typography/Typography';
 import { Video } from '@/atoms/Video/Video';
+import { useVariantImageFallback } from '@/hooks/useVariantImageFallback/useVariantImageFallback';
+import { supportsResizedVariants } from '@/libs/file/fileVariant';
 import { cn } from '@/libs/utils/utils';
 import type { AttachmentConstructed } from '@/organisms/PostAttachments/PostAttachments.types';
 import { PostAttachmentsCarouselImage } from '../PostAttachmentsCarouselImage/PostAttachmentsCarouselImage';
@@ -41,6 +43,33 @@ type PostAttachmentsImagesAndVideosProps = {
     openPreview: (index: number, event?: MouseEvent) => void;
   }) => ReactNode;
 };
+
+type AttachmentGridImageProps = {
+  media: AttachmentConstructed;
+  isOnlyMedia: boolean;
+  isListVariant: boolean;
+};
+
+function AttachmentGridImage({ media, isOnlyMedia, isListVariant }: AttachmentGridImageProps) {
+  const variantSrc = supportsResizedVariants(media.type) && media.type !== 'image/gif' ? media.urls.feed : undefined;
+  const { src, onError } = useVariantImageFallback(variantSrc, media.urls.main);
+
+  return (
+    <Image
+      src={src}
+      alt={media.name}
+      fill={!isOnlyMedia}
+      onError={onError}
+      className={cn(
+        'rounded-md',
+        isOnlyMedia
+          ? cn(isListVariant ? 'max-h-[theme(spacing.27)] w-fit' : 'max-h-96 max-w-full', 'object-contain')
+          : 'object-cover object-center',
+      )}
+    />
+  );
+}
+
 export const PostAttachmentsImagesAndVideos = ({
   imagesAndVideos,
   variant = 'default',
@@ -146,20 +175,7 @@ export const PostAttachmentsImagesAndVideos = ({
                 )}
               >
                 <Button overrideDefaults onClick={(e) => openPreview(i, e)}>
-                  <Image
-                    src={media.type === 'image/gif' ? media.urls.main : (media.urls.feed ?? media.urls.main)}
-                    alt={media.name}
-                    fill={!isOnlyMedia}
-                    className={cn(
-                      'rounded-md',
-                      isOnlyMedia
-                        ? cn(
-                            isListVariant ? 'max-h-[theme(spacing.27)] w-fit' : 'max-h-96 max-w-full',
-                            'object-contain',
-                          )
-                        : 'object-cover object-center',
-                    )}
-                  />
+                  <AttachmentGridImage media={media} isOnlyMedia={isOnlyMedia} isListVariant={isListVariant} />
                   {renderRemainingOverlay(i)}
                 </Button>
               </DialogTrigger>

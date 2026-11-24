@@ -326,6 +326,27 @@ describe('useVisualFeedTiles', () => {
     expect(result.current.hasPendingSnapshot).toBe(false);
   });
 
+  it('uses the main URL as the preview for remote SVG files', async () => {
+    mockUseLiveQuery.mockImplementation(useExecutedLiveQuery);
+    mockFindByIdsPreserveOrder.mockResolvedValue([
+      createPostDetails({
+        id: 'author:post-svg',
+        attachments: ['pubky://user-1/pub/pubky.app/files/file-svg'],
+      }),
+    ]);
+    mockGetMetadata.mockResolvedValue([
+      createFileDetails({ id: 'user-1:file-svg', contentType: 'image/svg+xml', width: 100, height: 100 }),
+    ]);
+
+    const { result } = renderHook(() => useVisualFeedTiles({ postIds: ['author:post-svg'], hasMore: false }));
+
+    await waitFor(() => {
+      expect(result.current.tiles).toHaveLength(1);
+    });
+    expect(result.current.tiles[0].mainSrc).toBe('/files/user-1:file-svg/main');
+    expect(result.current.tiles[0].previewSrc).toBe(result.current.tiles[0].mainSrc);
+  });
+
   it('resolves probed square and wide tiles into non-medium rows', async () => {
     const squareId = findIdentity({
       base: 'square-tile',
