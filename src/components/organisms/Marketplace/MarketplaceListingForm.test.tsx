@@ -280,6 +280,18 @@ describe('MarketplaceListingForm', () => {
     expect(screen.getByText('You can add these later')).toBeInTheDocument();
   });
 
+  it('lets the description grow with its text up to a cap, then scroll', () => {
+    render(<FormHarness />);
+
+    const description = screen.getByPlaceholderText(
+      'Condition, provenance, measurements, and anything a buyer should know',
+    );
+    // A fixed height keeps a long description in a 100px box; the field sizes to its content between a floor
+    // and a ceiling instead, the ceiling higher from the sm breakpoint up.
+    expect(description).not.toHaveClass('h-25');
+    expect(description).toHaveClass('field-sizing-content', 'h-auto', 'min-h-36', 'max-h-64', 'sm:max-h-96');
+  });
+
   it('offers only the 7-day auction, with no length choice, by default', () => {
     const { container } = render(<FormHarness defaultValues={{ saleFormat: 'auction' }} />);
 
