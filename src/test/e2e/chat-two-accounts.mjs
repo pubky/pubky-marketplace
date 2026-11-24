@@ -25,6 +25,8 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { blake3 } from '@noble/hashes/blake3.js';
 import { chromium } from 'playwright';
+import { PubkySpecsBuilder } from 'pubky-app-specs';
+import { buildUser } from 'pubky-social-specs';
 
 const BASE = process.env.SHOP_URL ?? 'http://localhost:3000';
 const HOMESERVER = process.env.CHAT_E2E_HOMESERVER ?? '8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo';
@@ -54,7 +56,7 @@ const SIGNUP_TOKENS = (process.env.CHAT_E2E_SIGNUP_TOKENS ?? '')
   .map((token) => token.trim())
   .filter(Boolean);
 
-async function registerIdentity(label) {
+async function registerIdentity(label, name, profileEpoch) {
   const keypair = sdk.Keypair.random();
   const signer = pubky.signer(keypair);
   const homeserver = sdk.PublicKey.from(HOMESERVER);
@@ -71,7 +73,21 @@ async function registerIdentity(label) {
     }
   }
   const id = keypair.publicKey.z32();
-  console.log(`${label}: ${id}`);
+  // SDK signup creates the identity. Publish its sole profile with a short-lived owner session
+  // before the browser asks for the normal Shop QR grant.
+  const ownerSession = await signer.signinBlocking('chat-e2e-fixtures.example');
+  try {
+    if (profileEpoch === 'v1') {
+      const profile = buildUser(id, { name });
+      await ownerSession.storage.putBytes(profile.path, profile.body);
+    } else {
+      const { user, meta } = new PubkySpecsBuilder(id).createUser(name, null, null, [], null);
+      await ownerSession.storage.putJson(meta.path, user.toJson());
+    }
+  } finally {
+    await ownerSession.signout();
+  }
+  console.log(`${label}: ${id} (${profileEpoch} profile)`);
   return { label, keypair, id };
 }
 
@@ -229,7 +245,7 @@ async function approveSignIn(identity, url) {
   }
 }
 
-async function signIn(context, identity, name) {
+async function signIn(context, identity) {
   const page = await context.newPage();
   const events = trackRequests(page);
   page.on('pageerror', (error) => console.error(`[${identity.label}] pageerror`, String(error)));
@@ -259,7 +275,7 @@ async function signIn(context, identity, name) {
       await approveSignIn(identity, url);
     }
     console.log(`[${identity.label}] approved`);
-    await waitForSignedIn(page, identity, name);
+    await waitForSignedIn(page, identity);
     // Chat is set up on the first non-maintenance route after sign-in.
     await page.goto(`${BASE}/messages`, { waitUntil: 'domcontentloaded' });
     await page.locator('[data-surface="chat-inbox"]').waitFor({ state: 'visible', timeout: 60_000 });
@@ -276,36 +292,28 @@ async function signIn(context, identity, name) {
   return page;
 }
 
-async function waitForSignedIn(page, identity, name) {
+async function waitForSignedIn(page, identity) {
+  await page.waitForFunction(() => !location.pathname.startsWith('/sign-in'), null, { timeout: 60_000 });
+  if (new URL(page.url()).pathname === '/complete-profile') {
+    throw new Error(`[${identity.label}] Shop required profile setup for an existing profile`);
+  }
   await page.waitForFunction(
-    () => {
+    (expectedPubky) => {
       try {
         const state = JSON.parse(localStorage.getItem('shop-auth-store') ?? '{}').state ?? {};
-        return typeof state.grantSessionRecordId === 'string' && state.grantSessionRecordId.length > 0;
+        return (
+          state.currentUserPubky === expectedPubky &&
+          state.hasProfile === true &&
+          typeof state.grantSessionRecordId === 'string' &&
+          state.grantSessionRecordId.length > 0
+        );
       } catch {
         return false;
       }
     },
-    null,
+    identity.id,
     { timeout: 60_000 },
   );
-  await page.waitForFunction(() => !location.pathname.startsWith('/sign-in'), null, { timeout: 60_000 });
-  if (page.url().includes('/complete-profile')) {
-    await page.getByPlaceholder('Enter your name').fill(name);
-    await page.getByRole('button', { name: 'Finish' }).click();
-    // The profile step records hasProfile; where it goes next depends on the stored return path.
-    await page.waitForFunction(
-      () => {
-        try {
-          return JSON.parse(localStorage.getItem('shop-auth-store') ?? '{}').state?.hasProfile === true;
-        } catch {
-          return false;
-        }
-      },
-      null,
-      { timeout: 60_000 },
-    );
-  }
 }
 
 async function readPublic(url) {
@@ -395,13 +403,13 @@ const makeContext = () =>
   browser.newContext({ viewport: { width: 1280, height: 800 }, permissions: ['clipboard-read', 'clipboard-write'] });
 
 try {
-  const alice = await registerIdentity('alice');
-  const bob = await registerIdentity('bob');
+  const alice = await registerIdentity('alice', 'Alice Seller', 'v1');
+  const bob = await registerIdentity('bob', 'Bob Buyer', 'legacy');
   const aliceContext = await makeContext();
   const bobContext = await makeContext();
-  const alicePage = await signIn(aliceContext, alice, 'Alice Seller');
+  const alicePage = await signIn(aliceContext, alice);
   record('alice:signed-in', true, alicePage.url());
-  const bobPage = await signIn(bobContext, bob, 'Bob Buyer');
+  const bobPage = await signIn(bobContext, bob);
   record('bob:signed-in', true, bobPage.url());
 
   // Identity keys are provisioned right after sign-in.
@@ -642,7 +650,7 @@ try {
     }
   }
   const deviceTwo = await makeContext();
-  const alicePageTwo = await signIn(deviceTwo, alice, 'Alice Seller');
+  const alicePageTwo = await signIn(deviceTwo, alice);
   alicePageTwo.on('console', (message) => {
     if (message.text().includes('Chat') || message.text().includes('chat'))
       console.log('[alice-2] console', message.text().slice(0, 300));
@@ -692,9 +700,9 @@ try {
   // Stranger first contact, with the inbox. Carol has never talked to Alice, so
   // Alice's leader streams nothing of hers and the 60 s reconcile knows no folder
   // to list: a row within 30 s on Alice's inbox list (no open thread) is a ping.
-  const carol = await registerIdentity('carol');
+  const carol = await registerIdentity('carol', 'Carol Stranger', 'v1');
   const carolContext = await makeContext();
-  const carolPage = await signIn(carolContext, carol, 'Carol Stranger');
+  const carolPage = await signIn(carolContext, carol);
   await alicePage.goto(`${BASE}/messages`, { waitUntil: 'domcontentloaded' });
   await alicePage.locator('[data-surface="chat-inbox"]').waitFor({ state: 'visible', timeout: 60_000 });
   await sleep(3_000);
@@ -720,11 +728,11 @@ try {
   // PUBKY_RUNTIME_INBOX_URL: chat runs on event streams and reconciliation
   // alone. Carol's first message does not surface while Dave sits on his inbox
   // list; it is there as soon as he opens the thread.
-  const dave = await registerIdentity('dave');
+  const dave = await registerIdentity('dave', 'Dave Offline', 'legacy');
   const daveContext = await makeContext();
   await daveContext.route('**/v1/auth/session', (route) => route.abort());
   await daveContext.route('**/v1/pings**', (route) => route.abort());
-  const davePage = await signIn(daveContext, dave, 'Dave Offline');
+  const davePage = await signIn(daveContext, dave);
   await davePage.goto(`${BASE}/messages`, { waitUntil: 'domcontentloaded' });
   await davePage.locator('[data-surface="chat-inbox"]').waitFor({ state: 'visible', timeout: 60_000 });
   const coldNonce = `noinbox-${Date.now().toString(36)}`;
