@@ -13,7 +13,7 @@ import {
   signedAttestorProfile,
 } from '@/test/fixtures/commerce/attestor-records';
 import { renderAgentGuide } from './agent-guide';
-import { dynamic, GET } from './route';
+import { dynamic, GET, runtime } from './route';
 
 const indexLine = (body: string) => body.split('\n').find((line) => line.startsWith('INDEX = '));
 
@@ -74,6 +74,10 @@ describe('GET /llms.txt', () => {
     expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
     expect(indexLine(body)).toBe('INDEX = https://index.runtime.example.com');
     expect(body).not.toMatch(/nexusd-production-[0-9a-f]+/);
+  });
+
+  it('uses the Node.js runtime', () => {
+    expect(runtime).toBe('nodejs');
   });
 
   it('renders per request, so runtime trust entries apply without a rebuild', () => {
@@ -192,12 +196,21 @@ describe('GET /llms.txt', () => {
     });
 
     const body = await (await GET()).text();
+    const copy = body.replace(/\s+/g, ' ');
     const windows = attestorWindowsParam([...MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS, runtimeAttestor]);
 
     expect(body).toContain(`/reputation?attestors=${windows}`);
     expect(body).toContain(`Configured bounds, profile not verified:\n- ${attestor.pubky}:`);
+    expect(copy).toContain(
+      `${attestor.pubky}: this attestor's signed profile could not be read and verified for this guide, so its window above may be later than the Shop's; the profile may end the window earlier.`,
+    );
     expect(body).toContain(`INDEX/v0/marketplace/attestor/${attestor.pubky}/profile`);
     expect(body).toContain(`pubky://${attestor.pubky}/pub/pubky.app/marketplace/v1/attestor/profile`);
+    expect(copy).toContain(
+      "If it cannot be verified, counts from these windows (buyers, orders, reviews) are upper bounds; a rating computed from them is unconfirmed and may be higher or lower than the Shop's.",
+    );
+    expect(body).not.toContain('present any figure from these windows as an upper bound');
+    expect(body).not.toContain('its window above is the configured bound');
   });
 
   it('keeps configured bounds without an extra notice when profiles are absent', async () => {
@@ -216,11 +229,30 @@ describe('GET /llms.txt', () => {
     expect(body).not.toContain('Configured bounds, profile not verified:');
   });
 
-  it('reports a seller rating only when seller_buyers is positive', () => {
+  it('describes effective windows except keys listed as not verified', () => {
+    const copy = renderAgentGuide('https://index.example.test', []).replace(/\s+/g, ' ');
+
+    expect(copy).toContain("These are this Shop's effective windows except keys listed as not verified above:");
+    expect(copy).toContain(
+      "each key's window ends at the earliest of its configured end and any `validUntil` / `compromisedFrom` that a trusted attestor's verified signed profile",
+    );
+    expect(copy).toContain('A profile never adds a key, widens a window or moves `validFrom`.');
+  });
+
+  it('reports item and seller ratings only when their buyer counts are positive', () => {
+    const copy = renderAgentGuide('https://index.example.test', []).replace(/\s+/g, ' ');
+
+    expect(copy).toContain('Item rating = `sum_buyer_means / buyers` when `buyers` is positive.');
+    expect(copy).toContain(
+      'Report seller rating = `sum_seller_buyer_means / seller_buyers` only when `seller_buyers` is positive; when it is 0 or missing, say "no seller rating yet" and never compute it.',
+    );
+  });
+
+  it('gives no rating for a snippet without buckets', () => {
     const copy = renderAgentGuide('https://index.example.test', []).replace(/\s+/g, ' ');
 
     expect(copy).toContain(
-      'Report seller rating = `sum_seller_buyer_means / seller_buyers` only when `seller_buyers` is positive; when it is 0 or missing, say "no seller rating yet" and never compute it.',
+      'A snippet without `buckets` gives no rating: say "no rating yet" (the Shop shows "No rating yet" there), and never quote its `avg` or `count`.',
     );
   });
 

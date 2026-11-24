@@ -3,6 +3,7 @@ import { configuredMarketplaceTrustedAttestors, marketplaceTrustedAttestors } fr
 import { getMarketplaceNexusUrl } from '@/config/nexus';
 import { renderAgentGuide } from './agent-guide';
 
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {

@@ -43,12 +43,13 @@ export function renderAgentGuide(
       : `\n\nConfigured bounds, profile not verified:\n${unconfirmedAttestorIds
           .map(
             (pubky) =>
-              `- ${pubky}: its window above is the configured bound because its signed profile could not be read
-  and verified for this guide; the profile may end the window earlier. Before computing a Shop-equivalent figure,
-  read INDEX/v0/marketplace/attestor/${pubky}/profile, verify the record's signature against
+              `- ${pubky}: this attestor's signed profile could not be read and verified for this guide, so its
+  window above may be later than the Shop's; the profile may end the window earlier. Before computing a
+  Shop-equivalent figure, read INDEX/v0/marketplace/attestor/${pubky}/profile, verify the record's signature against
   pubky://${pubky}/pub/pubky.app/marketplace/v1/attestor/profile, and end each listed key's window at the earliest
   validUntil or compromisedFrom the verified profile states for it (Unix seconds, rounded up). If it cannot be
-  verified, present any figure from these windows as an upper bound.`,
+  verified, counts from these windows (buyers, orders, reviews) are upper bounds; a rating computed from them is
+  unconfirmed and may be higher or lower than the Shop's.`,
           )
           .join('\n')}`;
 
@@ -185,8 +186,8 @@ GET INDEX/v0/shop/{seller_id}/reputation?attestors=<windows>
 Build \`<windows>\` from the trusted list as comma-separated \`<pubky>:<from>:<until>\` entries,
 with Unix seconds over the attestation \`iat\`; an open window leaves \`until\` empty. If no windows
 can be built (the list is empty or too long), call without \`attestors=\` and use the bucket rule below.
-These are this Shop's effective windows: the configured trust list, with each key's window ended at
-the earliest of its configured end and the \`validUntil\` / \`compromisedFrom\` that the attestor's verified
+These are this Shop's effective windows except keys listed as not verified above: each key's window ends at
+the earliest of its configured end and any \`validUntil\` / \`compromisedFrom\` that a trusted attestor's verified
 signed profile (INDEX/v0/marketplace/attestor/{attestor_pubky}/profile) states for that key. A profile
 never adds a key, widens a window or moves \`validFrom\`.
 
@@ -229,7 +230,7 @@ GET INDEX/v0/shop/gujx6qd8ksydh1makdphd3bxu351d9b8waqka8hfg6q7hnqkxexo/reputatio
 
 Prefer \`scoped\`: it is the index's figure over the trusted windows, with one buyer counted once.
 Without \`scoped\`, sum only buckets of trusted attestors whose window covers the bucket's whole
-\`[first_iat, last_iat]\`; skip every other bucket. Item rating = \`sum_buyer_means / buyers\`.
+\`[first_iat, last_iat]\`; skip every other bucket. Item rating = \`sum_buyer_means / buyers\` when \`buyers\` is positive.
 Report seller rating = \`sum_seller_buyer_means / seller_buyers\` only when \`seller_buyers\` is positive;
 when it is 0 or missing, say "no seller rating yet" and never compute it. Basis = "N buyers · M orders".
 With no counted buyers, say "no counted reviews yet", never 0.0.
@@ -283,7 +284,8 @@ INDEX/v0/shop/{seller_id}?limit=30&skip=0 (404 = the seller has not published a 
 they may still have listings: INDEX/v0/stream/listings?seller_id={seller_id}&state=active).
 Stream rows and shop listings also embed a small \`reputation\` / \`listing_reputation\` snippet.
 Newer indexes include \`buckets\`, to which the same bucket rule applies. Their \`avg\`, \`count\`
-and \`verified_count\` are unfiltered.
+and \`verified_count\` are unfiltered. A snippet without \`buckets\` gives no rating: say "no rating yet"
+(the Shop shows "No rating yet" there), and never quote its \`avg\` or \`count\`.
 
 ### 5. Drops (limited releases)
 
