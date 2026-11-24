@@ -867,6 +867,20 @@ describe('CommerceApplication.publishOrderReceipts without the seller side', () 
 
   const SOLD_RECEIPT = '018f47d2-6a27-7c23-a49d-6b21bb770240';
   const sale = () => ({ receiptId: SOLD_RECEIPT, buyerPubky: SELLER, sellerPubky: BUYER }) as never;
+  const sellerReceiptId = (n: number) => `018f47d2-6a27-7c23-a49d-6b21bb${String(n).padStart(6, '0')}`;
+  const plantSellerReceipts = (record: Record<string, unknown>, count: number) => {
+    const sold = Array.from({ length: count }, (_, n) => sellerReceiptId(n));
+    for (const receiptId of sold) {
+      homeserver.files.set(legacyUrl(BUYER, receiptId), {
+        ...record,
+        receiptId,
+        role: 'seller',
+        buyerPubky: SELLER,
+        sellerPubky: BUYER,
+      });
+    }
+    return sold;
+  };
 
   it('moves only the plaintext receipts of purchases', async () => {
     const record = await publishedRecord();
@@ -893,16 +907,7 @@ describe('CommerceApplication.publishOrderReceipts without the seller side', () 
     const record = await publishedRecord();
     CommerceApplication.resetReceiptPublicationMemo();
     homeserver.files.clear();
-    const sold = Array.from({ length: 150 }, (_, n) => `018f47d2-6a27-7c23-a49d-6b21bb${String(n).padStart(6, '0')}`);
-    for (const receiptId of sold) {
-      homeserver.files.set(legacyUrl(BUYER, receiptId), {
-        ...record,
-        receiptId,
-        role: 'seller',
-        buyerPubky: SELLER,
-        sellerPubky: BUYER,
-      });
-    }
+    const sold = plantSellerReceipts(record, 150);
     homeserver.files.set(legacyUrl(BUYER, RECEIPT_ID), record);
 
     await expect(CommerceApplication.publishOrderReceipts(BUYER, [], { sellerSide: false })).resolves.toBe('published');
@@ -915,6 +920,124 @@ describe('CommerceApplication.publishOrderReceipts without the seller side', () 
     expect(reads.mock.calls.filter(([url]) => sold.some((receiptId) => url === legacyUrl(BUYER, receiptId)))).toEqual(
       [],
     );
+  });
+
+  it('resumes after five pages and moves a purchase behind more than 500 seller receipts', async () => {
+    const record = await publishedRecord();
+    CommerceApplication.resetReceiptPublicationMemo();
+    homeserver.files.clear();
+    const sold = plantSellerReceipts(record, 550);
+    const purchaseUrl = legacyUrl(BUYER, RECEIPT_ID);
+    const purchaseSealedUrl = sealedUrl(BUYER, RECEIPT_ID);
+    homeserver.files.set(purchaseUrl, record);
+    const list = vi.spyOn(CommerceHomeserverService, 'list');
+    const reads = vi.spyOn(CommerceHomeserverService, 'fetchJson');
+
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [], { sellerSide: false })).resolves.toBe(
+      'unavailable',
+    );
+
+    expect(list).toHaveBeenCalledTimes(5);
+    expect(list.mock.calls.map(([, , , cursor]) => cursor)).toEqual([
+      undefined,
+      legacyUrl(BUYER, sold[99]),
+      legacyUrl(BUYER, sold[199]),
+      legacyUrl(BUYER, sold[299]),
+      legacyUrl(BUYER, sold[399]),
+    ]);
+    expect(reads.mock.calls.some(([url]) => url === purchaseUrl)).toBe(false);
+    expect(homeserver.files.has(purchaseUrl)).toBe(true);
+    expect(homeserver.files.has(purchaseSealedUrl)).toBe(false);
+    homeserver.log.length = 0;
+
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [], { sellerSide: false })).resolves.toBe('published');
+
+    expect(list).toHaveBeenCalledTimes(6);
+    expect(list.mock.calls[5][3]).toBe(legacyUrl(BUYER, sold[499]));
+    expect(homeserver.files.has(purchaseUrl)).toBe(false);
+    expect(storedReceipt(BUYER, RECEIPT_ID)).toEqual(record);
+    expect(homeserver.log.filter((entry) => entry.endsWith(purchaseUrl) || entry.endsWith(purchaseSealedUrl))).toEqual([
+      `GET ${purchaseUrl}`,
+      `GET ${purchaseSealedUrl}`,
+      `PUT ${purchaseSealedUrl}`,
+      `GET ${purchaseSealedUrl}`,
+      `DELETE ${purchaseUrl}`,
+    ]);
+    expect(sold.every((receiptId) => homeserver.files.has(legacyUrl(BUYER, receiptId)))).toBe(true);
+  });
+
+  it('does not report a resumed cycle done when an earlier page had an invalid purchase receipt', async () => {
+    const record = await publishedRecord();
+    CommerceApplication.resetReceiptPublicationMemo();
+    homeserver.files.clear();
+    plantSellerReceipts(record, 550);
+    const invalidReceipt = '018f47d2-6a27-7c23-a49d-6b21ba770202';
+    const invalidUrl = legacyUrl(BUYER, invalidReceipt);
+    homeserver.files.set(invalidUrl, { invalid: true });
+    homeserver.files.set(legacyUrl(BUYER, RECEIPT_ID), record);
+    vi.spyOn(Logger, 'warn').mockImplementation(() => {});
+    const list = vi.spyOn(CommerceHomeserverService, 'list');
+    const reads = vi.spyOn(CommerceHomeserverService, 'fetchJson');
+
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [], { sellerSide: false })).resolves.toBe(
+      'unavailable',
+    );
+    expect(reads.mock.calls.some(([url]) => url === invalidUrl)).toBe(true);
+
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [], { sellerSide: false })).resolves.toBe(
+      'unavailable',
+    );
+    expect(homeserver.files.has(legacyUrl(BUYER, RECEIPT_ID))).toBe(false);
+    expect(storedReceipt(BUYER, RECEIPT_ID)).toEqual(record);
+
+    list.mockClear();
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [], { sellerSide: false })).resolves.toBe(
+      'unavailable',
+    );
+    expect(list.mock.calls[0][3]).toBeUndefined();
+    expect(reads.mock.calls.filter(([url]) => url === invalidUrl)).toHaveLength(2);
+  });
+
+  it('finishes after a full seller-only page followed by an empty page', async () => {
+    const record = await publishedRecord();
+    CommerceApplication.resetReceiptPublicationMemo();
+    homeserver.files.clear();
+    const sold = plantSellerReceipts(record, 100);
+    const list = vi.spyOn(CommerceHomeserverService, 'list');
+
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [], { sellerSide: false })).resolves.toBe('published');
+
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(list.mock.calls.map(([, , , cursor]) => cursor)).toEqual([undefined, legacyUrl(BUYER, sold[99])]);
+    expect(sold.every((receiptId) => homeserver.files.has(legacyUrl(BUYER, receiptId)))).toBe(true);
+  });
+
+  it.each(['account switch', 'sign out'] as const)('clears migration memos on %s', async (cleanup) => {
+    const record = await publishedRecord();
+    CommerceApplication.resetReceiptPublicationMemo();
+    homeserver.files.clear();
+    const sold = plantSellerReceipts(record, 500);
+    const list = vi.spyOn(CommerceHomeserverService, 'list');
+    const reads = vi.spyOn(CommerceHomeserverService, 'fetchJson');
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [], { sellerSide: false })).resolves.toBe(
+      'unavailable',
+    );
+
+    if (cleanup === 'account switch') {
+      vi.spyOn(MarketplaceSessionService, 'clearOtherAccounts').mockImplementation(() => {});
+      CommerceApplication.clearMarketplaceSessionsOfOtherAccounts(SELLER);
+    } else {
+      vi.spyOn(MarketplaceSessionService, 'clearForSignOut').mockImplementation(() => {});
+      await CommerceApplication.clearMarketplaceSessionForSignOut();
+    }
+    list.mockClear();
+    reads.mockClear();
+
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [], { sellerSide: false })).resolves.toBe(
+      'unavailable',
+    );
+    expect(list.mock.calls[0][3]).toBeUndefined();
+    expect(reads.mock.calls.some(([url]) => url === legacyUrl(BUYER, sold[0]))).toBe(true);
   });
 
   it('publishes receipts of purchases and leaves those of sales, which the seller side publishes', async () => {

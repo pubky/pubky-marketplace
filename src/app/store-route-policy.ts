@@ -252,7 +252,11 @@ export const STORE_STATIC_FILES: ReadonlySet<string> = new Set([
   '/favicon.ico',
 ]);
 
-/** A React Server Components request for a page: `<page>.rsc`, `<page>.prefetch.rsc`, `<page>.segments/...`. */
+/**
+ * A React Server Components request for a page: `<page>.rsc`, `<page>.prefetch.rsc`, `<page>.segments/...`.
+ * A production Next.js server strips the `.rsc` suffix before the proxy runs and sends RSC requests to the page URL
+ * with headers; this table still pins the policy for the literal suffixed paths.
+ */
 const RSC_REQUEST_SUFFIX = /(?:\.prefetch)?\.rsc$|\.segments\/.*$/;
 
 type Segment =

@@ -1850,6 +1850,9 @@ export class CommerceApplication {
 
   private static clearSessionScopedState(): void {
     this.publishedReceiptUrls.clear();
+    this.plaintextSellerReceiptUrls.clear();
+    this.receiptMigrationCursors.clear();
+    this.receiptMigrationFailedCycles.clear();
     this.ownReviewHomeserverMisses.clear();
     this.deletedOwnReviews.clear();
     CommercePrivKeyringApplication.clear();
@@ -2843,11 +2846,15 @@ export class CommerceApplication {
   /** Where the last pass without the seller side stopped listing plaintext receipts, by owner. */
   private static receiptMigrationCursors = new Map<string, string>();
 
+  /** Owners whose current migration cycle included a receipt or listing failure. */
+  private static receiptMigrationFailedCycles = new Set<string>();
+
   /** Test support: clears the session-scoped published-receipt and migration memos. */
   static resetReceiptPublicationMemo(): void {
     this.publishedReceiptUrls.clear();
     this.plaintextSellerReceiptUrls.clear();
     this.receiptMigrationCursors.clear();
+    this.receiptMigrationFailedCycles.clear();
   }
 
   /**
@@ -2863,8 +2870,9 @@ export class CommerceApplication {
    * Without `sellerSide`, seller receipts stay in place and do not count
    * toward the batch: the pass lists on past them (up to
    * RECEIPT_MIGRATION_MAX_PAGES pages) and the next pass resumes where it
-   * stopped, so buyer receipts behind any number of seller receipts move. It
-   * is done only after a pass from the start reaches the end.
+   * stopped, so buyer receipts behind any number of seller receipts move. A
+   * cycle that reaches the end is done only when none of its passes failed;
+   * after a failed cycle, the next pass starts again from the beginning.
    */
   private static async migratePlaintextReceipts(
     ownerPubky: string,
@@ -2873,7 +2881,7 @@ export class CommerceApplication {
   ): Promise<'done' | 'incomplete' | 'needs_reauth'> {
     const directory = CommerceRecordNormalizer.orderReceiptDirectoryUri(ownerPubky);
     let cursor = sellerSide ? undefined : this.receiptMigrationCursors.get(ownerPubky);
-    let incomplete = cursor !== undefined;
+    let incomplete = false;
     let moved = 0;
     for (let page = 1; ; page += 1) {
       let urls: string[];
@@ -2881,6 +2889,7 @@ export class CommerceApplication {
         urls = await CommerceHomeserverService.list(directory, RECEIPT_MIGRATION_BATCH, PRIV_V1_LOG_PATH, cursor);
       } catch (error) {
         if (this.isPrivateAccessDenied(error)) return 'needs_reauth';
+        if (!sellerSide) this.receiptMigrationFailedCycles.add(ownerPubky);
         Logger.warn(
           'Listing plaintext order receipts failed; the move retries on the next orders load',
           privErrorSummary(error),
@@ -2889,11 +2898,19 @@ export class CommerceApplication {
       }
       const result = await this.migratePlaintextReceiptPage(ownerPubky, keyring, sellerSide, urls);
       if (result === 'needs_reauth') return 'needs_reauth';
-      if (result === 'revoked') return 'incomplete';
+      if (result === 'revoked') {
+        if (!sellerSide) this.receiptMigrationFailedCycles.add(ownerPubky);
+        return 'incomplete';
+      }
       moved += result.moved;
       incomplete ||= result.incomplete;
+      if (result.incomplete && !sellerSide) this.receiptMigrationFailedCycles.add(ownerPubky);
       if (urls.length < RECEIPT_MIGRATION_BATCH) {
         this.receiptMigrationCursors.delete(ownerPubky);
+        if (!sellerSide) {
+          const failed = this.receiptMigrationFailedCycles.delete(ownerPubky);
+          return failed ? 'incomplete' : 'done';
+        }
         break;
       }
       cursor = urls[urls.length - 1];

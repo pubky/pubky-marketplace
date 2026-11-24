@@ -89,6 +89,25 @@ describe('proxy in store mode', () => {
     expect(response.headers.get('location')).toBe(`https://store.example/marketplace/shop/${STORE_SELLER}`);
   });
 
+  it('passes the not-found destination through and keeps the other store route responses', () => {
+    runtime.storeSeller = STORE_SELLER;
+    runtime.frameAncestors = [];
+
+    const notFound = proxy(request('/_not-found'));
+    expect(notFound.headers.get('x-middleware-rewrite')).toBeNull();
+    expect(notFound.headers.get('x-middleware-next')).toBe('1');
+    expect(notFound.headers.get('content-security-policy')).toBe("frame-ancestors 'none'");
+    expect(notFound.headers.get('x-frame-options')).toBe('DENY');
+    expect(notFound.headers.get('cross-origin-opener-policy')).toBe('same-origin-allow-popups');
+
+    const masked = proxy(request('/hot'));
+    expect(masked.headers.get('x-middleware-rewrite')).toBe('https://store.example/_not-found');
+
+    const storeHome = proxy(request('/marketplace'));
+    expect(storeHome.status).toBe(307);
+    expect(storeHome.headers.get('location')).toBe(`https://store.example/marketplace/shop/${STORE_SELLER}`);
+  });
+
   it.each([
     '/home',
     '/search',

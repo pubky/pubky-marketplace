@@ -27,7 +27,7 @@ export function proxy(request: NextRequest) {
 
 function storeModeResponse(request: NextRequest): NextResponse | null {
   const storeSeller = getStoreSeller();
-  if (storeSeller === null) return null;
+  if (storeSeller === null || request.nextUrl.pathname === STORE_NOT_FOUND_PATHNAME) return null;
   const decision = decideStoreRoute(request.nextUrl.pathname, storeSeller);
   if (decision.kind === 'allow') return null;
   const url = request.nextUrl.clone();
