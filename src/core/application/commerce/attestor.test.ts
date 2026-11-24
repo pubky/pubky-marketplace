@@ -203,22 +203,30 @@ describe('CommerceAttestorApplication.loadKeyWindows', () => {
   it('keeps verified windows confirmed when a later profile read fails', async () => {
     vi.useFakeTimers();
     const profile = signedAttestorProfile(attestor, [{ pubky: attestor.pubky, validFrom: FROM }]);
+    let fail = false;
     const read = vi
       .spyOn(NexusMarketplaceService, 'fetchAttestorProfile')
-      .mockImplementation(async ({ attestor_id }) =>
-        attestor_id === attestor.pubky ? servedAttestorProfile(attestor.pubky, profile) : null,
-      );
+      .mockImplementation(async ({ attestor_id }) => {
+        if (attestor_id === attestor.pubky) {
+          if (fail) throw new Error('offline');
+          return servedAttestorProfile(attestor.pubky, profile);
+        }
+        return null;
+      });
     await CommerceAttestorApplication.loadKeyWindows();
     vi.advanceTimersByTime(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
-    read.mockImplementationOnce(async ({ attestor_id }) => {
-      if (attestor_id === attestor.pubky) throw new Error('offline');
-      return null;
-    });
+    fail = true;
+    const warn = vi.spyOn(Logger, 'warn');
 
     await CommerceAttestorApplication.loadKeyWindows();
 
+    expect(read.mock.calls.filter(([params]) => params.attestor_id === attestor.pubky)).toHaveLength(2);
+    expect(warn).toHaveBeenCalledWith(
+      'An attestor profile could not be read; the configured trust windows stay',
+      expect.objectContaining({ attestorId: attestor.pubky }),
+    );
     expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
-    expect(attestorProfileKeyWindows()).not.toEqual([]);
+    expect(attestorProfileKeyWindows()).toContainEqual(expect.objectContaining({ pubky: attestor.pubky }));
   });
 
   it('lists no unconfirmed profile attestors in sandbox mode', async () => {
