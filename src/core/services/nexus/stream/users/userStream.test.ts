@@ -503,6 +503,8 @@ describe('NexusUserStreamService.fetchByIds', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks keeps queued mockResolvedValueOnce values.
+    mockQueryNexus.mockReset();
   });
 
   test.each([

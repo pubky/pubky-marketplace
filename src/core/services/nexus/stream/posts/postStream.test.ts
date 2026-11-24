@@ -1069,6 +1069,8 @@ describe('NexusPostStreamService', () => {
   // Mock the queryNexus function
   beforeEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks keeps queued mockResolvedValueOnce values.
+    mockQueryNexus.mockReset();
   });
 
   describe('fetch - Stream routing (Consolidated)', () => {

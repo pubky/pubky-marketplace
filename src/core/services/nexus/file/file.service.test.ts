@@ -33,6 +33,8 @@ function createFile(uri: string): NexusFileDetails {
 describe('NexusFileService.fetchFiles', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks keeps queued mockResolvedValueOnce values.
+    mockQueryNexus.mockReset();
   });
 
   test.each([
