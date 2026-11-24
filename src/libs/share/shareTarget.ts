@@ -10,8 +10,11 @@ import { rasterImageMimeType } from '@/libs/media/image-bytes';
 
 const SHARE_TARGET_CACHE = 'share-target-files';
 
-/** Leading bytes read to type a shared file; an AVIF `ftyp` box fits well inside. */
+/** Leading bytes read to type a shared file from its supported image signatures. */
 const SHARED_FILE_HEAD_BYTES = 256;
+
+/** Raster image types that the post composer accepts (pubky-app-specs). */
+const SHARED_IMAGE_TYPES: ReadonlySet<string> = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 
 /**
  * Audio and video types that both the manifest's `share_target` offers and the
@@ -22,8 +25,9 @@ const SHARED_MEDIA_TYPES: ReadonlySet<string> = new Set(['audio/mpeg', 'audio/wa
 
 /**
  * The type a shared file is kept under, or null to refuse it. Any page can
- * POST to /share, so an image is typed from its own bytes, and a declared
- * image type whose bytes are not a raster image (SVG included) is refused.
+ * POST to /share, so an image is typed from its own bytes. Only JPEG, PNG, GIF
+ * and WebP are kept; AVIF and declared image types whose bytes are not a
+ * supported raster image (SVG included) are refused regardless of declared type.
  * Audio and video keep the essence of their declared type (lowercased, without
  * parameters) only when it is one of `SHARED_MEDIA_TYPES`; Chromium hands the
  * part's type over with its case and parameters. HTML, XML and every other
@@ -32,19 +36,21 @@ const SHARED_MEDIA_TYPES: ReadonlySet<string> = new Set(['audio/mpeg', 'audio/wa
 export async function sharedFileType(file: Blob): Promise<string | null> {
   const head = new Uint8Array(await file.slice(0, SHARED_FILE_HEAD_BYTES).arrayBuffer());
   const imageType = rasterImageMimeType(head);
-  if (imageType) return imageType;
+  if (imageType === 'image/avif') return null;
+  if (imageType && SHARED_IMAGE_TYPES.has(imageType)) return imageType;
   const essence = file.type.split(';')[0].trim().toLowerCase();
   return SHARED_MEDIA_TYPES.has(essence) ? essence : null;
 }
 
 /**
  * Answers a Web Share Target POST to /share in the service worker. Every
- * POST first drops the files of an earlier share, text-only shares included.
- * Text params go into the redirect's query; files `sharedFileType` accepts
- * are cached under that type, and the rest are dropped before caching and
- * counted in `refusedFiles`.
+ * POST first drops the files of an earlier share, even one whose body cannot
+ * be read. Text params go into the redirect's query; files `sharedFileType`
+ * accepts are cached under that type, and the rest are dropped before caching
+ * and counted in `refusedFiles`.
  */
 export async function handleShareTarget(request: Request, cacheStorage: CacheStorage): Promise<Response> {
+  await cacheStorage.delete(SHARE_TARGET_CACHE);
   const formData = await request.formData();
 
   const title = formData.get('title')?.toString() ?? '';
@@ -58,7 +64,6 @@ export async function handleShareTarget(request: Request, cacheStorage: CacheSto
   let stored = 0;
   let refused = 0;
 
-  await cacheStorage.delete(SHARE_TARGET_CACHE);
   if (files.length > 0) {
     const cache = await cacheStorage.open(SHARE_TARGET_CACHE);
     for (const file of files) {

@@ -1,7 +1,7 @@
 /** @vitest-environment node */
 // FormData, File and Request must come from one implementation for a multipart POST to parse.
 import sharp from 'sharp';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { POST_SUPPORTED_ATTACHMENT_MIME_TYPES } from '@/config/posts';
 import { asOpaque } from '@/test-utils/type-assertions';
 import {
@@ -187,10 +187,35 @@ describe('shareTarget utilities', () => {
       ['jpeg', 'image/jpeg'],
       ['gif', 'image/gif'],
       ['webp', 'image/webp'],
-      ['avif', 'image/avif'],
     ] as const)('types a real %s image from its bytes, whatever was declared', async (format, type) => {
       await expect(sharedFileType(new Blob([await image(format)], { type: 'text/html' }))).resolves.toBe(type);
     });
+
+    it('keeps only attachment types that the composer accepts', () => {
+      const keptTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'audio/mpeg', 'audio/wav', 'video/mp4'];
+      for (const type of keptTypes) expect(POST_SUPPORTED_ATTACHMENT_MIME_TYPES).toContain(type);
+      expect(POST_SUPPORTED_ATTACHMENT_MIME_TYPES).not.toContain('image/avif');
+    });
+
+    it('reads exactly the first 256 bytes of a real PNG file', async () => {
+      const file = new File([await image('png')], 'photo.png', { type: 'image/png' });
+      const slice = vi.spyOn(file, 'slice');
+      const arrayBuffer = vi.spyOn(file, 'arrayBuffer');
+
+      await expect(sharedFileType(file)).resolves.toBe('image/png');
+
+      expect(slice).toHaveBeenCalledTimes(1);
+      expect(slice).toHaveBeenCalledWith(0, 256);
+      expect(arrayBuffer).not.toHaveBeenCalled();
+    });
+
+    it.each(['image/avif', 'image/png', 'video/mp4', 'audio/mpeg'])(
+      'refuses a real AVIF declared as %s',
+      async (type) => {
+        const file = new File([await image('avif')], 'photo.avif', { type });
+        await expect(sharedFileType(file)).resolves.toBeNull();
+      },
+    );
 
     it.each([
       ['image/svg+xml', SVG],
@@ -211,17 +236,16 @@ describe('shareTarget utilities', () => {
       await expect(sharedFileType(new Blob([HTML], { type: 'video/mp4' }))).resolves.toBe('video/mp4');
     });
 
-    it('types an AVIF whose brand ends at byte 256 and refuses one whose brand starts there', async () => {
-      await expect(sharedFileType(new Blob([avifBrandAt(252)], { type: 'application/octet-stream' }))).resolves.toBe(
-        'image/avif',
-      );
+    it('refuses an AVIF whose compatible brand starts at byte 252 or 256', async () => {
+      await expect(
+        sharedFileType(new Blob([avifBrandAt(252)], { type: 'application/octet-stream' })),
+      ).resolves.toBeNull();
       await expect(
         sharedFileType(new Blob([avifBrandAt(256)], { type: 'application/octet-stream' })),
       ).resolves.toBeNull();
     });
 
-    it.each(['audio/mpeg', 'audio/wav', 'video/mp4'])('keeps %s, which the composer accepts', async (type) => {
-      expect(POST_SUPPORTED_ATTACHMENT_MIME_TYPES).toContain(type);
+    it.each(['audio/mpeg', 'audio/wav', 'video/mp4'])('keeps %s from its declared media type', async (type) => {
       await expect(sharedFileType(new Blob([wavFile()], { type }))).resolves.toBe(type);
     });
 
@@ -262,6 +286,31 @@ describe('shareTarget utilities', () => {
       expect(response.status).toBe(303);
       expect(response.headers.get('location')).toBe('http://localhost:3000/share?text=Look&hasFiles=true');
       await expect(cachedTypes()).resolves.toEqual(['image/png']);
+    });
+
+    it('caches only the PNG in a mixed PNG and AVIF share', async () => {
+      const response = await handleShareTarget(
+        sharePost([
+          new File([await image('png')], 'photo.png', { type: 'image/png' }),
+          new File([await image('avif')], 'photo.avif', { type: 'image/avif' }),
+        ]),
+        cacheStorage(),
+      );
+
+      expect(response.headers.get('location')).toBe('http://localhost:3000/share?hasFiles=true&refusedFiles=1');
+      await expect(cachedTypes()).resolves.toEqual(['image/png']);
+      expect(storage.stores.get('share-target-files')?.putNames).toEqual(['photo.png']);
+    });
+
+    it('refuses an AVIF-only share without caching or setting hasFiles', async () => {
+      const response = await handleShareTarget(
+        sharePost([new File([await image('avif')], 'photo.avif', { type: 'image/avif' })]),
+        cacheStorage(),
+      );
+
+      expect(response.headers.get('location')).toBe('http://localhost:3000/share?refusedFiles=1');
+      await expect(cachedTypes()).resolves.toEqual([]);
+      expect(storage.stores.get('share-target-files')?.putNames ?? []).toEqual([]);
     });
 
     it('refuses SVG, HTML and XML POSTed from another site before caching them', async () => {
@@ -378,6 +427,23 @@ describe('shareTarget utilities', () => {
       await expect(getSharedFiles()).resolves.toEqual([]);
     });
 
+    it.each([
+      { label: 'a text/plain body', contentType: 'text/plain', body: 'plain text' },
+      { label: 'a truncated multipart body', contentType: 'multipart/form-data; boundary=b', body: '--b' },
+    ])('clears an earlier share before rejecting $label', async ({ contentType, body }) => {
+      await handleShareTarget(sharePost([new File([await image('png')], 'old.png')]), cacheStorage());
+      const request = new Request('http://localhost:3000/share', {
+        method: 'POST',
+        body,
+        headers: { 'content-type': contentType },
+      });
+
+      await expect(handleShareTarget(request, cacheStorage())).rejects.toThrow();
+
+      expect(storage.stores.size).toBe(0);
+      await expect(getSharedFiles()).resolves.toEqual([]);
+    });
+
     it('ignores the empty part of a file input with nothing selected', async () => {
       await handleShareTarget(sharePost([new File([await image('png')], 'old.png')]), cacheStorage());
 
@@ -485,6 +551,17 @@ describe('shareTarget utilities', () => {
       const files = await getSharedFiles();
 
       expect(files.map((file) => [file.name, file.type])).toEqual([['ok.gif', 'image/gif']]);
+    });
+
+    it('drops cached AVIF entries with image or video headers and returns a PNG entry', async () => {
+      const avif = await image('avif');
+      await cacheEntry(avif, { 'X-Share-Filename': 'image.avif', 'Content-Type': 'image/avif' });
+      await cacheEntry(avif, { 'X-Share-Filename': 'video.avif', 'Content-Type': 'video/mp4' });
+      await cacheEntry(await image('png'), { 'X-Share-Filename': 'photo.png', 'Content-Type': 'image/png' });
+
+      const files = await getSharedFiles();
+
+      expect(files.map((file) => [file.name, file.type])).toEqual([['photo.png', 'image/png']]);
     });
 
     it('handles multiple files in cache', async () => {
