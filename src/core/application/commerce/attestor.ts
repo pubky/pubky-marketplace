@@ -84,14 +84,19 @@ export class CommerceAttestorApplication {
     }
   }
 
-  /** Configured attestors whose effective windows have no verified profile or confirmed absence behind them. */
+  /**
+   * Configured attestors whose effective windows have no verified profile or confirmed absence behind
+   * them, and those whose profile is being read again: a read only starts once the last settled
+   * outcome has expired, so until it settles that outcome (an absence included) confirms nothing.
+   */
   static unconfirmedProfileAttestors(): string[] {
     if (getCommerceAdapterMode() === 'sandbox') return [];
     const attestorIds = [...new Set(configuredMarketplaceTrustedAttestors().map(({ pubky }) => pubky))];
-    return attestorIds.filter(
-      (attestorId) =>
-        !hasAttestorProfileKeyWindows(attestorId) && this.profileReads.get(attestorId)?.outcome !== 'absent',
-    );
+    return attestorIds.filter((attestorId) => {
+      const read = this.profileReads.get(attestorId);
+      if (read?.pending) return true;
+      return !hasAttestorProfileKeyWindows(attestorId) && read?.outcome !== 'absent';
+    });
   }
 
   private static readProfile(attestorId: string): Promise<void> {

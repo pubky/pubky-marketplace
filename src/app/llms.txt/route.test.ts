@@ -2,7 +2,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceAttestorApplication } from '@/application/commerce/attestor';
-import { MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS } from '@/config/commerce';
+import {
+  MARKETPLACE_ATTESTOR_PROFILE_TTL_MS,
+  MARKETPLACE_ATTESTOR_PROFILE_WAIT_MS,
+  MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS,
+} from '@/config/commerce';
 import { resetAttestorKeyWindows } from '@/libs/commerce/attestor-key-windows';
 import { attestorWindowsParam } from '@/libs/commerce/review-counting';
 import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
@@ -60,6 +64,7 @@ describe('GET /llms.txt', () => {
     CommerceAttestorApplication.resetSession();
     resetAttestorKeyWindows();
     vi.restoreAllMocks();
+    vi.useRealTimers();
     vi.unstubAllEnvs();
     resetRuntimeConfigForTests();
   });
@@ -202,15 +207,164 @@ describe('GET /llms.txt', () => {
     expect(body).toContain(`/reputation?attestors=${windows}`);
     expect(body).toContain(`Configured bounds, profile not verified:\n- ${attestor.pubky}:`);
     expect(copy).toContain(
-      `${attestor.pubky}: this attestor's signed profile could not be read and verified for this guide, so its window above may be later than the Shop's; the profile may end the window earlier.`,
+      `${attestor.pubky}: this attestor's signed profile was not read and verified for this guide, so any window above may be later than the Shop's.`,
     );
     expect(body).toContain(`INDEX/v0/marketplace/attestor/${attestor.pubky}/profile`);
     expect(body).toContain(`pubky://${attestor.pubky}/pub/pubky.app/marketplace/v1/attestor/profile`);
     expect(copy).toContain(
-      "If it cannot be verified, counts from these windows (buyers, orders, reviews) are upper bounds; a rating computed from them is unconfirmed and may be higher or lower than the Shop's.",
+      "If a profile cannot be verified, counts from these windows (buyers, orders, reviews) are upper bounds; a rating computed from them is unconfirmed and may be higher or lower than the Shop's.",
     );
     expect(body).not.toContain('present any figure from these windows as an upper bound');
     expect(body).not.toContain('its window above is the configured bound');
+  });
+
+  it('marks every configured key window unconfirmed when only another key profile is unreadable', async () => {
+    const readable = createAttestorTestKey();
+    const unreadable = createAttestorTestKey();
+    const validFrom = '2026-01-01T00:00:00Z';
+    const compromisedFrom = '2026-05-01T00:00:00Z';
+    vi.stubEnv(
+      'PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS',
+      JSON.stringify([
+        { pubky: readable.pubky, label: 'Readable', validFrom },
+        { pubky: unreadable.pubky, label: 'Unreadable', validFrom },
+      ]),
+    );
+    const readableProfile = signedAttestorProfile(readable, [
+      { pubky: readable.pubky, validFrom },
+      { pubky: unreadable.pubky, validFrom, compromisedFrom },
+    ]);
+    vi.mocked(NexusMarketplaceService.fetchAttestorProfile).mockImplementation(async ({ attestor_id }) => {
+      if (attestor_id === unreadable.pubky) throw new Error('offline');
+      return attestor_id === readable.pubky ? servedAttestorProfile(readable.pubky, readableProfile) : null;
+    });
+
+    const body = await (await GET()).text();
+    const copy = body.replace(/\s+/g, ' ');
+    const notice = body.slice(
+      body.indexOf('Configured bounds, profile not verified:'),
+      body.indexOf('A profile can end the window of any configured key'),
+    );
+    const bullets = notice.split('\n').filter((line) => line.startsWith('- '));
+    const keyLines = body
+      .split('\n')
+      .filter((line) => /^- [a-z0-9]{52}( \(|,)/.test(line) && line.includes(', valid from'));
+    const suffix = '[window not confirmed: a profile listed below is not verified]';
+
+    expect(bullets).toHaveLength(1);
+    expect(bullets[0]).toContain(`- ${unreadable.pubky}:`);
+    expect(notice).not.toContain(`- ${readable.pubky}:`);
+    expect(keyLines.length).toBe(MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS.length + 2);
+    for (const line of keyLines) expect(line).toContain(suffix);
+    expect(keyLines.find((line) => line.includes(unreadable.pubky))).toContain(
+      `until ${compromisedFrom.replace('Z', '.000Z')}`,
+    );
+    expect(copy).toContain(
+      'A profile can end the window of any configured key, not only its own, so every configured key window above is unconfirmed while any profile listed here is unverified.',
+    );
+    expect(copy).toContain(`end each configured key's window above, not only ${unreadable.pubky}'s own,`);
+    expect(body).toContain(`/reputation?attestors=${attestorWindowsParam()}`);
+  });
+
+  it('lists each unconfirmed profile with its own read path and signature target', async () => {
+    const first = createAttestorTestKey();
+    const second = createAttestorTestKey();
+    const validFrom = '2026-01-01T00:00:00Z';
+    vi.stubEnv(
+      'PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS',
+      JSON.stringify([
+        { pubky: first.pubky, label: 'First', validFrom },
+        { pubky: second.pubky, label: 'Second', validFrom },
+      ]),
+    );
+    vi.mocked(NexusMarketplaceService.fetchAttestorProfile).mockImplementation(async ({ attestor_id }) => {
+      if (attestor_id === first.pubky || attestor_id === second.pubky) throw new Error('offline');
+      return null;
+    });
+
+    const body = await (await GET()).text();
+    const notice = body.slice(
+      body.indexOf('Configured bounds, profile not verified:'),
+      body.indexOf('A profile can end the window of any configured key'),
+    );
+    const bullets = notice.split('\n').filter((line) => line.startsWith('- '));
+
+    expect(bullets).toHaveLength(2);
+    for (const { pubky } of [first, second]) {
+      expect(notice).toContain(`\n- ${pubky}: this attestor's signed profile was not read and verified`);
+      expect(notice).toContain(`INDEX/v0/marketplace/attestor/${pubky}/profile`);
+      expect(notice).toContain(`pubky://${pubky}/pub/pubky.app/marketplace/v1/attestor/profile`);
+    }
+  });
+
+  it('warns while an expired absent profile is being read again, then applies the profile that arrives', async () => {
+    vi.useFakeTimers();
+    const attestor = createAttestorTestKey();
+    const validFrom = '2026-01-01T00:00:00Z';
+    const compromisedFrom = '2026-05-01T00:00:00Z';
+    vi.stubEnv(
+      'PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS',
+      JSON.stringify([{ pubky: attestor.pubky, label: 'Runtime example', validFrom }]),
+    );
+    const profile = signedAttestorProfile(attestor, [{ pubky: attestor.pubky, validFrom, compromisedFrom }]);
+    const pending: ((value: ReturnType<typeof servedAttestorProfile>) => void)[] = [];
+    let reads = 0;
+    vi.mocked(NexusMarketplaceService.fetchAttestorProfile).mockImplementation(async ({ attestor_id }) => {
+      if (attestor_id !== attestor.pubky) return null;
+      reads += 1;
+      if (reads === 1) return null;
+      return new Promise((resolve) => {
+        pending.push(resolve);
+      });
+    });
+    const serve = async () => {
+      const served = GET().then((response) => response.text());
+      await vi.advanceTimersByTimeAsync(MARKETPLACE_ATTESTOR_PROFILE_WAIT_MS);
+      return served;
+    };
+
+    expect(await serve()).not.toContain('Configured bounds, profile not verified:');
+
+    vi.advanceTimersByTime(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+    const whilePending = await serve();
+
+    expect(whilePending).toContain(`Configured bounds, profile not verified:\n- ${attestor.pubky}:`);
+    expect(whilePending).toContain('[window not confirmed: a profile listed below is not verified]');
+    expect(whilePending).toContain(`/reputation?attestors=${attestorWindowsParam()}`);
+    const openWindowQuery = attestorWindowsParam();
+
+    pending.shift()?.(servedAttestorProfile(attestor.pubky, profile));
+    await vi.advanceTimersByTimeAsync(0);
+    const settled = await serve();
+
+    expect(settled).not.toContain('Configured bounds, profile not verified:');
+    expect(settled).not.toContain('[window not confirmed');
+    expect(attestorWindowsParam()).not.toBe(openWindowQuery);
+    expect(settled).toContain(`/reputation?attestors=${attestorWindowsParam()}`);
+    expect(settled).toContain(
+      `${attestor.pubky}:${Math.ceil(Date.parse(validFrom) / 1000)}:${Math.ceil(Date.parse(compromisedFrom) / 1000)}`,
+    );
+  });
+
+  it('marks every key line unconfirmed only when a profile is listed as not verified', () => {
+    const trusted = [
+      { pubky: 'a'.repeat(52), label: 'First', validFrom: '2026-01-01T00:00:00Z' },
+      { pubky: 'b'.repeat(52), label: 'Second', validFrom: '2026-02-01T00:00:00Z', validUntil: '2026-12-01T00:00:00Z' },
+    ];
+    const suffix = '[window not confirmed: a profile listed below is not verified]';
+
+    const unconfirmed = renderAgentGuide('https://index.example.test', trusted, {
+      unconfirmedAttestorIds: ['b'.repeat(52)],
+    });
+    const confirmed = renderAgentGuide('https://index.example.test', trusted);
+
+    for (const { pubky } of trusted) {
+      expect(unconfirmed.split('\n').find((line) => line.startsWith(`- ${pubky}`))).toContain(suffix);
+      expect(confirmed.split('\n').find((line) => line.startsWith(`- ${pubky}`))).not.toContain(suffix);
+    }
+    expect(unconfirmed).toContain('Configured bounds, profile not verified:');
+    expect(confirmed).not.toContain('Configured bounds, profile not verified:');
+    expect(confirmed).not.toContain('window not confirmed');
   });
 
   it('keeps configured bounds without an extra notice when profiles are absent', async () => {
@@ -229,10 +383,12 @@ describe('GET /llms.txt', () => {
     expect(body).not.toContain('Configured bounds, profile not verified:');
   });
 
-  it('describes effective windows except keys listed as not verified', () => {
+  it('describes effective windows as unconfirmed while a profile is listed as not verified', () => {
     const copy = renderAgentGuide('https://index.example.test', []).replace(/\s+/g, ' ');
 
-    expect(copy).toContain("These are this Shop's effective windows except keys listed as not verified above:");
+    expect(copy).toContain(
+      "These are this Shop's effective windows, except that every window is unconfirmed while a profile is listed as not verified above:",
+    );
     expect(copy).toContain(
       "each key's window ends at the earliest of its configured end and any `validUntil` / `compromisedFrom` that a trusted attestor's verified signed profile",
     );
@@ -256,16 +412,22 @@ describe('GET /llms.txt', () => {
     );
   });
 
-  it('documents the created_at fallback for reviews without iat', () => {
+  it('documents the created_at fallback for reviews without iat window by window', () => {
     const copy = renderAgentGuide('https://index.example.test', []).replace(/\s+/g, ' ');
 
     expect(copy).toContain(
-      "Without `iat` (an older index, or a review not yet re-read), the Shop uses the review's `created_at` instead",
+      "Without `iat` (an older index, or a review not yet re-read), the Shop uses the review's `created_at` instead and tests it window by window, because one key can have an earlier closed window and a later open window.",
     );
-    expect(copy).toContain('open-ended effective window: no configured `until` and not shortened by a profile');
-    expect(copy).toContain("`created_at` is on or after that window's `validFrom`");
-    expect(copy).toContain('it must still be verified and not excluded by moderation');
-    expect(copy).toContain('A key whose window has an end never counts a review without `iat`');
+    expect(copy).toContain(
+      'A bounded window, one with an end (a configured `until`, or one shortened by a profile), never vouches for a review without `iat`, because `created_at` is written by the reviewer.',
+    );
+    expect(copy).toContain(
+      "An open-ended window (no configured `until` and not shortened by a profile) covers the review when `created_at` is on or after that window's `validFrom`; the review must still be verified and not excluded by moderation.",
+    );
+    expect(copy).toContain(
+      'So when a key has both kinds, only its open window can count a review without `iat`, even if `created_at` falls inside the closed window.',
+    );
+    expect(copy).not.toContain('A key whose window has an end never counts a review without `iat`');
     expect(copy).toContain(
       '- A review counts only under the rule in recipe 4, including the rule for reviews without `iat`.',
     );

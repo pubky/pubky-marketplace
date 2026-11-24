@@ -18,6 +18,8 @@ export function renderAgentGuide(
 ): string {
   const windows = attestorWindowsParam(trustedAttestors);
   const reputationQuery = windows === null ? '' : `?attestors=${windows}`;
+  const unconfirmedSuffix =
+    unconfirmedAttestorIds.length === 0 ? '' : ' [window not confirmed: a profile listed below is not verified]';
   const trustedAttestorList =
     trustedAttestors.length === 0
       ? 'This deployment trusts no attestor, so no review counts.'
@@ -34,7 +36,7 @@ export function renderAgentGuide(
                 : '';
             return `- ${entry.pubky}${entry.label ? ` (${entry.label})` : ''}, valid from ${entry.validFrom}${
               entry.validUntil === undefined ? '' : `, until ${entry.validUntil}`
-            }${profileNote}`;
+            }${profileNote}${unconfirmedSuffix}`;
           })
           .join('\n');
   const unconfirmedProfileNotice =
@@ -43,15 +45,18 @@ export function renderAgentGuide(
       : `\n\nConfigured bounds, profile not verified:\n${unconfirmedAttestorIds
           .map(
             (pubky) =>
-              `- ${pubky}: this attestor's signed profile could not be read and verified for this guide, so its
-  window above may be later than the Shop's; the profile may end the window earlier. Before computing a
-  Shop-equivalent figure, read INDEX/v0/marketplace/attestor/${pubky}/profile, verify the record's signature against
-  pubky://${pubky}/pub/pubky.app/marketplace/v1/attestor/profile, and end each listed key's window at the earliest
-  validUntil or compromisedFrom the verified profile states for it (Unix seconds, rounded up). If it cannot be
-  verified, counts from these windows (buyers, orders, reviews) are upper bounds; a rating computed from them is
-  unconfirmed and may be higher or lower than the Shop's.`,
+              `- ${pubky}: this attestor's signed profile was not read and verified for this guide, so any
+  window above may be later than the Shop's. Read INDEX/v0/marketplace/attestor/${pubky}/profile, verify the
+  record's signature against pubky://${pubky}/pub/pubky.app/marketplace/v1/attestor/profile, and end each
+  configured key's window above, not only ${pubky}'s own, at the earliest validUntil or compromisedFrom the
+  verified profile states for that key (Unix seconds, rounded up).`,
           )
-          .join('\n')}`;
+          .join('\n')}
+
+A profile can end the window of any configured key, not only its own, so every configured key window above is
+unconfirmed while any profile listed here is unverified. If a profile cannot be verified, counts from these
+windows (buyers, orders, reviews) are upper bounds; a rating computed from them is unconfirmed and may be higher
+or lower than the Shop's.`;
 
   return `# Pubky Market — guide for agents
 
@@ -186,7 +191,8 @@ GET INDEX/v0/shop/{seller_id}/reputation?attestors=<windows>
 Build \`<windows>\` from the trusted list as comma-separated \`<pubky>:<from>:<until>\` entries,
 with Unix seconds over the attestation \`iat\`; an open window leaves \`until\` empty. If no windows
 can be built (the list is empty or too long), call without \`attestors=\` and use the bucket rule below.
-These are this Shop's effective windows except keys listed as not verified above: each key's window ends at
+These are this Shop's effective windows, except that every window is unconfirmed while a profile is listed as
+not verified above: each key's window ends at
 the earliest of its configured end and any \`validUntil\` / \`compromisedFrom\` that a trusted attestor's verified
 signed profile (INDEX/v0/marketplace/attestor/{attestor_pubky}/profile) states for that key. A profile
 never adds a key, widens a window or moves \`validFrom\`.
@@ -272,12 +278,14 @@ Reviews: GET INDEX/v0/shop/{seller_id}/reviews?limit=30&skip=0
 
 With \`iat\`, a review counts only when \`verified\` is true, \`attestor_id\` is a trusted attestor,
 effective \`validFrom\` <= \`iat\` < effective \`validUntil\`, and \`moderation.state\` is not \`"excluded"\`
-(an open-ended window has no effective \`validUntil\`). Without \`iat\` (an older index, or a review not
-yet re-read), the Shop uses the review's \`created_at\` instead, but only against a trusted window of
-that attestor that has no end (an open-ended effective window: no configured \`until\` and not shortened
-by a profile), and only when \`created_at\` is on or after that window's \`validFrom\`; it must still be
-verified and not excluded by moderation. A key whose window has an end never counts a review without
-\`iat\`, because \`created_at\` is written by the reviewer.
+(an open-ended window has no effective \`validUntil\`). Without \`iat\` (an older index, or a review not yet
+re-read), the Shop uses the review's \`created_at\` instead and tests it window by window, because one key can
+have an earlier closed window and a later open window. A bounded window, one with an end (a configured
+\`until\`, or one shortened by a profile), never vouches for a review without \`iat\`, because \`created_at\` is
+written by the reviewer. An open-ended window (no configured \`until\` and not shortened by a profile) covers
+the review when \`created_at\` is on or after that window's \`validFrom\`; the review must still be verified and
+not excluded by moderation. So when a key has both kinds, only its open window can count a review
+without \`iat\`, even if \`created_at\` falls inside the closed window.
 
 Shop record and a page of the seller's listings, all states included:
 INDEX/v0/shop/{seller_id}?limit=30&skip=0 (404 = the seller has not published a shop record;

@@ -263,6 +263,100 @@ describe('CommerceAttestorApplication.loadKeyWindows', () => {
     );
   });
 
+  describe('while a profile refresh is pending past the bounded wait', () => {
+    type ServedProfile = ReturnType<typeof servedAttestorProfile> | null;
+
+    const cutoffProfile = () =>
+      signedAttestorProfile(attestor, [
+        { pubky: attestor.pubky, validFrom: FROM, compromisedFrom: '2026-05-01T00:00:00Z' },
+      ]);
+
+    /** The test key answers its first read with `first`, then each later read with a promise the test settles. */
+    function serveFirstThenPending(first: ServedProfile) {
+      const pending: ((value: ServedProfile) => void)[] = [];
+      let reads = 0;
+      vi.spyOn(NexusMarketplaceService, 'fetchAttestorProfile').mockImplementation(async ({ attestor_id }) => {
+        if (attestor_id !== attestor.pubky) return null;
+        reads += 1;
+        if (reads === 1) return first;
+        return new Promise<ServedProfile>((resolve) => {
+          pending.push(resolve);
+        });
+      });
+      return { settle: (value: ServedProfile) => pending.shift()?.(value) };
+    }
+
+    async function loadPastTheWait() {
+      const loading = CommerceAttestorApplication.loadKeyWindows();
+      await vi.advanceTimersByTimeAsync(MARKETPLACE_ATTESTOR_PROFILE_WAIT_MS);
+      await loading;
+    }
+
+    const effectiveUntil = () =>
+      marketplaceTrustedAttestors().find(({ pubky }) => pubky === attestor.pubky)?.validUntil;
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    it('lists an attestor whose refresh of an expired absent profile is still pending as unconfirmed', async () => {
+      const served = serveFirstThenPending(null);
+      await CommerceAttestorApplication.loadKeyWindows();
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+
+      vi.advanceTimersByTime(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+      await loadPastTheWait();
+
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([attestor.pubky]);
+      expect(attestorProfileKeyWindows()).toEqual([]);
+      expect(effectiveUntil()).toBeUndefined();
+
+      served.settle(servedAttestorProfile(attestor.pubky, cutoffProfile()));
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+      expect(attestorProfileKeyWindows()).toContainEqual(expect.objectContaining({ pubky: attestor.pubky }));
+      expect(effectiveUntil()).toBe('2026-05-01T00:00:00.000Z');
+    });
+
+    it('lists an attestor whose refresh of an expired verified profile is still pending as unconfirmed', async () => {
+      const served = serveFirstThenPending(
+        servedAttestorProfile(
+          attestor.pubky,
+          signedAttestorProfile(attestor, [{ pubky: attestor.pubky, validFrom: FROM }]),
+        ),
+      );
+      await CommerceAttestorApplication.loadKeyWindows();
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+
+      vi.advanceTimersByTime(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+      await loadPastTheWait();
+
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([attestor.pubky]);
+      expect(effectiveUntil()).toBeUndefined();
+
+      served.settle(servedAttestorProfile(attestor.pubky, cutoffProfile()));
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+      expect(effectiveUntil()).toBe('2026-05-01T00:00:00.000Z');
+    });
+
+    it('lists an attestor as confirmed again when its pending refresh settles absent', async () => {
+      const served = serveFirstThenPending(null);
+      await CommerceAttestorApplication.loadKeyWindows();
+
+      vi.advanceTimersByTime(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+      await loadPastTheWait();
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([attestor.pubky]);
+
+      served.settle(null);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+    });
+  });
+
   it('lists no unconfirmed profile attestors in sandbox mode', async () => {
     vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('sandbox');
     const read = vi.spyOn(NexusMarketplaceService, 'fetchAttestorProfile');
