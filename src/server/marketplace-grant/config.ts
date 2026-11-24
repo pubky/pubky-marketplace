@@ -1,3 +1,5 @@
+import { X509Certificate } from 'node:crypto';
+import { isIP } from 'node:net';
 import { z } from 'zod';
 
 const exactOrigin = z
@@ -15,6 +17,50 @@ const canonicalBase64Key = z.string().refine((value) => {
 }, 'Expected canonical padded Base64 for 32 bytes');
 const signingSeed = z.string().regex(/^[0-9a-f]{64}$/);
 const keyId = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/);
+const databaseCaPemMessage = 'SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM must contain one to four CA certificates';
+const databaseCaPem = z
+  .string()
+  .optional()
+  .transform((value, ctx) => {
+    const pem = value?.trim();
+    if (!pem) return undefined;
+
+    const blocks: string[] = [];
+    const blockPattern = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
+    let position = 0;
+    for (const match of pem.matchAll(blockPattern)) {
+      const separator = pem.slice(position, match.index);
+      if ((blocks.length === 0 && separator !== '') || (blocks.length > 0 && !/^\s+$/.test(separator))) {
+        ctx.addIssue({ code: 'custom', message: databaseCaPemMessage });
+        return z.NEVER;
+      }
+      blocks.push(match[0]);
+      position = match.index + match[0].length;
+    }
+    if (position !== pem.length || blocks.length < 1 || blocks.length > 4) {
+      ctx.addIssue({ code: 'custom', message: databaseCaPemMessage });
+      return z.NEVER;
+    }
+
+    for (const block of blocks) {
+      try {
+        if (new X509Certificate(block).ca) continue;
+      } catch {
+        // The static issue below intentionally omits certificate content.
+      }
+      ctx.addIssue({ code: 'custom', message: databaseCaPemMessage });
+      return z.NEVER;
+    }
+    return blocks;
+  })
+  .optional();
+const databaseTlsServerName = z
+  .string()
+  .refine((value) => {
+    if (value.length > 253 || isIP(value) !== 0) return false;
+    return value.split('.').every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label));
+  }, 'SHOP_BFF_GRANT_STATE_DATABASE_TLS_SERVER_NAME must be a lowercase DNS name')
+  .optional();
 export const CLAIM_LEASE_MARGIN_SECONDS = 5;
 export const CLAIM_SERVICE_CALLS = 4;
 
@@ -31,6 +77,8 @@ const configSchema = z
     publicOrigin: exactOrigin,
     serviceUrl: exactOrigin,
     databaseUrl: z.string().min(1),
+    databaseCaPem,
+    databaseTlsServerName,
     cronSecret: z.string().min(32),
     assertionIssuer: exactOrigin,
     assertionKeyId: keyId,
@@ -49,6 +97,13 @@ const configSchema = z
     serviceTimeoutMs: z.coerce.number().int().min(2000).max(10000).default(5000),
   })
   .superRefine((value, ctx) => {
+    if (value.databaseTlsServerName !== undefined && value.databaseCaPem === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['databaseTlsServerName'],
+        message: 'SHOP_BFF_GRANT_STATE_DATABASE_TLS_SERVER_NAME requires SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM',
+      });
+    }
     if (value.assertionIssuer !== value.publicOrigin) {
       ctx.addIssue({ code: 'custom', path: ['assertionIssuer'], message: 'Issuer must equal SHOP_PUBLIC_ORIGIN' });
     }
@@ -120,6 +175,8 @@ export function getMarketplaceGrantConfig(): MarketplaceGrantConfig | null {
     publicOrigin: process.env.SHOP_PUBLIC_ORIGIN,
     serviceUrl: process.env.MARKETPLACE_SERVICE_URL,
     databaseUrl: process.env.SHOP_BFF_GRANT_STATE_DATABASE_URL,
+    databaseCaPem: process.env.SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM,
+    databaseTlsServerName: process.env.SHOP_BFF_GRANT_STATE_DATABASE_TLS_SERVER_NAME,
     cronSecret: process.env.CRON_SECRET,
     assertionIssuer: process.env.SHOP_GRANT_ASSERTION_ISSUER,
     assertionKeyId: process.env.SHOP_GRANT_ASSERTION_KEY_ID,

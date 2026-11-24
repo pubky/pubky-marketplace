@@ -203,6 +203,7 @@ describe('embedded BFF readiness', () => {
     expect(mocks.sql.mock.calls[0][0].join('')).toMatch(
       /^\s*SELECT version FROM shop_grant_bff.schema_version WHERE singleton = TRUE\s*$/,
     );
+    expect(mocks.postgres.mock.calls[0][1]).not.toHaveProperty('ssl');
   });
 
   it.each([{ rows: [] }, { rows: [{ version: 1 }] }, { rows: [{ version: 2 }, { version: 2 }] }])(

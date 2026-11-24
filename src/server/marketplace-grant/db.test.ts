@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MarketplaceGrantConfig } from './config';
 
-const mocks = vi.hoisted(() => ({ statements: [] as string[], selects: [] as unknown[][] }));
+const mocks = vi.hoisted(() => ({
+  statements: [] as string[],
+  selects: [] as unknown[][],
+  postgres: vi.fn(),
+}));
 
 vi.mock('postgres', () => {
   const record = (strings: TemplateStringsArray) => {
@@ -12,10 +16,11 @@ vi.mock('postgres', () => {
   const sql = Object.assign(record, {
     begin: async <T>(callback: (tx: typeof record) => Promise<T>) => callback(record),
   });
-  return { default: () => sql };
+  mocks.postgres.mockReturnValue(sql);
+  return { default: mocks.postgres };
 });
 
-const { replaceBridge } = await import('./db');
+const { grantSql, replaceBridge, setGrantSqlForTests } = await import('./db');
 
 const config = { databaseUrl: 'postgres://test', databaseTimeoutMs: 1_000 } as MarketplaceGrantConfig;
 const row = {
@@ -30,8 +35,16 @@ const row = {
 
 describe('replaceBridge (#433)', () => {
   beforeEach(() => {
+    setGrantSqlForTests(undefined);
+    mocks.postgres.mockClear();
     mocks.statements.length = 0;
     mocks.selects.length = 0;
+  });
+
+  it('omits the ssl option when no CA is configured', () => {
+    grantSql(config);
+    expect(mocks.postgres).toHaveBeenCalledOnce();
+    expect(mocks.postgres.mock.calls[0][1]).not.toHaveProperty('ssl');
   });
 
   it('locks the user, then replaces their bridge when nothing changed while it waited', async () => {
