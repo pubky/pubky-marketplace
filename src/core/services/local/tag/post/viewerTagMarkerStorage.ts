@@ -12,7 +12,7 @@ interface ViewerTagMarker {
 }
 
 function buildKey(pubky: Pubky, postId: string, label: string): string {
-  return `${VIEWER_TAG_MARKER_STORAGE_PREFIX}${pubky}:${postId}:${label.toLowerCase()}`;
+  return `${VIEWER_TAG_MARKER_STORAGE_PREFIX}${pubky}:${postId}:${label.replace(/[A-Z]/g, (letter) => letter.toLowerCase())}`;
 }
 
 function userPrefix(pubky: Pubky): string {

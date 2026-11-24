@@ -1,7 +1,10 @@
 'use client';
 
 import { useCallback, useState } from 'react';
+import { getProfileRoute, PROFILE_ROUTES } from '@/app/routes';
+import { getSocialHostUrl } from '@/config/social';
 import { UserController } from '@/controllers/user/user';
+import { isAppError } from '@/libs/error/error.utils';
 import { HttpMethod } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
@@ -76,6 +79,24 @@ export function useFollowUser(): UseFollowUserResult {
 
         return true;
       } catch (err) {
+        if (isAppError(err) && err.operation === 'socialWrite') {
+          toast({
+            variant: 'info',
+            description: err.message,
+            action: {
+              label: 'Open Pubky App',
+              altText: 'Open this profile in Pubky App',
+              onClick: () =>
+                window.open(
+                  getSocialHostUrl(getProfileRoute(PROFILE_ROUTES.PROFILE, userId)),
+                  '_blank',
+                  'noopener,noreferrer',
+                ),
+            },
+          });
+          return false;
+        }
+        if (err instanceof DOMException && err.name === 'AbortError') return false;
         // Always a friendly, named message — raw transport/server text never reaches the user.
         const message = isCurrentlyFollowing ? `Failed to unfollow ${username}` : `Failed to follow ${username}`;
         setError(message);

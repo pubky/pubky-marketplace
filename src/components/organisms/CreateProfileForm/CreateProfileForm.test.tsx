@@ -83,7 +83,7 @@ vi.mock('@/pipes/user/user.validator', () => ({
 }));
 vi.mock('@/controllers/auth/auth', () => ({
   AuthController: {
-    bootstrapWithDelay: vi.fn(),
+    completeProfileSetup: vi.fn(),
   },
 }));
 
@@ -459,7 +459,7 @@ describe('CreateProfileForm', () => {
     vi.mocked(FileController.commitCreate).mockReset();
     vi.mocked(ProfileController.commitCreate).mockReset();
     vi.mocked(UserValidator.check).mockReset();
-    vi.mocked(AuthController.bootstrapWithDelay).mockReset();
+    vi.mocked(AuthController.completeProfileSetup).mockReset();
   });
 
   it('renders with default state', () => {
@@ -820,10 +820,10 @@ describe('CreateProfileForm', () => {
       expect(typeof ProfileController.commitCreate).toBe('function');
       expect(typeof FileController.commitCreate).toBe('function');
       expect(typeof UserValidator.check).toBe('function');
-      expect(typeof AuthController.bootstrapWithDelay).toBe('function');
+      expect(typeof AuthController.completeProfileSetup).toBe('function');
     });
 
-    it('should handle bootstrapWithDelay error and show error state', async () => {
+    it('should handle completeProfileSetup error and show error state', async () => {
       // Mock successful validation and profile save
       vi.mocked(UserValidator.check).mockReturnValue({
         data: {
@@ -836,9 +836,9 @@ describe('CreateProfileForm', () => {
 
       vi.mocked(ProfileController.commitCreate).mockResolvedValue(undefined);
 
-      // Mock bootstrapWithDelay to throw an error
+      // Mock completeProfileSetup to throw an error
       const bootstrapError = new Error('Failed to fetch user data');
-      vi.mocked(AuthController.bootstrapWithDelay).mockRejectedValue(bootstrapError);
+      vi.mocked(AuthController.completeProfileSetup).mockRejectedValue(bootstrapError);
 
       render(<CreateProfileForm />);
 
@@ -864,7 +864,7 @@ describe('CreateProfileForm', () => {
       // Verify the mocks were called in the correct order
       expect(UserValidator.check).toHaveBeenCalled();
       expect(ProfileController.commitCreate).toHaveBeenCalled();
-      expect(AuthController.bootstrapWithDelay).toHaveBeenCalled();
+      expect(AuthController.completeProfileSetup).toHaveBeenCalled();
     });
   });
 });

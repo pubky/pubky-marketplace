@@ -1075,10 +1075,10 @@ describe('MarketplacePaymentSettings', () => {
     expect(mockedController.putMyPaymentConfig.mock.calls[0]?.[0]).toMatchObject({ usdtEnabled: true });
   });
 
-  it('leaves sign-out to account settings while social link-out is off', async () => {
+  it('offers sign-out within the Shop by default', async () => {
     await renderSettings();
 
-    expect(screen.queryByTestId('marketplace-sign-out-card')).not.toBeInTheDocument();
+    expect(screen.getByTestId('marketplace-sign-out-card')).toBeInTheDocument();
   });
 
   it('offers Shop sign-out while social link-out is on', async () => {

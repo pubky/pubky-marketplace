@@ -1,6 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { setSocialHost } from '@/test-utils/social-host';
 import { DialogAddContent } from './DialogAddContent';
 
 const AUTHOR = 'a'.repeat(52);
@@ -218,7 +217,7 @@ describe('DialogAddContent', () => {
   });
 
   it.each(['add-content-feed-reply-pill', 'add-content-feed-repost-pill', 'add-content-feed-save-pill'])(
-    'closes the dialog and navigates home when clicking %s',
+    'closes the dialog and returns to the Market catalog when clicking %s',
     async (dataCy) => {
       render(<DialogAddContent />);
 
@@ -230,28 +229,10 @@ describe('DialogAddContent', () => {
 
       fireEvent.click(feedPill);
 
-      expect(mocks.routerPush).toHaveBeenCalledWith('/home');
+      expect(mocks.routerPush).toHaveBeenCalledWith('/marketplace');
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     },
   );
-
-  it('navigates to the marketplace from a feed pill with social link-out on', () => {
-    setSocialHost('https://pubky.app');
-    try {
-      render(<DialogAddContent />);
-
-      fireEvent.click(screen.getByRole('button', { name: 'Add Post' }));
-      const feedPill = document.querySelector('[data-cy="add-content-feed-reply-pill"]');
-      if (!(feedPill instanceof HTMLElement)) {
-        throw new Error('Expected add-content-feed-reply-pill to render');
-      }
-      fireEvent.click(feedPill);
-
-      expect(mocks.routerPush).toHaveBeenCalledWith('/marketplace');
-    } finally {
-      setSocialHost(undefined);
-    }
-  });
 
   it('stacks URL validation messages below the input', () => {
     render(<DialogAddContent />);

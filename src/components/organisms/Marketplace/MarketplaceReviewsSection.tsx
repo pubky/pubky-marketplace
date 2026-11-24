@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { BadgeCheck, Ellipsis, Flag, MessageSquareReply, Star } from 'lucide-react';
-import { getMarketplaceListingRoute, getMarketplaceShopRoute, getProfileRoute, PROFILE_ROUTES } from '@/app/routes';
+import { getMarketplaceListingRoute, getMarketplaceShopRoute } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import {
@@ -22,7 +22,6 @@ import {
   REVIEW_OUTCOME_COPY,
   REVIEW_SORT_COPY,
 } from '@/config/commerce-copy';
-import { isSocialLinkOutEnabled } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useAttestorKeyWindowsVersion } from '@/hooks/useAttestorKeyWindows/useAttestorKeyWindows';
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
@@ -303,11 +302,7 @@ function MarketplaceReviewItem({
       <div className="flex flex-wrap items-center gap-2">
         <MarketplaceStarRating rating={review.ratingOverall} size="sm" />
         <Link
-          href={
-            isSocialLinkOutEnabled()
-              ? getMarketplaceShopRoute(review.reviewerId)
-              : getProfileRoute(PROFILE_ROUTES.PROFILE, review.reviewerId)
-          }
+          href={getMarketplaceShopRoute(review.reviewerId)}
           overrideDefaults
           className="text-xs font-medium text-foreground hover:underline"
         >

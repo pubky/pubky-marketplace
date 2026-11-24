@@ -1,0 +1,1 @@
+Market recognizes both generations of Pubky profiles and uses the shared Market specs for commerce records. Listings offer Watchlist and sharing to Pubky App. Existing profile and collection links open in the App.

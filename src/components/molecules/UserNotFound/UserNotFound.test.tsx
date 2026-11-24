@@ -40,7 +40,7 @@ describe('UserNotFound', () => {
     render(<UserNotFound />);
 
     await user.click(screen.getByRole('button', { name: 'Back to Feed' }));
-    expect(mockPush).toHaveBeenCalledWith(APP_ROUTES.HOME);
+    expect(mockPush).toHaveBeenCalledWith(APP_ROUTES.MARKETPLACE);
 
     await user.click(screen.getByRole('button', { name: 'Explore Tags' }));
     expect(mockPush).toHaveBeenCalledWith(APP_ROUTES.HOT);

@@ -19,7 +19,6 @@ function embeddedConfig(runtime: EmbeddedShopSettings): CliGrantConfig | null {
       !runtime.embedded ||
       Env.NEXT_PUBLIC_BASE_PATH !== '/shop-embed' ||
       Env.NEXT_PUBLIC_DB_NAME !== 'shop-franky' ||
-      Env.NEXT_PUBLIC_SOCIAL_HOST ||
       runtime.shopPublicPath !== '/shop' ||
       !runtime.marketplaceGrantFlowEnabled
     )

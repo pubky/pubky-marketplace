@@ -1,37 +1,8 @@
-import type { TBootstrapParams } from '@/application/bootstrap/bootstrap.types';
-import { FeedApplication } from '@/application/feed/feed';
-import { FileApplication } from '@/application/file/file';
-import { MuteApplication } from '@/application/mute/mute';
-import { NotificationApplication } from '@/application/notification/notification';
 import { UserApplication } from '@/application/user/user';
 import { getModerationId } from '@/config/moderation';
-import { TtlCoordinator } from '@/coordinators/ttl/ttl';
 import { isAppError } from '@/libs/error/error.utils';
-import { HttpMethod } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
-import { getTtlRetryDelayMs } from '@/libs/runtime-config/runtime-config';
-import { buildHotTagsId } from '@/models/hot/hot.helper';
-import type { NotificationType } from '@/models/notification/notification.types';
-import { PostStreamTypes } from '@/models/stream/post/postStream.types';
-import { TagStreamTypes } from '@/models/stream/tag/tagStream.types';
-import { UserStreamTypes } from '@/models/stream/user/userStream.types';
-import { LastReadNormalizer } from '@/pipes/lastRead/lastRead.normalizer';
-import { HomeserverService } from '@/services/homeserver/homeserver';
-import type { THomeserverJsonIfFound } from '@/services/homeserver/homeserver.types';
-import { LocalHotService } from '@/services/local/hot/hot';
-import { LocalStreamPostsService } from '@/services/local/stream/posts/posts';
-import { LocalStreamTagsService } from '@/services/local/stream/tags/tags';
-import { LocalStreamUsersService } from '@/services/local/stream/users/users';
-import { LocalUserService } from '@/services/local/user/user';
-import { NexusBootstrapService } from '@/services/nexus/bootstrap/bootstrap';
-import { UserStreamTimeframe } from '@/services/nexus/nexus.types';
-import type { NotificationState } from '@/stores/notification/notification.types';
-
-/**
- * Callback type for reporting bootstrap progress to the Controller layer.
- * This allows the Controller to update stores without violating architecture rules.
- */
-export type BootstrapProgressCallback = (step: 'bootstrapFetched' | 'dataPersisted' | 'homeserverSynced') => void;
+import type { Pubky } from '@/models/models.types';
 
 export class BootstrapApplication {
   private static moderationFollowAbortController: AbortController | null = null;
@@ -44,161 +15,35 @@ export class BootstrapApplication {
     this.moderationFollowAbortController = null;
   }
 
-  private static clearModerationFollowController(controller: AbortController): void {
-    if (this.moderationFollowAbortController === controller) {
-      this.moderationFollowAbortController = null;
-    }
-  }
-
-  /**
-   * Initialize application state from Nexus and notifications in parallel.
-   *
-   * @param params, Bootstrap parameters
-   * @param params.pubky, The user's public key identifier
-   * @param params.lastReadUrl, URL to fetch user's last read timestamp from homeserver
-   * @param onProgress, Optional callback to report progress to the Controller layer
-   * @returns Promise resolving to notification state with preference-filtered unread count.
-   *          Only the social (Nexus-backed) fields: the marketplace unread count is owned
-   *          by the commerce badge poll, so bootstrap never touches it.
-   */
-  static async initialize(
-    params: TBootstrapParams & { allowedTypes: NotificationType[] },
-    onProgress?: BootstrapProgressCallback,
-  ): Promise<Omit<NotificationState, 'marketplaceUnread'>> {
+  /** The Shop starts its follow independently of sign-in. Each Market surface fetches the data it displays. */
+  static async initialize({ pubky, signal }: { pubky: Pubky; signal?: AbortSignal }): Promise<void> {
     this.cancelModerationFollow();
-    const moderationFollowController = new AbortController();
-    this.moderationFollowAbortController = moderationFollowController;
-
-    try {
-      const { pubky, signal } = params;
-      const [bootstrapResult, lastReadResult, ...syncResults] = await Promise.allSettled([
-        NexusBootstrapService.fetch(pubky),
-        this.fetchOrPutLastRead(params),
-        MuteApplication.fetchMutedUsers(pubky, signal), // fetches and persists MUTED stream internally
-        FeedApplication.fetchFeeds(pubky, signal),
-      ]);
-      // Keep account ownership until every started sync has finished writing.
-      signal?.throwIfAborted();
-      if (bootstrapResult.status === 'rejected') throw bootstrapResult.reason;
-      if (lastReadResult.status === 'rejected') throw lastReadResult.reason;
-      for (const result of syncResults) {
-        if (result.status === 'rejected') throw result.reason;
-      }
-      const bootstrapData = bootstrapResult.value;
-      const userLastRead = lastReadResult.value;
-      onProgress?.('bootstrapFetched'); // Step 3 complete (60%)
-
-      if (!bootstrapData.indexed) {
-        // Tell Nexus this user exists (best-effort, never rejects; see NexusBootstrapService.ingest).
-        void NexusBootstrapService.ingest(pubky);
-
-        const retryDelayMs = getTtlRetryDelayMs();
-        Logger.warn('User is not indexed in Nexus. Scheduling TTL retry', {
-          pubky,
-          retryDelayMs,
-        });
-
-        // Write TTL record to become stale after configured retry delay
-        await LocalUserService.upsertTtlWithDelay(pubky, retryDelayMs);
-
-        // Subscribe to TTL coordinator for periodic staleness checks
-        TtlCoordinator.getInstance().subscribeUser({ pubky });
-      }
-
-      signal?.throwIfAborted();
-      const [notificationResult, ...persistenceResults] = await Promise.allSettled([
-        NotificationApplication.persistAndSummarize({
-          notifications: bootstrapData.notifications,
-          lastRead: userLastRead,
-          allowedTypes: params.allowedTypes,
-        }),
-        LocalStreamUsersService.persistUsers(bootstrapData.users),
-        LocalStreamPostsService.persistPosts({ posts: bootstrapData.posts }),
-        LocalStreamPostsService.upsert({
-          streamId: PostStreamTypes.TIMELINE_ALL_ALL,
-          stream: bootstrapData.ids.stream,
-        }),
-        LocalStreamUsersService.upsert({
-          streamId: UserStreamTypes.TODAY_INFLUENCERS_ALL,
-          stream: bootstrapData.ids.influencers,
-        }),
-        LocalStreamUsersService.upsert({
-          streamId: UserStreamTypes.RECOMMENDED,
-          stream: bootstrapData.ids.recommended,
-        }),
-        FileApplication.persistFiles(bootstrapData.files),
-        // Both features: hot tags and tag streams
-        LocalHotService.upsert(buildHotTagsId(UserStreamTimeframe.TODAY, 'all'), bootstrapData.ids.hot_tags),
-        LocalStreamTagsService.upsert(TagStreamTypes.TODAY_ALL, bootstrapData.ids.hot_tags),
-      ]);
-      if (notificationResult.status === 'rejected') throw notificationResult.reason;
-      for (const result of persistenceResults) {
-        if (result.status === 'rejected') throw result.reason;
-      }
-      const { unread, nextPollCursor } = notificationResult.value;
-      onProgress?.('dataPersisted'); // Step 4 complete (80%)
-      signal?.throwIfAborted();
-      void this.ensureModerationFollow(pubky, moderationFollowController);
-      // TODO: We will not have that step, but we will add HomeserverSignIn step before step 1 to catch errors
-      onProgress?.('homeserverSynced'); // Step 5 complete (100%)
-
-      return { unread, lastRead: userLastRead, lastPolledTimestamp: nextPollCursor };
-    } catch (error) {
-      moderationFollowController.abort();
-      this.clearModerationFollowController(moderationFollowController);
-      throw error;
-    }
+    if (signal?.aborted) return;
+    const controller = new AbortController();
+    this.moderationFollowAbortController = controller;
+    const followSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    void this.ensureModerationFollow(pubky, controller, followSignal);
   }
 
   /** Keep the one-time default follow off the authentication critical path. */
-  private static async ensureModerationFollow(pubky: string, controller: AbortController): Promise<void> {
+  private static async ensureModerationFollow(
+    pubky: Pubky,
+    controller: AbortController,
+    signal: AbortSignal,
+  ): Promise<void> {
     try {
       await UserApplication.ensureModerationFollow({
         follower: pubky,
         moderationId: getModerationId(),
-        signal: controller.signal,
+        signal,
       });
     } catch (error) {
       // AppError factories already report at their origin. Only unexpected raw failures need a warning.
-      if (!controller.signal.aborted && !isAppError(error)) {
+      if (!signal.aborted && !isAppError(error)) {
         Logger.warn('Unexpected moderation-follow bootstrap failure', { error });
       }
     } finally {
-      this.clearModerationFollowController(controller);
+      if (this.moderationFollowAbortController === controller) this.moderationFollowAbortController = null;
     }
-  }
-
-  /**
-   * Retrieves user's last read timestamp from homeserver, fetches notification data from Nexus
-   * and persists the notifications to the cache.
-   *
-   * @private
-   * @param params, Bootstrap parameters
-   * @param params.pubky, The user's public key identifier
-   * @param params.lastReadUrl, URL to fetch user's last read timestamp from homeserver
-   * @returns Promise resolving to notification list and last read timestamp
-   */
-  private static async fetchOrPutLastRead({ pubky, lastReadUrl, signal }: TBootstrapParams): Promise<number> {
-    let stored: THomeserverJsonIfFound<{ timestamp: number }>;
-    try {
-      stored = await HomeserverService.getJsonIfFound<{ timestamp: number }>({ url: lastReadUrl });
-    } catch (error) {
-      // Network errors, timeouts, server errors, etc. should bubble up
-      Logger.error('Failed to fetch last read timestamp', error);
-      throw error;
-    }
-    if (stored.found) {
-      const { timestamp } = stored.json as { timestamp: number };
-      return timestamp;
-    }
-    Logger.info('Last read file not found, creating new one...', { pubky });
-    const lastRead = LastReadNormalizer.to(pubky);
-    signal?.throwIfAborted();
-    void HomeserverService.request({
-      method: HttpMethod.PUT,
-      url: lastRead.meta.url,
-      bodyJson: lastRead.last_read.toJson(),
-    });
-    return Number(lastRead.last_read.timestamp);
   }
 }

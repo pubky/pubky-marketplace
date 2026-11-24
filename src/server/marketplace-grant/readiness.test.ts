@@ -79,6 +79,12 @@ describe('embedded Shop startup configuration', () => {
     expect(mocks.sql).not.toHaveBeenCalled();
   });
 
+  it('also accepts an explicit social App origin for top-level handoffs', async () => {
+    mocks.env.NEXT_PUBLIC_SOCIAL_HOST = 'https://social.example';
+    const { assertEmbeddedShopDeployment } = await import('./readiness');
+    expect(() => assertEmbeddedShopDeployment(mocks.runtime)).not.toThrow();
+  });
+
   it('leaves a standalone deployment independent of BFF configuration', async () => {
     mocks.runtime.embedded = false;
     mocks.env.NEXT_PUBLIC_BASE_PATH = '';
@@ -104,12 +110,6 @@ describe('embedded Shop startup configuration', () => {
       'wrong database namespace',
       () => {
         mocks.env.NEXT_PUBLIC_DB_NAME = 'franky';
-      },
-    ],
-    [
-      'social redirect',
-      () => {
-        mocks.env.NEXT_PUBLIC_SOCIAL_HOST = 'https://app.example';
       },
     ],
     [

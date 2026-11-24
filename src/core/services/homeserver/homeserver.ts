@@ -192,6 +192,22 @@ export class HomeserverService {
     return capabilitiesGrantWrite(capabilities, path);
   }
 
+  /** Whether the active identity owns this path and its current grant covers the write. */
+  static canCurrentUserSessionWrite(pubky: string, path: string): boolean {
+    const state = useAuthStore.getState();
+    return (
+      !state.isLoggingOut &&
+      state.currentUserPubky === pubky &&
+      state.session?.info.publicKey.z32() === pubky &&
+      this.canCurrentSessionWrite(path)
+    );
+  }
+
+  /** V1 social records are written only through an App-owned session. */
+  static canCurrentHostSessionWrite(pubky: string, path: string): boolean {
+    return useAuthStore.getState().sessionOwner === 'host' && this.canCurrentUserSessionWrite(pubky, path);
+  }
+
   /**
    * Whether the current grant covers every Shop storage permission.
    */

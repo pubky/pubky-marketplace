@@ -15,7 +15,7 @@ import {
   UserRound,
   UserRoundPlus,
 } from 'lucide-react';
-import { APP_ROUTES, isNavItemActive, PROFILE_ROUTES, SETTINGS_ROUTES } from '@/app/routes';
+import { APP_ROUTES, isNavItemActive, MARKETPLACE_ROUTES, PROFILE_ROUTES, SETTINGS_ROUTES } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
@@ -27,7 +27,7 @@ import {
 } from '@/atoms/DropdownMenu/DropdownMenu';
 import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode } from '@/config/commerce';
-import { getSocialHostUrl } from '@/config/social';
+import { getSocialHostUrl, usesSocialHostNavigation } from '@/config/social';
 import { FileController } from '@/controllers/file/file';
 import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
 import { useCollectionsNavDiscovery } from '@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery';
@@ -69,12 +69,12 @@ export function MobileFooter({ className }: MobileFooterProps) {
   const setShowSignInDialog = useAuthStore((state) => state.setShowSignInDialog);
   const { isPublicExploreRoute } = usePublicRoute();
   const { userDetails, currentUserPubky } = useCurrentUserProfile();
-  const socialHostUrl = getSocialHostUrl('/');
+  const socialHostNav = usesSocialHostNavigation();
   // Social unread plus marketplace unread — one badge for the whole surface.
-  const unreadNotifications = useNotificationStore((state) => state.selectTotalUnread());
+  const unreadNotifications = useNotificationStore((state) => state.selectMarketplaceUnread());
   // Honest device-local unread: conversations whose last received message
   // postdates the local read checkpoint.
-  const unreadMessages = useChatUnread({ enabled: !socialHostUrl });
+  const unreadMessages = useChatUnread({ enabled: !socialHostNav });
   const marketplaceCartCount = useMarketplaceCartCount();
   const marketplaceAttention = useMarketplaceNavAttention();
   const accountUnread = unreadNotifications + unreadMessages;
@@ -99,7 +99,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
             href: APP_ROUTES.MARKETPLACE,
             activePrefix: APP_ROUTES.MARKETPLACE,
             icon: Store,
-            label: socialHostUrl ? 'Shop' : 'Market',
+            label: socialHostNav ? 'Shop' : 'Market',
           },
         ]
       : [];
@@ -129,7 +129,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
       label: 'Collections',
     },
   ];
-  const navItems = socialHostUrl
+  const navItems = socialHostNav
     ? [...socialNavItems, { href: SETTINGS_ROUTES.ACCOUNT, icon: Settings, label: 'Settings' }]
     : socialNavItems;
   // Hide footer for guests only on non-explore routes. Core explore and dynamic public
@@ -144,7 +144,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
       overrideDefaults
       className={cn(
         'fixed bottom-0 z-40 w-full overflow-x-auto bg-gradient-to-t from-background via-background/95 to-transparent px-3 py-4 lg:hidden',
-        socialHostUrl && 'px-1 min-[360px]:px-3',
+        socialHostNav && 'px-1 min-[360px]:px-3',
         className,
       )}
     >
@@ -154,7 +154,8 @@ export function MobileFooter({ className }: MobileFooterProps) {
       >
         {navItems.map((item) => {
           const Icon = item.icon;
-          const externalHref = item.href === APP_ROUTES.MARKETPLACE ? null : getSocialHostUrl(item.href);
+          const externalHref =
+            !socialHostNav || item.href === APP_ROUTES.MARKETPLACE ? null : getSocialHostUrl(item.href);
           const itemIsActive = !externalHref && isNavItemActive(pathname, item);
           const isCollectionsItem = item.href === APP_ROUTES.COLLECTIONS;
           const itemBadgeCount = item.href === APP_ROUTES.MARKETPLACE ? marketplaceCartCount + marketplaceAttention : 0;
@@ -182,7 +183,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
                 handleFeedNavClick(event, { isActive: itemIsActive, smoothScrollWhenActive: true });
               }}
               className={cn(
-                socialHostUrl
+                socialHostNav
                   ? 'flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full p-2 transition-all sm:p-3'
                   : 'rounded-full p-3 transition-all',
                 itemBadgeCount > 0 && 'relative inline-flex',
@@ -207,7 +208,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
             </Link>
           );
         })}
-        {isAuthenticated && socialHostUrl ? (
+        {isAuthenticated && socialHostNav ? (
           <a
             href={getSocialHostUrl(APP_ROUTES.PROFILE)!}
             aria-label="Profile"
@@ -266,7 +267,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href={APP_ROUTES.PROFILE} className="min-h-12 gap-2 px-4 py-2 text-sm font-medium">
+                <Link href={MARKETPLACE_ROUTES.NOTIFICATIONS} className="min-h-12 gap-2 px-4 py-2 text-sm font-medium">
                   <Bell className="size-5 shrink-0" aria-hidden="true" />
                   <span className="flex-1">Notifications</span>
                   {unreadNotifications > 0 && (
@@ -290,7 +291,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href={SETTINGS_ROUTES.ACCOUNT} className="min-h-12 gap-2 px-4 py-2 text-sm font-medium">
+                <Link href={MARKETPLACE_ROUTES.SETTINGS} className="min-h-12 gap-2 px-4 py-2 text-sm font-medium">
                   <Settings className="size-5 shrink-0" aria-hidden="true" />
                   Settings
                 </Link>
@@ -303,7 +304,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
             size="icon"
             className={cn(
               'items-center justify-center border bg-glass',
-              socialHostUrl ? 'size-11 shrink-0 sm:size-12' : 'size-12',
+              socialHostNav ? 'size-11 shrink-0 sm:size-12' : 'size-12',
             )}
             aria-label="Join Pubky"
             onClick={() => setShowSignInDialog(true)}

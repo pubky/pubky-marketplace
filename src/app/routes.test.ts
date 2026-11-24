@@ -546,9 +546,9 @@ describe('getShopHomeRoute', () => {
     setSocialHost(undefined);
   });
 
-  it('is /home, and the route guard sends signed-in users there, while social link-out is off', () => {
-    expect(getShopHomeRoute()).toBe(APP_ROUTES.HOME);
-    expect(AUTHENTICATED_ROUTES.redirectTo).toBe(APP_ROUTES.HOME);
+  it('the route guard sends signed-in users to the catalog by default', () => {
+    expect(getShopHomeRoute()).toBe(APP_ROUTES.MARKETPLACE);
+    expect(AUTHENTICATED_ROUTES.redirectTo).toBe(APP_ROUTES.MARKETPLACE);
   });
 
   it('is the marketplace, and the route guard sends signed-in users there, while social link-out is on', () => {

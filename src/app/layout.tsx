@@ -10,7 +10,6 @@ import { RootContainer } from '@/molecules/ContainerRoot/ContainerRoot';
 import { EmbeddedDocumentFlag } from '@/molecules/EmbeddedDocumentFlag/EmbeddedDocumentFlag';
 import { EmbeddedExternalLinks } from '@/molecules/EmbeddedExternalLinks/EmbeddedExternalLinks';
 import { EmbeddedLegalFooter } from '@/molecules/EmbeddedLegalFooter/EmbeddedLegalFooter';
-import { Fab } from '@/molecules/Fab/Fab';
 import { Metadata } from '@/molecules/Metadata/Metadata';
 import { ServiceWorkerRegistration } from '@/molecules/ServiceWorkerRegistration/ServiceWorkerRegistration';
 import { StructuredData } from '@/molecules/StructuredData/StructuredData';
@@ -70,7 +69,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   <Header />
                   {children}
                   <EmbeddedLegalFooter />
-                  <Fab />
                   <Toaster />
                   <DialogSignIn />
                 </RouteGuardProvider>

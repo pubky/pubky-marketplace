@@ -354,7 +354,7 @@ export function useProfileForm(props: UseProfileFormProps): UseProfileFormReturn
           const globalBlobUrl = URL.createObjectURL(avatarFile);
           useLocalFilesStore.getState().setProfile(globalBlobUrl);
         }
-        await AuthController.bootstrapWithDelay();
+        await AuthController.completeProfileSetup();
         // RouteGuard owns navigation after guarded bootstrap marks this identity complete.
       } else {
         await ProfileController.commitUpdate({

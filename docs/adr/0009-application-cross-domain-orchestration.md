@@ -53,15 +53,14 @@ The fundamental issue: **Where does cross-domain orchestration belong?**
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `PostApplication`         | Single user action spans files, tags, and related posts (create / edit / delete / replies).                                        |
 | `NotificationApplication` | Hydrates referenced posts/users before notification persistence; see [ADR-0010](./0010-notification-application-orchestration.md). |
-| `BootstrapApplication`    | Session startup must hydrate multiple homeserver/Nexus domains in one coordinated fan-out. **Root-node** orchestrator (see below). |
-| `MigrationApplication`    | After DB recreation, critical homeserver-backed state must be re-synced once. **Root-node** orchestrator (see below).              |
+| `BootstrapApplication`    | Session startup initiates the default moderation follow through the user domain. See the root-node rule below.                     |
 | `HotApplication`          | Hot-tag UI needs tagger profiles cached before tags are written, to avoid liveQuery flashes with missing users.                    |
 | `PostStreamApplication`   | Stream slices include attachment metadata that must land in the file domain when posts are persisted.                              |
 | `TtlApplication`          | Force-refresh of stale posts must also persist attachments and hydrate embedded original posts for reposts.                        |
 
 #### Root-node orchestrators
 
-`BootstrapApplication` and `MigrationApplication` are **source nodes (in-degree 0)** in the Application dependency DAG: Controllers invoke them, and no Application may call them, preventing cycles through these roots. Their current execution paths stop after one cross-Application hop, so they remain at depth 1.
+Controllers invoke `BootstrapApplication`. It has no incoming Application dependencies and calls the user domain at depth 1.
 
 ### Example
 
@@ -93,7 +92,7 @@ A → B → A                                  // cycle
 
 **We rely on:**
 
-1. **Code Reviews**: Reviewers MUST check for circular dependencies, the call-depth rule and its single explicit exception, orchestration privilege (Allowed orchestrators table), and the root-node invariant (no Application may call `BootstrapApplication` or `MigrationApplication`)
+1. **Code Reviews**: Reviewers MUST check for circular dependencies, the call-depth rule and its single explicit exception, orchestration privilege (Allowed orchestrators table), and the root-node invariant (no Application may call `BootstrapApplication`)
 2. **Automated Review**: The `cross-domain-app-restriction` rule in `.greptile/config.json` mirrors the allowlist and call-depth constraints
 3. **Documentation**: This ADR is the source of truth
 

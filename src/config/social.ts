@@ -1,21 +1,11 @@
 import { Env } from '@/libs/env/env';
-import { toSocialHostUrl } from '@/libs/social-host/social-host';
+import { socialHostForMount } from '@/libs/social-host/social-host';
 
-/**
- * Social link-out switch for components (see `@/libs/social-host/social-host`).
- * Read per call rather than captured at import, so one artifact holds a single
- * baked value and tests can exercise both states.
- */
-export function getSocialHost(): string | undefined {
-  return Env.NEXT_PUBLIC_SOCIAL_HOST;
+export function getSocialHostUrl(path: string): string {
+  return socialHostForMount(Env.NEXT_PUBLIC_SOCIAL_HOST, Env.NEXT_PUBLIC_BASE_PATH) + path;
 }
 
-export function isSocialLinkOutEnabled(): boolean {
-  return getSocialHost() !== undefined;
-}
-
-/** Absolute social-host URL for a social route path, or `null` while link-out is off. */
-export function getSocialHostUrl(path: string): string | null {
-  const host = getSocialHost();
-  return host ? toSocialHostUrl(host, path) : null;
+/** An explicit social host selects the standalone global nav layout. Both layouts delegate social routes to the App. */
+export function usesSocialHostNavigation(): boolean {
+  return Boolean(Env.NEXT_PUBLIC_SOCIAL_HOST);
 }

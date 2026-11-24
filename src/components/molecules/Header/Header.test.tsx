@@ -482,7 +482,7 @@ describe('Header Components', () => {
       expect(hotLink).toHaveAttribute('href', '/hot');
       expect(collectionsLink).toHaveAttribute('href', '/collections');
       expect(settingsLink).toHaveAttribute('href', '/settings/account');
-      expect(profileLink).toHaveAttribute('href', '/profile');
+      expect(profileLink).toHaveAttribute('href', '/marketplace/notifications');
     });
 
     it('highlights Collections on nested collection routes', () => {
@@ -610,12 +610,17 @@ describe('Header Components', () => {
   });
 
   describe('HeaderExploreNavigationButtons', () => {
-    it('renders full navigation with account routes gated behind the Join dialog', () => {
+    it('requires a Shop session only for messages', () => {
       render(<HeaderExploreNavigationButtons />);
 
       // Home, Hot, and Collections are public explore routes → real navigation links.
       const links = screen.getAllByRole('link');
-      expect(links.map((link) => link.getAttribute('href'))).toEqual(['/home', '/hot', '/collections']);
+      expect(links.map((link) => link.getAttribute('href'))).toEqual([
+        '/home',
+        '/hot',
+        '/collections',
+        '/settings/account',
+      ]);
       expect(screen.getByTestId('search-input')).toBeInTheDocument();
 
       // All four nav icons are shown.
@@ -624,9 +629,9 @@ describe('Header Components', () => {
       expect(document.querySelector('.lucide-library')).toBeInTheDocument();
       expect(document.querySelector('.lucide-settings')).toBeInTheDocument();
 
-      // Settings require an account, so it renders as an auth-gated button, not a link.
-      expect(document.querySelector('.lucide-settings')?.closest('a')).toBeNull();
-      expect(document.querySelector('[data-cy="header-settings-btn"]')?.tagName).toBe('BUTTON');
+      // Settings are managed by the social App.
+      expect(document.querySelector('.lucide-settings')?.closest('a')).toHaveAttribute('href', '/settings/account');
+      expect(document.querySelector('[data-cy="header-messages-btn"]')?.tagName).toBe('BUTTON');
       expect(document.querySelector('.lucide-library')?.closest('a')).toHaveAttribute('href', '/collections');
     });
 
@@ -659,7 +664,14 @@ describe('Header Components', () => {
       render(<HeaderSignIn />);
 
       const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
-      expect(hrefs).toEqual(['/home', '/hot', '/collections', '/messages', '/settings/account', '/profile']);
+      expect(hrefs).toEqual([
+        '/home',
+        '/hot',
+        '/collections',
+        '/messages',
+        '/settings/account',
+        '/marketplace/notifications',
+      ]);
       expect(document.querySelector('[data-cy="header-pubky-btn"]')).toBeNull();
       expect(screen.getByTestId('search-input')).toBeInTheDocument();
     });
@@ -693,7 +705,7 @@ describe('Header Components', () => {
       render(<HeaderExploreNavigationButtons />);
       const settings = screen.getByRole('button', { name: 'Settings' }).closest('a');
       expect(settings).toHaveAttribute('href', 'https://pubky.app/settings/account');
-      expect(settings).not.toHaveAttribute('target');
+      expect(settings).toHaveAttribute('target', '_top');
       expect(screen.getByTestId('search-input')).toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
       expect(mockPush).not.toHaveBeenCalled();

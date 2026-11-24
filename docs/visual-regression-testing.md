@@ -15,7 +15,7 @@ interaction tests for those).
   followed by the cleanup and image review below.
 - Harness: `src/test-utils/vrt.tsx` (`renderForVRT`, `VRT_ROOT_TESTID`),
   `vrt.setup.ts` (global mocks), `vrt.clock.ts`, `vrt.viewports.ts`.
-- Reference example: `src/test/vrt/feed/Home.vrt.test.tsx`.
+- Reference example: `src/test/vrt/marketplace/MarketplaceListing.vrt.test.tsx`.
 
 ## Writing a test
 

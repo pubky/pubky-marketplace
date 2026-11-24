@@ -4,7 +4,6 @@ import {
   BITKIT_PROFILE_PATHS,
   parseBitkitProfileSeed,
   parsePubkyAppProfileSeed,
-  PUBKY_APP_PROFILE_PATH,
 } from '@/application/profile/profile.seed';
 import type {
   TApplicationCommitUpdateDetailsParams,
@@ -24,6 +23,7 @@ import type { Pubky } from '@/models/models.types';
 import { UserDetailsModel } from '@/models/user/details/userDetails';
 import { UserNormalizer } from '@/pipes/user/user.normalizer';
 import { HomeserverService } from '@/services/homeserver/homeserver';
+import { SocialProfileService } from '@/services/homeserver/social-profile';
 import { LocalProfileService } from '@/services/local/profile/profile';
 import { LocalUserService } from '@/services/local/user/user';
 import { NexusBootstrapService } from '@/services/nexus/bootstrap/bootstrap';
@@ -66,15 +66,22 @@ export class ProfileApplication {
    * never rejects, and returns null when no source has a usable field.
    */
   static async readProfileSeed({ pubky }: { pubky: Pubky }): Promise<TProfileSeed | null> {
-    const sources = [
-      { path: PUBKY_APP_PROFILE_PATH, parse: parsePubkyAppProfileSeed },
-      ...BITKIT_PROFILE_PATHS.map((path) => ({ path, parse: parseBitkitProfileSeed })),
-    ];
-    for (const { path, parse } of sources) {
+    try {
+      const profile = await SocialProfileService.read(pubky);
+      if (profile.epoch !== 'missing') {
+        const seed = parsePubkyAppProfileSeed(profile.json);
+        if (seed) return seed;
+      }
+    } catch (error) {
+      Logger.warn('[ProfileApplication] Social profile could not be read for prefill', {
+        code: isAppError(error) ? error.code : 'unknown',
+      });
+    }
+    for (const path of BITKIT_PROFILE_PATHS) {
       const url = `pubky://${pubky}${path}`;
       try {
         if (!(await HomeserverService.exists(url))) continue;
-        const seed = parse(await HomeserverService.request<unknown>({ method: HttpMethod.GET, url }));
+        const seed = parseBitkitProfileSeed(await HomeserverService.request<unknown>({ method: HttpMethod.GET, url }));
         if (seed) return seed;
       } catch (error) {
         Logger.warn('[ProfileApplication] Existing profile could not be read for prefill', {

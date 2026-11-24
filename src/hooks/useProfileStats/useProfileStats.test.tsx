@@ -84,10 +84,10 @@ vi.mock('@/controllers/user/user', () => ({
 }));
 vi.mock('@/stores/notification/notification.store', () => ({
   useNotificationStore: vi.fn(
-    (selector: (state: { selectUnread: () => number; selectTotalUnread: () => number }) => number) =>
+    (selector: (state: { selectUnread: () => number; selectMarketplaceUnread: () => number }) => number) =>
       selector({
         selectUnread: () => mockNotificationsCount.current,
-        selectTotalUnread: () => mockNotificationsCount.current,
+        selectMarketplaceUnread: () => mockNotificationsCount.current,
       }),
   ),
 }));

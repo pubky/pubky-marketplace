@@ -17,6 +17,8 @@ import type { TCreateTagInput, TDeleteTagInput } from './tag.types';
 vi.mock('@/services/homeserver/homeserver', () => ({
   HomeserverService: {
     request: vi.fn(),
+    canCurrentUserSessionWrite: vi.fn(),
+    getJsonIfFound: vi.fn(),
   },
 }));
 
@@ -320,6 +322,7 @@ describe('Tag Application', () => {
         taggedId: 'listing:seller123:0034A0X7NJ52A',
         label: 'handmade',
         taggerId: 'tagger123',
+        tagUri: listingTagData.tagUrl,
       });
       expect(requestSpy).toHaveBeenCalledWith({
         method: HttpMethod.PUT,
@@ -339,6 +342,7 @@ describe('Tag Application', () => {
         taggedId: 'shop:shopowner123',
         label: 'trusted',
         taggerId: 'tagger123',
+        tagUri: shopTagData.tagUrl,
       });
     });
 
@@ -378,6 +382,37 @@ describe('Tag Application', () => {
       });
       expect(requestSpy).toHaveBeenCalledWith({ method: HttpMethod.DELETE, url: shopTagData.tagUrl });
     });
+
+    it.each([
+      ['legacy', 'v1', false, false],
+      ['v1', 'legacy', false, false],
+      ['v1', 'legacy', true, true],
+      ['legacy', 'legacy', true, true],
+    ] as const)(
+      'validates an indexed %s-author tag with a %s address and old grant %s',
+      async (active, indexed, oldGrant, shouldRead) => {
+        const { deleteSpy, requestSpy } = setupMarketplaceMocks();
+        const tagUrl = (epoch: 'legacy' | 'v1', id: string) =>
+          epoch === 'legacy'
+            ? `pubky://tagger123/pub/pubky.app/tags/${id}`
+            : `pubky://tagger123/pub/social/v1/tags/${id}.json`;
+        const targetUri = 'pubky://shopowner123/pub/pubky.app/marketplace/v1/shop.json';
+        const indexedUrl = tagUrl(indexed, '00000000000000000000000000');
+        const computedUrl = tagUrl(active, '11111111111111111111111111');
+        vi.spyOn(LocalMarketplaceTagService, 'getViewerTagUrl').mockResolvedValue(indexedUrl);
+        vi.spyOn(HomeserverService, 'canCurrentUserSessionWrite').mockReturnValue(oldGrant);
+        const read = vi
+          .spyOn(HomeserverService, 'getJsonIfFound')
+          .mockResolvedValue({ found: true, json: { uri: targetUri, label: shopTagData.label } });
+        deleteSpy.mockResolvedValue(true);
+        requestSpy.mockResolvedValue(undefined);
+        await TagApplication.commitDelete({ ...shopTagData, tagUrl: computedUrl, targetUri });
+        expect(read).toHaveBeenCalledTimes(shouldRead ? 1 : 0);
+        expect(requestSpy.mock.calls.map(([{ url }]) => url)).toEqual(
+          shouldRead ? [indexedUrl, computedUrl] : [computedUrl],
+        );
+      },
+    );
 
     it('never touches the post or user tag services for marketplace kinds', async () => {
       const { createSpy, requestSpy } = setupMarketplaceMocks();

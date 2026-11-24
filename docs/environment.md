@@ -25,24 +25,17 @@ The schema is intentionally small:
 
 The cookie-based vibe consumer and `#s=` handoff are removed. Keep `NEXT_PUBLIC_VIBE_SESSION_BRIDGE_ORIGIN` and `NEXT_PUBLIC_VIBE_ID` unset; the retired settings are ignored and no longer enable sign-in or session restoration. Old cookie identities retain local history and must sign in again for a grant. [ADR 0029](adr/0029-vibe-session-consumer.md) records the historical design. The supported shared sign-in uses App `/shop` around Shop `/shop-embed` on one origin; follow [Shop embedding](launch/shop-embedding.md) for its build and runtime configuration.
 
-### Social link-out (optional)
+### Social App links
 
-`NEXT_PUBLIC_SOCIAL_HOST` hands the Shop's social surfaces to the canonical social app. It is baked into the artifact, so changing it needs a rebuild.
+The Shop serves the catalog, watchlist, messages, orders, Shop settings and profile completion. Social profiles, posts, feeds, tags search, collections, settings and the share composer open in the social App. Set `NEXT_PUBLIC_SOCIAL_HOST` to its exact HTTPS origin for a custom deployment. Standalone defaults to `https://pubky.app`. The same-origin `/shop-embed` build defaults to the current origin, so staging and self-hosted App wrappers can share the artifact. A change to the explicit origin requires a rebuild. Development builds also accept `http://localhost:<port>`.
 
-| Variable                  | Required | Meaning                                                                                                                                                                                                                 |
-| ------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NEXT_PUBLIC_SOCIAL_HOST` | No       | Exact `https://` origin of the social app (`https://pubky.app`, or `https://staging.pubky.app` for staging). `http://localhost:<port>` is allowed only when `NODE_ENV !== 'production'`. Invalid values fail the build. |
+- Legacy social links retain their path and query. `/profile/<pubky>/posts` opens the canonical `/profile/<pubky>`, and `/profile/notifications` opens the local `/marketplace/notifications`.
+- The embedded Shop opens the social App in the top window. A framed deep link offers an ordinary link when the browser requires a click to leave the frame.
+- Listing saves use the encrypted Market watchlist. Existing social collections remain with their owners. The listing's share action opens the App's `/share?url=...` composer with the public listing URL.
+- The Shop PWA does not register as a file share target. Files from the operating system must be shared directly with the social App.
+- Product search, payments and messages stay in Market. The Shop signs a user into the service configured for that deployment. Following a link does not transfer a session to another origin.
 
-When unset (the default) nothing changes. When set:
-
-- `/home`, `/feed/*`, `/hot`, `/search`, `/who-to-follow`, `/post/*`, `/collections/*`, `/profile/*` and `/settings/*` 307-redirect to the same path and query on the social host (`src/libs/social-host/social-host.ts`, applied in `next.config.ts`). `/profile/notifications` goes to `/marketplace/notifications` instead.
-- The header and mobile footer show Marketplace, Messages and one Pubky link; the social search box is hidden; the account menu points at `/marketplace/notifications` and `/marketplace/settings`, which gains a sign-out card.
-- Every in-app "go home" (route guard, logo, end of onboarding, not-found fallbacks) goes to `/marketplace`, so a signed-in user is never sent to the social host, where the Shop session does not carry over.
-- Seller and reviewer names in the marketplace and messages link to the person's shop, with a small "Profile on Pubky" link beside them.
-
-The redirects are unconditional and carry no session. Until single sign-on exists, each site keeps its own sign-in: a user signed in to the Shop (Ring, Bitkit or any other session) arrives on the social host signed out unless they already signed in there, and signs in there separately. This is the accepted beta behaviour, and no Shop copy promises otherwise; keep the "Pubky" and "Profile on Pubky" link labels free of any claim that the user will be signed in.
-
-The build also fails when the value is one of the Shop's own origins (a leading `www.` on either side is ignored), because every social route would redirect to itself. Those origins are `PUBKY_RUNTIME_DEFAULT_URL` (only when set explicitly) and, on Vercel, `VERCEL_PROJECT_PRODUCTION_URL`, `VERCEL_BRANCH_URL` and `VERCEL_URL`.
+Root-mounted builds reject an explicit social origin matching a configured Shop origin (`PUBKY_RUNTIME_DEFAULT_URL` or a Vercel deployment host). A subpath build may share its origin with the social App.
 
 ### Serving under a base path (optional)
 
@@ -304,4 +297,4 @@ If deployed runtime config is missing or invalid, the server exits at boot with 
 
 ### Shared App/Shop navigation
 
-With `NEXT_PUBLIC_SOCIAL_HOST` set, global Home, Hot, Collections, Settings, Profile and Search open their corresponding social App routes in the same tab. Search is a link; it does not query the Shop Nexus for social results. The Shop item and marketplace section navigation stay local. Product search remains in the marketplace catalog. Without this variable, the existing integrated navigation remains. The regular App needs its own Shop navigation link for the return trip.
+Global Home, Hot, Collections, Settings, Profile and Search open in the social App. Product search and the marketplace section navigation stay local.

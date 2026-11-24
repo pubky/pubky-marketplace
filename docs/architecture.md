@@ -142,7 +142,6 @@ Only these Applications can call other Applications:
 - `PostApplication`
 - `NotificationApplication`
 - `BootstrapApplication`
-- `MigrationApplication`
 - `HotApplication`
 - `PostStreamApplication`
 - `TtlApplication`
@@ -300,7 +299,7 @@ src/core/
 Trace the existing flow and its callers before changing these areas. Keep unrelated refactors out of the change.
 
 - `src/core/database/franky/**` + `src/config/database.ts` — schema upgrades, legacy table removal and database recovery. A version or index change needs an explicit PR callout covering retained data, upgrade/downgrade behavior and validation. Preserve device-local inventory, drafts and import state; see `docs/data-patterns.md` — _Schema changes_.
-- `src/core/services/homeserver/**`, `src/core/pipes/**` and `vendor/pubky-app-specs/**` — session authority and wire formats. Preserve grant ownership, capability checks and payload shapes; do not change a format incidentally while adding a feature.
+- `src/core/services/homeserver/**`, `src/core/pipes/**` and `vendor/pubky-market-specs/**` — session authority and wire formats. Preserve grant ownership, capability checks and payload shapes; do not change a format incidentally while adding a feature.
 - `src/core/services/local/**` — Dexie and TTL consistency. Persist dependencies before dependents and refresh affected TTL rows on writes. Check pending local writes before changing refresh or reconciliation behavior.
 - `src/core/application/**` cross-domain calls — check the ADR-0009 allow-list before wiring Applications together.
 - `services/marketplace/**` and commerce transaction integrations — transaction authority, inventory, payment and fulfillment state. Follow the commerce ADRs and runbooks; do not treat service-owned truth as a UI cache or remove active workflows as cleanup.

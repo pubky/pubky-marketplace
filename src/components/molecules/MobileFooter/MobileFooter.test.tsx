@@ -91,6 +91,7 @@ vi.mock('@/app/routes', async () => {
       SETTINGS: '/settings',
       PROFILE: '/profile',
     },
+    MARKETPLACE_ROUTES: { SETTINGS: '/marketplace/settings', NOTIFICATIONS: '/marketplace/notifications' },
     SETTINGS_ROUTES: {
       ACCOUNT: '/settings/account',
     },
@@ -166,8 +167,8 @@ vi.mock('@/stores/localFiles/localFiles.store', () => ({
 }));
 vi.mock('@/stores/notification/notification.store', () => ({
   useNotificationStore: vi.fn(
-    (selector: (state: { selectUnread: () => number; selectTotalUnread: () => number }) => unknown) =>
-      selector({ selectUnread: mockSelectUnread, selectTotalUnread: mockSelectUnread }),
+    (selector: (state: { selectUnread: () => number; selectMarketplaceUnread: () => number }) => unknown) =>
+      selector({ selectUnread: mockSelectUnread, selectMarketplaceUnread: mockSelectUnread }),
   ),
 }));
 
@@ -324,8 +325,11 @@ describe('MobileFooter', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Account menu' }), { button: 0, ctrlKey: false });
 
     expect(screen.getByRole('menuitem', { name: 'Messages' })).toHaveAttribute('href', '/messages');
-    expect(screen.getByRole('menuitem', { name: 'Settings' })).toHaveAttribute('href', '/settings/account');
-    expect(screen.getByRole('menuitem', { name: 'Notifications' })).toHaveAttribute('href', '/profile');
+    expect(screen.getByRole('menuitem', { name: 'Settings' })).toHaveAttribute('href', '/marketplace/settings');
+    expect(screen.getByRole('menuitem', { name: 'Notifications' })).toHaveAttribute(
+      'href',
+      '/marketplace/notifications',
+    );
     expect(screen.getByRole('menuitem', { name: 'Profile' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'My posts' })).toBeInTheDocument();
   });

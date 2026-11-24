@@ -18,6 +18,10 @@ import { NexusUserService } from '@/services/nexus/user/user';
 import { asInvalid, asOpaque } from '@/test-utils/type-assertions';
 import { UserApplication } from './user';
 
+vi.mock('@/services/homeserver/social-writes', () => ({
+  SocialWriteService: { requireEpoch: vi.fn(async () => 'legacy'), getEpoch: vi.fn(async () => 'legacy') },
+}));
+
 vi.mock('@/config/moderation', () => ({ getModerationId: vi.fn() }));
 
 const getModerationIdMock = vi.mocked(getModerationId);
@@ -1146,5 +1150,67 @@ describe('UserApplication.ensureSellerFollow', () => {
       url: markerUrlOf(seller),
       bodyJson: { seller, completedAt: expect.any(Number) },
     });
+  });
+});
+
+describe('Market follows after migration', () => {
+  const follower = '8kkppkmiubfq4pxn6f73nqrhhhgkb5xyfprntc9si3np9ydbotto';
+  const seller = 'dzswkfy7ek3bqnoc89jxuqqfbzhjrj6mi8qthgbxxcqkdugm3rio';
+  it('checks the v1 follow and creates it before recording the existing once-only marker', async () => {
+    const { SocialWriteService } = await import('@/services/homeserver/social-writes');
+    vi.mocked(SocialWriteService.getEpoch).mockResolvedValueOnce('v1');
+    const url = `pubky://${follower}/pub/social/v1/follows/${seller}.json`;
+    const exists = vi.spyOn(HomeserverService, 'exists').mockResolvedValue(false);
+    const put = vi.spyOn(HomeserverService, 'putBlob').mockResolvedValue(undefined);
+    const request = vi.spyOn(HomeserverService, 'request').mockResolvedValue(undefined);
+    vi.spyOn(LocalFollowService, 'create').mockResolvedValue(undefined);
+    await UserApplication.ensureSellerFollow({ follower, seller });
+    expect(exists).toHaveBeenCalledWith(url);
+    const upload = put.mock.calls[0][0];
+    expect(upload.url).toBe(url);
+    expect(JSON.parse(new TextDecoder().decode(upload.blob))).toEqual({ created_at: expect.any(Number) });
+    expect(request).toHaveBeenCalledWith({
+      method: HttpMethod.PUT,
+      url: `pubky://${follower}/pub/pubky.app/migrations/seller-auto-follow/v1/${seller}.json`,
+      bodyJson: { seller, completedAt: expect.any(Number) },
+    });
+  });
+
+  it('unfollows on the active v1 root when the App session has no legacy write grant', async () => {
+    const { SocialWriteService } = await import('@/services/homeserver/social-writes');
+    vi.mocked(SocialWriteService.requireEpoch).mockResolvedValueOnce('v1');
+    const record = await UserApplication.prepareFollow({ follower, followee: seller });
+    vi.spyOn(HomeserverService, 'canCurrentUserSessionWrite').mockReturnValue(false);
+    vi.spyOn(LocalFollowService, 'delete').mockResolvedValue(undefined);
+    const request = vi.spyOn(HomeserverService, 'request').mockResolvedValue(undefined);
+    await UserApplication.commitFollow({ ...record, follower, followee: seller, eventType: HttpMethod.DELETE });
+    expect(request.mock.calls.map(([{ url }]) => url)).toEqual([
+      `pubky://${follower}/pub/social/v1/follows/${seller}.json`,
+    ]);
+  });
+
+  it('removes both epochs on unfollow, even if the earlier record was already absent', async () => {
+    vi.spyOn(HomeserverService, 'canCurrentUserSessionWrite').mockReturnValue(true);
+    const { SocialWriteService } = await import('@/services/homeserver/social-writes');
+    vi.mocked(SocialWriteService.requireEpoch).mockResolvedValueOnce('v1');
+    const record = await UserApplication.prepareFollow({ follower, followee: seller });
+    vi.spyOn(LocalFollowService, 'delete').mockResolvedValue(undefined);
+    const request = vi
+      .spyOn(HomeserverService, 'request')
+      .mockRejectedValueOnce(
+        new AppError({
+          category: ErrorCategory.Client,
+          code: ClientErrorCode.NOT_FOUND,
+          message: 'Already gone',
+          service: ErrorService.Homeserver,
+          operation: 'delete',
+        }),
+      )
+      .mockResolvedValueOnce(undefined);
+    await UserApplication.commitFollow({ ...record, follower, followee: seller, eventType: HttpMethod.DELETE });
+    expect(request.mock.calls.map(([{ url }]) => url)).toEqual([
+      `pubky://${follower}/pub/pubky.app/follows/${seller}`,
+      `pubky://${follower}/pub/social/v1/follows/${seller}.json`,
+    ]);
   });
 });

@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Flame, Home, Library, MessageCircle, Settings, Store, UserRoundPlus } from 'lucide-react';
-import { APP_ROUTES, isCoreExploreRoute, isNavItemActive, SETTINGS_ROUTES } from '@/app/routes';
+import { APP_ROUTES, isNavItemActive, MARKETPLACE_ROUTES, SETTINGS_ROUTES } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
@@ -12,7 +12,7 @@ import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode } from '@/config/commerce';
 import { getGithubLink, getTelegramLink, getTwitterGetpubkyLink } from '@/config/externalLinks';
-import { getSocialHostUrl, isSocialLinkOutEnabled } from '@/config/social';
+import { getSocialHostUrl, usesSocialHostNavigation } from '@/config/social';
 import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
 import { useCollectionsNavDiscovery } from '@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery';
 import { useMarketplaceCartCount } from '@/hooks/useMarketplaceCartCount/useMarketplaceCartCount';
@@ -158,14 +158,14 @@ const getSocialNavigationItems = (): NavigationItemConfig[] => [
 ];
 const getNavigationItems = (): NavigationItemConfig[] => {
   const items = getSocialNavigationItems();
-  if (!isSocialLinkOutEnabled()) return items;
+  if (!usesSocialHostNavigation()) return items;
   // Shop messages remain in the marketplace section nav. Global items mirror Pubky App.
   return items
     .filter((item) => item.href !== APP_ROUTES.MESSAGES)
     .map((item) =>
       item.href === APP_ROUTES.MARKETPLACE
         ? { ...item, label: 'Shop' }
-        : { ...item, href: getSocialHostUrl(item.href)!, external: true, isFeedRoute: false },
+        : { ...item, href: getSocialHostUrl(item.href), external: true, isFeedRoute: false },
     );
 };
 
@@ -256,7 +256,7 @@ const NavigationButton = ({
   const needsRelativeWrap = showNew || badgeCount > 0;
   if (href && external) {
     return (
-      <a href={href} data-cy={dataCy} className={needsRelativeWrap ? 'relative inline-flex' : undefined}>
+      <a href={href} target="_top" data-cy={dataCy} className={needsRelativeWrap ? 'relative inline-flex' : undefined}>
         {content}
       </a>
     );
@@ -290,11 +290,13 @@ export function HeaderNavigationButtons({
   const { markCollectionsNavSeen } = useCollectionsNavDiscovery();
   // Honest badge: conversations on THIS device whose last received message
   // postdates the local read checkpoint — never a server-claimed count.
-  const unreadMessages = useChatUnread({ enabled: !isSocialLinkOutEnabled() });
+  const unreadMessages = useChatUnread({ enabled: !usesSocialHostNavigation() });
   const marketplaceCartCount = useMarketplaceCartCount();
   const marketplaceAttention = useMarketplaceNavAttention();
   const counterString = counter > 21 ? '21+' : counter.toString();
-  const profileHref = getSocialHostUrl(APP_ROUTES.PROFILE) ?? APP_ROUTES.PROFILE;
+  const profileHref = usesSocialHostNavigation()
+    ? getSocialHostUrl(APP_ROUTES.PROFILE)
+    : MARKETPLACE_ROUTES.NOTIFICATIONS;
   return (
     <Container className={cn('hidden w-auto flex-row items-center justify-start gap-3 lg:flex', className)}>
       {getNavigationItems().map((item) => {
@@ -334,7 +336,7 @@ export function HeaderNavigationButtons({
           className="cursor-pointer"
           alt={'Profile'}
         />
-        {!isSocialLinkOutEnabled() && counter > 0 && (
+        {!usesSocialHostNavigation() && counter > 0 && (
           <Badge
             data-cy="header-notification-counter"
             className="absolute right-0 bottom-0 h-5 w-5 rounded-full bg-brand shadow-sm"
@@ -371,8 +373,8 @@ export function HeaderExploreNavigationButtons({
     <Container className={cn('hidden min-w-0 flex-1 flex-row items-center justify-end gap-3 lg:flex', className)}>
       {showSearch && <SearchInput />}
       {getNavigationItems().map((item) => {
-        // Core explore routes and the social host navigate freely; Settings and Messages require an account.
-        const requiresAuth = !item.external && !isCoreExploreRoute(item.href);
+        // Messages need a Shop session. The social App owns access to its settings.
+        const requiresAuth = item.href === APP_ROUTES.MESSAGES;
         return (
           <NavigationButton
             key={item.href}

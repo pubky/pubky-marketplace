@@ -13,6 +13,10 @@ import { CONTENT, REACH, SORT } from '@/stores/home/home.types';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { UserController } from './user';
 
+vi.mock('@/services/homeserver/social-writes', () => ({
+  SocialWriteService: { requireEpoch: vi.fn(async () => 'legacy'), getEpoch: vi.fn(async () => 'legacy') },
+}));
+
 vi.mock('@/stores/home/home.store', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/stores/home/home.store')>();
   const useHomeStoreMock = Object.assign(vi.fn(), {
@@ -369,6 +373,7 @@ describe('UserController', () => {
       expect(toSpy).toHaveBeenCalledWith({ follower, followee });
       expect(mockToJson).toHaveBeenCalled();
       expect(followSpy).toHaveBeenCalledWith({
+        assertCurrent: expect.any(Function),
         eventType: HttpMethod.PUT,
         followUrl: mockMeta.url,
         followJson: mockFollowJson,
@@ -376,6 +381,22 @@ describe('UserController', () => {
         followee,
         activeStreamId: null,
       });
+    });
+
+    it('stops a manual follow if the account changes during its epoch lookup', async () => {
+      const { endAuthScope } = await import('@/controllers/auth/auth-scope');
+      const lookup = Promise.withResolvers<Awaited<ReturnType<typeof UserApplication.prepareFollow>>>();
+      vi.spyOn(UserApplication, 'prepareFollow').mockReturnValueOnce(lookup.promise);
+      const write = vi.spyOn(UserApplication, 'commitFollow');
+      const pending = UserController.commitFollow(HttpMethod.PUT, {
+        follower: TEST_PUBKY.USER_1,
+        followee: TEST_PUBKY.USER_2,
+      });
+      endAuthScope();
+      const cancelled = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+      lookup.resolve({ followUrl: 'pubky://former-user/pub/social/v1/follows/other.json', followJson: {} });
+      await cancelled;
+      expect(write).not.toHaveBeenCalled();
     });
 
     it('should support DELETE action and delegate correctly', async () => {
@@ -400,6 +421,7 @@ describe('UserController', () => {
       await UserController.commitFollow(HttpMethod.DELETE, { follower, followee });
 
       expect(followSpy).toHaveBeenCalledWith({
+        assertCurrent: expect.any(Function),
         eventType: HttpMethod.DELETE,
         followUrl: mockMeta.url,
         followJson: mockFollowJson,
@@ -473,6 +495,7 @@ describe('UserController', () => {
       await UserController.commitFollow(HttpMethod.PUT, { follower, followee });
 
       expect(followSpy).toHaveBeenCalledWith({
+        assertCurrent: expect.any(Function),
         eventType: HttpMethod.PUT,
         followUrl: mockMeta.url,
         followJson: mockFollowJson,

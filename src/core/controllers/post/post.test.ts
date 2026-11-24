@@ -42,8 +42,9 @@ vi.mock('@/application/file/file', () => ({
 }));
 
 // Mock TagApplication
-vi.mock('@/application/tag/tag', () => ({
+vi.mock('@/application/tag/tag', async () => ({
   TagApplication: {
+    prepareTag: (await import('@/pipes/tag/tag.normalizer')).TagNormalizer.from,
     create: vi.fn(),
     commitCreate: vi.fn().mockResolvedValue(undefined),
   },
@@ -116,8 +117,6 @@ vi.mock('pubky-app-specs', () => ({
     ) {}
   },
   postUriBuilder: (authorId: string, postId: string) => `pubky://${authorId}/pub/pubky.app/posts/${postId}`,
-  listingUriBuilder: (sellerId: string, listingId: string) =>
-    `pubky://${sellerId}/pub/pubky.app/marketplace/v1/listings/${listingId}`,
 }));
 
 // Test data
@@ -827,76 +826,6 @@ describe('PostController', () => {
             name: 'Saved posts',
             description: '',
             items: [],
-            layout: COLLECTION_LAYOUT.GRID,
-          }),
-          currentUserPubky: testData.authorPubky,
-        });
-      } finally {
-        cleanupAuthUser();
-      }
-    });
-
-    it('adds a marketplace listing URI when itemKind is listing', async () => {
-      setupAuthUser(testData.authorPubky);
-      const compositeListingId = buildCompositeId({ pubky: 'seller_pubky_value' as Pubky, id: '0034A0X7NJ52A' });
-      const listingUri = 'pubky://seller_pubky_value/pub/pubky.app/marketplace/v1/listings/0034A0X7NJ52A';
-      vi.spyOn(PostApplication, 'getDetails').mockResolvedValue(createCollectionDetails());
-      const toEditSpy = vi.spyOn(PostNormalizer, 'toEdit').mockResolvedValue({
-        post: { toJson: () => ({}) },
-        meta: { url: 'pubky://author/pub/pubky.app/posts/collection123' },
-      } as never);
-      vi.spyOn(PostApplication, 'commitEdit').mockResolvedValue(undefined);
-
-      try {
-        const { PostController } = await import('./post');
-        await PostController.commitUpdateCollectionItem({
-          collectionId: collectionPostId,
-          postId: compositeListingId,
-          shouldAdd: true,
-          itemKind: 'listing',
-        });
-
-        expect(toEditSpy).toHaveBeenCalledWith({
-          compositePostId: collectionPostId,
-          content: JSON.stringify({
-            name: 'Saved posts',
-            description: '',
-            items: [listingUri],
-            layout: COLLECTION_LAYOUT.GRID,
-          }),
-          currentUserPubky: testData.authorPubky,
-        });
-      } finally {
-        cleanupAuthUser();
-      }
-    });
-
-    it('removes a marketplace listing URI when itemKind is listing', async () => {
-      setupAuthUser(testData.authorPubky);
-      const compositeListingId = buildCompositeId({ pubky: 'seller_pubky_value' as Pubky, id: '0034A0X7NJ52A' });
-      const listingUri = 'pubky://seller_pubky_value/pub/pubky.app/marketplace/v1/listings/0034A0X7NJ52A';
-      vi.spyOn(PostApplication, 'getDetails').mockResolvedValue(createCollectionDetails([listingUri, targetPostUri]));
-      const toEditSpy = vi.spyOn(PostNormalizer, 'toEdit').mockResolvedValue({
-        post: { toJson: () => ({}) },
-        meta: { url: 'pubky://author/pub/pubky.app/posts/collection123' },
-      } as never);
-      vi.spyOn(PostApplication, 'commitEdit').mockResolvedValue(undefined);
-
-      try {
-        const { PostController } = await import('./post');
-        await PostController.commitUpdateCollectionItem({
-          collectionId: collectionPostId,
-          postId: compositeListingId,
-          shouldAdd: false,
-          itemKind: 'listing',
-        });
-
-        expect(toEditSpy).toHaveBeenCalledWith({
-          compositePostId: collectionPostId,
-          content: JSON.stringify({
-            name: 'Saved posts',
-            description: '',
-            items: [targetPostUri],
             layout: COLLECTION_LAYOUT.GRID,
           }),
           currentUserPubky: testData.authorPubky,

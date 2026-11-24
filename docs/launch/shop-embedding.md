@@ -80,7 +80,7 @@ Route `/shop` and `/shop/*` to **App**. Route `/shop-embed` and `/shop-embed/*` 
 - **Cookies.** The Shop's bridge cookies, `__Host-shop-bff-session` and `__Host-shop-marketplace-grant`, use `Secure`, `HttpOnly`, `SameSite=Strict` and `Path=/`. On `pubky.app` they are sent to App routes too; reserve those names for Shop. App asks the mounted Shop BFF to clear them at logout.
 - **Entry.** App `/shop` opens `/shop-embed/marketplace` in its iframe. The Shop root redirect stays within its configured mount.
 - **Grant cleanup.** The repository schedules no jobs. Configure an external scheduler to call `GET /shop-embed/api/marketplace/grant-cleanup` every minute with `Authorization: Bearer <CRON_SECRET>`, through a route that reaches the Shop BFF. Verify HTTP 200 and `{"ok":true}`; account for any staging edge authentication separately.
-- **Socials.** Leave `NEXT_PUBLIC_SOCIAL_HOST` unset in the embedded build. With it set, `/shop-embed/home` and the other social routes answer a 307 to the App and would load the App inside the frame.
+- **Social links.** The `/shop-embed` build uses the App at the root of the same origin by default. Set `NEXT_PUBLIC_SOCIAL_HOST` for a different social origin. Social links leave the iframe, including old `/shop-embed/home`, profile, collection and post URLs. Market pages, chat, account completion and Shop settings stay in the frame.
 
 The Shop exposes no manifest and registers no service worker under a base path (see [Service worker](#service-worker)), so the App's manifest and worker are the only ones on the origin.
 

@@ -2,9 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { getMarketplaceListingRoute, getMarketplaceShopRoute } from '@/app/routes';
 import { TagKind } from '@/application/tag/tag.types';
+import { getSocialHostUrl } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { TagController } from '@/controllers/tag/tag';
+import { normalizeLegacyTagLabel, normalizeSocialTagLabel } from '@/hooks/useTagInput/useTagInput.utils';
+import { AppError } from '@/libs/error/error';
 import type { TagWithAvatars } from '@/molecules/TaggedItem/TaggedItem.types';
 import { transformTagsForViewer } from '@/molecules/TaggedItem/TaggedItem.utils';
 import { toast } from '@/molecules/Toaster/toast';
@@ -16,6 +20,8 @@ export type MarketplaceTagTarget =
 
 export interface UseMarketplaceTagsResult {
   tags: TagWithAvatars[];
+  socialHandoffUrl?: string;
+  normalizeLabel: (label: string) => string;
   handleTagAdd: (label: string) => Promise<{ success: boolean; error?: string }>;
   handleTagToggle: (tag: { label: string; relationship?: boolean }) => Promise<void>;
 }
@@ -24,31 +30,79 @@ function targetTaggedId(target: MarketplaceTagTarget): string {
   return target.kind === TagKind.LISTING ? `${target.sellerPubky}:${target.listingId}` : target.ownerPubky;
 }
 
-/**
- * Community tags for a marketplace target (listing or shop), reusing the same
- * local-first tag flow posts use:
- *
- * - Writes go through `TagController.commitCreate/commitDelete` — real
- *   `PubkyAppTag` records on the tagger's homeserver targeting the canonical
- *   listing/shop URI, with local write-through and rollback on failure.
- * - Reads come from the local `marketplace_tags` cache via `useLiveQuery`
- *   (the viewer's own tags render immediately), plus one fetch from the
- *   marketplace Nexus tag endpoint. Until that Nexus deploys tag aggregation
- *   the endpoint answers 404 and the fetch honestly yields nothing — no
- *   fabricated aggregates.
- */
+function socialListingOrShopUrl(target: MarketplaceTagTarget) {
+  const path =
+    target.kind === TagKind.LISTING
+      ? getMarketplaceListingRoute(target.sellerPubky, target.listingId)
+      : getMarketplaceShopRoute(target.ownerPubky);
+  return getSocialHostUrl(`/shop${path}`);
+}
+
+function showWriteError(error: unknown, fallback: string, target: MarketplaceTagTarget) {
+  if (error instanceof AppError && error.operation === 'socialWrite') {
+    toast({
+      variant: 'info',
+      description: error.message,
+      action: {
+        label: 'Open Pubky App',
+        altText: 'Open this item in Pubky App',
+        onClick: () => window.open(socialListingOrShopUrl(target), '_blank', 'noopener,noreferrer'),
+      },
+    });
+    return;
+  }
+  toast({ variant: 'error', description: fallback });
+}
+
+/** Community tags on the canonical listing or shop URI, with optimistic local writes. */
 export function useMarketplaceTags(target: MarketplaceTagTarget | null): UseMarketplaceTagsResult {
   const viewerId = useAuthStore((state) => state.currentUserPubky);
+  const session = useAuthStore((state) => state.session);
+  const sessionOwner = useAuthStore((state) => state.sessionOwner);
+  const [access, setAccess] = useState<{
+    owner: string;
+    session: typeof session;
+    sessionOwner: typeof sessionOwner;
+    epoch: 'legacy' | 'v1' | null;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!viewerId || !session) return;
+    let active = true;
+    void TagController.getWriteEpoch(viewerId).then(
+      (epoch) => {
+        if (active) setAccess({ owner: viewerId, session, sessionOwner, epoch });
+      },
+      () => {
+        if (active) setAccess(null);
+      }, // A transient read can be retried on the next tag action.
+    );
+    return () => {
+      active = false;
+    };
+  }, [viewerId, session, sessionOwner]);
+  const epoch =
+    access?.owner === viewerId && access?.session === session && access?.sessionOwner === sessionOwner
+      ? access?.epoch
+      : undefined;
+  const normalizeLabel = epoch === 'legacy' ? normalizeLegacyTagLabel : normalizeSocialTagLabel;
+  const socialHandoffUrl =
+    epoch === null && target
+      ? sessionOwner === 'host'
+        ? getSocialHostUrl('/')
+        : socialListingOrShopUrl(target)
+      : undefined;
   const [hasFetched, setHasFetched] = useState(false);
   const targetKey = target ? `${target.kind}:${targetTaggedId(target)}` : null;
+  const fetchKey = JSON.stringify([targetKey, viewerId]);
   const prevTargetKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (prevTargetKeyRef.current !== targetKey) {
-      prevTargetKeyRef.current = targetKey;
+    if (prevTargetKeyRef.current !== fetchKey) {
+      prevTargetKeyRef.current = fetchKey;
       setHasFetched(false);
     }
-  }, [targetKey]);
+  }, [fetchKey]);
 
   const localTags = useLiveQuery(
     async () => {
@@ -98,7 +152,7 @@ export function useMarketplaceTags(target: MarketplaceTagTarget | null): UseMark
       if (!target) return { success: false, error: 'Tag target is required' };
       if (!viewerId) return { success: false, error: 'You must be logged in to add tags' };
 
-      const existingTag = (localTags ?? []).find((t) => t.label.toLowerCase() === label.toLowerCase());
+      const existingTag = (localTags ?? []).find((t) => t.label === normalizeLabel(label));
       if (existingTag?.relationship || existingTag?.taggers?.includes(viewerId)) {
         return { success: false, error: 'You have already added this tag' };
       }
@@ -112,13 +166,13 @@ export function useMarketplaceTags(target: MarketplaceTagTarget | null): UseMark
         });
         toast({ title: `Tag added: ${label}` });
         return { success: true };
-      } catch {
-        toast({ variant: 'error', description: `Could not add tag: ${label}` });
+      } catch (error) {
+        showWriteError(error, `Could not add tag: ${label}`, target);
         return { success: false, error: 'Failed to add tag' };
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- targetKey encodes every field of target
-    [targetKey, viewerId, localTags],
+    [targetKey, viewerId, localTags, normalizeLabel],
   );
 
   const handleTagToggle = useCallback(
@@ -147,16 +201,17 @@ export function useMarketplaceTags(target: MarketplaceTagTarget | null): UseMark
           });
           toast({ title: `Tag added: ${tag.label}` });
         }
-      } catch {
-        toast({
-          variant: 'error',
-          description: userIsTagger ? `Could not remove tag: ${tag.label}` : `Could not add tag: ${tag.label}`,
-        });
+      } catch (error) {
+        showWriteError(
+          error,
+          userIsTagger ? `Could not remove tag: ${tag.label}` : `Could not add tag: ${tag.label}`,
+          target,
+        );
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- targetKey encodes every field of target
     [targetKey, viewerId, localTags],
   );
 
-  return { tags, handleTagAdd, handleTagToggle };
+  return { tags, socialHandoffUrl, normalizeLabel, handleTagAdd, handleTagToggle };
 }

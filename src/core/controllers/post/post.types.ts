@@ -29,19 +29,11 @@ export interface TCreateCollectionParams {
   coverImage?: File | string | null;
 }
 
-/** What a collection item URI points at. Defaults to `post` when omitted. */
-export type CollectionItemKind = 'post' | 'listing';
-
 export interface TUpdateCollectionItemParams {
   collectionId: string;
-  /**
-   * Composite id of the item: `authorId:postId` for posts,
-   * `sellerPubky:listingId` for marketplace listings.
-   */
+  /** Composite post ID (authorId:postId). */
   postId: string;
   shouldAdd: boolean;
-  /** Kind of the item — determines which canonical URI builder is used. */
-  itemKind?: CollectionItemKind;
 }
 
 export interface TReorderCollectionItemsParams {

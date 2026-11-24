@@ -155,6 +155,8 @@ export type NexusUserRelationship = {
 
 /** Tag with associated taggers information */
 export type NexusTag = {
+  /** Viewer-owned file reported by a v1 resource tag view. */
+  tag_uri?: string | null;
   label: string;
   taggers: Pubky[];
   taggers_count: number;

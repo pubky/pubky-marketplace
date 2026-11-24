@@ -13,7 +13,6 @@ mean exactly that.
     index with a local-first Dexie cache
   - Auction browsing with seller terms on cards (starting bid, buy-now, end
     date) and lazy live-bid reads once a card scrolls into view
-  - Hot-marketplace modules and a followed-sellers shelf
 - **Search and filters**
   - Text search; filters for category, price, condition, sale format, and
     location
@@ -24,8 +23,8 @@ mean exactly that.
     lists, size charts, and controlled vocabularies
   - Attributes render on catalog cards and drive browse facets
 - **SEO and sharing**
-  - Open Graph / Twitter preview images and descriptions for listings,
-    shops, profiles, and posts (Satori-rendered, serverless-traced fonts)
+  - Open Graph / Twitter preview images and descriptions for listings and
+    shops (Satori-rendered, serverless-traced fonts)
 
 ## 2. Selling
 
@@ -270,10 +269,9 @@ stack (see the proof ledger). Card payments are paused in the shop. USDT
 
 - **Community tags** on listings (Nexus-indexed, separate from seller
   keywords)
-- **Collections**: save listings into post collections; collection pages
-  hydrate listing cards through the commerce read path
+- **Share a listing** opens the Pubky App composer with its link. Existing collection links open in Pubky App.
 - **Commerce activity** renamed **Transaction history** in the UI
-- **Shop follows** and followed-seller discovery
+- **Shop follows** use the writable social version for the current account.
 - **Watchlist / favorites**
   - Watch toggles on cards and listing pages (bell for auctions, heart for
     fixed price)

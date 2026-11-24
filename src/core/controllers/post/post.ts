@@ -1,8 +1,9 @@
-import { listingUriBuilder, postUriBuilder } from 'pubky-app-specs';
+import { postUriBuilder } from 'pubky-app-specs';
 import { FileApplication } from '@/application/file/file';
 import type { EnrichedPostDetails } from '@/application/moderation/moderation.types';
 import { PostApplication } from '@/application/post/post';
 import type { TGetDetailsByIdsParams, TGetOrFetchPostParams } from '@/application/post/post.types';
+import { TagApplication } from '@/application/tag/tag';
 import { TagKind, type TCreateTagInput } from '@/application/tag/tag.types';
 import type {
   TCreateCollectionParams,
@@ -36,7 +37,6 @@ import { CollectionPostContent } from '@/pipes/post/post.collection';
 import { inferPostKindForCreate, resolveTagTargetCompositeIdForPostCreate } from '@/pipes/post/post.kind';
 import { PostNormalizer } from '@/pipes/post/post.normalizer';
 import { PostValidators } from '@/pipes/post/post.validators';
-import { TagNormalizer } from '@/pipes/tag/tag.normalizer';
 import type { NexusTag, NexusTaggers } from '@/services/nexus/nexus.types';
 import type { TCompositeId } from '@/services/nexus/post/post.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -226,7 +226,7 @@ export class PostController {
           taggedKind: TagKind.POST,
         };
       });
-      tagList = this.normalizeTags({ tags: tagsMetadata });
+      tagList = await this.normalizeTags({ tags: tagsMetadata });
     }
 
     const compositePostId = buildCompositeId({ pubky: authorId, id: postId });
@@ -426,7 +426,6 @@ export class PostController {
     collectionId,
     postId,
     shouldAdd,
-    itemKind = 'post',
   }: TUpdateCollectionItemParams): Promise<void> {
     const currentUserPubky = useAuthStore.getState().selectCurrentUserPubky();
     const collection = await PostApplication.getDetails({ compositeId: collectionId });
@@ -451,8 +450,7 @@ export class PostController {
     }
 
     const { pubky: itemOwnerId, id: rawItemId } = parseCompositeId(postId);
-    const itemUri =
-      itemKind === 'listing' ? listingUriBuilder(itemOwnerId, rawItemId) : postUriBuilder(itemOwnerId, rawItemId);
+    const itemUri = postUriBuilder(itemOwnerId, rawItemId);
     const nextContent = shouldAdd
       ? CollectionPostContent.addItem(currentContent, itemUri)
       : CollectionPostContent.removeItem(currentContent, itemUri);
@@ -565,9 +563,7 @@ export class PostController {
    * @param params.tags - Tags to normalize
    * @returns Normalized tags
    */
-  private static normalizeTags({ tags }: TNormalizeTagsParams): TCreateTagInput[] {
-    return tags.map((param: TTagEventParams) => {
-      return TagNormalizer.from(param);
-    });
+  private static async normalizeTags({ tags }: TNormalizeTagsParams): Promise<TCreateTagInput[]> {
+    return Promise.all(tags.map((param: TTagEventParams) => TagApplication.prepareTag(param)));
   }
 }

@@ -4,7 +4,6 @@ import { AuthApplication } from '@/application/auth/auth';
 import { BootstrapApplication } from '@/application/bootstrap/bootstrap';
 import { SettingsApplication } from '@/application/settings/settings';
 import { SHOP_GRANT_CLIENT_ID } from '@/config/app';
-import { NotificationNormalizer } from '@/pipes/notification/notification.normalizer';
 import { clearPersistedAuthIdentity } from '@/stores/auth/auth.persisted';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { authInitialState } from '@/stores/auth/auth.types';
@@ -52,10 +51,7 @@ export function resetGrantTest() {
   vi.spyOn(AuthApplication, 'userIsSignedUp').mockResolvedValue(false);
   vi.spyOn(BootstrapApplication, 'cancelModerationFollow').mockImplementation(() => {});
   vi.spyOn(SettingsApplication, 'initializeSettings').mockResolvedValue(null);
-  vi.spyOn(NotificationNormalizer, 'to').mockReturnValue(
-    asOpaque({ meta: { url: 'pubky://alice/pub/pubky.app/last_read' } }),
-  );
-  vi.spyOn(BootstrapApplication, 'initialize').mockResolvedValue(asOpaque({}));
+  vi.spyOn(BootstrapApplication, 'initialize').mockResolvedValue(undefined);
 }
 
 /**

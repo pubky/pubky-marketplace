@@ -45,7 +45,7 @@ export class LocalMarketplaceTagService {
    * @param params.taggerId - Pubky of the user adding the tag
    * @returns true if local state changed; false if the tagger already had this tag
    */
-  static async create({ taggedId, label, taggerId }: TLocalTagParams): Promise<boolean> {
+  static async create({ taggedId, label, taggerId, tagUri }: TLocalTagParams & { tagUri?: string }): Promise<boolean> {
     let mutated = false;
     try {
       mutated = await db.transaction('rw', [MarketplaceTagsModel.table], async () => {
@@ -54,6 +54,8 @@ export class LocalMarketplaceTagService {
         if (status === null) {
           return false;
         }
+        const changed = model.findByLabel(label);
+        if (changed && tagUri) changed.tag_uri = tagUri;
         await MarketplaceTagsModel.upsert({ id: taggedId, tags: model.tags as NexusTag[] });
         return true;
       });
@@ -82,20 +84,15 @@ export class LocalMarketplaceTagService {
    * @returns true if a tag was removed, false if nothing to delete (idempotent)
    */
   static async delete({ taggedId, label, taggerId }: TLocalTagParams): Promise<boolean> {
-    const tagsData = await MarketplaceTagsModel.findById(taggedId);
-    if (!tagsData) {
-      return false;
-    }
-
-    const model = new MarketplaceTagsModel(tagsData);
-    const status = model.removeTagger(label, taggerId);
-    if (status === null) {
-      return false;
-    }
-
+    let deleted: boolean;
     try {
-      await db.transaction('rw', [MarketplaceTagsModel.table], async () => {
+      deleted = await db.transaction('rw', [MarketplaceTagsModel.table], async () => {
+        const tagsData = await MarketplaceTagsModel.findById(taggedId);
+        if (!tagsData) return false;
+        const model = new MarketplaceTagsModel(tagsData);
+        if (model.removeTagger(label, taggerId) === null) return false;
         await MarketplaceTagsModel.upsert({ id: taggedId, tags: model.tags as NexusTag[] });
+        return true;
       });
     } catch (error) {
       throw Err.database(DatabaseErrorCode.WRITE_FAILED, 'Failed to delete marketplace tag', {
@@ -106,8 +103,20 @@ export class LocalMarketplaceTagService {
       });
     }
 
-    ViewerTagMarkerStorage.set({ pubky: taggerId, postId: taggedId, label, op: HttpMethod.DELETE });
-    return true;
+    if (deleted) ViewerTagMarkerStorage.set({ pubky: taggerId, postId: taggedId, label, op: HttpMethod.DELETE });
+    return deleted;
+  }
+
+  /** A resource tag can have a migrated id. Use only this viewer's own social tag file. */
+  static async getViewerTagUrl(rowId: string, label: string, viewer: Pubky): Promise<string | undefined> {
+    const tag = (await this.read(rowId)).find((tag) => tag.label === label && tag.relationship);
+    if (!tag?.tag_uri) return;
+    const owner = `pubky://${viewer}/pub/`;
+    if (!tag.tag_uri.startsWith(owner)) return;
+    const path = tag.tag_uri.slice(owner.length);
+    if (/^(?:social\/v1\/tags\/[0-9A-HJKMNP-TV-Z]{26}\.json|pubky\.app\/tags\/[0-9A-HJKMNP-TV-Z]{26})$/.test(path)) {
+      return tag.tag_uri;
+    }
   }
 
   /**
@@ -129,7 +138,8 @@ export class LocalMarketplaceTagService {
    *   marker disagrees with Nexus about the viewer's membership.
    * - Viewer relationship / viewer taggers entry: marker overrides Nexus.
    * - Other taggers: union of existing + Nexus (the Nexus sample is truncated).
-   * - Labels present locally but absent from this response: left alone.
+   * - A complete canonical result supersedes stale labels. Pending local adds survive index lag.
+   *   Partial pages and legacy projections merge with the existing labels.
    *
    * @param params.taggedId - Kind-prefixed target row id
    * @param params.tags - Tags from the Nexus response
@@ -139,10 +149,12 @@ export class LocalMarketplaceTagService {
     taggedId,
     tags,
     viewerId,
+    clearMissing = false,
   }: {
     taggedId: string;
     tags: NexusTag[];
     viewerId: Pubky | null;
+    clearMissing?: boolean;
   }): Promise<void> {
     ViewerTagMarkerStorage.sweepExpired();
 
@@ -153,11 +165,19 @@ export class LocalMarketplaceTagService {
 
         const tagMap = new Map<string, NexusTag>();
         for (const tag of existingTags) {
-          tagMap.set(tag.label.toLowerCase(), tag);
+          if (clearMissing) {
+            const marker =
+              viewerId && ViewerTagMarkerStorage.get({ pubky: viewerId, postId: taggedId, label: tag.label });
+            if (!marker || marker.op !== HttpMethod.PUT) continue;
+            // Only this viewer's pending addition is known to survive the index change.
+            tagMap.set(tag.label, { ...tag, taggers: [viewerId], taggers_count: 1, relationship: true });
+            continue;
+          }
+          tagMap.set(tag.label, tag);
         }
 
         for (const newTag of tags) {
-          const key = newTag.label.toLowerCase();
+          const key = newTag.label;
           const existingTag = tagMap.get(key);
 
           const marker = viewerId
@@ -179,8 +199,13 @@ export class LocalMarketplaceTagService {
             taggers_count = viewerIsTagger ? taggers_count + 1 : Math.max(0, taggers_count - 1);
           }
 
+          if (marker?.op === HttpMethod.DELETE && taggers_count === 0) {
+            tagMap.delete(key);
+            continue;
+          }
           tagMap.set(key, {
             ...newTag,
+            ...(marker?.op === HttpMethod.PUT && existingTag?.tag_uri ? { tag_uri: existingTag.tag_uri } : {}),
             taggers_count,
             taggers: mergedTaggers,
             relationship: viewerIsTagger,

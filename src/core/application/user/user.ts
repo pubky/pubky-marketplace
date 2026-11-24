@@ -7,9 +7,11 @@ import type {
 import { getModerationId } from '@/config/moderation';
 import type { TReadProfileParams } from '@/controllers/profile/profile.types';
 import type { TPubkyListParams } from '@/controllers/user/user.type';
+import type { TFollowParams } from '@/controllers/user/user.type';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
+import { isAppError, isNotFound } from '@/libs/error/error.utils';
 import { HttpMethod } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
 import { stripPubkyPrefix } from '@/libs/utils/utils';
@@ -18,6 +20,8 @@ import type { UserCountsModel } from '@/models/user/counts/userCounts';
 import type { UserRelationshipsModelSchema } from '@/models/user/relationships/userRelationships.schema';
 import { FollowNormalizer } from '@/pipes/follow/follow.normalizer';
 import { HomeserverService } from '@/services/homeserver/homeserver';
+import { SocialProfileService } from '@/services/homeserver/social-profile';
+import { SocialWriteService } from '@/services/homeserver/social-writes';
 import { LocalFollowService } from '@/services/local/follow/follow';
 import { LocalProfileService } from '@/services/local/profile/profile';
 import { LocalStreamUsersService } from '@/services/local/stream/users/users';
@@ -204,6 +208,10 @@ export class UserApplication {
     return await NexusUserService.tags(params);
   }
 
+  static async prepareFollow(params: TFollowParams) {
+    return FollowNormalizer.record(params, await SocialWriteService.requireEpoch(params.follower, 'follows'));
+  }
+
   /**
    * Handles following or unfollowing a user.
    * Performs local database operations and syncs with the homeserver.
@@ -213,12 +221,16 @@ export class UserApplication {
     eventType,
     followUrl,
     followJson,
+    followBody,
+    deleteUrls,
     follower,
     followee,
     activeStreamId,
     signal,
+    assertCurrent,
   }: TUserApplicationFollowParams) {
     if (signal?.aborted) return;
+    assertCurrent?.();
 
     const moderationId = eventType === HttpMethod.DELETE ? getModerationId() : undefined;
     if (moderationId && followee === moderationId) {
@@ -228,16 +240,60 @@ export class UserApplication {
     }
 
     if (signal?.aborted) return;
+    assertCurrent?.();
 
+    const local = { follower, followee, activeStreamId };
+    const v1 = followBody !== undefined;
+    const wasFollowing = v1
+      ? Boolean((await LocalUserService.readRelationships({ userId: followee }))?.following)
+      : false;
+    if (signal?.aborted) return;
+    assertCurrent?.();
     if (eventType === HttpMethod.PUT) {
-      await LocalFollowService.create({ follower, followee, activeStreamId });
+      await LocalFollowService.create(local);
     } else if (eventType === HttpMethod.DELETE) {
-      await LocalFollowService.delete({ follower, followee, activeStreamId });
+      await LocalFollowService.delete(local);
     }
 
     if (signal?.aborted) return;
+    assertCurrent?.();
 
-    await HomeserverService.request({ method: eventType, url: followUrl, bodyJson: followJson });
+    try {
+      if (eventType === HttpMethod.PUT && followBody) {
+        await HomeserverService.putBlob({ url: followUrl, blob: followBody });
+      } else if (eventType === HttpMethod.DELETE && deleteUrls) {
+        for (const url of deleteUrls) {
+          if (signal?.aborted) return;
+          assertCurrent?.();
+          if (
+            url.startsWith(`pubky://${follower}/pub/pubky.app/follows/`) &&
+            !HomeserverService.canCurrentUserSessionWrite(follower, '/pub/pubky.app/follows/')
+          )
+            continue;
+          try {
+            await HomeserverService.request({ method: HttpMethod.DELETE, url });
+          } catch (error) {
+            if (!isAppError(error) || !isNotFound(error)) throw error;
+          }
+        }
+      } else {
+        await HomeserverService.request({ method: eventType, url: followUrl, bodyJson: followJson });
+      }
+    } catch (error) {
+      assertCurrent?.();
+      // Only compensate an actual local transition for this account. A retried delete may have
+      // removed the legacy copy already; the v1 relationship remains authoritative.
+      if (
+        v1 &&
+        !signal?.aborted &&
+        SocialProfileService.canWriteV1(follower) &&
+        wasFollowing !== (eventType === HttpMethod.PUT)
+      ) {
+        if (wasFollowing) await LocalFollowService.create(local);
+        else await LocalFollowService.delete(local);
+      }
+      throw error;
+    }
   }
 
   /**
@@ -256,24 +312,24 @@ export class UserApplication {
     const markerExists = await HomeserverService.exists(markerUrl);
     if (signal?.aborted || markerExists) return;
 
-    const { meta, follow } = FollowNormalizer.to({ follower, followee: moderationId });
-    const expectedFollowUrl = followUriBuilder(follower, moderationId);
-    if (meta.url !== expectedFollowUrl) {
+    const epoch = await SocialWriteService.getEpoch(follower, 'follows');
+    if (!epoch || signal?.aborted) return;
+    const record = FollowNormalizer.record({ follower, followee: moderationId }, epoch);
+    if (epoch === 'legacy' && record.followUrl !== followUriBuilder(follower, moderationId)) {
       throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Follow resource belongs to an unexpected account', {
         service: ErrorService.PubkyAppSpecs,
         operation: 'ensureModerationFollow',
-        context: { follower, moderationId, followUrl: meta.url },
+        context: { follower, moderationId, followUrl: record.followUrl },
       });
     }
 
-    const followExists = await HomeserverService.exists(meta.url);
+    const followExists = await HomeserverService.exists(record.followUrl);
     if (signal?.aborted) return;
 
     if (!followExists) {
       await this.commitFollow({
         eventType: HttpMethod.PUT,
-        followUrl: meta.url,
-        followJson: follow.toJson(),
+        ...record,
         follower,
         followee: moderationId,
         activeStreamId: undefined,
@@ -295,7 +351,9 @@ export class UserApplication {
     const followee = stripPubkyPrefix(seller) as Pubky;
     if (follower === followee || signal?.aborted) return;
 
-    const sessionKey = `${follower}:${followee}`;
+    const epoch = await SocialWriteService.getEpoch(follower, 'follows');
+    if (!epoch || signal?.aborted) return;
+    const sessionKey = `${follower}:${followee}:${epoch}`;
     const forget = (entry: { attempt: Promise<void> }) => {
       if (this.sellerAutoFollowSession.get(sessionKey) === entry) this.sellerAutoFollowSession.delete(sessionKey);
     };
@@ -315,7 +373,7 @@ export class UserApplication {
       return await this.ensureSellerFollow({ follower, seller: followee, signal });
     }
 
-    const entry = { attempt: this.runEnsureSellerFollow({ follower, seller: followee, signal }), signal };
+    const entry = { attempt: this.runEnsureSellerFollow({ follower, seller: followee, signal }, epoch), signal };
     this.sellerAutoFollowSession.set(sessionKey, entry);
     try {
       await entry.attempt;
@@ -335,19 +393,21 @@ export class UserApplication {
     });
   }
 
-  private static async runEnsureSellerFollow({ follower, seller, signal }: TEnsureSellerFollowParams): Promise<void> {
+  private static async runEnsureSellerFollow(
+    { follower, seller, signal }: TEnsureSellerFollowParams,
+    epoch: 'legacy' | 'v1',
+  ): Promise<void> {
     const markerExists = await HomeserverService.exists(this.sellerAutoFollowMarkerUrl(follower, seller));
     if (signal?.aborted || markerExists) return;
 
-    const { meta, follow } = FollowNormalizer.to({ follower, followee: seller });
-    const followExists = await HomeserverService.exists(meta.url);
+    const record = FollowNormalizer.record({ follower, followee: seller }, epoch);
+    const followExists = await HomeserverService.exists(record.followUrl);
     if (signal?.aborted) return;
 
     if (!followExists) {
       await this.commitFollow({
         eventType: HttpMethod.PUT,
-        followUrl: meta.url,
-        followJson: follow.toJson(),
+        ...record,
         follower,
         followee: seller,
         activeStreamId: null,

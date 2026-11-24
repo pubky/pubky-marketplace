@@ -87,7 +87,7 @@ type AppModules = {
   useAuthStore: typeof import('@/stores/auth/auth.store').useAuthStore;
   commerceConfig: typeof import('@/config/commerce');
   sdk: typeof import('@synonymdev/pubky');
-  specs: typeof import('pubky-app-specs');
+  specs: typeof import('pubky-market-specs');
   privEntryUrl: typeof import('@/libs/commerce/priv-envelope').privEntryUrl;
 };
 
@@ -120,7 +120,7 @@ async function loadModules(): Promise<AppModules> {
     import('@/stores/auth/auth.store'),
     import('@/config/commerce'),
     import('@synonymdev/pubky'),
-    import('pubky-app-specs'),
+    import('pubky-market-specs'),
     import('@/libs/commerce/priv-envelope'),
   ]);
   return {
@@ -345,14 +345,14 @@ async function withPatience<T>(
 async function publishSellerRecords(sellerPubky: string): Promise<string> {
   const { CommerceHomeserverService, specs } = modules;
   const nowIso = new Date().toISOString();
-  const builder = new specs.PubkySpecsBuilder(sellerPubky);
+  const { PubkySpecsBuilder } = await import('pubky-app-specs');
 
   // The real profile record every Pubky user has: Nexus only indexes records
   // whose author exists as a user. Idempotent PUT (re-runs overwrite).
-  const profile = builder.createUser('Drops Live Proof Seller', null, null, null, null);
+  const profile = new PubkySpecsBuilder(sellerPubky).createUser('Drops Live Proof Seller', null, null, null, null);
   await CommerceHomeserverService.putJson(profile.meta.url, profile.user.toJson() as Record<string, unknown>);
 
-  const shop = builder.createShop({
+  const shop = specs.buildShop(sellerPubky, {
     schemaVersion: 1,
     recordType: 'shop',
     ownerPubky: sellerPubky,
@@ -368,7 +368,7 @@ async function publishSellerRecords(sellerPubky: string): Promise<string> {
   });
   await CommerceHomeserverService.putJson(shop.meta.url, shop.shop.toJson() as Record<string, unknown>);
 
-  const listing = builder.createListing({
+  const listing = specs.buildListing(sellerPubky, {
     schemaVersion: 1,
     recordType: 'listing',
     ownerPubky: sellerPubky,

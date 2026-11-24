@@ -110,7 +110,7 @@ async function loadModules() {
     import('@/database/franky/franky'),
     import('@/libs/commerce/priv-envelope'),
     import('@synonymdev/pubky'),
-    import('pubky-app-specs'),
+    import('pubky-market-specs'),
   ]);
   return {
     MarketplaceSessionService,
@@ -322,8 +322,7 @@ function listingBody(sellerPubky: string, nowIso: string): { record: never } {
 
 async function publishSellerRecords(sellerPubky: string): Promise<{ listingId: string }> {
   const nowIso = new Date().toISOString();
-  const builder = new m.specs.PubkySpecsBuilder(sellerPubky);
-  const shop = builder.createShop({
+  const shop = m.specs.buildShop(sellerPubky, {
     schemaVersion: 1,
     recordType: 'shop',
     ownerPubky: sellerPubky,
@@ -338,7 +337,7 @@ async function publishSellerRecords(sellerPubky: string): Promise<{ listingId: s
     vacationMode: false,
   });
   await m.CommerceHomeserverService.putJson(shop.meta.url, shop.shop.toJson() as Record<string, unknown>);
-  const listing = builder.createListing(listingBody(sellerPubky, nowIso).record);
+  const listing = m.specs.buildListing(sellerPubky, listingBody(sellerPubky, nowIso).record);
   await m.CommerceHomeserverService.putJson(listing.meta.url, listing.listing.toJson() as Record<string, unknown>);
   return { listingId: listing.meta.id as string };
 }
@@ -421,7 +420,7 @@ async function legacyReceiptRecord(ownerPubky: string, receiptId: string): Promi
     paidAt: claims.paidAt,
     receiptAttestation: attestation.jws,
   };
-  const built = new m.specs.PubkySpecsBuilder(ownerPubky).createMarketplaceOrderReceipt(body);
+  const built = m.specs.buildOrderReceipt(ownerPubky, body);
   const record = m.CommerceRecordNormalizer.orderReceiptRecord(built.order_receipt.toJson());
   if (claims.v === 2) record.settlementTotal = claims.settlementTotal;
   return { ...record };
@@ -537,7 +536,7 @@ async function cleanUp(
 /** A valid listing record body to end a listing whose record is already gone. */
 async function listingTemplate(sellerPubky: string): Promise<Record<string, unknown>> {
   const { record } = listingBody(sellerPubky, new Date().toISOString());
-  return new m.specs.PubkySpecsBuilder(sellerPubky).createListing(record).listing.toJson() as Record<string, unknown>;
+  return m.specs.buildListing(sellerPubky, record).listing.toJson() as Record<string, unknown>;
 }
 
 /** Types in place of values, keys sorted: what a wire fixture must share with the live body. */
@@ -620,8 +619,8 @@ describe('encrypted /priv — LIVE proof on the deployed staging stack', () => {
     const legacyActivitySeenAt = Number(legacyActivityUrl.slice(-13));
     const watchedSeller = m.sdk.Keypair.fromSecret(crypto.getRandomValues(new Uint8Array(32))).publicKey.z32();
     const nowIso = new Date().toISOString();
-    const legacyWatchlist = new m.specs.PubkySpecsBuilder(buyer.pubky)
-      .createWatchlist({
+    const legacyWatchlist = m.specs
+      .buildWatchlist(buyer.pubky, {
         schemaVersion: 1,
         recordType: 'watchlist',
         ownerPubky: buyer.pubky,

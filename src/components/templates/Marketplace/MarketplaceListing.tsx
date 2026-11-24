@@ -12,11 +12,12 @@ import {
   MapPin,
   Package,
   PlaneTakeoff,
+  Share2,
   ShieldCheck,
   ShoppingCart,
   Store,
 } from 'lucide-react';
-import { APP_ROUTES, getMarketplaceShopRoute, MARKETPLACE_ROUTES } from '@/app/routes';
+import { APP_ROUTES, getMarketplaceListingRoute, getMarketplaceShopRoute, MARKETPLACE_ROUTES } from '@/app/routes';
 import { TagKind } from '@/application/tag/tag.types';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
@@ -25,7 +26,9 @@ import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
+import { getShopBaseUrl } from '@/config/base-path';
 import { getCommerceAdapterMode, isDurableCommerceMode, isTransactionalCommerceMode } from '@/config/commerce';
+import { getSocialHostUrl } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useCommerceFavorite } from '@/hooks/useCommerceFavorite/useCommerceFavorite';
 import { useDefaultAddressCountry } from '@/hooks/useDefaultAddressCountry/useDefaultAddressCountry';
@@ -100,7 +103,6 @@ import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceCon
 import { MarketplaceDigitalDeliveryNotice } from '@/organisms/Marketplace/MarketplaceDigitalDeliveryNotice';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import { MarketplaceListingOwnerPanel } from '@/organisms/Marketplace/MarketplaceListingOwnerPanel';
-import { MarketplaceListingSavePicker } from '@/organisms/Marketplace/MarketplaceListingSavePicker';
 import { MarketplaceListingSpecifics } from '@/organisms/Marketplace/MarketplaceListingSpecifics';
 import { MarketplaceMediaGallery } from '@/organisms/Marketplace/MarketplaceMediaGallery';
 import { MarketplaceOfferDialog } from '@/organisms/Marketplace/MarketplaceOfferDialog';
@@ -692,7 +694,20 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                   <Heart className={favorite.isFavorite ? 'fill-brand text-brand' : ''} />
                 )}
               </Button>
-              <MarketplaceListingSavePicker sellerPubky={record.ownerPubky} listingId={record.listingId} />
+              <Button asChild size="icon" variant="secondary" className="size-10 rounded-full">
+                <a
+                  href={getSocialHostUrl(
+                    '/share?' +
+                      new URLSearchParams({
+                        url: getShopBaseUrl() + getMarketplaceListingRoute(record.ownerPubky, record.listingId),
+                      }),
+                  )}
+                  target="_top"
+                  aria-label="Share listing on Pubky"
+                >
+                  <Share2 />
+                </a>
+              </Button>
             </div>
             {adapterMode === 'unavailable' && (
               <Typography as="p" className="text-center text-sm text-muted-foreground">

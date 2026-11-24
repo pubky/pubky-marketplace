@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { APP_ROUTES, isDynamicPublicRoute, matchesAllowedRoute, PUBLIC_ROUTES } from '@/app/routes';
 import { Spinner } from '@/atoms/Spinner/Spinner';
 import { AuthController } from '@/controllers/auth/auth';
-import { MigrationController } from '@/controllers/migration/migration';
+import { CommerceController } from '@/controllers/commerce/commerce';
 import { useAuthStatus } from '@/hooks/useAuthStatus/useAuthStatus';
 import { AuthStatus } from '@/hooks/useAuthStatus/useAuthStatus.types';
 import { TimeoutErrorCode } from '@/libs/error/error.codes';
@@ -122,14 +122,15 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
       });
   }, [hasHydrated, session, sessionExport, grantSessionRecordId, isRestoringSession, hosted]);
 
-  // Post-migration re-sync: fetch critical homeserver data after DB recreation
+  // Recover the private Shop watchlist after DB recreation. Catalog and account views refresh on demand.
   // TODO: Consider using BroadcastChannel to notify other browser tabs when DB was recreated / resync completed
   useEffect(() => {
     if (!wasDbReset) return; // No need to resync if the DB was NOT reset
     if (!hasHydrated) return; // No need to resync if the app has NOT hydrated
     if (isMigrationResyncRunningRef.current) return; // No need to resync if the resync is ALREADY running
-    if (!currentUserPubky) {
-      // No need to resync if the user is NOT logged in
+    if (isRestoringSession || isLoading) return;
+    if (!currentUserPubky || !session) {
+      // Guests have no private watchlist to recover.
       useMigrationStore.getState().reset();
       return;
     }
@@ -154,7 +155,7 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
           );
         });
         // Unblock the app when either resync finishes or the timeout fires.
-        await Promise.race([MigrationController.resync(currentUserPubky), timeoutPromise]);
+        await Promise.race([CommerceController.syncWatchlist(), timeoutPromise]);
       } catch (error) {
         Logger.warn('Migration re-sync degraded', {
           error,
@@ -171,7 +172,7 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
     };
 
     runResync();
-  }, [wasDbReset, hasHydrated, currentUserPubky]);
+  }, [wasDbReset, hasHydrated, currentUserPubky, session, isRestoringSession, isLoading]);
 
   useEffect(() => {
     if (status !== AuthStatus.AUTHENTICATED) return;

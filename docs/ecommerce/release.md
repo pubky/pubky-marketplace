@@ -57,6 +57,14 @@ Then verify the paired production builds in a browser: restore/reload, two tabs,
 
 Follow [Shop embedding](../launch/shop-embedding.md) for the fixed `/shop-embed` build path, runtime environment, BFF schema/keys and coordinated deployment. The [grant session guide](../launch/grant-auth-session.md) records migration and compatibility limits, including the parallel Inbox/chat work.
 
+## Verify the Shop with the Social v1 App release
+
+Run these checks on the paired staging builds before promoting the Shop and the App.
+
+- Open a protected Shop page with a v0 account, a migrated account that still has its old profile, and an account with only a v1 profile. Check standalone sign-in, the App's embedded grant, reload and logout. The seller inventory page should open without asking any of these users to create a second profile.
+- From the embedded Shop, add and remove a tag on a listing with a migrated account. Verify the canonical listing URI, the result seen by another viewer, and seller follow/unfollow behavior. Check that a standalone Shop grant still opens inventory and orders.
+- Verify moderation with the deployment owners. After a v1 moderator restricts a test listing on staging, confirm the Market index reports the restriction and the service refuses checkout. The Market client reads community tags from the social Nexus once it serves v1. That read alone cannot verify the Market index's moderation decision.
+
 ## Day-to-day merges
 
 1. Branch from the current train branch (or from `master` if no train is open). Target the agreed train or `master`; use the actual PR base for review, never an assumed `dev` branch.

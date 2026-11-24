@@ -47,7 +47,7 @@ describe('PostNotFound', () => {
     render(<PostNotFound postId={VALID_COMPOSITE} />);
 
     await user.click(screen.getByRole('button', { name: 'Back to Feed' }));
-    expect(mockPush).toHaveBeenCalledWith(APP_ROUTES.HOME);
+    expect(mockPush).toHaveBeenCalledWith(APP_ROUTES.MARKETPLACE);
 
     await user.click(screen.getByRole('button', { name: 'View profile' }));
     expect(mockPush).toHaveBeenCalledWith(getProfileRoute(PROFILE_ROUTES.PROFILE, PUBKY_52_STAGING_FIXTURE));

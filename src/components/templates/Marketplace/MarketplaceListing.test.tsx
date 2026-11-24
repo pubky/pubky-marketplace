@@ -218,10 +218,6 @@ vi.mock('@/organisms/Marketplace/MarketplaceCommunityTags', () => ({
   MarketplaceCommunityTags: () => null,
 }));
 
-vi.mock('@/organisms/Marketplace/MarketplaceListingSavePicker', () => ({
-  MarketplaceListingSavePicker: () => null,
-}));
-
 vi.mock('@/organisms/Marketplace/MarketplaceMessageDialog', () => ({
   MarketplaceMessageDialog: () => <button type="button">Message seller</button>,
 }));
@@ -286,6 +282,17 @@ describe('MarketplaceListing', () => {
     render(<MarketplaceListing sellerPubky={listing.seller_id} listingId={listing.listing_id} />);
     return listing;
   };
+
+  it('shares the public listing URL in Pubky while keeping the watchlist local', () => {
+    const listing = renderListing();
+    const link = screen.getByRole('link', { name: 'Share listing on Pubky' });
+    const composer = new URL(link.getAttribute('href')!);
+    expect(composer.origin + composer.pathname).toBe('https://pubky.app/share');
+    const listingUrl = new URL(composer.searchParams.get('url')!);
+    expect(listingUrl.pathname).toBe(`/marketplace/listing/${listing.seller_id}/${listing.listing_id}`);
+    expect(link).toHaveAttribute('target', '_top');
+    expect(screen.getByRole('button', { name: /watchlist/i })).toBeInTheDocument();
+  });
 
   describe('a listing that is not in the local catalog', () => {
     const notFoundOnHomeserver = new Error('homeserver 404');

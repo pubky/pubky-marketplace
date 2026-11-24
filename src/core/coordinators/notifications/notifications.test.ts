@@ -26,7 +26,7 @@ type CoordinatorConfigWithBase = NotificationCoordinatorConfig & PollingServiceC
  * Reduces boilerplate for most tests
  */
 function setupAuthenticatedTest(userId = 'user123') {
-  const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+  const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
   // Use init() to set up authenticated state with hasProfile: true (required for polling)
   useAuthStore.getState().init({
     session: mockSession(),
@@ -60,7 +60,7 @@ describe('NotificationCoordinator', () => {
 
   describe('Singleton Behavior', () => {
     it('starts polling when the session is restored after the persisted pubky was hydrated (cold load)', async () => {
-      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
       // A cold load hydrates the persisted pubky and profile flag before the
       // session restore completes; the coordinator may start in between.
       useAuthStore.setState({ currentUserPubky: 'user123', hasProfile: true, hasHydrated: true });
@@ -77,7 +77,7 @@ describe('NotificationCoordinator', () => {
     });
 
     it('starts polling when the profile flag arrives after the session (restore, grant sign-in, host session)', async () => {
-      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
       useAuthStore.setState({
         session: mockSession(),
         currentUserPubky: 'user123',
@@ -108,7 +108,7 @@ describe('NotificationCoordinator', () => {
     });
 
     it('shares state across all getInstance() references', async () => {
-      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
       // Use init() to set up authenticated state with hasProfile: true
       useAuthStore.getState().init({
@@ -148,7 +148,7 @@ describe('NotificationCoordinator', () => {
     });
 
     it('new instance after reset has fresh state', async () => {
-      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
       // Use init() to set up authenticated state with hasProfile: true
       useAuthStore.getState().init({
@@ -232,7 +232,7 @@ describe('NotificationCoordinator', () => {
     });
 
     it('handles multiple rapid configure() calls gracefully', () => {
-      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
       // Use init() to set up authenticated state with hasProfile: true
       useAuthStore.getState().init({
@@ -261,7 +261,7 @@ describe('NotificationCoordinator', () => {
     });
 
     it('handles configure() during active polling without creating duplicate timers', () => {
-      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
       // Use init() to set up authenticated state with hasProfile: true
       useAuthStore.getState().init({
@@ -294,7 +294,7 @@ describe('NotificationCoordinator', () => {
     });
 
     it('handles start/configure/stop in rapid succession', () => {
-      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
       // Use init() to set up authenticated state with hasProfile: true
       useAuthStore.getState().init({
@@ -324,7 +324,7 @@ describe('NotificationCoordinator', () => {
 
   describe('Memory Leaks & Cleanup', () => {
     it('stops polling after destroy() is called', () => {
-      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
       // Use init() to set up authenticated state with hasProfile: true
       useAuthStore.getState().init({
@@ -370,7 +370,7 @@ describe('NotificationCoordinator', () => {
     });
 
     it('does not respond to auth changes after destroy()', () => {
-      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
       // Use init() to set up authenticated state with hasProfile: true
       useAuthStore.getState().init({
@@ -401,7 +401,7 @@ describe('NotificationCoordinator', () => {
     });
 
     it('does not respond to visibility changes after destroy()', () => {
-      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
       // Use init() to set up authenticated state with hasProfile: true
       useAuthStore.getState().init({
@@ -455,7 +455,7 @@ describe('NotificationCoordinator', () => {
     });
 
     it('resetInstance() properly cleans up before creating new instance', () => {
-      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
       // Use init() to set up authenticated state with hasProfile: true
       useAuthStore.getState().init({
@@ -486,7 +486,7 @@ describe('NotificationCoordinator', () => {
 
   describe('UserId Edge Cases', () => {
     it('does not poll when userId is null', async () => {
-      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
       // Don't set userId (will be null) - just set session without pubky
       useAuthStore.getState().init({
@@ -513,7 +513,7 @@ describe('NotificationCoordinator', () => {
     });
 
     it('does not poll when userId is undefined', async () => {
-      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
       // Use init() to set up state with undefined pubky (should not poll)
       useAuthStore.getState().init({
@@ -536,7 +536,7 @@ describe('NotificationCoordinator', () => {
     });
 
     it('does not poll when userId is empty string', async () => {
-      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
       // Use init() to set up state with empty string pubky (should not poll)
       useAuthStore.getState().init({
@@ -559,7 +559,7 @@ describe('NotificationCoordinator', () => {
     });
 
     it('stops polling when userId becomes null mid-session', async () => {
-      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
       // Use init() to set up authenticated state with hasProfile: true
       useAuthStore.getState().init({
@@ -575,7 +575,6 @@ describe('NotificationCoordinator', () => {
 
       vi.advanceTimersByTime(1_000);
       expect(spy).toHaveBeenCalledTimes(1);
-      expect(spy).toHaveBeenCalledWith({ userId: 'user123' });
 
       // Clear userId mid-session - polling should stop
       useAuthStore.getState().init({
@@ -589,7 +588,7 @@ describe('NotificationCoordinator', () => {
     });
 
     it('resumes polling when userId is set after being null', async () => {
-      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
       // Authentication is now derived from session, so we need to set session
       useAuthStore.getState().setSession(mockSession());
@@ -619,11 +618,13 @@ describe('NotificationCoordinator', () => {
 
       vi.advanceTimersByTime(1_000);
       expect(spy).toHaveBeenCalledTimes(1);
-      expect(spy).toHaveBeenCalledWith({ userId: 'user456' });
     });
 
     it('handles userId changing between polls', async () => {
-      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      const polled: (string | null)[] = [];
+      vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockImplementation(async () => {
+        polled.push(useAuthStore.getState().currentUserPubky);
+      });
 
       // Use init() to set up authenticated state with hasProfile: true
       useAuthStore.getState().init({
@@ -638,7 +639,6 @@ describe('NotificationCoordinator', () => {
       coordinator.start();
 
       vi.advanceTimersByTime(1_000);
-      expect(spy).toHaveBeenCalledWith({ userId: 'user1' });
 
       // Change userId - polling continues with new value
       useAuthStore.getState().init({
@@ -647,7 +647,6 @@ describe('NotificationCoordinator', () => {
         hasProfile: true,
       });
       vi.advanceTimersByTime(1_000);
-      expect(spy).toHaveBeenCalledWith({ userId: 'user2' });
 
       // Change again
       useAuthStore.getState().init({
@@ -656,9 +655,8 @@ describe('NotificationCoordinator', () => {
         hasProfile: true,
       });
       vi.advanceTimersByTime(1_000);
-      expect(spy).toHaveBeenCalledWith({ userId: 'user3' });
 
-      expect(spy).toHaveBeenCalledTimes(3);
+      expect(polled).toEqual(['user1', 'user2', 'user3']);
     });
   });
 
@@ -833,7 +831,7 @@ describe('NotificationCoordinator', () => {
       // Reset instance so we get a fresh coordinator that reads the hidden state
       NotificationCoordinator.resetInstance();
 
-      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
       useAuthStore.getState().init({
         session: mockSession(),
@@ -972,7 +970,7 @@ describe('NotificationCoordinator', () => {
     });
 
     it('resumes polling when moving from disabled to enabled route', async () => {
-      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
       // Use init() to set up authenticated state with hasProfile: true
       useAuthStore.getState().init({
@@ -999,7 +997,7 @@ describe('NotificationCoordinator', () => {
     });
 
     it('stops polling when moving from enabled to disabled route', async () => {
-      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
       // Use init() to set up authenticated state with hasProfile: true
       useAuthStore.getState().init({
@@ -1027,7 +1025,7 @@ describe('NotificationCoordinator', () => {
   });
 
   it('polls on interval when started (no pollOnStart)', () => {
-    const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+    const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
     // Use init() to set up authenticated state with hasProfile: true
     useAuthStore.getState().init({
@@ -1051,7 +1049,7 @@ describe('NotificationCoordinator', () => {
   });
 
   it('restarts polling when interval changes via configure()', () => {
-    const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+    const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
     // Use init() to set up authenticated state with hasProfile: true
     useAuthStore.getState().init({
@@ -1075,7 +1073,7 @@ describe('NotificationCoordinator', () => {
   });
 
   it('respects page visibility: pauses when hidden, resumes when visible', async () => {
-    const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+    const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
     // Use init() to set up authenticated state with hasProfile: true
     useAuthStore.getState().init({
@@ -1126,7 +1124,7 @@ describe('NotificationCoordinator', () => {
   });
 
   it('ignores page visibility when respectPageVisibility is false', async () => {
-    const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+    const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
     // Use init() to set up authenticated state with hasProfile: true
     useAuthStore.getState().init({
@@ -1157,7 +1155,7 @@ describe('NotificationCoordinator', () => {
   });
 
   it('stops when de-authenticated and resumes when authenticated again', async () => {
-    const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+    const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
     // Use init() to set up authenticated state with hasProfile: true
     useAuthStore.getState().init({
@@ -1194,7 +1192,7 @@ describe('NotificationCoordinator', () => {
   });
 
   it('pauses on disabled route then resumes on allowed route', async () => {
-    const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+    const spy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
 
     // Use init() to set up authenticated state with hasProfile: true
     useAuthStore.getState().init({
@@ -1220,30 +1218,9 @@ describe('NotificationCoordinator', () => {
     expect(spy).toHaveBeenCalledTimes(3);
   });
 
-  it('forwards the correct userId to NotificationController.fetchNotifications', async () => {
-    const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
-
-    // Use init() to set up authenticated state with hasProfile: true
-    useAuthStore.getState().init({
-      session: mockSession(),
-      currentUserPubky: 'userABC',
-      hasProfile: true,
-    });
-
-    const coordinator = NotificationCoordinator.getInstance();
-    coordinator.configure({ pollOnStart: true, intervalMs: 1_000 } as Partial<CoordinatorConfigWithBase>);
-    coordinator.setRoute(APP_ROUTES.HOME);
-    coordinator.start();
-
-    await Promise.resolve();
-    expect(spy).toHaveBeenCalled();
-    const callArg = spy.mock.calls[0]?.[0] as { userId: unknown };
-    expect(callArg?.userId).toBe('userABC');
-  });
-
   it('continues polling even if a poll attempt throws', async () => {
     const spy = vi
-      .spyOn(NotificationController, 'fetchNotifications')
+      .spyOn(CommerceController, 'refreshMarketplaceNotificationBadge')
       .mockRejectedValueOnce(new Error('network'))
       .mockResolvedValue(undefined);
 
@@ -1297,47 +1274,15 @@ describe('NotificationCoordinator', () => {
     expect(spy).toHaveBeenCalledTimes(1);
   });
 
-  describe('Marketplace badge refresh', () => {
-    it('refreshes the marketplace badge on every poll', async () => {
-      const badgeSpy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
-      const { spy, coordinator } = setupAuthenticatedTest();
-      coordinator.configure({ pollOnStart: true, intervalMs: 1_000 } as Partial<CoordinatorConfigWithBase>);
-      coordinator.start();
-
-      await flushPromises();
-      expect(spy).toHaveBeenCalledTimes(1);
-      expect(badgeSpy).toHaveBeenCalledTimes(1);
-    });
-
-    it('still fetches social notifications when the marketplace refresh rejects', async () => {
-      vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockRejectedValue(
-        new Error('commerce backend down'),
-      );
-      const { spy, coordinator } = setupAuthenticatedTest();
-      coordinator.configure({ pollOnStart: true, intervalMs: 1_000 } as Partial<CoordinatorConfigWithBase>);
-      coordinator.start();
-
-      await flushPromises();
-      expect(spy).toHaveBeenCalledTimes(1);
-
-      // The failure is contained: the next poll still runs both.
-      vi.advanceTimersByTime(1_000);
-      await flushPromises();
-      expect(spy).toHaveBeenCalledTimes(2);
-    });
-
-    it('still refreshes the marketplace badge when the social fetch rejects', async () => {
-      const badgeSpy = vi.spyOn(CommerceController, 'refreshMarketplaceNotificationBadge').mockResolvedValue(undefined);
-      const { spy, coordinator } = setupAuthenticatedTest();
-      spy.mockRejectedValue(new Error('nexus down'));
-      coordinator.configure({ pollOnStart: true, intervalMs: 1_000 } as Partial<CoordinatorConfigWithBase>);
-      coordinator.start();
-
-      await flushPromises();
-      expect(badgeSpy).toHaveBeenCalledTimes(1);
-    });
+  it('refreshes the Market badge without polling the social notification stream', async () => {
+    const social = vi.spyOn(NotificationController, 'fetchNotifications');
+    const { spy, coordinator } = setupAuthenticatedTest();
+    coordinator.configure({ pollOnStart: true, intervalMs: 1_000 });
+    coordinator.start();
+    await flushPromises();
+    expect(spy).toHaveBeenCalledOnce();
+    expect(social).not.toHaveBeenCalled();
   });
-
   afterEach(() => {
     NotificationCoordinator.resetInstance();
     // Restore document visibility to visible for subsequent tests

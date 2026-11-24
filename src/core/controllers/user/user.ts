@@ -1,5 +1,6 @@
 import { UserApplication } from '@/application/user/user';
 import { withoutBasePath } from '@/config/base-path';
+import { captureAuthWriteGuard } from '@/controllers/auth/auth-scope';
 import type { TReadProfileParams } from '@/controllers/profile/profile.types';
 import type { TFollowParams, TPubkyListParams } from '@/controllers/user/user.type';
 import { HttpMethod } from '@/libs/http/http.types';
@@ -9,7 +10,6 @@ import type { Pubky } from '@/models/models.types';
 import type { PostStreamId } from '@/models/stream/post/postStream.types';
 import type { UserCountsModel } from '@/models/user/counts/userCounts';
 import type { UserRelationshipsModelSchema } from '@/models/user/relationships/userRelationships.schema';
-import { FollowNormalizer } from '@/pipes/follow/follow.normalizer';
 import type { NexusTag, NexusUserCounts, NexusUserDetails, NexusUserRelationship } from '@/services/nexus/nexus.types';
 import type { TUserTagsParams } from '@/services/nexus/user/user.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -144,15 +144,17 @@ export class UserController {
     // Normalize pubky IDs to ensure consistent format for storage and comparison
     // This strips any prefix (pubky or pk:) to get the raw 52-character key
     const normalizedFollowee = stripPubkyPrefix(followee) as Pubky;
-    const { meta, follow } = FollowNormalizer.to({ follower, followee: normalizedFollowee });
+    const assertCurrent = captureAuthWriteGuard();
+    const record = await UserApplication.prepareFollow({ follower, followee: normalizedFollowee });
 
+    assertCurrent();
     // Get active stream ID from store (controller layer responsibility)
     const activeStreamId = this.getActiveStreamId();
 
     await UserApplication.commitFollow({
       eventType,
-      followUrl: meta.url,
-      followJson: follow.toJson(),
+      assertCurrent,
+      ...record,
       follower,
       followee: normalizedFollowee,
       activeStreamId,

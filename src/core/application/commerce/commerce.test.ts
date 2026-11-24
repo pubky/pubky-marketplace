@@ -3942,7 +3942,9 @@ describe('CommerceApplication', () => {
     const nexusTag = { label: 'handmade', taggers: [VIEWER], taggers_count: 1, relationship: true };
 
     it('fetches listing tags from Nexus and merges them into the local cache', async () => {
-      const fetchSpy = vi.spyOn(NexusMarketplaceService, 'fetchListingTags').mockResolvedValue([nexusTag]);
+      const fetchSpy = vi
+        .spyOn(NexusMarketplaceService, 'fetchListingTags')
+        .mockResolvedValue({ tags: [nexusTag], completeResource: false });
       const mergeSpy = vi.spyOn(LocalMarketplaceTagService, 'mergeTags').mockResolvedValue(undefined);
 
       const result = await CommerceApplication.fetchMarketplaceTags({
@@ -3963,11 +3965,14 @@ describe('CommerceApplication', () => {
         taggedId: `listing:${COMMERCE_FIXTURE_SELLER}:0034A0X7NJ52A`,
         tags: [nexusTag],
         viewerId: VIEWER,
+        clearMissing: false,
       });
     });
 
     it('fetches shop tags from Nexus keyed by the owner pubky', async () => {
-      const fetchSpy = vi.spyOn(NexusMarketplaceService, 'fetchShopTags').mockResolvedValue([nexusTag]);
+      const fetchSpy = vi
+        .spyOn(NexusMarketplaceService, 'fetchShopTags')
+        .mockResolvedValue({ tags: [nexusTag], completeResource: true });
       const mergeSpy = vi.spyOn(LocalMarketplaceTagService, 'mergeTags').mockResolvedValue(undefined);
 
       await CommerceApplication.fetchMarketplaceTags({ kind: TagKind.SHOP, taggedId: COMMERCE_FIXTURE_SELLER });
@@ -3982,6 +3987,7 @@ describe('CommerceApplication', () => {
         taggedId: `shop:${COMMERCE_FIXTURE_SELLER}`,
         tags: [nexusTag],
         viewerId: null,
+        clearMissing: true,
       });
     });
 
@@ -4008,8 +4014,8 @@ describe('CommerceApplication', () => {
       ).rejects.toThrow('nexus unreachable');
     });
 
-    it('skips the merge when Nexus returns an empty aggregate', async () => {
-      vi.spyOn(NexusMarketplaceService, 'fetchShopTags').mockResolvedValue([]);
+    it('reconciles stale local tags when Nexus returns an empty aggregate', async () => {
+      vi.spyOn(NexusMarketplaceService, 'fetchShopTags').mockResolvedValue({ tags: [], completeResource: true });
       const mergeSpy = vi.spyOn(LocalMarketplaceTagService, 'mergeTags');
 
       const result = await CommerceApplication.fetchMarketplaceTags({
@@ -4018,7 +4024,12 @@ describe('CommerceApplication', () => {
       });
 
       expect(result).toEqual([]);
-      expect(mergeSpy).not.toHaveBeenCalled();
+      expect(mergeSpy).toHaveBeenCalledWith({
+        taggedId: `shop:${COMMERCE_FIXTURE_SELLER}`,
+        tags: [],
+        viewerId: null,
+        clearMissing: true,
+      });
     });
   });
 

@@ -11,9 +11,12 @@ export type TUserCountsOrFetchResult = UserCountsModel | NexusUserCounts;
 export type TUserApplicationFollowParams = TFollowParams & {
   eventType: HttpMethod;
   followUrl: string;
+  followBody?: Uint8Array;
+  deleteUrls?: string[];
   followJson: Record<string, unknown>;
   activeStreamId?: PostStreamId | null;
   signal?: AbortSignal;
+  assertCurrent?: () => void;
 };
 
 export type TEnsureModerationFollowParams = {

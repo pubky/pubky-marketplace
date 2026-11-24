@@ -4,7 +4,7 @@ import { prepareDestination } from 'next/dist/shared/lib/router/utils/prepare-de
 import withSerwistInit from '@serwist/next';
 import type { NextConfig } from 'next';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { redirects, resolveMountConfig } from './next.config';
+import { redirects, resolveMountConfig, socialRewrites } from './next.config';
 import packageJson from './package.json';
 
 vi.mock('@serwist/next', () => ({ default: vi.fn(() => (config: NextConfig) => config) }));
@@ -39,6 +39,7 @@ function resolveRedirect(configured: { source: string; destination: string }[], 
 
 const SOCIAL_PATHS = [
   '/home',
+  '/share',
   '/feed/abc123',
   '/hot',
   '/search',
@@ -68,7 +69,6 @@ const SHOP_PATHS = [
   '/complete-profile',
   '/copyright',
   '/offline',
-  '/share',
   '/homepage',
   '/profiles',
 ];
@@ -89,76 +89,17 @@ describe('Next redirects', () => {
     expect(configuredRedirects).not.toContainEqual(expect.objectContaining({ source: '/:path*' }));
   });
 
-  describe('social link-out off (NEXT_PUBLIC_SOCIAL_HOST unset)', () => {
-    it('keeps every social route in the Shop', async () => {
-      vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', undefined);
-      const configured = await redirects();
-
-      expect(configured).toHaveLength(10);
+  describe('handoff routes', () => {
+    it('maps social deep links with their query and leaves Market and auth routes alone', async () => {
+      const routes = await socialRewrites();
       for (const path of SOCIAL_PATHS) {
-        expect(resolveRedirect(configured, path), path).toBeNull();
+        expect(resolveRedirect(routes, path)).toBe(`${SHOP_ORIGIN}/social-handoff${path}`);
       }
-      expect(resolveRedirect(configured, '/profile/notifications')).toBeNull();
-      expect(resolveRedirect(configured, '/profile/abc/posts')).toBe(`${SHOP_ORIGIN}/profile/abc`);
-    });
-
-    it('treats an empty value as unset', async () => {
-      vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', '');
-      expect(await redirects()).toHaveLength(10);
-    });
-  });
-
-  describe('social link-out on', () => {
-    it('maps every social route 1:1 onto the production social host, query included', async () => {
-      vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', 'https://pubky.app');
-      const configured = await redirects();
-
-      for (const path of SOCIAL_PATHS) {
-        expect(resolveRedirect(configured, path), path).toBe(`https://pubky.app${path}`);
-      }
-      expect(resolveRedirect(configured, '/search?tags=bitcoin,art')).toBe(
-        `https://pubky.app/search?${new URLSearchParams({ tags: 'bitcoin,art' }).toString()}`,
-      );
-    });
-
-    it('uses temporary redirects only', async () => {
-      vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', 'https://pubky.app');
-      const socialRedirects = (await redirects()).filter((route) => route.destination.startsWith('https://'));
-
-      expect(socialRedirects.length).toBeGreaterThan(0);
-      for (const route of socialRedirects) {
-        expect(route.permanent, route.source).toBe(false);
-      }
-    });
-
-    it('maps staging onto the staging social host', async () => {
-      vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', 'https://staging.pubky.app');
-      const configured = await redirects();
-
-      expect(resolveRedirect(configured, '/home')).toBe('https://staging.pubky.app/home');
-      expect(resolveRedirect(configured, '/profile/abc/tagged')).toBe('https://staging.pubky.app/profile/abc/tagged');
-    });
-
-    it('keeps profile notifications in the Shop', async () => {
-      vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', 'https://pubky.app');
+      expect(resolveRedirect(routes, '/search?tags=art')).toBe(`${SHOP_ORIGIN}/social-handoff/search?tags=art`);
+      for (const path of SHOP_PATHS) expect(resolveRedirect(routes, path)).toBeNull();
       expect(resolveRedirect(await redirects(), '/profile/notifications')).toBe(
         `${SHOP_ORIGIN}/marketplace/notifications`,
       );
-    });
-
-    it('sends the legacy posts URL to the social host in one hop', async () => {
-      vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', 'https://pubky.app');
-      expect(resolveRedirect(await redirects(), '/profile/abc/posts')).toBe('https://pubky.app/profile/abc/posts');
-    });
-
-    it('leaves marketplace, messages, auth, account and utility routes in the Shop', async () => {
-      vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', 'https://pubky.app');
-      const configured = await redirects();
-
-      for (const path of SHOP_PATHS) {
-        expect(resolveRedirect(configured, path), path).toBeNull();
-      }
-      expect(resolveRedirect(configured, '/')).toBe(`${SHOP_ORIGIN}/marketplace`);
     });
 
     it("fails the build when the host is the Shop's configured canonical URL", async () => {
@@ -184,7 +125,7 @@ describe('Next redirects', () => {
       vi.stubEnv('PUBKY_RUNTIME_DEFAULT_URL', 'https://shop.pubky.app');
       vi.stubEnv('VERCEL_PROJECT_PRODUCTION_URL', 'shop.pubky.app');
       vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', 'https://pubky.app');
-      expect(resolveRedirect(await redirects(), '/home')).toBe('https://pubky.app/home');
+      await expect(redirects()).resolves.toBeDefined();
     });
 
     it('fails the build on an invalid host', async () => {

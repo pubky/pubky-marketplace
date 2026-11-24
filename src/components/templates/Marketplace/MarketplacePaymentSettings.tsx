@@ -12,7 +12,6 @@ import { Link } from '@/atoms/Link/Link';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Switch } from '@/atoms/Switch/Switch';
 import { Typography } from '@/atoms/Typography/Typography';
-import { isSocialLinkOutEnabled } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import {
   consumeListingComposerReturnTo,
@@ -191,7 +190,7 @@ export function MarketplacePaymentSettings() {
           </CardContent>
         </Card>
 
-        {isSocialLinkOutEnabled() && <MarketplaceSignOutCard />}
+        <MarketplaceSignOutCard />
       </Container>
     </MarketplaceContentLayout>
   );

@@ -539,18 +539,18 @@ describe('PostNormalizer', () => {
     beforeEach(setupIntegrationTestMocks);
     afterEach(restoreMocks);
 
-    it('produces a collection post containing a marketplace entity-id listing URI', async () => {
-      const listingUri = buildPubkyUri(TEST_PUBKY.USER_2, 'marketplace/v1/listings/1061cf08aaad4c8f99d996f3c2c092ba');
+    it('preserves a canonical legacy post reference in a collection', async () => {
+      const postUri = buildPubkyUri(TEST_PUBKY.USER_2, 'posts/0034A0X7NJ52A');
 
       const result = await PostNormalizer.toCollection(
         {
-          name: 'Saved listings',
-          items: [listingUri],
+          name: 'Saved posts',
+          items: [postUri],
         },
         TEST_PUBKY.USER_1,
       );
 
-      expect(result.post.toJson().content).toContain(listingUri);
+      expect(result.post.toJson().content).toContain(postUri);
       expect(result.meta.url).toContain('/pub/pubky.app/posts/');
     });
 

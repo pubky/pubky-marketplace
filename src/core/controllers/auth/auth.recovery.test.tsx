@@ -20,7 +20,6 @@ import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { AUTH_PERSIST_KEY } from '@/stores/persistedKeys';
 import { useSearchStore } from '@/stores/search/search.store';
 import { useSettingsStore } from '@/stores/settings/settings.store';
-import { settingsInitialState } from '@/stores/settings/settings.types';
 import { asOpaque } from '@/test-utils/type-assertions';
 
 vi.mock('@/database/franky/franky.helpers', () => ({ clearDatabase: vi.fn(), clearPrivateData: vi.fn() }));
@@ -273,7 +272,7 @@ it.each(['logout', 'replacement'] as const)(
     else changing = approve(next).then(() => AuthController.initializeAuthenticatedSession({ session: next }));
     expect(order).toEqual([]);
     order.push('bootstrap');
-    bootstrap.resolve(asOpaque({}));
+    bootstrap.resolve();
     await changing;
     await expect(restoring).resolves.toEqual({ status: change === 'logout' ? 'signed-out' : 'restored' });
     expect(order).toEqual(['bootstrap', 'cleanup']);
@@ -404,12 +403,7 @@ it.each(['alice', 'bob'])('preserves settings only when replacing with the same 
   expect(useSearchStore.getState().recentTags.map((entry) => entry.tag)).toEqual(
     pubky === 'alice' ? ['alice-private-search'] : [],
   );
-  if (pubky === 'bob')
-    expect(SettingsApplication.initializeSettings).toHaveBeenCalledWith(
-      'bob',
-      settingsInitialState,
-      expect.any(AbortSignal),
-    );
+  expect(SettingsApplication.initializeSettings).not.toHaveBeenCalled();
   useSettingsStore.getState().reset();
   useSearchStore.getState().reset();
 });

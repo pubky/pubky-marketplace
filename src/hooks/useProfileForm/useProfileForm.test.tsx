@@ -18,7 +18,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/controllers/auth/auth', () => ({
-  AuthController: { bootstrapWithDelay: vi.fn() },
+  AuthController: { completeProfileSetup: vi.fn() },
 }));
 
 vi.mock('@/controllers/file/file', () => ({
@@ -199,7 +199,7 @@ describe('existing-account profile completion authority', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(ProfileController.commitCreate).mockResolvedValue();
-    vi.mocked(AuthController.bootstrapWithDelay).mockResolvedValue();
+    vi.mocked(AuthController.completeProfileSetup).mockResolvedValue();
   });
   const renderForm = () => {
     const form = renderHook(() => useProfileForm({ mode: 'create', pubky }));
@@ -211,11 +211,11 @@ describe('existing-account profile completion authority', () => {
     const { result } = renderForm();
     await act(async () => result.current.handlers.handleSubmit());
     expect(ProfileController.commitCreate).not.toHaveBeenCalled();
-    expect(AuthController.bootstrapWithDelay).not.toHaveBeenCalled();
+    expect(AuthController.completeProfileSetup).not.toHaveBeenCalled();
   });
   it('awaits guarded bootstrap and leaves all completion navigation to RouteGuard', async () => {
     let finish!: () => void;
-    vi.mocked(AuthController.bootstrapWithDelay).mockReturnValue(
+    vi.mocked(AuthController.completeProfileSetup).mockReturnValue(
       new Promise((resolve) => {
         finish = resolve;
       }),
@@ -225,7 +225,7 @@ describe('existing-account profile completion authority', () => {
     act(() => {
       submit = result.current.handlers.handleSubmit();
     });
-    await waitFor(() => expect(AuthController.bootstrapWithDelay).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(AuthController.completeProfileSetup).toHaveBeenCalledTimes(1));
     expect(result.current.state.isSaving).toBe(true);
     expect(mockPush).not.toHaveBeenCalled();
     await act(async () => {
@@ -261,7 +261,7 @@ describe('existing-account profile completion authority', () => {
         finish();
         await submit;
       });
-      expect(AuthController.bootstrapWithDelay).not.toHaveBeenCalled();
+      expect(AuthController.completeProfileSetup).not.toHaveBeenCalled();
       expect(mockPush).not.toHaveBeenCalled();
     },
   );

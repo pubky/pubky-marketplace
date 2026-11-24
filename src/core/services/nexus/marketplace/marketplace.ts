@@ -1,3 +1,4 @@
+import { buildMarketUri } from 'pubky-market-specs';
 import { MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS } from '@/config/commerce';
 import { marketplaceApi } from '@/services/nexus/marketplace/marketplace.api';
 import type {
@@ -17,7 +18,11 @@ import type {
   TShopTagsParams,
 } from '@/services/nexus/marketplace/marketplace.types';
 import type { NexusTag } from '@/services/nexus/nexus.types';
-import { fetchNexus, fetchNexusIfFound, queryNexus } from '@/services/nexus/nexus.utils';
+import { buildUrlWithQuery, fetchNexus, fetchNexusIfFound, queryNexus } from '@/services/nexus/nexus.utils';
+import { socialNexusServesV1 } from '@/services/nexus/social-v1';
+
+/** A short first page of the canonical resource replaces the tag projection from the old index. */
+export type MarketplaceTagPage = { tags: NexusTag[]; completeResource: boolean };
 
 /**
  * Nexus Marketplace Service
@@ -68,15 +73,18 @@ export class NexusMarketplaceService {
   /**
    * Fetches the community tag aggregate for a listing.
    *
-   * Served by the marketplace Nexus (tag aggregation deployed 2026-08-28,
-   * `308b985e`); a 404 means this deployment lacks the endpoint and callers
-   * degrade to local-only tags.
+   * A v1 social Nexus indexes the canonical resource URI across epochs.
+   * Before cutover the Marketplace index supplies its legacy projection.
    *
    * @param params - Seller/listing path params plus pagination and viewer id
-   * @returns Array of tag aggregates (empty when the listing has no tags)
+   * @returns A tag page and whether it contains the complete canonical aggregate
    */
-  static async fetchListingTags(params: TListingTagsParams): Promise<NexusTag[]> {
-    return await queryNexus<NexusTag[]>({ url: marketplaceApi.listingTags(params) });
+  static async fetchListingTags(params: TListingTagsParams): Promise<MarketplaceTagPage> {
+    if (await socialNexusServesV1()) {
+      return this.fetchResourceTags(buildMarketUri(params.seller_id, 'listing', params.listing_id), params);
+    }
+    const tags = await queryNexus<NexusTag[]>({ url: marketplaceApi.listingTags(params) });
+    return { tags, completeResource: false };
   }
 
   /**
@@ -85,10 +93,27 @@ export class NexusMarketplaceService {
    * Same deployment caveat as `fetchListingTags`.
    *
    * @param params - Seller path param plus pagination and viewer id
-   * @returns Array of tag aggregates (empty when the shop has no tags)
+   * @returns A tag page and whether it contains the complete canonical aggregate
    */
-  static async fetchShopTags(params: TShopTagsParams): Promise<NexusTag[]> {
-    return await queryNexus<NexusTag[]>({ url: marketplaceApi.shopTags(params) });
+  static async fetchShopTags(params: TShopTagsParams): Promise<MarketplaceTagPage> {
+    if (await socialNexusServesV1()) {
+      return this.fetchResourceTags(buildMarketUri(params.seller_id, 'shop'), params);
+    }
+    const tags = await queryNexus<NexusTag[]>({ url: marketplaceApi.shopTags(params) });
+    return { tags, completeResource: false };
+  }
+
+  /** On a v1 Nexus a missing resource has no tags. Its old Market projection may still contain removed tags. */
+  private static async fetchResourceTags(uri: string, { skip_tags = 0, limit_tags = 5, viewer_id }: TShopTagsParams) {
+    const url = buildUrlWithQuery({
+      baseRoute: 'v1/resource/by-uri',
+      params: { uri, skip_tags, limit_tags, viewer_id },
+    });
+    const view = await fetchNexusIfFound<{ tags: (Omit<NexusTag, 'relationship'> & { tag_uri: string | null })[] }>({
+      url,
+    });
+    const tags = (view?.tags ?? []).map((tag) => ({ ...tag, relationship: tag.tag_uri != null }));
+    return { tags, completeResource: skip_tags === 0 && tags.length < limit_tags };
   }
 
   /**

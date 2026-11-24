@@ -15,10 +15,10 @@ vi.mock('@/hooks/useCurrentUserProfile/useCurrentUserProfile', () => ({
 // Mock dependencies
 vi.mock('@/stores/notification/notification.store', () => ({
   useNotificationStore: vi.fn(
-    (selector: (state: { selectUnread: () => number; selectTotalUnread: () => number }) => number) => {
+    (selector: (state: { selectUnread: () => number; selectMarketplaceUnread: () => number }) => number) => {
       const state = {
         selectUnread: () => 5,
-        selectTotalUnread: () => 5,
+        selectMarketplaceUnread: () => 5,
       };
       return selector(state);
     },

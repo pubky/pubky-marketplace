@@ -40,7 +40,7 @@ Hard constraints (`docs/architecture.md`):
 - Coordinators never call Application; go through Controllers.
 - Application never accesses Stores; controllers own UI state orchestration.
 - Pipes are pure: no IO or side effects. Services never call up into Application or Controllers.
-- Only PostApplication, NotificationApplication, BootstrapApplication, MigrationApplication, HotApplication,
+- Only PostApplication, NotificationApplication, BootstrapApplication, HotApplication,
   PostStreamApplication and TtlApplication may call other Applications. Maximum depth is 1, except
   PostApplication/NotificationApplication/TtlApplication → PostStreamApplication → FileApplication may reach depth 2;
   no cycles.
@@ -143,3 +143,13 @@ personal matters to people. See `docs/development-workflow.md` for the full poli
 - Greptile configuration lives in `.greptile/config.json` and `.greptile/files.json`; keep referenced review guidance in
   sync. Configuration is not evidence that the external review service is enabled.
 - Update canonical docs first, then their summary here and the relevant Greptile instructions. Keep adapters as pointers.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

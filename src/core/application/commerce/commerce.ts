@@ -256,7 +256,7 @@ import {
   type MarketplaceSessionEndedEvent,
   MarketplaceSessionService,
 } from '@/services/marketplace/marketplace-session';
-import { NexusMarketplaceService } from '@/services/nexus/marketplace/marketplace';
+import { type MarketplaceTagPage, NexusMarketplaceService } from '@/services/nexus/marketplace/marketplace';
 import type {
   NexusListingCondition,
   NexusListingDetails,
@@ -857,11 +857,12 @@ export class CommerceApplication {
     skip?: number;
     limit?: number;
   }): Promise<NexusTag[]> {
-    let nexusTags: NexusTag[];
+    const epoch = readAuthEpoch();
+    let page: MarketplaceTagPage;
     try {
       if (kind === TagKind.LISTING) {
         const [sellerId, listingId] = taggedId.split(':');
-        nexusTags = await NexusMarketplaceService.fetchListingTags({
+        page = await NexusMarketplaceService.fetchListingTags({
           seller_id: sellerId,
           listing_id: listingId,
           skip_tags: skip,
@@ -869,7 +870,7 @@ export class CommerceApplication {
           viewer_id: viewerId,
         });
       } else {
-        nexusTags = await NexusMarketplaceService.fetchShopTags({
+        page = await NexusMarketplaceService.fetchShopTags({
           seller_id: taggedId,
           skip_tags: skip,
           limit_tags: limit,
@@ -883,15 +884,17 @@ export class CommerceApplication {
       throw error;
     }
 
-    if (nexusTags.length > 0) {
+    if (epoch !== readAuthEpoch()) return [];
+    if (page.completeResource || page.tags.length) {
       await LocalMarketplaceTagService.mergeTags({
         taggedId: buildMarketplaceTagRowId(kind, taggedId),
-        tags: nexusTags,
+        tags: page.tags,
         viewerId: viewerId ?? null,
+        clearMissing: page.completeResource,
       });
     }
 
-    return nexusTags;
+    return page.tags;
   }
 
   static async getListingsBySeller(sellerPubky: string) {
@@ -2752,8 +2755,8 @@ export class CommerceApplication {
         });
         // Validate through the vendored specs builder before sealing, the
         // same guarantee every other marketplace record gets.
-        const { PubkySpecsBuilder } = await import('pubky-app-specs');
-        const built = new PubkySpecsBuilder(ownerPubky).createWatchlist(body);
+        const { buildWatchlist } = await import('pubky-market-specs');
+        const built = buildWatchlist(ownerPubky, body);
         const record = CommerceRecordNormalizer.watchlistRecord(built.watchlist.toJson());
         signal?.throwIfAborted();
         try {
@@ -3041,8 +3044,8 @@ export class CommerceApplication {
               }
             : {}),
         };
-        const { PubkySpecsBuilder } = await import('pubky-app-specs');
-        const provisional = new PubkySpecsBuilder(ownerPubky).createMarketplaceOrderReceipt(wireBody);
+        const { buildOrderReceipt } = await import('pubky-market-specs');
+        const provisional = buildOrderReceipt(ownerPubky, wireBody);
         const provisionalRecord = CommerceRecordNormalizer.orderReceiptRecord(provisional.order_receipt.toJson());
         const verifiedClaims = verifyOrderReceiptClaims({ ...provisionalRecord });
         if (
@@ -3092,7 +3095,7 @@ export class CommerceApplication {
               }
             : {}),
         };
-        const built = new PubkySpecsBuilder(ownerPubky).createMarketplaceOrderReceipt(verifiedBody);
+        const built = buildOrderReceipt(ownerPubky, verifiedBody);
         const record = CommerceRecordNormalizer.orderReceiptRecord(built.order_receipt.toJson());
         if (verifiedClaims.v === 2) record.settlementTotal = verifiedClaims.settlementTotal;
         if (verifyOwnOrderReceipt({ ...record }) === null) {
@@ -3859,8 +3862,8 @@ export class CommerceApplication {
     role: 'buyer_reviewing_seller' | 'seller_reviewing_buyer';
     orderRef?: string;
   }): Promise<string> {
-    const { PubkySpecsBuilder } = await import('pubky-app-specs');
-    const built = new PubkySpecsBuilder(input.actorPubky).createMarketplaceReview({
+    const { buildReview } = await import('pubky-market-specs');
+    const built = buildReview(input.actorPubky, {
       schemaVersion: 1,
       recordType: 'review',
       ownerPubky: input.actorPubky,
@@ -4472,7 +4475,7 @@ export class CommerceApplication {
   /**
    * Publishes the reviewer-owned public review record after a successful
    * `review.create`/`review.update` (trust & reputation plan P1.6): builds
-   * the `PubkyAppMarketplaceReview` via the specs builder (deterministic
+   * the `PubkyMarketReview` via the specs builder (deterministic
    * hash ID), embeds the service-issued purchase attestation verbatim in
    * `eligibilityAttestation`, and PUTs it to the reviewer's homeserver with
    * the staged-job outbox pattern listing publication established — a failed
@@ -4627,8 +4630,8 @@ export class CommerceApplication {
         : {};
 
     const build = async (revision: number, createdAt: string) => {
-      const { PubkySpecsBuilder } = await import('pubky-app-specs');
-      const built = new PubkySpecsBuilder(actorPubky).createMarketplaceReview({
+      const { buildReview } = await import('pubky-market-specs');
+      const built = buildReview(actorPubky, {
         schemaVersion: 1,
         recordType: 'review',
         ownerPubky: actorPubky,
@@ -4646,7 +4649,7 @@ export class CommerceApplication {
         ...(orderRef === undefined ? {} : { orderRef }),
       });
       return {
-        record: commerceReviewRecordSchema.parse(built.marketplace_review.toJson()),
+        record: commerceReviewRecordSchema.parse(built.review.toJson()),
         reviewId: built.meta.id,
       };
     };
@@ -5209,8 +5212,8 @@ export class CommerceApplication {
     const nowIso = new Date().toISOString();
     const createdAt = prior?.record.createdAt ?? input.priorCreatedAt ?? nowIso;
 
-    const { PubkySpecsBuilder } = await import('pubky-app-specs');
-    const built = new PubkySpecsBuilder(actorPubky).createReviewResponse({
+    const { buildReviewResponse } = await import('pubky-market-specs');
+    const built = buildReviewResponse(actorPubky, {
       schemaVersion: 1,
       recordType: 'review_response',
       ownerPubky: actorPubky,
@@ -5817,9 +5820,9 @@ export class CommerceApplication {
    * truths (record published / service registered) separately.
    */
   static async commitPublishDrop(record: CommerceDropRecord): Promise<void> {
-    const { PubkySpecsBuilder } = await import('pubky-app-specs');
-    const built = new PubkySpecsBuilder(record.ownerPubky).createMarketplaceDrop({ ...record });
-    const validated = CommerceRecordNormalizer.drop(built.marketplace_drop.toJson());
+    const { buildDrop } = await import('pubky-market-specs');
+    const built = buildDrop(record.ownerPubky, { ...record });
+    const validated = CommerceRecordNormalizer.drop(built.drop.toJson());
     const url = CommerceRecordNormalizer.dropUri(validated.ownerPubky, validated.dropId);
     await CommerceHomeserverService.putJson(url, { ...validated });
   }

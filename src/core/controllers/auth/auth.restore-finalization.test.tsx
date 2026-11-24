@@ -59,6 +59,17 @@ describe('AuthController restore finalization — real useAuthStatus', () => {
     vi.restoreAllMocks();
   });
 
+  it('checks again when the same account completed its profile in Pubky App', async () => {
+    useAuthStore.setState({ hasProfile: false });
+    const session = mockSession();
+    vi.spyOn(AuthApplication, 'restorePersistedSession').mockResolvedValue({ status: 'restored', session });
+    vi.spyOn(Identity, 'z32FromSession').mockReturnValue(PREVIOUS_PUBKY);
+    vi.spyOn(AuthApplication, 'userIsSignedUp').mockResolvedValue(true);
+    await expect(AuthController.restorePersistedSession()).resolves.toMatchObject({ status: 'restored' });
+    expect(AuthApplication.userIsSignedUp).toHaveBeenCalledWith({ pubky: PREVIOUS_PUBKY });
+    expect(useAuthStore.getState().hasProfile).toBe(true);
+  });
+
   it('keeps useAuthStatus loading until init on identity-change restore', async () => {
     const session = mockSession();
     let resolveSignedUp: ((value: boolean) => void) | undefined;

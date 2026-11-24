@@ -6,7 +6,7 @@ import { Logger } from '@/libs/logger/logger';
 import { getCharacterCount, sanitizeTagInput } from '@/libs/utils/utils';
 import { useEmojiInsert } from '../useEmojiInsert/useEmojiInsert';
 import type { UseTagInputOptions, UseTagInputReturn } from './useTagInput.types';
-import { filterSuggestions } from './useTagInput.utils';
+import { filterSuggestions, normalizeLegacyTagLabel } from './useTagInput.utils';
 
 /**
  * Hook for managing tag input state and local suggestions.
@@ -37,13 +37,18 @@ import { filterSuggestions } from './useTagInput.utils';
  * });
  * ```
  */
-export function useTagInput({ onTagAdd, existingTags = [], allTags = [] }: UseTagInputOptions): UseTagInputReturn {
+export function useTagInput({
+  onTagAdd,
+  existingTags = [],
+  allTags = [],
+  normalizeLabel = normalizeLegacyTagLabel,
+}: UseTagInputOptions): UseTagInputReturn {
   const [inputValue, setInputValue] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const filteredSuggestions = filterSuggestions(allTags, inputValue);
+  const filteredSuggestions = filterSuggestions(allTags, inputValue, undefined, normalizeLabel);
 
   const clearInput = () => {
     setInputValue('');
@@ -55,8 +60,8 @@ export function useTagInput({ onTagAdd, existingTags = [], allTags = [] }: UseTa
     if (!trimmedTag) return;
 
     // Check for duplicates (case-insensitive)
-    const normalizedTag = trimmedTag.toLowerCase();
-    const isDuplicate = existingTags.some((tag) => tag.toLowerCase() === normalizedTag);
+    const normalizedTag = normalizeLabel(trimmedTag);
+    const isDuplicate = existingTags.some((tag) => normalizeLabel(tag) === normalizedTag);
 
     if (isDuplicate) {
       clearInput();
@@ -75,7 +80,7 @@ export function useTagInput({ onTagAdd, existingTags = [], allTags = [] }: UseTa
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const sanitized = sanitizeTagInput(e.target.value);
-    const value = sanitized.toLowerCase();
+    const value = normalizeLabel(sanitized);
     setInputValue(value);
     setShowSuggestions(value.trim().length > 0);
   };
@@ -89,7 +94,7 @@ export function useTagInput({ onTagAdd, existingTags = [], allTags = [] }: UseTa
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
     const pasted = e.clipboardData.getData('text');
-    const sanitized = sanitizeTagInput(pasted).toLowerCase();
+    const sanitized = normalizeLabel(sanitizeTagInput(pasted));
 
     const input = inputRef.current;
     const start = input?.selectionStart ?? inputValue.length;
@@ -115,7 +120,7 @@ export function useTagInput({ onTagAdd, existingTags = [], allTags = [] }: UseTa
 
   const handleEmojiChange = (newValue: string) => {
     const sanitized = sanitizeTagInput(newValue);
-    const value = sanitized.toLowerCase();
+    const value = normalizeLabel(sanitized);
     const charCount = getCharacterCount(value);
 
     if (charCount <= TAG_MAX_LENGTH) {
@@ -131,7 +136,7 @@ export function useTagInput({ onTagAdd, existingTags = [], allTags = [] }: UseTa
 
   // Set input value with sanitization (for programmatic updates like suggestion selection)
   const setSanitizedInputValue = (value: string) => {
-    const sanitized = sanitizeTagInput(value).toLowerCase();
+    const sanitized = normalizeLabel(sanitizeTagInput(value));
     setInputValue(sanitized);
   };
 

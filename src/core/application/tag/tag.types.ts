@@ -3,13 +3,14 @@ import type { TTagEventParams } from '@/controllers/tag/tag.types';
 export interface TCreateTagInput extends TTagEventParams {
   tagUrl: string;
   tagJson: Record<string, unknown>;
+  tagBody?: Uint8Array;
 }
 
 export interface TCreateTagListInput {
   tagList: TCreateTagInput[];
 }
 
-export type TDeleteTagInput = Omit<TCreateTagInput, 'tagJson'>;
+export type TDeleteTagInput = Omit<TCreateTagInput, 'tagJson' | 'tagBody'> & { targetUri?: string };
 
 export enum TagKind {
   USER = 'user',

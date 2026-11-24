@@ -68,7 +68,7 @@ vi.mock('@/hooks/usePublicRoute/usePublicRoute', () => ({
 
 vi.mock('@/stores/notification/notification.store', () => ({
   useNotificationStore: (selector: (state: Record<string, unknown>) => unknown) =>
-    selector({ selectTotalUnread: () => 0 }),
+    selector({ selectMarketplaceUnread: () => 0 }),
 }));
 
 vi.mock('@/stores/localFiles/localFiles.store', () => ({

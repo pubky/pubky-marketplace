@@ -1,12 +1,4 @@
-import {
-  dropUriBuilder,
-  listingUriBuilder,
-  marketplaceReviewUriBuilder,
-  orderReceiptUriBuilder,
-  reviewResponseUriBuilder,
-  shopUriBuilder,
-  watchlistUriBuilder,
-} from 'pubky-app-specs';
+import { buildMarketUri } from 'pubky-market-specs';
 import { z } from 'zod';
 import { LISTING_CURRENCY_CODES } from '@/config/currencies';
 import {
@@ -683,7 +675,7 @@ export class CommerceRecordNormalizer {
 
   /**
    * Auction money terms arrive as minor units of the listing's primary asset
-   * (`price_currency` / `price_exponent`); pubky-app-specs guarantees all
+   * (`price_currency` / `price_exponent`); pubky-market-specs guarantees all
    * auction prices share that asset, so denominating them here reproduces the
    * record's terms rather than inventing values.
    */
@@ -715,14 +707,14 @@ export class CommerceRecordNormalizer {
     return this.parse(locksPublicUriSchema, input, 'lockResource');
   }
 
-  // Record paths come from pubky-app-specs so the client cannot drift from the
+  // Record paths come from pubky-market-specs so the client cannot drift from the
   // protocol definition. Media has no spec object yet and keeps a local path.
   static shopUri(ownerPubky: unknown): string {
-    return shopUriBuilder(this.pubky(ownerPubky));
+    return buildMarketUri(this.pubky(ownerPubky), 'shop');
   }
 
   static listingUri(ownerPubky: unknown, listingId: unknown): string {
-    return listingUriBuilder(this.pubky(ownerPubky), this.entityId(listingId));
+    return buildMarketUri(this.pubky(ownerPubky), 'listing', this.entityId(listingId));
   }
 
   static auctionReserveUri(ownerPubky: unknown, listingId: unknown): string {
@@ -748,16 +740,16 @@ export class CommerceRecordNormalizer {
   }
 
   static reviewUri(ownerPubky: unknown, reviewId: unknown): string {
-    return marketplaceReviewUriBuilder(this.pubky(ownerPubky), this.entityId(reviewId));
+    return buildMarketUri(this.pubky(ownerPubky), 'review', this.entityId(reviewId));
   }
 
   static reviewResponseUri(responderPubky: unknown, reviewId: unknown): string {
-    return reviewResponseUriBuilder(this.pubky(responderPubky), this.entityId(reviewId));
+    return buildMarketUri(this.pubky(responderPubky), 'review_response', this.entityId(reviewId));
   }
 
   /** The owner's PRIVATE watchlist document URI (`pubky://<owner>/priv/pubky.app/marketplace/v1/watchlist.json`). */
   static watchlistUri(ownerPubky: unknown): string {
-    return watchlistUriBuilder(this.pubky(ownerPubky));
+    return buildMarketUri(this.pubky(ownerPubky), 'watchlist');
   }
 
   static watchlistRecord(input: unknown): CommerceWatchlistRecord {
@@ -765,7 +757,7 @@ export class CommerceRecordNormalizer {
   }
 
   static orderReceiptUri(ownerPubky: unknown, receiptId: unknown): string {
-    return orderReceiptUriBuilder(this.pubky(ownerPubky), z.uuid().parse(receiptId));
+    return buildMarketUri(this.pubky(ownerPubky), 'order_receipt', z.uuid().parse(receiptId));
   }
 
   /** The owner's plaintext v1 receipt directory, read only to move its files into encrypted entries. */
@@ -778,7 +770,7 @@ export class CommerceRecordNormalizer {
   }
 
   static dropUri(ownerPubky: unknown, dropId: unknown): string {
-    return dropUriBuilder(this.pubky(ownerPubky), z.string().min(1).parse(dropId));
+    return buildMarketUri(this.pubky(ownerPubky), 'drop', z.string().min(1).parse(dropId));
   }
 
   static drop(input: unknown): CommerceDropRecord {
