@@ -135,6 +135,31 @@ function sharePost(files: readonly File[], fields: Record<string, string> = {}, 
   });
 }
 
+/**
+ * A share POST from a form whose file input has nothing selected: browsers
+ * still send one `media` part, with an empty file name and an empty body.
+ */
+function emptyFileInputPost(text: string): Request {
+  const body = [
+    '--b',
+    'Content-Disposition: form-data; name="text"',
+    '',
+    text,
+    '--b',
+    'Content-Disposition: form-data; name="media"; filename=""',
+    'Content-Type: application/octet-stream',
+    '',
+    '',
+    '--b--',
+    '',
+  ].join('\r\n');
+  return new Request('http://localhost:3000/share', {
+    method: 'POST',
+    body,
+    headers: { 'content-type': 'multipart/form-data; boundary=b' },
+  });
+}
+
 describe('shareTarget utilities', () => {
   let storage: MemoryCacheStorage;
   const originalCaches = globalThis.caches;
@@ -351,6 +376,33 @@ describe('shareTarget utilities', () => {
       );
       expect(storage.stores.size).toBe(0);
       await expect(getSharedFiles()).resolves.toEqual([]);
+    });
+
+    it('ignores the empty part of a file input with nothing selected', async () => {
+      await handleShareTarget(sharePost([new File([await image('png')], 'old.png')]), cacheStorage());
+
+      const response = await handleShareTarget(emptyFileInputPost('only text'), cacheStorage());
+
+      expect(response.headers.get('location')).toBe('http://localhost:3000/share?text=only+text');
+      expect(storage.stores.size).toBe(0);
+    });
+
+    it('keeps a file with no name when it has content', async () => {
+      const response = await handleShareTarget(parsedSharePost([new File([await image('png')], '')]), cacheStorage());
+
+      expect(response.headers.get('location')).toBe('http://localhost:3000/share?hasFiles=true');
+      const files = await getSharedFiles();
+      expect(files.map((file) => [file.name, file.type])).toEqual([['shared-file', 'image/png']]);
+    });
+
+    it('still counts an empty file that has a name', async () => {
+      const response = await handleShareTarget(
+        sharePost([new File([], 'empty.png', { type: 'image/png' })]),
+        cacheStorage(),
+      );
+
+      expect(response.headers.get('location')).toBe('http://localhost:3000/share?refusedFiles=1');
+      expect(storage.stores.get('share-target-files')?.putNames).toEqual([]);
     });
 
     it('hands the share page only files typed from their bytes', async () => {

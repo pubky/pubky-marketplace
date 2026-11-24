@@ -51,7 +51,10 @@ export async function handleShareTarget(request: Request, cacheStorage: CacheSto
   const text = formData.get('text')?.toString() ?? '';
   const url = formData.get('url')?.toString() ?? '';
 
-  const files = formData.getAll('media').filter((entry): entry is File => entry instanceof File);
+  // A file input with nothing selected still sends one empty, unnamed part.
+  const files = formData
+    .getAll('media')
+    .filter((entry): entry is File => entry instanceof File && (entry.size > 0 || entry.name !== ''));
   let stored = 0;
   let refused = 0;
 
