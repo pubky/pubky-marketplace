@@ -38,9 +38,10 @@ export async function sharedFileType(file: Blob): Promise<string | null> {
 }
 
 /**
- * Answers a Web Share Target POST to /share in the service worker. Text
- * params go into the redirect's query; files `sharedFileType` accepts are
- * cached under that type, and the rest are dropped before caching and
+ * Answers a Web Share Target POST to /share in the service worker. Every
+ * POST first drops the files of an earlier share, text-only shares included.
+ * Text params go into the redirect's query; files `sharedFileType` accepts
+ * are cached under that type, and the rest are dropped before caching and
  * counted in `refusedFiles`.
  */
 export async function handleShareTarget(request: Request, cacheStorage: CacheStorage): Promise<Response> {
@@ -54,11 +55,9 @@ export async function handleShareTarget(request: Request, cacheStorage: CacheSto
   let stored = 0;
   let refused = 0;
 
+  await cacheStorage.delete(SHARE_TARGET_CACHE);
   if (files.length > 0) {
     const cache = await cacheStorage.open(SHARE_TARGET_CACHE);
-    for (const key of await cache.keys()) {
-      await cache.delete(key);
-    }
     for (const file of files) {
       const type = await sharedFileType(file);
       if (!type) {

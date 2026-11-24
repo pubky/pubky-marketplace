@@ -286,7 +286,9 @@ describe('shareTarget utilities', () => {
       ]);
     });
 
-    it('redirects a text-only share without opening the cache', async () => {
+    it('drops the files of an earlier share on a text-only share', async () => {
+      await handleShareTarget(sharePost([new File([await image('png')], 'old.png')]), cacheStorage());
+
       const response = await handleShareTarget(
         sharePost([], { title: 'T', url: 'https://example.com' }),
         cacheStorage(),
@@ -296,6 +298,7 @@ describe('shareTarget utilities', () => {
         'http://localhost:3000/share?title=T&url=https%3A%2F%2Fexample.com',
       );
       expect(storage.stores.size).toBe(0);
+      await expect(getSharedFiles()).resolves.toEqual([]);
     });
 
     it('hands the share page only files typed from their bytes', async () => {
