@@ -711,6 +711,23 @@ describe.each([
     const parkFirstRemovalStateRead = () => parkRemovalStateRead(1, true);
     const parkSecondRemovalStateRead = (afterAnswer: boolean) => parkRemovalStateRead(2, afterAnswer);
 
+    const parkOwnReviewIdRead = () => {
+      const read = LocalCommerceService.getOwnReviewById.bind(LocalCommerceService);
+      let arrive = () => {};
+      let release = () => {};
+      const reached = new Promise<void>((resolve) => (arrive = resolve));
+      const proceed = new Promise<void>((resolve) => (release = resolve));
+      vi.spyOn(LocalCommerceService, 'getOwnReviewById').mockImplementationOnce(async (id) => {
+        const answer = await read(id);
+        arrive();
+        await proceed;
+        return answer;
+      });
+      const getOrder = vi.spyOn(MarketplaceGatewayService, 'getOrder');
+      getOrder.mockClear();
+      return { reached, release, getOrder };
+    };
+
     it('deletes the record through the order list after the account signs back in', async () => {
       await leaveRecordWithdrawnAfterWipe();
       mockItemAttestations();
@@ -857,6 +874,124 @@ describe.each([
       expect(homeserver.files.has(url)).toBe(true);
       expect(await localRow()).toBeUndefined();
       expect(await jobs()).toHaveLength(1);
+    });
+
+    it('withdrawn cleanup sends no second service read when the scope ends during its local read', async () => {
+      await leaveRecordWithdrawnAfterWipe();
+      const scope = new AbortController();
+      const parked = parkOwnReviewIdRead();
+      const hydration = CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, service.order(), scope.signal);
+      await parked.reached;
+      scope.abort(new DOMException('Signed out', 'AbortError'));
+      useAuthStore.getState().setCurrentUserPubky(null);
+      parked.release();
+
+      await expect(hydration).resolves.toBeNull();
+
+      expect(parked.getOrder).toHaveBeenCalledTimes(1);
+      expect(deletes()).toEqual([]);
+      expect(homeserver.files.has(url)).toBe(true);
+      expect(await localRow()).toBeUndefined();
+      expect(await jobs()).toEqual([]);
+    });
+
+    it('withdrawn cleanup sends no second service read when the account changes during its local read', async () => {
+      await leaveRecordWithdrawnAfterWipe();
+      const parked = parkOwnReviewIdRead();
+      const hydration = CommerceApplication.getOwnMarketplaceReview(
+        ORDER_FIXTURE_BUYER,
+        service.order(),
+        new AbortController().signal,
+      );
+      await parked.reached;
+      useAuthStore.getState().setCurrentUserPubky(order.sellerPubky);
+      parked.release();
+
+      await expect(hydration).resolves.toBeNull();
+
+      expect(parked.getOrder).toHaveBeenCalledTimes(1);
+      expect(deletes()).toEqual([]);
+      expect(homeserver.files.has(url)).toBe(true);
+      expect(await localRow()).toBeUndefined();
+      expect(await jobs()).toEqual([]);
+    });
+
+    it('withdrawn cleanup republishes an edit that lands between its fresh read and DEL', async () => {
+      await leaveRecordWithdrawnAfterWipe();
+      const parked = homeserver.holdNext(HttpMethod.DELETE, url);
+      const hydration = CommerceApplication.getOwnMarketplaceReview(
+        ORDER_FIXTURE_BUYER,
+        service.order(),
+        new AbortController().signal,
+      );
+      await parked.reached;
+      const own = order.reviews![0];
+      Object.assign(own, {
+        text: 'Edited on another device.',
+        rating: 2,
+        shipping: 4,
+        communication: 3,
+        updatedAt: '2026-08-22T10:00:00.000Z',
+      });
+      service.reinstate();
+      await CommerceHomeserverService.putJson(url, {
+        ...otherDeviceEdit(2, own.text, own.rating),
+        ratings: { overall: own.rating, shipping: own.shipping, communication: own.communication },
+      });
+      parked.release();
+
+      await expect(hydration).resolves.toBeNull();
+
+      const current = service.order().reviews![0];
+      expect(homeserver.files.get(url)).toMatchObject({
+        text: current.text,
+        ratings: { overall: current.rating, shipping: 4, communication: 3 },
+        updatedAt: current.updatedAt,
+        eligibilityAttestation: published.record.eligibilityAttestation,
+      });
+      expect(service.log.filter((entry) => entry === 'review.withdraw')).toHaveLength(1);
+      expect((await localRow())?.sync_status).toBe('synced');
+    });
+
+    it('withdrawn cleanup does not republish while the post-DEL read still says removed', async () => {
+      await leaveRecordWithdrawnAfterWipe();
+
+      await expect(
+        CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, service.order(), new AbortController().signal),
+      ).resolves.toBeNull();
+
+      expect(homeserver.files.has(url)).toBe(false);
+      expect(homeserver.log.filter((entry) => entry.startsWith(`${HttpMethod.PUT} `))).toEqual([]);
+      expect(await localRow()).toBeUndefined();
+      expect(await jobs()).toEqual([]);
+    });
+
+    it('withdrawn cleanup leaves a legacy per-listing record in place', async () => {
+      await leaveRecordWithdrawnAfterWipe();
+      const { orderRef: _orderRef, ...unscoped } = published.record;
+      const { PubkySpecsBuilder } = await import('pubky-app-specs');
+      const legacy = new PubkySpecsBuilder(ORDER_FIXTURE_BUYER).createMarketplaceReview({
+        ...unscoped,
+        reviewId: '',
+      });
+      const legacyUrl = CommerceRecordNormalizer.reviewUri(ORDER_FIXTURE_BUYER, legacy.meta.id);
+      homeserver.files.delete(url);
+      homeserver.files.set(legacyUrl, legacy.marketplace_review.toJson());
+
+      await expect(
+        CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, service.order(), new AbortController().signal),
+      ).resolves.toBeNull();
+
+      expect(homeserver.files.has(legacyUrl)).toBe(true);
+      expect(homeserver.log.filter((entry) => entry.startsWith(`${HttpMethod.DELETE} `))).toEqual([]);
+      expect(await localRow()).toBeUndefined();
+      expect(await jobs()).toEqual([]);
+
+      homeserver.log.length = 0;
+      await expect(
+        CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, service.order(), new AbortController().signal),
+      ).resolves.toBeNull();
+      expect(homeserver.log).toEqual([]);
     });
   });
 

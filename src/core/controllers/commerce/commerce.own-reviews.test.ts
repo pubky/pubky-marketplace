@@ -37,8 +37,8 @@ describe('CommerceController own reviews', () => {
     await expect(CommerceController.getOwnMarketplaceReview(order)).resolves.toBeNull();
     await expect(CommerceController.getOwnMarketplaceOrderReviews(order)).resolves.toEqual([]);
 
-    expect(single).toHaveBeenCalledWith(ORDER_FIXTURE_BUYER, order, captureAuthScope());
-    expect(items).toHaveBeenCalledWith(ORDER_FIXTURE_BUYER, order, captureAuthScope());
+    expect(single.mock.calls[0][2]).toBe(captureAuthScope());
+    expect(items.mock.calls[0][2]).toBe(captureAuthScope());
   });
 
   it('refreshes and resumes through the application for the signed-in user', async () => {
