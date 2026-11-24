@@ -12,6 +12,7 @@ import { isAppError } from '@/libs/error/error';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
+import { isAbortError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
 import { isPubkyIdentifier, stripPubkyPrefix } from '@/libs/utils/utils';
 import type { ChatContext } from '@/models/chat/chat.schema';
@@ -28,6 +29,8 @@ import type { InboxAvailability, InboxPing, InboxPingRef } from '@/services/inbo
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useChatStore } from '@/stores/chat/chat.store';
 import type { ChatConversationView, ChatMessageView, ChatSendParams } from './chat.types';
+
+type ChatOrder = { id: string; buyerPubky: string; sellerPubky: string };
 
 /**
  * UI and coordinator entry point for chat. `get*` reads Dexie, `fetch*`
@@ -123,11 +126,11 @@ export class ChatController {
    * listing each thread's listing context names, so its sale threads can be told apart. Nothing to
    * read for a viewer who sells here.
    */
-  static async fetchStoreThreadRoles(): Promise<StoreThreadRoles | null> {
+  static async fetchStoreThreadRoles(signal: AbortSignal = captureAuthScope()): Promise<StoreThreadRoles | null> {
     const me = useAuthStore.getState().currentUserPubky;
     if (!me || StoreSellerGate.canSellHere(me)) return null;
     if (this.storeThreadRolesRead?.pubky !== me) {
-      const read: Promise<StoreThreadRoles> = this.readStoreThreadRoles(me).finally(() => {
+      const read: Promise<StoreThreadRoles> = this.readStoreThreadRoles(me, signal).finally(() => {
         if (this.storeThreadRolesRead?.read === read) this.storeThreadRolesRead = null;
       });
       this.storeThreadRolesRead = { pubky: me, read };
@@ -138,41 +141,77 @@ export class ChatController {
   /** One read per account at a time: every chat surface asks on mount. */
   private static storeThreadRolesRead: { pubky: string; read: Promise<StoreThreadRoles> } | null = null;
 
-  private static async readStoreThreadRoles(me: string): Promise<StoreThreadRoles> {
-    const signal = captureAuthScope();
+  private static async readStoreThreadRoles(me: string, signal: AbortSignal): Promise<StoreThreadRoles> {
     const [orders, conversations] = await Promise.all([
       CommerceApplication.getMarketplaceOrders(me),
       ChatApplication.getConversations(me, { includeEmpty: true }),
     ]);
+    signal.throwIfAborted();
+    const knownOrderIds = new Set(orders.map(({ id }) => id));
+    const missingOrderIds = new Set<string>();
     const contexts = new Map<string, { peer: string; listingId: string }>();
     for (const { peer_pubky: peer, last_context: context } of conversations) {
+      if (context?.orderId && !knownOrderIds.has(context.orderId)) missingOrderIds.add(context.orderId);
       if (context?.listingId)
         contexts.set(listingContextKey(peer, context.listingId), { peer, listingId: context.listingId });
     }
+    const resolvedOrders = await this.resolveOrdersById(me, missingOrderIds, signal);
     const listingSides: Record<string, ListingSide> = {};
     const pending = [...contexts.entries()];
     for (let index = 0; index < pending.length; index += CHAT_FETCH_CONCURRENCY) {
       await Promise.all(
         pending.slice(index, index + CHAT_FETCH_CONCURRENCY).map(async ([key, { peer, listingId }]) => {
-          const side = await this.listingSide(me, null, peer, listingId, { fetch: true });
-          if (side) listingSides[key] = side;
+          const side = await this.listingSide(me, null, peer, listingId, { fetch: true, signal });
+          if (side !== null) listingSides[key] = side;
         }),
       );
       signal.throwIfAborted();
     }
-    const roles = storeThreadRoles(orders, me, listingSides);
+    const roles = storeThreadRoles([...orders, ...resolvedOrders], me, listingSides);
     signal.throwIfAborted();
     useChatStore.getState().setStoreThreadRoles(roles);
     return roles;
   }
 
+  private static async resolveOrdersById(
+    me: string,
+    orderIds: ReadonlySet<string>,
+    signal: AbortSignal,
+  ): Promise<ChatOrder[]> {
+    const resolved: ChatOrder[] = [];
+    const pending = [...orderIds];
+    for (let index = 0; index < pending.length; index += CHAT_FETCH_CONCURRENCY) {
+      await Promise.all(
+        pending.slice(index, index + CHAT_FETCH_CONCURRENCY).map(async (orderId) => {
+          try {
+            const parties = await CommerceApplication.getMarketplaceOrderParties(me, orderId);
+            signal.throwIfAborted();
+            if (parties === null) {
+              Logger.warn('Could not resolve the order a chat context names', { orderId });
+              return;
+            }
+            resolved.push({ id: orderId, ...parties });
+          } catch (error) {
+            signal.throwIfAborted();
+            if (isAbortError(error)) throw error;
+            Logger.warn('Could not read the order a chat context names', { orderId, error });
+          }
+        }),
+      );
+      signal.throwIfAborted();
+    }
+    return resolved;
+  }
+
   /** The roles this tab has, read first when it has none; null when they cannot be read now. */
-  private static async knownStoreThreadRoles(): Promise<StoreThreadRoles | null> {
+  private static async knownStoreThreadRoles(signal: AbortSignal): Promise<StoreThreadRoles | null> {
     const known = useChatStore.getState().storeThreadRoles;
     if (known) return known;
     try {
-      return await this.fetchStoreThreadRoles();
+      return await this.fetchStoreThreadRoles(signal);
     } catch (error) {
+      signal.throwIfAborted();
+      if (isAbortError(error)) throw error;
       if (!isAppError(error)) Logger.warn('Could not read the store thread roles', { error });
       return null;
     }
@@ -191,97 +230,159 @@ export class ChatController {
     me: string,
     roles: StoreThreadRoles | null,
     thread: { peer_pubky: string; last_context: ChatContext | null },
-    options: { fetch?: boolean } = {},
   ): Promise<boolean> {
     const listingId = thread.last_context?.listingId;
-    const side = listingId ? await this.listingSide(me, roles, thread.peer_pubky, listingId, options) : null;
+    const side = listingId ? await this.listingSide(me, roles, thread.peer_pubky, listingId) : null;
     return !isSaleThread(thread, roles, getStoreSeller(), side);
   }
 
   /**
    * Whose listing a context names: resolved in the roles, else cached here under the peer's or the
    * viewer's composite id, else (with `fetch`) read from the peer's and then the viewer's homeserver.
-   * Null when none of these finds it.
+   * `absent` requires both complete lookups; null leaves the context unresolved after a failed read.
    */
   private static async listingSide(
     me: string,
     roles: StoreThreadRoles | null,
     peer: string,
     listingId: string,
-    { fetch = false }: { fetch?: boolean } = {},
+    { fetch = false, signal }: { fetch?: boolean; signal?: AbortSignal } = {},
   ): Promise<ListingSide | null> {
     const resolved = roles?.listingSides[listingContextKey(peer, listingId)];
     if (resolved) return resolved;
+    signal?.throwIfAborted();
     const owners = [
       { owner: peer, side: 'peer' },
       { owner: me, side: 'viewer' },
     ] as const;
-    for (const { owner, side } of owners) {
-      if (await CommerceApplication.getListing(`${owner}:${listingId}`)) return side;
-    }
-    if (!fetch) return null;
-    for (const { owner, side } of owners) {
-      try {
-        if (await CommerceApplication.getOrFetchListingIfFound(owner, listingId)) return side;
-      } catch (error) {
-        if (!isAppError(error)) Logger.warn('Could not read the listing a chat context names', { error });
+    for (const source of ['cache', 'homeserver'] as const) {
+      if (source === 'homeserver' && !fetch) return null;
+      for (const { owner, side } of owners) {
+        try {
+          const listing =
+            source === 'cache'
+              ? await CommerceApplication.getListing(`${owner}:${listingId}`)
+              : await CommerceApplication.getOrFetchListingIfFound(owner, listingId);
+          signal?.throwIfAborted();
+          if (listing) return side;
+        } catch (error) {
+          signal?.throwIfAborted();
+          if (isAbortError(error)) throw error;
+          if (!isAppError(error)) Logger.warn('Could not read the listing a chat context names', { error });
+          return null;
+        }
       }
     }
-    return null;
+    return 'absent';
   }
 
-  /**
-   * Whether a write to a peer is a sale for a viewer who cannot sell here: the thread with that peer,
-   * or the context the write names, is a sale thread.
-   */
+  /** A write's own sale or unresolved context is refused before peer-level purchase history applies. */
   private static async isSaleWrite(
     me: string,
     roles: StoreThreadRoles | null,
     peer: string,
     context: ChatContext | null | undefined,
+    signal: AbortSignal,
   ): Promise<boolean> {
+    signal.throwIfAborted();
+    if (peer === getStoreSeller()) return false;
+    if (roles === null) return true;
     const existing = await ChatApplication.getConversation(me, peer);
-    const threads = [
-      existing ?? { peer_pubky: peer, last_context: null },
-      ...(context ? [{ peer_pubky: peer, last_context: context }] : []),
-    ];
-    for (const thread of threads) {
-      if (!(await this.isBuyerThread(me, roles, thread, { fetch: true }))) return true;
+    signal.throwIfAborted();
+    const contexts = [existing?.last_context, context];
+    const missingOrderIds = new Set<string>();
+    for (const candidate of contexts) {
+      const orderId = candidate?.orderId;
+      if (orderId && !roles.boughtOrderIds.includes(orderId) && !roles.soldOrderIds.includes(orderId)) {
+        missingOrderIds.add(orderId);
+      }
     }
-    return false;
+    const resolvedOrders = await this.resolveOrdersById(me, missingOrderIds, signal);
+    const additions = storeThreadRoles(resolvedOrders, me);
+    const listingSides: Record<string, ListingSide> = { ...roles.listingSides };
+    const merged: StoreThreadRoles = {
+      soldTo: [...new Set([...roles.soldTo, ...additions.soldTo])],
+      boughtFrom: [...new Set([...roles.boughtFrom, ...additions.boughtFrom])],
+      soldOrderIds: [...new Set([...roles.soldOrderIds, ...additions.soldOrderIds])],
+      boughtOrderIds: [...new Set([...roles.boughtOrderIds, ...additions.boughtOrderIds])],
+      listingSides,
+    };
+    let changed = resolvedOrders.length > 0;
+    for (const candidate of contexts) {
+      const listingId = candidate?.listingId;
+      if (!listingId) continue;
+      const key = listingContextKey(peer, listingId);
+      if (listingSides[key] !== undefined) continue;
+      const side = await this.listingSide(me, merged, peer, listingId, { fetch: true, signal });
+      if (side !== null) {
+        listingSides[key] = side;
+        changed = true;
+      }
+    }
+    signal.throwIfAborted();
+    if (changed) useChatStore.getState().setStoreThreadRoles(merged);
+
+    const sideOf = (candidate: ChatContext | null | undefined): ListingSide | null => {
+      if (!candidate?.listingId) return null;
+      return merged.listingSides[listingContextKey(peer, candidate.listingId)] ?? null;
+    };
+    if (context) {
+      const orderId = context.orderId;
+      const side = sideOf(context);
+      const ownSale =
+        (orderId !== undefined && merged.soldOrderIds.includes(orderId)) ||
+        side === 'viewer' ||
+        (orderId !== undefined && !merged.boughtOrderIds.includes(orderId) && !merged.soldOrderIds.includes(orderId)) ||
+        (context.listingId !== undefined && side === null);
+      if (ownSale) return true;
+    }
+    const thread = existing ?? { peer_pubky: peer, last_context: null };
+    return isSaleThread(thread, merged, getStoreSeller(), sideOf(thread.last_context));
   }
 
   /** Refuses a write in a sale thread, or about a sale, for a viewer who cannot sell here. */
-  private static async assertNotSaleThread(me: string, peer: string, context: ChatContext | undefined): Promise<void> {
-    if (await this.isSaleWrite(me, await this.knownStoreThreadRoles(), peer, context)) {
-      StoreSellerGate.assertCanSellHere(me);
-    }
+  private static async assertNotSaleThread(
+    me: string,
+    peer: string,
+    context: ChatContext | undefined,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const sale = await this.isSaleWrite(me, await this.knownStoreThreadRoles(signal), peer, context, signal);
+    signal.throwIfAborted();
+    if (sale) StoreSellerGate.assertCanSellHere(me);
   }
 
   /** For a viewer who cannot sell here, which queued messages may go out: none in a sale thread or about a sale. */
-  private static async outboxSends(me: string): Promise<ChatOutboxSends | undefined> {
+  private static async outboxSends(me: string, signal: AbortSignal): Promise<ChatOutboxSends | undefined> {
     if (StoreSellerGate.canSellHere(me)) return undefined;
-    const roles = await this.knownStoreThreadRoles();
-    return async ({ peer_pubky, context }) => !(await this.isSaleWrite(me, roles, peer_pubky, context));
+    const roles = await this.knownStoreThreadRoles(signal);
+    return async ({ peer_pubky, context }) => {
+      const sale = await this.isSaleWrite(me, roles, peer_pubky, context, signal);
+      signal.throwIfAborted();
+      return !sale;
+    };
   }
 
   // ------------------------------------------------------------------ writes
 
   static async commitOpenConversation(peerPubky: string, context?: ChatContext): Promise<ChatOpenResult> {
     const me = this.me();
+    const signal = captureAuthScope();
     const sellsHere = StoreSellerGate.canSellHere(me);
     const peer = this.normalizePeer(peerPubky);
-    if (!sellsHere) await this.assertNotSaleThread(me, peer, context);
-    return await ChatApplication.openConversation(me, peer, context, captureAuthScope());
+    if (!sellsHere) await this.assertNotSaleThread(me, peer, context, signal);
+    signal.throwIfAborted();
+    return await ChatApplication.openConversation(me, peer, context, signal);
   }
 
   /** Queues locally (the UI updates at once), then starts delivery. Returns the message row id. */
   static async commitSendMessage(params: ChatSendParams): Promise<string> {
     const me = this.me();
+    const signal = captureAuthScope();
     const sellsHere = StoreSellerGate.canSellHere(me);
     const peer = this.normalizePeer(params.peerPubky);
-    if (!sellsHere) await this.assertNotSaleThread(me, peer, params.context);
-    const signal = captureAuthScope();
+    if (!sellsHere) await this.assertNotSaleThread(me, peer, params.context, signal);
+    signal.throwIfAborted();
     const id = await ChatApplication.queueMessage(me, { peer, body: params.body, context: params.context }, signal);
     void this.flushOutboxFor(me, signal);
     if (params.context) void this.followSellerOnIntent(me, peer, params.context, signal);
@@ -328,8 +429,9 @@ export class ChatController {
   /** Puts a failed message back in the queue; in a store, one in a sale thread or about a sale stays failed. */
   static async commitRetryMessage(id: string): Promise<void> {
     const me = this.me();
-    const sends = await this.outboxSends(me);
     const signal = captureAuthScope();
+    const sends = await this.outboxSends(me, signal);
+    signal.throwIfAborted();
     await ChatApplication.retryMessage(me, id, signal, { sends });
     void this.flushOutboxFor(me, signal);
   }
@@ -346,7 +448,7 @@ export class ChatController {
    */
   private static async flushOutboxFor(me: string, signal: AbortSignal): Promise<void> {
     try {
-      await ChatApplication.flushOutbox(me, signal, { sends: await this.outboxSends(me) });
+      await ChatApplication.flushOutbox(me, signal, { sends: await this.outboxSends(me, signal) });
     } catch (error) {
       if (!signal.aborted) {
         Logger.warn('Chat outbox flush failed; queued messages wait for the next attempt', { error });

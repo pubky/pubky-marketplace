@@ -211,7 +211,9 @@ describe('isSaleThread', () => {
   const roles = storeThreadRoles(
     [
       { id: 'bought', buyerPubky: VIEWER, sellerPubky: STORE_SELLER },
+      { id: 'bought-from-prior-peer', buyerPubky: VIEWER, sellerPubky: 'p'.repeat(52) },
       { id: 'sold', buyerPubky: BUYER, sellerPubky: VIEWER },
+      { id: 'resolved-sold', buyerPubky: 'r'.repeat(52), sellerPubky: VIEWER },
       { id: 'sold-to-store-seller', buyerPubky: STORE_SELLER, sellerPubky: VIEWER },
     ],
     VIEWER,
@@ -235,10 +237,48 @@ describe('isSaleThread', () => {
     expect(isSale(BUYER, { listingId: 'boots' }, 'peer')).toBe(false);
   });
 
-  it('keeps a plain thread, an order neither list names, and a listing it could not resolve', () => {
-    expect(isSale(OTHER, null)).toBe(false);
-    expect(isSale(OTHER, { orderId: 'unknown' })).toBe(false);
-    expect(isSale(OTHER, { listingId: 'boots' })).toBe(false);
+  it.each([
+    { name: 'order known bought', peer: OTHER, context: { orderId: 'bought' }, side: null, sale: false },
+    { name: 'order known sold', peer: OTHER, context: { orderId: 'sold' }, side: null, sale: true },
+    {
+      name: 'order missing from the page but resolved by id as sold',
+      peer: 'r'.repeat(52),
+      context: { orderId: 'resolved-sold' },
+      side: null,
+      sale: true,
+    },
+    {
+      name: 'order missing from the page and unresolvable',
+      peer: OTHER,
+      context: { orderId: 'unknown' },
+      side: null,
+      sale: true,
+    },
+    {
+      name: 'order lookup throws',
+      peer: OTHER,
+      context: { orderId: 'failed-order' },
+      side: null,
+      sale: true,
+    },
+    { name: 'listing peer', peer: OTHER, context: { listingId: 'boots' }, side: 'peer', sale: false },
+    { name: 'listing viewer', peer: OTHER, context: { listingId: 'boots' }, side: 'viewer', sale: true },
+    { name: 'listing absent', peer: OTHER, context: { listingId: 'gone' }, side: 'absent', sale: false },
+    { name: 'listing lookup failed', peer: OTHER, context: { listingId: 'gone' }, side: null, sale: true },
+    { name: 'no context', peer: OTHER, context: null, side: null, sale: false },
+    {
+      name: 'store seller with an unresolved context',
+      peer: STORE_SELLER,
+      context: { orderId: 'unknown' },
+      side: null,
+      sale: false,
+    },
+  ] as const)('classifies $name fail closed where needed', ({ peer, context, side, sale }) => {
+    expect(isSale(peer, context, side)).toBe(sale);
+  });
+
+  it('keeps purchase evidence ahead of an unresolved context for reads', () => {
+    expect(isSale('p'.repeat(52), { orderId: 'unknown' })).toBe(false);
   });
 
   it('shows only the thread with the store seller before the roles are read', () => {

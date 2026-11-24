@@ -155,8 +155,8 @@ export function withoutSalesNotificationsOutsideStoreSeller<T extends SubjectNot
   return notifications.filter(isBuyerSide);
 }
 
-/** Whose listing a chat context names: the peer's (the viewer asks as a buyer) or the viewer's own. */
-export type ListingSide = 'peer' | 'viewer';
+/** Whose listing a chat context names, or that neither side owns it after a complete lookup. */
+export type ListingSide = 'peer' | 'viewer' | 'absent';
 
 /**
  * Which chat peers the viewer sold to or bought from, which order ids are its sales or purchases, and
@@ -196,8 +196,8 @@ export function storeThreadRoles(
  * peer, so it stays whenever anything makes it a purchase: the peer sold to the viewer, or its latest
  * context is an order the viewer bought or a listing of the peer. Otherwise it is a sale when the peer
  * bought from the viewer, or its latest context is an order the viewer sold or a listing of the
- * viewer's. Anything else stays: a plain thread, an order neither list names, and a listing context
- * `listingSide` could not resolve.
+ * viewer's. A context that remains unresolved is also a sale. A plain thread and a listing lookup that
+ * completed without finding either owner's listing stay. The store seller's own thread always stays.
  */
 export function isSaleThread(
   thread: { peer_pubky: string; last_context: ChatContext | null },
@@ -206,16 +206,21 @@ export function isSaleThread(
   listingSide: ListingSide | null,
 ): boolean {
   const { peer_pubky: peer, last_context: context } = thread;
-  if (roles === null) return peer !== storeSeller;
+  if (peer === storeSeller) return false;
+  if (roles === null) return true;
   const orderId = context?.orderId;
   const purchase =
     roles.boughtFrom.includes(peer) ||
     (orderId !== undefined && roles.boughtOrderIds.includes(orderId)) ||
     listingSide === 'peer';
   if (purchase) return false;
-  return (
+  const sale =
     roles.soldTo.includes(peer) ||
     (orderId !== undefined && roles.soldOrderIds.includes(orderId)) ||
-    listingSide === 'viewer'
+    listingSide === 'viewer';
+  if (sale) return true;
+  return (
+    (orderId !== undefined && !roles.boughtOrderIds.includes(orderId) && !roles.soldOrderIds.includes(orderId)) ||
+    (context?.listingId !== undefined && listingSide === null)
   );
 }
