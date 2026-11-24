@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FileVariant } from '@/services/nexus/file/file.types';
 import type { AttachmentConstructed } from '../PostAttachments/PostAttachments.types';
@@ -42,13 +42,25 @@ vi.mock('@/atoms/Image/Image', () => {
       className,
       width,
       height,
+      onError,
     }: {
       src: string;
       alt: string;
       className?: string;
       width?: number;
       height?: number;
-    }) => <img data-testid="cover-image" src={src} alt={alt} className={className} width={width} height={height} />,
+      onError?: () => void;
+    }) => (
+      <img
+        data-testid="cover-image"
+        src={src}
+        alt={alt}
+        className={className}
+        width={width}
+        height={height}
+        onError={onError}
+      />
+    ),
   };
 });
 
@@ -319,6 +331,39 @@ describe('PostArticle', () => {
 
       const image = screen.getByTestId('cover-image');
       expect(image).toHaveAttribute('src', 'https://example.com/cover-image.jpg');
+    });
+  });
+
+  describe('Cover Image Fallback', () => {
+    const variantCover = {
+      title: 'Test Article Title',
+      body: 'This is the article body content.',
+      coverImage: { src: 'https://cdn.test/cover/feed', mainSrc: 'https://cdn.test/cover/main', alt: 'Cover Image' },
+    };
+
+    it('switches the cover from the feed variant to main once after a load error', () => {
+      mockUsePostArticle.mockReturnValue(variantCover);
+      render(<PostArticle {...defaultProps} />);
+
+      const image = screen.getByTestId('cover-image');
+      expect(image).toHaveAttribute('src', 'https://cdn.test/cover/feed');
+
+      fireEvent.error(image);
+      expect(image).toHaveAttribute('src', 'https://cdn.test/cover/main');
+
+      fireEvent.error(image);
+      expect(image).toHaveAttribute('src', 'https://cdn.test/cover/main');
+    });
+
+    it('renders the cover with a source on the first render after it arrives', () => {
+      mockUsePostArticle.mockReturnValue(mockHookReturnWithoutImage);
+      const { rerender } = render(<PostArticle {...defaultProps} />);
+      expect(screen.queryByTestId('cover-image')).not.toBeInTheDocument();
+
+      mockUsePostArticle.mockReturnValue(variantCover);
+      rerender(<PostArticle {...defaultProps} />);
+
+      expect(screen.getByTestId('cover-image')).toHaveAttribute('src', 'https://cdn.test/cover/feed');
     });
   });
 

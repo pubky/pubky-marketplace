@@ -347,6 +347,59 @@ describe('useVisualFeedTiles', () => {
     expect(result.current.tiles[0].previewSrc).toBe(result.current.tiles[0].mainSrc);
   });
 
+  it.each([
+    ['image/png', 'file-png'],
+    ['image/jpeg', 'file-jpeg'],
+  ])('uses the feed URL as the preview for remote %s files', async (contentType, fileName) => {
+    mockUseLiveQuery.mockImplementation(useExecutedLiveQuery);
+    mockFindByIdsPreserveOrder.mockResolvedValue([
+      createPostDetails({
+        id: 'author:post-raster',
+        attachments: [`pubky://user-1/pub/pubky.app/files/${fileName}`],
+      }),
+    ]);
+    mockGetMetadata.mockResolvedValue([
+      createFileDetails({ id: `user-1:${fileName}`, contentType, width: 100, height: 100 }),
+    ]);
+
+    const { result } = renderHook(() => useVisualFeedTiles({ postIds: ['author:post-raster'], hasMore: false }));
+
+    await waitFor(() => {
+      expect(result.current.tiles).toHaveLength(1);
+    });
+    expect(result.current.tiles[0].mainSrc).toBe(`/files/user-1:${fileName}/main`);
+    expect(result.current.tiles[0].previewSrc).toBe(`/files/user-1:${fileName}/feed`);
+  });
+
+  it('uses the feed URL for local raster files and main for local SVG files', async () => {
+    mockUseLiveQuery.mockImplementation(useExecutedLiveQuery);
+    mockLocalFilesState.posts = {
+      'author:post-local-png': [
+        { type: 'image/png', name: 'img.png', urls: { main: '/img.png', feed: '/img-feed.png' } },
+      ],
+      'author:post-local-svg': [
+        { type: 'image/svg+xml', name: 'icon.svg', urls: { main: '/icon.svg', feed: '/icon-feed.svg' } },
+      ],
+    };
+    mockFindByIdsPreserveOrder.mockResolvedValue([
+      createPostDetails({ id: 'author:post-local-png' }),
+      createPostDetails({ id: 'author:post-local-svg' }),
+    ]);
+
+    const { result } = renderHook(() =>
+      useVisualFeedTiles({ postIds: ['author:post-local-png', 'author:post-local-svg'], hasMore: false }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.tiles).toHaveLength(2);
+    });
+    const previewByPost = Object.fromEntries(result.current.tiles.map((tile) => [tile.postId, tile.previewSrc]));
+    expect(previewByPost).toEqual({
+      'author:post-local-png': '/img-feed.png',
+      'author:post-local-svg': '/icon.svg',
+    });
+  });
+
   it('resolves probed square and wide tiles into non-medium rows', async () => {
     const squareId = findIdentity({
       base: 'square-tile',
