@@ -130,7 +130,7 @@ describe('MarketplaceReputationHeader counted figures', () => {
     function basisLine(overrides: Partial<CommerceReputationSummary>): string | null {
       reputation.value = rated(overrides);
       const { unmount } = render(<MarketplaceReputationHeader sellerPubky={SELLER} variant="full" />);
-      const text = screen.getByText(/counted:/).textContent;
+      const text = screen.getByText(/counted/).textContent;
       unmount();
       return text;
     }
@@ -165,7 +165,7 @@ describe('MarketplaceReputationHeader counted figures', () => {
       });
 
       expect(after).toBe(before);
-      expect(after).toBe('No reviews counted: none is a verified purchase from an attestor this app trusts');
+      expect(after).toBe('No reviews counted');
     });
 
     it('keeps two counted reviews unchanged when many unverified reviews are added', () => {
@@ -331,9 +331,7 @@ describe('MarketplaceReputationHeader counted figures', () => {
     expect(screen.getByTestId('marketplace-reputation-seller-rating')).toHaveTextContent('No rating yet');
     expect(screen.queryByTestId('marketplace-reputation-products')).not.toBeInTheDocument();
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
-    expect(
-      screen.getByText('No reviews counted: none is a verified purchase from an attestor this app trusts'),
-    ).toBeVisible();
+    expect(screen.getByText('No reviews counted')).toBeVisible();
   });
 
   it('drops a trusted bucket its window cuts when the index served no scoped figure', () => {
@@ -344,6 +342,7 @@ describe('MarketplaceReputationHeader counted figures', () => {
     render(<MarketplaceReputationHeader sellerPubky={SELLER} variant="full" />);
 
     expect(screen.getByTestId('marketplace-reputation-seller-rating')).toHaveTextContent('No rating yet');
+    expect(screen.getByText('No reviews counted')).toBeVisible();
   });
 
   it('omits the listing count when no cached listing has counted reviews', () => {

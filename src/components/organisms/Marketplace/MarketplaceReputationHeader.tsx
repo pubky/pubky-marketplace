@@ -183,7 +183,7 @@ function productsLine(counted: CountedReputation, ratedListings: number): string
 
 function countedBasisLine(counted: CountedReputation): string {
   if (counted.reviews === 0) {
-    return 'No reviews counted: none is a verified purchase from an attestor this app trusts';
+    return 'No reviews counted';
   }
   return `${counted.reviews} ${counted.reviews === 1 ? 'review' : 'reviews'} counted: ${
     counted.reviews === 1
