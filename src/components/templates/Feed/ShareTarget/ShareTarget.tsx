@@ -36,8 +36,8 @@ export function ShareTarget() {
         variant: 'error',
         description:
           refusedFiles === 1
-            ? 'A shared file was not added. You can share JPEG, PNG, GIF and WebP images, audio and video.'
-            : `${refusedFiles} shared files were not added. You can share JPEG, PNG, GIF and WebP images, audio and video.`,
+            ? 'A shared file was not added. You can share JPEG, PNG, GIF and WebP images, MP3 and WAV audio, and MP4 video.'
+            : `${refusedFiles} shared files were not added. You can share JPEG, PNG, GIF and WebP images, MP3 and WAV audio, and MP4 video.`,
       });
     }
 

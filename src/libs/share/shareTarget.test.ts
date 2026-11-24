@@ -2,6 +2,7 @@
 // FormData, File and Request must come from one implementation for a multipart POST to parse.
 import sharp from 'sharp';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { POST_SUPPORTED_ATTACHMENT_MIME_TYPES } from '@/config/posts';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { composeShareContent, getSharedFiles, handleShareTarget, sharedFileType } from './shareTarget';
 
@@ -79,6 +80,25 @@ function wavFile(): Uint8Array<ArrayBuffer> {
   return file;
 }
 
+/**
+ * A file whose declared type keeps its case and parameters, as Chromium's
+ * multipart parser hands it over; Node's and Firefox's lowercase it.
+ */
+function chromiumFile(bits: BlobPart[], name: string, type: string): File {
+  const file = new File(bits, name);
+  Object.defineProperty(file, 'type', { value: type });
+  return file;
+}
+
+/** A share POST whose form data is already parsed, so file types reach the handler as given. */
+function parsedSharePost(files: readonly File[]): Request {
+  const form = new FormData();
+  for (const file of files) form.append('media', file);
+  const request = new Request('http://localhost:3000/share', { method: 'POST' });
+  Object.defineProperty(request, 'formData', { value: async () => form });
+  return request;
+}
+
 /** A multipart POST to /share, as a share sheet or any other page's form would send it. */
 function sharePost(files: readonly File[], fields: Record<string, string> = {}, origin?: string): Request {
   const form = new FormData();
@@ -132,16 +152,42 @@ describe('shareTarget utilities', () => {
       ['application/xml', '<?xml version="1.0"?><root/>'],
       ['text/xml', '<?xml version="1.0"?><root/>'],
       ['application/octet-stream', HTML],
-      ['video/mp4,text/html', HTML],
       ['audio/x-unknown', HTML],
     ])('refuses a file declared as %s whose bytes are not a raster image', async (type, body) => {
       await expect(sharedFileType(new Blob([body], { type }))).resolves.toBeNull();
     });
 
-    it.each(['audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm', 'video/mp4', 'video/webm', 'video/ogg'])(
-      'keeps the manifest media type %s',
+    it('refuses video/mp4,text/html as Node and Firefox hand it over; Chromium hands over video/mp4, an exact kept type', async () => {
+      await expect(sharedFileType(new Blob([HTML], { type: 'video/mp4,text/html' }))).resolves.toBeNull();
+      await expect(sharedFileType(new Blob([HTML], { type: 'video/mp4' }))).resolves.toBe('video/mp4');
+    });
+
+    it.each(['audio/mpeg', 'audio/wav', 'video/mp4'])('keeps %s, which the composer accepts', async (type) => {
+      expect(POST_SUPPORTED_ATTACHMENT_MIME_TYPES).toContain(type);
+      await expect(sharedFileType(new Blob([wavFile()], { type }))).resolves.toBe(type);
+    });
+
+    it.each(['audio/ogg', 'audio/webm', 'video/webm', 'video/ogg'])(
+      'refuses the manifest type %s, which the composer does not accept',
       async (type) => {
-        await expect(sharedFileType(new Blob([wavFile()], { type }))).resolves.toBe(type);
+        expect(POST_SUPPORTED_ATTACHMENT_MIME_TYPES).not.toContain(type);
+        await expect(sharedFileType(new Blob([wavFile()], { type }))).resolves.toBeNull();
+      },
+    );
+
+    it.each([
+      ['VIDEO/MP4', 'video/mp4'],
+      ['video/mp4; codecs=avc1', 'video/mp4'],
+      ['Audio/WAV ;rate=8000', 'audio/wav'],
+      ['audio/MPEG', 'audio/mpeg'],
+    ])('keeps %s as Chromium hands it over, under its essence %s', async (declared, type) => {
+      await expect(sharedFileType(chromiumFile([wavFile()], 'clip', declared))).resolves.toBe(type);
+    });
+
+    it.each(['VIDEO/WEBM', 'video/mp4x; codecs=avc1', 'text/html; charset=video/mp4'])(
+      'refuses %s as Chromium hands it over',
+      async (declared) => {
+        await expect(sharedFileType(chromiumFile([HTML], 'clip', declared))).resolves.toBeNull();
       },
     );
   });
@@ -194,6 +240,20 @@ describe('shareTarget utilities', () => {
         'http://localhost/share-target-file/0',
         'http://localhost/share-target-file/1',
       ]);
+    });
+
+    it('caches audio and video Chromium hands over under the essence of their type', async () => {
+      const response = await handleShareTarget(
+        parsedSharePost([
+          chromiumFile([wavFile()], 'clip.mp4', 'VIDEO/MP4'),
+          chromiumFile([wavFile()], 'clip2.mp4', 'video/mp4; codecs=avc1'),
+          chromiumFile([wavFile()], 'clip.webm', 'Video/WebM'),
+        ]),
+        cacheStorage(),
+      );
+
+      expect(response.headers.get('location')).toBe('http://localhost:3000/share?hasFiles=true&refusedFiles=1');
+      await expect(cachedTypes()).resolves.toEqual(['video/mp4', 'video/mp4']);
     });
 
     it('drops the files of an earlier share', async () => {

@@ -292,7 +292,8 @@ describe('ShareTarget', () => {
     });
     expect(toast).toHaveBeenCalledWith({
       variant: 'error',
-      description: '2 shared files were not added. You can share JPEG, PNG, GIF and WebP images, audio and video.',
+      description:
+        '2 shared files were not added. You can share JPEG, PNG, GIF and WebP images, MP3 and WAV audio, and MP4 video.',
     });
   });
 
@@ -308,7 +309,8 @@ describe('ShareTarget', () => {
     expect(mockGetSharedFiles).not.toHaveBeenCalled();
     expect(toast).toHaveBeenCalledWith({
       variant: 'error',
-      description: 'A shared file was not added. You can share JPEG, PNG, GIF and WebP images, audio and video.',
+      description:
+        'A shared file was not added. You can share JPEG, PNG, GIF and WebP images, MP3 and WAV audio, and MP4 video.',
     });
   });
 

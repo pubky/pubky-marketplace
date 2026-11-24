@@ -13,29 +13,28 @@ const SHARE_TARGET_CACHE = 'share-target-files';
 /** Leading bytes read to type a shared file; an AVIF `ftyp` box fits well inside. */
 const SHARED_FILE_HEAD_BYTES = 256;
 
-/** The audio and video types the manifest's `share_target` accepts. */
-const SHARED_MEDIA_TYPES: ReadonlySet<string> = new Set([
-  'audio/mpeg',
-  'audio/ogg',
-  'audio/wav',
-  'audio/webm',
-  'video/mp4',
-  'video/webm',
-  'video/ogg',
-]);
+/**
+ * Audio and video types that both the manifest's `share_target` offers and the
+ * post composer accepts (pubky-app-specs). The manifest's Ogg and WebM types
+ * are left out because the composer refuses them.
+ */
+const SHARED_MEDIA_TYPES: ReadonlySet<string> = new Set(['audio/mpeg', 'audio/wav', 'video/mp4']);
 
 /**
  * The type a shared file is kept under, or null to refuse it. Any page can
  * POST to /share, so an image is typed from its own bytes, and a declared
  * image type whose bytes are not a raster image (SVG included) is refused.
- * Audio and video keep their declared type only when it is exactly one of the
- * manifest's types. HTML, XML and every other type is refused.
+ * Audio and video keep the essence of their declared type (lowercased, without
+ * parameters) only when it is one of `SHARED_MEDIA_TYPES`; Chromium hands the
+ * part's type over with its case and parameters. HTML, XML and every other
+ * type is refused.
  */
 export async function sharedFileType(file: Blob): Promise<string | null> {
   const head = new Uint8Array(await file.slice(0, SHARED_FILE_HEAD_BYTES).arrayBuffer());
   const imageType = rasterImageMimeType(head);
   if (imageType) return imageType;
-  return SHARED_MEDIA_TYPES.has(file.type) ? file.type : null;
+  const essence = file.type.split(';')[0].trim().toLowerCase();
+  return SHARED_MEDIA_TYPES.has(essence) ? essence : null;
 }
 
 /**
