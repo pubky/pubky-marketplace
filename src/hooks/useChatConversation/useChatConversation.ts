@@ -33,6 +33,8 @@ export function useChatConversation(peerPubky: string, context?: ChatContext): U
   const [limit, setLimit] = useState(CHAT_THREAD_PAGE);
   const [openState, setOpenState] = useState<UseChatConversationResult['openState']>('opening');
   const openStateRef = useRef(openState);
+  const openRun = useRef(0);
+  const rolesSeen = useRef(false);
   const isSelf = currentUserPubky === peerPubky;
   const contextKey = `${context?.listingId ?? ''}|${context?.orderId ?? ''}`;
   const updateOpenState = (state: UseChatConversationResult['openState']) => {
@@ -42,15 +44,17 @@ export function useChatConversation(peerPubky: string, context?: ChatContext): U
 
   const open = async () => {
     if (!currentUserPubky || isSelf) return;
+    const run = ++openRun.current;
     try {
       const result = await ChatController.commitOpenConversation(peerPubky, context);
+      if (run !== openRun.current) return;
       updateOpenState(result.state);
       if (result.state === 'ready') {
         await ChatController.fetchConversationUpdates(peerPubky, 'open');
         void ChatController.commitFlushOutbox();
       }
     } catch (error) {
-      if (isAbortError(error)) return;
+      if (isAbortError(error) || run !== openRun.current) return;
       if (isStoreThreadRefusal(error)) {
         updateOpenState('store_restricted');
         return;
@@ -88,9 +92,14 @@ export function useChatConversation(peerPubky: string, context?: ChatContext): U
   }, [currentUserPubky, peerPubky, contextKey]);
 
   useEffect(() => {
-    // The roles that closed this thread were incomplete when they were read; the roles that arrive decide again.
-    if (openStateRef.current === 'store_restricted') void open();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a change of the roles reopens a closed thread
+    // Roles that arrive or grow decide again, for an open thread that has become a sale as much as for a
+    // closed one that was not: a newer open supersedes any open still in flight.
+    if (!rolesSeen.current) {
+      rolesSeen.current = true;
+      return;
+    }
+    void open();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a change of the roles reopens the thread
   }, [storeThreadRoles]);
 
   const conversation = useLiveQuery(async () => {
@@ -115,11 +124,11 @@ export function useChatConversation(peerPubky: string, context?: ChatContext): U
   // compare against), so a glance at the thread clears the badge without
   // hiding a later message from a peer whose clock lags ours.
   useEffect(() => {
-    if (!conversation || !newestReceived) return;
+    if (!conversation || !newestReceived || openState === 'store_restricted') return;
     if (newestReceived.sent_at <= conversation.last_read_at) return;
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
     void ChatController.commitMarkRead(peerPubky, newestReceived.sent_at);
-  }, [conversation, newestReceived, peerPubky]);
+  }, [conversation, newestReceived, openState, peerPubky]);
 
   return {
     messages,

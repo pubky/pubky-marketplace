@@ -163,6 +163,7 @@ export type ListingSide = 'peer' | 'viewer' | 'absent';
  * whose listing each resolved listing context names, keyed by {@link listingContextKey}.
  */
 export type StoreThreadRoles = {
+  viewer: string;
   soldTo: readonly string[];
   boughtFrom: readonly string[];
   soldOrderIds: readonly string[];
@@ -182,6 +183,7 @@ export function storeThreadRoles(
   const sold = orders.filter(({ sellerPubky }) => sellerPubky === viewerPubky);
   const bought = orders.filter(({ buyerPubky }) => buyerPubky === viewerPubky);
   return {
+    viewer: viewerPubky,
     soldTo: sold.map(({ buyerPubky }) => buyerPubky),
     boughtFrom: bought.map(({ sellerPubky }) => sellerPubky),
     soldOrderIds: sold.map(({ id }) => id),
@@ -190,14 +192,29 @@ export function storeThreadRoles(
   };
 }
 
+/** Everything either set of roles knows about one viewer; roles of another viewer are never mixed in. */
+export function mergeStoreThreadRoles(base: StoreThreadRoles, addition: StoreThreadRoles): StoreThreadRoles {
+  if (base.viewer !== addition.viewer) return addition;
+  const union = (first: readonly string[], second: readonly string[]) => [...new Set([...first, ...second])];
+  return {
+    viewer: base.viewer,
+    soldTo: union(base.soldTo, addition.soldTo),
+    boughtFrom: union(base.boughtFrom, addition.boughtFrom),
+    soldOrderIds: union(base.soldOrderIds, addition.soldOrderIds),
+    boughtOrderIds: union(base.boughtOrderIds, addition.boughtOrderIds),
+    listingSides: { ...base.listingSides, ...addition.listingSides },
+  };
+}
+
 /**
  * Whether a chat thread is the viewer's sale, for a viewer who cannot sell in `storeSeller`'s store.
- * Before the roles are read, only the thread with the store seller is shown. After, a thread is per
- * peer, so it stays whenever anything makes it a purchase: the peer sold to the viewer, or its latest
- * context is an order the viewer bought or a listing of the peer. Otherwise it is a sale when the peer
- * bought from the viewer, or its latest context is an order the viewer sold or a listing of the
- * viewer's. A context that remains unresolved is also a sale. A plain thread and a listing lookup that
- * completed without finding either owner's listing stay. The store seller's own thread always stays.
+ * The store seller's own thread always stays. Before the roles are read, nothing else is shown. A
+ * latest context that is an order the viewer bought or a listing of the peer keeps the thread. A
+ * context that remains unresolved (an order in neither list, or a listing whose lookup failed) makes
+ * it a sale, whatever else the viewer bought from that peer. Past that, the thread stays when the peer
+ * sold to the viewer, and is a sale when the latest context is an order the viewer sold or a listing of
+ * the viewer's, or the peer bought from the viewer. A plain thread, and a listing lookup that completed
+ * without finding either owner's listing, place nothing.
  */
 export function isSaleThread(
   thread: { peer_pubky: string; last_context: ChatContext | null },
@@ -209,18 +226,13 @@ export function isSaleThread(
   if (peer === storeSeller) return false;
   if (roles === null) return true;
   const orderId = context?.orderId;
-  const purchase =
-    roles.boughtFrom.includes(peer) ||
-    (orderId !== undefined && roles.boughtOrderIds.includes(orderId)) ||
-    listingSide === 'peer';
-  if (purchase) return false;
-  const sale =
-    roles.soldTo.includes(peer) ||
-    (orderId !== undefined && roles.soldOrderIds.includes(orderId)) ||
-    listingSide === 'viewer';
-  if (sale) return true;
-  return (
-    (orderId !== undefined && !roles.boughtOrderIds.includes(orderId) && !roles.soldOrderIds.includes(orderId)) ||
-    (context?.listingId !== undefined && listingSide === null)
-  );
+  const orderPlaced =
+    orderId === undefined || roles.boughtOrderIds.includes(orderId) || roles.soldOrderIds.includes(orderId);
+  const listingPlaced = context?.listingId === undefined || listingSide !== null;
+  const contextPurchase = (orderId !== undefined && roles.boughtOrderIds.includes(orderId)) || listingSide === 'peer';
+  const contextSale = (orderId !== undefined && roles.soldOrderIds.includes(orderId)) || listingSide === 'viewer';
+  if (contextPurchase) return false;
+  if (!orderPlaced || !listingPlaced) return true;
+  if (roles.boughtFrom.includes(peer)) return false;
+  return contextSale || roles.soldTo.includes(peer);
 }

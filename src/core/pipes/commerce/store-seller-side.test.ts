@@ -277,8 +277,12 @@ describe('isSaleThread', () => {
     expect(isSale(peer, context, side)).toBe(sale);
   });
 
-  it('keeps purchase evidence ahead of an unresolved context for reads', () => {
-    expect(isSale('p'.repeat(52), { orderId: 'unknown' })).toBe(false);
+  it('closes a thread whose latest context is unresolved even when the peer sold to the viewer before', () => {
+    const peer = 'p'.repeat(52);
+    expect(isSale(peer, { orderId: 'unknown' })).toBe(true);
+    expect(isSale(peer, { listingId: 'unreadable' }, null)).toBe(true);
+    expect(isSale(peer, null)).toBe(false);
+    expect(isSale(peer, { listingId: 'gone' }, 'absent')).toBe(false);
   });
 
   it('shows only the thread with the store seller before the roles are read', () => {

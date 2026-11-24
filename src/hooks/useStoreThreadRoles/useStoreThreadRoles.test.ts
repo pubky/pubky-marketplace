@@ -8,6 +8,7 @@ import { setStoreSeller } from '@/test-utils/store-mode';
 import { useStoreThreadRoles } from './useStoreThreadRoles';
 
 const roles = {
+  viewer: 'a'.repeat(52),
   soldTo: ['b'.repeat(52)],
   boughtFrom: [],
   soldOrderIds: ['order-1'],

@@ -2909,7 +2909,7 @@ export class CommerceApplication {
         this.receiptMigrationCursors.delete(ownerPubky);
         if (!sellerSide) {
           const failed = this.receiptMigrationFailedCycles.delete(ownerPubky);
-          return failed ? 'incomplete' : 'done';
+          return failed || incomplete ? 'incomplete' : 'done';
         }
         break;
       }

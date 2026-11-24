@@ -430,28 +430,55 @@ const SELLING_APPLICATION_DIRS = ['chat', 'commerce', 'connectors', 'import-imag
 const NOT_THE_SHOP = [APPLICATION_DIR, CONTROLLERS_DIR, ...TEST_DIRS];
 const SELLING_SERVICE_IMPORT_DIRS = [APPLICATION_DIR, CONTROLLERS_DIR, SERVICES_DIR, ...TEST_DIRS];
 
-/** Existing pure UI helpers and session plumbing that still read these service modules directly. */
-const SELLING_SERVICE_IMPORT_ALLOWLIST: Record<string, string> = {
+/** Existing pure UI helpers and session plumbing that still read these service modules directly, by name. */
+const SELLING_SERVICE_IMPORT_ALLOWLIST: Record<string, { names: string[]; reason: string }> = {
   'components/organisms/Marketplace/MarketplaceReauthDialog.tsx -> core/services/marketplace/marketplace-session-grant.ts':
-    'Builds approval disclosure copy without reading seller data.',
+    {
+      names: ['signInApprovalDisclosure'],
+      reason: 'Builds approval disclosure copy without reading seller data.',
+    },
   'components/organisms/Marketplace/MarketplaceSessionConnectDialog.tsx -> core/services/marketplace/marketplace-session-grant.ts':
-    'Builds approval disclosure copy without reading seller data.',
-  'components/templates/Marketplace/MarketplaceCheckout.tsx -> core/services/marketplace/marketplace-projections.ts':
-    'Uses the pure award eligibility predicate for buyer checkout.',
-  'components/templates/Marketplace/MarketplaceListing.tsx -> core/services/marketplace/marketplace-session.ts':
-    'Reads the buyer marketplace session already established by the controller flow.',
-  'components/templates/Marketplace/MarketplaceOffers.tsx -> core/services/marketplace/marketplace-projections.ts':
-    'Uses the pure award eligibility predicate for buyer offers.',
+    {
+      names: ['marketplaceApprovalDisclosure'],
+      reason: 'Builds approval disclosure copy without reading seller data.',
+    },
+  'components/templates/Marketplace/MarketplaceCheckout.tsx -> core/services/marketplace/marketplace-projections.ts': {
+    names: ['isMarketplaceAwardCheckoutEligible'],
+    reason: 'Uses the pure award eligibility predicate for buyer checkout.',
+  },
+  'components/templates/Marketplace/MarketplaceListing.tsx -> core/services/marketplace/marketplace-session.ts': {
+    names: ['MarketplaceSessionService'],
+    reason: 'Reads the buyer marketplace session already established by the controller flow.',
+  },
+  'components/templates/Marketplace/MarketplaceOffers.tsx -> core/services/marketplace/marketplace-projections.ts': {
+    names: ['isMarketplaceAwardCheckoutEligible'],
+    reason: 'Uses the pure award eligibility predicate for buyer offers.',
+  },
   'core/pipes/marketplaceNotification/marketplaceNotification.normalizer.ts -> core/services/marketplace/marketplace-projections.ts':
-    'Shares the notification type length constant with the projection schema.',
+    {
+      names: ['MARKETPLACE_NOTIFICATION_TYPE_MAX_LENGTH'],
+      reason: 'Shares the notification type length constant with the projection schema.',
+    },
   'hooks/useMarketplaceActivityAttentionKeys/useMarketplaceActivityAttentionKeys.ts -> core/services/marketplace/marketplace-projections.ts':
-    'Uses the pure notification type guard on controller results.',
+    {
+      names: ['isRecognizedMarketplaceNotification'],
+      reason: 'Uses the pure notification type guard on controller results.',
+    },
   'hooks/useMarketplaceNotifications/useMarketplaceNotifications.ts -> core/services/marketplace/marketplace-projections.ts':
-    'Uses the pure notification type guard on controller results.',
+    {
+      names: ['isRecognizedMarketplaceNotification'],
+      reason: 'Uses the pure notification type guard on controller results.',
+    },
   'hooks/useMarketplaceOfferCheckout/useMarketplaceOfferCheckout.ts -> core/services/marketplace/marketplace-projections.ts':
-    'Uses the pure award eligibility predicate for buyer checkout.',
+    {
+      names: ['isMarketplaceAwardCheckoutEligible'],
+      reason: 'Uses the pure award eligibility predicate for buyer checkout.',
+    },
   'hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect.ts -> core/services/marketplace/marketplace-session.ts':
-    'Maintains the existing buyer session connection lifecycle.',
+    {
+      names: ['MarketplaceSessionService'],
+      reason: 'Maintains the existing buyer session connection lifecycle.',
+    },
 };
 
 const tsconfig = ts.readConfigFile(path.join(ROOT, 'tsconfig.json'), ts.sys.readFile);
@@ -549,14 +576,14 @@ function importSpecifierPrefixes(file: string, target: string): string[] {
 const SPECIFIER_LITERAL = /\b(?:from|import|require)\s*\(?\s*(['"`])([^'"`\n]+)\1/g;
 
 /**
- * Skips only files whose module specifiers all miss the targets. Every string a module form can name
- * follows `from`, `import` or `require`; a specifier is judged after normalising, as the resolver would.
+ * Skips only files whose module specifiers all miss the targets. The compiler's own import scanner
+ * (which reads past comments) and a literal scan both name candidates; a specifier is judged after
+ * normalising, as the resolver would.
  */
 export function mayImportTargets(text: string, file: string, targets: readonly string[]): boolean {
-  for (const match of text.matchAll(SPECIFIER_LITERAL)) {
-    if (specifierCanReachTargets(match[2], file, targets)) return true;
-  }
-  return false;
+  const scanned = ts.preProcessFile(text, true, true).importedFiles.map(({ fileName }) => fileName);
+  const literals = [...text.matchAll(SPECIFIER_LITERAL)].map((match) => match[2]);
+  return [...scanned, ...literals].some((specifier) => specifierCanReachTargets(specifier, file, targets));
 }
 
 const couldImportTargets = (file: string, targets: readonly string[]) =>
@@ -619,7 +646,8 @@ export function valueImportsInSource(source: ts.SourceFile): UnresolvedValueImpo
 }
 
 function specifierCanReachTargets(specifier: string, file: string, targets: readonly string[]): boolean {
-  const normalized = specifier.startsWith('.') ? path.posix.normalize(specifier) : specifier;
+  const collapsed = path.posix.normalize(specifier);
+  const normalized = specifier.startsWith('./') && !collapsed.startsWith('.') ? `./${collapsed}` : collapsed;
   return targets.some((target) =>
     importSpecifierPrefixes(file, target).some((prefix) => {
       const indexPrefix = prefix.endsWith('/index') ? prefix.slice(0, -'/index'.length) : undefined;
@@ -645,7 +673,7 @@ const isSellingApplication = (file: string) => SELLING_APPLICATION_DIRS.some((di
 
 type SellingApplicationUsage = { calls: string[]; invalid: string[] };
 
-/** Only `Class.member` and `Class['member']` may consume an exempt application import. */
+/** Only a call of `Class.member` or `Class['member']` may consume an exempt application import. */
 export function sellingApplicationUsesInSource(
   source: ts.SourceFile,
   classes: ReadonlyMap<string, string>,
@@ -658,12 +686,14 @@ export function sellingApplicationUsesInSource(
       const imported = classes.get(node.text);
       if (imported) {
         const parent = node.parent;
-        if (ts.isPropertyAccessExpression(parent) && parent.expression === node) {
+        const isCalled = ts.isCallExpression(parent.parent) && parent.parent.expression === parent;
+        if (ts.isPropertyAccessExpression(parent) && parent.expression === node && isCalled) {
           calls.add(`${imported}.${parent.name.text}`);
         } else if (
           ts.isElementAccessExpression(parent) &&
           parent.expression === node &&
-          ts.isStringLiteralLike(parent.argumentExpression)
+          ts.isStringLiteralLike(parent.argumentExpression) &&
+          isCalled
         ) {
           calls.add(`${imported}.${parent.argumentExpression.text}`);
         } else {
@@ -778,6 +808,13 @@ function sellingServiceModules(): ReadonlySet<string> {
     for (const file of sourceFiles(APPLICATION_DIR)) {
       if (!isSellingApplication(file) || !couldImportTargets(file, [SERVICES_DIR])) continue;
       for (const { target } of valueImports(file, [SERVICES_DIR])) {
+        if (target.startsWith(`${SERVICES_DIR}${path.sep}`)) modules.add(target);
+      }
+    }
+    // A service the selling applications reach only through another service is as selling as the first.
+    for (const service of modules) {
+      if (!couldImportTargets(service, [SERVICES_DIR])) continue;
+      for (const { target } of valueImports(service, [SERVICES_DIR])) {
         if (target.startsWith(`${SERVICES_DIR}${path.sep}`)) modules.add(target);
       }
     }
@@ -922,10 +959,12 @@ describe('store seller gate inventory', () => {
         const key = 'restoreInventorySession';
         CommerceApplication[key]('x');
         use(CommerceApplication);
+        const read = CommerceApplication.restoreInventorySession;
+        const passed = [CommerceApplication['restoreMarketplaceSession']];
       `),
       classes,
     );
-    expect(rejected.invalid).toHaveLength(4);
+    expect(rejected.invalid).toHaveLength(6);
   });
 
   it('detects a value import from a non-selling application to a selling application', () => {
@@ -963,6 +1002,16 @@ describe('store seller gate inventory', () => {
     expect(reaches(`const m = require('./../../core/application/commerce/./commerce');`)).toBe(true);
     expect(reaches(`import service = require("@/application/import-store/import-store");`)).toBe(true);
     expect(reaches(`import '@/application/chat/side-effect';`)).toBe(true);
+    expect(reaches(`import { X } from /* note */ '@/application/chat/chat';`)).toBe(true);
+    expect(reaches(`import {\n  X,\n} from // note\n  '@/application/chat/chat';`)).toBe(true);
+    expect(reaches(`import { X } from '@/application/profile/../commerce/commerce';`)).toBe(true);
+    expect(
+      mayImportTargets(
+        `import { X } from './chat/chat';`,
+        path.join(APPLICATION_DIR, 'index.ts'),
+        SELLING_APPLICATION_DIRS,
+      ),
+    ).toBe(true);
     expect(reaches(`import { Logger } from '@/libs/logger/logger';\nconst chat = 'commerce';`)).toBe(false);
     expect(reaches(`import { Profile } from '@/application/profile/profile';`)).toBe(false);
   });
@@ -1043,9 +1092,11 @@ describe('store seller gate inventory', () => {
         .flatMap(({ target, names }) => {
           const edge = importEdge(file, target);
           current.add(edge);
-          if (Object.hasOwn(SELLING_SERVICE_IMPORT_ALLOWLIST, edge)) return [];
+          const pinned = Object.hasOwn(SELLING_SERVICE_IMPORT_ALLOWLIST, edge)
+            ? SELLING_SERVICE_IMPORT_ALLOWLIST[edge].names
+            : [];
           const taken = names === '*' ? ['*'] : names;
-          return taken.map((name) => `${edge}: ${name}`);
+          return taken.filter((name) => !pinned.includes(name)).map((name) => `${edge}: ${name}`);
         }),
     );
     expect(offenders).toEqual([]);

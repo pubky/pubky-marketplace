@@ -21,6 +21,7 @@ import {
   isSaleThread,
   listingContextKey,
   type ListingSide,
+  mergeStoreThreadRoles,
   type StoreThreadRoles,
   storeThreadRoles,
 } from '@/pipes/commerce/store-seller-side';
@@ -134,17 +135,21 @@ export class ChatController {
   static async fetchStoreThreadRoles(signal: AbortSignal = captureAuthScope()): Promise<StoreThreadRoles | null> {
     const me = useAuthStore.getState().currentUserPubky;
     if (!me || StoreSellerGate.canSellHere(me)) return null;
-    if (this.storeThreadRolesRead?.pubky !== me) {
+    if (this.storeThreadRolesRead?.pubky !== me || this.storeThreadRolesRead.signal !== signal) {
       const read: Promise<StoreThreadRoles> = this.readStoreThreadRoles(me, signal).finally(() => {
         if (this.storeThreadRolesRead?.read === read) this.storeThreadRolesRead = null;
       });
-      this.storeThreadRolesRead = { pubky: me, read };
+      this.storeThreadRolesRead = { pubky: me, signal, read };
     }
     return await this.storeThreadRolesRead.read;
   }
 
-  /** One read per account at a time: every chat surface asks on mount. */
-  private static storeThreadRolesRead: { pubky: string; read: Promise<StoreThreadRoles> } | null = null;
+  /** One read per account and auth scope at a time: every chat surface asks on mount. */
+  private static storeThreadRolesRead: {
+    pubky: string;
+    signal: AbortSignal;
+    read: Promise<StoreThreadRoles>;
+  } | null = null;
 
   private static async readStoreThreadRoles(me: string, signal: AbortSignal): Promise<StoreThreadRoles> {
     const [orders, conversations] = await Promise.all([
@@ -160,20 +165,30 @@ export class ChatController {
       if (context?.listingId)
         contexts.set(listingContextKey(peer, context.listingId), { peer, listingId: context.listingId });
     }
-    const resolvedOrders = await this.resolveOrdersById(me, missingOrderIds, signal);
+    const { orders: resolvedOrders, failed: ordersFailed } = await this.resolveOrdersById(me, missingOrderIds, signal);
+    let failed = ordersFailed;
     const listingSides: Record<string, ListingSide> = {};
     const pending = [...contexts.entries()];
     for (let index = 0; index < pending.length; index += CHAT_FETCH_CONCURRENCY) {
       await Promise.all(
         pending.slice(index, index + CHAT_FETCH_CONCURRENCY).map(async ([key, { peer, listingId }]) => {
           const side = await this.listingSide(me, null, peer, listingId, { fetch: true, signal });
-          if (side !== null) listingSides[key] = side;
+          if (side === null) failed = true;
+          else listingSides[key] = side;
         }),
       );
       signal.throwIfAborted();
     }
-    const roles = storeThreadRoles([...orders, ...resolvedOrders], me, listingSides);
     signal.throwIfAborted();
+    const roles = this.publishStoreThreadRoles(me, storeThreadRoles([...orders, ...resolvedOrders], me, listingSides));
+    if (failed) throw new Error('Some chat contexts could not be placed; the roles read retries');
+    return roles;
+  }
+
+  /** Adds what was learned to the roles this tab holds for the viewer, so a slower read never drops newer facts. */
+  private static publishStoreThreadRoles(me: string, learned: StoreThreadRoles): StoreThreadRoles {
+    const held = useChatStore.getState().storeThreadRoles;
+    const roles = held?.viewer === me ? mergeStoreThreadRoles(held, learned) : learned;
     useChatStore.getState().setStoreThreadRoles(roles);
     return roles;
   }
@@ -182,8 +197,9 @@ export class ChatController {
     me: string,
     orderIds: ReadonlySet<string>,
     signal: AbortSignal,
-  ): Promise<ChatOrder[]> {
+  ): Promise<{ orders: ChatOrder[]; failed: boolean }> {
     const resolved: ChatOrder[] = [];
+    let failed = false;
     const pending = [...orderIds];
     for (let index = 0; index < pending.length; index += CHAT_FETCH_CONCURRENCY) {
       await Promise.all(
@@ -199,19 +215,20 @@ export class ChatController {
           } catch (error) {
             signal.throwIfAborted();
             if (isAbortError(error)) throw error;
+            failed = true;
             Logger.warn('Could not read the order a chat context names', { orderId, error });
           }
         }),
       );
       signal.throwIfAborted();
     }
-    return resolved;
+    return { orders: resolved, failed };
   }
 
   /** The roles this tab has, read first when it has none; null when they cannot be read now. */
-  private static async knownStoreThreadRoles(signal: AbortSignal): Promise<StoreThreadRoles | null> {
+  private static async knownStoreThreadRoles(me: string, signal: AbortSignal): Promise<StoreThreadRoles | null> {
     const known = useChatStore.getState().storeThreadRoles;
-    if (known) return known;
+    if (known?.viewer === me) return known;
     try {
       return await this.fetchStoreThreadRoles(signal);
     } catch (error) {
@@ -302,29 +319,27 @@ export class ChatController {
         missingOrderIds.add(orderId);
       }
     }
-    const resolvedOrders = await this.resolveOrdersById(me, missingOrderIds, signal);
-    const additions = storeThreadRoles(resolvedOrders, me);
-    const listingSides: Record<string, ListingSide> = { ...roles.listingSides };
-    const merged: StoreThreadRoles = {
-      soldTo: [...new Set([...roles.soldTo, ...additions.soldTo])],
-      boughtFrom: [...new Set([...roles.boughtFrom, ...additions.boughtFrom])],
-      soldOrderIds: [...new Set([...roles.soldOrderIds, ...additions.soldOrderIds])],
-      boughtOrderIds: [...new Set([...roles.boughtOrderIds, ...additions.boughtOrderIds])],
-      listingSides,
-    };
+    const { orders: resolvedOrders } = await this.resolveOrdersById(me, missingOrderIds, signal);
+    let learned = storeThreadRoles(resolvedOrders, me, { ...roles.listingSides });
     let changed = resolvedOrders.length > 0;
     for (const candidate of contexts) {
       const listingId = candidate?.listingId;
       if (!listingId) continue;
       const key = listingContextKey(peer, listingId);
-      if (listingSides[key] !== undefined) continue;
-      const side = await this.listingSide(me, merged, peer, listingId, { fetch: true, signal });
+      if (learned.listingSides[key] !== undefined) continue;
+      const side = await this.listingSide(me, mergeStoreThreadRoles(roles, learned), peer, listingId, {
+        fetch: true,
+        signal,
+      });
       if (side !== null) {
-        listingSides[key] = side;
+        learned = { ...learned, listingSides: { ...learned.listingSides, [key]: side } };
         changed = true;
       }
     }
     signal.throwIfAborted();
+    const held = useChatStore.getState().storeThreadRoles;
+    const base = held?.viewer === me ? mergeStoreThreadRoles(roles, held) : roles;
+    const merged = mergeStoreThreadRoles(base, learned);
     if (changed) useChatStore.getState().setStoreThreadRoles(merged);
 
     const sideOf = (candidate: ChatContext | null | undefined): ListingSide | null => {
@@ -352,7 +367,7 @@ export class ChatController {
     context: ChatContext | undefined,
     signal: AbortSignal,
   ): Promise<void> {
-    const sale = await this.isSaleWrite(me, await this.knownStoreThreadRoles(signal), peer, context, signal);
+    const sale = await this.isSaleWrite(me, await this.knownStoreThreadRoles(me, signal), peer, context, signal);
     signal.throwIfAborted();
     if (sale) StoreSellerGate.assertCanSellHere(me);
   }
@@ -363,7 +378,7 @@ export class ChatController {
     // Read on the first message to judge, so a sync that sends nothing never waits for the roles.
     let roles: Promise<StoreThreadRoles | null> | undefined;
     return async ({ peer_pubky, context }) => {
-      roles ??= this.knownStoreThreadRoles(signal);
+      roles ??= this.knownStoreThreadRoles(me, signal);
       const sale = await this.isSaleWrite(me, await roles, peer_pubky, context, signal);
       signal.throwIfAborted();
       return !sale;

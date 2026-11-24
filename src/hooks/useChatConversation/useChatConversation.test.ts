@@ -114,6 +114,44 @@ describe('useChatConversation', () => {
     useChatStore.getState().setStoreThreadRoles(null);
   });
 
+  it('closes an open thread when roles arrive that make it a sale', async () => {
+    mocks.commitOpenConversation.mockResolvedValueOnce({ state: 'ready' });
+    const { result } = renderHook(() => useChatConversation(PEER));
+    await waitFor(() => expect(result.current.openState).toBe('ready'));
+
+    mocks.commitOpenConversation.mockRejectedValueOnce(storeRefusal());
+    await act(async () => {
+      useChatStore.getState().setStoreThreadRoles(storeThreadRoles([], 'm'.repeat(52)));
+    });
+
+    await waitFor(() => expect(result.current.openState).toBe('store_restricted'));
+    useChatStore.getState().setStoreThreadRoles(null);
+  });
+
+  it('ignores an open that finishes after a newer open decided the thread is closed', async () => {
+    let finishFirst: (result: { state: 'ready' }) => void = () => undefined;
+    mocks.commitOpenConversation.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishFirst = resolve;
+      }),
+    );
+    const { result } = renderHook(() => useChatConversation(PEER));
+
+    mocks.commitOpenConversation.mockRejectedValueOnce(storeRefusal());
+    await act(async () => {
+      useChatStore.getState().setStoreThreadRoles(storeThreadRoles([], 'm'.repeat(52)));
+    });
+    await waitFor(() => expect(result.current.openState).toBe('store_restricted'));
+
+    await act(async () => {
+      finishFirst({ state: 'ready' });
+      await Promise.resolve();
+    });
+
+    expect(result.current.openState).toBe('store_restricted');
+    useChatStore.getState().setStoreThreadRoles(null);
+  });
+
   it('settles a retry cancelled by a sign-out without an error', async () => {
     mocks.commitOpenConversation.mockResolvedValue({ state: 'peer_not_enabled' });
     mocks.commitRetryMessage.mockRejectedValue(signedOut());

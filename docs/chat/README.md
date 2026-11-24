@@ -60,8 +60,9 @@ send, retry or flush messages to them. Queued messages in those threads stay que
 follows a sync. Roles use the newest service order page, 50 by default in durable modes, plus conversations and listing
 contexts. An older order named by a context is read by id, but a plain thread with a buyer whose only order is older than
 the page stays visible. An order neither the lists nor a by-id read resolves, or a listing lookup that failed, is treated
-as a sale and closed, except in the thread with the store seller. The open-thread screen explains that restriction.
-`useStoreThreadRoles` reads the roles and retries a failed read. Until they arrive, only the thread with the store seller
+as a sale and closed, even when the user bought from that peer before, except in the thread with the store seller. The
+open-thread screen explains that restriction and decides again whenever the roles change. `useStoreThreadRoles` reads the
+roles and retries a read that failed or could not place every context. Until they arrive, only the thread with the store seller
 is shown. See [Store mode](../environment.md#store-mode-runtime).
 
 Session capabilities: `CAPABILITIES` in `src/config/app.ts`. Runtime config:

@@ -123,7 +123,11 @@ describe('ChatController sale threads in a store', () => {
       vi.mocked(CommerceApplication.getMarketplaceOrderParties).mockRejectedValue(new Error('order read failed'));
     }
 
-    await expect(ChatController.fetchStoreThreadRoles()).resolves.toMatchObject({ soldOrderIds: [] });
+    if (outcome === 'throws') {
+      await expect(ChatController.fetchStoreThreadRoles()).rejects.toThrow('could not be placed');
+    } else {
+      await expect(ChatController.fetchStoreThreadRoles()).resolves.toMatchObject({ soldOrderIds: [] });
+    }
 
     expect(await ChatController.getConversations()).toEqual([]);
     expect(await ChatController.getUnreadConversationCount()).toBe(0);
@@ -144,7 +148,7 @@ describe('ChatController sale threads in a store', () => {
     vi.mocked(CommerceApplication.getMarketplaceOrders).mockResolvedValue([]);
     vi.mocked(CommerceApplication.getOrFetchListingIfFound).mockRejectedValue(new Error('listing read failed'));
 
-    await expect(ChatController.fetchStoreThreadRoles()).resolves.toBeTruthy();
+    await expect(ChatController.fetchStoreThreadRoles()).rejects.toThrow('could not be placed');
 
     expect(peers(await ChatController.getConversations())).toEqual([STORE_SELLER]);
     expect(await ChatController.getConversation(STRANGER)).toBeNull();
@@ -576,6 +580,67 @@ describe('ChatController sale threads in a store', () => {
 
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
     expect(ChatApplication.queueMessage).not.toHaveBeenCalled();
+  });
+
+  it('keeps what a send learned while a slower roles read finishes later', async () => {
+    setStoreSeller(STORE_SELLER);
+    let finishOrders: (orders: never) => void = () => undefined;
+    vi.mocked(CommerceApplication.getMarketplaceOrders).mockReturnValue(
+      new Promise((resolve) => {
+        finishOrders = resolve as never;
+      }),
+    );
+    const read = ChatController.fetchStoreThreadRoles();
+    useChatStore.getState().setStoreThreadRoles({
+      viewer: VIEWER,
+      soldTo: [],
+      boughtFrom: [],
+      soldOrderIds: ['learned-sale'],
+      boughtOrderIds: [],
+      listingSides: { [`${ASKER}:my-lamp`]: 'viewer' },
+    });
+    finishOrders([{ id: 'order-sold', buyerPubky: MY_BUYER, sellerPubky: VIEWER }] as never);
+    await read;
+
+    expect(useChatStore.getState().storeThreadRoles).toMatchObject({
+      soldOrderIds: expect.arrayContaining(['learned-sale', 'order-sold']),
+      listingSides: expect.objectContaining({ [`${ASKER}:my-lamp`]: 'viewer' }),
+    });
+  });
+
+  it('does not mix roles held for another account into a read', async () => {
+    setStoreSeller(STORE_SELLER);
+    useChatStore.getState().setStoreThreadRoles({
+      viewer: OTHER_SELLER,
+      soldTo: [],
+      boughtFrom: [FRIEND],
+      soldOrderIds: [],
+      boughtOrderIds: ['foreign-purchase'],
+      listingSides: {},
+    });
+
+    const roles = await ChatController.fetchStoreThreadRoles();
+
+    expect(roles).toMatchObject({ viewer: VIEWER, boughtFrom: [STORE_SELLER], boughtOrderIds: ['order-bought'] });
+    expect(useChatStore.getState().storeThreadRoles).toBe(roles);
+  });
+
+  it('hides a thread whose latest context is unresolved even after the viewer bought from that peer', async () => {
+    setStoreSeller(STORE_SELLER);
+    const unplaced = thread(FRIEND, { orderId: 'unplaced' });
+    vi.mocked(ChatApplication.getConversations).mockResolvedValue([unplaced] as never);
+    vi.mocked(ChatApplication.getConversation).mockResolvedValue(unplaced as never);
+    vi.mocked(CommerceApplication.getMarketplaceOrders).mockResolvedValue([
+      { id: 'bought-from-friend', buyerPubky: VIEWER, sellerPubky: FRIEND },
+    ] as never);
+
+    await ChatController.fetchStoreThreadRoles();
+
+    expect(useChatStore.getState().storeThreadRoles?.boughtFrom).toEqual([FRIEND]);
+    expect(await ChatController.getConversations()).toEqual([]);
+    await expect(
+      ChatController.commitSendMessage({ peerPubky: FRIEND, body: 'hello', context: { orderId: 'unplaced' } }),
+    ).rejects.toMatchObject(refused);
   });
 
   it('keeps every thread and reads no orders for the store seller and outside store mode', async () => {
