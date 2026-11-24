@@ -14,7 +14,20 @@ describe('PaykitCreatorValidators.validateSafe', () => {
     expect(PaykitCreatorValidators.validateSafe(raw)).toEqual({ ok: true, creator: `pubky${raw}` });
   });
 
-  it.each([null, '', 'pubky', 'not-a-pubky', `${PUBKY}x`, PUBKY.toUpperCase()])('rejects the creator %j', (creator) => {
+  it.each([
+    null,
+    '',
+    'pubky',
+    'not-a-pubky',
+    `${PUBKY}x`,
+    PUBKY.toUpperCase(),
+    // 52 lowercase alphanumerics that are not z-base-32: Paykit would refuse them with a 400.
+    '0'.repeat(52),
+    `pubky${'0'.repeat(52)}`,
+    `l${PUBKY.slice(1)}`,
+    `v${PUBKY.slice(1)}`,
+    `2${PUBKY.slice(1)}`,
+  ])('rejects the creator %j', (creator) => {
     expect(PaykitCreatorValidators.validateSafe(creator)).toEqual({
       ok: false,
       message: 'Invalid creator',

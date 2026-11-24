@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PAYKIT_CREATOR_GLOBAL_READS_PER_WINDOW, PAYKIT_CREATOR_MAX_IN_FLIGHT } from '@/config/paykit-creator';
 import { ErrorCategory } from '@/libs/error/error.types';
 import { NextJsPaykitCreatorService } from './paykit-creator';
+import { PaykitCreatorRateLimiter } from './paykit-creator.rate-limit';
 
 const PUBKY = 'gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco';
 
@@ -26,14 +28,22 @@ const refused = (status: 429 | 503, retryAfter = status === 429 ? '60' : '1') =>
     { status, headers: { 'Retry-After': retryAfter } },
   );
 
+/** A Paykit read that stays pending until the test ends. */
+const hanging: ((response: Response) => void)[] = [];
+const hang = () => new Promise<Response>((resolve) => hanging.push(resolve));
+
 describe('NextJsPaykitCreatorService.isCreatorHeld', () => {
   beforeEach(() => {
     params = freshParams();
+    PaykitCreatorRateLimiter.resetForTests();
     mocks.getPaykitSetupUrl.mockReturnValue('https://paykit.server/setup');
     vi.spyOn(globalThis, 'fetch');
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // Settle reads a test left pending, so no creator stays in flight for the next test.
+    for (const release of hanging.splice(0)) release(heldAnswer(false));
+    await Promise.resolve();
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
@@ -150,5 +160,91 @@ describe('NextJsPaykitCreatorService.isCreatorHeld', () => {
 
     expect(answers).toEqual(Array(5).fill(true));
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  describe('timeouts', () => {
+    /** Hands the service a signal the test fires, standing in for `AbortSignal.timeout`. */
+    const controllableTimeout = () => {
+      const controller = new AbortController();
+      vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+      return () => controller.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError'));
+    };
+
+    it('reports a stall before the headers as a timeout, not a network error', async () => {
+      const fire = controllableTimeout();
+      vi.mocked(fetch).mockImplementation(
+        (_url, init) =>
+          new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(init.signal?.reason))),
+      );
+
+      const answer = NextJsPaykitCreatorService.isCreatorHeld(params);
+      fire();
+
+      await expect(answer).rejects.toMatchObject({ category: ErrorCategory.Timeout });
+    });
+
+    it('reports a stall while reading the body as a timeout, not an invalid answer', async () => {
+      const fire = controllableTimeout();
+      vi.mocked(fetch).mockImplementation(async (_url, init) => {
+        const body = new ReadableStream({
+          start(stream) {
+            stream.enqueue(new TextEncoder().encode('{"held":'));
+            init?.signal?.addEventListener('abort', () => stream.error(init.signal?.reason));
+          },
+        });
+        return new Response(body, { status: 200 });
+      });
+
+      const answer = NextJsPaykitCreatorService.isCreatorHeld(params);
+      await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
+      fire();
+
+      await expect(answer).rejects.toMatchObject({ category: ErrorCategory.Timeout });
+    });
+  });
+
+  describe('upstream read limits', () => {
+    it('refuses a new creator while too many distinct reads are pending, without asking Paykit', async () => {
+      vi.mocked(fetch).mockImplementation(hang);
+      const pending = Array.from({ length: PAYKIT_CREATOR_MAX_IN_FLIGHT }, () => freshParams());
+      for (const p of pending) void NextJsPaykitCreatorService.isCreatorHeld(p).catch(() => {});
+
+      await expect(NextJsPaykitCreatorService.isCreatorHeld(freshParams())).rejects.toMatchObject({
+        category: ErrorCategory.RateLimit,
+        context: expect.objectContaining({ retryAfter: 1 }),
+      });
+      expect(fetch).toHaveBeenCalledTimes(PAYKIT_CREATOR_MAX_IN_FLIGHT);
+    });
+
+    it('still lets a caller join a read already pending when the cap is reached', async () => {
+      let release: (response: Response) => void = () => {};
+      vi.mocked(fetch)
+        .mockImplementationOnce(() => new Promise<Response>((resolve) => (release = resolve)))
+        .mockImplementation(hang);
+      const first = NextJsPaykitCreatorService.isCreatorHeld(params);
+      for (let i = 1; i < PAYKIT_CREATOR_MAX_IN_FLIGHT; i += 1) {
+        void NextJsPaykitCreatorService.isCreatorHeld(freshParams()).catch(() => {});
+      }
+
+      const joined = NextJsPaykitCreatorService.isCreatorHeld(params);
+      release(heldAnswer(true));
+
+      await expect(Promise.all([first, joined])).resolves.toEqual([true, true]);
+    });
+
+    it('stops reading Paykit for the window once the shared read allowance is spent, but still serves kept answers', async () => {
+      vi.mocked(fetch).mockImplementation(async () => heldAnswer(true));
+      const kept = params;
+      await NextJsPaykitCreatorService.isCreatorHeld(kept);
+      for (let i = 1; i < PAYKIT_CREATOR_GLOBAL_READS_PER_WINDOW; i += 1) {
+        await NextJsPaykitCreatorService.isCreatorHeld(freshParams());
+      }
+
+      await expect(NextJsPaykitCreatorService.isCreatorHeld(freshParams())).rejects.toMatchObject({
+        category: ErrorCategory.RateLimit,
+      });
+      await expect(NextJsPaykitCreatorService.isCreatorHeld(kept)).resolves.toBe(true);
+      expect(fetch).toHaveBeenCalledTimes(PAYKIT_CREATOR_GLOBAL_READS_PER_WINDOW);
+    });
   });
 });

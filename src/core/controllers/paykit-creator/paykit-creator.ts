@@ -13,15 +13,22 @@ export class PaykitCreatorController {
    * answer for the same creator and shares one request between concurrent callers.
    *
    * @param params.creator - Raw `creator` query value (may be null)
+   * @param params.rateLimitKeys - The caller's limiter keys (client address)
    * @returns The answer, or a validation failure for a malformed query
-   * @throws AppError when Paykit cannot answer.
+   * @throws AppError when the caller is out of lookups or Paykit cannot answer.
    */
-  static async fetchCreatorHeld(params: { creator: string | null }): Promise<TPaykitCreatorControllerResult> {
+  static async fetchCreatorHeld(params: {
+    creator: string | null;
+    rateLimitKeys: string[];
+  }): Promise<TPaykitCreatorControllerResult> {
     const validation = PaykitCreatorValidators.validateSafe(params.creator);
     if (!validation.ok) {
       return { ok: false, message: validation.message, statusCode: validation.statusCode };
     }
-    const held = await PaykitCreatorApplication.isCreatorHeld({ creator: validation.creator });
+    const held = await PaykitCreatorApplication.isCreatorHeld({
+      creator: validation.creator,
+      rateLimitKeys: params.rateLimitKeys,
+    });
     return { ok: true, held };
   }
 }

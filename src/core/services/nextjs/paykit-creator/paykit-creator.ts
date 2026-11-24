@@ -1,13 +1,15 @@
 import { z } from 'zod';
 import type { TPaykitCreatorProbeParams } from '@/application/paykit-creator/paykit-creator.types';
 import { getPaykitSetupUrl } from '@/config/commerce';
-import { ValidationErrorCode } from '@/libs/error/error.codes';
+import { PAYKIT_CREATOR_MAX_IN_FLIGHT } from '@/config/paykit-creator';
+import { RateLimitErrorCode, ServerErrorCode, TimeoutErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { httpResponseToError, safeFetch } from '@/libs/error/error.http';
 import { ErrorService } from '@/libs/error/error.types';
 import { HttpMethod, HttpStatusCode } from '@/libs/http/http.types';
 import { parseRetryAfterHeader } from '@/libs/http/response.utils';
 import { sleep } from '@/libs/utils/utils';
+import { PaykitCreatorRateLimiter } from './paykit-creator.rate-limit';
 
 const PROBE_TIMEOUT_MS = 6000;
 const OPERATION = 'NextJsPaykitCreatorService.isCreatorHeld';
@@ -46,7 +48,10 @@ const inFlight = new Map<string, Promise<boolean>>();
  *
  * Every caller of this route shares the app server's address, and so that read limit. An answer is
  * therefore reused for the same creator (`HELD_TTL_MS`, `NOT_HELD_TTL_MS`), and concurrent callers share
- * one request. Failures are not kept, so the next caller asks again. The cache is per server instance.
+ * one request. Failures are not kept, so the next caller asks again. Reads of Paykit are capped per window
+ * across all callers and in how many distinct creators are pending at once (`src/config/paykit-creator.ts`);
+ * past either the lookup is refused as rate limited before Paykit is asked. Kept answers and pending reads
+ * stay available. All of this is per server instance.
  */
 export class NextJsPaykitCreatorService {
   private constructor() {}
@@ -67,6 +72,9 @@ export class NextJsPaykitCreatorService {
     if (cached && cached.expiresAt > now) return cached.held;
     const pending = inFlight.get(key);
     if (pending) return pending;
+    if (inFlight.size >= PAYKIT_CREATOR_MAX_IN_FLIGHT) throw rateLimited('Too many creator lookups pending', 1);
+    const read = PaykitCreatorRateLimiter.admitRead();
+    if (!read.ok) throw rateLimited('Paykit read allowance spent', read.retryAfterSeconds);
 
     const probe = this.probe(paykitOrigin, creator).then((held) => {
       this.remember(key, held);
@@ -98,29 +106,51 @@ export class NextJsPaykitCreatorService {
     const deadline = Date.now() + PROBE_TIMEOUT_MS;
     const signal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
 
-    let response = await this.ask(url.href, signal);
-    if (response.status === HttpStatusCode.SERVICE_UNAVAILABLE) {
-      const waitMs = (parseRetryAfterHeader(response.headers.get('retry-after')) ?? 1) * 1000;
-      if (waitMs <= MAX_UNAVAILABLE_WAIT_MS && Date.now() + waitMs < deadline) {
-        discardBody(response);
-        await sleep(waitMs);
-        response = await this.ask(url.href, signal);
+    try {
+      let response = await this.ask(url.href, signal);
+      if (response.status === HttpStatusCode.SERVICE_UNAVAILABLE) {
+        const waitMs = (parseRetryAfterHeader(response.headers.get('retry-after')) ?? 1) * 1000;
+        if (
+          waitMs <= MAX_UNAVAILABLE_WAIT_MS &&
+          Date.now() + waitMs < deadline &&
+          PaykitCreatorRateLimiter.admitRead().ok
+        ) {
+          discardBody(response);
+          await sleep(waitMs);
+          response = await this.ask(url.href, signal);
+        }
       }
-    }
 
-    if (response.status !== HttpStatusCode.OK) {
-      discardBody(response);
-      throw httpResponseToError(response, ErrorService.Paykit, OPERATION, endpoint);
-    }
-    const body = creatorHeldResponseSchema.safeParse(await response.json().catch(() => undefined));
-    if (!body.success) {
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Paykit creator-held response is invalid', {
-        service: ErrorService.Paykit,
-        operation: OPERATION,
-        context: { endpoint },
+      if (response.status !== HttpStatusCode.OK) {
+        discardBody(response);
+        throw httpResponseToError(response, ErrorService.Paykit, OPERATION, endpoint);
+      }
+      const json = await response.json().catch((error: unknown) => {
+        // A body cut off by the deadline is a timeout; anything else unreadable is a malformed answer.
+        if (signal.aborted) throw error;
+        return undefined;
       });
+      const body = creatorHeldResponseSchema.safeParse(json);
+      if (!body.success) {
+        throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Paykit creator-held response is invalid', {
+          service: ErrorService.Paykit,
+          operation: OPERATION,
+          context: { endpoint },
+        });
+      }
+      return body.data.held;
+    } catch (error) {
+      // `AbortSignal.timeout` raises a TimeoutError, which `safeFetch` reports as a network failure.
+      if (signal.aborted) {
+        throw Err.timeout(TimeoutErrorCode.REQUEST_TIMEOUT, 'Paykit did not answer in time', {
+          service: ErrorService.Paykit,
+          operation: OPERATION,
+          context: { endpoint },
+          cause: error,
+        });
+      }
+      throw error;
     }
-    return body.data.held;
   }
 
   private static ask(href: string, signal: AbortSignal): Promise<Response> {
@@ -131,6 +161,14 @@ export class NextJsPaykitCreatorService {
       OPERATION,
     );
   }
+}
+
+function rateLimited(message: string, retryAfter: number) {
+  return Err.rateLimit(RateLimitErrorCode.RATE_LIMITED, message, {
+    service: ErrorService.Local,
+    operation: OPERATION,
+    context: { retryAfter },
+  });
 }
 
 /** Releases the connection behind an answer that is not read. */
