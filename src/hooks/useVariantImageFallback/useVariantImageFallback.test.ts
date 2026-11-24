@@ -47,4 +47,20 @@ describe('useVariantImageFallback', () => {
     rerender({ variantSrc: '/feed-two.png', mainSrc: '/main-three.png' });
     expect(result.current.src).toBe('/feed-two.png');
   });
+
+  it('returns the new source on the first render after the inputs change', () => {
+    const renderedSrcs: string[] = [];
+    const { rerender } = renderHook(
+      ({ variantSrc, mainSrc }) => {
+        const state = useVariantImageFallback(variantSrc, mainSrc);
+        renderedSrcs.push(state.src);
+        return state;
+      },
+      { initialProps: { variantSrc: undefined as string | undefined, mainSrc: '' } },
+    );
+
+    rerender({ variantSrc: '/feed.png', mainSrc: '/main.png' });
+
+    expect(renderedSrcs.slice(1)).toEqual(['/feed.png']);
+  });
 });
