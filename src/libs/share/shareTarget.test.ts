@@ -266,6 +266,26 @@ describe('shareTarget utilities', () => {
       await expect(cachedTypes()).resolves.toEqual(['image/gif']);
     });
 
+    it('keeps file names outside Latin-1 through the cache', async () => {
+      const names = ['写真 2026.png', 'фото.jpg', '100% café 🎉.gif'];
+      const response = await handleShareTarget(
+        sharePost([
+          new File([await image('png')], names[0], { type: 'image/png' }),
+          new File([await image('jpeg')], names[1], { type: 'image/jpeg' }),
+          new File([await image('gif')], names[2], { type: 'image/gif' }),
+        ]),
+        cacheStorage(),
+      );
+
+      expect(response.headers.get('location')).toBe('http://localhost:3000/share?hasFiles=true');
+      const files = await getSharedFiles();
+      expect(files.map((file) => [file.name, file.type])).toEqual([
+        [names[0], 'image/png'],
+        [names[1], 'image/jpeg'],
+        [names[2], 'image/gif'],
+      ]);
+    });
+
     it('redirects a text-only share without opening the cache', async () => {
       const response = await handleShareTarget(
         sharePost([], { title: 'T', url: 'https://example.com' }),
@@ -320,6 +340,22 @@ describe('shareTarget utilities', () => {
 
     it('uses fallback filename when X-Share-Filename header is missing', async () => {
       await cacheEntry(await image('jpeg'), { 'Content-Type': 'image/jpeg' });
+
+      const files = await getSharedFiles();
+
+      expect(files.map((file) => file.name)).toEqual(['shared-file']);
+    });
+
+    it('uses fallback filename when X-Share-Filename is empty', async () => {
+      await cacheEntry(await image('png'), { 'X-Share-Filename': '', 'Content-Type': 'image/png' });
+
+      const files = await getSharedFiles();
+
+      expect(files.map((file) => file.name)).toEqual(['shared-file']);
+    });
+
+    it('uses fallback filename when X-Share-Filename is not a valid encoding', async () => {
+      await cacheEntry(await image('png'), { 'X-Share-Filename': 'photo%E0%A4%A.png', 'Content-Type': 'image/png' });
 
       const files = await getSharedFiles();
 

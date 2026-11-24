@@ -65,7 +65,9 @@ export async function handleShareTarget(request: Request, cacheStorage: CacheSto
         refused += 1;
         continue;
       }
-      const response = new Response(file, { headers: { 'Content-Type': type, 'X-Share-Filename': file.name } });
+      const response = new Response(file, {
+        headers: { 'Content-Type': type, 'X-Share-Filename': encodeURIComponent(file.name) },
+      });
       await cache.put(`/share-target-file/${stored}`, response);
       stored += 1;
     }
@@ -80,6 +82,19 @@ export async function handleShareTarget(request: Request, cacheStorage: CacheSto
 
   const query = params.toString();
   return Response.redirect(new URL(`/share${query ? `?${query}` : ''}`, request.url).href, 303);
+}
+
+/**
+ * The name a cached file was shared under. Header values are Latin-1 only, so
+ * the name is cached percent-encoded; a missing or malformed value gives
+ * `shared-file`.
+ */
+function sharedFileName(header: string | null): string {
+  try {
+    return (header && decodeURIComponent(header)) || 'shared-file';
+  } catch {
+    return 'shared-file';
+  }
 }
 
 /**
@@ -104,7 +119,7 @@ export async function getSharedFiles(): Promise<File[]> {
       const blob = await response.blob();
       const type = await sharedFileType(blob);
       if (!type) continue;
-      const filename = response.headers.get('X-Share-Filename') || 'shared-file';
+      const filename = sharedFileName(response.headers.get('X-Share-Filename'));
 
       files.push(new File([blob], filename, { type }));
     }
