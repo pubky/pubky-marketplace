@@ -224,6 +224,21 @@ describe('GET /llms.txt', () => {
     );
   });
 
+  it('documents the created_at fallback for reviews without iat', () => {
+    const copy = renderAgentGuide('https://index.example.test', []).replace(/\s+/g, ' ');
+
+    expect(copy).toContain(
+      "Without `iat` (an older index, or a review not yet re-read), the Shop uses the review's `created_at` instead",
+    );
+    expect(copy).toContain('open-ended effective window: no configured `until` and not shortened by a profile');
+    expect(copy).toContain("`created_at` is on or after that window's `validFrom`");
+    expect(copy).toContain('it must still be verified and not excluded by moderation');
+    expect(copy).toContain('A key whose window has an end never counts a review without `iat`');
+    expect(copy).toContain(
+      '- A review counts only under the rule in recipe 4, including the rule for reviews without `iat`.',
+    );
+  });
+
   it('limits legacy per-signer counts to effective windows open now', () => {
     const copy = renderAgentGuide('https://index.example.test', []).replace(/\s+/g, ' ');
 
