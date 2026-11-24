@@ -5,20 +5,52 @@ import type { MarketplaceTrustedAttestor } from '@/libs/runtime-config/runtime-c
  * The agent guide served at /llms.txt. INDEX is the marketplace Nexus the Shop itself reads, so
  * agents query the same index build as the app.
  */
-export function renderAgentGuide(indexUrl: string, trustedAttestors: readonly MarketplaceTrustedAttestor[]): string {
+export function renderAgentGuide(
+  indexUrl: string,
+  trustedAttestors: readonly MarketplaceTrustedAttestor[],
+  {
+    configured = trustedAttestors,
+    unconfirmedAttestorIds = [],
+  }: {
+    configured?: readonly MarketplaceTrustedAttestor[];
+    unconfirmedAttestorIds?: readonly string[];
+  } = {},
+): string {
   const windows = attestorWindowsParam(trustedAttestors);
   const reputationQuery = windows === null ? '' : `?attestors=${windows}`;
   const trustedAttestorList =
     trustedAttestors.length === 0
       ? 'This deployment trusts no attestor, so no review counts.'
       : trustedAttestors
-          .map(
-            (entry) =>
-              `- ${entry.pubky}${entry.label ? ` (${entry.label})` : ''}, valid from ${entry.validFrom}${
-                entry.validUntil === undefined ? '' : `, until ${entry.validUntil}`
-              }`,
-          )
+          .map((entry, index) => {
+            const configuredEntry = configured[index] ?? entry;
+            const profileNote =
+              entry.validUntil !== undefined && entry.validUntil !== configuredEntry.validUntil
+                ? ` (the attestor's signed profile ends this key's window early; ${
+                    configuredEntry.validUntil === undefined
+                      ? 'configured open'
+                      : `configured until ${configuredEntry.validUntil}`
+                  })`
+                : '';
+            return `- ${entry.pubky}${entry.label ? ` (${entry.label})` : ''}, valid from ${entry.validFrom}${
+              entry.validUntil === undefined ? '' : `, until ${entry.validUntil}`
+            }${profileNote}`;
+          })
           .join('\n');
+  const unconfirmedProfileNotice =
+    unconfirmedAttestorIds.length === 0
+      ? ''
+      : `\n\nConfigured bounds, profile not verified:\n${unconfirmedAttestorIds
+          .map(
+            (pubky) =>
+              `- ${pubky}: its window above is the configured bound because its signed profile could not be read
+  and verified for this guide; the profile may end the window earlier. Before computing a Shop-equivalent figure,
+  read INDEX/v0/marketplace/attestor/${pubky}/profile, verify the record's signature against
+  pubky://${pubky}/pub/pubky.app/marketplace/v1/attestor/profile, and end each listed key's window at the earliest
+  validUntil or compromisedFrom the verified profile states for it (Unix seconds, rounded up). If it cannot be
+  verified, present any figure from these windows as an upper bound.`,
+          )
+          .join('\n')}`;
 
   return `# Pubky Market — guide for agents
 
@@ -146,13 +178,17 @@ Media URIs are records on the seller's homeserver; the listing page renders them
 ### 4. Is this seller any good?
 
 Trusted attestors:
-${trustedAttestorList}
+${trustedAttestorList}${unconfirmedProfileNotice}
 
 GET INDEX/v0/shop/{seller_id}/reputation?attestors=<windows>
 
 Build \`<windows>\` from the trusted list as comma-separated \`<pubky>:<from>:<until>\` entries,
 with Unix seconds over the attestation \`iat\`; an open window leaves \`until\` empty. If no windows
 can be built (the list is empty or too long), call without \`attestors=\` and use the bucket rule below.
+These are this Shop's effective windows: the configured trust list, with each key's window ended at
+the earliest of its configured end and the \`validUntil\` / \`compromisedFrom\` that the attestor's verified
+signed profile (INDEX/v0/marketplace/attestor/{attestor_pubky}/profile) states for that key. A profile
+never adds a key, widens a window or moves \`validFrom\`.
 
 GET INDEX/v0/shop/gujx6qd8ksydh1makdphd3bxu351d9b8waqka8hfg6q7hnqkxexo/reputation${reputationQuery}
 
@@ -200,8 +236,9 @@ With no counted buyers, say "no counted reviews yet", never 0.0.
 \`count\`, \`avg\` and \`histogram\` are unfiltered: they include reviews whose attestation did not
 verify and reviews signed by any key. \`verified_count\` and \`attestors\` count verified reviews
 from any signer, trusted or not. Do not quote any of them as a rating or as a number of verified
-purchases. A response without \`buckets\` comes from an older index: give no rating, and report only
-how many verified reviews the trusted attestors signed (their entries in \`attestors\`).
+purchases. A response without \`buckets\` comes from an older index: give no rating, and report the
+per-signer counts in \`attestors\` only for trusted keys whose effective window is open now
+(\`validFrom\` <= now < effective \`validUntil\`), because the aggregate carries no attestation times.
 
 404 = no indexed reviews yet; say "no reviews yet", not "bad seller".
 One review is thin evidence; read the reviews and the reviewed listings before calling a seller

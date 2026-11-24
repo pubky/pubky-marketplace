@@ -6,7 +6,7 @@ import {
   MARKETPLACE_ATTESTOR_PROFILE_TTL_MS,
   MARKETPLACE_ATTESTOR_PROFILE_WAIT_MS,
 } from '@/config/commerce';
-import { setAttestorProfileKeyWindows } from '@/libs/commerce/attestor-key-windows';
+import { hasAttestorProfileKeyWindows, setAttestorProfileKeyWindows } from '@/libs/commerce/attestor-key-windows';
 import {
   type ReviewOutcome,
   reviewOutcomeKey,
@@ -23,9 +23,13 @@ export interface CommerceAttestorOrderRef {
   orderRef: string;
 }
 
+type AttestorProfileReadOutcome = 'verified' | 'absent' | 'failed';
+
 interface AttestorProfileRead {
   /** The read in flight, shared by every caller until it settles. */
   pending: Promise<void> | null;
+  /** The latest settled read; unset until the first read settles. */
+  outcome: AttestorProfileReadOutcome | undefined;
   /** The earliest time the next read may start (a success lasts longer than a failure). */
   nextReadAt: number;
 }
@@ -80,36 +84,49 @@ export class CommerceAttestorApplication {
     }
   }
 
+  /** Configured attestors whose effective windows have no verified profile or confirmed absence behind them. */
+  static unconfirmedProfileAttestors(): string[] {
+    if (getCommerceAdapterMode() === 'sandbox') return [];
+    const attestorIds = [...new Set(configuredMarketplaceTrustedAttestors().map(({ pubky }) => pubky))];
+    return attestorIds.filter(
+      (attestorId) =>
+        !hasAttestorProfileKeyWindows(attestorId) && this.profileReads.get(attestorId)?.outcome !== 'absent',
+    );
+  }
+
   private static readProfile(attestorId: string): Promise<void> {
     const known = this.profileReads.get(attestorId);
     if (known?.pending) return known.pending;
     if (known !== undefined && Date.now() < known.nextReadAt) return Promise.resolve();
 
-    const read: AttestorProfileRead = { pending: null, nextReadAt: 0 };
-    read.pending = this.fetchProfile(attestorId).then((ok) => {
+    const read: AttestorProfileRead = { pending: null, outcome: known?.outcome, nextReadAt: 0 };
+    read.pending = this.fetchProfile(attestorId).then((outcome) => {
       read.pending = null;
-      read.nextReadAt = Date.now() + (ok ? MARKETPLACE_ATTESTOR_PROFILE_TTL_MS : MARKETPLACE_ATTESTOR_PROFILE_RETRY_MS);
+      read.outcome = outcome;
+      read.nextReadAt =
+        Date.now() +
+        (outcome === 'verified' ? MARKETPLACE_ATTESTOR_PROFILE_TTL_MS : MARKETPLACE_ATTESTOR_PROFILE_RETRY_MS);
     });
     this.profileReads.set(attestorId, read);
     return read.pending;
   }
 
-  /** One profile read; true when a verified profile's windows were recorded. */
-  private static async fetchProfile(attestorId: string): Promise<boolean> {
+  /** One profile read and the outcome that determines when it may be read again. */
+  private static async fetchProfile(attestorId: string): Promise<AttestorProfileReadOutcome> {
     try {
       const payload = await NexusMarketplaceService.fetchAttestorProfile({ attestor_id: attestorId });
-      if (payload === null) return false;
+      if (payload === null) return 'absent';
       const record = CommerceRecordNormalizer.nexusAttestorProfileRecord(payload);
       const windows = record === null ? null : verifiedAttestorProfileKeyWindows(attestorId, record);
       if (windows === null) {
         Logger.warn('An attestor profile did not verify; the configured trust windows stay', { attestorId });
-        return false;
+        return 'failed';
       }
       setAttestorProfileKeyWindows(attestorId, windows);
-      return true;
+      return 'verified';
     } catch (error) {
       Logger.warn('An attestor profile could not be read; the configured trust windows stay', { attestorId, error });
-      return false;
+      return 'failed';
     }
   }
 

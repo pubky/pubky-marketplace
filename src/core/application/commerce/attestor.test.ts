@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as commerceConfig from '@/config/commerce';
 import {
   MARKETPLACE_ATTESTOR_ANNOTATIONS_BATCH_MAX,
   MARKETPLACE_ATTESTOR_PROFILE_RETRY_MS,
@@ -152,6 +153,82 @@ describe('CommerceAttestorApplication.loadKeyWindows', () => {
     expect(marketplaceTrustedAttestors().find(({ pubky }) => pubky === attestor.pubky)?.validUntil).toBe(
       '2026-05-01T00:00:00.000Z',
     );
+  });
+
+  it('does not list an attestor with verified profile windows as unconfirmed', async () => {
+    const profile = signedAttestorProfile(attestor, [{ pubky: attestor.pubky, validFrom: FROM }]);
+    vi.spyOn(NexusMarketplaceService, 'fetchAttestorProfile').mockImplementation(async ({ attestor_id }) =>
+      attestor_id === attestor.pubky ? servedAttestorProfile(attestor.pubky, profile) : null,
+    );
+
+    await CommerceAttestorApplication.loadKeyWindows();
+
+    expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+  });
+
+  it('does not list an attestor whose profile is absent as unconfirmed', async () => {
+    vi.spyOn(NexusMarketplaceService, 'fetchAttestorProfile').mockResolvedValue(null);
+
+    await CommerceAttestorApplication.loadKeyWindows();
+
+    expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+  });
+
+  it('lists an attestor whose profile read rejects as unconfirmed', async () => {
+    vi.spyOn(NexusMarketplaceService, 'fetchAttestorProfile').mockImplementation(async ({ attestor_id }) => {
+      if (attestor_id === attestor.pubky) throw new Error('offline');
+      return null;
+    });
+
+    await CommerceAttestorApplication.loadKeyWindows();
+
+    expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([attestor.pubky]);
+  });
+
+  it('lists an attestor whose profile does not verify as unconfirmed', async () => {
+    const profile = signedAttestorProfile(attestor, [{ pubky: attestor.pubky, validFrom: FROM }]);
+    const changed = {
+      ...profile,
+      keys: [{ pubky: attestor.pubky, validFrom: FROM, validUntil: '2026-02-01T00:00:00Z' }],
+    };
+    vi.spyOn(NexusMarketplaceService, 'fetchAttestorProfile').mockImplementation(async ({ attestor_id }) =>
+      attestor_id === attestor.pubky ? servedAttestorProfile(attestor.pubky, changed) : null,
+    );
+
+    await CommerceAttestorApplication.loadKeyWindows();
+
+    expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([attestor.pubky]);
+  });
+
+  it('keeps verified windows confirmed when a later profile read fails', async () => {
+    vi.useFakeTimers();
+    const profile = signedAttestorProfile(attestor, [{ pubky: attestor.pubky, validFrom: FROM }]);
+    const read = vi
+      .spyOn(NexusMarketplaceService, 'fetchAttestorProfile')
+      .mockImplementation(async ({ attestor_id }) =>
+        attestor_id === attestor.pubky ? servedAttestorProfile(attestor.pubky, profile) : null,
+      );
+    await CommerceAttestorApplication.loadKeyWindows();
+    vi.advanceTimersByTime(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+    read.mockImplementationOnce(async ({ attestor_id }) => {
+      if (attestor_id === attestor.pubky) throw new Error('offline');
+      return null;
+    });
+
+    await CommerceAttestorApplication.loadKeyWindows();
+
+    expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+    expect(attestorProfileKeyWindows()).not.toEqual([]);
+  });
+
+  it('lists no unconfirmed profile attestors in sandbox mode', async () => {
+    vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('sandbox');
+    const read = vi.spyOn(NexusMarketplaceService, 'fetchAttestorProfile');
+
+    await CommerceAttestorApplication.loadKeyWindows();
+
+    expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+    expect(read).not.toHaveBeenCalled();
   });
 });
 
