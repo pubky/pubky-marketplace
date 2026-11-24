@@ -229,6 +229,40 @@ describe('CommerceAttestorApplication.loadKeyWindows', () => {
     expect(attestorProfileKeyWindows()).toContainEqual(expect.objectContaining({ pubky: attestor.pubky }));
   });
 
+  it('keeps verified windows when a later profile does not verify', async () => {
+    vi.useFakeTimers();
+    const profile = signedAttestorProfile(attestor, [
+      { pubky: attestor.pubky, validFrom: FROM, compromisedFrom: '2026-05-01T00:00:00Z' },
+    ]);
+    const changed = {
+      ...profile,
+      keys: [{ pubky: attestor.pubky, validFrom: FROM, validUntil: '2026-02-01T00:00:00Z' }],
+    };
+    let serveChanged = false;
+    const read = vi
+      .spyOn(NexusMarketplaceService, 'fetchAttestorProfile')
+      .mockImplementation(async ({ attestor_id }) => {
+        if (attestor_id !== attestor.pubky) return null;
+        return servedAttestorProfile(attestor.pubky, serveChanged ? changed : profile);
+      });
+    await CommerceAttestorApplication.loadKeyWindows();
+    vi.advanceTimersByTime(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+    serveChanged = true;
+    const warn = vi.spyOn(Logger, 'warn');
+
+    await CommerceAttestorApplication.loadKeyWindows();
+
+    expect(read.mock.calls.filter(([params]) => params.attestor_id === attestor.pubky)).toHaveLength(2);
+    expect(warn).toHaveBeenCalledWith(
+      'An attestor profile did not verify; the configured trust windows stay',
+      expect.objectContaining({ attestorId: attestor.pubky }),
+    );
+    expect(attestorProfileKeyWindows()).toContainEqual(expect.objectContaining({ pubky: attestor.pubky }));
+    expect(marketplaceTrustedAttestors().find(({ pubky }) => pubky === attestor.pubky)?.validUntil).toBe(
+      '2026-05-01T00:00:00.000Z',
+    );
+  });
+
   it('lists no unconfirmed profile attestors in sandbox mode', async () => {
     vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('sandbox');
     const read = vi.spyOn(NexusMarketplaceService, 'fetchAttestorProfile');
