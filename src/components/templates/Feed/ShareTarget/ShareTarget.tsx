@@ -6,7 +6,7 @@ import { getShopHomeRoute } from '@/app/routes';
 import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
 import { Typography } from '@/atoms/Typography/Typography';
-import { composeShareContent, getSharedFiles } from '@/libs/share/shareTarget';
+import { composeShareContent, getSharedFiles, refusedFileCount } from '@/libs/share/shareTarget';
 import { toast } from '@/molecules/Toaster/toast';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { PostInput } from '@/organisms/PostInput/PostInput';
@@ -26,7 +26,7 @@ export function ShareTarget() {
     const text = searchParams.get('text') ?? undefined;
     const url = searchParams.get('url') ?? undefined;
     const hasFiles = searchParams.get('hasFiles') === 'true';
-    const refusedFiles = Number(searchParams.get('refusedFiles') ?? 0);
+    const refusedFiles = refusedFileCount(searchParams.get('refusedFiles'));
 
     const content = composeShareContent({ title, text, url });
     setInitialContent(content);

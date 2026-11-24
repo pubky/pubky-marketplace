@@ -4,7 +4,13 @@ import sharp from 'sharp';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { POST_SUPPORTED_ATTACHMENT_MIME_TYPES } from '@/config/posts';
 import { asOpaque } from '@/test-utils/type-assertions';
-import { composeShareContent, getSharedFiles, handleShareTarget, sharedFileType } from './shareTarget';
+import {
+  composeShareContent,
+  getSharedFiles,
+  handleShareTarget,
+  refusedFileCount,
+  sharedFileType,
+} from './shareTarget';
 
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg" onload="document.title=1"><rect width="1" height="1"/></svg>';
 const HTML = '<!doctype html><html><body><script>document.title = 1</script></body></html>';
@@ -408,6 +414,23 @@ describe('shareTarget utilities', () => {
 
       await expect(getSharedFiles()).resolves.toEqual([]);
     });
+  });
+
+  describe('refusedFileCount', () => {
+    it.each([
+      ['1', 1],
+      ['3', 3],
+      ['9007199254740991', Number.MAX_SAFE_INTEGER],
+    ])('reads %s as %i', (value, count) => {
+      expect(refusedFileCount(value)).toBe(count);
+    });
+
+    it.each([null, '', '0', '-1', '1.5', '1e3', '0x10', 'Infinity', ' 2', '2 ', 'abc', '9007199254740992'])(
+      'reads %s as no refused files',
+      (value) => {
+        expect(refusedFileCount(value)).toBe(0);
+      },
+    );
   });
 
   describe('composeShareContent', () => {

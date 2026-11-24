@@ -84,6 +84,16 @@ export async function handleShareTarget(request: Request, cacheStorage: CacheSto
 }
 
 /**
+ * The `refusedFiles` count from the share redirect's query: a positive safe
+ * integer written in plain digits, or 0 for anything else.
+ */
+export function refusedFileCount(value: string | null): number {
+  if (!value || !/^\d+$/.test(value)) return 0;
+  const count = Number(value);
+  return Number.isSafeInteger(count) ? count : 0;
+}
+
+/**
  * The name a cached file was shared under. Header values are Latin-1 only, so
  * the name is cached percent-encoded; a missing or malformed value gives
  * `shared-file`.

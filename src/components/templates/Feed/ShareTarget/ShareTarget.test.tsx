@@ -325,4 +325,18 @@ describe('ShareTarget', () => {
     });
     expect(toast).not.toHaveBeenCalled();
   });
+
+  it.each(['Infinity', '1e3', '0x10', '-1', '1.5', 'abc'])(
+    'shows no toast for a refusedFiles value of %s',
+    async (value) => {
+      mockSearchParams.set('refusedFiles', value);
+
+      render(<ShareTarget />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('post-input')).toBeInTheDocument();
+      });
+      expect(toast).not.toHaveBeenCalled();
+    },
+  );
 });
