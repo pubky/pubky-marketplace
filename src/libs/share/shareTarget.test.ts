@@ -23,6 +23,8 @@ function cacheKey(request: RequestInfo | URL): string {
 /** The parts of the Cache API the share target uses, kept in memory. */
 class MemoryCache {
   readonly entries = new Map<string, Response>();
+  /** The `X-Share-Filename` of every response ever put, including ones deleted later. */
+  readonly putNames: string[] = [];
 
   async keys(): Promise<Request[]> {
     return [...this.entries.keys()].map((url) => new Request(url));
@@ -33,6 +35,7 @@ class MemoryCache {
   }
 
   async put(request: RequestInfo | URL, response: Response): Promise<void> {
+    this.putNames.push(response.headers.get('X-Share-Filename') ?? '');
     this.entries.set(cacheKey(request), response);
   }
 
@@ -84,6 +87,21 @@ function wavFile(): Uint8Array<ArrayBuffer> {
   ascii('data', 36);
   view.setUint32(40, 16, true);
   return file;
+}
+
+/**
+ * A 300-byte AVIF `ftyp` box whose only AVIF brand is a compatible brand at
+ * `offset`; every other brand is `mif1`.
+ */
+function avifBrandAt(offset: number): Uint8Array<ArrayBuffer> {
+  const box = new Uint8Array(300);
+  new DataView(box.buffer).setUint32(0, box.length);
+  const ascii = (text: string, at: number) => box.set(new TextEncoder().encode(text), at);
+  ascii('ftyp', 4);
+  for (let at = 8; at < box.length; at += 4) ascii('mif1', at);
+  box.fill(0, 12, 16);
+  ascii('avif', offset);
+  return box;
 }
 
 /**
@@ -168,6 +186,15 @@ describe('shareTarget utilities', () => {
       await expect(sharedFileType(new Blob([HTML], { type: 'video/mp4' }))).resolves.toBe('video/mp4');
     });
 
+    it('types an AVIF whose brand ends at byte 256 and refuses one whose brand starts there', async () => {
+      await expect(sharedFileType(new Blob([avifBrandAt(252)], { type: 'application/octet-stream' }))).resolves.toBe(
+        'image/avif',
+      );
+      await expect(
+        sharedFileType(new Blob([avifBrandAt(256)], { type: 'application/octet-stream' })),
+      ).resolves.toBeNull();
+    });
+
     it.each(['audio/mpeg', 'audio/wav', 'video/mp4'])('keeps %s, which the composer accepts', async (type) => {
       expect(POST_SUPPORTED_ATTACHMENT_MIME_TYPES).toContain(type);
       await expect(sharedFileType(new Blob([wavFile()], { type }))).resolves.toBe(type);
@@ -228,6 +255,25 @@ describe('shareTarget utilities', () => {
 
       expect(response.headers.get('location')).toBe('http://localhost:3000/share?refusedFiles=3');
       await expect(cachedTypes()).resolves.toEqual([]);
+    });
+
+    it('never puts a refused file in the cache', async () => {
+      const response = await handleShareTarget(
+        sharePost(
+          [
+            new File([SVG], 'cat.svg', { type: 'image/svg+xml' }),
+            new File([await image('png')], 'photo.png', { type: 'image/png' }),
+            new File([HTML], 'page.html', { type: 'text/html' }),
+            new File([wavFile()], 'clip.ogg', { type: 'audio/ogg' }),
+          ],
+          {},
+          'https://other.example',
+        ),
+        cacheStorage(),
+      );
+
+      expect(response.headers.get('location')).toBe('http://localhost:3000/share?hasFiles=true&refusedFiles=3');
+      expect(storage.stores.get('share-target-files')?.putNames).toEqual(['photo.png']);
     });
 
     it('keeps the images and media of a mixed share and counts what it refused', async () => {
