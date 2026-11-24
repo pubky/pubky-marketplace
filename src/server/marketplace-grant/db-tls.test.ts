@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import tls, { type PeerCertificate } from 'node:tls';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ZodError } from 'zod';
 import {
   databaseTlsHostFromUrl,
   getMarketplaceGrantConfig,
@@ -404,6 +405,42 @@ describe('grant database TLS configuration', () => {
     if (!('issues' in thrown)) throw new Error('Expected zod issues');
     expect(JSON.stringify(thrown.issues)).not.toContain(password);
     expect(JSON.stringify(thrown.issues)).toContain('SHOP_BFF_GRANT_STATE_DATABASE_URL');
+  });
+
+  it('reports existing refinement issues before the invalid database URL without exposing credentials', () => {
+    const password = 'fake-database-password';
+    const databaseUrl = `postgres://u:${password}@[]/db`;
+    process.env = {
+      ...validEnv(),
+      SHOP_BFF_GRANT_STATE_DATABASE_URL: databaseUrl,
+      SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM: certificates.caA,
+      SHOP_GRANT_ASSERTION_ISSUER: 'https://other.example',
+    };
+    let issuerThrown: unknown;
+    try {
+      configured();
+    } catch (error) {
+      issuerThrown = error;
+    }
+    if (!(issuerThrown instanceof ZodError)) throw new Error('Expected a zod configuration error');
+    expect(issuerThrown.issues.map(({ path }) => path)).toEqual([['assertionIssuer']]);
+    expect(JSON.stringify(issuerThrown.issues)).not.toContain(password);
+
+    process.env = {
+      ...validEnv(),
+      SHOP_BFF_GRANT_STATE_DATABASE_URL: databaseUrl,
+      SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM: certificates.caA,
+    };
+    resetMarketplaceGrantConfigForTests();
+    let databaseUrlThrown: unknown;
+    try {
+      configured();
+    } catch (error) {
+      databaseUrlThrown = error;
+    }
+    if (!(databaseUrlThrown instanceof ZodError)) throw new Error('Expected a zod configuration error');
+    expect(databaseUrlThrown.issues.map(({ path }) => path)).toEqual([['databaseUrl']]);
+    expect(JSON.stringify(databaseUrlThrown.issues)).not.toContain(password);
   });
 
   it.each([
