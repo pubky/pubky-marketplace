@@ -754,7 +754,7 @@ export class CommerceController {
         operation: 'getOwnMarketplaceReview',
       });
     }
-    return await CommerceApplication.getOwnMarketplaceReview(this.getCurrentUserPubky(), order);
+    return await CommerceApplication.getOwnMarketplaceReview(this.getCurrentUserPubky(), order, captureAuthScope());
   }
 
   /** The current user's own published review rows of one order, one per reviewed listing. */
@@ -765,7 +765,11 @@ export class CommerceController {
         operation: 'getOwnMarketplaceOrderReviews',
       });
     }
-    return await CommerceApplication.getOwnMarketplaceOrderReviews(this.getCurrentUserPubky(), order);
+    return await CommerceApplication.getOwnMarketplaceOrderReviews(
+      this.getCurrentUserPubky(),
+      order,
+      captureAuthScope(),
+    );
   }
 
   /**

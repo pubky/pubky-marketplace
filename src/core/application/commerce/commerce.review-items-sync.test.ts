@@ -377,19 +377,47 @@ describe('own item reviews on the reviewer homeserver', () => {
       );
     };
 
+    it('deletes only the withdrawn item record and hydrates the other reviewed item', async () => {
+      const twoItems: MarketplaceOrder = {
+        ...order,
+        lines: order.lines.slice(0, 2),
+        reviews: order.reviews!.slice(0, 2),
+      };
+      service = installFakeMarketplaceService(twoItems, ORDER_FIXTURE_BUYER);
+      service.withdraw('belt');
+      homeserver.files.delete(urlOf(published[2]));
+      await db.table(CommerceReviewModel.table.name).clear();
+      await CommerceSyncJobModel.table.clear();
+      CommerceApplication.resetOwnReviewHydrateMemo();
+      homeserver.log.length = 0;
+      vi.spyOn(MarketplaceGatewayService, 'getReviewAttestations').mockResolvedValue(
+        attestations.slice(0, 2).map(({ wire }, index) => ({ listingId: LISTINGS[index].id, ...wire })),
+      );
+
+      const rows = await CommerceApplication.getOwnMarketplaceOrderReviews(ORDER_FIXTURE_BUYER, service.order());
+
+      expect(listingsOf(rows)).toEqual(['boots']);
+      expect(listingsOf(await localRows())).toEqual(['boots']);
+      expect(deletes()).toEqual([`${HttpMethod.DELETE} ${urlOf(published[1])}`]);
+      expect(homeserver.files.has(urlOf(published[0]))).toBe(true);
+      expect(homeserver.files.has(urlOf(published[1]))).toBe(false);
+      expect(service.log.filter((entry) => entry === 'review.withdraw')).toEqual([]);
+      expect(await CommerceSyncJobModel.table.toArray()).toEqual([]);
+    });
+
     describe('with the belt removed on device 1 and the other items kept', () => {
       beforeEach(async () => {
         service.withdraw('belt');
         await switchDevice();
       });
 
-      it('does not show the belt when device 2 opens the order, though the homeserver still serves its record', async () => {
+      it('deletes the belt and does not show it when device 2 opens the order', async () => {
         const rows = await CommerceApplication.getOwnMarketplaceOrderReviews(ORDER_FIXTURE_BUYER, service.order());
 
         expect(listingsOf(rows)).toEqual(['boots', 'wallet']);
         expect(listingsOf(await localRows())).toEqual(['boots', 'wallet']);
         expect(puts()).toEqual([]);
-        expect(homeserver.files.has(urlOf(published[1]))).toBe(true);
+        expect(homeserver.files.has(urlOf(published[1]))).toBe(false);
       });
 
       it("does not read the belt's record again in the same session", async () => {

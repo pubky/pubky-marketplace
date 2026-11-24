@@ -29,6 +29,18 @@ describe('CommerceController own reviews', () => {
     expect(remove).not.toHaveBeenCalled();
   });
 
+  it('passes the current auth scope to both own-review hydration reads', async () => {
+    const order = createOrderFixture('completed');
+    const single = vi.spyOn(CommerceApplication, 'getOwnMarketplaceReview').mockResolvedValue(null);
+    const items = vi.spyOn(CommerceApplication, 'getOwnMarketplaceOrderReviews').mockResolvedValue([]);
+
+    await expect(CommerceController.getOwnMarketplaceReview(order)).resolves.toBeNull();
+    await expect(CommerceController.getOwnMarketplaceOrderReviews(order)).resolves.toEqual([]);
+
+    expect(single).toHaveBeenCalledWith(ORDER_FIXTURE_BUYER, order, captureAuthScope());
+    expect(items).toHaveBeenCalledWith(ORDER_FIXTURE_BUYER, order, captureAuthScope());
+  });
+
   it('refreshes and resumes through the application for the signed-in user', async () => {
     const orders = [createOrderFixture('completed')];
     const refresh = vi.spyOn(CommerceApplication, 'refreshOwnReviews').mockResolvedValue(2);

@@ -3836,11 +3836,12 @@ export class CommerceApplication {
   static async getOwnMarketplaceReview(
     actorPubky: string,
     order: MarketplaceOrder,
+    signal?: AbortSignal,
   ): Promise<CommerceReviewModelSchema | null> {
     const local = (await LocalCommerceService.getOwnReviewByOrder(actorPubky, order.id)) ?? null;
     if (local !== null) return local;
     if (this.ownReviewHomeserverMisses.has(this.ownReviewMissKey(actorPubky, order.id))) return null;
-    return await this.hydrateOwnReviewFromHomeserver(actorPubky, order);
+    return await this.hydrateOwnReviewFromHomeserver(actorPubky, order, signal);
   }
 
   /** `listing:<sellerPubky>_<listingId>` on the first order line, or null. */
@@ -3890,15 +3891,16 @@ export class CommerceApplication {
 
   /**
    * Rebuilds the local own-review row from the reviewer's homeserver after
-   * a cache miss. The only write to the homeserver is the one-time republish
-   * of a review no record carries
-   * ({@link republishOverwrittenOwnReview}). A 404 or identity mismatch stays
-   * unresolved (the order card's waiting copy), never a false published
-   * or unpublished claim.
+   * a cache miss. Homeserver writes are limited to the one-time republish of
+   * a review no record carries ({@link republishOverwrittenOwnReview}) and
+   * deletion of a record the service holds withdrawn. A 404 or identity
+   * mismatch stays unresolved (the order card's waiting copy), never a false
+   * published or unpublished claim.
    */
   private static async hydrateOwnReviewFromHomeserver(
     actorPubky: string,
     order: MarketplaceOrder,
+    signal?: AbortSignal,
   ): Promise<CommerceReviewModelSchema | null> {
     const hydrateIdentity = actorPubky;
     if (!this.liveIdentityMatches(hydrateIdentity)) return null;
@@ -3919,7 +3921,19 @@ export class CommerceApplication {
       // The user removed this review: a record still served (a DEL owed, or
       // not yet visible) must not be shown again.
       if (await this.ownReviewWithdrawn(actorPubky, order, read.model.record.listingId)) {
-        this.ownReviewHomeserverMisses.add(this.ownReviewMissKey(actorPubky, order.id));
+        const retracted = await this.retractWithdrawnOwnReview(
+          actorPubky,
+          order.id,
+          read.model.record.listingId,
+          read.model,
+          signal,
+        );
+        if (
+          retracted ||
+          (await LocalCommerceService.hasOwedOwnReviewRemoval(actorPubky, order.id, read.model.record.listingId))
+        ) {
+          this.ownReviewHomeserverMisses.add(this.ownReviewMissKey(actorPubky, order.id));
+        }
         return null;
       }
       await LocalCommerceService.upsertOwnReview(read.model);
@@ -4143,12 +4157,14 @@ export class CommerceApplication {
    * reviewed but that has no local row (wiped with identity, or published
    * from another device) is hydrated from the reviewer's homeserver: the
    * order's per-listing attestations name each `order_ref`, and each record
-   * is read from its deterministic path. GET only, never PUT; a missing
-   * record stays unresolved instead of claiming unpublished.
+   * is read from its deterministic path. A missing record stays unresolved
+   * instead of claiming unpublished. Homeserver writes are limited to the
+   * overwrite repair and deletion of records the service holds withdrawn.
    */
   static async getOwnMarketplaceOrderReviews(
     actorPubky: string,
     order: MarketplaceOrder,
+    signal?: AbortSignal,
   ): Promise<CommerceReviewModelSchema[]> {
     const local = await LocalCommerceService.getOwnReviewsByOrder(actorPubky, order.id);
     const reviewed = reviewsOfReviewer(order, actorPubky).flatMap((review) => {
@@ -4168,6 +4184,7 @@ export class CommerceApplication {
             actorPubky,
             order,
             missing.map(({ listingId }) => listingId),
+            signal,
           );
     const lineOrder = orderReviewListings(order).map(({ listingId }) => listingId);
     return [...local, ...hydrated].sort(
@@ -4181,12 +4198,14 @@ export class CommerceApplication {
 
   /**
    * Rebuilds the local rows of the listings that have none, from one read of
-   * the order's review attestations and one GET per record. Never a PUT.
+   * the order's review attestations and one GET per record. Homeserver writes
+   * are limited to the overwrite repair and deletion of withdrawn records.
    */
   private static async hydrateOwnReviewItemsFromHomeserver(
     actorPubky: string,
     order: MarketplaceOrder,
     listingIds: string[],
+    signal?: AbortSignal,
   ): Promise<CommerceReviewModelSchema[]> {
     if (!this.liveIdentityMatches(actorPubky)) return [];
     let attestations: MarketplaceItemAttestation[];
@@ -4233,7 +4252,10 @@ export class CommerceApplication {
         // The user removed this item's review: a record still served (a DEL
         // owed, or not yet visible) must not be shown again.
         if (await this.ownReviewWithdrawn(actorPubky, order, listingId)) {
-          this.ownReviewHomeserverMisses.add(this.ownReviewItemMissKey(actorPubky, order.id, listingId));
+          const retracted = await this.retractWithdrawnOwnReview(actorPubky, order.id, listingId, read.model, signal);
+          if (retracted || (await LocalCommerceService.hasOwedOwnReviewRemoval(actorPubky, order.id, listingId))) {
+            this.ownReviewHomeserverMisses.add(this.ownReviewItemMissKey(actorPubky, order.id, listingId));
+          }
           continue;
         }
         await LocalCommerceService.upsertOwnReview(read.model);
@@ -4247,6 +4269,43 @@ export class CommerceApplication {
       }
     }
     return hydrated;
+  }
+
+  /**
+   * Deletes the owner's record only while the service freshly holds that item
+   * withdrawn. The order lock excludes publications and outbox removals. An
+   * owed removal or a local row owns the next action instead. This path sends
+   * no service command and writes no outbox job or local row. False leaves the
+   * cleanup for a later hydration.
+   */
+  private static async retractWithdrawnOwnReview(
+    actorPubky: string,
+    orderId: string,
+    listingId: string,
+    model: CommerceReviewModelSchema,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    return await this.withOwnReviewLock(actorPubky, orderId, async () => {
+      if (signal?.aborted || !this.liveIdentityMatches(actorPubky)) return false;
+      if (await LocalCommerceService.hasOwedOwnReviewRemoval(actorPubky, orderId, listingId)) return false;
+      if ((await LocalCommerceService.getOwnReviewById(model.id)) !== undefined) return false;
+      const removal = await this.fetchOwnReviewRemovalState(actorPubky, orderId, listingId);
+      if (removal !== 'removed') return false;
+      if (signal?.aborted || !this.liveIdentityMatches(actorPubky)) return false;
+
+      try {
+        await CommerceHomeserverService.delete(CommerceRecordNormalizer.reviewUri(actorPubky, model.review_id));
+        return true;
+      } catch (error) {
+        if (isAppError(error) && isNotFound(error)) return true;
+        Logger.warn('Could not delete a withdrawn own review; a later hydration retries', {
+          orderId,
+          reviewId: model.review_id,
+          error,
+        });
+        return false;
+      }
+    });
   }
 
   /**
@@ -4379,7 +4438,10 @@ export class CommerceApplication {
    * idempotent (a withdrawal already recorded and a 404 both count as done),
    * so the job simply retries from the top. Any other failure keeps the job,
    * with its attempt count and cause recorded. Once `signal` aborts, nothing
-   * more is sent or recorded and the job stays as it was.
+   * more is sent or recorded and the job stays as it was. If the scope ends
+   * after the service accepts the withdrawal, the job stays. If a wipe drops
+   * that job, the owner's next hydration deletes the record the service holds
+   * withdrawn.
    */
   private static async sendOwnReviewRemoval(
     actorPubky: string,
