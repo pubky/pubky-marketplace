@@ -605,6 +605,9 @@ export function MarketplaceListingForm({
             label="Description"
             placeholder="Condition, provenance, measurements, and anything a buyer should know"
             rows={6}
+            // Grows with the text instead of scrolling a 100px box, capped so a long description cannot push
+            // the rest of the form off screen; taller from the sm breakpoint, where there is room.
+            textareaClassName="h-auto min-h-36 max-h-64 sm:max-h-96"
             disabled={isPublishing || followsContent}
           />
           <Controller
