@@ -61,6 +61,24 @@ const databaseTlsServerName = z
     return value.split('.').every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label));
   }, 'SHOP_BFF_GRANT_STATE_DATABASE_TLS_SERVER_NAME must be a lowercase DNS name')
   .optional();
+const databaseTlsUrlMessage =
+  'SHOP_BFF_GRANT_STATE_DATABASE_URL must be a valid single-host PostgreSQL URL when a CA is configured';
+
+export function databaseTlsHostFromUrl(databaseUrl: string): string | undefined {
+  try {
+    const url = new URL(databaseUrl);
+    if (
+      (url.protocol !== 'postgres:' && url.protocol !== 'postgresql:') ||
+      url.hostname.length === 0 ||
+      url.host.includes(',')
+    )
+      return undefined;
+    return url.hostname.startsWith('[') && url.hostname.endsWith(']') ? url.hostname.slice(1, -1) : url.hostname;
+  } catch {
+    return undefined;
+  }
+}
+
 export const CLAIM_LEASE_MARGIN_SECONDS = 5;
 export const CLAIM_SERVICE_CALLS = 4;
 
@@ -124,9 +142,20 @@ const configSchema = z
         message: `Claim lease must be at least ${CLAIM_SERVICE_CALLS}× service timeout plus ${CLAIM_LEASE_MARGIN_SECONDS}s (${minimumLeaseSeconds}s)`,
       });
     }
+  })
+  .transform((value, ctx) => {
+    if (value.databaseCaPem === undefined) return { ...value, databaseTlsHost: undefined };
+    const databaseTlsHost = databaseTlsHostFromUrl(value.databaseUrl);
+    if (databaseTlsHost === undefined) {
+      ctx.addIssue({ code: 'custom', path: ['databaseUrl'], message: databaseTlsUrlMessage });
+      return z.NEVER;
+    }
+    return { ...value, databaseTlsHost };
   });
 
-export type MarketplaceGrantConfig = z.infer<typeof configSchema>;
+export type MarketplaceGrantConfig = Omit<z.infer<typeof configSchema>, 'databaseTlsHost'> & {
+  databaseTlsHost?: string;
+};
 
 const cliExtrasSchema = z.object({
   challengeTtlSeconds: z.coerce.number().int().min(30).max(120).default(60),

@@ -7,7 +7,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import tls, { type PeerCertificate } from 'node:tls';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getMarketplaceGrantConfig, type MarketplaceGrantConfig, resetMarketplaceGrantConfigForTests } from './config';
+import {
+  databaseTlsHostFromUrl,
+  getMarketplaceGrantConfig,
+  type MarketplaceGrantConfig,
+  resetMarketplaceGrantConfigForTests,
+} from './config';
 import { grantSql, resetGrantSqlForTests } from './db';
 import { grantDatabaseSsl } from './db-tls';
 import { isEmbeddedShopReady, resetEmbeddedShopReadinessForTests } from './readiness';
@@ -292,9 +297,10 @@ function databaseConfig(
   ca?: string,
   serverName?: string,
   sslmode = 'require',
+  host = '127.0.0.1',
 ): MarketplaceGrantConfig {
   const env = validEnv();
-  env.SHOP_BFF_GRANT_STATE_DATABASE_URL = `postgres://u:p@127.0.0.1:${server.port}/db?sslmode=${sslmode}`;
+  env.SHOP_BFF_GRANT_STATE_DATABASE_URL = `postgres://u:p@${host}:${server.port}/db?sslmode=${sslmode}`;
   if (ca !== undefined) env.SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM = ca;
   if (serverName !== undefined) env.SHOP_BFF_GRANT_STATE_DATABASE_TLS_SERVER_NAME = serverName;
   process.env = env;
@@ -356,6 +362,50 @@ describe('grant database TLS configuration', () => {
     expect(configured().databaseCaPem).toEqual([certificates.caA.trim(), certificates.caB.trim()]);
   });
 
+  it('derives an unbracketed IPv6 TLS identity host', () => {
+    const databaseUrl = 'postgres://[::1]:5432/db';
+    process.env = {
+      ...validEnv(),
+      SHOP_BFF_GRANT_STATE_DATABASE_URL: databaseUrl,
+      SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM: certificates.caA,
+    };
+    const config = configured();
+    expect(databaseTlsHostFromUrl(databaseUrl)).toBe('::1');
+    expect(config.databaseTlsHost).toBe('::1');
+    expect(grantDatabaseSsl(config)?.host).toBe('::1');
+  });
+
+  it('does not newly validate the database URL without a CA', () => {
+    process.env = { ...validEnv(), SHOP_BFF_GRANT_STATE_DATABASE_URL: 'not a URL' };
+    expect(configured()).toMatchObject({ databaseUrl: 'not a URL', databaseTlsHost: undefined });
+  });
+
+  it.each(['multi-host', 'unparsable'])('rejects a %s database URL with a CA without exposing credentials', (kind) => {
+    const password = 'fake-database-password';
+    const databaseUrl =
+      kind === 'multi-host' ? `postgres://u:${password}@host1:5432,host2:5432/db` : `postgres://u:${password}@[]/db`;
+    process.env = {
+      ...validEnv(),
+      SHOP_BFF_GRANT_STATE_DATABASE_URL: databaseUrl,
+      SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM: certificates.caA,
+    };
+    let thrown: unknown;
+    try {
+      configured();
+    } catch (error) {
+      thrown = error;
+    }
+    if (!(thrown instanceof Error)) throw new Error('Expected a database URL configuration error');
+    expect(String(thrown)).not.toContain(password);
+    expect(thrown.message).not.toContain(password);
+    expect(thrown).not.toHaveProperty('cause');
+    expect(thrown).not.toHaveProperty('input');
+    expect(thrown).toHaveProperty('issues');
+    if (!('issues' in thrown)) throw new Error('Expected zod issues');
+    expect(JSON.stringify(thrown.issues)).not.toContain(password);
+    expect(JSON.stringify(thrown.issues)).toContain('SHOP_BFF_GRANT_STATE_DATABASE_URL');
+  });
+
   it.each([
     ['garbage', () => 'not a certificate'],
     ['a private key', () => '-----BEGIN PRIVATE KEY-----\ninvalid\n-----END PRIVATE KEY-----'],
@@ -411,6 +461,29 @@ describe('grantDatabaseSsl', () => {
         databaseTlsServerName: undefined,
       }),
     ).toBeUndefined();
+  });
+
+  it('sanitizes fallback URL parsing failures for a config built without the schema', () => {
+    const password = 'fake-database-password';
+    const databaseUrl = `postgres://u:${password}@[]/db`;
+    let thrown: unknown;
+    try {
+      grantDatabaseSsl({
+        databaseUrl,
+        databaseCaPem: [certificates.caA],
+        databaseTlsServerName: undefined,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    if (!(thrown instanceof Error)) throw new Error('Expected a sanitized database URL error');
+    expect(thrown.message).toBe('Invalid database URL for TLS certificate verification');
+    expect(thrown).not.toHaveProperty('cause');
+    expect(thrown).not.toHaveProperty('input');
+    for (const output of [String(thrown), thrown.message, JSON.stringify(Object.getOwnPropertyDescriptors(thrown))]) {
+      expect(output).not.toContain(databaseUrl);
+      expect(output).not.toContain(password);
+    }
   });
 
   it('pins the CA, requires verification, leaves SNI unchanged, and checks the configured name', () => {
@@ -479,6 +552,12 @@ describe('real grant database TLS connections', () => {
     const config = databaseConfig(tlsServer, certificates.caA, 'db.example.test');
     await expect(runGrantQuery(config)).rejects.toMatchObject({ code: 'ERR_TLS_CERT_ALTNAME_INVALID' });
     expectNoStartup(tlsServer);
+  });
+
+  it('accepts CA-A using the localhost URL host without an explicit server name', async () => {
+    const config = databaseConfig(tlsServer, certificates.caA, undefined, 'require', 'localhost');
+    await expect(runGrantQuery(config)).rejects.toMatchObject({ name: 'PostgresError', code: '28P01' });
+    expectTlsStartup(tlsServer);
   });
 
   it('rejects the IP URL host when no explicit server name is configured', async () => {
