@@ -50,7 +50,6 @@ vi.mock('@/hooks/useMarketplaceLocksPayment/useMarketplaceLocksPayment', () => (
     isUnlocking: false,
     delivery: null,
     error: null,
-    pollExhausted: false,
     start: vi.fn(),
     unlock: vi.fn(),
     resumePolling: vi.fn(),
@@ -975,21 +974,9 @@ describe('MarketplacePaymentStatusCard', () => {
       expect(screen.getByTestId('locks-admission-stalled')).toHaveTextContent(LOCKS_ADMISSION_COPY.stalledTitle);
       expect(screen.getByTestId('locks-admission-stalled')).toHaveTextContent(LOCKS_ADMISSION_COPY.stalledBody);
       expect(screen.queryByText(/Payment request sent/)).toBeNull();
-      expect(screen.queryByRole('button', { name: /Request payment|Retry registration|Keep checking/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Request payment|Retry registration/ })).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: LOCKS_ADMISSION_COPY.stalledAction }));
       expect(resumePolling).toHaveBeenCalledTimes(1);
-    });
-
-    it('shows one check action when the task is stalled and polling has run out', () => {
-      locksView.overrides = {
-        correlation: registered,
-        pollExhausted: true,
-        admission: { kind: 'in_flight', readerWalletSetupNeeded: false, stalled: true },
-      };
-      renderAwaiting();
-
-      expect(screen.getAllByRole('button', { name: /Check again|Keep checking/ })).toHaveLength(1);
-      expect(screen.getByRole('button', { name: LOCKS_ADMISSION_COPY.stalledAction })).toBeInTheDocument();
     });
 
     it('keeps the wallet-setup notice above the stalled notice', () => {
@@ -1003,16 +990,15 @@ describe('MarketplacePaymentStatusCard', () => {
       expect(screen.getByTestId('locks-admission-stalled')).toBeInTheDocument();
     });
 
-    it('keeps the sent-request line and Keep checking for a pending task that is not stalled', () => {
+    it('keeps the sent-request line, with no action, for a pending task that is not stalled', () => {
       locksView.overrides = {
         correlation: registered,
-        pollExhausted: true,
         admission: { kind: 'in_flight', readerWalletSetupNeeded: false, stalled: false },
       };
       renderAwaiting();
 
       expect(screen.getByText(/Payment request sent/)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Keep checking' })).toBeInTheDocument();
+      expect(screen.queryByRole('button')).toBeNull();
       expect(screen.queryByTestId('locks-admission-stalled')).toBeNull();
     });
 
@@ -1029,7 +1015,7 @@ describe('MarketplacePaymentStatusCard', () => {
       expect(screen.getByTestId('locks-admission-failed')).toHaveTextContent(copy);
       expect(screen.queryByText(/Payment request sent/)).toBeNull();
       expect(screen.queryByTestId('locks-reader-wallet-setup')).toBeNull();
-      expect(screen.queryByRole('button', { name: /Request payment|Retry|Keep checking|Check again/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Request payment|Retry|Check again/ })).toBeNull();
     });
 
     describe('expired by the payment request (terminal reason)', () => {

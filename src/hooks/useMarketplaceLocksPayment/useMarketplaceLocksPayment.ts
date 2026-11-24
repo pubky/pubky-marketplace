@@ -19,22 +19,6 @@ import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplac
  */
 const LOCKS_POLL_FALLBACK_BOUND_MS = 15 * 60 * 1_000;
 
-/**
- * How long past its payment window the transaction service keeps a registered
- * Locks order held while the Lock Server task is live or not yet looked up:
- * the service's default `LOCKS_LIVE_TASK_HOLD_SECONDS` (Paykit's 24 h payment
- * window, 10 minutes of invoice admission and a 2 h confirmation allowance).
- * The payment can still confirm until then, so status polling follows it.
- */
-const LOCKS_LIVE_TASK_HOLD_MS = 94_200 * 1_000;
-
-/**
- * Past the payment window the order only moves when the service's Locks
- * worker looks the task up again (every 30 s by default), so polling slows to
- * that cadence.
- */
-const LOCKS_LIVE_TASK_POLL_MS = 30_000;
-
 export interface MarketplaceLocksDelivery {
   objectUrl: string;
   fileName: string;
@@ -59,12 +43,12 @@ export interface MarketplaceLocksDelivery {
  *   task says (pubky/locks#72). Once the marketplace marks the payment
  *   expired it reads the task one last time, for the Lock Server's terminal
  *   reason.
- * - Status polling reads the order projection back from the transaction
- *   service. THE CLIENT NEVER ADVANCES THE PAYMENT: the service's worker
- *   independently verifies the Locks lifecycle and confirms exactly once.
- *   Polling is abortable (unmount), bounded (the registration's payment
- *   window plus the service's live-task hold for a registered payment, or a
- *   fallback bound), and resumable — the correlation is
+ * - Payment status comes only from the order projection the surface already
+ *   reloads (`useMarketplaceOrders`), passed in as `payment`; this hook adds
+ *   no status poll of its own. THE CLIENT NEVER ADVANCES THE PAYMENT: the
+ *   service's worker independently verifies the Locks lifecycle and confirms
+ *   exactly once, including a confirmation that lands while the service holds
+ *   the order past its window for a live Lock Server task. The correlation is
  *   persisted, so a reload re-reads the durable state and picks up where the
  *   buyer left off.
  * - `unlock` redeems a confirmed payment for the guarded digital content and
@@ -93,7 +77,6 @@ export function useMarketplaceLocksPayment({
   const [error, setError] = useState<string | null>(null);
   // An explicit resume starts a new read window for this payment only.
   const [pollResume, setPollResume] = useState<{ paymentId: string; boundAt: number } | null>(null);
-  const [pollExhausted, setPollExhausted] = useState(false);
   const [admission, setAdmission] = useState<LocksAdmissionView | null>(null);
   const deliveryRef = useRef<MarketplaceLocksDelivery | null>(null);
 
@@ -112,51 +95,6 @@ export function useMarketplaceLocksPayment({
   useEffect(() => {
     void loadCorrelation();
   }, [loadCorrelation]);
-
-  // Bounded, abortable status polling while the payment can still move.
-  // The projection read is the ONLY source of payment progress. A registered
-  // payment stays pending past its window while the service holds the order
-  // for a live Locks task, so polling continues, more slowly, to that bound.
-  useEffect(() => {
-    if (!enabled || !payment || !correlation) return;
-    if (payment.state !== 'awaiting_entitlement' && payment.state !== 'detected') return;
-    const resumeBoundAt = pollResume?.paymentId === payment.id ? pollResume.boundAt : null;
-    const windowEndsAt = correlation.window_expires_at ? Date.parse(correlation.window_expires_at) + 60_000 : null;
-    const slowPollAfter = resumeBoundAt === null && correlation.registered ? windowEndsAt : null;
-    const boundAt =
-      resumeBoundAt ??
-      (slowPollAfter === null ? null : slowPollAfter + LOCKS_LIVE_TASK_HOLD_MS) ??
-      windowEndsAt ??
-      Date.now() + LOCKS_POLL_FALLBACK_BOUND_MS;
-    let active = true;
-    let lastPolledAt = 0;
-    setPollExhausted(false);
-    const timer = window.setInterval(() => {
-      if (!active) return;
-      const now = Date.now();
-      if (now > boundAt) {
-        window.clearInterval(timer);
-        setPollExhausted(true);
-        return;
-      }
-      if (slowPollAfter !== null && now > slowPollAfter && now - lastPolledAt < LOCKS_LIVE_TASK_POLL_MS) return;
-      lastPolledAt = now;
-      void Promise.resolve(onPaymentChanged()).catch(() => undefined);
-    }, getCommercePollIntervalMs());
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    enabled,
-    payment?.id,
-    payment?.state,
-    correlation?.id,
-    correlation?.registered,
-    correlation?.window_expires_at,
-    pollResume,
-  ]);
 
   // Bounded polling of the Lock Server task while the request is in flight.
   // It stops at the first terminal answer and never resubmits the bundle.
@@ -300,7 +238,6 @@ export function useMarketplaceLocksPayment({
 
   const resumePolling = () => {
     if (!enabled || !payment) return;
-    setPollExhausted(false);
     setPollResume({ paymentId: payment.id, boundAt: Date.now() + LOCKS_POLL_FALLBACK_BOUND_MS });
   };
 
@@ -310,7 +247,6 @@ export function useMarketplaceLocksPayment({
     isUnlocking,
     delivery,
     error,
-    pollExhausted,
     admission,
     start,
     unlock,

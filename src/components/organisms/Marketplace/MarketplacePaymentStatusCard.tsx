@@ -981,11 +981,6 @@ export function MarketplacePaymentStatusCard({
                 marketplace independently verifies the payment.
               </div>
             )}
-            {locks.pollExhausted && !(locks.admission?.kind === 'in_flight' && locks.admission.stalled) && (
-              <Button variant="secondary" size="sm" className="w-fit rounded-full" onClick={locks.resumePolling}>
-                Keep checking
-              </Button>
-            )}
           </div>
         ))}
 
