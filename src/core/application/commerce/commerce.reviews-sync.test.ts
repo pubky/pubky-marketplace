@@ -772,6 +772,40 @@ describe.each([
       expect(service.log.filter((entry) => entry === 'review.withdraw')).toHaveLength(1);
     });
 
+    it.each(['single-order read', 'order list'] as const)(
+      'makes the withdrawn cleanup DEL a single attempt through the %s',
+      async (entryPoint) => {
+        await leaveRecordWithdrawnAfterWipe();
+        if (entryPoint === 'order list') mockItemAttestations();
+        const remove = vi.spyOn(CommerceHomeserverService, 'delete');
+
+        try {
+          if (entryPoint === 'single-order read') {
+            await expect(
+              CommerceApplication.getOwnMarketplaceReview(
+                ORDER_FIXTURE_BUYER,
+                service.order(),
+                new AbortController().signal,
+              ),
+            ).resolves.toBeNull();
+          } else {
+            await expect(
+              CommerceApplication.getOwnMarketplaceOrderReviews(
+                ORDER_FIXTURE_BUYER,
+                service.order(),
+                new AbortController().signal,
+              ),
+            ).resolves.toEqual([]);
+          }
+
+          expect(remove).toHaveBeenCalledWith(url, undefined, { singleAttempt: true });
+          expect(homeserver.files.has(url)).toBe(false);
+        } finally {
+          remove.mockRestore();
+        }
+      },
+    );
+
     it('sends no service read and no DEL when the hydration scope ended before the lock', async () => {
       await leaveRecordWithdrawnAfterWipe();
       const scope = new AbortController();

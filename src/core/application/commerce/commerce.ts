@@ -4316,7 +4316,8 @@ export class CommerceApplication {
    * edit another device publishes between the fresh service read and the DEL
    * is deleted, the same window {@link sendOwnReviewRemoval} has between its
    * withdrawal and its DEL. False sets no miss memo and leaves cleanup for a
-   * later hydration.
+   * later hydration. The DEL is a single attempt so no retry backoff outlives
+   * the captured scope; a failed DEL is retried by a later hydration.
    */
   private static async retractWithdrawnOwnReview(
     actorPubky: string,
@@ -4335,7 +4336,13 @@ export class CommerceApplication {
       if (signal?.aborted || !this.liveIdentityMatches(actorPubky)) return false;
 
       try {
-        await CommerceHomeserverService.delete(CommerceRecordNormalizer.reviewUri(actorPubky, model.review_id));
+        await CommerceHomeserverService.delete(
+          CommerceRecordNormalizer.reviewUri(actorPubky, model.review_id),
+          undefined,
+          {
+            singleAttempt: true,
+          },
+        );
         return true;
       } catch (error) {
         if (isAppError(error) && isNotFound(error)) return true;
