@@ -83,7 +83,8 @@ describe('region rules stay inside the Market', () => {
     expect(nonMarketEntries.length).toBeGreaterThan(20);
   });
 
-  it('has the Market pages reach the region surfaces', () => {
+  // Walks the whole import graph from every Market entry; ~4.5 s on a CI shard, so the 5 s default is too tight.
+  it('has the Market pages reach the region surfaces', { timeout: 30_000 }, () => {
     const reachable = reachableFrom(marketEntries);
     for (const file of REGION_SURFACES) expect(reachable.has(file), file).toBe(true);
   });
