@@ -181,13 +181,13 @@ export function useMarketplaceOrders() {
           try {
             correlation = (await CommerceController.getMarketplaceLocksCorrelation(order.paymentId)) ?? null;
           } catch {
-            // A local read failure carries no useful timing detail.
+            // A local read failure leaves registration unknown.
           }
           toast({
             variant: 'error',
             description: locksCancelPausedMessage({
-              windowExpiresAt: correlation?.window_expires_at ?? null,
-              registered: correlation?.registered ?? true,
+              holdExpiresAt: order.holdExpiresAt,
+              registered: correlation?.registered ?? false,
             }),
           });
           return false;

@@ -7,24 +7,28 @@ export const LOCKS_CANCEL_PAUSED_IN_PROGRESS_COPY =
   'Cancelling is paused while this payment is still in progress. You can cancel it once the payment has finished or its payment time has ended.';
 
 interface LocksCancelPausedMessageOptions {
-  windowExpiresAt: string | null;
+  holdExpiresAt: string | null | undefined;
   registered: boolean;
   now?: number;
   locale?: string;
   timeZone?: string;
 }
 
-/** Buyer copy for a cancellation the service paused while a Locks payment is active. */
+/**
+ * Buyer copy for a paused cancellation. Without a locally registered payment,
+ * the order hold gives only the earliest time because another device may have
+ * registered a payment that stays active longer.
+ */
 export function locksCancelPausedMessage({
-  windowExpiresAt,
+  holdExpiresAt,
   registered,
   now = Date.now(),
   locale,
   timeZone,
 }: LocksCancelPausedMessageOptions): string {
-  const windowEnd = windowExpiresAt === null ? Number.NaN : Date.parse(windowExpiresAt);
-  const cancelAt = windowEnd + LOCKS_REGISTRATION_GRACE_SECONDS * 1_000;
-  if (!registered && Number.isFinite(windowEnd) && cancelAt > now) {
+  const holdEnd = holdExpiresAt === null || holdExpiresAt === undefined ? Number.NaN : Date.parse(holdExpiresAt);
+  const cancelAt = holdEnd + LOCKS_REGISTRATION_GRACE_SECONDS * 1_000;
+  if (!registered && Number.isFinite(holdEnd) && cancelAt > now) {
     const dayFormat = new Intl.DateTimeFormat(locale, {
       year: 'numeric',
       month: 'numeric',
@@ -38,10 +42,10 @@ export function locksCancelPausedMessage({
       minute: '2-digit',
       timeZone,
     }).format(cancelAt);
-    return `Cancelling is paused while this payment is being set up. You can cancel it after ${time}.`;
+    return `Cancelling is paused while this payment is still in progress. The earliest you can cancel it is ${time}.`;
   }
 
   // A registered payment can stay active under a configurable service hold,
-  // so its local payment window cannot provide an honest end time.
+  // so the order hold cannot provide an honest end time.
   return LOCKS_CANCEL_PAUSED_IN_PROGRESS_COPY;
 }
