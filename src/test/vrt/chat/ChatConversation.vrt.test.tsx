@@ -115,6 +115,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
 // The composer form hook only talks to the controller on submit; the thread
 // never submits in these captures, so the controller is a stub.
 vi.mock('@/controllers/chat/chat', () => ({
+  isStoreThreadRefusal: () => false,
   ChatController: { commitSendMessage: async () => 'id', fetchStoreThreadRoles: async () => null },
 }));
 

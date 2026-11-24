@@ -255,6 +255,36 @@ describe('ChatApplication', () => {
       expect((await LocalChatService.getMessage(id))?.status).toBe('sent');
     });
 
+    it.each([
+      { filtered: true, expected: 'queued' },
+      { filtered: false, expected: 'sent' },
+    ] as const)(
+      'applies the sends filter to the flush after a peer key arrives: filtered=$filtered',
+      async ({ filtered, expected }) => {
+        await ChatApplication.ensureIdentity(ALICE);
+        expect(await ChatApplication.openConversation(ALICE, BOB)).toEqual({ state: 'peer_not_enabled' });
+        const id = await ChatApplication.queueMessage(ALICE, {
+          peer: BOB,
+          body: 'about a sale',
+          context: { orderId: 'sale-order' },
+        });
+        await ChatApplication.ensureIdentity(BOB);
+        const pings = vi.spyOn(ChatApplication, 'flushPings');
+        const put = vi.spyOn(ChatHomeserverService, 'putMessageFile');
+        const sends = vi.fn(async () => false);
+
+        await ChatApplication.syncConversation(ALICE, BOB, {
+          reason: 'open',
+          ...(filtered ? { sends } : {}),
+        });
+        await vi.waitFor(() => expect(pings).toHaveBeenCalled());
+
+        expect((await LocalChatService.getMessage(id))?.status).toBe(expected);
+        expect(sends).toHaveBeenCalledTimes(filtered ? 1 : 0);
+        expect(put).toHaveBeenCalledTimes(filtered ? 0 : 1);
+      },
+    );
+
     it('keeps a message queued while the peer has no key', async () => {
       await ChatApplication.ensureIdentity(ALICE);
       await ChatApplication.openConversation(ALICE, BOB);

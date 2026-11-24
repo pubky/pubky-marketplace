@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { ChatOpenResult } from '@/application/chat/chat.types';
 import { CHAT_OPEN_THREAD_POLL_MS, CHAT_THREAD_PAGE } from '@/config/chat';
-import { ChatController } from '@/controllers/chat/chat';
+import { ChatController, isStoreThreadRefusal } from '@/controllers/chat/chat';
 import type { ChatMessageView } from '@/controllers/chat/chat.types';
 import { useStoreThreadRoles } from '@/hooks/useStoreThreadRoles/useStoreThreadRoles';
 import { isAbortError } from '@/libs/error/error.utils';
@@ -16,7 +16,7 @@ export type UseChatConversationResult = {
   messages: ChatMessageView[];
   hasMore: boolean;
   loadOlder: () => void;
-  openState: ChatOpenResult['state'] | 'opening';
+  openState: ChatOpenResult['state'] | 'opening' | 'store_restricted';
   reopen: () => Promise<void>;
   retryMessage: (id: string) => Promise<void>;
   isSelf: boolean;
@@ -32,22 +32,31 @@ export function useChatConversation(peerPubky: string, context?: ChatContext): U
   const storeThreadRoles = useStoreThreadRoles();
   const [limit, setLimit] = useState(CHAT_THREAD_PAGE);
   const [openState, setOpenState] = useState<UseChatConversationResult['openState']>('opening');
+  const openStateRef = useRef(openState);
   const isSelf = currentUserPubky === peerPubky;
   const contextKey = `${context?.listingId ?? ''}|${context?.orderId ?? ''}`;
+  const updateOpenState = (state: UseChatConversationResult['openState']) => {
+    openStateRef.current = state;
+    setOpenState(state);
+  };
 
   const open = async () => {
     if (!currentUserPubky || isSelf) return;
     try {
       const result = await ChatController.commitOpenConversation(peerPubky, context);
-      setOpenState(result.state);
+      updateOpenState(result.state);
       if (result.state === 'ready') {
         await ChatController.fetchConversationUpdates(peerPubky, 'open');
         void ChatController.commitFlushOutbox();
       }
     } catch (error) {
       if (isAbortError(error)) return;
+      if (isStoreThreadRefusal(error)) {
+        updateOpenState('store_restricted');
+        return;
+      }
       Logger.warn('Chat conversation open failed', { error });
-      setOpenState('peer_not_enabled');
+      updateOpenState('peer_not_enabled');
     }
   };
 
@@ -60,9 +69,10 @@ export function useChatConversation(peerPubky: string, context?: ChatContext): U
   };
 
   useEffect(() => {
-    setOpenState('opening');
+    updateOpenState('opening');
     void open();
     const refresh = () => {
+      if (openStateRef.current === 'store_restricted') return;
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
       void ChatController.fetchConversationUpdates(peerPubky, 'open').catch(() => {});
     };
@@ -76,6 +86,12 @@ export function useChatConversation(peerPubky: string, context?: ChatContext): U
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- context identity is folded into contextKey
   }, [currentUserPubky, peerPubky, contextKey]);
+
+  useEffect(() => {
+    // The roles that closed this thread were incomplete when they were read; the roles that arrive decide again.
+    if (openStateRef.current === 'store_restricted') void open();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a change of the roles reopens a closed thread
+  }, [storeThreadRoles]);
 
   const conversation = useLiveQuery(async () => {
     if (!currentUserPubky) return null;

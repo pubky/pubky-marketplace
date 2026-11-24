@@ -56,9 +56,13 @@ background loops and every tab renders through Dexie live queries.
 | Two-account live proof               | `src/test/e2e/chat-two-accounts.mjs` (`npm run test:e2e:chat`)                |
 
 In store mode, `ChatController` hides the sale threads of a signed-in user other than the store seller and refuses to
-send, retry or flush messages to them. It places threads with roles read from the user's orders, conversations and
-listing contexts, kept in the chat store per account; `useStoreThreadRoles` reads them and retries a failed read. Until
-they arrive, only the thread with the store seller is shown. See [Store mode](../environment.md#store-mode-runtime).
+send, retry or flush messages to them. Queued messages in those threads stay queued on every flush, including one that
+follows a sync. Roles use the newest service order page, 50 by default in durable modes, plus conversations and listing
+contexts. An older order named by a context is read by id, but a plain thread with a buyer whose only order is older than
+the page stays visible. An order neither the lists nor a by-id read resolves, or a listing lookup that failed, is treated
+as a sale and closed, except in the thread with the store seller. The open-thread screen explains that restriction.
+`useStoreThreadRoles` reads the roles and retries a failed read. Until they arrive, only the thread with the store seller
+is shown. See [Store mode](../environment.md#store-mode-runtime).
 
 Session capabilities: `CAPABILITIES` in `src/config/app.ts`. Runtime config:
 `inboxUrl` / `inboxAudience` in `src/libs/runtime-config/runtime-config.schema.ts`.

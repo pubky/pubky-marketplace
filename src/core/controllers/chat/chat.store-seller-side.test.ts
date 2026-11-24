@@ -4,7 +4,7 @@ import type { ChatOutboxSends } from '@/application/chat/chat.types';
 import { CommerceApplication } from '@/application/commerce/commerce';
 import { UserApplication } from '@/application/user/user';
 import { endAuthScope } from '@/controllers/auth/auth-scope';
-import { ChatController } from '@/controllers/chat/chat';
+import { ChatController, isStoreThreadRefusal } from '@/controllers/chat/chat';
 import type { ChatContext } from '@/models/chat/chat.schema';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useChatStore } from '@/stores/chat/chat.store';
@@ -217,6 +217,16 @@ describe('ChatController sale threads in a store', () => {
     );
   });
 
+  it('recognizes only the store thread refusal', async () => {
+    setStoreSeller(STORE_SELLER);
+    const refusal = await ChatController.commitOpenConversation(MY_BUYER).catch((error: unknown) => error);
+    const other = await ChatController.commitOpenConversation('not-a-pubky').catch((error: unknown) => error);
+
+    expect(isStoreThreadRefusal(refusal)).toBe(true);
+    expect(isStoreThreadRefusal(other)).toBe(false);
+    expect(isStoreThreadRefusal(new Error('unavailable'))).toBe(false);
+  });
+
   it('refuses a write context sold to a peer the viewer previously bought from', async () => {
     setStoreSeller(STORE_SELLER);
     const buyerThread = thread(FRIEND, { orderId: 'bought-from-friend' });
@@ -331,6 +341,122 @@ describe('ChatController sale threads in a store', () => {
     expect(vi.mocked(ChatApplication.retryMessage).mock.calls[0][3]?.sends).toEqual(expect.any(Function));
   });
 
+  it.each(['fetchConversationUpdates', 'handleInboxPings'] as const)(
+    'sends only the store seller row when %s triggers an outbox flush',
+    async (entryPoint) => {
+      setStoreSeller(STORE_SELLER);
+      await ChatController.fetchStoreThreadRoles();
+      const queued = [
+        { peer_pubky: MY_BUYER, context: { orderId: 'order-sold' } },
+        { peer_pubky: STORE_SELLER, context: { orderId: 'order-bought' } },
+      ];
+      const delivered: string[] = [];
+      const deliver = async (sends?: ChatOutboxSends) => {
+        for (const message of queued) {
+          if (!sends || (await sends(message))) delivered.push(message.peer_pubky);
+        }
+      };
+      const ping = {
+        sender: MY_BUYER,
+        slot: `chat-${'f'.repeat(32)}`,
+        revision: 'r1',
+        received_at: '',
+        expires_at: '',
+        payload: JSON.stringify({
+          v: 0,
+          t: 'chat',
+          folder: 'f'.repeat(32),
+          file: '1700000000000-aaaaaaaa.json',
+        }),
+      };
+      vi.spyOn(ChatController, 'getOrFetchIdentity').mockResolvedValue('ready');
+      vi.spyOn(ChatApplication, 'syncConversation').mockImplementation(async (_me, _peer, { sends }) => {
+        await deliver(sends);
+        return 'synced';
+      });
+      vi.spyOn(ChatApplication, 'handlePing').mockImplementation(async (_me, _ping, _signal, { sends } = {}) => {
+        await deliver(sends);
+      });
+
+      if (entryPoint === 'fetchConversationUpdates') {
+        await ChatController.fetchConversationUpdates(MY_BUYER, 'open');
+      } else {
+        await ChatController.handleInboxPings([ping]);
+      }
+
+      expect(delivered).toEqual([STORE_SELLER]);
+    },
+  );
+
+  it.each([
+    'fetchConversationUpdates',
+    'fetchAllConversationUpdates',
+    'fetchRebuild',
+    'fetchSeededConversations',
+    'handleInboxPings',
+  ] as const)('%s passes the outbox filter only for a viewer who cannot sell here', async (entryPoint) => {
+    vi.spyOn(ChatApplication, 'syncConversation').mockResolvedValue('synced');
+    vi.spyOn(ChatApplication, 'syncAll').mockResolvedValue();
+    vi.spyOn(ChatApplication, 'rebuildFromHomeserver').mockResolvedValue();
+    vi.spyOn(ChatApplication, 'seedConversations').mockResolvedValue();
+    vi.spyOn(ChatApplication, 'handlePing').mockResolvedValue();
+    vi.spyOn(ChatController, 'getOrFetchIdentity').mockResolvedValue('ready');
+    const ping = {
+      sender: MY_BUYER,
+      slot: `chat-${'f'.repeat(32)}`,
+      revision: 'r1',
+      received_at: '',
+      expires_at: '',
+      payload: JSON.stringify({
+        v: 0,
+        t: 'chat',
+        folder: 'f'.repeat(32),
+        file: '1700000000000-aaaaaaaa.json',
+      }),
+    };
+    const run = async () => {
+      switch (entryPoint) {
+        case 'fetchConversationUpdates':
+          await ChatController.fetchConversationUpdates(MY_BUYER, 'open');
+          break;
+        case 'fetchAllConversationUpdates':
+          await ChatController.fetchAllConversationUpdates('reconcile');
+          break;
+        case 'fetchRebuild':
+          await ChatController.fetchRebuild();
+          break;
+        case 'fetchSeededConversations':
+          await ChatController.fetchSeededConversations([MY_BUYER]);
+          break;
+        case 'handleInboxPings':
+          await ChatController.handleInboxPings([ping]);
+          break;
+      }
+    };
+    const lastSends = (): ChatOutboxSends | undefined => {
+      switch (entryPoint) {
+        case 'fetchConversationUpdates':
+          return vi.mocked(ChatApplication.syncConversation).mock.calls.at(-1)?.[2].sends;
+        case 'fetchAllConversationUpdates':
+          return vi.mocked(ChatApplication.syncAll).mock.calls.at(-1)?.[3]?.sends;
+        case 'fetchRebuild':
+          return vi.mocked(ChatApplication.rebuildFromHomeserver).mock.calls.at(-1)?.[2]?.sends;
+        case 'fetchSeededConversations':
+          return vi.mocked(ChatApplication.seedConversations).mock.calls.at(-1)?.[3]?.sends;
+        case 'handleInboxPings':
+          return vi.mocked(ChatApplication.handlePing).mock.calls.at(-1)?.[3]?.sends;
+      }
+    };
+
+    setStoreSeller(STORE_SELLER);
+    await run();
+    expect(lastSends()).toEqual(expect.any(Function));
+
+    setStoreSeller(VIEWER);
+    await run();
+    expect(lastSends()).toBeUndefined();
+  });
+
   it("reads each account's roles on its own", async () => {
     setStoreSeller(STORE_SELLER);
     let finishFirst: (orders: never) => void = () => {};
@@ -378,6 +504,9 @@ describe('ChatController sale threads in a store', () => {
       vi.mocked(CommerceApplication.getMarketplaceOrders).mockImplementationOnce(
         () => new Promise((resolve) => (finishOrders = resolve)),
       );
+      vi.mocked(ChatApplication.retryMessage).mockImplementationOnce(async (_me, _id, _signal, { sends } = {}) => {
+        await sends?.({ peer_pubky: FRIEND, context: null });
+      });
       const pending =
         operation === 'send'
           ? ChatController.commitSendMessage({ peerPubky: FRIEND, body: 'Hello' })
@@ -393,7 +522,7 @@ describe('ChatController sale threads in a store', () => {
       await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
       expect(ChatApplication.queueMessage).not.toHaveBeenCalled();
       expect(ChatApplication.openConversation).not.toHaveBeenCalled();
-      expect(ChatApplication.retryMessage).not.toHaveBeenCalled();
+      if (operation !== 'retry') expect(ChatApplication.retryMessage).not.toHaveBeenCalled();
     },
   );
 

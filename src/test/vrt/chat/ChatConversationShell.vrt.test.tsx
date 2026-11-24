@@ -74,6 +74,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
 }));
 
 vi.mock('@/controllers/chat/chat', () => ({
+  isStoreThreadRefusal: () => false,
   ChatController: {
     commitSendMessage: async () => 'id',
     getUnreadConversationCount: () => 0,

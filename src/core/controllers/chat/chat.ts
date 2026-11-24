@@ -8,7 +8,7 @@ import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import { StoreSellerGate } from '@/controllers/store-seller-gate/store-seller-gate';
 import { isChatPingSlot } from '@/libs/chat/paths';
 import { isChatPing } from '@/libs/chat/schemas';
-import { isAppError } from '@/libs/error/error';
+import { type AppError, isAppError } from '@/libs/error/error';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -31,6 +31,11 @@ import { useChatStore } from '@/stores/chat/chat.store';
 import type { ChatConversationView, ChatMessageView, ChatSendParams } from './chat.types';
 
 type ChatOrder = { id: string; buyerPubky: string; sellerPubky: string };
+
+/** The refusal produced when a store thread is closed to this viewer. */
+export function isStoreThreadRefusal(error: unknown): error is AppError {
+  return isAppError(error) && error.code === 'FORBIDDEN' && error.operation === 'assertCanSellHere';
+}
 
 /**
  * UI and coordinator entry point for chat. `get*` reads Dexie, `fetch*`
@@ -353,11 +358,13 @@ export class ChatController {
   }
 
   /** For a viewer who cannot sell here, which queued messages may go out: none in a sale thread or about a sale. */
-  private static async outboxSends(me: string, signal: AbortSignal): Promise<ChatOutboxSends | undefined> {
+  private static outboxSends(me: string, signal: AbortSignal): ChatOutboxSends | undefined {
     if (StoreSellerGate.canSellHere(me)) return undefined;
-    const roles = await this.knownStoreThreadRoles(signal);
+    // Read on the first message to judge, so a sync that sends nothing never waits for the roles.
+    let roles: Promise<StoreThreadRoles | null> | undefined;
     return async ({ peer_pubky, context }) => {
-      const sale = await this.isSaleWrite(me, roles, peer_pubky, context, signal);
+      roles ??= this.knownStoreThreadRoles(signal);
+      const sale = await this.isSaleWrite(me, await roles, peer_pubky, context, signal);
       signal.throwIfAborted();
       return !sale;
     };
@@ -430,7 +437,7 @@ export class ChatController {
   static async commitRetryMessage(id: string): Promise<void> {
     const me = this.me();
     const signal = captureAuthScope();
-    const sends = await this.outboxSends(me, signal);
+    const sends = this.outboxSends(me, signal);
     signal.throwIfAborted();
     await ChatApplication.retryMessage(me, id, signal, { sends });
     void this.flushOutboxFor(me, signal);
@@ -448,7 +455,7 @@ export class ChatController {
    */
   private static async flushOutboxFor(me: string, signal: AbortSignal): Promise<void> {
     try {
-      await ChatApplication.flushOutbox(me, signal, { sends: await this.outboxSends(me, signal) });
+      await ChatApplication.flushOutbox(me, signal, { sends: this.outboxSends(me, signal) });
     } catch (error) {
       if (!signal.aborted) {
         Logger.warn('Chat outbox flush failed; queued messages wait for the next attempt', { error });
@@ -473,19 +480,25 @@ export class ChatController {
     reason: ChatSyncReason,
     hintFile?: string,
   ): Promise<ChatSyncOutcome> {
-    return await ChatApplication.syncConversation(this.me(), peerPubky, {
+    const me = this.me();
+    const signal = captureAuthScope();
+    const sends = this.outboxSends(me, signal);
+    return await ChatApplication.syncConversation(me, peerPubky, {
       reason,
       hintFile,
-      signal: captureAuthScope(),
+      signal,
+      sends,
     });
   }
 
   static async fetchAllConversationUpdates(reason: ChatSyncReason): Promise<void> {
+    const me = this.me();
     const signal = captureAuthScope();
     const store = useChatStore.getState();
     store.setSyncStatus('syncing');
     try {
-      await ChatApplication.syncAll(this.me(), reason, signal);
+      const sends = this.outboxSends(me, signal);
+      await ChatApplication.syncAll(me, reason, signal, { sends });
       signal.throwIfAborted();
       store.setSyncStatus('idle');
     } catch (error) {
@@ -495,11 +508,17 @@ export class ChatController {
   }
 
   static async fetchRebuild(): Promise<void> {
-    await ChatApplication.rebuildFromHomeserver(this.me(), captureAuthScope());
+    const me = this.me();
+    const signal = captureAuthScope();
+    const sends = this.outboxSends(me, signal);
+    await ChatApplication.rebuildFromHomeserver(me, signal, { sends });
   }
 
   static async fetchSeededConversations(peers: string[]): Promise<void> {
-    await ChatApplication.seedConversations(this.me(), peers, captureAuthScope());
+    const me = this.me();
+    const signal = captureAuthScope();
+    const sends = this.outboxSends(me, signal);
+    await ChatApplication.seedConversations(me, peers, signal, { sends });
   }
 
   static async fetchInboxAvailability(): Promise<InboxAvailability> {
@@ -538,6 +557,7 @@ export class ChatController {
     const handled: InboxPingRef[] = [];
     // Without a ready identity nothing can be handled; acking would discard first contacts.
     if ((await this.getOrFetchIdentity()) !== 'ready') return handled;
+    const sends = this.outboxSends(me, signal);
     for (const ping of pings) {
       if (!isChatPingSlot(ping.slot)) continue;
       const ref: InboxPingRef = { sender: ping.sender, slot: ping.slot, revision: ping.revision };
@@ -548,7 +568,7 @@ export class ChatController {
       }
       const key = `${ping.sender}|${ping.slot}|${ping.revision}`;
       try {
-        await ChatApplication.handlePing(me, ping, signal);
+        await ChatApplication.handlePing(me, ping, signal, { sends });
         this.pingFailures.delete(key);
         handled.push(ref);
       } catch (error) {
