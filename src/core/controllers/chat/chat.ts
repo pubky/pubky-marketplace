@@ -555,9 +555,9 @@ export class ChatController {
     const me = this.me();
     const signal = captureAuthScope();
     const handled: InboxPingRef[] = [];
+    const sends = this.outboxSends(me, signal);
     // Without a ready identity nothing can be handled; acking would discard first contacts.
     if ((await this.getOrFetchIdentity()) !== 'ready') return handled;
-    const sends = this.outboxSends(me, signal);
     for (const ping of pings) {
       if (!isChatPingSlot(ping.slot)) continue;
       const ref: InboxPingRef = { sender: ping.sender, slot: ping.slot, revision: ping.revision };

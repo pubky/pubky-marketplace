@@ -295,13 +295,13 @@ const CHAT_INVENTORY: Record<string, Entry> = {
   normalizePeer: none,
   getOrFetchIdentity: none,
   commitMarkRead: none,
-  fetchConversationUpdates: none,
-  fetchAllConversationUpdates: none,
-  fetchRebuild: none,
-  fetchSeededConversations: none,
+  fetchConversationUpdates: split,
+  fetchAllConversationUpdates: split,
+  fetchRebuild: split,
+  fetchSeededConversations: split,
   fetchInboxAvailability: none,
   fetchInboxPings: none,
-  handleInboxPings: none,
+  handleInboxPings: split,
   commitAckInboxPings: none,
   subscribeChatEventStream: none,
   fetchPeerHomeserver: none,
@@ -401,39 +401,180 @@ const APPLICATIONS: Record<string, object> = {
   UserApplication,
 };
 
+const GATED_CONTROLLER_EXPORTS: Record<string, string[]> = {
+  'commerce/commerce.ts': ['CommerceController'],
+  'commerce/order-tracking.ts': ['CommerceOrderTrackingController'],
+  'chat/chat.ts': ['ChatController', 'isStoreThreadRefusal'],
+  'connectors/connectors.ts': ['ConnectorsController'],
+  'import-image/import-image-upload.ts': ['ImportImageUploadController'],
+  'import-store/import-store-catalog.ts': ['ImportStoreCatalogController'],
+};
+
+const CHAT_OUTBOX_SYNC_METHODS = [
+  'fetchConversationUpdates',
+  'fetchAllConversationUpdates',
+  'fetchRebuild',
+  'fetchSeededConversations',
+  'handleInboxPings',
+];
+
 const ROOT = path.resolve(__dirname, '../../../..');
 const SRC = path.join(ROOT, 'src');
 const CONTROLLERS_DIR = path.join(SRC, 'core/controllers');
 const APPLICATION_DIR = path.join(SRC, 'core/application');
+const SERVICES_DIR = path.join(SRC, 'core/services');
+const TEST_DIRS = [path.join(SRC, 'test'), path.join(SRC, 'test-utils')];
 const SELLING_APPLICATION_DIRS = ['chat', 'commerce', 'connectors', 'import-image', 'import-store'].map(
   (dir) => `${path.join(APPLICATION_DIR, dir)}${path.sep}`,
 );
-const NOT_THE_SHOP = [APPLICATION_DIR, CONTROLLERS_DIR, path.join(SRC, 'test'), path.join(SRC, 'test-utils')];
+const NOT_THE_SHOP = [APPLICATION_DIR, CONTROLLERS_DIR, ...TEST_DIRS];
+const SELLING_SERVICE_IMPORT_DIRS = [APPLICATION_DIR, CONTROLLERS_DIR, SERVICES_DIR, ...TEST_DIRS];
 
-const compilerOptions = (() => {
-  const { config } = ts.readConfigFile(path.join(ROOT, 'tsconfig.json'), ts.sys.readFile);
-  return ts.parseJsonConfigFileContent(config, ts.sys, ROOT).options;
-})();
+/** Existing pure UI helpers and session plumbing that still read these service modules directly. */
+const SELLING_SERVICE_IMPORT_ALLOWLIST: Record<string, string> = {
+  'components/organisms/Marketplace/MarketplaceReauthDialog.tsx -> core/services/marketplace/marketplace-session-grant.ts':
+    'Builds approval disclosure copy without reading seller data.',
+  'components/organisms/Marketplace/MarketplaceSessionConnectDialog.tsx -> core/services/marketplace/marketplace-session-grant.ts':
+    'Builds approval disclosure copy without reading seller data.',
+  'components/templates/Marketplace/MarketplaceCheckout.tsx -> core/services/marketplace/marketplace-projections.ts':
+    'Uses the pure award eligibility predicate for buyer checkout.',
+  'components/templates/Marketplace/MarketplaceListing.tsx -> core/services/marketplace/marketplace-session.ts':
+    'Reads the buyer marketplace session already established by the controller flow.',
+  'components/templates/Marketplace/MarketplaceOffers.tsx -> core/services/marketplace/marketplace-projections.ts':
+    'Uses the pure award eligibility predicate for buyer offers.',
+  'core/pipes/marketplaceNotification/marketplaceNotification.normalizer.ts -> core/services/marketplace/marketplace-projections.ts':
+    'Shares the notification type length constant with the projection schema.',
+  'hooks/useMarketplaceActivityAttentionKeys/useMarketplaceActivityAttentionKeys.ts -> core/services/marketplace/marketplace-projections.ts':
+    'Uses the pure notification type guard on controller results.',
+  'hooks/useMarketplaceNotifications/useMarketplaceNotifications.ts -> core/services/marketplace/marketplace-projections.ts':
+    'Uses the pure notification type guard on controller results.',
+  'hooks/useMarketplaceOfferCheckout/useMarketplaceOfferCheckout.ts -> core/services/marketplace/marketplace-projections.ts':
+    'Uses the pure award eligibility predicate for buyer checkout.',
+  'hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect.ts -> core/services/marketplace/marketplace-session.ts':
+    'Maintains the existing buyer session connection lifecycle.',
+};
 
-const parse = (file: string) => ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
+const tsconfig = ts.readConfigFile(path.join(ROOT, 'tsconfig.json'), ts.sys.readFile);
+const compilerOptions = ts.parseJsonConfigFileContent(tsconfig.config, ts.sys, ROOT).options;
+const moduleResolutionCache = ts.createModuleResolutionCache(ROOT, (name) => name, compilerOptions);
+const resolvedModules = new Map<string, string | null>();
+const sourceTexts = new Map<string, string>();
+const parsedSources = new Map<string, ts.SourceFile>();
 
+function sourceText(file: string): string {
+  let text = sourceTexts.get(file);
+  if (text === undefined) {
+    text = readFileSync(file, 'utf8');
+    sourceTexts.set(file, text);
+  }
+  return text;
+}
+
+function parse(file: string): ts.SourceFile {
+  let source = parsedSources.get(file);
+  if (!source) {
+    // Only the controller usage walks read node.parent.
+    const withParents = file.startsWith(`${CONTROLLERS_DIR}${path.sep}`);
+    source = ts.createSourceFile(file, sourceText(file), ts.ScriptTarget.Latest, withParents);
+    parsedSources.set(file, source);
+  }
+  return source;
+}
+
+const parseText = (text: string) => ts.createSourceFile('inventory.fixture.ts', text, ts.ScriptTarget.Latest, true);
+
+function resolveModule(specifier: string, file: string): string | null {
+  const key = `${path.dirname(file)}\0${specifier}`;
+  if (!resolvedModules.has(key)) {
+    const resolved = ts.resolveModuleName(specifier, file, compilerOptions, ts.sys, moduleResolutionCache);
+    resolvedModules.set(key, resolved.resolvedModule?.resolvedFileName ?? null);
+  }
+  return resolvedModules.get(key) ?? null;
+}
+
+const sourceFileLists = new Map<string, string[]>();
 function sourceFiles(dir: string): string[] {
-  return readdirSync(dir).flatMap((name) => {
+  const cached = sourceFileLists.get(dir);
+  if (cached) return cached;
+  const files = readdirSync(dir).flatMap((name) => {
     const file = path.join(dir, name);
     if (statSync(file).isDirectory()) return sourceFiles(file);
     return /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) ? [file] : [];
   });
+  sourceFileLists.set(dir, files);
+  return files;
 }
+
+const PATH_ALIASES = Object.entries(compilerOptions.paths ?? {}).flatMap(([alias, targets]) => {
+  const aliasStar = alias.indexOf('*');
+  if (aliasStar < 0) return [];
+  return targets.flatMap((target) => {
+    const targetStar = target.indexOf('*');
+    return targetStar < 0
+      ? []
+      : [{ prefix: alias.slice(0, aliasStar), directory: path.resolve(ROOT, target.slice(0, targetStar)) }];
+  });
+});
+
+const targetAliasPrefixes = new Map<string, string[]>();
+const fileImportSpecifierPrefixes = new Map<string, string[]>();
+
+function importSpecifierPrefixes(file: string, target: string): string[] {
+  const normalizedTarget = target.replace(/[\\/]$/, '');
+  const key = `${file}\0${normalizedTarget}`;
+  const cached = fileImportSpecifierPrefixes.get(key);
+  if (cached) return cached;
+  let aliases = targetAliasPrefixes.get(normalizedTarget);
+  if (!aliases) {
+    aliases = PATH_ALIASES.flatMap(({ prefix, directory }) => {
+      const relative = path.relative(directory, normalizedTarget);
+      if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return [];
+      return [`${prefix}${relative.split(path.sep).join('/')}`];
+    });
+    targetAliasPrefixes.set(normalizedTarget, aliases);
+  }
+  const relative = path.relative(path.dirname(file), normalizedTarget).split(path.sep).join('/');
+  const prefixes = [...aliases, relative.startsWith('.') ? relative : `./${relative}`];
+  const result = [
+    ...new Set(
+      prefixes.flatMap((prefix) =>
+        prefix.endsWith('/index') ? [prefix, prefix.slice(0, -'/index'.length)] : [prefix],
+      ),
+    ),
+  ];
+  fileImportSpecifierPrefixes.set(key, result);
+  return result;
+}
+
+const SPECIFIER_LITERAL = /\b(?:from|import|require)\s*\(?\s*(['"`])([^'"`\n]+)\1/g;
+
+/**
+ * Skips only files whose module specifiers all miss the targets. Every string a module form can name
+ * follows `from`, `import` or `require`; a specifier is judged after normalising, as the resolver would.
+ */
+export function mayImportTargets(text: string, file: string, targets: readonly string[]): boolean {
+  for (const match of text.matchAll(SPECIFIER_LITERAL)) {
+    if (specifierCanReachTargets(match[2], file, targets)) return true;
+  }
+  return false;
+}
+
+const couldImportTargets = (file: string, targets: readonly string[]) =>
+  mayImportTargets(sourceText(file), file, targets);
+
+const withoutExtension = (file: string) => file.replace(/\.tsx?$/, '');
+const importEdge = (file: string, target: string) => `${path.relative(SRC, file)} -> ${path.relative(SRC, target)}`;
 
 /**
  * The runtime values a file takes from another module, resolved through the tsconfig paths: named
  * imports by their exported name (so aliases do not hide them), and `*` for namespace, side-effect,
  * dynamic and `require` imports and for `export *`. Type-only imports and exports carry no value.
  */
+type UnresolvedValueImport = { specifier: string; names: string[] | '*'; locals: Map<string, string> };
 type ValueImport = { target: string; names: string[] | '*'; locals: Map<string, string> };
 
-function valueImports(file: string): ValueImport[] {
-  const found: { specifier: string; names: string[] | '*'; locals: Map<string, string> }[] = [];
+export function valueImportsInSource(source: ts.SourceFile): UnresolvedValueImport[] {
+  const found: UnresolvedValueImport[] = [];
   const visit = (node: ts.Node) => {
     if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
       const clause = node.importClause;
@@ -473,30 +614,113 @@ function valueImports(file: string): ValueImport[] {
     }
     ts.forEachChild(node, visit);
   };
-  visit(parse(file));
-  return found.flatMap(({ specifier, names, locals }) => {
-    const target = ts.resolveModuleName(specifier, file, compilerOptions, ts.sys).resolvedModule?.resolvedFileName;
+  visit(source);
+  return found;
+}
+
+function specifierCanReachTargets(specifier: string, file: string, targets: readonly string[]): boolean {
+  const normalized = specifier.startsWith('.') ? path.posix.normalize(specifier) : specifier;
+  return targets.some((target) =>
+    importSpecifierPrefixes(file, target).some((prefix) => {
+      const indexPrefix = prefix.endsWith('/index') ? prefix.slice(0, -'/index'.length) : undefined;
+      return (
+        normalized === prefix ||
+        normalized === indexPrefix ||
+        normalized.startsWith(prefix.endsWith('/') ? prefix : `${prefix}/`) ||
+        (/\.[cm]?[jt]sx?$/.test(normalized) && normalized.replace(/\.[cm]?[jt]sx?$/, '') === prefix)
+      );
+    }),
+  );
+}
+
+function valueImports(file: string, targets?: readonly string[]): ValueImport[] {
+  return valueImportsInSource(parse(file)).flatMap(({ specifier, names, locals }) => {
+    if (targets && !specifierCanReachTargets(specifier, file, targets)) return [];
+    const target = resolveModule(specifier, file);
     return target && (names === '*' || names.length > 0) ? [{ target: path.resolve(target), names, locals }] : [];
   });
 }
 
 const isSellingApplication = (file: string) => SELLING_APPLICATION_DIRS.some((dir) => file.startsWith(dir));
 
-/** `Class.member` for every member access on a class a file imported from a selling application. */
-function sellingApplicationCalls(file: string): string[] {
+type SellingApplicationUsage = { calls: string[]; invalid: string[] };
+
+/** Only `Class.member` and `Class['member']` may consume an exempt application import. */
+export function sellingApplicationUsesInSource(
+  source: ts.SourceFile,
+  classes: ReadonlyMap<string, string>,
+): SellingApplicationUsage {
+  const calls = new Set<string>();
+  const invalid = new Set<string>();
+  const visit = (node: ts.Node) => {
+    if (ts.isImportDeclaration(node) || ts.isImportEqualsDeclaration(node)) return;
+    if (ts.isIdentifier(node)) {
+      const imported = classes.get(node.text);
+      if (imported) {
+        const parent = node.parent;
+        if (ts.isPropertyAccessExpression(parent) && parent.expression === node) {
+          calls.add(`${imported}.${parent.name.text}`);
+        } else if (
+          ts.isElementAccessExpression(parent) &&
+          parent.expression === node &&
+          ts.isStringLiteralLike(parent.argumentExpression)
+        ) {
+          calls.add(`${imported}.${parent.argumentExpression.text}`);
+        } else {
+          invalid.add(`${imported} at ${node.getStart(source)}: ${ts.SyntaxKind[parent.kind]}`);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return { calls: [...calls].sort(), invalid: [...invalid].sort() };
+}
+
+function sellingApplicationUsage(file: string): SellingApplicationUsage {
   const classes = new Map<string, string>();
   for (const { target, locals } of valueImports(file)) {
     if (isSellingApplication(target)) for (const [local, name] of locals) classes.set(local, name);
   }
-  const calls = new Set<string>();
-  const visit = (node: ts.Node) => {
-    if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && classes.has(node.expression.text)) {
-      calls.add(`${classes.get(node.expression.text)}.${node.name.text}`);
+  return sellingApplicationUsesInSource(parse(file), classes);
+}
+
+function bindingNames(name: ts.BindingName): string[] {
+  if (ts.isIdentifier(name)) return [name.text];
+  return name.elements.flatMap((element) => (ts.isBindingElement(element) ? bindingNames(element.name) : []));
+}
+
+const hasModifier = (node: ts.Node, kind: ts.SyntaxKind) =>
+  ts.canHaveModifiers(node) && (ts.getModifiers(node) ?? []).some((modifier) => modifier.kind === kind);
+
+/** Exported runtime names, excluding type-only declarations and export specifiers. */
+export function runtimeExportsInSource(source: ts.SourceFile): string[] {
+  return source.statements.flatMap((statement) => {
+    if (ts.isExportDeclaration(statement)) {
+      if (statement.isTypeOnly) return [];
+      if (!statement.exportClause) return [`* from ${statement.moduleSpecifier?.getText(source) ?? ''}`];
+      if (ts.isNamespaceExport(statement.exportClause)) return [statement.exportClause.name.text];
+      return statement.exportClause.elements
+        .filter((element) => !element.isTypeOnly)
+        .map((element) => element.name.text);
     }
-    ts.forEachChild(node, visit);
-  };
-  visit(parse(file));
-  return [...calls].sort();
+    if (ts.isExportAssignment(statement)) return [statement.isExportEquals ? 'export=' : 'default'];
+    if (!hasModifier(statement, ts.SyntaxKind.ExportKeyword)) return [];
+    if (hasModifier(statement, ts.SyntaxKind.DefaultKeyword)) return ['default'];
+    if (ts.isVariableStatement(statement)) {
+      return statement.declarationList.declarations.flatMap((declaration) => bindingNames(declaration.name));
+    }
+    if (
+      ts.isClassDeclaration(statement) ||
+      ts.isFunctionDeclaration(statement) ||
+      ts.isEnumDeclaration(statement) ||
+      ts.isModuleDeclaration(statement) ||
+      ts.isImportEqualsDeclaration(statement)
+    ) {
+      return statement.name ? [statement.name.text] : [];
+    }
+    return [];
+  });
 }
 
 /** The static function members a controller class declares: methods and function-valued properties. */
@@ -525,17 +749,41 @@ function staticFunctions(source: string, className: string): { name: string; isP
 /** Where the split methods' buyer-side filtering is tested with rows of both sides. */
 const STORE_SELLER_SIDE_TESTS = ['commerce/commerce.store-seller-side.test.ts', 'chat/chat.store-seller-side.test.ts'];
 
-/** The members a file reads off `className`. */
-function controllerCalls(file: string, className: string): string[] {
+/** The methods invoked as `className.method(...)`, not property reads or aliases. */
+export function controllerCallsInSource(source: ts.SourceFile, className: string): string[] {
   const calls = new Set<string>();
   const visit = (node: ts.Node) => {
-    if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === className) {
-      calls.add(node.name.text);
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) &&
+      node.expression.expression.text === className
+    ) {
+      calls.add(node.expression.name.text);
     }
     ts.forEachChild(node, visit);
   };
-  visit(parse(file));
+  visit(source);
   return [...calls];
+}
+
+function controllerCalls(file: string, className: string): string[] {
+  return controllerCallsInSource(parse(file), className);
+}
+
+let cachedSellingServiceModules: ReadonlySet<string> | undefined;
+function sellingServiceModules(): ReadonlySet<string> {
+  if (!cachedSellingServiceModules) {
+    const modules = new Set<string>();
+    for (const file of sourceFiles(APPLICATION_DIR)) {
+      if (!isSellingApplication(file) || !couldImportTargets(file, [SERVICES_DIR])) continue;
+      for (const { target } of valueImports(file, [SERVICES_DIR])) {
+        if (target.startsWith(`${SERVICES_DIR}${path.sep}`)) modules.add(target);
+      }
+    }
+    cachedSellingServiceModules = modules;
+  }
+  return cachedSellingServiceModules;
 }
 
 const publicStaticMethods = (controller: (typeof CONTROLLERS)[number]) =>
@@ -553,21 +801,35 @@ const STORE_SELLER = COMMERCE_FIXTURE_SELLER;
 const SELLER_ELSEWHERE = COMMERCE_FIXTURE_BUYER;
 const DUMMY_ARGS = ['x', 'x', 'x', 'x'];
 
+type ApplicationCall = { name: string; gateViewers: (string | null)[] };
+
+export function applicationCallsBeforeGate(calls: readonly ApplicationCall[], viewer: string): string[] {
+  return calls.filter((call) => !call.gateViewers.includes(viewer)).map(({ name }) => name);
+}
+
 let reached: string[];
+let applicationCalls: ApplicationCall[];
 let gate: MockInstance<typeof StoreSellerGate.canSellHere>;
+let spiesInstalled = false;
 
 function stubApplications() {
   reached = [];
+  applicationCalls = [];
+  if (spiesInstalled) return;
+  gate = vi.spyOn(StoreSellerGate, 'canSellHere');
   for (const [name, application] of Object.entries(APPLICATIONS)) {
     for (const key of Object.getOwnPropertyNames(application)) {
       const value = (application as Record<string, unknown>)[key];
       if (typeof value !== 'function' || key === 'prototype') continue;
       vi.spyOn(application as Record<string, () => unknown>, key).mockImplementation(() => {
-        reached.push(`${name}.${key}`);
+        const call = `${name}.${key}`;
+        reached.push(call);
+        applicationCalls.push({ name: call, gateViewers: gate.mock.calls.map(([viewer]) => viewer) });
         return undefined;
       });
     }
   }
+  spiesInstalled = true;
 }
 
 async function call(controller: object, method: string): Promise<{ result?: unknown; error?: unknown }> {
@@ -585,13 +847,12 @@ describe('store seller gate inventory', () => {
   beforeEach(() => {
     commerceConfig.mode = 'transaction-service';
     stubApplications();
-    gate = vi.spyOn(StoreSellerGate, 'canSellHere');
   });
 
   afterEach(() => {
     setStoreSeller(undefined);
     useAuthStore.setState({ currentUserPubky: null });
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   it('inventories or exempts every controller that imports a selling application', () => {
@@ -608,10 +869,122 @@ describe('store seller gate inventory', () => {
     (source, exempt) => {
       const file = path.join(CONTROLLERS_DIR, source);
       const imports = valueImports(file).filter(({ target }) => isSellingApplication(target));
+      const usage = sellingApplicationUsage(file);
       expect(imports.filter(({ names }) => names === '*')).toEqual([]);
-      expect(sellingApplicationCalls(file)).toEqual([...exempt.calls].sort());
+      expect(usage.calls).toEqual([...exempt.calls].sort());
+      expect(usage.invalid).toEqual([]);
     },
   );
+
+  it.each(CONTROLLERS.map((controller) => [controller.source, controller] as const))(
+    '%s: exports only its controller and pinned helper values',
+    (source, controller) => {
+      expect(runtimeExportsInSource(parse(path.join(CONTROLLERS_DIR, source))).sort()).toEqual(
+        [...(GATED_CONTROLLER_EXPORTS[source] ?? [controller.name])].sort(),
+      );
+    },
+  );
+
+  it('recognizes new runtime exports while leaving type-only exports unpinned', () => {
+    const source = parseText(`
+      export class CommerceController {}
+      export class ExtraController {}
+      export function helper() {}
+      export type Result = string;
+      export interface Filters { seller: string }
+      export type { Result as RenamedResult };
+      export { type Filters, helper as renamedHelper };
+    `);
+    expect(runtimeExportsInSource(source).sort()).toEqual(
+      ['CommerceController', 'ExtraController', 'helper', 'renamedHelper'].sort(),
+    );
+  });
+
+  it('pins dot and literal element access and rejects every other exempt application use', () => {
+    const classes = new Map([['CommerceApplication', 'CommerceApplication']]);
+    const allowed = sellingApplicationUsesInSource(
+      parseText(`
+        import { CommerceApplication } from '@/application/commerce/commerce';
+        CommerceApplication.restoreInventorySession('x');
+        CommerceApplication['restoreMarketplaceSession']('x');
+      `),
+      classes,
+    );
+    expect(allowed).toEqual({
+      calls: ['CommerceApplication.restoreInventorySession', 'CommerceApplication.restoreMarketplaceSession'],
+      invalid: [],
+    });
+
+    const rejected = sellingApplicationUsesInSource(
+      parseText(`
+        const { restoreInventorySession } = CommerceApplication;
+        const alias = CommerceApplication;
+        const key = 'restoreInventorySession';
+        CommerceApplication[key]('x');
+        use(CommerceApplication);
+      `),
+      classes,
+    );
+    expect(rejected.invalid).toHaveLength(4);
+  });
+
+  it('detects a value import from a non-selling application to a selling application', () => {
+    const source = parseText(`
+      import { CommerceApplication } from '@/application/commerce/commerce';
+      import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
+      CommerceApplication.getMarketplaceOrders('viewer');
+    `);
+    const [edge] = valueImportsInSource(source).flatMap(({ specifier }) => {
+      const target = resolveModule(specifier, path.join(APPLICATION_DIR, 'user/user.ts'));
+      return target && isSellingApplication(target) ? [{ target }] : [];
+    });
+    expect(edge?.target).toBe(path.join(APPLICATION_DIR, 'commerce/commerce.ts'));
+  });
+
+  it('detects only controller method calls, not property reads or aliases', () => {
+    const source = parseText(`
+      ChatController.fetchRebuild();
+      const read = ChatController.fetchConversationUpdates;
+      const alias = ChatController;
+      alias.fetchSeededConversations();
+      CommerceController.getMarketplaceOrders();
+      ChatController['handleInboxPings']();
+    `);
+    expect(controllerCallsInSource(source, 'ChatController')).toEqual(['fetchRebuild']);
+  });
+
+  it('judges module specifiers as the resolver would before skipping a file', () => {
+    const file = path.join(SRC, 'hooks/useExample/useExample.ts');
+    const reaches = (text: string) => mayImportTargets(text, file, SELLING_APPLICATION_DIRS);
+    expect(reaches(`import { CommerceApplication } from '@/application/commerce/commerce';`)).toBe(true);
+    expect(reaches(`import type { Order } from "@/application/commerce/commerce.types";`)).toBe(true);
+    expect(reaches(`export * from '../../core/application/chat/chat';`)).toBe(true);
+    expect(reaches(`const m = await import(\n  '@/application/connectors/connectors',\n);`)).toBe(true);
+    expect(reaches(`const m = require('./../../core/application/commerce/./commerce');`)).toBe(true);
+    expect(reaches(`import service = require("@/application/import-store/import-store");`)).toBe(true);
+    expect(reaches(`import '@/application/chat/side-effect';`)).toBe(true);
+    expect(reaches(`import { Logger } from '@/libs/logger/logger';\nconst chat = 'commerce';`)).toBe(false);
+    expect(reaches(`import { Profile } from '@/application/profile/profile';`)).toBe(false);
+  });
+
+  it('reads path aliases the specifier pre-check understands', () => {
+    expect(compilerOptions.baseUrl).toBeUndefined();
+    const exactAliases = Object.keys(compilerOptions.paths ?? {}).filter((alias) => !alias.includes('*'));
+    expect(exactAliases).toEqual(['@/icons']);
+  });
+
+  it('distinguishes application calls made before and after the viewer gate', () => {
+    expect(
+      applicationCallsBeforeGate(
+        [
+          { name: 'ChatApplication.before', gateViewers: [] },
+          { name: 'ChatApplication.after', gateViewers: [SELLER_ELSEWHERE] },
+          { name: 'ChatApplication.wrongViewer', gateViewers: [STORE_SELLER] },
+        ],
+        SELLER_ELSEWHERE,
+      ),
+    ).toEqual(['ChatApplication.before', 'ChatApplication.wrongViewer']);
+  });
 
   it.each(CONTROLLERS.map((controller) => [controller.name, controller] as const))(
     '%s: the inventory classifies exactly the public static methods of the class',
@@ -643,11 +1016,53 @@ describe('store seller gate inventory', () => {
     expect([...imported].sort()).toEqual(Object.keys(APPLICATIONS).sort());
   });
 
+  it('keeps non-selling applications from importing a selling application', () => {
+    const allowlist = new Set<string>();
+    const offenders = sourceFiles(APPLICATION_DIR)
+      .filter((file) => !isSellingApplication(file) && couldImportTargets(file, SELLING_APPLICATION_DIRS))
+      .flatMap((file) =>
+        valueImports(file, SELLING_APPLICATION_DIRS)
+          .filter(({ target }) => isSellingApplication(target))
+          .map(({ target }) => importEdge(file, target)),
+      )
+      .filter((edge) => !allowlist.has(edge));
+    expect(offenders).toEqual([]);
+  });
+
+  // Derives the selling service modules from the applications first: a full-tree pass, slow under coverage on CI.
+  it('keeps the Shop from importing selling service modules outside the pinned pairs', () => {
+    const services = sellingServiceModules();
+    const targets = [...services].map(withoutExtension);
+    const current = new Set<string>();
+    const candidates = sourceFiles(SRC)
+      .filter((file) => !SELLING_SERVICE_IMPORT_DIRS.some((dir) => file.startsWith(`${dir}${path.sep}`)))
+      .filter((file) => couldImportTargets(file, targets));
+    const offenders = candidates.flatMap((file) =>
+      valueImports(file, targets)
+        .filter(({ target }) => services.has(target))
+        .flatMap(({ target, names }) => {
+          const edge = importEdge(file, target);
+          current.add(edge);
+          if (Object.hasOwn(SELLING_SERVICE_IMPORT_ALLOWLIST, edge)) return [];
+          const taken = names === '*' ? ['*'] : names;
+          return taken.map((name) => `${edge}: ${name}`);
+        }),
+    );
+    expect(offenders).toEqual([]);
+    expect(Object.keys(SELLING_SERVICE_IMPORT_ALLOWLIST).filter((edge) => !current.has(edge))).toEqual([]);
+  }, 30_000);
+
+  it('classifies every chat sync entry that can flush the outbox as split', () => {
+    expect(CHAT_OUTBOX_SYNC_METHODS.filter((method) => CHAT_INVENTORY[method]?.kind !== 'split')).toEqual([]);
+  });
+
+  // A full-tree compiler pass under coverage can be slow on CI runners.
   it('leaves the controllers as the only way from the Shop to the selling applications', () => {
     const offenders = sourceFiles(SRC)
       .filter((file) => !NOT_THE_SHOP.some((dir) => file.startsWith(`${dir}${path.sep}`)))
+      .filter((file) => couldImportTargets(file, SELLING_APPLICATION_DIRS))
       .flatMap((file) =>
-        valueImports(file)
+        valueImports(file, SELLING_APPLICATION_DIRS)
           .filter(({ target }) => isSellingApplication(target))
           .flatMap(({ target, names }) => {
             const allowed = SELLING_VALUES_OUTSIDE_CONTROLLERS[path.relative(SRC, target)] ?? [];
@@ -656,7 +1071,7 @@ describe('store seller gate inventory', () => {
           }),
       );
     expect(offenders).toEqual([]);
-  });
+  }, 30_000);
 
   const sellerEntries = CONTROLLERS.flatMap((controller) =>
     entriesOf(controller)
@@ -713,9 +1128,10 @@ describe('store seller gate inventory', () => {
         commerceConfig.mode = mode;
         gate.mockClear();
         reached = [];
+        applicationCalls = [];
         await call(controller, method);
-        const asked = gate.mock.calls.some(([viewer]) => viewer === SELLER_ELSEWHERE);
-        outcomes.push(asked || reached.length === 0 ? 'gated' : `reached ${reached.join(', ')} without asking`);
+        const early = applicationCallsBeforeGate(applicationCalls, SELLER_ELSEWHERE);
+        outcomes.push(early.length === 0 ? 'gated' : `reached ${early.join(', ')} before asking for the viewer`);
       }
 
       expect(outcomes).toEqual(['gated', 'gated']);
