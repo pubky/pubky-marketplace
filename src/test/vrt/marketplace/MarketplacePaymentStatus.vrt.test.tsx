@@ -22,7 +22,7 @@ setupFixedDateLocale('en-US');
  * Every buyer-visible payment state of the truthful status card (plan task
  * 4.6), rendered for baselines (task 4.8):
  *
- * - `locks-paykit` mode: awaiting (start / registered / poll-bound reached),
+ * - `locks-paykit` mode: awaiting (start / registered),
  *   confirmed with the digital delivery view (locked and unlocked), expired,
  *   and manual review. Detection and confirmation counts are deliberately
  *   absent from every one of these — the upstream contract keeps them

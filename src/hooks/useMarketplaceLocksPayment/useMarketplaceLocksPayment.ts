@@ -13,9 +13,10 @@ import { toast } from '@/molecules/Toaster/toast';
 import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
 
 /**
- * Fallback polling bound when the registration's marketplace payment window
- * is unknown (e.g. resumed before registration succeeded). Polling never runs
- * unbounded: it stops here at the latest and the user resumes it explicitly.
+ * Bound for the Lock Server task poll when a registered correlation has no
+ * marketplace payment window, and for each explicit resume ("Check again").
+ * The task poll never runs unbounded: it stops here at the latest and the
+ * user resumes it explicitly.
  */
 const LOCKS_POLL_FALLBACK_BOUND_MS = 15 * 60 * 1_000;
 
