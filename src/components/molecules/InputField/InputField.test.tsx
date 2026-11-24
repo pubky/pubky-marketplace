@@ -48,7 +48,7 @@ describe('InputField', () => {
     expect(input).toHaveAttribute('aria-invalid', 'true');
     expect(input).toHaveAttribute('aria-describedby', 'amount-message');
     expect(input).toHaveAccessibleDescription('Enter a valid amount.');
-    expect(screen.getByText('Enter a valid amount.')).toHaveClass('text-destructive');
+    expect(screen.getByText('Enter a valid amount.')).toHaveClass('text-field-error');
   });
 
   it('sets no describedby without a message or without an id', () => {
@@ -152,7 +152,7 @@ describe('InputField - Variants', () => {
     expect(screen.getByText('Looks good')).toHaveClass('text-brand');
 
     rerender(<InputField value="" status="error" message="Nope" messageType="alert" />);
-    expect(screen.getByTestId('input').parentElement).toHaveClass('border-destructive', 'text-destructive');
+    expect(screen.getByTestId('input').parentElement).toHaveClass('border-destructive', 'text-field-error');
     expect(screen.getByTestId('input').parentElement).not.toHaveClass('border-dashed');
     expect(screen.getByText('Nope')).toHaveClass('text-yellow-500');
   });

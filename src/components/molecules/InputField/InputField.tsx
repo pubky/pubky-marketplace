@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react';
 import { Container } from '@/atoms/Container/Container';
 import { Input } from '@/atoms/Input/Input';
 import { Typography } from '@/atoms/Typography/Typography';
+import { FIELD_MESSAGE_CLASSES, FIELD_STATUS_CLASSES } from '@/config/forms';
 import { cn } from '@/libs/utils/utils';
 
 interface InputFieldProps {
@@ -46,9 +47,6 @@ interface InputFieldProps {
   'aria-haspopup'?: React.AriaAttributes['aria-haspopup'];
   'aria-required'?: boolean;
 }
-// The design's destructive ink is readable on the dark page. Raised cards and the light page need different ink.
-const errorTextClasses =
-  'text-destructive [:root:not(.light)_.bg-card_&]:text-red-400 [.light_&]:text-error-foreground';
 
 export function InputField({
   id,
@@ -90,22 +88,10 @@ export function InputField({
 }: InputFieldProps) {
   const resolvedLoadingText = loadingText ?? 'Loading...';
   const containerClasses = variant === 'dashed' && 'border-dashed font-medium';
-  const statusClasses = {
-    default: 'focus-within:border-ring',
-    success: 'border-brand text-brand focus-within:ring-1 focus-within:ring-brand',
-    error: cn('border-destructive focus-within:ring-1 focus-within:ring-destructive', errorTextClasses),
-  };
   const sizeClasses = {
     sm: 'h-10 text-sm',
     md: 'h-12 text-base',
     lg: 'h-14 text-lg',
-  } as const;
-  const messageClasses = {
-    default: 'text-muted-foreground',
-    info: 'text-blue-500',
-    alert: 'text-yellow-500 [.light_&]:text-yellow-700',
-    error: errorTextClasses,
-    success: 'text-brand',
   } as const;
   return (
     <>
@@ -114,7 +100,7 @@ export function InputField({
           'mx-0 mb-2 w-full cursor-pointer flex-row items-center gap-0 rounded-md border border-input !bg-background/20',
           icon && iconPosition === 'left' ? 'pl-4.5' : 'pl-2',
           containerClasses,
-          statusClasses[status],
+          FIELD_STATUS_CLASSES[status],
           loading && 'border-brand text-brand',
           sizeClasses[size],
           className,
@@ -174,7 +160,7 @@ export function InputField({
           id={id ? `${id}-message` : undefined}
           as="small"
           size="sm"
-          className={cn('ml-1', messageClasses[messageType])}
+          className={cn('ml-1', FIELD_MESSAGE_CLASSES[messageType])}
         >
           {message}
         </Typography>

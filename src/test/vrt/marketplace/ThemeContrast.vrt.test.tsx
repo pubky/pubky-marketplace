@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
+import { userEvent } from 'vitest/browser';
 import { Checkbox } from '@/atoms/Checkbox/Checkbox';
 import { Link } from '@/atoms/Link/Link';
 import { RadioGroup, RadioGroupItem } from '@/atoms/RadioGroup/RadioGroup';
 import { Switch } from '@/atoms/Switch/Switch';
 import { HotTagCard } from '@/molecules/HotTagCard/HotTagCard';
 import { InputField } from '@/molecules/InputField/InputField';
+import { TextareaField } from '@/molecules/TextareaField/TextareaField';
 import { toast } from '@/molecules/Toaster/toast';
 import { Toaster } from '@/molecules/Toaster/Toaster';
 import { WordSlot } from '@/molecules/WordSlot/WordSlot';
@@ -13,20 +15,70 @@ import { expectGraphicContrast, expectTextContrast } from '@/test-utils/color-co
 import { renderForVRT } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP } from '@/test-utils/vrt.viewports';
 
-describe('Validation contrast on profile cards', () => {
-  it.each(['dark', 'light'] as const)('keeps invalid values and messages readable in %s mode', async (theme) => {
+describe.each(['bg-background', 'bg-card', 'bg-card/80', 'bg-popover'])('Field validation on %s', (surface) => {
+  it.each(['dark', 'light'] as const)('keeps values and error messages readable in %s mode', async (theme) => {
     const screen = await renderForVRT(
-      <main className="bg-card p-6">
-        <InputField id="profile-name" value="Invalid" status="error" message="Enter a valid name." readOnly />
+      <main className="bg-background">
+        <section className={surface}>
+          <InputField
+            id="profile-name"
+            variant="dashed"
+            value="Invalid"
+            status="error"
+            message="Enter a valid name."
+            readOnly
+          />
+          <TextareaField
+            id="profile-bio"
+            variant="dashed"
+            value="My bio"
+            status="error"
+            messageType="error"
+            message="Shorten your bio."
+            readOnly
+          />
+        </section>
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP, theme },
     );
 
-    const message = screen.getByText('Enter a valid name.');
-    await expect.element(message).toBeVisible();
-    expectTextContrast(message.element());
-    expectTextContrast(screen.getByRole('textbox').element());
+    for (const message of ['Enter a valid name.', 'Shorten your bio.']) {
+      const hint = screen.getByText(message);
+      await expect.element(hint).toBeVisible();
+      expectTextContrast(hint.element());
+    }
+    for (const field of screen.getByRole('textbox').all()) expectTextContrast(field.element());
   });
+});
+
+describe('Multiline field focus', () => {
+  it.each(['dark', 'light'] as const)(
+    'shows keyboard focus and preserves an invalid border in %s mode',
+    async (theme) => {
+      const screen = await renderForVRT(
+        <main className="bg-card">
+          <TextareaField value="My bio" variant="dashed" readOnly />
+          <TextareaField value="My bio" variant="dashed" status="error" readOnly />
+        </main>,
+        { viewport: VRT_VIEWPORT_DESKTOP, theme },
+      );
+      const [bio, invalidBio] = screen.getByRole('textbox').all();
+      const bioFrame = bio.element().parentElement!;
+      const invalidFrame = invalidBio.element().parentElement!;
+      const idleBorder = getComputedStyle(bioFrame).borderTopColor;
+      const errorBorder = getComputedStyle(invalidFrame).borderTopColor;
+      const idleShadow = getComputedStyle(invalidFrame).boxShadow;
+
+      expect(getComputedStyle(invalidBio.element()).color).toBe(getComputedStyle(bio.element()).color);
+      await userEvent.tab();
+      await expect.element(bio).toHaveFocus();
+      expect(getComputedStyle(bioFrame).borderTopColor).not.toBe(idleBorder);
+      await userEvent.tab();
+      await expect.element(invalidBio).toHaveFocus();
+      expect(getComputedStyle(invalidFrame).borderTopColor).toBe(errorBorder);
+      expect(getComputedStyle(invalidFrame).boxShadow).not.toBe(idleShadow);
+    },
+  );
 });
 
 describe('Success toast contrast', () => {

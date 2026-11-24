@@ -40,6 +40,7 @@ const RadioGroupItem = React.forwardRef<React.ComponentRef<typeof RadioGroupPrim
           'transition-colors',
           'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
           'disabled:cursor-not-allowed disabled:opacity-50',
+          '[:root:not(.light)_&]:data-[state=unchecked]:border-ring',
           '[.light_&]:data-[state=checked]:border-brand [.light_&]:data-[state=checked]:bg-brand',
           className,
         )}

@@ -51,6 +51,12 @@ export function expectTextContrast(element: Element, minimum = 4.5) {
   expectContrast(paint(element, rgba(getComputedStyle(element).color)), paint(element), minimum);
 }
 
+/** Measure a CSS stroke over its backdrop against the surface beside it. */
+export function expectColorContrast(color: string, backdrop: Element, adjacentSurface = backdrop) {
+  expect(CSS.supports('color', color)).toBe(true);
+  expectContrast(paint(backdrop, rgba(color)), paint(adjacentSurface), 3);
+}
+
 /** Icons use their current color; solid control markers use their background color. */
 export function expectGraphicContrast(element: Element, surface: Element, minimum = 3) {
   const style = getComputedStyle(element);
