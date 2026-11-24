@@ -72,13 +72,15 @@ describe('locksSubmitRefusalMessage', () => {
     expect(locksSubmitRefusalMessage(error, FALLBACK)).toBe(FALLBACK);
   });
 
-  it('tells the buyer to cancel and check out again when the seller changed the lock after checkout', () => {
+  it('says when cancelling is possible after the seller changed the lock after checkout', () => {
     const error = Err.validation(ValidationErrorCode.INVALID_INPUT, 'The listing lock changed after checkout.', {
       service: ErrorService.Locks,
       operation: 'beginMarketplaceLocksPayment',
       context: { preparedTermsDiffer: true },
     });
     expect(locksSubmitRefusalMessage(error, FALLBACK)).toBe(LOCKS_PREPARED_TERMS_DIFFER_COPY);
+    expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).not.toContain('Cancel it');
+    expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).toContain('payment time has ended');
   });
 
   it('never carries server text into any copy', () => {

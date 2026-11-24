@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getCommerceAdapterMode, getCommercePollIntervalMs, isLocksPaykitCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { MARKETPLACE_FAILURE_MESSAGES, marketplaceFailureMessage } from '@/libs/commerce/failure-messages';
+import { LOCKS_REGISTRATION_GRACE_SECONDS } from '@/libs/commerce/locks-cancel-paused';
 import type { LocksAdmissionView } from '@/libs/commerce/locks-lifecycle';
 import { locksSubmitRefusalMessage } from '@/libs/commerce/locks-submit-refusal';
 import type { CommerceDigitalLock } from '@/libs/commerce/marketplace-records';
@@ -110,7 +111,7 @@ export function useMarketplaceLocksPayment({
       pollResume?.paymentId === payment.id
         ? pollResume.boundAt
         : correlation.window_expires_at
-          ? Date.parse(correlation.window_expires_at) + 60_000
+          ? Date.parse(correlation.window_expires_at) + LOCKS_REGISTRATION_GRACE_SECONDS * 1_000
           : Date.now() + LOCKS_POLL_FALLBACK_BOUND_MS;
     let active = true;
     let timer: number | undefined;

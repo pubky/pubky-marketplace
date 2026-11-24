@@ -311,6 +311,27 @@ describe('orderCommandPayloadIssues', () => {
   });
 });
 
+describe('marketplace command refusal responses', () => {
+  it('keeps an optional refusal reason after parsing', () => {
+    const refused = marketplaceCommandResponseSchema.parse({
+      ok: false,
+      error: {
+        code: 'INVALID_STATE',
+        message: 'This payment is still in progress.',
+        reason: 'locks_task_live',
+      },
+    });
+    expect(refused).toMatchObject({ error: { reason: 'locks_task_live' } });
+
+    const withoutReason = marketplaceCommandResponseSchema.parse({
+      ok: false,
+      error: { code: 'INVALID_STATE', message: 'This order cannot be cancelled.' },
+    });
+    expect(withoutReason).toMatchObject({ error: { code: 'INVALID_STATE' } });
+    if (!withoutReason.ok) expect(withoutReason.error.reason).toBeUndefined();
+  });
+});
+
 describe('review.update revision conflict handling', () => {
   it('classifies the 409 REVISION_CONFLICT answer for the refetch-and-retry pattern', () => {
     expect(

@@ -10,6 +10,7 @@ import {
   marketplaceErrorCode,
   marketplaceFailureMessage,
 } from '@/libs/commerce/failure-messages';
+import { LOCKS_TASK_LIVE_REFUSAL_REASON, locksCancelPausedMessage } from '@/libs/commerce/locks-cancel-paused';
 import { orderShowsCommandResult } from '@/libs/commerce/order-command-result';
 import { formatReviewDate, isReviewWindowClosedRefusal } from '@/libs/commerce/order-reviews';
 import { plainRefundRefusal } from '@/libs/commerce/partial-refund';
@@ -26,6 +27,7 @@ import { PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
 import { CONFIRM_REFUND_DESTINATION_KIND, usdtRefundRefusalMessage } from '@/libs/commerce/usdt-refund';
 import { isPaymentNotFinalRefusal } from '@/libs/commerce/usdt-settlement-contract';
 import { isMarketplaceCommandValidationError, isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
+import type { CommerceLocksCorrelationModelSchema } from '@/models/commerce/commerce.schema';
 import { toast } from '@/molecules/Toaster/toast';
 import type { MarketplaceOrder, MarketplacePayment, MarketplaceReceipt } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -169,6 +171,26 @@ export function useMarketplaceOrders() {
           const fresh = await readOrders();
           const current = fresh?.find((view) => view.order.id === order.id)?.order;
           if (current && orderShowsCommandResult(current, kind, payload)) return true;
+        }
+        if (
+          kind === 'order.cancel_request' &&
+          response.error.code === 'INVALID_STATE' &&
+          response.error.reason === LOCKS_TASK_LIVE_REFUSAL_REASON
+        ) {
+          let correlation: CommerceLocksCorrelationModelSchema | null = null;
+          try {
+            correlation = (await CommerceController.getMarketplaceLocksCorrelation(order.paymentId)) ?? null;
+          } catch {
+            // A local read failure carries no useful timing detail.
+          }
+          toast({
+            variant: 'error',
+            description: locksCancelPausedMessage({
+              windowExpiresAt: correlation?.window_expires_at ?? null,
+              registered: correlation?.registered ?? true,
+            }),
+          });
+          return false;
         }
         // The service refuses a checkout cancel once it has seen a payment on the
         // request (#347): say so and re-read, so the cancel is no longer offered.
