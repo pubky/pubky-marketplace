@@ -7,7 +7,6 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { useLinkConfirmation } from '@/hooks/useLinkConfirmation/useLinkConfirmation';
 import { usePostArticle } from '@/hooks/usePostArticle/usePostArticle';
 import { usePostReplyRepostDialogs } from '@/hooks/usePostReplyRepostDialogs/usePostReplyRepostDialogs';
-import { useVariantImageFallback } from '@/hooks/useVariantImageFallback/useVariantImageFallback';
 import { cn } from '@/libs/utils/utils';
 import type { PostDetailsModel } from '@/models/post/details/postDetails';
 import { PostText } from '@/molecules/PostText/PostText';
@@ -57,13 +56,10 @@ export const PostArticleDetail = ({ postId, content, attachments, isBlurred }: P
   const localAttachments = useLocalFilesStore((s) => s.posts[postId]);
 
   const localCoverImage = localAttachments?.[0]?.type.startsWith('image')
-    ? { src: localAttachments[0].urls.main, mainSrc: localAttachments[0].urls.main, alt: localAttachments[0].name }
+    ? { src: localAttachments[0].urls.main, alt: localAttachments[0].name }
     : null;
 
   const finalCoverImage = localCoverImage || coverImage;
-  const mainCoverSrc = finalCoverImage?.mainSrc ?? finalCoverImage?.src ?? '';
-  const variantCoverSrc = finalCoverImage && finalCoverImage.src !== mainCoverSrc ? finalCoverImage.src : undefined;
-  const { src: coverSrc, onError } = useVariantImageFallback(variantCoverSrc, mainCoverSrc);
 
   const articleHeader = (
     <>
@@ -98,9 +94,8 @@ export const PostArticleDetail = ({ postId, content, attachments, isBlurred }: P
     <>
       {finalCoverImage && (
         <Image
-          src={coverSrc}
+          src={finalCoverImage.src}
           alt={finalCoverImage.alt}
-          onError={onError}
           className="mb-6 aspect-video w-full rounded-md object-cover object-center"
         />
       )}

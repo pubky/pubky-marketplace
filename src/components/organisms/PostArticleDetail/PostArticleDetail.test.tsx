@@ -34,8 +34,8 @@ vi.mock('@/atoms/Container/Container', () => ({
 }));
 
 vi.mock('@/atoms/Image/Image', () => ({
-  Image: ({ src, alt, className, onError }: { src: string; alt: string; className?: string; onError?: () => void }) => (
-    <img data-testid="cover-image" src={src} alt={alt} className={className} onError={onError} />
+  Image: ({ src, alt, className }: { src: string; alt: string; className?: string }) => (
+    <img data-testid="cover-image" src={src} alt={alt} className={className} />
   ),
 }));
 
@@ -282,24 +282,7 @@ describe('PostArticleDetail', () => {
     expect(screen.getByTestId('cover-image')).toHaveAttribute('alt', 'Cover image');
   });
 
-  it('switches a variant cover to main once after a load error', () => {
-    mockUsePostArticle.mockReturnValue({
-      title: 'Test Title',
-      body: 'Test body',
-      coverImage: { src: 'https://cdn.test/cover/feed', mainSrc: 'https://cdn.test/cover/main', alt: 'Cover image' },
-    });
-
-    render(<PostArticleDetail {...defaultProps} />);
-
-    const image = screen.getByTestId('cover-image');
-    expect(image).toHaveAttribute('src', 'https://cdn.test/cover/feed');
-    fireEvent.error(image);
-    expect(image).toHaveAttribute('src', 'https://cdn.test/cover/main');
-    fireEvent.error(image);
-    expect(image).toHaveAttribute('src', 'https://cdn.test/cover/main');
-  });
-
-  it('keeps a main cover unchanged after a load error', () => {
+  it('renders the main cover source directly', () => {
     mockUsePostArticle.mockReturnValue({
       title: 'Test Title',
       body: 'Test body',
@@ -307,22 +290,6 @@ describe('PostArticleDetail', () => {
     });
 
     render(<PostArticleDetail {...defaultProps} />);
-
-    const image = screen.getByTestId('cover-image');
-    fireEvent.error(image);
-    expect(image).toHaveAttribute('src', 'https://cdn.test/cover/main');
-  });
-
-  it('renders the cover with a source on the first render after it arrives', () => {
-    const { rerender } = render(<PostArticleDetail {...defaultProps} />);
-    expect(screen.queryByTestId('cover-image')).not.toBeInTheDocument();
-
-    mockUsePostArticle.mockReturnValue({
-      title: 'Test Title',
-      body: 'Test body',
-      coverImage: { src: 'https://cdn.test/cover/main', mainSrc: 'https://cdn.test/cover/main', alt: 'Cover image' },
-    });
-    rerender(<PostArticleDetail {...defaultProps} />);
 
     expect(screen.getByTestId('cover-image')).toHaveAttribute('src', 'https://cdn.test/cover/main');
   });

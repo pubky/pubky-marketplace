@@ -228,6 +228,9 @@ describe('usePostArticle', () => {
         fileId: 'user123:file456',
         variant: FileVariant.MAIN,
       });
+      expect(mockGetFileUrl).not.toHaveBeenCalledWith({ fileId: 'user123:file456', variant: FileVariant.FEED });
+      expect(result.current.coverImage?.src).toBe('https://cdn.example.com/user123:file456/main');
+      expect(result.current.coverImage?.mainSrc).toBe('https://cdn.example.com/user123:file456/main');
     });
 
     it('does not set cover image when attachment is not an image', async () => {
