@@ -9,8 +9,9 @@ import {
   MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS,
 } from '@/config/commerce';
 import { resetAttestorKeyWindows } from '@/libs/commerce/attestor-key-windows';
-import { attestorWindowsParam } from '@/libs/commerce/review-counting';
+import { attestorWindowsParam, countedFromTrustedBuckets } from '@/libs/commerce/review-counting';
 import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
+import type { CommerceReputationBucket } from '@/models/commerce/commerce.schema';
 import { NexusMarketplaceService } from '@/services/nexus/marketplace/marketplace';
 import {
   createAttestorTestKey,
@@ -435,6 +436,240 @@ describe('GET /llms.txt', () => {
     });
   });
 
+  describe('when a verified profile that set a cutoff later answers 404', () => {
+    const validFrom = '2026-01-01T00:00:00Z';
+    const compromisedFrom = '2026-05-01T00:00:00Z';
+    const signer = createAttestorTestKey();
+    const RETAINED_HEADING = 'Cutoffs kept from a profile the index no longer serves:';
+    const RETAINED_SUFFIX =
+      '[window not confirmed: a cutoff listed below comes from a profile the index no longer serves]';
+    const fromSeconds = Math.ceil(Date.parse(validFrom) / 1000);
+    const cutoffSeconds = Math.ceil(Date.parse(compromisedFrom) / 1000);
+
+    type Served = ReturnType<typeof servedAttestorProfile> | null | Error;
+
+    /** The signer answers each read with the next queued answer (the last one repeats); other keys are absent. */
+    function serveInTurn(...answers: Served[]) {
+      vi.useFakeTimers();
+      vi.stubEnv(
+        'PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS',
+        JSON.stringify([{ pubky: signer.pubky, label: 'Runtime example', validFrom }]),
+      );
+      let reads = 0;
+      vi.mocked(NexusMarketplaceService.fetchAttestorProfile).mockImplementation(async ({ attestor_id }) => {
+        if (attestor_id !== signer.pubky) return null;
+        const answer = answers[Math.min(reads, answers.length - 1)];
+        reads += 1;
+        if (answer instanceof Error) throw answer;
+        return answer ?? null;
+      });
+      return { reads: () => reads };
+    }
+
+    const cutoffProfile = () =>
+      servedAttestorProfile(
+        signer.pubky,
+        signedAttestorProfile(signer, [{ pubky: signer.pubky, validFrom, compromisedFrom }]),
+      );
+    const openProfile = () =>
+      servedAttestorProfile(signer.pubky, signedAttestorProfile(signer, [{ pubky: signer.pubky, validFrom }]));
+    const keyLine = (body: string) => body.split('\n').find((line) => line.startsWith(`- ${signer.pubky} (`)) ?? '';
+
+    async function serveAfter(ms: number) {
+      vi.advanceTimersByTime(ms);
+      return (await GET()).text();
+    }
+
+    it('marks the kept cutoff unconfirmed, while a fresh process that only saw the 404 publishes the open window as confirmed', async () => {
+      const { reads } = serveInTurn(cutoffProfile(), null);
+      const verified = await (await GET()).text();
+      expect(verified).not.toContain('[window not confirmed');
+
+      const afterAbsent = await serveAfter(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+      const copy = afterAbsent.replace(/\s+/g, ' ');
+
+      expect(reads()).toBe(2);
+      expect(afterAbsent).toContain(`${signer.pubky}:${fromSeconds}:${cutoffSeconds}`);
+      expect(keyLine(afterAbsent)).toContain(`until ${compromisedFrom.replace('Z', '.000Z')}`);
+      expect(keyLine(afterAbsent)).toContain(RETAINED_SUFFIX);
+      for (const line of afterAbsent.split('\n').filter((entry) => /^- [a-z0-9]{52} \(/.test(entry))) {
+        expect(line).toContain(RETAINED_SUFFIX);
+      }
+      expect(afterAbsent).toContain(`${RETAINED_HEADING}\n- ${signer.pubky}:`);
+      expect(copy).toContain(
+        `this Shop verified this attestor's signed profile earlier, and the windows above still end where that profile ended them, but INDEX/v0/marketplace/attestor/${signer.pubky}/profile now answers 404.`,
+      );
+      expect(copy).toContain('a Shop server that never verified the profile applies the configured windows instead.');
+      expect(copy).toContain(
+        'every configured key window above is unconfirmed while a cutoff is listed here, and another Shop server may publish later window ends for the same keys.',
+      );
+      expect(afterAbsent).not.toContain('Configured bounds, profile not verified:');
+
+      CommerceAttestorApplication.resetSession();
+      resetAttestorKeyWindows();
+      const fresh = await (await GET()).text();
+
+      expect(fresh).toContain(`${signer.pubky}:${fromSeconds}:`);
+      expect(fresh).not.toContain(`${signer.pubky}:${fromSeconds}:${cutoffSeconds}`);
+      expect(fresh).not.toContain('[window not confirmed');
+      expect(fresh).not.toContain(RETAINED_HEADING);
+    });
+
+    it('keeps the notice while later reads still answer 404', async () => {
+      const { reads } = serveInTurn(cutoffProfile(), null);
+      await GET();
+      await serveAfter(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+
+      const body = await serveAfter(MARKETPLACE_ATTESTOR_PROFILE_RETRY_MS);
+
+      expect(reads()).toBe(3);
+      expect(body).toContain(`${RETAINED_HEADING}\n- ${signer.pubky}:`);
+      expect(keyLine(body)).toContain(RETAINED_SUFFIX);
+    });
+
+    it('drops the notice once a later read verifies the profile again', async () => {
+      serveInTurn(cutoffProfile(), null, openProfile());
+      await GET();
+      expect(await serveAfter(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS)).toContain(RETAINED_HEADING);
+
+      const body = await serveAfter(MARKETPLACE_ATTESTOR_PROFILE_RETRY_MS);
+
+      expect(body).not.toContain(RETAINED_HEADING);
+      expect(body).not.toContain('[window not confirmed');
+      expect(body).not.toContain(`${signer.pubky}:${fromSeconds}:${cutoffSeconds}`);
+    });
+
+    it('lists the profile as not verified, without the kept-cutoff notice, when a read after the 404 fails', async () => {
+      serveInTurn(cutoffProfile(), null, new Error('offline'));
+      await GET();
+      await serveAfter(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+
+      const body = await serveAfter(MARKETPLACE_ATTESTOR_PROFILE_RETRY_MS);
+
+      expect(body).toContain(`Configured bounds, profile not verified:\n- ${signer.pubky}:`);
+      expect(keyLine(body)).toContain('[window not confirmed: a profile listed below is not verified]');
+      expect(body).not.toContain(RETAINED_HEADING);
+      expect(body).toContain(`${signer.pubky}:${fromSeconds}:${cutoffSeconds}`);
+    });
+
+    it('adds no notice when the earlier verified profile set no cutoff', async () => {
+      serveInTurn(openProfile(), null);
+      await GET();
+
+      const body = await serveAfter(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+
+      expect(body).not.toContain(RETAINED_HEADING);
+      expect(body).not.toContain('Configured bounds, profile not verified:');
+      expect(body).not.toContain('[window not confirmed');
+    });
+  });
+
+  describe('bucket fallback for a key with several windows', () => {
+    const key = 'c'.repeat(52);
+    const seconds = (iso: string) => Math.ceil(Date.parse(iso) / 1000);
+    const JAN = '2026-01-01T00:00:00Z';
+    const JUN = '2026-06-01T00:00:00Z';
+    const JUN_PLUS_ONE_SECOND = '2026-06-01T00:00:01Z';
+    const JUL = '2026-07-01T00:00:00Z';
+    const SEP = '2026-09-01T00:00:00Z';
+
+    const bucketOf = (first: string, last: string): CommerceReputationBucket => ({
+      orders: 2,
+      buyers: 2,
+      sumBuyerMeans: 9,
+      weightedSum: 9,
+      weightTotal: 2,
+      histogram: [0, 0, 0, 1, 1],
+      firstIat: seconds(first),
+      lastIat: seconds(last),
+      sellerBuyers: null,
+      sumSellerBuyerMeans: null,
+    });
+    const spanningJune = bucketOf('2026-05-15T00:00:00Z', '2026-06-15T00:00:00Z');
+    const windowOf = (validFrom: string, validUntil?: string) => ({
+      pubky: key,
+      label: 'Runtime example',
+      validFrom,
+      ...(validUntil !== undefined && { validUntil }),
+    });
+    const reputationQuery = (body: string) =>
+      body.split('\n').find((line) => line.startsWith('GET INDEX/v0/shop/') && line.includes(`?attestors=${key}`)) ??
+      '';
+    const keyLines = (body: string) => body.split('\n').filter((line) => line.startsWith(`- ${key} (`));
+
+    it('tells agents to merge touching or overlapping windows of one key, and keep a gap, before testing coverage', () => {
+      const copy = renderAgentGuide('https://index.example.test', []).replace(/\s+/g, ' ');
+
+      expect(copy).toContain("Without `scoped`, first merge each trusted key's effective windows from the list above.");
+      expect(copy).toContain('Drop a window whose `until` is not after its `from`; it vouches for nothing.');
+      expect(copy).toContain(
+        "Sort the rest by `from`, and join a window to the one before it when it starts on or before that window's `until` (they touch or overlap): the joined window keeps the earlier `from` and runs to the later `until`, and an open `until` stays open.",
+      );
+      expect(copy).toContain('A window that starts after the previous one ends, by any amount, stays separate.');
+      expect(copy).toContain(
+        "Then sum only buckets of trusted attestors for which one merged window covers the bucket's whole `[first_iat, last_iat]` (`from` <= `first_iat` and `last_iat` < `until`); skip every other bucket, including one that spans a gap between two windows of its key.",
+      );
+      expect(copy).toContain('The `attestors=` windows in the example request above are already merged this way.');
+      expect(copy).toContain('Newer indexes include `buckets`, to which the same bucket rule applies.');
+    });
+
+    it('lists back-to-back windows separately, sends them merged, and counts a bucket across their boundary', () => {
+      const trusted = [windowOf(JAN, JUN), windowOf(JUN)];
+
+      const body = renderAgentGuide('https://index.example.test', trusted);
+
+      expect(keyLines(body)).toHaveLength(2);
+      expect(reputationQuery(body)).toMatch(new RegExp(`\\?attestors=${key}:${seconds(JAN)}:$`));
+      expect(countedFromTrustedBuckets({ [key]: spanningJune }, trusted).buyers).toBe(2);
+    });
+
+    it('merges overlapping windows to the later end', () => {
+      const trusted = [windowOf(JUN, SEP), windowOf(JAN, JUL)];
+
+      const body = renderAgentGuide('https://index.example.test', trusted);
+
+      expect(reputationQuery(body)).toMatch(new RegExp(`\\?attestors=${key}:${seconds(JAN)}:${seconds(SEP)}$`));
+      expect(countedFromTrustedBuckets({ [key]: spanningJune }, trusted).buyers).toBe(2);
+    });
+
+    it('keeps windows separated by a gap distinct, and skips a bucket that spans the gap', () => {
+      const trusted = [windowOf(JAN, JUN), windowOf(JUN_PLUS_ONE_SECOND)];
+
+      const body = renderAgentGuide('https://index.example.test', trusted);
+
+      expect(reputationQuery(body)).toMatch(
+        new RegExp(`\\?attestors=${key}:${seconds(JAN)}:${seconds(JUN)},${key}:${seconds(JUN_PLUS_ONE_SECOND)}:$`),
+      );
+      expect(countedFromTrustedBuckets({ [key]: spanningJune }, trusted).buyers).toBe(0);
+      expect(
+        countedFromTrustedBuckets({ [key]: bucketOf('2026-06-15T00:00:00Z', '2026-08-01T00:00:00Z') }, trusted).buyers,
+      ).toBe(2);
+    });
+  });
+
+  it('marks key lines with the kept-cutoff reason only when no profile is listed as not verified', () => {
+    const trusted = [{ pubky: 'a'.repeat(52), label: 'First', validFrom: '2026-01-01T00:00:00Z' }];
+    const retainedSuffix =
+      '[window not confirmed: a cutoff listed below comes from a profile the index no longer serves]';
+    const unverifiedSuffix = '[window not confirmed: a profile listed below is not verified]';
+
+    const retainedOnly = renderAgentGuide('https://index.example.test', trusted, {
+      retainedCutoffAttestorIds: ['a'.repeat(52)],
+    });
+    const both = renderAgentGuide('https://index.example.test', trusted, {
+      unconfirmedAttestorIds: ['b'.repeat(52)],
+      retainedCutoffAttestorIds: ['a'.repeat(52)],
+    });
+
+    expect(retainedOnly).toContain(retainedSuffix);
+    expect(retainedOnly).not.toContain(unverifiedSuffix);
+    expect(retainedOnly).not.toContain('Configured bounds, profile not verified:');
+    expect(both).toContain(unverifiedSuffix);
+    expect(both).not.toContain(retainedSuffix);
+    expect(both).toContain('Configured bounds, profile not verified:');
+    expect(both).toContain('Cutoffs kept from a profile the index no longer serves:');
+  });
+
   it('marks every key line unconfirmed only when a profile is listed as not verified', () => {
     const trusted = [
       { pubky: 'a'.repeat(52), label: 'First', validFrom: '2026-01-01T00:00:00Z' },
@@ -476,7 +711,7 @@ describe('GET /llms.txt', () => {
     const copy = renderAgentGuide('https://index.example.test', []).replace(/\s+/g, ' ');
 
     expect(copy).toContain(
-      "These are this Shop's effective windows, except that every window is unconfirmed while a profile is listed as not verified above:",
+      "These are this Shop's effective windows, except that every window is unconfirmed while a profile is listed as not verified, or a cutoff as kept from a profile the index no longer serves, above:",
     );
     expect(copy).toContain(
       "each key's window ends at the earliest of its configured end and any `validUntil` / `compromisedFrom` that a trusted attestor's verified signed profile",

@@ -11,15 +11,21 @@ export function renderAgentGuide(
   {
     configured = trustedAttestors,
     unconfirmedAttestorIds = [],
+    retainedCutoffAttestorIds = [],
   }: {
     configured?: readonly MarketplaceTrustedAttestor[];
     unconfirmedAttestorIds?: readonly string[];
+    retainedCutoffAttestorIds?: readonly string[];
   } = {},
 ): string {
   const windows = attestorWindowsParam(trustedAttestors);
   const reputationQuery = windows === null ? '' : `?attestors=${windows}`;
   const unconfirmedSuffix =
-    unconfirmedAttestorIds.length === 0 ? '' : ' [window not confirmed: a profile listed below is not verified]';
+    unconfirmedAttestorIds.length > 0
+      ? ' [window not confirmed: a profile listed below is not verified]'
+      : retainedCutoffAttestorIds.length > 0
+        ? ' [window not confirmed: a cutoff listed below comes from a profile the index no longer serves]'
+        : '';
   const trustedAttestorList =
     trustedAttestors.length === 0
       ? 'This deployment trusts no attestor, so no review counts.'
@@ -58,6 +64,23 @@ A profile can end the window of any configured key, not only its own, so every c
 unconfirmed while any profile listed here is unverified. If a profile cannot be verified, counts from these
 windows (buyers, orders, reviews) are upper bounds, unless a profile being read again relaxes a cutoff it stated
 before; a rating computed from them is unconfirmed and may be higher or lower than the Shop's.`;
+  const retainedCutoffNotice =
+    retainedCutoffAttestorIds.length === 0
+      ? ''
+      : `\n\nCutoffs kept from a profile the index no longer serves:\n${retainedCutoffAttestorIds
+          .map(
+            (pubky) =>
+              `- ${pubky}: this Shop verified this attestor's signed profile earlier, and the windows above still end
+  where that profile ended them, but INDEX/v0/marketplace/attestor/${pubky}/profile now answers 404. A profile
+  can only narrow trust, so this Shop keeps a cutoff the profile stated rather than reopen the window when the
+  profile disappears; a Shop server that never verified the profile applies the configured windows instead.`,
+          )
+          .join('\n')}
+
+Because no current profile confirms these cutoffs, every configured key window above is unconfirmed while a cutoff
+is listed here, and another Shop server may publish later window ends for the same keys. Counts from these windows
+(buyers, orders, reviews) may be lower than that server's, and a rating computed from them may be higher or lower;
+present both as unconfirmed.`;
 
   return `# Pubky Market — guide for agents
 
@@ -185,7 +208,7 @@ Media URIs are records on the seller's homeserver; the listing page renders them
 ### 4. Is this seller any good?
 
 Trusted attestors:
-${trustedAttestorList}${unconfirmedProfileNotice}
+${trustedAttestorList}${unconfirmedProfileNotice}${retainedCutoffNotice}
 
 GET INDEX/v0/shop/{seller_id}/reputation?attestors=<windows>
 
@@ -193,7 +216,7 @@ Build \`<windows>\` from the trusted list as comma-separated \`<pubky>:<from>:<u
 with Unix seconds over the attestation \`iat\`; an open window leaves \`until\` empty. If no windows
 can be built (the list is empty or too long), call without \`attestors=\` and use the bucket rule below.
 These are this Shop's effective windows, except that every window is unconfirmed while a profile is listed as
-not verified above: each key's window ends at the earliest of its configured end and any \`validUntil\` / \`compromisedFrom\` that a trusted attestor's verified
+not verified, or a cutoff as kept from a profile the index no longer serves, above: each key's window ends at the earliest of its configured end and any \`validUntil\` / \`compromisedFrom\` that a trusted attestor's verified
 signed profile (INDEX/v0/marketplace/attestor/{attestor_pubky}/profile) states for that key. A profile
 never adds a key, widens a window or moves \`validFrom\`.
 
@@ -235,8 +258,14 @@ GET INDEX/v0/shop/gujx6qd8ksydh1makdphd3bxu351d9b8waqka8hfg6q7hnqkxexo/reputatio
 }
 
 Prefer \`scoped\`: it is the index's figure over the trusted windows, with one buyer counted once.
-Without \`scoped\`, sum only buckets of trusted attestors whose window covers the bucket's whole
-\`[first_iat, last_iat]\`; skip every other bucket. Item rating = \`sum_buyer_means / buyers\` when \`buyers\` is positive.
+Without \`scoped\`, first merge each trusted key's effective windows from the list above. Drop a window whose
+\`until\` is not after its \`from\`; it vouches for nothing. Sort the rest by \`from\`, and join a window to the one
+before it when it starts on or before that window's \`until\` (they touch or overlap): the joined window keeps the
+earlier \`from\` and runs to the later \`until\`, and an open \`until\` stays open. A window that starts after the
+previous one ends, by any amount, stays separate. Then sum only buckets of trusted attestors for which one merged
+window covers the bucket's whole \`[first_iat, last_iat]\` (\`from\` <= \`first_iat\` and \`last_iat\` < \`until\`);
+skip every other bucket, including one that spans a gap between two windows of its key. The \`attestors=\` windows
+in the example request above are already merged this way. Item rating = \`sum_buyer_means / buyers\` when \`buyers\` is positive.
 Report seller rating = \`sum_seller_buyer_means / seller_buyers\` only when \`seller_buyers\` is positive;
 when it is 0 or missing, say "no seller rating yet" and never compute it. Basis = "N buyers · M orders".
 With no counted buyers, say "no counted reviews yet", never 0.0.

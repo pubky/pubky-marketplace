@@ -13,6 +13,7 @@ export async function GET() {
     renderAgentGuide(indexUrl, marketplaceTrustedAttestors(), {
       configured: configuredMarketplaceTrustedAttestors(),
       unconfirmedAttestorIds: CommerceAttestorApplication.unconfirmedProfileAttestors(),
+      retainedCutoffAttestorIds: CommerceAttestorApplication.retainedCutoffProfileAttestors(),
     }),
     {
       headers: {

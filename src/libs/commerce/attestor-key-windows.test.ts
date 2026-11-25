@@ -3,6 +3,7 @@ import {
   attestorKeyWindowsVersion,
   type AttestorProfileKeyWindow,
   attestorProfileKeyWindows,
+  attestorProfileKeyWindowsFrom,
   narrowTrustedAttestors,
   resetAttestorKeyWindows,
   setAttestorProfileKeyWindows,
@@ -149,6 +150,15 @@ describe('the profile window registry', () => {
 
     setAttestorProfileKeyWindows(KEY_A, []);
     expect(attestorProfileKeyWindows()).toEqual([windowOf(KEY_A, { validUntil: 200 })]);
+  });
+
+  it('returns the windows recorded from one attestor’s profile, and none for an attestor without one', () => {
+    setAttestorProfileKeyWindows(KEY_A, [windowOf(KEY_B, { compromisedFrom: 100 })]);
+    setAttestorProfileKeyWindows(STRANGER, [windowOf(KEY_A, { validUntil: 200 })]);
+
+    expect(attestorProfileKeyWindowsFrom(KEY_A)).toEqual([windowOf(KEY_B, { compromisedFrom: 100 })]);
+    expect(attestorProfileKeyWindowsFrom(STRANGER)).toEqual([windowOf(KEY_A, { validUntil: 200 })]);
+    expect(attestorProfileKeyWindowsFrom(KEY_B)).toEqual([]);
   });
 
   it('moves its version and calls subscribers only when the windows changed', () => {

@@ -264,6 +264,168 @@ describe('CommerceAttestorApplication.loadKeyWindows', () => {
     expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([attestor.pubky]);
   });
 
+  describe('when a verified profile is later absent', () => {
+    const CUTOFF = '2026-05-01T00:00:00Z';
+    type Served = ReturnType<typeof servedAttestorProfile> | null | Error;
+
+    /** The test key answers each read with the next queued answer (the last one repeats); other keys are absent. */
+    function serveInTurn(...answers: Served[]) {
+      let reads = 0;
+      vi.spyOn(NexusMarketplaceService, 'fetchAttestorProfile').mockImplementation(async ({ attestor_id }) => {
+        if (attestor_id !== attestor.pubky) return null;
+        const answer = answers[Math.min(reads, answers.length - 1)];
+        reads += 1;
+        if (answer instanceof Error) throw answer;
+        return answer ?? null;
+      });
+      return { reads: () => reads };
+    }
+
+    const served = (keys: Parameters<typeof signedAttestorProfile>[1]) =>
+      servedAttestorProfile(attestor.pubky, signedAttestorProfile(attestor, keys));
+    const cutoffProfile = () => served([{ pubky: attestor.pubky, validFrom: FROM, compromisedFrom: CUTOFF }]);
+    const untilOf = (pubky: string) => marketplaceTrustedAttestors().find((entry) => entry.pubky === pubky)?.validUntil;
+
+    async function loadAfter(ms: number) {
+      vi.advanceTimersByTime(ms);
+      await CommerceAttestorApplication.loadKeyWindows();
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    it('lists a cutoff kept from a verified profile that now answers 404, not as confirmed absence', async () => {
+      const { reads } = serveInTurn(cutoffProfile(), null);
+      await CommerceAttestorApplication.loadKeyWindows();
+      expect(CommerceAttestorApplication.retainedCutoffProfileAttestors()).toEqual([]);
+
+      await loadAfter(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+
+      expect(reads()).toBe(2);
+      expect(untilOf(attestor.pubky)).toBe('2026-05-01T00:00:00.000Z');
+      expect(CommerceAttestorApplication.retainedCutoffProfileAttestors()).toEqual([attestor.pubky]);
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+    });
+
+    it('keeps listing the kept cutoff while later reads still answer 404', async () => {
+      const { reads } = serveInTurn(cutoffProfile(), null);
+      await CommerceAttestorApplication.loadKeyWindows();
+      await loadAfter(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+
+      await loadAfter(MARKETPLACE_ATTESTOR_PROFILE_RETRY_MS);
+
+      expect(reads()).toBe(3);
+      expect(CommerceAttestorApplication.retainedCutoffProfileAttestors()).toEqual([attestor.pubky]);
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+    });
+
+    it('treats a 404 as confirmed absence when no profile was verified before', async () => {
+      serveInTurn(null);
+
+      await CommerceAttestorApplication.loadKeyWindows();
+      await loadAfter(MARKETPLACE_ATTESTOR_PROFILE_RETRY_MS);
+
+      expect(CommerceAttestorApplication.retainedCutoffProfileAttestors()).toEqual([]);
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+      expect(untilOf(attestor.pubky)).toBeUndefined();
+    });
+
+    it('treats a 404 as confirmed absence when the earlier verified profile narrowed nothing', async () => {
+      trusted.entries = [{ pubky: attestor.pubky, label: 'Pubky Market', validFrom: FROM, validUntil: CUTOFF }];
+      serveInTurn(
+        served([{ pubky: attestor.pubky, validFrom: FROM, validUntil: '2026-09-01T00:00:00Z' }]),
+        served([{ pubky: attestor.pubky, validFrom: FROM }]),
+        null,
+      );
+      await CommerceAttestorApplication.loadKeyWindows();
+      await loadAfter(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+      expect(attestorProfileKeyWindows()).toContainEqual(expect.objectContaining({ pubky: attestor.pubky }));
+
+      await loadAfter(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+
+      expect(untilOf(attestor.pubky)).toBe(CUTOFF);
+      expect(CommerceAttestorApplication.retainedCutoffProfileAttestors()).toEqual([]);
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+    });
+
+    it('lists a kept cutoff that a now-absent profile set on another configured key', async () => {
+      const other = createAttestorTestKey();
+      trust(attestor, other);
+      serveInTurn(
+        served([
+          { pubky: attestor.pubky, validFrom: FROM },
+          { pubky: other.pubky, validFrom: FROM, compromisedFrom: CUTOFF },
+        ]),
+        null,
+      );
+      await CommerceAttestorApplication.loadKeyWindows();
+
+      await loadAfter(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+
+      expect(untilOf(attestor.pubky)).toBeUndefined();
+      expect(untilOf(other.pubky)).toBe('2026-05-01T00:00:00.000Z');
+      expect(CommerceAttestorApplication.retainedCutoffProfileAttestors()).toEqual([attestor.pubky]);
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+    });
+
+    it('lists the attestor as unconfirmed, not as a kept cutoff, while a re-read after the 404 is pending', async () => {
+      let answer: (value: ReturnType<typeof servedAttestorProfile>) => void = () => undefined;
+      let reads = 0;
+      vi.spyOn(NexusMarketplaceService, 'fetchAttestorProfile').mockImplementation(async ({ attestor_id }) => {
+        if (attestor_id !== attestor.pubky) return null;
+        reads += 1;
+        if (reads === 1) return cutoffProfile();
+        if (reads === 2) return null;
+        return new Promise((resolve) => {
+          answer = resolve;
+        });
+      });
+      await CommerceAttestorApplication.loadKeyWindows();
+      await loadAfter(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+
+      vi.advanceTimersByTime(MARKETPLACE_ATTESTOR_PROFILE_RETRY_MS);
+      const loading = CommerceAttestorApplication.loadKeyWindows();
+      await vi.advanceTimersByTimeAsync(MARKETPLACE_ATTESTOR_PROFILE_WAIT_MS);
+      await loading;
+
+      expect(reads).toBe(3);
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([attestor.pubky]);
+      expect(CommerceAttestorApplication.retainedCutoffProfileAttestors()).toEqual([]);
+
+      answer(cutoffProfile());
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+      expect(CommerceAttestorApplication.retainedCutoffProfileAttestors()).toEqual([]);
+    });
+
+    it('lists the attestor as unconfirmed, with the cutoff still in use, when a read after the 404 fails', async () => {
+      serveInTurn(cutoffProfile(), null, new Error('offline'));
+      await CommerceAttestorApplication.loadKeyWindows();
+      await loadAfter(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+
+      await loadAfter(MARKETPLACE_ATTESTOR_PROFILE_RETRY_MS);
+
+      expect(untilOf(attestor.pubky)).toBe('2026-05-01T00:00:00.000Z');
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([attestor.pubky]);
+      expect(CommerceAttestorApplication.retainedCutoffProfileAttestors()).toEqual([]);
+    });
+
+    it('confirms the windows again once a profile verifies after the 404', async () => {
+      serveInTurn(cutoffProfile(), null, served([{ pubky: attestor.pubky, validFrom: FROM }]));
+      await CommerceAttestorApplication.loadKeyWindows();
+      await loadAfter(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+      expect(CommerceAttestorApplication.retainedCutoffProfileAttestors()).toEqual([attestor.pubky]);
+
+      await loadAfter(MARKETPLACE_ATTESTOR_PROFILE_RETRY_MS);
+
+      expect(untilOf(attestor.pubky)).toBeUndefined();
+      expect(CommerceAttestorApplication.retainedCutoffProfileAttestors()).toEqual([]);
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+    });
+  });
+
   describe('while a profile refresh is pending past the bounded wait', () => {
     type ServedProfile = ReturnType<typeof servedAttestorProfile> | null;
 
@@ -413,6 +575,7 @@ describe('CommerceAttestorApplication.loadKeyWindows', () => {
     await CommerceAttestorApplication.loadKeyWindows();
 
     expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+    expect(CommerceAttestorApplication.retainedCutoffProfileAttestors()).toEqual([]);
     expect(read).not.toHaveBeenCalled();
   });
 });

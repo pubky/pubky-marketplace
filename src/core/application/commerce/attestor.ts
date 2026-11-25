@@ -6,7 +6,11 @@ import {
   MARKETPLACE_ATTESTOR_PROFILE_TTL_MS,
   MARKETPLACE_ATTESTOR_PROFILE_WAIT_MS,
 } from '@/config/commerce';
-import { setAttestorProfileKeyWindows } from '@/libs/commerce/attestor-key-windows';
+import {
+  attestorProfileKeyWindowsFrom,
+  narrowTrustedAttestors,
+  setAttestorProfileKeyWindows,
+} from '@/libs/commerce/attestor-key-windows';
 import {
   type ReviewOutcome,
   reviewOutcomeKey,
@@ -71,8 +75,7 @@ export class CommerceAttestorApplication {
    */
   static async loadKeyWindows(): Promise<void> {
     if (getCommerceAdapterMode() === 'sandbox') return;
-    const attestorIds = [...new Set(configuredMarketplaceTrustedAttestors().map(({ pubky }) => pubky))];
-    const reads = Promise.all(attestorIds.map((attestorId) => this.readProfile(attestorId)));
+    const reads = Promise.all(this.configuredAttestorIds().map((attestorId) => this.readProfile(attestorId)));
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<void>((resolve) => {
       timer = setTimeout(resolve, MARKETPLACE_ATTESTOR_PROFILE_WAIT_MS);
@@ -90,15 +93,37 @@ export class CommerceAttestorApplication {
    * outcome has expired, so until it settles that outcome confirms nothing), or last settled as a
    * failed read. A failed re-read keeps the recorded windows in use but does not make the expired
    * outcome current, so the attestor stays unconfirmed until a read verifies the profile or finds it
-   * absent.
+   * absent. An absent profile whose earlier verified windows still narrow the trust list is listed
+   * by {@link retainedCutoffProfileAttestors} instead.
    */
   static unconfirmedProfileAttestors(): string[] {
     if (getCommerceAdapterMode() === 'sandbox') return [];
-    const attestorIds = [...new Set(configuredMarketplaceTrustedAttestors().map(({ pubky }) => pubky))];
-    return attestorIds.filter((attestorId) => {
+    return this.configuredAttestorIds().filter((attestorId) => {
       const read = this.profileReads.get(attestorId);
       return read === undefined || read.pending !== null || (read.outcome !== 'verified' && read.outcome !== 'absent');
     });
+  }
+
+  /**
+   * Configured attestors whose profile was last found absent while windows recorded from an earlier
+   * verified copy still narrow the configured trust list. The recorded windows stay in use, because
+   * a profile can only narrow trust and a missing profile does not undo a cutoff it stated, but
+   * nothing current confirms them: a process that never verified the profile applies the configured
+   * windows instead.
+   */
+  static retainedCutoffProfileAttestors(): string[] {
+    if (getCommerceAdapterMode() === 'sandbox') return [];
+    const configured = configuredMarketplaceTrustedAttestors();
+    return this.configuredAttestorIds().filter((attestorId) => {
+      const read = this.profileReads.get(attestorId);
+      if (read === undefined || read.pending !== null || read.outcome !== 'absent') return false;
+      const narrowed = narrowTrustedAttestors(configured, attestorProfileKeyWindowsFrom(attestorId));
+      return narrowed.some((entry, index) => entry.validUntil !== configured[index]?.validUntil);
+    });
+  }
+
+  private static configuredAttestorIds(): string[] {
+    return [...new Set(configuredMarketplaceTrustedAttestors().map(({ pubky }) => pubky))];
   }
 
   private static readProfile(attestorId: string): Promise<void> {
