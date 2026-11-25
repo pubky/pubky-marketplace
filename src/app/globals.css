@@ -66,6 +66,7 @@ body {
   --color-embed: var(--embed);
   --color-warning-foreground: var(--warning-foreground);
   --color-notice-foreground: var(--notice-foreground);
+  --color-toast-success: var(--toast-success);
   --color-toast-action-brand: var(--toast-action-brand);
   --color-toast-action-brand-hover: var(--toast-action-brand-hover);
   --color-toast-action-muted: var(--toast-action-muted);
@@ -176,7 +177,8 @@ body {
   --error-foreground: var(--color-red-500);
   /* Field errors must remain readable on raised and translucent form surfaces. */
   --field-error: var(--color-red-400);
-  /* The small success action needs an opaque fill when its translucent toast floats over cards or images. */
+  /* Blend with the page color so text stays readable over photos. */
+  --toast-success: color-mix(in srgb, var(--brand) 25%, var(--background));
   --toast-action-brand: color-mix(in srgb, var(--brand) 32%, var(--background));
   --toast-action-brand-hover: color-mix(in srgb, var(--brand) 40%, var(--background));
   --toast-action-muted: oklch(0.218 0.006 286);

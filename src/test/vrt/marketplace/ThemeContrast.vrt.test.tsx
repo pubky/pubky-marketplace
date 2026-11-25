@@ -81,22 +81,33 @@ describe('Multiline field focus', () => {
   );
 });
 
-describe('Success toast contrast', () => {
-  it.each(['dark', 'light'] as const)('keeps the dismiss action readable over cards in %s mode', async (theme) => {
-    toast({ title: 'Reply posted', dismissButton: true, persistent: true });
+describe.each(['var(--card)', '#000', '#606060', '#fff'])('Success toast over %s', (backdrop) => {
+  it.each(['dark', 'light'] as const)('keeps its text and OK button readable in %s mode', async (theme) => {
     const screen = await renderForVRT(
-      <main className="h-full bg-card">
+      <main className="fixed inset-0" style={{ backgroundColor: backdrop }}>
         <Toaster />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP, theme },
     );
-    const dismiss = screen.getByRole('button', { name: 'OK' });
-    await expect.element(dismiss).toBeVisible();
-    expectTextContrast(dismiss.element());
-    await dismiss.hover();
-    expect(dismiss.element().matches(':hover')).toBe(true);
-    expectTextContrast(dismiss.element());
-    await dismiss.click();
+    const handle = toast({ title: 'Added to cart', description: 'Item saved.', dismissButton: true, persistent: true });
+    try {
+      const title = screen.getByText('Added to cart', { exact: true });
+      const description = screen.getByText('Item saved.', { exact: true });
+      const dismiss = screen.getByRole('button', { name: 'OK' });
+      await expect.element(dismiss).toBeVisible();
+      expectTextContrast(title.element());
+      expectTextContrast(description.element());
+      await title.hover();
+      expectTextContrast(dismiss.element());
+      const idleFill = getComputedStyle(dismiss.element()).backgroundColor;
+      await dismiss.hover();
+      await expect.poll(() => getComputedStyle(dismiss.element()).backgroundColor).not.toBe(idleFill);
+      expectTextContrast(dismiss.element());
+      await dismiss.click();
+      await expect.element(dismiss).not.toBeInTheDocument();
+    } finally {
+      handle.dismiss();
+    }
   });
 });
 
