@@ -18,6 +18,29 @@ const canonicalBase64Key = z.string().refine((value) => {
 const signingSeed = z.string().regex(/^[0-9a-f]{64}$/);
 const keyId = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/);
 const databaseCaPemMessage = 'SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM must contain one to four CA certificates';
+const databaseCaRootMessage =
+  'SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM must include the self-signed root CA of every intermediate CA';
+
+function issuedBy(certificate: X509Certificate, issuer: X509Certificate): boolean {
+  return certificate.checkIssued(issuer) && certificate.verify(issuer.publicKey);
+}
+
+// Node verifies without X509_V_FLAG_PARTIAL_CHAIN, so a trusted chain must end at a self-signed
+// root: an intermediate is usable only when the bundle also holds the root it chains to.
+function caBundleAnchoredAtRoots(certificates: X509Certificate[]): boolean {
+  const anchored = new Set(certificates.filter((certificate) => issuedBy(certificate, certificate)));
+  let added = anchored.size > 0;
+  while (added) {
+    added = false;
+    for (const certificate of certificates) {
+      if (anchored.has(certificate) || ![...anchored].some((issuer) => issuedBy(certificate, issuer))) continue;
+      anchored.add(certificate);
+      added = true;
+    }
+  }
+  return anchored.size === certificates.length;
+}
+
 const databaseCaPem = z
   .string()
   .optional()
@@ -42,13 +65,22 @@ const databaseCaPem = z
       return z.NEVER;
     }
 
+    const certificates: X509Certificate[] = [];
     for (const block of blocks) {
       try {
-        if (new X509Certificate(block).ca) continue;
+        const certificate = new X509Certificate(block);
+        if (certificate.ca) {
+          certificates.push(certificate);
+          continue;
+        }
       } catch {
         // The static issue below intentionally omits certificate content.
       }
       ctx.addIssue({ code: 'custom', message: databaseCaPemMessage });
+      return z.NEVER;
+    }
+    if (!caBundleAnchoredAtRoots(certificates)) {
+      ctx.addIssue({ code: 'custom', message: databaseCaRootMessage });
       return z.NEVER;
     }
     return blocks;
@@ -64,16 +96,25 @@ const databaseTlsServerName = z
 const databaseTlsUrlMessage =
   'SHOP_BFF_GRANT_STATE_DATABASE_URL must be a valid single-host PostgreSQL URL when a CA is configured';
 
+const databaseTlsHostPattern = /^[A-Za-z0-9._-]+$/;
+const databaseRoutingQueryKeys = ['host', 'hostaddr', 'port'];
+
+/**
+ * The pinned postgres.js (3.4.9) routes by the URL-decoded text between `://` and the first `?` or
+ * `/`, after its first `@`: a decoded `,` selects multiple hosts and a `/` a Unix socket, and each
+ * host is cut at its first `:` (so `[::1]` becomes `[`). Only accept URLs whose driver host is
+ * exactly the WHATWG host with a plain DNS name or IPv4 hostname; libpq-style routing query keys
+ * are refused as well.
+ */
 export function databaseTlsHostFromUrl(databaseUrl: string): string | undefined {
   try {
     const url = new URL(databaseUrl);
-    if (
-      (url.protocol !== 'postgres:' && url.protocol !== 'postgresql:') ||
-      url.hostname.length === 0 ||
-      url.host.includes(',')
-    )
-      return undefined;
-    return url.hostname.startsWith('[') && url.hostname.endsWith(']') ? url.hostname.slice(1, -1) : url.hostname;
+    if (url.protocol !== 'postgres:' && url.protocol !== 'postgresql:') return undefined;
+    if (databaseRoutingQueryKeys.some((key) => url.searchParams.has(key))) return undefined;
+    const authority = databaseUrl.slice(databaseUrl.indexOf('://') + 3).split(/[?/]/)[0];
+    const driverHost = decodeURIComponent(authority.slice(authority.indexOf('@') + 1));
+    if (driverHost !== url.host || !databaseTlsHostPattern.test(url.hostname)) return undefined;
+    return url.hostname;
   } catch {
     return undefined;
   }

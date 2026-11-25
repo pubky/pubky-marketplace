@@ -6,6 +6,7 @@ import net from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import tls, { type PeerCertificate } from 'node:tls';
+import postgres from 'postgres';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ZodError } from 'zod';
 import {
@@ -41,7 +42,12 @@ type Certificates = {
   caB: string;
   leaf: string;
   leafKey: string;
+  intermediate: string;
+  intermediateLeaf: string;
+  intermediateLeafKey: string;
 };
+
+type ServerIdentity = { key: string; cert: string };
 
 type ConnectionRecord = {
   tlsHandshake: boolean;
@@ -77,6 +83,37 @@ function configured(): MarketplaceGrantConfig {
   const config = getMarketplaceGrantConfig();
   if (!config) throw new Error('Expected enabled grant configuration');
   return config;
+}
+
+const PASSWORD = 'fake-database-password';
+
+async function driverRoute(databaseUrl: string): Promise<{ host: string[]; path: string | false }> {
+  const sql = postgres(databaseUrl, { ssl: { rejectUnauthorized: true } });
+  const { host, path } = sql.options;
+  await sql.end({ timeout: 0 });
+  return { host, path: path || false };
+}
+
+function expectDatabaseUrlRejected(databaseUrl: string): void {
+  process.env = {
+    ...validEnv(),
+    SHOP_BFF_GRANT_STATE_DATABASE_URL: databaseUrl,
+    SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM: certificates.caA,
+  };
+  resetMarketplaceGrantConfigForTests();
+  let thrown: unknown;
+  try {
+    configured();
+  } catch (error) {
+    thrown = error;
+  }
+  if (!(thrown instanceof ZodError)) throw new Error('Expected a zod configuration error');
+  expect(thrown.issues.map(({ path }) => path)).toEqual([['databaseUrl']]);
+  expect(thrown).not.toHaveProperty('cause');
+  for (const output of [String(thrown), thrown.message, JSON.stringify(thrown.issues)]) {
+    expect(output).not.toContain(databaseUrl);
+    expect(output).not.toContain(PASSWORD);
+  }
 }
 
 function openssl(args: string[]): void {
@@ -156,8 +193,52 @@ function generateCertificates(directory: string): Certificates {
     '-out',
     path('leaf.pem'),
   ]);
+  const signed = (name: string, subject: string, issuer: string, extensions: string) => {
+    openssl([
+      'req',
+      '-new',
+      '-newkey',
+      'rsa:2048',
+      '-nodes',
+      '-subj',
+      subject,
+      '-keyout',
+      path(`${name}.key`),
+      '-out',
+      path(`${name}.csr`),
+    ]);
+    openssl([
+      'x509',
+      '-req',
+      '-in',
+      path(`${name}.csr`),
+      '-CA',
+      path(`${issuer}.pem`),
+      '-CAkey',
+      path(`${issuer}.key`),
+      '-CAcreateserial',
+      '-days',
+      '1',
+      '-extfile',
+      path(extensions),
+      '-extensions',
+      extensions === 'ca.ext' ? 'ca' : 'leaf',
+      '-out',
+      path(`${name}.pem`),
+    ]);
+  };
+  signed('intermediate', '/CN=intermediate-ca', 'ca-a', 'ca.ext');
+  signed('intermediate-leaf', '/CN=localhost', 'intermediate', 'leaf.ext');
   const read = (name: string) => readFileSync(path(name), 'utf8');
-  return { caA: read('ca-a.pem'), caB: read('ca-b.pem'), leaf: read('leaf.pem'), leafKey: read('leaf.key') };
+  return {
+    caA: read('ca-a.pem'),
+    caB: read('ca-b.pem'),
+    leaf: read('leaf.pem'),
+    leafKey: read('leaf.key'),
+    intermediate: read('intermediate.pem'),
+    intermediateLeaf: read('intermediate-leaf.pem'),
+    intermediateLeafKey: read('intermediate-leaf.key'),
+  };
 }
 
 function postgresErrorResponse(): Buffer {
@@ -175,7 +256,7 @@ class FakePostgresServer {
 
   constructor(
     private readonly allowTls: boolean,
-    private readonly certificates: Certificates,
+    private readonly identity: () => ServerIdentity,
   ) {
     this.server = net.createServer((socket) => this.accept(socket));
   }
@@ -229,11 +310,7 @@ class FakePostgresServer {
   }
 
   private startTls(socket: net.Socket, record: ConnectionRecord): void {
-    const secure = new tls.TLSSocket(socket, {
-      isServer: true,
-      key: this.certificates.leafKey,
-      cert: this.certificates.leaf + this.certificates.caA,
-    });
+    const secure = new tls.TLSSocket(socket, { isServer: true, ...this.identity() });
     secure.on('error', () => {});
     secure.once('secure', () => {
       record.tlsHandshake = true;
@@ -262,13 +339,19 @@ let directory = '';
 let certificates: Certificates;
 let tlsServer: FakePostgresServer;
 let noTlsServer: FakePostgresServer;
+let intermediateTlsServer: FakePostgresServer;
 
 beforeAll(async () => {
   directory = mkdtempSync(join(tmpdir(), 'shop-grant-db-tls-'));
   certificates = generateCertificates(directory);
-  tlsServer = new FakePostgresServer(true, certificates);
-  noTlsServer = new FakePostgresServer(false, certificates);
-  await Promise.all([tlsServer.listen(), noTlsServer.listen()]);
+  const rootIdentity = () => ({ key: certificates.leafKey, cert: certificates.leaf + certificates.caA });
+  tlsServer = new FakePostgresServer(true, rootIdentity);
+  noTlsServer = new FakePostgresServer(false, rootIdentity);
+  intermediateTlsServer = new FakePostgresServer(true, () => ({
+    key: certificates.intermediateLeafKey,
+    cert: certificates.intermediateLeaf + certificates.intermediate,
+  }));
+  await Promise.all([tlsServer.listen(), noTlsServer.listen(), intermediateTlsServer.listen()]);
 });
 
 beforeEach(() => {
@@ -276,6 +359,7 @@ beforeEach(() => {
   resetMarketplaceGrantConfigForTests();
   tlsServer.reset();
   noTlsServer.reset();
+  intermediateTlsServer.reset();
 });
 
 afterEach(async () => {
@@ -285,7 +369,7 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-  await Promise.all([tlsServer?.close(), noTlsServer?.close()]);
+  await Promise.all([tlsServer?.close(), noTlsServer?.close(), intermediateTlsServer?.close()]);
   if (directory) rmSync(directory, { recursive: true, force: true });
 });
 
@@ -363,17 +447,75 @@ describe('grant database TLS configuration', () => {
     expect(configured().databaseCaPem).toEqual([certificates.caA.trim(), certificates.caB.trim()]);
   });
 
-  it('derives an unbracketed IPv6 TLS identity host', () => {
-    const databaseUrl = 'postgres://[::1]:5432/db';
+  it.each([
+    ['a DNS host and port', `postgres://u:${PASSWORD}@db.example:5432/db`, 'db.example'],
+    [
+      'escaped @ and comma in the password',
+      'postgresql://u:p%40ss%2Cw@db.example/db?sslmode=verify-full',
+      'db.example',
+    ],
+    ['an IPv4 host', `postgres://u:${PASSWORD}@127.0.0.1:6543/db`, '127.0.0.1'],
+    [
+      'mixed case, digits, hyphen and underscore',
+      `postgres://u:${PASSWORD}@Db-1.example_internal/db`,
+      'Db-1.example_internal',
+    ],
+  ])('accepts %s as the single host the pinned driver routes to', async (_name, databaseUrl, host) => {
+    expect(await driverRoute(databaseUrl)).toEqual({ host: [host], path: false });
+    expect(databaseTlsHostFromUrl(databaseUrl)).toBe(host);
     process.env = {
       ...validEnv(),
       SHOP_BFF_GRANT_STATE_DATABASE_URL: databaseUrl,
       SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM: certificates.caA,
     };
     const config = configured();
-    expect(databaseTlsHostFromUrl(databaseUrl)).toBe('::1');
-    expect(config.databaseTlsHost).toBe('::1');
-    expect(grantDatabaseSsl(config)?.host).toBe('::1');
+    expect(config.databaseTlsHost).toBe(host);
+    expect(grantDatabaseSsl(config)?.host).toBe(host);
+  });
+
+  it.each([
+    ['an escaped comma', `postgres://u:${PASSWORD}@h1%2Ch2/db`, { host: ['h1', 'h2'], path: false }],
+    [
+      'an escaped comma between IPv4 hosts',
+      `postgres://u:${PASSWORD}@10.0.0.1%2C10.0.0.2:5433/db`,
+      { host: ['10.0.0.1', '10.0.0.2'], path: false },
+    ],
+    [
+      'an escaped socket path',
+      `postgres://u:${PASSWORD}@%2Ftmp%2C/db`,
+      { host: ['/tmp', ''], path: '/tmp,/.s.PGSQL.5432' },
+    ],
+    [
+      'an escaped socket directory',
+      `postgres://u:${PASSWORD}@%2Fvar%2Frun%2Fpostgresql/db`,
+      { host: ['%2Fvar%2Frun%2Fpostgresql'], path: false },
+    ],
+    ['an escaped host letter', `postgres://u:${PASSWORD}@%68ost/db`, { host: ['%68ost'], path: false }],
+    ['a comma before a second @', `postgres://u:${PASSWORD}@a,b@host/db`, { host: ['a', 'b@host'], path: false }],
+    ['a comma after a fragment marker', `postgres://u:${PASSWORD}@h1#,h2/db`, { host: ['h1#', 'h2'], path: false }],
+    ['a bracketed IPv6 host', `postgres://u:${PASSWORD}@[::1]:5432/db`, { host: ['['], path: false }],
+  ])(
+    'rejects %s that the pinned driver routes differently, without exposing the URL',
+    async (_name, databaseUrl, route) => {
+      expect(await driverRoute(databaseUrl)).toEqual(route);
+      expect(databaseTlsHostFromUrl(databaseUrl)).toBeUndefined();
+      expectDatabaseUrlRejected(databaseUrl);
+    },
+  );
+
+  it.each(['host=%2Ftmp', 'hostaddr=10.0.0.2', 'port=5433'])(
+    'rejects the libpq routing query parameter %s without exposing the URL',
+    (query) => {
+      const databaseUrl = `postgres://u:${PASSWORD}@db.example/db?sslmode=require&${query}`;
+      expect(databaseTlsHostFromUrl(databaseUrl)).toBeUndefined();
+      expectDatabaseUrlRejected(databaseUrl);
+    },
+  );
+
+  it('rejects a malformed escape in the driver host without exposing the URL', () => {
+    const databaseUrl = `postgres://u:${PASSWORD}@db%ZZ.example/db`;
+    expect(databaseTlsHostFromUrl(databaseUrl)).toBeUndefined();
+    expectDatabaseUrlRejected(databaseUrl);
   });
 
   it('does not newly validate the database URL without a CA', () => {
@@ -456,6 +598,41 @@ describe('grant database TLS configuration', () => {
   ])('rejects %s', (_name, value) => {
     configureCa(value());
     expect(() => configured()).toThrow('SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM');
+  });
+
+  it('loads an intermediate CA beside its self-signed root in either order', () => {
+    configureCa(`${certificates.intermediate}\n${certificates.caA}`);
+    expect(configured().databaseCaPem).toEqual([certificates.intermediate.trim(), certificates.caA.trim()]);
+    configureCa(`${certificates.caA}\n${certificates.intermediate}`);
+    resetMarketplaceGrantConfigForTests();
+    expect(configured().databaseCaPem).toEqual([certificates.caA.trim(), certificates.intermediate.trim()]);
+  });
+
+  it.each([
+    ['an intermediate CA without its root', () => certificates.intermediate],
+    [
+      'an intermediate CA beside a root with its issuer name but another key',
+      () => `${certificates.caB}\n${certificates.intermediate}`,
+    ],
+  ])('rejects %s without echoing PEM content', (_name, value) => {
+    configureCa(value());
+    let thrown: unknown;
+    try {
+      configured();
+    } catch (error) {
+      thrown = error;
+    }
+    if (!(thrown instanceof ZodError)) throw new Error('Expected a zod configuration error');
+    expect(thrown.issues).toEqual([
+      expect.objectContaining({
+        path: ['databaseCaPem'],
+        message: 'SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM must include the self-signed root CA of every intermediate CA',
+      }),
+    ]);
+    for (const output of [String(thrown), JSON.stringify(thrown.issues)]) {
+      expect(output).not.toContain(certificates.intermediate.split('\n')[1]);
+      expect(output).not.toContain(certificates.caB.split('\n')[1]);
+    }
   });
 
   it('rejects a server name without a CA', () => {
@@ -617,6 +794,36 @@ describe('real grant database TLS connections', () => {
     const config = databaseConfig(noTlsServer, certificates.caA, 'localhost');
     await expect(runGrantQuery(config)).rejects.toBeInstanceOf(Error);
     expectNoStartup(noTlsServer);
+  });
+
+  it.each([
+    ['the root alone', () => certificates.caA],
+    ['the root and its intermediate', () => `${certificates.intermediate}\n${certificates.caA}`],
+  ])('accepts %s for an intermediate-issued leaf through grantSql and readiness', async (_name, ca) => {
+    const config = databaseConfig(intermediateTlsServer, ca(), 'localhost');
+    await expect(runGrantQuery(config)).rejects.toMatchObject({ name: 'PostgresError', code: '28P01' });
+    expectTlsStartup(intermediateTlsServer);
+
+    intermediateTlsServer.reset();
+    await expect(isEmbeddedShopReady()).resolves.toBe(false);
+    expectTlsStartup(intermediateTlsServer);
+  });
+
+  it('refuses an intermediate-only bundle at startup, which the TLS handshake would also reject', async () => {
+    expect(() => databaseConfig(intermediateTlsServer, certificates.intermediate, 'localhost')).toThrow(
+      'SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM must include the self-signed root CA of every intermediate CA',
+    );
+    await expect(isEmbeddedShopReady()).resolves.toBe(false);
+    expect(intermediateTlsServer.records).toHaveLength(0);
+
+    const unvalidated: MarketplaceGrantConfig = {
+      ...databaseConfig(intermediateTlsServer),
+      databaseCaPem: [certificates.intermediate],
+      databaseTlsHost: '127.0.0.1',
+      databaseTlsServerName: 'localhost',
+    };
+    await expect(runGrantQuery(unvalidated)).rejects.toMatchObject({ code: 'UNABLE_TO_GET_ISSUER_CERT' });
+    expectNoStartup(intermediateTlsServer);
   });
 
   it('uses and verifies TLS with a pin even when the URL disables SSL', async () => {
