@@ -158,6 +158,12 @@ export function withoutSalesNotificationsOutsideStoreSeller<T extends SubjectNot
 /** Whose listing a chat context names, or that neither side owns it after a complete lookup. */
 export type ListingSide = 'peer' | 'viewer' | 'absent';
 
+/** A looked-up listing context: its side, or `unresolved` while a lookup of it failed, which reads as a sale. */
+export type ListingSideRecord = ListingSide | 'unresolved';
+
+/** The counterparty recorded for an order two reads placed with different counterparties; it matches no peer. */
+export const CONFLICTING_COUNTERPARTY = '';
+
 /**
  * Which chat peers the viewer sold to or bought from, the buyer of each order it sold and the seller of
  * each order it bought (by order id), and whose listing each resolved listing context names, keyed by
@@ -169,7 +175,7 @@ export type StoreThreadRoles = {
   boughtFrom: readonly string[];
   soldOrders: Readonly<Record<string, string>>;
   boughtOrders: Readonly<Record<string, string>>;
-  listingSides: Readonly<Record<string, ListingSide>>;
+  listingSides: Readonly<Record<string, ListingSideRecord>>;
 };
 
 export function listingContextKey(peerPubky: string, listingId: string): string {
@@ -179,7 +185,7 @@ export function listingContextKey(peerPubky: string, listingId: string): string 
 export function storeThreadRoles(
   orders: readonly { id: string; buyerPubky: string; sellerPubky: string }[],
   viewerPubky: string,
-  listingSides: Readonly<Record<string, ListingSide>> = {},
+  listingSides: Readonly<Record<string, ListingSideRecord>> = {},
 ): StoreThreadRoles {
   const sold = orders.filter(({ sellerPubky }) => sellerPubky === viewerPubky);
   const bought = orders.filter(({ buyerPubky }) => buyerPubky === viewerPubky);
@@ -195,21 +201,32 @@ export function storeThreadRoles(
 
 /**
  * Everything either set of roles knows about one viewer; roles of another viewer are never mixed in.
- * A listing the viewer owns stays the viewer's: a later read never turns it into the peer's or absent.
+ * A listing the viewer owns stays the viewer's: a later read never turns it into the peer's or absent, and
+ * a failed lookup never replaces a resolved one. An order two reads placed with different counterparties
+ * is recorded with {@link CONFLICTING_COUNTERPARTY}, so it is a purchase in no thread.
  */
 export function mergeStoreThreadRoles(base: StoreThreadRoles, addition: StoreThreadRoles): StoreThreadRoles {
   if (base.viewer !== addition.viewer) return addition;
   const union = (first: readonly string[], second: readonly string[]) => [...new Set([...first, ...second])];
-  const listingSides: Record<string, ListingSide> = { ...base.listingSides, ...addition.listingSides };
-  for (const [key, side] of Object.entries(base.listingSides)) {
-    if (side === 'viewer') listingSides[key] = side;
+  const listingSides: Record<string, ListingSideRecord> = { ...base.listingSides };
+  for (const [key, side] of Object.entries(addition.listingSides)) {
+    const held = listingSides[key];
+    if (held === 'viewer' || (side === 'unresolved' && held !== undefined)) continue;
+    listingSides[key] = side;
   }
+  const counterparties = (first: Readonly<Record<string, string>>, second: Readonly<Record<string, string>>) => {
+    const merged = new Map(Object.entries(first));
+    for (const [id, party] of Object.entries(second)) {
+      merged.set(id, merged.has(id) && merged.get(id) !== party ? CONFLICTING_COUNTERPARTY : party);
+    }
+    return Object.fromEntries(merged);
+  };
   return {
     viewer: base.viewer,
     soldTo: union(base.soldTo, addition.soldTo),
     boughtFrom: union(base.boughtFrom, addition.boughtFrom),
     soldOrders: { ...base.soldOrders, ...addition.soldOrders },
-    boughtOrders: { ...base.boughtOrders, ...addition.boughtOrders },
+    boughtOrders: counterparties(base.boughtOrders, addition.boughtOrders),
     listingSides,
   };
 }

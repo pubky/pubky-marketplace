@@ -6,6 +6,7 @@ import { UserApplication } from '@/application/user/user';
 import { endAuthScope } from '@/controllers/auth/auth-scope';
 import { ChatController, isStoreThreadRefusal } from '@/controllers/chat/chat';
 import type { ChatContext } from '@/models/chat/chat.schema';
+import { CONFLICTING_COUNTERPARTY } from '@/pipes/commerce/store-seller-side';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useChatStore } from '@/stores/chat/chat.store';
 import { setStoreSeller } from '@/test-utils/store-mode';
@@ -830,6 +831,30 @@ describe('ChatController sale threads in a store', () => {
     });
   });
 
+  it('closes an order that a slower roles read and a send place with different counterparties', async () => {
+    setStoreSeller(STORE_SELLER);
+    const row = thread(FRIEND, { orderId: 'contested' });
+    vi.mocked(ChatApplication.getConversations).mockResolvedValue([row] as never);
+    vi.mocked(ChatApplication.getConversation).mockResolvedValue(row as never);
+    vi.mocked(CommerceApplication.getMarketplaceOrders).mockResolvedValue([
+      { id: 'contested', buyerPubky: VIEWER, sellerPubky: FRIEND },
+    ] as never);
+    useChatStore.getState().setStoreThreadRoles({
+      viewer: VIEWER,
+      soldTo: [],
+      boughtFrom: [],
+      soldOrders: {},
+      boughtOrders: { contested: STORE_SELLER },
+      listingSides: {},
+    });
+
+    await ChatController.fetchStoreThreadRoles();
+
+    expect(useChatStore.getState().storeThreadRoles?.boughtOrders.contested).toBe(CONFLICTING_COUNTERPARTY);
+    expect(await ChatController.getConversations()).toEqual([]);
+    await expect(ChatController.commitSendMessage({ peerPubky: FRIEND, body: 'hello' })).rejects.toMatchObject(refused);
+  });
+
   describe('a listing id both the peer and the viewer published', () => {
     const owners = (peerHas: 'cache' | 'none', viewerHas: 'cache' | 'homeserver' | 'none') => {
       if (peerHas === 'cache') CACHED.add(`${FRIEND}:boots`);
@@ -869,6 +894,29 @@ describe('ChatController sale threads in a store', () => {
         else await expect(send).rejects.toMatchObject(refused);
       },
     );
+
+    it('keeps a context closed after the viewer listing lookup failed while the peer copy is cached', async () => {
+      setStoreSeller(STORE_SELLER);
+      CACHED.add(`${FRIEND}:boots`);
+      const row = thread(FRIEND, { listingId: 'boots' });
+      vi.mocked(ChatApplication.getConversations).mockResolvedValue([row] as never);
+      vi.mocked(ChatApplication.getConversation).mockResolvedValue(row as never);
+      vi.mocked(CommerceApplication.getMarketplaceOrders).mockResolvedValue([]);
+      vi.mocked(CommerceApplication.getOrFetchListingIfFound).mockImplementation(async (owner) => {
+        if (owner === VIEWER) throw new Error('viewer homeserver unreachable');
+        return null as never;
+      });
+
+      await expect(ChatController.fetchStoreThreadRoles()).rejects.toThrow('could not be placed');
+
+      expect(await ChatController.getConversations()).toEqual([]);
+      expect(await ChatController.getConversation(FRIEND)).toBeNull();
+      expect(await ChatController.getMessages(FRIEND)).toEqual([]);
+      expect(await ChatController.getUnreadConversationCount()).toBe(0);
+      await expect(
+        ChatController.commitSendMessage({ peerPubky: FRIEND, body: 'hello', context: { listingId: 'boots' } }),
+      ).rejects.toMatchObject(refused);
+    });
 
     it('keeps the viewer side a slower roles read finds differently', async () => {
       setStoreSeller(STORE_SELLER);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CONFLICTING_COUNTERPARTY,
   canSellHere,
   isSaleSubject,
   isSaleThread,
@@ -357,6 +358,28 @@ describe('isSaleThread', () => {
   it('keeps a thread with a seller whose order the viewer bought even when it sold to someone else', () => {
     expect(isSale(STORE_SELLER, { orderId: 'bought' })).toBe(false);
     expect(isSale('p'.repeat(52), { orderId: 'bought-from-prior-peer', listingId: 'boots' }, 'peer')).toBe(false);
+  });
+
+  it('treats an order placed with two counterparties as a purchase in no thread', () => {
+    const placed = (seller: string) =>
+      storeThreadRoles([{ id: 'contested', buyerPubky: VIEWER, sellerPubky: seller }], VIEWER);
+    const merged = mergeStoreThreadRoles(placed(OTHER), placed(STORE_SELLER));
+    expect(merged.boughtOrders).toEqual({ contested: CONFLICTING_COUNTERPARTY });
+    expect(mergeStoreThreadRoles(merged, placed(OTHER)).boughtOrders).toEqual({ contested: CONFLICTING_COUNTERPARTY });
+    expect(mergeStoreThreadRoles(placed(OTHER), placed(OTHER)).boughtOrders).toEqual({ contested: OTHER });
+    for (const peer of [OTHER, 'p'.repeat(52)]) {
+      expect(
+        isSaleThread({ peer_pubky: peer, last_context: { orderId: 'contested' } }, merged, STORE_SELLER, null),
+      ).toBe(true);
+    }
+  });
+
+  it('lets a resolved listing replace a failed lookup but never the reverse', () => {
+    const key = `${OTHER}:boots`;
+    const recorded = (side: 'unresolved' | ListingSide) => storeThreadRoles([], VIEWER, { [key]: side });
+    expect(mergeStoreThreadRoles(recorded('unresolved'), recorded('peer')).listingSides[key]).toBe('peer');
+    expect(mergeStoreThreadRoles(recorded('peer'), recorded('unresolved')).listingSides[key]).toBe('peer');
+    expect(mergeStoreThreadRoles(recorded('unresolved'), recorded('unresolved')).listingSides[key]).toBe('unresolved');
   });
 
   it('keeps a listing the viewer owns as its own when roles are merged', () => {

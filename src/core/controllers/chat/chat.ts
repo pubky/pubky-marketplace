@@ -22,6 +22,7 @@ import {
   isSaleThread,
   listingContextKey,
   type ListingSide,
+  type ListingSideRecord,
   mergeStoreThreadRoles,
   type StoreThreadRoles,
   storeThreadRoles,
@@ -168,14 +169,14 @@ export class ChatController {
     }
     const { orders: resolvedOrders, failed: ordersFailed } = await this.resolveOrdersById(me, missingOrderIds, signal);
     let failed = ordersFailed;
-    const listingSides: Record<string, ListingSide> = {};
+    const listingSides: Record<string, ListingSideRecord> = {};
     const pending = [...contexts.entries()];
     for (let index = 0; index < pending.length; index += CHAT_FETCH_CONCURRENCY) {
       await Promise.all(
         pending.slice(index, index + CHAT_FETCH_CONCURRENCY).map(async ([key, { peer, listingId }]) => {
           const side = await this.listingSide(me, null, peer, listingId, { fetch: true, signal });
           if (side === null) failed = true;
-          else listingSides[key] = side;
+          listingSides[key] = side ?? 'unresolved';
         }),
       );
       signal.throwIfAborted();
@@ -282,8 +283,10 @@ export class ChatController {
     listingId: string,
     { fetch = false, signal }: { fetch?: boolean; signal?: AbortSignal } = {},
   ): Promise<ListingSide | null> {
-    const resolved = roles?.listingSides[listingContextKey(peer, listingId)];
-    if (resolved) return resolved;
+    const known = roles?.listingSides[listingContextKey(peer, listingId)];
+    if (known === 'unresolved') {
+      if (!fetch) return null;
+    } else if (known) return known;
     signal?.throwIfAborted();
     const owners = [
       { owner: me, side: 'viewer' },
@@ -338,13 +341,14 @@ export class ChatController {
       const listingId = candidate?.listingId;
       if (!listingId) continue;
       const key = listingContextKey(peer, listingId);
-      if (learned.listingSides[key] !== undefined) continue;
+      const recorded = learned.listingSides[key];
+      if (recorded !== undefined && recorded !== 'unresolved') continue;
       const side = await this.listingSide(me, mergeStoreThreadRoles(roles, learned), peer, listingId, {
         fetch: true,
         signal,
       });
-      if (side !== null) {
-        learned = { ...learned, listingSides: { ...learned.listingSides, [key]: side } };
+      if (side !== null || recorded === undefined) {
+        learned = { ...learned, listingSides: { ...learned.listingSides, [key]: side ?? 'unresolved' } };
         changed = true;
       }
     }
@@ -356,7 +360,8 @@ export class ChatController {
 
     const sideOf = (candidate: ChatContext | null | undefined): ListingSide | null => {
       if (!candidate?.listingId) return null;
-      return merged.listingSides[listingContextKey(peer, candidate.listingId)] ?? null;
+      const recorded = merged.listingSides[listingContextKey(peer, candidate.listingId)];
+      return recorded === undefined || recorded === 'unresolved' ? null : recorded;
     };
     if (context && contextRole(merged, peer, context, sideOf(context)) === 'sale') return true;
     const thread = existing ?? { peer_pubky: peer, last_context: null };

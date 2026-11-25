@@ -65,7 +65,7 @@ thread whose latest context is the user's sale is closed even when the user also
 same context also names an order the user bought or a listing of the peer. An order counts as a purchase only in the
 thread with its seller: an order the user bought from someone other than the peer closes the thread like an unplaced
 order, even when the user bought from that peer before. A listing id that both the user and the peer published counts as
-the user's, and a roles read that learned the user's side is never overwritten by a slower one. An order neither the lists nor a by-id read
+the user's, and a roles read that learned the user's side is never overwritten by a slower one. An order two reads place with different counterparties counts as a purchase in no thread, and a listing lookup that failed is remembered as unresolved, so its context stays closed on local reads until a later read resolves it. An order neither the lists nor a by-id read
 resolves, or a listing lookup that failed, is treated as a sale and closed in the same way, even when the user bought
 from that peer before, except in the thread with the store seller. Only a context that is wholly a purchase keeps the
 thread. The open-thread screen explains that restriction and decides again whenever the roles change.
