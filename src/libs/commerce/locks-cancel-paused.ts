@@ -8,6 +8,7 @@ export const LOCKS_CANCEL_PAUSED_IN_PROGRESS_COPY =
 
 interface LocksCancelPausedMessageOptions {
   holdExpiresAt: string | null | undefined;
+  /** True when the saved payment is registered, or when registration is unknown. */
   registered: boolean;
   now?: number;
   locale?: string;
@@ -15,9 +16,10 @@ interface LocksCancelPausedMessageOptions {
 }
 
 /**
- * Buyer copy for a paused cancellation. Without a locally registered payment,
- * the order hold gives only the earliest time because another device may have
- * registered a payment that stays active longer.
+ * Buyer copy for a paused cancellation. The order hold gives a time only when
+ * this device saved a payment that is known not to be registered. For a
+ * registered payment, or when registration is unknown (no saved payment, failed
+ * read), a live task can end earlier or later than the hold, so no time is stated.
  */
 export function locksCancelPausedMessage({
   holdExpiresAt,

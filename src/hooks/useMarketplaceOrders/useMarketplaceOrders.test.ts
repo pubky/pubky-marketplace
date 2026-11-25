@@ -174,57 +174,15 @@ describe('useMarketplaceOrders', () => {
     expect(vi.mocked(CommerceController.getMarketplaceOrders).mock.calls.length).toBeGreaterThan(reads);
   });
 
-  it.each([
-    ['an unregistered correlation', { registered: false }],
-    ['no correlation', null],
-  ] as const)(
-    'explains the earliest time for a paused cancel with %s and does not re-read the orders',
-    async (_label, correlation) => {
-      const { result } = renderHook(() => useMarketplaceOrders());
-      await waitFor(() => expect(result.current.orders).toHaveLength(1));
-      const order = {
-        ...result.current.orders[0].order,
-        holdExpiresAt: new Date(Date.now() + 60_000).toISOString(),
-      };
-      vi.mocked(CommerceController.getMarketplaceLocksCorrelation).mockResolvedValue(correlation as never);
-      vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
-        ok: false,
-        error: {
-          code: 'INVALID_STATE',
-          message: "This order's payment is still in progress.",
-          reason: 'locks_task_live',
-        },
-      });
-      vi.mocked(toast).mockClear();
-      const reads = vi.mocked(CommerceController.getMarketplaceOrders).mock.calls.length;
-
-      let accepted: boolean | undefined;
-      await act(async () => {
-        accepted = await result.current.actOnOrder(order, 'order.cancel_request', { reason: 'Changed my mind' });
-      });
-
-      expect(accepted).toBe(false);
-      expect(CommerceController.getMarketplaceLocksCorrelation).toHaveBeenCalledWith(order.paymentId);
-      expect(toast).toHaveBeenCalledTimes(1);
-      expect(toast).toHaveBeenCalledWith({
-        variant: 'error',
-        description: expect.stringMatching(
-          /^Cancelling is paused while this payment is still in progress\. The earliest you can cancel it is .+\.$/,
-        ),
-      });
-      expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain("We've seen a payment");
-      expect(CommerceController.getMarketplaceOrders).toHaveBeenCalledTimes(reads);
-    },
-  );
-
-  it('explains a paused cancel without a time for a registered correlation even when the hold is in the future', async () => {
+  it('explains the earliest time for a paused cancel with a saved unregistered payment and does not re-read the orders', async () => {
+    const correlation = { registered: false };
     const { result } = renderHook(() => useMarketplaceOrders());
     await waitFor(() => expect(result.current.orders).toHaveLength(1));
     const order = {
       ...result.current.orders[0].order,
       holdExpiresAt: new Date(Date.now() + 60_000).toISOString(),
     };
-    vi.mocked(CommerceController.getMarketplaceLocksCorrelation).mockResolvedValue({ registered: true } as never);
+    vi.mocked(CommerceController.getMarketplaceLocksCorrelation).mockResolvedValue(correlation as never);
     vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
       ok: false,
       error: {
@@ -242,14 +200,58 @@ describe('useMarketplaceOrders', () => {
     });
 
     expect(accepted).toBe(false);
+    expect(CommerceController.getMarketplaceLocksCorrelation).toHaveBeenCalledWith(order.paymentId);
+    expect(toast).toHaveBeenCalledTimes(1);
     expect(toast).toHaveBeenCalledWith({
       variant: 'error',
-      description:
-        'Cancelling is paused while this payment is still in progress. You can cancel it once the payment has finished or its payment time has ended.',
+      description: expect.stringMatching(
+        /^Cancelling is paused while this payment is still in progress\. The earliest you can cancel it is .+\.$/,
+      ),
     });
     expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain("We've seen a payment");
     expect(CommerceController.getMarketplaceOrders).toHaveBeenCalledTimes(reads);
   });
+
+  it.each([
+    ['a registered correlation', () => Promise.resolve({ registered: true })],
+    ['no saved payment', () => Promise.resolve(null)],
+    ['a failed local read', () => Promise.reject(new Error('read failed'))],
+  ] as const)(
+    'explains a paused cancel without a time for %s even when the hold is in the future',
+    async (_label, read) => {
+      const { result } = renderHook(() => useMarketplaceOrders());
+      await waitFor(() => expect(result.current.orders).toHaveLength(1));
+      const order = {
+        ...result.current.orders[0].order,
+        holdExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+      };
+      vi.mocked(CommerceController.getMarketplaceLocksCorrelation).mockImplementation(read as never);
+      vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
+        ok: false,
+        error: {
+          code: 'INVALID_STATE',
+          message: "This order's payment is still in progress.",
+          reason: 'locks_task_live',
+        },
+      });
+      vi.mocked(toast).mockClear();
+      const reads = vi.mocked(CommerceController.getMarketplaceOrders).mock.calls.length;
+
+      let accepted: boolean | undefined;
+      await act(async () => {
+        accepted = await result.current.actOnOrder(order, 'order.cancel_request', { reason: 'Changed my mind' });
+      });
+
+      expect(accepted).toBe(false);
+      expect(toast).toHaveBeenCalledWith({
+        variant: 'error',
+        description:
+          'Cancelling is paused while this payment is still in progress. You can cancel it once the payment has finished or its payment time has ended.',
+      });
+      expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain("We've seen a payment");
+      expect(CommerceController.getMarketplaceOrders).toHaveBeenCalledTimes(reads);
+    },
+  );
 
   describe('when the Shop refuses the command it built', () => {
     const refusedByNormalizer = () =>

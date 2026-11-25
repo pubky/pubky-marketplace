@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   CONFIRM_REFUND_DESTINATION_WIRE_COMMAND,
   REFUND_FIXTURE_ADDRESS,
@@ -328,7 +328,10 @@ describe('marketplace command refusal responses', () => {
       error: { code: 'INVALID_STATE', message: 'This order cannot be cancelled.' },
     });
     expect(withoutReason).toMatchObject({ error: { code: 'INVALID_STATE' } });
-    if (!withoutReason.ok) expect(withoutReason.error.reason).toBeUndefined();
+    if (!withoutReason.ok) {
+      expect(withoutReason.error.reason).toBeUndefined();
+      expectTypeOf(withoutReason.error.reason).toEqualTypeOf<string | undefined>();
+    }
   });
 });
 
