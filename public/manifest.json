@@ -80,8 +80,8 @@
       "purpose": "any"
     }
   ],
-  "theme_color": "#000000",
-  "background_color": "#000000",
+  "theme_color": "#05050A",
+  "background_color": "#05050A",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
   "start_url": "/",

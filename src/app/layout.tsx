@@ -2,6 +2,7 @@ import './globals.css';
 import type { Viewport } from 'next';
 import { TooltipProvider } from '@/atoms/Tooltip/Tooltip';
 import { getSiteName } from '@/config/metadata';
+import { COLORS } from '@/config/theme';
 import { TOOLTIP_DELAY_MS } from '@/config/ui';
 import { buildMarketplacePromoPrepaintScript } from '@/libs/commerce/promo-prepaint';
 import { MARKETPLACE_STATIC_SEO } from '@/libs/commerce/seo';
@@ -29,7 +30,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: '#000000',
+  themeColor: COLORS.background,
 };
 
 export function generateMetadata() {

@@ -198,7 +198,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
                   variant="secondary"
                 >
                   <Typography
-                    className={cn('font-semibold text-bright-fill-foreground', itemBadgeCount > 21 && 'text-xs')}
+                    className={cn('font-semibold text-brand-foreground', itemBadgeCount > 21 && 'text-xs')}
                     size="xs"
                   >
                     {itemBadgeCount > 21 ? '21+' : itemBadgeCount}
@@ -250,7 +250,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
                     variant="secondary"
                   >
                     <Typography
-                      className={cn('font-semibold text-bright-fill-foreground', accountUnread > 21 && 'text-xs')}
+                      className={cn('font-semibold text-brand-foreground', accountUnread > 21 && 'text-xs')}
                       size="xs"
                     >
                       {accountUnread > 21 ? '21+' : accountUnread}
