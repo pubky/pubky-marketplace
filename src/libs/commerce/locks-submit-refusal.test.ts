@@ -72,7 +72,7 @@ describe('locksSubmitRefusalMessage', () => {
     expect(locksSubmitRefusalMessage(error, FALLBACK)).toBe(FALLBACK);
   });
 
-  it('says when cancelling is possible after the seller changed the lock after checkout', () => {
+  it('offers cancelling only while the order still allows it after the seller changed the lock', () => {
     const error = Err.validation(ValidationErrorCode.INVALID_INPUT, 'The listing lock changed after checkout.', {
       service: ErrorService.Locks,
       operation: 'beginMarketplaceLocksPayment',
@@ -82,7 +82,9 @@ describe('locksSubmitRefusalMessage', () => {
     expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).not.toContain('Cancel it');
     expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).not.toContain('Nothing was charged');
     expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).not.toContain('can’t be paid');
-    expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).toContain('no payment is in progress');
+    expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).not.toContain('no payment is in progress');
+    expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).toContain('check this order’s status');
+    expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).toContain('only if it still offers that option');
   });
 
   it('never carries server text into any copy', () => {
