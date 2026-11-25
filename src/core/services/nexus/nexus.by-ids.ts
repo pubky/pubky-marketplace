@@ -1,6 +1,6 @@
 // Nexus by_ids endpoints reject requests with more than 100 ids. A larger
 // `chunkSize` passed to `fetchByIdsInChunks` is not clamped to this cap.
-export const NEXUS_BY_IDS_MAX = 100;
+const NEXUS_BY_IDS_MAX = 100;
 
 export async function fetchByIdsInChunks<TId, TResult>(
   ids: readonly TId[],
