@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PAYKIT_CREATOR_GLOBAL_READS_PER_WINDOW, PAYKIT_CREATOR_MAX_IN_FLIGHT } from '@/config/paykit-creator';
+import {
+  PAYKIT_CREATOR_GLOBAL_READS_PER_WINDOW,
+  PAYKIT_CREATOR_MAX_IN_FLIGHT,
+  PAYKIT_CREATOR_RATE_LIMIT_WINDOW_MS,
+} from '@/config/paykit-creator';
+import { TimeoutErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
 import { NextJsPaykitCreatorService } from './paykit-creator';
@@ -94,6 +99,28 @@ describe('NextJsPaykitCreatorService.isCreatorHeld', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
+  it('charges the retry after a 503 to the window it runs in', async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetch).mockImplementation(async () => heldAnswer(true));
+    // Opens the shared read window.
+    await NextJsPaykitCreatorService.isCreatorHeld(freshParams());
+    await vi.advanceTimersByTimeAsync(PAYKIT_CREATOR_RATE_LIMIT_WINDOW_MS - 500);
+
+    // The first ask runs in this window; its one-second retry lands in the next one.
+    vi.mocked(fetch).mockResolvedValueOnce(refused(503));
+    const answer = NextJsPaykitCreatorService.isCreatorHeld(params);
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(answer).resolves.toBe(true);
+
+    // The next window has already spent one read on that retry.
+    for (let i = 1; i < PAYKIT_CREATOR_GLOBAL_READS_PER_WINDOW; i += 1) {
+      await NextJsPaykitCreatorService.isCreatorHeld(freshParams());
+    }
+    await expect(NextJsPaykitCreatorService.isCreatorHeld(freshParams())).rejects.toMatchObject({
+      category: ErrorCategory.RateLimit,
+    });
+  });
+
   it('throws when the retry after a 503 is refused again', async () => {
     vi.useFakeTimers();
     vi.mocked(fetch).mockResolvedValueOnce(refused(503)).mockResolvedValueOnce(refused(503));
@@ -175,28 +202,29 @@ describe('NextJsPaykitCreatorService.isCreatorHeld', () => {
   });
 
   describe('timeouts', () => {
-    /** Hands the service a signal the test fires, standing in for `AbortSignal.timeout`. */
-    const controllableTimeout = () => {
-      const controller = new AbortController();
-      vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
-      return () => controller.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError'));
-    };
+    const PROBE_TIMEOUT_MS = 6000;
 
-    it('reports a stall before the headers as a timeout, not a network error', async () => {
-      const fire = controllableTimeout();
+    it('reports a stall before the headers as one timeout, not a network error as well', async () => {
+      vi.useFakeTimers();
+      const logged = vi.spyOn(Logger, 'error').mockImplementation(() => {});
       vi.mocked(fetch).mockImplementation(
         (_url, init) =>
           new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(init.signal?.reason))),
       );
 
-      const answer = NextJsPaykitCreatorService.isCreatorHeld(params);
-      fire();
+      const settled = expect(NextJsPaykitCreatorService.isCreatorHeld(params)).rejects.toMatchObject({
+        category: ErrorCategory.Timeout,
+        code: TimeoutErrorCode.REQUEST_TIMEOUT,
+      });
+      await vi.advanceTimersByTimeAsync(PROBE_TIMEOUT_MS);
 
-      await expect(answer).rejects.toMatchObject({ category: ErrorCategory.Timeout });
+      await settled;
+      expect(logged).toHaveBeenCalledTimes(1);
     });
 
-    it('reports a stall while reading the body as a timeout, not an invalid answer', async () => {
-      const fire = controllableTimeout();
+    it('reports a stall while reading the body as one timeout, not an invalid answer', async () => {
+      vi.useFakeTimers();
+      const logged = vi.spyOn(Logger, 'error').mockImplementation(() => {});
       vi.mocked(fetch).mockImplementation(async (_url, init) => {
         const body = new ReadableStream({
           start(stream) {
@@ -207,11 +235,14 @@ describe('NextJsPaykitCreatorService.isCreatorHeld', () => {
         return new Response(body, { status: 200 });
       });
 
-      const answer = NextJsPaykitCreatorService.isCreatorHeld(params);
-      await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
-      fire();
+      const settled = expect(NextJsPaykitCreatorService.isCreatorHeld(params)).rejects.toMatchObject({
+        category: ErrorCategory.Timeout,
+        code: TimeoutErrorCode.REQUEST_TIMEOUT,
+      });
+      await vi.advanceTimersByTimeAsync(PROBE_TIMEOUT_MS);
 
-      await expect(answer).rejects.toMatchObject({ category: ErrorCategory.Timeout });
+      await settled;
+      expect(logged).toHaveBeenCalledTimes(1);
     });
   });
 

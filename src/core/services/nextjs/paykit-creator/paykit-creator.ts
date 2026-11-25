@@ -104,20 +104,29 @@ export class NextJsPaykitCreatorService {
     url.searchParams.set('creator', creator);
     const endpoint = url.origin + url.pathname;
     const deadline = Date.now() + PROBE_TIMEOUT_MS;
-    const signal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
+    // The deadline aborts with the timeout itself, so `safeFetch` and the body read rethrow that one error
+    // instead of reporting a network failure (or an unreadable answer) for the same request first.
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort(
+        Err.timeout(TimeoutErrorCode.REQUEST_TIMEOUT, 'Paykit did not answer in time', {
+          service: ErrorService.Paykit,
+          operation: OPERATION,
+          context: { endpoint },
+        }),
+      );
+    }, PROBE_TIMEOUT_MS);
+    const { signal } = controller;
 
     try {
       let response = await this.ask(url.href, endpoint, signal);
       if (response.status === HttpStatusCode.SERVICE_UNAVAILABLE) {
         const waitMs = (parseRetryAfterHeader(response.headers.get('retry-after')) ?? 1) * 1000;
-        if (
-          waitMs <= MAX_UNAVAILABLE_WAIT_MS &&
-          Date.now() + waitMs < deadline &&
-          PaykitCreatorRateLimiter.admitRead().ok
-        ) {
+        if (waitMs <= MAX_UNAVAILABLE_WAIT_MS && Date.now() + waitMs < deadline) {
           discardBody(response);
           await sleep(waitMs);
-          response = await this.ask(url.href, endpoint, signal);
+          // Charged now, so a retry that lands in the next window counts against that window.
+          if (PaykitCreatorRateLimiter.admitRead().ok) response = await this.ask(url.href, endpoint, signal);
         }
       }
 
@@ -139,17 +148,8 @@ export class NextJsPaykitCreatorService {
         });
       }
       return body.data.held;
-    } catch (error) {
-      // `AbortSignal.timeout` raises a TimeoutError, which `safeFetch` reports as a network failure.
-      if (signal.aborted) {
-        throw Err.timeout(TimeoutErrorCode.REQUEST_TIMEOUT, 'Paykit did not answer in time', {
-          service: ErrorService.Paykit,
-          operation: OPERATION,
-          context: { endpoint },
-          cause: error,
-        });
-      }
-      throw error;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
