@@ -461,7 +461,7 @@ describe('shareTarget utilities', () => {
       );
 
       expect(response.headers.get('location')).toBe('http://localhost:3000/share?hasFiles=true');
-      const files = await getSharedFiles();
+      const { files } = await getSharedFiles();
       expect(files.map((file) => [file.name, file.type])).toEqual([
         [names[0], 'image/png'],
         [names[1], 'image/jpeg'],
@@ -478,7 +478,7 @@ describe('shareTarget utilities', () => {
       const [response] = [...(storage.stores.get('share-target-files')?.entries.values() ?? [])];
       expect(response.headers.get('X-Share-Filename-Encoded')).toBe('100%25%20caf%C3%A9%20a%2520b.png');
       expect(response.headers.get('X-Share-Filename')).toBeNull();
-      const files = await getSharedFiles();
+      const { files } = await getSharedFiles();
       expect(files.map((file) => file.name)).toEqual(['100% café a%20b.png']);
     });
 
@@ -494,7 +494,7 @@ describe('shareTarget utilities', () => {
         'http://localhost:3000/share?title=T&url=https%3A%2F%2Fexample.com',
       );
       expect(storage.stores.size).toBe(0);
-      await expect(getSharedFiles()).resolves.toEqual([]);
+      await expect(getSharedFiles()).resolves.toEqual({ files: [], refused: 0 });
     });
 
     it.each([
@@ -511,7 +511,7 @@ describe('shareTarget utilities', () => {
       await expect(handleShareTarget(request, cacheStorage())).rejects.toThrow();
 
       expect(storage.stores.size).toBe(0);
-      await expect(getSharedFiles()).resolves.toEqual([]);
+      await expect(getSharedFiles()).resolves.toEqual({ files: [], refused: 0 });
     });
 
     it('ignores the empty part of a file input with nothing selected', async () => {
@@ -527,7 +527,7 @@ describe('shareTarget utilities', () => {
       const response = await handleShareTarget(parsedSharePost([new File([await image('png')], '')]), cacheStorage());
 
       expect(response.headers.get('location')).toBe('http://localhost:3000/share?hasFiles=true');
-      const files = await getSharedFiles();
+      const { files } = await getSharedFiles();
       expect(files.map((file) => [file.name, file.type])).toEqual([['shared-file', 'image/png']]);
     });
 
@@ -552,7 +552,7 @@ describe('shareTarget utilities', () => {
         cacheStorage(),
       );
 
-      const files = await getSharedFiles();
+      const { files } = await getSharedFiles();
 
       expect(files.map((file) => [file.name, file.type])).toEqual([['photo.png', 'image/png']]);
       expect(new Uint8Array(await files[0].arrayBuffer())).toEqual(png);
@@ -567,13 +567,13 @@ describe('shareTarget utilities', () => {
     }
 
     it('returns empty array when cache has no files', async () => {
-      await expect(getSharedFiles()).resolves.toEqual([]);
+      await expect(getSharedFiles()).resolves.toEqual({ files: [], refused: 0 });
     });
 
     it('retrieves files from cache and returns them', async () => {
       await cacheEntry(await image('png'), { 'X-Share-Filename': 'test-image.png', 'Content-Type': 'image/png' });
 
-      const files = await getSharedFiles();
+      const { files } = await getSharedFiles();
 
       expect(files).toHaveLength(1);
       expect(files[0]).toBeInstanceOf(File);
@@ -584,7 +584,7 @@ describe('shareTarget utilities', () => {
     it('uses fallback filename when X-Share-Filename header is missing', async () => {
       await cacheEntry(await image('jpeg'), { 'Content-Type': 'image/jpeg' });
 
-      const files = await getSharedFiles();
+      const { files } = await getSharedFiles();
 
       expect(files.map((file) => file.name)).toEqual(['shared-file']);
     });
@@ -592,7 +592,7 @@ describe('shareTarget utilities', () => {
     it('uses fallback filename when X-Share-Filename is empty', async () => {
       await cacheEntry(await image('png'), { 'X-Share-Filename': '', 'Content-Type': 'image/png' });
 
-      const files = await getSharedFiles();
+      const { files } = await getSharedFiles();
 
       expect(files.map((file) => file.name)).toEqual(['shared-file']);
     });
@@ -603,7 +603,7 @@ describe('shareTarget utilities', () => {
         'Content-Type': 'image/png',
       });
 
-      const files = await getSharedFiles();
+      const { files } = await getSharedFiles();
 
       expect(files.map((file) => file.name)).toEqual(['shared-file']);
     });
@@ -615,7 +615,7 @@ describe('shareTarget utilities', () => {
         'Content-Type': 'image/png',
       });
 
-      const files = await getSharedFiles();
+      const { files } = await getSharedFiles();
 
       expect(files.map((file) => file.name)).toEqual(['写真 a%20b.png']);
     });
@@ -625,7 +625,7 @@ describe('shareTarget utilities', () => {
       async (name) => {
         await cacheEntry(await image('png'), { 'X-Share-Filename': name, 'Content-Type': 'image/png' });
 
-        const files = await getSharedFiles();
+        const { files } = await getSharedFiles();
 
         expect(files.map((file) => file.name)).toEqual([name]);
       },
@@ -634,19 +634,28 @@ describe('shareTarget utilities', () => {
     it('types an image from its bytes when the Content-Type header is missing', async () => {
       await cacheEntry(await image('webp'), { 'X-Share-Filename': 'photo.webp' });
 
-      const files = await getSharedFiles();
+      const { files } = await getSharedFiles();
 
       expect(files.map((file) => file.type)).toEqual(['image/webp']);
     });
 
-    it('refuses an SVG or HTML entry an older service worker cached', async () => {
+    it('refuses and counts an SVG or HTML entry an older service worker cached', async () => {
       await cacheEntry(SVG, { 'X-Share-Filename': 'cat.svg', 'Content-Type': 'image/svg+xml' });
       await cacheEntry(HTML, { 'X-Share-Filename': 'page.png', 'Content-Type': 'image/png' });
       await cacheEntry(await image('gif'), { 'X-Share-Filename': 'ok.gif', 'Content-Type': 'image/gif' });
 
-      const files = await getSharedFiles();
+      const { files, refused } = await getSharedFiles();
 
       expect(files.map((file) => [file.name, file.type])).toEqual([['ok.gif', 'image/gif']]);
+      expect(refused).toBe(2);
+      expect(storage.stores.has('share-target-files')).toBe(false);
+    });
+
+    it('counts the only entry an older service worker cached when it is refused', async () => {
+      await cacheEntry(SVG, { 'X-Share-Filename': 'cat.svg', 'Content-Type': 'image/svg+xml' });
+
+      await expect(getSharedFiles()).resolves.toEqual({ files: [], refused: 1 });
+      expect(storage.stores.has('share-target-files')).toBe(false);
     });
 
     it('drops cached AVIF entries with image or video headers and returns a PNG entry', async () => {
@@ -655,16 +664,17 @@ describe('shareTarget utilities', () => {
       await cacheEntry(avif, { 'X-Share-Filename': 'video.avif', 'Content-Type': 'video/mp4' });
       await cacheEntry(await image('png'), { 'X-Share-Filename': 'photo.png', 'Content-Type': 'image/png' });
 
-      const files = await getSharedFiles();
+      const { files, refused } = await getSharedFiles();
 
       expect(files.map((file) => [file.name, file.type])).toEqual([['photo.png', 'image/png']]);
+      expect(refused).toBe(2);
     });
 
     it('handles multiple files in cache', async () => {
       await cacheEntry(await image('png'), { 'X-Share-Filename': 'image.png', 'Content-Type': 'image/png' });
       await cacheEntry(wavFile(), { 'X-Share-Filename': 'clip.wav', 'Content-Type': 'audio/wav' });
 
-      const files = await getSharedFiles();
+      const { files } = await getSharedFiles();
 
       expect(files.map((file) => [file.name, file.type])).toEqual([
         ['image.png', 'image/png'],
@@ -683,7 +693,7 @@ describe('shareTarget utilities', () => {
     it('returns empty array on error', async () => {
       storage.failOpen = true;
 
-      await expect(getSharedFiles()).resolves.toEqual([]);
+      await expect(getSharedFiles()).resolves.toEqual({ files: [], refused: 0 });
     });
   });
 

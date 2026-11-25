@@ -124,17 +124,19 @@ function sharedFileName(headers: Headers): string {
 /**
  * Retrieve files that were cached by the service worker from a share target POST.
  * Each is checked again with `sharedFileType`, so an entry cached by an older
- * service worker is kept only if it passes. After retrieval, the cache is
- * cleared to avoid stale data.
+ * service worker is kept only if it passes; `refused` counts the entries that
+ * fail, which that worker's redirect did not include in `refusedFiles`. After
+ * retrieval, the cache is cleared to avoid stale data.
  */
-export async function getSharedFiles(): Promise<File[]> {
+export async function getSharedFiles(): Promise<{ files: File[]; refused: number }> {
   try {
     const cache = await caches.open(SHARE_TARGET_CACHE);
     const keys = await cache.keys();
 
-    if (keys.length === 0) return [];
+    if (keys.length === 0) return { files: [], refused: 0 };
 
     const files: File[] = [];
+    let refused = 0;
 
     for (const request of keys) {
       const response = await cache.match(request);
@@ -142,7 +144,10 @@ export async function getSharedFiles(): Promise<File[]> {
 
       const blob = await response.blob();
       const type = await sharedFileType(blob);
-      if (!type) continue;
+      if (!type) {
+        refused += 1;
+        continue;
+      }
       const filename = sharedFileName(response.headers);
 
       files.push(new File([blob], filename, { type }));
@@ -151,9 +156,9 @@ export async function getSharedFiles(): Promise<File[]> {
     // Clear the cache after retrieval
     await caches.delete(SHARE_TARGET_CACHE);
 
-    return files;
+    return { files, refused };
   } catch {
-    return [];
+    return { files: [], refused: 0 };
   }
 }
 

@@ -8,11 +8,11 @@ import { ShareTarget } from './ShareTarget';
 // Mock next/navigation
 const mockPush = vi.fn();
 const mockSearchParams = new Map<string, string>();
+// Next returns the same object until the URL changes, so the page's effect runs once per URL.
+const mockSearchParamsReader = { get: (key: string) => mockSearchParams.get(key) ?? null };
 
 vi.mock('next/navigation', () => ({
-  useSearchParams: () => ({
-    get: (key: string) => mockSearchParams.get(key) ?? null,
-  }),
+  useSearchParams: () => mockSearchParamsReader,
   useRouter: () => ({
     push: mockPush,
   }),
@@ -128,7 +128,7 @@ describe('ShareTarget', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSearchParams.clear();
-    mockGetSharedFiles.mockResolvedValue([]);
+    mockGetSharedFiles.mockResolvedValue({ files: [], refused: 0 });
   });
 
   it('renders without errors', async () => {
@@ -226,7 +226,7 @@ describe('ShareTarget', () => {
   it('retrieves shared files when hasFiles is true', async () => {
     mockSearchParams.set('hasFiles', 'true');
     const mockFile = new File(['test'], 'test.png', { type: 'image/png' });
-    mockGetSharedFiles.mockResolvedValue([mockFile]);
+    mockGetSharedFiles.mockResolvedValue({ files: [mockFile], refused: 0 });
 
     render(<ShareTarget />);
 
@@ -270,7 +270,7 @@ describe('ShareTarget', () => {
   it('passes initial attachments to PostInput when files are shared', async () => {
     mockSearchParams.set('hasFiles', 'true');
     const mockFile = new File(['test'], 'test.png', { type: 'image/png' });
-    mockGetSharedFiles.mockResolvedValue([mockFile]);
+    mockGetSharedFiles.mockResolvedValue({ files: [mockFile], refused: 0 });
 
     render(<ShareTarget />);
 
@@ -283,7 +283,10 @@ describe('ShareTarget', () => {
   it('tells the user how many shared files were not added', async () => {
     mockSearchParams.set('hasFiles', 'true');
     mockSearchParams.set('refusedFiles', '2');
-    mockGetSharedFiles.mockResolvedValue([new File(['test'], 'test.png', { type: 'image/png' })]);
+    mockGetSharedFiles.mockResolvedValue({
+      files: [new File(['test'], 'test.png', { type: 'image/png' })],
+      refused: 0,
+    });
 
     render(<ShareTarget />);
 
@@ -314,9 +317,51 @@ describe('ShareTarget', () => {
     });
   });
 
+  it('tells the user when the only file an older service worker cached was refused on read', async () => {
+    mockSearchParams.set('hasFiles', 'true');
+    mockGetSharedFiles.mockResolvedValue({ files: [], refused: 1 });
+
+    render(<ShareTarget />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('post-input')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('post-input')).not.toHaveAttribute('data-has-attachments', 'true');
+    expect(toast).toHaveBeenCalledTimes(1);
+    expect(toast).toHaveBeenCalledWith({
+      variant: 'error',
+      description:
+        'A shared file was not added. You can share JPEG, PNG, GIF and WebP images, MP3 and WAV audio, and MP4 video.',
+    });
+  });
+
+  it('adds the files refused on read to the redirect count in one notice', async () => {
+    mockSearchParams.set('hasFiles', 'true');
+    mockSearchParams.set('refusedFiles', '1');
+    mockGetSharedFiles.mockResolvedValue({
+      files: [new File(['test'], 'test.png', { type: 'image/png' })],
+      refused: 2,
+    });
+
+    render(<ShareTarget />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('post-input')).toHaveAttribute('data-has-attachments', 'true');
+    });
+    expect(toast).toHaveBeenCalledTimes(1);
+    expect(toast).toHaveBeenCalledWith({
+      variant: 'error',
+      description:
+        '3 shared files were not added. You can share JPEG, PNG, GIF and WebP images, MP3 and WAV audio, and MP4 video.',
+    });
+  });
+
   it('shows no toast when every shared file was added', async () => {
     mockSearchParams.set('hasFiles', 'true');
-    mockGetSharedFiles.mockResolvedValue([new File(['test'], 'test.png', { type: 'image/png' })]);
+    mockGetSharedFiles.mockResolvedValue({
+      files: [new File(['test'], 'test.png', { type: 'image/png' })],
+      refused: 0,
+    });
 
     render(<ShareTarget />);
 

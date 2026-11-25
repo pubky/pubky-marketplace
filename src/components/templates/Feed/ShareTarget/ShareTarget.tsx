@@ -13,6 +13,17 @@ import { PostInput } from '@/organisms/PostInput/PostInput';
 import { POST_INPUT_VARIANT } from '@/organisms/PostInput/PostInput.constants';
 import { ShareTargetSkeleton } from './ShareTarget.skeleton';
 
+function notifyRefusedFiles(count: number) {
+  if (count <= 0) return;
+  toast({
+    variant: 'error',
+    description:
+      count === 1
+        ? 'A shared file was not added. You can share JPEG, PNG, GIF and WebP images, MP3 and WAV audio, and MP4 video.'
+        : `${count} shared files were not added. You can share JPEG, PNG, GIF and WebP images, MP3 and WAV audio, and MP4 video.`,
+  });
+}
+
 export function ShareTarget() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -31,25 +42,17 @@ export function ShareTarget() {
     const content = composeShareContent({ title, text, url });
     setInitialContent(content);
 
-    if (refusedFiles > 0) {
-      toast({
-        variant: 'error',
-        description:
-          refusedFiles === 1
-            ? 'A shared file was not added. You can share JPEG, PNG, GIF and WebP images, MP3 and WAV audio, and MP4 video.'
-            : `${refusedFiles} shared files were not added. You can share JPEG, PNG, GIF and WebP images, MP3 and WAV audio, and MP4 video.`,
-      });
-    }
-
     if (hasFiles) {
       getSharedFiles()
-        .then((files) => {
+        .then(({ files, refused }) => {
           if (files.length > 0) {
             setInitialAttachments(files);
           }
+          notifyRefusedFiles(refusedFiles + refused);
         })
         .finally(() => setIsLoading(false));
     } else {
+      notifyRefusedFiles(refusedFiles);
       setIsLoading(false);
     }
   }, [searchParams]);
