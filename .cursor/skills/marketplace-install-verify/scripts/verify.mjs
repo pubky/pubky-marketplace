@@ -145,6 +145,7 @@ const SERVICE = url('SERVICE_URL');
 const PAYKIT = url('PAYKIT_URL');
 const LOCKS = url('LOCKS_URL');
 const NEXUS = url('NEXUS_URL');
+const SOCIAL_NEXUS = url('SOCIAL_NEXUS_URL');
 const FIAT = url('FIAT_VERIFIER_URL');
 const INBOX = url('INBOX_URL');
 const FORBIDDEN_HOSTS = parseList(get('FORBIDDEN_HOSTS')).map((h) => h.toLowerCase());
@@ -358,7 +359,7 @@ async function sectionConfig() {
     missing.length ? `missing ${missing.join(', ')}` : `${SHOP_ORIGINS.length} Shop origin(s), 4 services`,
     `set ${missing.join(', ')}`,
   );
-  const all = [...SHOP_ORIGINS, SERVICE, PAYKIT, LOCKS, NEXUS, FIAT, INBOX].filter(Boolean);
+  const all = [...SHOP_ORIGINS, SERVICE, PAYKIT, LOCKS, NEXUS, SOCIAL_NEXUS, FIAT, INBOX].filter(Boolean);
   const plain = all.filter((value) => !value.startsWith('https://'));
   if (plain.length && get('ALLOW_HTTP') !== '1')
     fail('config.https', 'every public endpoint uses https', plain.join(', '), 'serve every public endpoint over HTTPS');
@@ -367,7 +368,7 @@ async function sectionConfig() {
 
 async function sectionTls() {
   heading('tls');
-  const hosts = [...new Set([...SHOP_ORIGINS, SERVICE, PAYKIT, LOCKS, NEXUS, FIAT, INBOX].filter(Boolean))]
+  const hosts = [...new Set([...SHOP_ORIGINS, SERVICE, PAYKIT, LOCKS, NEXUS, SOCIAL_NEXUS, FIAT, INBOX].filter(Boolean))]
     .filter((value) => value.startsWith('https://'))
     .map((value) => new URL(value).hostname);
   const minDays = Number(get('TLS_MIN_DAYS') ?? 21);
@@ -461,17 +462,19 @@ async function sectionShop() {
     const pairs = [
       ['marketplaceUrl', SERVICE, 'PUBKY_RUNTIME_MARKETPLACE_URL'],
       ['marketplaceNexusUrl', NEXUS, 'PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL'],
+      ['nexusUrl', SOCIAL_NEXUS, 'PUBKY_RUNTIME_NEXUS_URL'],
       ['locksUrl', LOCKS, 'PUBKY_RUNTIME_LOCKS_URL'],
       ['paykitSetupUrl', PAYKIT && `${PAYKIT}/setup`, 'PUBKY_RUNTIME_PAYKIT_SETUP_URL'],
       ['inboxUrl', INBOX, 'PUBKY_RUNTIME_INBOX_URL'],
     ];
     for (const [key, expected, envName] of pairs) {
       if (!expected) continue;
+      const actual = key === 'marketplaceNexusUrl' ? runtime.marketplaceNexusUrl ?? runtime.nexusUrl : runtime[key];
       check(
         `shop.runtime.${host}.${key}`,
-        same(runtime[key], expected),
+        same(actual, expected),
         `${key} points at this stack`,
-        `${runtime[key] ?? 'unset'}`,
+        `${actual ?? 'unset'}`,
         `set ${envName}=${expected} on the Shop and redeploy (runtime values change only on restart)`,
       );
     }
@@ -513,17 +516,27 @@ async function sectionShop() {
         'replace every retired host in the Shop PUBKY_RUNTIME_* values',
       );
     const llms = await http(`${origin}${EMBED_PATH}/llms.txt`);
-    const index = llms.text.match(/^INDEX\s*=\s*(\S+)/m)?.[1];
+    const index = llms.text.match(/^INDEX[ \t]*=[ \t]*(\S+)/m)?.[1];
     if (llms.status !== 200) warn(`shop.llms.${host}`, `${EMBED_PATH}/llms.txt served`, describe(llms), `check the Shop route ${EMBED_PATH}/llms.txt`);
     else if (!index) warn(`shop.llms.${host}`, '/llms.txt names the index', 'no INDEX line', 'check the llms.txt template');
     else
       check(
         `shop.llms.${host}`,
         !NEXUS || same(index, NEXUS),
-        '/llms.txt advertises this Nexus',
+        '/llms.txt advertises the marketplace Nexus',
         index,
         'set PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL on the Shop; /llms.txt reads it',
       );
+    if (SOCIAL_NEXUS) {
+      const social = llms.text.match(/^SOCIAL[ \t]*=[ \t]*(\S+)/m)?.[1];
+      check(
+        `shop.llms.${host}.social`,
+        llms.status === 200 && same(social, SOCIAL_NEXUS),
+        '/llms.txt advertises the social Nexus',
+        llms.status === 200 ? social ?? 'no SOCIAL URL' : describe(llms),
+        `set PUBKY_RUNTIME_NEXUS_URL=${SOCIAL_NEXUS} on the Shop and serve it as SOCIAL in /llms.txt`,
+      );
+    }
   }
 }
 

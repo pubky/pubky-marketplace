@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
 import { GET } from './route';
 
-const indexLine = (body: string) => body.split('\n').find((line) => line.startsWith('INDEX = '));
+const baseUrl = (body: string, label: 'INDEX' | 'SOCIAL') => body.match(new RegExp(`^${label} = (.+)$`, 'm'))?.[1];
 
 // The guide as it was served from public/llms.txt, with its fixed INDEX host.
 const STATIC_GUIDE = readFileSync(path.join(process.cwd(), 'src/test/fixtures/agent-guide/llms-static.txt'), 'utf8');
@@ -22,6 +22,12 @@ const GUIDE_COPY_CHANGES = [
   ],
   ['"under 20,000 sats"', '"under ₿20,000"'],
   ['for BTC is sats.', 'for BTC is in bitcoin base units (₿1 = 0.00000001 BTC).'],
+  [
+    'INDEX is the current host; a stable alias may replace it. Every path below is INDEX + path.\n' +
+      'Full reference (all routes, params, schemas): INDEX/api-docs/v0/openapi.json',
+    'INDEX serves marketplace records and reviews. SOCIAL serves community tags on Social v1.\n' +
+      'The marketplace API reference is at INDEX/api-docs/v0/openapi.json.',
+  ],
 ];
 
 describe('GET /llms.txt', () => {
@@ -34,15 +40,20 @@ describe('GET /llms.txt', () => {
     resetRuntimeConfigForTests();
   });
 
-  it('names the marketplace Nexus the Shop reads as INDEX', async () => {
+  it('names the configured hosts for the marketplace index and social v1 resources', async () => {
     vi.stubEnv('PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL', 'https://index.runtime.example.com');
+    vi.stubEnv('PUBKY_RUNTIME_NEXUS_URL', 'https://social.runtime.example.com');
 
     const response = GET();
     const body = await response.text();
 
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
-    expect(indexLine(body)).toBe('INDEX = https://index.runtime.example.com');
+    expect(baseUrl(body, 'INDEX')).toBe('https://index.runtime.example.com');
+    expect(baseUrl(body, 'SOCIAL')).toBe('https://social.runtime.example.com');
+    expect(body).toContain('GET SOCIAL/v1/resource/by-uri?uri={encoded_uri}&skip_tags=0&limit_tags=5');
+    expect(body).toContain('If SOCIAL/v1/info returns 404, read the legacy tags at INDEX/v0/listing/');
+    expect(body).toContain('Get listing reviews at INDEX/v0/listing/{seller_id}/{listing_id}/reviews.');
     expect(body).not.toMatch(/nexusd-production-[0-9a-f]+/);
   });
 
@@ -52,27 +63,35 @@ describe('GET /llms.txt', () => {
     expect(GET().headers.get('Cache-Control')).toBe('public, max-age=0, must-revalidate');
   });
 
-  it('preserves the historical guide except the INDEX line and explicit Bitcoin display wording', async () => {
+  it('preserves the historical guide outside the Nexus instructions and Bitcoin display wording', async () => {
     vi.stubEnv('PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL', 'https://index.runtime.example.com');
+    vi.stubEnv('PUBKY_RUNTIME_NEXUS_URL', 'https://social.runtime.example.com');
     expect(STATIC_GUIDE.split(STATIC_INDEX_LINE)).toHaveLength(2);
 
     const body = await GET().text();
 
-    let expected = STATIC_GUIDE.replace(STATIC_INDEX_LINE, 'INDEX = https://index.runtime.example.com');
+    let expected = STATIC_GUIDE.replace(
+      STATIC_INDEX_LINE,
+      'INDEX = https://index.runtime.example.com\nSOCIAL = https://social.runtime.example.com',
+    );
     for (const [before, after] of GUIDE_COPY_CHANGES) {
       expect(expected.split(before)).toHaveLength(2);
       expected = expected.replace(before, after);
     }
-    expect(body).toBe(expected);
+    const oldListingInstructions = /Related: INDEX\/v0\/listing\/[^\n]*\nINDEX\/v0\/listing\/[^\n]*\n/;
+    const newListingInstructions = /Get listing reviews at [\s\S]*?(?=Media URIs are records)/;
+    expect(body.replace(newListingInstructions, '')).toBe(expected.replace(oldListingInstructions, ''));
     expect(body).not.toMatch(/\bsats\b/);
   });
 
-  it('strips a trailing slash so INDEX + path stays a valid URL', async () => {
+  it('strips a trailing slash from each base URL', async () => {
     vi.stubEnv('PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL', 'https://index.runtime.example.com/');
+    vi.stubEnv('PUBKY_RUNTIME_NEXUS_URL', 'https://social.runtime.example.com/');
 
     const body = await GET().text();
 
-    expect(indexLine(body)).toBe('INDEX = https://index.runtime.example.com');
+    expect(baseUrl(body, 'INDEX')).toBe('https://index.runtime.example.com');
+    expect(baseUrl(body, 'SOCIAL')).toBe('https://social.runtime.example.com');
   });
 
   it('falls back to the main Nexus when no marketplace Nexus is configured, like the app', async () => {
@@ -81,7 +100,8 @@ describe('GET /llms.txt', () => {
 
     const body = await GET().text();
 
-    expect(indexLine(body)).toBe('INDEX = https://nexus.runtime.example.com');
+    expect(baseUrl(body, 'INDEX')).toBe('https://nexus.runtime.example.com');
+    expect(baseUrl(body, 'SOCIAL')).toBe('https://nexus.runtime.example.com');
   });
 
   it('is not shadowed by a static public/llms.txt with a fixed host', () => {

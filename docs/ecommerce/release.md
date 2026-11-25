@@ -59,11 +59,27 @@ Follow [Shop embedding](../launch/shop-embedding.md) for the fixed `/shop-embed`
 
 ## Verify the Shop with the Social v1 App release
 
-Run these checks on the paired staging builds before promoting the Shop and the App.
+The team rollout needs separate origins for social and Market reads. Check the running Shop's `window.__PUBKY_CONFIG__` against the deployment configuration. Use the corresponding staging origins when testing on staging.
+
+| Shop runtime variable                 | Production origin              | Request to verify                                     |
+| ------------------------------------- | ------------------------------ | ----------------------------------------------------- |
+| `PUBKY_RUNTIME_NEXUS_URL`             | `https://nexus.pubky.app`      | `GET /v1/info` on the social Nexus after its upgrade  |
+| `PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL` | `https://shop-nexus.pubky.app` | `GET /v0/stream/listings?limit=1` on the Market index |
+
+These values appear as `nexusUrl` and `marketplaceNexusUrl` in the browser. If `marketplaceNexusUrl` is unset, commerce reads fall back to `nexusUrl`. Configure both in [shop-migration](https://github.com/pubky/shop-migration/blob/main/config/pubky-marketplace/pubky-marketplace.env) when deploying separate indexes.
+
+For the [install verifier](../launch/install-verification.md), set `NEXUS_URL` to the Market index and `SOCIAL_NEXUS_URL` to the social Nexus in the stack's configuration file. Run the read-only Shop checks against the deployed build:
+
+```bash
+node .cursor/skills/marketplace-install-verify/scripts/verify.mjs --config /path/to/stack.env --only shop
+```
+
+Run these checks on the paired staging builds before promoting the Shop and the App with user migration. Publishing the Social Specs packages can proceed independently.
 
 - Open a protected Shop page with a v0 account, a migrated account that still has its old profile, and an account with only a v1 profile. Check standalone sign-in, the App's embedded grant, reload and logout. The seller inventory page should open without asking any of these users to create a second profile.
+- With a new seller whose only profile is `/pub/social/v1/profile.json`, publish an active listing. Confirm its ID appears in the Market index's `GET /v0/stream/listings?seller_id=<seller>` and that a second browser can find it in the public catalog. Sign-in and the seller's own inventory can both succeed while the index is still waiting for the seller profile.
 - From the embedded Shop, add and remove a tag on a listing with a migrated account. Verify the canonical listing URI, the result seen by another viewer, and seller follow/unfollow behavior. Check that a standalone Shop grant still opens inventory and orders.
-- Verify moderation with the deployment owners. After a v1 moderator restricts a test listing on staging, confirm the Market index reports the restriction and the service refuses checkout. The Market client reads community tags from the social Nexus once it serves v1. That read alone cannot verify the Market index's moderation decision.
+- With the configured staging moderator, apply a takedown from a v1 profile and verify that the Market index reports the restriction and the transaction service refuses checkout for that listing. Keep the production moderation bot on its current profile version until its consumers handle v1 tags. [Moderator rollout decision](https://github.com/pubky/pubky-marketplace/issues/487#issuecomment-7158784282)
 
 ## Day-to-day merges
 
