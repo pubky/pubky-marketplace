@@ -1,9 +1,10 @@
 'use client';
 
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
-import { Button, buttonVariants } from '@/atoms/Button/Button';
+import { Button } from '@/atoms/Button/Button';
 import { Input } from '@/atoms/Input/Input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
+import { secondarySelectClasses } from '@/atoms/Select/Select.variants';
 import { Typography } from '@/atoms/Typography/Typography';
 import type { UseListingTableQueryResult } from '@/hooks/useListingTableQuery/useListingTableQuery';
 import {
@@ -15,7 +16,7 @@ import {
 import { cn } from '@/libs/utils/utils';
 
 const ANY = 'any';
-const TRIGGER_CLASS = cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'max-w-64 text-xs');
+const TRIGGER_CLASS = cn(secondarySelectClasses('sm'), 'max-w-64 text-xs');
 
 const STATE_LABELS: Record<string, string> = { active: 'Active', paused: 'Paused', ended: 'Ended', removed: 'Removed' };
 const SORT_LABELS: Record<ListingSortKey, string> = {
