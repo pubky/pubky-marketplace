@@ -322,14 +322,14 @@ describe('Post Application', () => {
           compositePostId: 'author:post-with-tags',
           post: mockPost,
           postUrl: 'pubky://author/pub/pubky.app/posts/post-with-tags',
-          tags: mockTags,
+          tags: { tagList: mockTags, assertCurrent: vi.fn() },
         };
 
         const { saveSpy, requestSpy, tagCreateSpy } = setupCreateSpies();
 
         await PostApplication.commitCreate(mockData);
 
-        expect(tagCreateSpy).toHaveBeenCalledWith({ tagList: mockTags });
+        expect(tagCreateSpy).toHaveBeenCalledWith(mockData.tags);
         expect(requestSpy).toHaveBeenCalledBefore(tagCreateSpy);
         expect(saveSpy).toHaveBeenCalledWith({
           compositePostId: mockData.compositePostId,
@@ -359,7 +359,7 @@ describe('Post Application', () => {
           compositePostId: 'author:post-with-tags-fail',
           post: mockPost,
           postUrl: 'pubky://author/pub/pubky.app/posts/post-with-tags-fail',
-          tags: mockTags,
+          tags: { tagList: mockTags, assertCurrent: vi.fn() },
         };
 
         const { saveSpy, requestSpy, tagCreateSpy } = setupCreateSpies();
@@ -379,7 +379,7 @@ describe('Post Application', () => {
             kind: 'short',
           }),
         });
-        expect(tagCreateSpy).toHaveBeenCalledWith({ tagList: mockTags });
+        expect(tagCreateSpy).toHaveBeenCalledWith(mockData.tags);
       });
     });
 
@@ -401,7 +401,7 @@ describe('Post Application', () => {
           post: mockPost,
           postUrl: 'pubky://author/pub/pubky.app/posts/post-combo',
           fileAttachments: mockFileAttachments,
-          tags: mockTags,
+          tags: { tagList: mockTags, assertCurrent: vi.fn() },
         };
 
         const { commitCreateSpy, saveSpy, requestSpy, tagCreateSpy } = setupCreateSpies();
@@ -421,7 +421,7 @@ describe('Post Application', () => {
             kind: 'short',
           }),
         });
-        expect(tagCreateSpy).toHaveBeenCalledWith({ tagList: mockTags });
+        expect(tagCreateSpy).toHaveBeenCalledWith(mockData.tags);
         expect(commitCreateSpy).toHaveBeenCalledBefore(saveSpy);
         expect(saveSpy).toHaveBeenCalledBefore(requestSpy);
         expect(requestSpy).toHaveBeenCalledBefore(tagCreateSpy);
@@ -443,7 +443,7 @@ describe('Post Application', () => {
           post: mockPost,
           postUrl: 'pubky://author/pub/pubky.app/posts/post-fail',
           fileAttachments: mockFileAttachments,
-          tags: mockTags,
+          tags: { tagList: mockTags, assertCurrent: vi.fn() },
         };
 
         const { commitCreateSpy, saveSpy, requestSpy, tagCreateSpy } = setupCreateSpies();
@@ -865,7 +865,7 @@ describe('Post Application', () => {
           compositePostId: 'author:post-empty-tags',
           post: mockPost,
           postUrl: 'pubky://author/pub/pubky.app/posts/post-empty-tags',
-          tags: [],
+          tags: { tagList: [], assertCurrent: vi.fn() },
         };
 
         const { saveSpy, requestSpy, tagCreateSpy } = setupCreateSpies();
@@ -934,7 +934,7 @@ describe('Post Application', () => {
           post: mockPost,
           postUrl: 'pubky://author/pub/pubky.app/posts/post-all-empty',
           fileAttachments: [],
-          tags: [],
+          tags: { tagList: [], assertCurrent: vi.fn() },
         };
 
         const { commitCreateSpy, saveSpy, requestSpy, tagCreateSpy } = setupCreateSpies();

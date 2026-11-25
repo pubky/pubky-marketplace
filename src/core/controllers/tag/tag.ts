@@ -6,8 +6,8 @@ import type { Pubky } from '@/models/models.types';
 export class TagController {
   private constructor() {}
 
-  static getWriteEpoch(owner: Pubky) {
-    return TagApplication.getWriteEpoch(owner);
+  static fetchWriteEpoch(owner: Pubky) {
+    return TagApplication.fetchWriteEpoch(owner);
   }
 
   /**
@@ -21,7 +21,7 @@ export class TagController {
     const assertCurrent = captureAuthWriteGuard();
     const tag = await TagApplication.prepareTag(params);
 
-    await TagApplication.commitCreate({ tagList: [tag] }, assertCurrent);
+    await TagApplication.commitCreate({ tagList: [tag], assertCurrent });
   }
 
   /**

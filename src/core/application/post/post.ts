@@ -251,8 +251,8 @@ export class PostApplication {
       throw error;
     }
 
-    if (tags && tags.length > 0) {
-      await TagApplication.commitCreate({ tagList: tags });
+    if (tags?.tagList.length) {
+      await TagApplication.commitCreate(tags);
     }
   }
 

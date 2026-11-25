@@ -3938,6 +3938,7 @@ describe('CommerceApplication', () => {
   });
 
   describe('fetchMarketplaceTags', () => {
+    const isCurrent = () => true;
     const VIEWER = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo';
     const nexusTag = { label: 'handmade', taggers: [VIEWER], taggers_count: 1, relationship: true };
 
@@ -3948,6 +3949,7 @@ describe('CommerceApplication', () => {
       const mergeSpy = vi.spyOn(LocalMarketplaceTagService, 'mergeTags').mockResolvedValue(undefined);
 
       const result = await CommerceApplication.fetchMarketplaceTags({
+        isCurrent,
         kind: TagKind.LISTING,
         taggedId: `${COMMERCE_FIXTURE_SELLER}:0034A0X7NJ52A`,
         viewerId: VIEWER,
@@ -3962,6 +3964,7 @@ describe('CommerceApplication', () => {
         viewer_id: VIEWER,
       });
       expect(mergeSpy).toHaveBeenCalledWith({
+        isCurrent,
         taggedId: `listing:${COMMERCE_FIXTURE_SELLER}:0034A0X7NJ52A`,
         tags: [nexusTag],
         viewerId: VIEWER,
@@ -3975,7 +3978,11 @@ describe('CommerceApplication', () => {
         .mockResolvedValue({ tags: [nexusTag], completeResource: true });
       const mergeSpy = vi.spyOn(LocalMarketplaceTagService, 'mergeTags').mockResolvedValue(undefined);
 
-      await CommerceApplication.fetchMarketplaceTags({ kind: TagKind.SHOP, taggedId: COMMERCE_FIXTURE_SELLER });
+      await CommerceApplication.fetchMarketplaceTags({
+        isCurrent,
+        kind: TagKind.SHOP,
+        taggedId: COMMERCE_FIXTURE_SELLER,
+      });
 
       expect(fetchSpy).toHaveBeenCalledWith({
         seller_id: COMMERCE_FIXTURE_SELLER,
@@ -3984,6 +3991,7 @@ describe('CommerceApplication', () => {
         viewer_id: undefined,
       });
       expect(mergeSpy).toHaveBeenCalledWith({
+        isCurrent,
         taggedId: `shop:${COMMERCE_FIXTURE_SELLER}`,
         tags: [nexusTag],
         viewerId: null,
@@ -3998,6 +4006,7 @@ describe('CommerceApplication', () => {
       const mergeSpy = vi.spyOn(LocalMarketplaceTagService, 'mergeTags');
 
       const result = await CommerceApplication.fetchMarketplaceTags({
+        isCurrent,
         kind: TagKind.LISTING,
         taggedId: `${COMMERCE_FIXTURE_SELLER}:0034A0X7NJ52A`,
       });
@@ -4010,7 +4019,7 @@ describe('CommerceApplication', () => {
       vi.spyOn(NexusMarketplaceService, 'fetchShopTags').mockRejectedValue(new Error('nexus unreachable'));
 
       await expect(
-        CommerceApplication.fetchMarketplaceTags({ kind: TagKind.SHOP, taggedId: COMMERCE_FIXTURE_SELLER }),
+        CommerceApplication.fetchMarketplaceTags({ isCurrent, kind: TagKind.SHOP, taggedId: COMMERCE_FIXTURE_SELLER }),
       ).rejects.toThrow('nexus unreachable');
     });
 
@@ -4019,12 +4028,14 @@ describe('CommerceApplication', () => {
       const mergeSpy = vi.spyOn(LocalMarketplaceTagService, 'mergeTags');
 
       const result = await CommerceApplication.fetchMarketplaceTags({
+        isCurrent,
         kind: TagKind.SHOP,
         taggedId: COMMERCE_FIXTURE_SELLER,
       });
 
       expect(result).toEqual([]);
       expect(mergeSpy).toHaveBeenCalledWith({
+        isCurrent,
         taggedId: `shop:${COMMERCE_FIXTURE_SELLER}`,
         tags: [],
         viewerId: null,

@@ -150,17 +150,21 @@ export class LocalMarketplaceTagService {
     tags,
     viewerId,
     clearMissing = false,
+    isCurrent,
   }: {
     taggedId: string;
     tags: NexusTag[];
     viewerId: Pubky | null;
     clearMissing?: boolean;
+    isCurrent?: () => boolean;
   }): Promise<void> {
     ViewerTagMarkerStorage.sweepExpired();
 
     try {
       await db.transaction('rw', [MarketplaceTagsModel.table], async () => {
         const existing = await MarketplaceTagsModel.findById(taggedId);
+        // The viewer may have changed while waiting for the transaction or its read.
+        if (isCurrent && !isCurrent()) return;
         const existingTags = existing?.tags ?? [];
 
         const tagMap = new Map<string, NexusTag>();

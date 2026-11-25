@@ -828,36 +828,34 @@ export class CommerceApplication {
   }
 
   /**
-   * Fetches the community tag aggregate for a marketplace target from the
-   * marketplace Nexus and merges it into the local cache.
-   *
-   * Honest degradation: the tag endpoints only exist once the marketplace
-   * Nexus deploys tag aggregation. A 404 means "aggregation not available",
-   * so this returns an empty array WITHOUT touching the local cache — the
-   * viewer's own locally written tags keep rendering, and nothing fake is
-   * shown. Any other error propagates.
+   * Reconciles the social Nexus resource tags or merges the legacy Market projection.
+   * A missing legacy endpoint preserves the cache. A transient read failure
+   * propagates so the open page can retry.
    *
    * @param params.kind - `TagKind.LISTING` or `TagKind.SHOP`
    * @param params.taggedId - Composite `seller:listingId` for listings, owner pubky for shops
    * @param params.viewerId - Viewer pubky for relationship data, if signed in
+   * @param params.isCurrent - Checks whether the viewer still owns this cache update
    * @param params.skip - Number of tags to skip (pagination)
    * @param params.limit - Maximum number of tags to return
-   * @returns Tags returned by Nexus; empty when the endpoint is not deployed (404)
+   * @returns The fetched tags, or an empty array when the viewer changes or the legacy endpoint is absent
    */
   static async fetchMarketplaceTags({
     kind,
     taggedId,
     viewerId,
+    isCurrent,
     skip,
     limit,
   }: {
     kind: MarketplaceTagKind;
     taggedId: string;
     viewerId?: string;
+    isCurrent: () => boolean;
     skip?: number;
     limit?: number;
   }): Promise<NexusTag[]> {
-    const epoch = readAuthEpoch();
+    if (!isCurrent()) return [];
     let page: MarketplaceTagPage;
     try {
       if (kind === TagKind.LISTING) {
@@ -884,17 +882,18 @@ export class CommerceApplication {
       throw error;
     }
 
-    if (epoch !== readAuthEpoch()) return [];
+    if (!isCurrent()) return [];
     if (page.completeResource || page.tags.length) {
       await LocalMarketplaceTagService.mergeTags({
         taggedId: buildMarketplaceTagRowId(kind, taggedId),
         tags: page.tags,
         viewerId: viewerId ?? null,
         clearMissing: page.completeResource,
+        isCurrent,
       });
     }
 
-    return page.tags;
+    return isCurrent() ? page.tags : [];
   }
 
   static async getListingsBySeller(sellerPubky: string) {

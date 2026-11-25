@@ -307,6 +307,14 @@ describe('TagController', () => {
     });
   });
 
+  it('fetches the tag write epoch for the requested account', async () => {
+    const { SocialWriteService } = await import('@/services/homeserver/social-writes');
+    vi.mocked(SocialWriteService.getEpoch).mockResolvedValueOnce('v1');
+
+    await expect(TagController.fetchWriteEpoch(testData.taggerPubky)).resolves.toBe('v1');
+    expect(SocialWriteService.getEpoch).toHaveBeenCalledWith(testData.taggerPubky, 'tags');
+  });
+
   describe('getViewerUserTagLabels', () => {
     it('answers the labels the viewer put on users, most used first', async () => {
       const viewer = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo' as Pubky;

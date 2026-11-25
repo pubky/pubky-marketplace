@@ -31,6 +31,8 @@ const httpError = (code: ClientErrorCode, operation: string) =>
   });
 
 describe('Tag Application', () => {
+  const assertCurrent = vi.fn<() => void>();
+
   // Test data factory
   const createMockTagData = (taggedKind: TagKind = TagKind.POST): TCreateTagInput => ({
     taggedId: taggedKind === TagKind.POST ? 'author:post123' : ('tagged-user-123' as Pubky),
@@ -82,7 +84,7 @@ describe('Tag Application', () => {
       createSpy.mockResolvedValue(true);
       requestSpy.mockResolvedValue(undefined);
 
-      await TagApplication.commitCreate({ tagList: [mockData] });
+      await TagApplication.commitCreate({ tagList: [mockData], assertCurrent });
 
       expect(createSpy).toHaveBeenCalledWith({
         taggedId: mockData.taggedId,
@@ -102,7 +104,9 @@ describe('Tag Application', () => {
 
       createSpy.mockRejectedValue(new Error('Database error'));
 
-      await expect(TagApplication.commitCreate({ tagList: [mockData] })).rejects.toThrow('Database error');
+      await expect(TagApplication.commitCreate({ tagList: [mockData], assertCurrent })).rejects.toThrow(
+        'Database error',
+      );
       expect(createSpy).toHaveBeenCalledOnce();
       expect(requestSpy).not.toHaveBeenCalled();
     });
@@ -115,7 +119,7 @@ describe('Tag Application', () => {
       deleteSpy.mockResolvedValue(true);
       requestSpy.mockRejectedValue(new Error('Failed to PUT to homeserver: 500'));
 
-      await expect(TagApplication.commitCreate({ tagList: [mockData] })).rejects.toThrow(
+      await expect(TagApplication.commitCreate({ tagList: [mockData], assertCurrent })).rejects.toThrow(
         'Failed to PUT to homeserver: 500',
       );
       expect(createSpy).toHaveBeenCalledOnce();
@@ -135,7 +139,7 @@ describe('Tag Application', () => {
       deleteSpy.mockResolvedValue(true);
       requestSpy.mockRejectedValue(new Error('Failed to PUT to homeserver: 500'));
 
-      await expect(TagApplication.commitCreate({ tagList: [mockData] })).rejects.toThrow(
+      await expect(TagApplication.commitCreate({ tagList: [mockData], assertCurrent })).rejects.toThrow(
         'Failed to PUT to homeserver: 500',
       );
       expect(createSpy).toHaveBeenCalledWith({
@@ -159,7 +163,7 @@ describe('Tag Application', () => {
       deleteSpy.mockResolvedValue(true);
       requestSpy.mockRejectedValueOnce(new Error('Failed to PUT to homeserver: 500'));
 
-      await expect(TagApplication.commitCreate({ tagList: mockData })).rejects.toThrow(
+      await expect(TagApplication.commitCreate({ tagList: mockData, assertCurrent })).rejects.toThrow(
         'Failed to PUT to homeserver: 500',
       );
 
@@ -192,7 +196,7 @@ describe('Tag Application', () => {
       deleteSpy.mockResolvedValue(true);
       requestSpy.mockResolvedValue(undefined);
 
-      await TagApplication.commitDelete(mockData);
+      await TagApplication.commitDelete(mockData, assertCurrent);
 
       expect(deleteSpy).toHaveBeenCalledWith({
         taggedId: mockData.taggedId,
@@ -208,7 +212,7 @@ describe('Tag Application', () => {
 
       deleteSpy.mockRejectedValue(new Error('User has not tagged this post with this label'));
 
-      await expect(TagApplication.commitDelete(mockData)).rejects.toThrow(
+      await expect(TagApplication.commitDelete(mockData, assertCurrent)).rejects.toThrow(
         'User has not tagged this post with this label',
       );
       expect(deleteSpy).toHaveBeenCalledOnce();
@@ -223,7 +227,9 @@ describe('Tag Application', () => {
       createSpy.mockResolvedValue(true);
       requestSpy.mockRejectedValue(new Error('Failed to DELETE from homeserver: 404'));
 
-      await expect(TagApplication.commitDelete(mockData)).rejects.toThrow('Failed to DELETE from homeserver: 404');
+      await expect(TagApplication.commitDelete(mockData, assertCurrent)).rejects.toThrow(
+        'Failed to DELETE from homeserver: 404',
+      );
       expect(deleteSpy).toHaveBeenCalledOnce();
       expect(requestSpy).toHaveBeenCalledOnce();
       expect(createSpy).toHaveBeenCalledWith({
@@ -241,7 +247,9 @@ describe('Tag Application', () => {
       createSpy.mockResolvedValue(true);
       requestSpy.mockRejectedValue(new Error('Failed to DELETE from homeserver: 404'));
 
-      await expect(TagApplication.commitDelete(mockData)).rejects.toThrow('Failed to DELETE from homeserver: 404');
+      await expect(TagApplication.commitDelete(mockData, assertCurrent)).rejects.toThrow(
+        'Failed to DELETE from homeserver: 404',
+      );
       expect(deleteSpy).toHaveBeenCalledWith({
         taggedId: mockData.taggedId,
         label: mockData.label,
@@ -261,7 +269,7 @@ describe('Tag Application', () => {
 
       deleteSpy.mockResolvedValue(false); // Nothing to delete
 
-      await TagApplication.commitDelete(mockData);
+      await TagApplication.commitDelete(mockData, assertCurrent);
 
       expect(deleteSpy).toHaveBeenCalledOnce();
       expect(requestSpy).not.toHaveBeenCalled();
@@ -276,7 +284,7 @@ describe('Tag Application', () => {
       requestSpy.mockRejectedValue(httpError(ClientErrorCode.NOT_FOUND, 'commitDelete'));
 
       // Should resolve, not throw — local delete is already correct.
-      await TagApplication.commitDelete(mockData);
+      await TagApplication.commitDelete(mockData, assertCurrent);
 
       expect(deleteSpy).toHaveBeenCalledOnce();
       expect(requestSpy).toHaveBeenCalledOnce();
@@ -316,7 +324,7 @@ describe('Tag Application', () => {
       createSpy.mockResolvedValue(true);
       requestSpy.mockResolvedValue(undefined);
 
-      await TagApplication.commitCreate({ tagList: [listingTagData] });
+      await TagApplication.commitCreate({ tagList: [listingTagData], assertCurrent });
 
       expect(createSpy).toHaveBeenCalledWith({
         taggedId: 'listing:seller123:0034A0X7NJ52A',
@@ -336,7 +344,7 @@ describe('Tag Application', () => {
       createSpy.mockResolvedValue(true);
       requestSpy.mockResolvedValue(undefined);
 
-      await TagApplication.commitCreate({ tagList: [shopTagData] });
+      await TagApplication.commitCreate({ tagList: [shopTagData], assertCurrent });
 
       expect(createSpy).toHaveBeenCalledWith({
         taggedId: 'shop:shopowner123',
@@ -352,7 +360,7 @@ describe('Tag Application', () => {
       deleteSpy.mockResolvedValue(true);
       requestSpy.mockRejectedValue(new Error('Failed to PUT to homeserver: 500'));
 
-      await expect(TagApplication.commitCreate({ tagList: [listingTagData] })).rejects.toThrow(
+      await expect(TagApplication.commitCreate({ tagList: [listingTagData], assertCurrent })).rejects.toThrow(
         'Failed to PUT to homeserver: 500',
       );
       expect(deleteSpy).toHaveBeenCalledWith({
@@ -367,13 +375,16 @@ describe('Tag Application', () => {
       deleteSpy.mockResolvedValue(true);
       requestSpy.mockResolvedValue(undefined);
 
-      await TagApplication.commitDelete({
-        taggedId: shopTagData.taggedId,
-        label: shopTagData.label,
-        taggerId: shopTagData.taggerId,
-        tagUrl: shopTagData.tagUrl,
-        taggedKind: TagKind.SHOP,
-      });
+      await TagApplication.commitDelete(
+        {
+          taggedId: shopTagData.taggedId,
+          label: shopTagData.label,
+          taggerId: shopTagData.taggerId,
+          tagUrl: shopTagData.tagUrl,
+          taggedKind: TagKind.SHOP,
+        },
+        assertCurrent,
+      );
 
       expect(deleteSpy).toHaveBeenCalledWith({
         taggedId: 'shop:shopowner123',
@@ -406,7 +417,7 @@ describe('Tag Application', () => {
           .mockResolvedValue({ found: true, json: { uri: targetUri, label: shopTagData.label } });
         deleteSpy.mockResolvedValue(true);
         requestSpy.mockResolvedValue(undefined);
-        await TagApplication.commitDelete({ ...shopTagData, tagUrl: computedUrl, targetUri });
+        await TagApplication.commitDelete({ ...shopTagData, tagUrl: computedUrl, targetUri }, assertCurrent);
         expect(read).toHaveBeenCalledTimes(shouldRead ? 1 : 0);
         expect(requestSpy.mock.calls.map(([{ url }]) => url)).toEqual(
           shouldRead ? [indexedUrl, computedUrl] : [computedUrl],
@@ -421,7 +432,7 @@ describe('Tag Application', () => {
       createSpy.mockResolvedValue(true);
       requestSpy.mockResolvedValue(undefined);
 
-      await TagApplication.commitCreate({ tagList: [listingTagData, shopTagData] });
+      await TagApplication.commitCreate({ tagList: [listingTagData, shopTagData], assertCurrent });
 
       expect(postCreateSpy).not.toHaveBeenCalled();
       expect(userCreateSpy).not.toHaveBeenCalled();

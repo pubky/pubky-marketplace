@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { getMarketplaceListingRoute, getMarketplaceShopRoute } from '@/app/routes';
 import { TagKind } from '@/application/tag/tag.types';
@@ -8,7 +8,9 @@ import { getSocialHostUrl } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { TagController } from '@/controllers/tag/tag';
 import { normalizeLegacyTagLabel, normalizeSocialTagLabel } from '@/hooks/useTagInput/useTagInput.utils';
-import { AppError } from '@/libs/error/error';
+import { AppError, isAppError } from '@/libs/error/error';
+import { isRetryable } from '@/libs/error/error.utils';
+import { getTtlRetryDelayMs } from '@/libs/runtime-config/runtime-config';
 import type { TagWithAvatars } from '@/molecules/TaggedItem/TaggedItem.types';
 import { transformTagsForViewer } from '@/molecules/TaggedItem/TaggedItem.utils';
 import { toast } from '@/molecules/Toaster/toast';
@@ -28,6 +30,27 @@ export interface UseMarketplaceTagsResult {
 
 function targetTaggedId(target: MarketplaceTagTarget): string {
   return target.kind === TagKind.LISTING ? `${target.sellerPubky}:${target.listingId}` : target.ownerPubky;
+}
+
+/** Retry transient failures while this effect still owns the resource or session. A successful read stops the timer. */
+function refreshTagRead<T>(read: () => Promise<T>, onSuccess?: (value: T) => void) {
+  let active = true;
+  let timer: number | undefined;
+  const attempt = async () => {
+    try {
+      const value = await read();
+      if (active) onSuccess?.(value);
+    } catch (error) {
+      if (active && (!isAppError(error) || isRetryable(error))) {
+        timer = window.setTimeout(attempt, getTtlRetryDelayMs());
+      }
+    }
+  };
+  void attempt();
+  return () => {
+    active = false;
+    window.clearTimeout(timer);
+  };
 }
 
 function socialListingOrShopUrl(target: MarketplaceTagTarget) {
@@ -68,18 +91,10 @@ export function useMarketplaceTags(target: MarketplaceTagTarget | null): UseMark
 
   useEffect(() => {
     if (!viewerId || !session) return;
-    let active = true;
-    void TagController.getWriteEpoch(viewerId).then(
-      (epoch) => {
-        if (active) setAccess({ owner: viewerId, session, sessionOwner, epoch });
-      },
-      () => {
-        if (active) setAccess(null);
-      }, // A transient read can be retried on the next tag action.
+    return refreshTagRead(
+      () => TagController.fetchWriteEpoch(viewerId),
+      (epoch) => setAccess({ owner: viewerId, session, sessionOwner, epoch }),
     );
-    return () => {
-      active = false;
-    };
   }, [viewerId, session, sessionOwner]);
   const epoch =
     access?.owner === viewerId && access?.session === session && access?.sessionOwner === sessionOwner
@@ -92,17 +107,7 @@ export function useMarketplaceTags(target: MarketplaceTagTarget | null): UseMark
         ? getSocialHostUrl('/')
         : socialListingOrShopUrl(target)
       : undefined;
-  const [hasFetched, setHasFetched] = useState(false);
   const targetKey = target ? `${target.kind}:${targetTaggedId(target)}` : null;
-  const fetchKey = JSON.stringify([targetKey, viewerId]);
-  const prevTargetKeyRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (prevTargetKeyRef.current !== fetchKey) {
-      prevTargetKeyRef.current = fetchKey;
-      setHasFetched(false);
-    }
-  }, [fetchKey]);
 
   const localTags = useLiveQuery(
     async () => {
@@ -118,29 +123,14 @@ export function useMarketplaceTags(target: MarketplaceTagTarget | null): UseMark
   );
 
   useEffect(() => {
-    if (!target || hasFetched) return;
-    let stale = false;
-
-    const fetchTags = async () => {
-      try {
-        if (target.kind === TagKind.LISTING) {
-          await CommerceController.fetchListingTags(target.sellerPubky, target.listingId, viewerId ?? undefined);
-        } else {
-          await CommerceController.fetchShopTags(target.ownerPubky, viewerId ?? undefined);
-        }
-      } catch {
-        // Silently degrade — local tags (if any) still render via useLiveQuery.
-      } finally {
-        if (!stale) setHasFetched(true);
-      }
-    };
-
-    void fetchTags();
-    return () => {
-      stale = true;
-    };
+    if (!target) return;
+    return refreshTagRead(() =>
+      target.kind === TagKind.LISTING
+        ? CommerceController.fetchListingTags(target.sellerPubky, target.listingId, viewerId ?? undefined)
+        : CommerceController.fetchShopTags(target.ownerPubky, viewerId ?? undefined),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps -- targetKey encodes every field of target
-  }, [targetKey, hasFetched, viewerId]);
+  }, [targetKey, viewerId, session, sessionOwner]);
 
   const tags = transformTagsForViewer(localTags ?? [], viewerId);
 

@@ -5,6 +5,7 @@ import { PostApplication } from '@/application/post/post';
 import type { TGetDetailsByIdsParams, TGetOrFetchPostParams } from '@/application/post/post.types';
 import { TagApplication } from '@/application/tag/tag';
 import { TagKind, type TCreateTagInput } from '@/application/tag/tag.types';
+import { captureAuthWriteGuard } from '@/controllers/auth/auth-scope';
 import type {
   TCreateCollectionParams,
   TCreatePostParams,
@@ -180,6 +181,7 @@ export class PostController {
     parentPostId,
     originalPostId,
   }: TCreatePostParams): Promise<string> {
+    const assertCurrent = captureAuthWriteGuard();
     let parentUri: string | undefined = undefined;
     let repostedUri: string | undefined = undefined;
     let tagList: TCreateTagInput[] = [];
@@ -231,12 +233,13 @@ export class PostController {
 
     const compositePostId = buildCompositeId({ pubky: authorId, id: postId });
 
+    assertCurrent();
     await PostApplication.commitCreate({
       compositePostId,
       post,
       postUrl: meta.url,
       fileAttachments,
-      tags: tagList,
+      tags: { tagList, assertCurrent },
     });
 
     return compositePostId;

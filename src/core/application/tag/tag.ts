@@ -1,6 +1,9 @@
-import { TagKind, type TCreateTagListInput, type TDeleteTagInput } from '@/application/tag/tag.types';
-import { captureAuthWriteGuard } from '@/controllers/auth/auth-scope';
-import type { TTagEventParams } from '@/controllers/tag/tag.types';
+import {
+  TagKind,
+  type TCreateTagListInput,
+  type TDeleteTagInput,
+  type TTagEventParams,
+} from '@/application/tag/tag.types';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { HttpMethod } from '@/libs/http/http.types';
@@ -61,7 +64,7 @@ async function applyLocalTagWrite(
  * Nexus.
  */
 export class TagApplication {
-  static getWriteEpoch(owner: Pubky) {
+  static fetchWriteEpoch(owner: Pubky) {
     return SocialWriteService.getEpoch(owner, 'tags');
   }
 
@@ -74,7 +77,7 @@ export class TagApplication {
    * Commits the create tag operation to the homeserver and local database.
    * @param tagList - The list of tags to create
    */
-  static async commitCreate({ tagList }: TCreateTagListInput, assertCurrent = captureAuthWriteGuard()) {
+  static async commitCreate({ tagList, assertCurrent }: TCreateTagListInput) {
     // Process tags one at a time so callers never observe hidden in-flight work
     // from later entries after an earlier tag fails.
     for (const { taggerId, taggedId, label, tagUrl, tagJson, tagBody, taggedKind } of tagList) {
@@ -120,7 +123,7 @@ export class TagApplication {
    */
   static async commitDelete(
     { taggerId, taggedId, label, tagUrl, taggedKind, targetUri }: TDeleteTagInput,
-    assertCurrent = captureAuthWriteGuard(),
+    assertCurrent: () => void,
   ) {
     assertCurrent();
     const storedUrl = isMarketplaceTagKind(taggedKind)

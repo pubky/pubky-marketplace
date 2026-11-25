@@ -570,6 +570,20 @@ describe('PostController', () => {
       });
     });
 
+    it('stops attached tag writes if the account signs out while the post is being saved', async () => {
+      const { PostController } = await import('./post');
+      const { TagApplication } = await import('@/application/tag/tag');
+      const actual = await vi.importActual<typeof import('@/application/tag/tag')>('@/application/tag/tag');
+      vi.mocked(TagApplication.commitCreate).mockImplementationOnce(actual.TagApplication.commitCreate);
+      const { endAuthScope } = await import('@/controllers/auth/auth-scope');
+      vi.mocked(HomeserverService.request).mockImplementationOnce(async () => endAuthScope());
+
+      await expect(
+        PostController.commitCreate({ authorId: testData.authorPubky, content: 'With tags', tags: ['bitcoin'] }),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      expect(HomeserverService.request).toHaveBeenCalledTimes(1);
+    });
+
     it('should apply tags to the original post for a simple repost', async () => {
       await setupExistingPost();
       const postCommitSpy = vi.spyOn(PostApplication, 'commitCreate');
@@ -583,7 +597,7 @@ describe('PostController', () => {
       });
 
       expect(postCommitSpy).toHaveBeenCalled();
-      const { tags: tagList } = postCommitSpy.mock.calls[0][0];
+      const tagList = postCommitSpy.mock.calls[0][0].tags?.tagList;
       expect(tagList?.[0]?.taggedId).toBe(testData.fullPostId);
       expect(tagList?.[0]?.label).toBe('bitcoin');
     });
@@ -601,7 +615,7 @@ describe('PostController', () => {
       });
 
       expect(postCommitSpy).toHaveBeenCalled();
-      const { tags: tagList } = postCommitSpy.mock.calls[0][0];
+      const tagList = postCommitSpy.mock.calls[0][0].tags?.tagList;
       expect(tagList?.[0]?.taggedId).toBe(createdId);
       expect(tagList?.[0]?.label).toBe('ethereum');
     });
@@ -621,7 +635,7 @@ describe('PostController', () => {
       });
 
       expect(postCommitSpy).toHaveBeenCalled();
-      const { tags: tagList } = postCommitSpy.mock.calls[0][0];
+      const tagList = postCommitSpy.mock.calls[0][0].tags?.tagList;
       expect(tagList?.[0]?.taggedId).toBe(createdId);
       expect(tagList?.[0]?.label).toBe('nft');
     });

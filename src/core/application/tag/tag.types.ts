@@ -1,4 +1,11 @@
-import type { TTagEventParams } from '@/controllers/tag/tag.types';
+import type { Pubky } from '@/models/models.types';
+
+export interface TTagEventParams {
+  taggerId: Pubky | string;
+  taggedId: Pubky;
+  label: string;
+  taggedKind: TagKind;
+}
 
 export interface TCreateTagInput extends TTagEventParams {
   tagUrl: string;
@@ -8,6 +15,7 @@ export interface TCreateTagInput extends TTagEventParams {
 
 export interface TCreateTagListInput {
   tagList: TCreateTagInput[];
+  assertCurrent: () => void;
 }
 
 export type TDeleteTagInput = Omit<TCreateTagInput, 'tagJson' | 'tagBody'> & { targetUri?: string };

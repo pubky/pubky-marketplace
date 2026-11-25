@@ -30,6 +30,7 @@ import {
   isTransactionalCommerceMode,
 } from '@/config/commerce';
 import { IMAGE_MAX_UPLOAD_SIZE } from '@/config/images';
+import { readAuthEpoch } from '@/controllers/auth/auth-epoch';
 import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import type { SellerDeliveryKey } from '@/libs/commerce/delivery-envelope';
 import {
@@ -267,6 +268,23 @@ export class CommerceController {
     if (stale.size > 0) useCommerceStore.getState().refreshListingCards([...stale]);
   }
 
+  /** Community tag rows share a target key, but their relationship and tag URI belong to one viewer. */
+  private static captureTagViewer(viewerId?: string): () => boolean {
+    const scope = captureAuthScope();
+    const epoch = readAuthEpoch();
+    const session = useAuthStore.getState().session;
+    return () => {
+      const auth = useAuthStore.getState();
+      return (
+        !scope.aborted &&
+        !auth.isLoggingOut &&
+        auth.currentUserPubky === (viewerId ?? null) &&
+        auth.session === session &&
+        readAuthEpoch() === epoch
+      );
+    };
+  }
+
   /**
    * Reads locally cached community tags for a listing (viewer write-through included).
    */
@@ -276,11 +294,7 @@ export class CommerceController {
     return await CommerceApplication.getMarketplaceTags(TagKind.LISTING, `${seller}:${id}`);
   }
 
-  /**
-   * Fetches community tags for a listing from the marketplace Nexus, merging
-   * into the local cache. Returns [] without faking when the tag endpoint is
-   * not deployed yet (404).
-   */
+  /** Refreshes the listing's community tags for the current viewer. */
   static async fetchListingTags(sellerPubky: unknown, listingId: unknown, viewerId?: string) {
     const seller = CommerceRecordNormalizer.pubky(sellerPubky);
     const id = CommerceRecordNormalizer.entityId(listingId);
@@ -288,6 +302,7 @@ export class CommerceController {
       kind: TagKind.LISTING,
       taggedId: `${seller}:${id}`,
       viewerId,
+      isCurrent: this.captureTagViewer(viewerId),
     });
   }
 
@@ -296,16 +311,13 @@ export class CommerceController {
     return await CommerceApplication.getMarketplaceTags(TagKind.SHOP, CommerceRecordNormalizer.pubky(ownerPubky));
   }
 
-  /**
-   * Fetches community tags for a shop from the marketplace Nexus, merging into
-   * the local cache. Returns [] without faking when the tag endpoint is not
-   * deployed yet (404).
-   */
+  /** Refreshes the shop's community tags for the current viewer. */
   static async fetchShopTags(ownerPubky: unknown, viewerId?: string) {
     return await CommerceApplication.fetchMarketplaceTags({
       kind: TagKind.SHOP,
       taggedId: CommerceRecordNormalizer.pubky(ownerPubky),
       viewerId,
+      isCurrent: this.captureTagViewer(viewerId),
     });
   }
 
