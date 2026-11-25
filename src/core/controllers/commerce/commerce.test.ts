@@ -97,6 +97,19 @@ describe('CommerceController', () => {
       'https://app.example/marketplace/settings',
       'opaque-state',
       COMMERCE_FIXTURE_SELLER,
+      undefined,
+    );
+    CommerceController.getPaykitReconnectUrl(
+      'https://app.example/marketplace/settings',
+      'opaque-state',
+      COMMERCE_FIXTURE_SELLER,
+      'USDT',
+    );
+    expect(getPaykitReconnectUrl).toHaveBeenLastCalledWith(
+      'https://app.example/marketplace/settings',
+      'opaque-state',
+      COMMERCE_FIXTURE_SELLER,
+      'USDT',
     );
     expect(() =>
       CommerceController.getPaykitReconnectUrl(
