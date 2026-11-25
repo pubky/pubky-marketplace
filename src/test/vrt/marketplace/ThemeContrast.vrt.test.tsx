@@ -96,7 +96,7 @@ for (const [name, Field] of [
         it.each(['dark', 'light'] as const)('shows a distinct keyboard focus ring in %s mode', async (theme) => {
           const screen = await renderForVRT(
             <main
-              className={surface}
+              className={`p-4 ${surface}`}
               style={{ borderColor: status === 'error' ? 'var(--destructive)' : 'var(--brand)' }}
             >
               <Field value="My profile" variant="dashed" status={status} readOnly />
