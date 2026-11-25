@@ -27,10 +27,13 @@ PAYKIT_URL=https://paykit.staging.shop.example
 LOCKS_URL=https://locks.staging.shop.example
 NEXUS_URL=https://nexus.staging.shop.example          # marketplace index
 # SOCIAL_NEXUS_URL=https://nexus.staging.social.example
+# SOCIAL_CDN_URL=https://media.staging.example/assets  # if the social CDN has a separate base URL
 FIAT_VERIFIER_URL=https://fiat.staging.shop.example   # only if deployed
 ```
 
 For a split deployment, set `NEXUS_URL` to the public marketplace index and `SOCIAL_NEXUS_URL` to the public social Nexus. The Shop's runtime variables for these are `PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL` and `PUBKY_RUNTIME_NEXUS_URL`, respectively. On a single-host installation, the Shop can use `nexusUrl` for both when the marketplace override is unset. Leave `SOCIAL_NEXUS_URL` unset when verifying older builds that only publish `INDEX` in `/llms.txt`.
+
+The verifier expects the Shop's `cdnUrl` (`PUBKY_RUNTIME_CDN_URL`) to be `${SOCIAL_NEXUS_URL}/static`. If avatars and files use a dedicated CDN, set `SOCIAL_CDN_URL` to its full public base, including any path. This override also works on its own. The verifier skips the CDN comparison when both social expectations are unset.
 
 The Shop at `pubky.app/shop` uses the Paykit and Locks instances it shares with Pubky App: one Paykit process and one Postgres, one Lock Server. For that install, `PAYKIT_URL` and `LOCKS_URL` are the shared instances, `SHOP_ORIGINS` is the App origin (`https://pubky.app` or `https://staging.pubky.app`, no `/shop`) with `SHOP_PATH=/shop/marketplace`, and the shared Paykit config must list the Lock Server key and the marketplace service key under `[signed_services] trusted_public_keys` and the App origin under `[setup] allowed_origins`. See [Shop embedding](shop-embedding.md) for the full list of settings.
 
@@ -91,7 +94,7 @@ Exit code 0 means no FAIL; `--strict` also fails on WARN. `report.md` in the out
 | `tls`     | `tls.<host>`                              | trusted certificate for the exact host, TLS 1.2+, at least 7 days left (WARN under `TLS_MIN_DAYS`, default 21)       | install or renew the certificate                                                                          |
 | `tls`     | `tls.<host>.redirect`                     | port 80 redirects to HTTPS or is closed                                                                              | redirect HTTP to HTTPS                                                                                    |
 | `shop`    | `shop.page`, `shop.runtime`               | `/marketplace` returns HTML with `window.__PUBKY_CONFIG__`                                                            | check the Shop deployment                                                                                 |
-| `shop`    | `shop.runtime.<key>`                      | `marketplaceUrl`, the effective `marketplaceNexusUrl`, `locksUrl` and `paykitSetupUrl` match the stack. When configured, `nexusUrl` matches `SOCIAL_NEXUS_URL`. | set the matching `PUBKY_RUNTIME_*` value and restart the Shop |
+| `shop`    | `shop.runtime.<key>`                      | `marketplaceUrl`, the effective `marketplaceNexusUrl`, `locksUrl` and `paykitSetupUrl` match the stack. The configured social expectations match `nexusUrl` and the avatar/file base `cdnUrl`. | set the matching `PUBKY_RUNTIME_*` value and restart the Shop |
 | `shop`    | `shop.runtime.forbidden`, `shop.llms`, `shop.llms.<host>.social` | no retired host in the runtime config. The Shop's `/llms.txt` publishes `INDEX` for the marketplace and, when `SOCIAL_NEXUS_URL` is set, `SOCIAL` for the social Nexus. | verify the public Nexus URLs in the Shop build served under `SHOP_EMBED_PATH` when set |
 | `shop`    | `shop.runtime.inbox`                      | the Shop runtime config names the chat inbox (`inboxUrl`); without it a stranger's first message never reaches the recipient's Messages badge | set `PUBKY_RUNTIME_INBOX_URL` and `PUBKY_RUNTIME_INBOX_AUDIENCE` and restart the Shop                     |
 | `shop`    | `shop.inbox.reachable`                    | WARN, not FAIL, when the inbox does not answer yet (no certificate, refused, timeout, or a proxy's 404/502/503/504): chat works without it and starts pinging by itself once the service is deployed; the CORS and authentication checks below run only when it answers | deploy `pubky/inbox` at `PUBKY_RUNTIME_INBOX_URL` (inbox team); `--strict` turns the WARN into a failure |

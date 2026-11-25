@@ -24,6 +24,7 @@ vi.mock('@/services/homeserver/homeserver', () => ({
     request: vi.fn(),
     putBlob: vi.fn(),
     getJsonIfFound: vi.fn(),
+    canCurrentUserSessionWrite: vi.fn(() => false),
     canCurrentHostSessionWrite: vi.fn(() => true),
     canCurrentSessionWrite: vi.fn(() => true),
   },
@@ -338,6 +339,43 @@ describe('TagController', () => {
 describe('Market social v1 tags', () => {
   const viewer = 'dzswkfy7ek3bqnoc89jxuqqfbzhjrj6mi8qthgbxxcqkdugm3rio';
   const seller = '8kkppkmiubfq4pxn6f73nqrhhhgkb5xyfprntc9si3np9ydbotto';
+
+  it('retries the active tag after a failed delete even when its legacy copy is already gone', async () => {
+    const { buildTag } = await import('pubky-social-specs');
+    const { TagController } = await import('./tag');
+    const { SocialWriteService } = await import('@/services/homeserver/social-writes');
+    const { MarketplaceTagsModel } = await import('@/models/marketplace/tags/marketplaceTags');
+    const rowId = `shop:${seller}`;
+    const target = `pubky://${seller}/pub/pubky.app/marketplace/v1/shop.json`;
+    const tag = buildTag(viewer, target, 'art');
+    const legacyUrl = `pubky://${viewer}/pub/pubky.app/tags/${tag.id}`;
+    const params = { taggedId: seller, taggedKind: TagKind.SHOP, taggerId: viewer, label: 'art' };
+    await MarketplaceTagsModel.upsert({
+      id: rowId,
+      tags: [{ label: 'art', taggers: [viewer], taggers_count: 1, relationship: true, tag_uri: tag.url }],
+    });
+    vi.mocked(SocialWriteService.requireEpoch).mockResolvedValueOnce('v1').mockResolvedValueOnce('v1');
+    vi.mocked(HomeserverService.canCurrentUserSessionWrite).mockReturnValueOnce(true).mockReturnValueOnce(true);
+    vi.mocked(HomeserverService.getJsonIfFound)
+      .mockResolvedValueOnce({ found: true, json: { uri: target, label: 'art' } })
+      .mockResolvedValueOnce({ found: false });
+    const request = vi
+      .mocked(HomeserverService.request)
+      .mockClear()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('homeserver unavailable'))
+      .mockResolvedValueOnce(undefined);
+    await expect(TagController.commitDelete(params)).rejects.toThrow('homeserver unavailable');
+    expect((await MarketplaceTagsModel.findById(rowId))?.tags[0]).toMatchObject({
+      relationship: true,
+      tag_uri: tag.url,
+    });
+
+    await TagController.commitDelete(params);
+    expect(request.mock.calls.map(([{ url }]) => url)).toEqual([legacyUrl, tag.url, tag.url]);
+    expect((await MarketplaceTagsModel.findById(rowId))?.tags).toEqual([]);
+  });
+
   it.each(['same tab', 'another tab'] as const)(
     'does not restore an outgoing viewer’s tag after sign-out in %s during the index-address read',
     async (source) => {

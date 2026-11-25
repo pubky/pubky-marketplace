@@ -231,6 +231,7 @@ export const getMarketplaceUrl = (): string => getRuntimeConfig().marketplaceUrl
  */
 export const getMarketplaceNexusUrl = (): string =>
   getRuntimeConfig().marketplaceNexusUrl ?? getRuntimeConfig().nexusUrl;
+export const getMarketplaceTagsBackfilled = (): boolean => getRuntimeConfig().marketplaceTagsBackfilled;
 /** The chat inbox ping service; `null` when the deployment has none. */
 export const getInboxUrl = (): string | null => getRuntimeConfig().inboxUrl ?? null;
 /** Audience the inbox expects in session proofs; defaults to the inbox URL. */

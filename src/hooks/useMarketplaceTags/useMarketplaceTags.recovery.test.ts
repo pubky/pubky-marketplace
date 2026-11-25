@@ -39,6 +39,8 @@ describe('community tags on an open Shop page', () => {
   it.each(targets)(
     'keeps cached $target.kind tags and refreshes them when the social Nexus recovers',
     async ({ target, rowId }) => {
+      vi.stubEnv('PUBKY_RUNTIME_MARKETPLACE_TAGS_BACKFILLED', 'true');
+      resetRuntimeConfigForTests();
       await MarketplaceTagsModel.upsert({ id: rowId, tags: [tag('cached')] });
       let available = false;
       const request = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
@@ -57,6 +59,19 @@ describe('community tags on an open Shop page', () => {
       available = true;
       await waitFor(() => expect(labels()).toEqual(['recovered']));
       expect(request.mock.calls.some(([input]) => String(input).startsWith(market))).toBe(false);
+    },
+  );
+  it.each(targets)(
+    'retains historical $target.kind tags until the social index is backfilled',
+    async ({ target, rowId }) => {
+      await MarketplaceTagsModel.upsert({ id: rowId, tags: [tag('historical')] });
+      vi.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(Response.json({}))
+        .mockResolvedValueOnce(Response.json({ tags: [tag('recent')] }));
+      const { result } = renderHook(() => useMarketplaceTags(target));
+      await waitFor(() =>
+        expect(result.current.tags.map(({ label }) => label).sort()).toEqual(['historical', 'recent']),
+      );
     },
   );
 });

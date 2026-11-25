@@ -4,6 +4,7 @@ import {
   type TDeleteTagInput,
   type TTagEventParams,
 } from '@/application/tag/tag.types';
+import { marketplaceTagCopyUrls } from '@/libs/commerce/tag-uri';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { HttpMethod } from '@/libs/http/http.types';
@@ -139,24 +140,23 @@ export class TagApplication {
     // Only send to homeserver if something was actually deleted locally
     if (wasDeleted) {
       try {
-        // A tag in the index can name its original or migrated copy. Remove the known
-        // viewer-owned address first, so a failed second delete stays safe to retry.
         assertCurrent();
-        const urls = [tagUrl];
-        if (storedUrl && storedUrl !== tagUrl && targetUri) {
-          const legacyRoot = `pubky://${taggerId}/pub/pubky.app/tags/`;
-          // A legacy account never touches a v1 file. A migrated account can also clean up an
-          // indexed v0 copy if its current grant still covers that legacy directory.
-          const mayDelete = tagUrl.startsWith(legacyRoot)
-            ? storedUrl.startsWith(legacyRoot)
-            : !storedUrl.startsWith(legacyRoot) ||
-              HomeserverService.canCurrentUserSessionWrite(taggerId, '/pub/pubky.app/tags/');
-          if (mayDelete) {
-            const copy = await HomeserverService.getJsonIfFound<{ uri: string; label: string }>({ url: storedUrl });
-            if (copy.found && copy.json?.uri === targetUri && copy.json.label === label) urls.unshift(storedUrl);
+        const copies =
+          isMarketplaceTagKind(taggedKind) && targetUri
+            ? marketplaceTagCopyUrls(
+                taggerId,
+                tagUrl,
+                storedUrl,
+                HomeserverService.canCurrentUserSessionWrite(taggerId, '/pub/pubky.app/tags/'),
+              )
+            : [];
+        // The migrator keeps the 0.x record. Delete verified copies first so a retry can still remove the active tag.
+        for (const url of [...copies, tagUrl]) {
+          assertCurrent();
+          if (url !== tagUrl) {
+            const copy = await HomeserverService.getJsonIfFound<{ uri: string; label: string }>({ url });
+            if (!copy.found || !copy.json || copy.json.uri !== targetUri || copy.json.label !== label) continue;
           }
-        }
-        for (const url of urls) {
           assertCurrent();
           try {
             await HomeserverService.request({ method: HttpMethod.DELETE, url });

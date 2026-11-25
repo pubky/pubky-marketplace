@@ -76,7 +76,7 @@ Keep these when changing the scripts:
 
 ## Changing the skill
 
-- Run the unit tests: `node --test .cursor/skills/marketplace-install-verify/scripts/lib.test.mjs`.
+- Run the unit and local CLI fixture tests with `node --test .cursor/skills/marketplace-install-verify/scripts/*.test.mjs`.
 - A new check needs a PASS run on a healthy stack and a FAIL run with a deliberately wrong input
   before it is relied on.
 - The skill carries no platform-specific helpers: a deployment's facts come from the config file and the

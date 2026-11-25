@@ -30,7 +30,6 @@ import {
   isTransactionalCommerceMode,
 } from '@/config/commerce';
 import { IMAGE_MAX_UPLOAD_SIZE } from '@/config/images';
-import { readAuthEpoch } from '@/controllers/auth/auth-epoch';
 import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import type { SellerDeliveryKey } from '@/libs/commerce/delivery-envelope';
 import {
@@ -73,6 +72,7 @@ import type { CommerceConditionFilter, CommerceSaleFormatFilter, CommerceSort } 
 import { useNotificationStore } from '@/stores/notification/notification.store';
 import { SELLER_PAYMENT_CONFIRM_PERSIST_KEY } from '@/stores/persistedKeys';
 import { useSellerPaymentConfirmStore } from '@/stores/seller-payment-confirm/seller-payment-confirm.store';
+import { captureTagViewer } from './tag-viewer';
 
 /** Rates for an order, or why this device could not open the address to quote against. */
 export type ShippingRatesResult =
@@ -268,23 +268,6 @@ export class CommerceController {
     if (stale.size > 0) useCommerceStore.getState().refreshListingCards([...stale]);
   }
 
-  /** Community tag rows share a target key, but their relationship and tag URI belong to one viewer. */
-  private static captureTagViewer(viewerId?: string): () => boolean {
-    const scope = captureAuthScope();
-    const epoch = readAuthEpoch();
-    const session = useAuthStore.getState().session;
-    return () => {
-      const auth = useAuthStore.getState();
-      return (
-        !scope.aborted &&
-        !auth.isLoggingOut &&
-        auth.currentUserPubky === (viewerId ?? null) &&
-        auth.session === session &&
-        readAuthEpoch() === epoch
-      );
-    };
-  }
-
   /**
    * Reads locally cached community tags for a listing (viewer write-through included).
    */
@@ -302,7 +285,7 @@ export class CommerceController {
       kind: TagKind.LISTING,
       taggedId: `${seller}:${id}`,
       viewerId,
-      isCurrent: this.captureTagViewer(viewerId),
+      isCurrent: captureTagViewer(viewerId),
     });
   }
 
@@ -317,7 +300,7 @@ export class CommerceController {
       kind: TagKind.SHOP,
       taggedId: CommerceRecordNormalizer.pubky(ownerPubky),
       viewerId,
-      isCurrent: this.captureTagViewer(viewerId),
+      isCurrent: captureTagViewer(viewerId),
     });
   }
 

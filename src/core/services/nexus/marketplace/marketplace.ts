@@ -1,5 +1,6 @@
 import { buildMarketUri } from 'pubky-market-specs';
 import { MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS } from '@/config/commerce';
+import { getMarketplaceTagsBackfilled } from '@/libs/runtime-config/runtime-config';
 import { marketplaceApi } from '@/services/nexus/marketplace/marketplace.api';
 import type {
   NexusAttestorAnnotation,
@@ -21,7 +22,7 @@ import type { NexusTag } from '@/services/nexus/nexus.types';
 import { buildUrlWithQuery, fetchNexus, fetchNexusIfFound, queryNexus } from '@/services/nexus/nexus.utils';
 import { socialNexusServesV1 } from '@/services/nexus/social-v1';
 
-/** A short first page of the canonical resource replaces the tag projection from the old index. */
+/** A complete first page is authoritative only after historical Market tags were backfilled. */
 export type MarketplaceTagPage = { tags: NexusTag[]; completeResource: boolean };
 
 /**
@@ -113,7 +114,7 @@ export class NexusMarketplaceService {
       url,
     });
     const tags = (view?.tags ?? []).map((tag) => ({ ...tag, relationship: tag.tag_uri != null }));
-    return { tags, completeResource: skip_tags === 0 && tags.length < limit_tags };
+    return { tags, completeResource: getMarketplaceTagsBackfilled() && skip_tags === 0 && tags.length < limit_tags };
   }
 
   /**

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS } from '@/config/commerce';
 import { getNexusUrl } from '@/config/nexus';
+import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
 import { fetchNexusIfFound, queryNexus } from '@/services/nexus/nexus.utils';
 import { createNexusListingDetailsFixture } from '@/test/fixtures/commerce/commerce';
 import { NexusMarketplaceService } from './marketplace';
@@ -238,6 +239,16 @@ describe('NexusMarketplaceService', () => {
 });
 
 describe('Commerce tags on the social Nexus', () => {
+  beforeEach(() => {
+    vi.stubEnv('PUBKY_RUNTIME_MARKETPLACE_TAGS_BACKFILLED', 'true');
+    resetRuntimeConfigForTests();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    resetRuntimeConfigForTests();
+  });
+
   const seller = '8kkppkmiubfq4pxn6f73nqrhhhgkb5xyfprntc9si3np9ydbotto';
   const viewer = 'dzswkfy7ek3bqnoc89jxuqqfbzhjrj6mi8qthgbxxcqkdugm3rio';
 

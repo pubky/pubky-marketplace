@@ -61,18 +61,26 @@ Follow [Shop embedding](../launch/shop-embedding.md) for the fixed `/shop-embed`
 
 The team rollout needs separate origins for social and Market reads. Check the running Shop's `window.__PUBKY_CONFIG__` against the deployment configuration. Use the corresponding staging origins when testing on staging.
 
-| Shop runtime variable                 | Production origin              | Request to verify                                     |
-| ------------------------------------- | ------------------------------ | ----------------------------------------------------- |
-| `PUBKY_RUNTIME_NEXUS_URL`             | `https://nexus.pubky.app`      | `GET /v1/info` on the social Nexus after its upgrade  |
-| `PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL` | `https://shop-nexus.pubky.app` | `GET /v0/stream/listings?limit=1` on the Market index |
+| Shop runtime variable                 | Production base URL              | Request to verify                                                                                                                                    |
+| ------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PUBKY_RUNTIME_NEXUS_URL`             | `https://nexus.pubky.app`        | `GET /v1/info` on the upgraded social Nexus                                                                                                          |
+| `PUBKY_RUNTIME_CDN_URL`               | `https://nexus.pubky.app/static` | `GET /static/avatar/<v1-only-user-id>` on the social Nexus. Use a v1-only account with a known avatar and verify that its image renders in the Shop. |
+| `PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL` | `https://shop-nexus.pubky.app`   | `GET /v0/stream/listings?limit=1` on the Market index                                                                                                |
 
-These values appear as `nexusUrl` and `marketplaceNexusUrl` in the browser. If `marketplaceNexusUrl` is unset, commerce reads fall back to `nexusUrl`. Configure both in [shop-migration](https://github.com/pubky/shop-migration/blob/main/config/pubky-marketplace/pubky-marketplace.env) when deploying separate indexes.
+These values appear as `nexusUrl`, `cdnUrl` and `marketplaceNexusUrl` in the framed Shop's runtime config. If `marketplaceNexusUrl` is unset, commerce reads fall back to `nexusUrl`. Set all three values in the deployment environment for the split rollout. [shop-migration environment](https://github.com/pubky/shop-migration/blob/main/config/pubky-marketplace/pubky-marketplace.env)
 
-For the [install verifier](../launch/install-verification.md), set `NEXUS_URL` to the Market index and `SOCIAL_NEXUS_URL` to the social Nexus in the stack's configuration file. Run the read-only Shop checks against the deployed build:
+In the install verifier's stack file, set `NEXUS_URL` to the Market index and `SOCIAL_NEXUS_URL` to the social Nexus. The verifier checks `cdnUrl` against the social Nexus's `/static` base by default. Set `SOCIAL_CDN_URL` explicitly for a separate media CDN. Run the read-only Shop checks against the deployed build. [Install verifier](../launch/install-verification.md)
 
 ```bash
 node .cursor/skills/marketplace-install-verify/scripts/verify.mjs --config /path/to/stack.env --only shop
 ```
+
+**Gate the production switch on the historical tag backfill.** Older social Nexus versions skipped tags on marketplace resources and advanced the watcher cursor. An upgrade can therefore serve `/v1/info` and index new tags while omitting tags written before the upgrade. A fresh browser has no saved tags to fill that gap. [Nexus indexing change](https://github.com/pubky/pubky-nexus/pull/1165)
+
+1. Record a listing and a storefront that each had a community tag before the target Nexus upgrade. Keep both canonical resource URIs, the labels and their pre-upgrade evidence from the Market index. For the staging removal check, choose a label applied only by the fixture account.
+2. Have the Nexus operator confirm the target deployment completed a backfill or replay covering historical tags on **both** listing and shop resources. Record the deployment, coverage and completion evidence. Query that environment's social Nexus at `GET /v1/resource/by-uri?uri=<encoded-canonical-uri>` for each fixture, paging through tags if needed. Verify the original label on both.
+3. Open the candidate Shop's listing and storefront in a fresh browser profile using the target indexes. Both historical tags must appear before anyone re-tags the resources. Keep the production switch on hold if backfill completion is unconfirmed or either check fails.
+4. Keep `PUBKY_RUNTIME_MARKETPLACE_TAGS_BACKFILLED=false` (the default) until those checks pass for that environment. Then set it to `true`, restart the Shop and verify `marketplaceTagsBackfilled` in the framed build. On staging, remove the fixture account's tag. Once its label disappears from the social index, verify it disappears both in a browser that cached the label before removal and in a fresh browser. The other historical tag must remain visible. If reconciliation fails, reset the flag to `false`, restart the candidate and hold promotion while the operator investigates.
 
 Run these checks on the paired staging builds before promoting the Shop and the App with user migration. Publishing the Social Specs packages can proceed independently.
 

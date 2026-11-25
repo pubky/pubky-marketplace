@@ -529,6 +529,7 @@ export const APP_RUNTIME_DEFAULTS = {
   auctionDurationsMinutes: [DEFAULT_AUCTION_DURATION_MINUTES],
   exchangeRateApi: 'https://api1.blocktank.to/api/fx/rates/btc',
   marketplaceUrl: 'http://localhost:3100',
+  marketplaceTagsBackfilled: false,
   locksUrl: 'http://localhost:3101',
   paykitSetupUrl: 'http://localhost:3102/setup',
   paykitSetupCreatorParam: true,
@@ -640,6 +641,8 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
    * `getMarketplaceNexusUrl`).
    */
   marketplaceNexusUrl: urlValue.optional(),
+  /** The social Nexus has replayed historical listing and shop tags for this deployment. */
+  marketplaceTagsBackfilled: z.boolean().default(APP_RUNTIME_DEFAULTS.marketplaceTagsBackfilled),
   /**
    * The inbox ping service used by chat for first contact and wake-ups.
    * Absent means chat runs on homeserver streams and polling alone.
@@ -862,6 +865,7 @@ export const runtimeEnvInputSchema = z
     exchangeRateApi: optionalUrlFromString,
     marketplaceUrl: optionalUrlFromString,
     marketplaceNexusUrl: optionalUrlFromString,
+    marketplaceTagsBackfilled: optionalBooleanFromString,
     inboxUrl: optionalUrlFromString,
     inboxAudience: optionalTrimmedString,
     locksUrl: optionalUrlFromString,
@@ -974,6 +978,7 @@ export const runtimeEnvInputSchemaWithDefaults = z
     exchangeRateApi: optionalUrlFromString,
     marketplaceUrl: optionalUrlFromString,
     marketplaceNexusUrl: optionalUrlFromString,
+    marketplaceTagsBackfilled: optionalBooleanFromString,
     inboxUrl: optionalUrlFromString,
     inboxAudience: optionalTrimmedString,
     locksUrl: optionalUrlFromString,
@@ -1077,6 +1082,7 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   exchangeRateApi: 'PUBKY_RUNTIME_EXCHANGE_RATE_API',
   marketplaceUrl: 'PUBKY_RUNTIME_MARKETPLACE_URL',
   marketplaceNexusUrl: 'PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL',
+  marketplaceTagsBackfilled: 'PUBKY_RUNTIME_MARKETPLACE_TAGS_BACKFILLED',
   inboxUrl: 'PUBKY_RUNTIME_INBOX_URL',
   inboxAudience: 'PUBKY_RUNTIME_INBOX_AUDIENCE',
   locksUrl: 'PUBKY_RUNTIME_LOCKS_URL',

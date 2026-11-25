@@ -146,6 +146,7 @@ const PAYKIT = url('PAYKIT_URL');
 const LOCKS = url('LOCKS_URL');
 const NEXUS = url('NEXUS_URL');
 const SOCIAL_NEXUS = url('SOCIAL_NEXUS_URL');
+const SOCIAL_CDN = url('SOCIAL_CDN_URL') ?? (SOCIAL_NEXUS && `${SOCIAL_NEXUS}/static`);
 const FIAT = url('FIAT_VERIFIER_URL');
 const INBOX = url('INBOX_URL');
 const FORBIDDEN_HOSTS = parseList(get('FORBIDDEN_HOSTS')).map((h) => h.toLowerCase());
@@ -359,7 +360,7 @@ async function sectionConfig() {
     missing.length ? `missing ${missing.join(', ')}` : `${SHOP_ORIGINS.length} Shop origin(s), 4 services`,
     `set ${missing.join(', ')}`,
   );
-  const all = [...SHOP_ORIGINS, SERVICE, PAYKIT, LOCKS, NEXUS, SOCIAL_NEXUS, FIAT, INBOX].filter(Boolean);
+  const all = [...SHOP_ORIGINS, SERVICE, PAYKIT, LOCKS, NEXUS, SOCIAL_NEXUS, SOCIAL_CDN, FIAT, INBOX].filter(Boolean);
   const plain = all.filter((value) => !value.startsWith('https://'));
   if (plain.length && get('ALLOW_HTTP') !== '1')
     fail('config.https', 'every public endpoint uses https', plain.join(', '), 'serve every public endpoint over HTTPS');
@@ -368,7 +369,7 @@ async function sectionConfig() {
 
 async function sectionTls() {
   heading('tls');
-  const hosts = [...new Set([...SHOP_ORIGINS, SERVICE, PAYKIT, LOCKS, NEXUS, SOCIAL_NEXUS, FIAT, INBOX].filter(Boolean))]
+  const hosts = [...new Set([...SHOP_ORIGINS, SERVICE, PAYKIT, LOCKS, NEXUS, SOCIAL_NEXUS, SOCIAL_CDN, FIAT, INBOX].filter(Boolean))]
     .filter((value) => value.startsWith('https://'))
     .map((value) => new URL(value).hostname);
   const minDays = Number(get('TLS_MIN_DAYS') ?? 21);
@@ -463,6 +464,7 @@ async function sectionShop() {
       ['marketplaceUrl', SERVICE, 'PUBKY_RUNTIME_MARKETPLACE_URL'],
       ['marketplaceNexusUrl', NEXUS, 'PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL'],
       ['nexusUrl', SOCIAL_NEXUS, 'PUBKY_RUNTIME_NEXUS_URL'],
+      ['cdnUrl', SOCIAL_CDN, 'PUBKY_RUNTIME_CDN_URL'],
       ['locksUrl', LOCKS, 'PUBKY_RUNTIME_LOCKS_URL'],
       ['paykitSetupUrl', PAYKIT && `${PAYKIT}/setup`, 'PUBKY_RUNTIME_PAYKIT_SETUP_URL'],
       ['inboxUrl', INBOX, 'PUBKY_RUNTIME_INBOX_URL'],

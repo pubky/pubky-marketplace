@@ -1,5 +1,6 @@
 import { TagKind } from '@/application/tag/tag.types';
 import { db } from '@/database/franky/franky';
+import { parseViewerTagUrl } from '@/libs/commerce/tag-uri';
 import { DatabaseErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -110,13 +111,7 @@ export class LocalMarketplaceTagService {
   /** A resource tag can have a migrated id. Use only this viewer's own social tag file. */
   static async getViewerTagUrl(rowId: string, label: string, viewer: Pubky): Promise<string | undefined> {
     const tag = (await this.read(rowId)).find((tag) => tag.label === label && tag.relationship);
-    if (!tag?.tag_uri) return;
-    const owner = `pubky://${viewer}/pub/`;
-    if (!tag.tag_uri.startsWith(owner)) return;
-    const path = tag.tag_uri.slice(owner.length);
-    if (/^(?:social\/v1\/tags\/[0-9A-HJKMNP-TV-Z]{26}\.json|pubky\.app\/tags\/[0-9A-HJKMNP-TV-Z]{26})$/.test(path)) {
-      return tag.tag_uri;
-    }
+    if (tag?.tag_uri && parseViewerTagUrl(viewer, tag.tag_uri)) return tag.tag_uri;
   }
 
   /**

@@ -1,3 +1,6 @@
+import { PubkySpecsBuilder } from 'pubky-app-specs';
+import { buildMarketUri } from 'pubky-market-specs';
+import { buildTag } from 'pubky-social-specs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TagKind } from '@/application/tag/tag.types';
 import { ClientErrorCode } from '@/libs/error/error.codes';
@@ -394,6 +397,36 @@ describe('Tag Application', () => {
       expect(requestSpy).toHaveBeenCalledWith({ method: HttpMethod.DELETE, url: shopTagData.tagUrl });
     });
 
+    it.each([TagKind.LISTING, TagKind.SHOP] as const)(
+      'removes both copies of a migrated %s tag after Nexus returns the v1 address',
+      async (taggedKind) => {
+        const taggerId = 'dzswkfy7ek3bqnoc89jxuqqfbzhjrj6mi8qthgbxxcqkdugm3rio';
+        const seller = '8kkppkmiubfq4pxn6f73nqrhhhgkb5xyfprntc9si3np9ydbotto';
+        const taggedId = taggedKind === TagKind.SHOP ? seller : `${seller}:boots`;
+        const targetUri =
+          taggedKind === TagKind.SHOP ? buildMarketUri(seller, 'shop') : buildMarketUri(seller, 'listing', 'boots');
+        const legacy = new PubkySpecsBuilder(taggerId).createTag(targetUri, 'Art');
+        const current = buildTag(taggerId, targetUri, 'art');
+        expect(legacy.meta.id).toBe(current.id);
+        const { deleteSpy, requestSpy } = setupMarketplaceMocks();
+        deleteSpy.mockResolvedValue(true);
+        vi.spyOn(LocalMarketplaceTagService, 'getViewerTagUrl').mockResolvedValue(current.url);
+        vi.spyOn(HomeserverService, 'canCurrentUserSessionWrite').mockReturnValue(true);
+        const read = vi
+          .spyOn(HomeserverService, 'getJsonIfFound')
+          .mockResolvedValue({ found: true, json: legacy.tag.toJson() });
+        requestSpy.mockResolvedValue(undefined);
+
+        await TagApplication.commitDelete(
+          { taggedKind, taggedId, taggerId, targetUri, label: 'art', tagUrl: current.url },
+          assertCurrent,
+        );
+
+        expect(read.mock.calls).toEqual([[{ url: legacy.meta.url }]]);
+        expect(requestSpy.mock.calls.map(([{ url }]) => url)).toEqual([legacy.meta.url, current.url]);
+      },
+    );
+
     it.each([
       ['legacy', 'v1', false, false],
       ['v1', 'legacy', false, false],
@@ -414,14 +447,48 @@ describe('Tag Application', () => {
         vi.spyOn(HomeserverService, 'canCurrentUserSessionWrite').mockReturnValue(oldGrant);
         const read = vi
           .spyOn(HomeserverService, 'getJsonIfFound')
-          .mockResolvedValue({ found: true, json: { uri: targetUri, label: shopTagData.label } });
+          .mockImplementation(async ({ url }) =>
+            url === indexedUrl ? { found: true, json: { uri: targetUri, label: shopTagData.label } } : { found: false },
+          );
         deleteSpy.mockResolvedValue(true);
         requestSpy.mockResolvedValue(undefined);
         await TagApplication.commitDelete({ ...shopTagData, tagUrl: computedUrl, targetUri }, assertCurrent);
-        expect(read).toHaveBeenCalledTimes(shouldRead ? 1 : 0);
+        expect(read.mock.calls.some(([{ url }]) => url === indexedUrl)).toBe(shouldRead);
+        if (active === 'v1' && !oldGrant) {
+          expect(read.mock.calls.some(([{ url }]) => url.includes('/pub/pubky.app/tags/'))).toBe(false);
+        }
         expect(requestSpy.mock.calls.map(([{ url }]) => url)).toEqual(
           shouldRead ? [indexedUrl, computedUrl] : [computedUrl],
         );
+      },
+    );
+
+    it.each(['absent', 'different target', 'different label'])(
+      'skips a legacy candidate that is %s',
+      async (reason) => {
+        const id = '00000000000000000000000000';
+        const tagUrl = `pubky://tagger123/pub/social/v1/tags/${id}.json`;
+        const legacyUrl = `pubky://tagger123/pub/pubky.app/tags/${id}`;
+        const targetUri = 'pubky://shopowner123/pub/pubky.app/marketplace/v1/shop.json';
+        const { deleteSpy, requestSpy } = setupMarketplaceMocks();
+        deleteSpy.mockResolvedValue(true);
+        vi.spyOn(LocalMarketplaceTagService, 'getViewerTagUrl').mockResolvedValue(tagUrl);
+        vi.spyOn(HomeserverService, 'canCurrentUserSessionWrite').mockReturnValue(true);
+        const read = vi.spyOn(HomeserverService, 'getJsonIfFound').mockResolvedValue(
+          reason === 'absent'
+            ? { found: false }
+            : {
+                found: true,
+                json: {
+                  uri: reason === 'different target' ? 'pubky://different' : targetUri,
+                  label: reason === 'different label' ? 'different' : shopTagData.label,
+                },
+              },
+        );
+        requestSpy.mockResolvedValue(undefined);
+        await TagApplication.commitDelete({ ...shopTagData, targetUri, tagUrl }, assertCurrent);
+        expect(read).toHaveBeenCalledWith({ url: legacyUrl });
+        expect(requestSpy.mock.calls.map(([{ url }]) => url)).toEqual([tagUrl]);
       },
     );
 
