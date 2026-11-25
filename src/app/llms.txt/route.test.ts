@@ -3,6 +3,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceAttestorApplication } from '@/application/commerce/attestor';
 import {
+  MARKETPLACE_ATTESTOR_PROFILE_RETRY_MS,
   MARKETPLACE_ATTESTOR_PROFILE_TTL_MS,
   MARKETPLACE_ATTESTOR_PROFILE_WAIT_MS,
   MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS,
@@ -207,12 +208,12 @@ describe('GET /llms.txt', () => {
     expect(body).toContain(`/reputation?attestors=${windows}`);
     expect(body).toContain(`Configured bounds, profile not verified:\n- ${attestor.pubky}:`);
     expect(copy).toContain(
-      `${attestor.pubky}: this attestor's signed profile was not read and verified for this guide, so any window above may be later than the Shop's.`,
+      `${attestor.pubky}: this attestor's signed profile has no current verified reading for this guide (not read, not verified, or its last verified reading expired and is being read again), so any window above may be later than the Shop's.`,
     );
     expect(body).toContain(`INDEX/v0/marketplace/attestor/${attestor.pubky}/profile`);
     expect(body).toContain(`pubky://${attestor.pubky}/pub/pubky.app/marketplace/v1/attestor/profile`);
     expect(copy).toContain(
-      "If a profile cannot be verified, counts from these windows (buyers, orders, reviews) are upper bounds; a rating computed from them is unconfirmed and may be higher or lower than the Shop's.",
+      "If a profile cannot be verified, counts from these windows (buyers, orders, reviews) are upper bounds, unless a profile being read again relaxes a cutoff it stated before; a rating computed from them is unconfirmed and may be higher or lower than the Shop's.",
     );
     expect(body).not.toContain('present any figure from these windows as an upper bound');
     expect(body).not.toContain('its window above is the configured bound');
@@ -291,7 +292,9 @@ describe('GET /llms.txt', () => {
 
     expect(bullets).toHaveLength(2);
     for (const { pubky } of [first, second]) {
-      expect(notice).toContain(`\n- ${pubky}: this attestor's signed profile was not read and verified`);
+      expect(notice).toContain(
+        `\n- ${pubky}: this attestor's signed profile has no current verified reading for this guide`,
+      );
       expect(notice).toContain(`INDEX/v0/marketplace/attestor/${pubky}/profile`);
       expect(notice).toContain(`pubky://${pubky}/pub/pubky.app/marketplace/v1/attestor/profile`);
     }
@@ -344,6 +347,92 @@ describe('GET /llms.txt', () => {
     expect(settled).toContain(
       `${attestor.pubky}:${Math.ceil(Date.parse(validFrom) / 1000)}:${Math.ceil(Date.parse(compromisedFrom) / 1000)}`,
     );
+  });
+
+  describe('with a verified profile whose reading has expired', () => {
+    const validFrom = '2026-01-01T00:00:00Z';
+    const signer = createAttestorTestKey();
+
+    function serveVerifiedThenPending() {
+      vi.useFakeTimers();
+      vi.stubEnv(
+        'PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS',
+        JSON.stringify([{ pubky: signer.pubky, label: 'Runtime example', validFrom }]),
+      );
+      const first = signedAttestorProfile(signer, [{ pubky: signer.pubky, validFrom }]);
+      const later: {
+        resolve: (value: ReturnType<typeof servedAttestorProfile>) => void;
+        reject: (e: unknown) => void;
+      }[] = [];
+      let reads = 0;
+      vi.mocked(NexusMarketplaceService.fetchAttestorProfile).mockImplementation(async ({ attestor_id }) => {
+        if (attestor_id !== signer.pubky) return null;
+        reads += 1;
+        if (reads === 1) return servedAttestorProfile(signer.pubky, first);
+        return new Promise((resolve, reject) => {
+          later.push({ resolve, reject });
+        });
+      });
+      const serve = async () => {
+        const served = GET().then((response) => response.text());
+        await vi.advanceTimersByTimeAsync(MARKETPLACE_ATTESTOR_PROFILE_WAIT_MS);
+        return served;
+      };
+      return { serve, reads: () => reads, later };
+    }
+
+    it('keeps the notice after the re-read fails, until a later read verifies the profile', async () => {
+      const { serve, later } = serveVerifiedThenPending();
+      expect(await serve()).not.toContain('Configured bounds, profile not verified:');
+
+      vi.advanceTimersByTime(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+      expect(await serve()).toContain(`Configured bounds, profile not verified:\n- ${signer.pubky}:`);
+
+      later.shift()?.reject(new Error('index timeout'));
+      await vi.advanceTimersByTimeAsync(0);
+      const afterFailure = await serve();
+
+      expect(afterFailure).toContain(`Configured bounds, profile not verified:\n- ${signer.pubky}:`);
+      expect(afterFailure).toContain('[window not confirmed: a profile listed below is not verified]');
+      expect(afterFailure).toContain(`/reputation?attestors=${attestorWindowsParam()}`);
+
+      vi.advanceTimersByTime(MARKETPLACE_ATTESTOR_PROFILE_RETRY_MS);
+      expect(await serve()).toContain(`Configured bounds, profile not verified:\n- ${signer.pubky}:`);
+      later
+        .shift()
+        ?.resolve(
+          servedAttestorProfile(signer.pubky, signedAttestorProfile(signer, [{ pubky: signer.pubky, validFrom }])),
+        );
+      await vi.advanceTimersByTimeAsync(0);
+
+      const verified = await serve();
+      expect(verified).not.toContain('Configured bounds, profile not verified:');
+      expect(verified).not.toContain('[window not confirmed');
+    });
+
+    it('explains in the notice that the last verified reading expired, beside the key line that shows its cutoff', async () => {
+      const { serve } = serveVerifiedThenPending();
+      await serve();
+      vi.advanceTimersByTime(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+
+      const body = await serve();
+
+      expect(body.replace(/\s+/g, ' ')).toContain(
+        "this attestor's signed profile has no current verified reading for this guide (not read, not verified, or its last verified reading expired and is being read again)",
+      );
+    });
+
+    it('neither re-reads nor warns one millisecond before the reading expires', async () => {
+      const { serve, reads } = serveVerifiedThenPending();
+      await serve();
+
+      vi.advanceTimersByTime(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS - 1 - MARKETPLACE_ATTESTOR_PROFILE_WAIT_MS);
+      const body = await serve();
+
+      expect(reads()).toBe(1);
+      expect(body).not.toContain('Configured bounds, profile not verified:');
+      expect(body).not.toContain('[window not confirmed');
+    });
   });
 
   it('marks every key line unconfirmed only when a profile is listed as not verified', () => {

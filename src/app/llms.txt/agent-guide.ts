@@ -45,8 +45,9 @@ export function renderAgentGuide(
       : `\n\nConfigured bounds, profile not verified:\n${unconfirmedAttestorIds
           .map(
             (pubky) =>
-              `- ${pubky}: this attestor's signed profile was not read and verified for this guide, so any
-  window above may be later than the Shop's. Read INDEX/v0/marketplace/attestor/${pubky}/profile, verify the
+              `- ${pubky}: this attestor's signed profile has no current verified reading for this guide (not
+  read, not verified, or its last verified reading expired and is being read again), so any window above may be
+  later than the Shop's. Read INDEX/v0/marketplace/attestor/${pubky}/profile, verify the
   record's signature against pubky://${pubky}/pub/pubky.app/marketplace/v1/attestor/profile, and end each
   configured key's window above, not only ${pubky}'s own, at the earliest validUntil or compromisedFrom the
   verified profile states for that key (Unix seconds, rounded up).`,
@@ -55,8 +56,8 @@ export function renderAgentGuide(
 
 A profile can end the window of any configured key, not only its own, so every configured key window above is
 unconfirmed while any profile listed here is unverified. If a profile cannot be verified, counts from these
-windows (buyers, orders, reviews) are upper bounds; a rating computed from them is unconfirmed and may be higher
-or lower than the Shop's.`;
+windows (buyers, orders, reviews) are upper bounds, unless a profile being read again relaxes a cutoff it stated
+before; a rating computed from them is unconfirmed and may be higher or lower than the Shop's.`;
 
   return `# Pubky Market — guide for agents
 
@@ -192,8 +193,7 @@ Build \`<windows>\` from the trusted list as comma-separated \`<pubky>:<from>:<u
 with Unix seconds over the attestation \`iat\`; an open window leaves \`until\` empty. If no windows
 can be built (the list is empty or too long), call without \`attestors=\` and use the bucket rule below.
 These are this Shop's effective windows, except that every window is unconfirmed while a profile is listed as
-not verified above: each key's window ends at
-the earliest of its configured end and any \`validUntil\` / \`compromisedFrom\` that a trusted attestor's verified
+not verified above: each key's window ends at the earliest of its configured end and any \`validUntil\` / \`compromisedFrom\` that a trusted attestor's verified
 signed profile (INDEX/v0/marketplace/attestor/{attestor_pubky}/profile) states for that key. A profile
 never adds a key, widens a window or moves \`validFrom\`.
 

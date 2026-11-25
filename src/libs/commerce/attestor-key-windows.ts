@@ -75,11 +75,6 @@ export function attestorProfileKeyWindows(): AttestorProfileKeyWindow[] {
   return [...windowsByProfile.values()].flat();
 }
 
-/** Whether a verified profile has recorded windows for this attestor. */
-export function hasAttestorProfileKeyWindows(attestorId: string): boolean {
-  return windowsByProfile.has(attestorId);
-}
-
 /**
  * Records the windows of one attestor's verified profile, replacing its
  * earlier copy. The version moves, and subscribers run, only when the

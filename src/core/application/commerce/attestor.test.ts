@@ -200,7 +200,7 @@ describe('CommerceAttestorApplication.loadKeyWindows', () => {
     expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([attestor.pubky]);
   });
 
-  it('keeps verified windows confirmed when a later profile read fails', async () => {
+  it('keeps verified windows but lists the attestor as unconfirmed when a later profile read fails', async () => {
     vi.useFakeTimers();
     const profile = signedAttestorProfile(attestor, [{ pubky: attestor.pubky, validFrom: FROM }]);
     let fail = false;
@@ -225,7 +225,7 @@ describe('CommerceAttestorApplication.loadKeyWindows', () => {
       'An attestor profile could not be read; the configured trust windows stay',
       expect.objectContaining({ attestorId: attestor.pubky }),
     );
-    expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+    expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([attestor.pubky]);
     expect(attestorProfileKeyWindows()).toContainEqual(expect.objectContaining({ pubky: attestor.pubky }));
   });
 
@@ -261,6 +261,7 @@ describe('CommerceAttestorApplication.loadKeyWindows', () => {
     expect(marketplaceTrustedAttestors().find(({ pubky }) => pubky === attestor.pubky)?.validUntil).toBe(
       '2026-05-01T00:00:00.000Z',
     );
+    expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([attestor.pubky]);
   });
 
   describe('while a profile refresh is pending past the bounded wait', () => {
@@ -273,17 +274,21 @@ describe('CommerceAttestorApplication.loadKeyWindows', () => {
 
     /** The test key answers its first read with `first`, then each later read with a promise the test settles. */
     function serveFirstThenPending(first: ServedProfile) {
-      const pending: ((value: ServedProfile) => void)[] = [];
+      const pending: { resolve: (value: ServedProfile) => void; reject: (error: unknown) => void }[] = [];
       let reads = 0;
       vi.spyOn(NexusMarketplaceService, 'fetchAttestorProfile').mockImplementation(async ({ attestor_id }) => {
         if (attestor_id !== attestor.pubky) return null;
         reads += 1;
         if (reads === 1) return first;
-        return new Promise<ServedProfile>((resolve) => {
-          pending.push(resolve);
+        return new Promise<ServedProfile>((resolve, reject) => {
+          pending.push({ resolve, reject });
         });
       });
-      return { settle: (value: ServedProfile) => pending.shift()?.(value) };
+      return {
+        reads: () => reads,
+        settle: (value: ServedProfile) => pending.shift()?.resolve(value),
+        fail: (error: unknown) => pending.shift()?.reject(error),
+      };
     }
 
     async function loadPastTheWait() {
@@ -353,6 +358,50 @@ describe('CommerceAttestorApplication.loadKeyWindows', () => {
       served.settle(null);
       await vi.advanceTimersByTimeAsync(0);
 
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+    });
+
+    it('keeps an attestor unconfirmed, with its recorded windows in use, when the refresh of an expired verified profile fails', async () => {
+      const served = serveFirstThenPending(servedAttestorProfile(attestor.pubky, cutoffProfile()));
+      await CommerceAttestorApplication.loadKeyWindows();
+
+      vi.advanceTimersByTime(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+      await loadPastTheWait();
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([attestor.pubky]);
+
+      served.fail(new Error('index timeout'));
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([attestor.pubky]);
+      expect(effectiveUntil()).toBe('2026-05-01T00:00:00.000Z');
+
+      vi.advanceTimersByTime(MARKETPLACE_ATTESTOR_PROFILE_RETRY_MS);
+      await loadPastTheWait();
+      served.settle(servedAttestorProfile(attestor.pubky, cutoffProfile()));
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+    });
+
+    it('neither re-reads nor lists an absent profile one millisecond before its outcome expires', async () => {
+      const served = serveFirstThenPending(null);
+      await CommerceAttestorApplication.loadKeyWindows();
+
+      vi.advanceTimersByTime(MARKETPLACE_ATTESTOR_PROFILE_RETRY_MS - 1);
+      await loadPastTheWait();
+
+      expect(served.reads()).toBe(1);
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+    });
+
+    it('neither re-reads nor lists a verified profile one millisecond before its outcome expires', async () => {
+      const served = serveFirstThenPending(servedAttestorProfile(attestor.pubky, cutoffProfile()));
+      await CommerceAttestorApplication.loadKeyWindows();
+
+      vi.advanceTimersByTime(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS - 1);
+      await loadPastTheWait();
+
+      expect(served.reads()).toBe(1);
       expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
     });
   });
