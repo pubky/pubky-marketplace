@@ -10,6 +10,9 @@ import { rasterImageMimeType } from '@/libs/media/image-bytes';
 
 const SHARE_TARGET_CACHE = 'share-target-files';
 
+const ENCODED_FILENAME_HEADER = 'X-Share-Filename-Encoded';
+const LEGACY_FILENAME_HEADER = 'X-Share-Filename';
+
 /** Leading bytes read to type a shared file from its supported image signatures. */
 const SHARED_FILE_HEAD_BYTES = 256;
 
@@ -73,7 +76,7 @@ export async function handleShareTarget(request: Request, cacheStorage: CacheSto
         continue;
       }
       const response = new Response(file, {
-        headers: { 'Content-Type': type, 'X-Share-Filename': encodeURIComponent(file.name) },
+        headers: { 'Content-Type': type, [ENCODED_FILENAME_HEADER]: encodeURIComponent(file.name) },
       });
       await cache.put(`/share-target-file/${stored}`, response);
       stored += 1;
@@ -103,12 +106,16 @@ export function refusedFileCount(value: string | null): number {
 
 /**
  * The name a cached file was shared under. Header values are Latin-1 only, so
- * the name is cached percent-encoded; a missing or malformed value gives
- * `shared-file`.
+ * the name is cached percent-encoded under `X-Share-Filename-Encoded`. An
+ * earlier service worker wrote it literally to `X-Share-Filename`, which is
+ * read as is, so `100%.png` or `%20` in such a name is kept. A missing, empty
+ * or malformed value gives `shared-file`.
  */
-function sharedFileName(header: string | null): string {
+function sharedFileName(headers: Headers): string {
+  const encoded = headers.get(ENCODED_FILENAME_HEADER);
+  if (encoded === null) return headers.get(LEGACY_FILENAME_HEADER) || 'shared-file';
   try {
-    return (header && decodeURIComponent(header)) || 'shared-file';
+    return decodeURIComponent(encoded) || 'shared-file';
   } catch {
     return 'shared-file';
   }
@@ -136,7 +143,7 @@ export async function getSharedFiles(): Promise<File[]> {
       const blob = await response.blob();
       const type = await sharedFileType(blob);
       if (!type) continue;
-      const filename = sharedFileName(response.headers.get('X-Share-Filename'));
+      const filename = sharedFileName(response.headers);
 
       files.push(new File([blob], filename, { type }));
     }

@@ -25,7 +25,7 @@ function cacheKey(request: RequestInfo | URL): string {
 /** The parts of the Cache API the share target uses, kept in memory. */
 class MemoryCache {
   readonly entries = new Map<string, Response>();
-  /** The `X-Share-Filename` of every response ever put, including ones deleted later. */
+  /** The `X-Share-Filename-Encoded` of every response ever put, including ones deleted later. */
   readonly putNames: string[] = [];
 
   async keys(): Promise<Request[]> {
@@ -37,7 +37,7 @@ class MemoryCache {
   }
 
   async put(request: RequestInfo | URL, response: Response): Promise<void> {
-    this.putNames.push(response.headers.get('X-Share-Filename') ?? '');
+    this.putNames.push(response.headers.get('X-Share-Filename-Encoded') ?? '');
     this.entries.set(cacheKey(request), response);
   }
 
@@ -469,6 +469,19 @@ describe('shareTarget utilities', () => {
       ]);
     });
 
+    it('caches each name percent-encoded under X-Share-Filename-Encoded only', async () => {
+      await handleShareTarget(
+        sharePost([new File([await image('png')], '100% café a%20b.png', { type: 'image/png' })]),
+        cacheStorage(),
+      );
+
+      const [response] = [...(storage.stores.get('share-target-files')?.entries.values() ?? [])];
+      expect(response.headers.get('X-Share-Filename-Encoded')).toBe('100%25%20caf%C3%A9%20a%2520b.png');
+      expect(response.headers.get('X-Share-Filename')).toBeNull();
+      const files = await getSharedFiles();
+      expect(files.map((file) => file.name)).toEqual(['100% café a%20b.png']);
+    });
+
     it('drops the files of an earlier share on a text-only share', async () => {
       await handleShareTarget(sharePost([new File([await image('png')], 'old.png')]), cacheStorage());
 
@@ -584,13 +597,39 @@ describe('shareTarget utilities', () => {
       expect(files.map((file) => file.name)).toEqual(['shared-file']);
     });
 
-    it('uses fallback filename when X-Share-Filename is not a valid encoding', async () => {
-      await cacheEntry(await image('png'), { 'X-Share-Filename': 'photo%E0%A4%A.png', 'Content-Type': 'image/png' });
+    it('uses fallback filename when X-Share-Filename-Encoded is not a valid encoding', async () => {
+      await cacheEntry(await image('png'), {
+        'X-Share-Filename-Encoded': 'photo%E0%A4%A.png',
+        'Content-Type': 'image/png',
+      });
 
       const files = await getSharedFiles();
 
       expect(files.map((file) => file.name)).toEqual(['shared-file']);
     });
+
+    it('decodes X-Share-Filename-Encoded ahead of a legacy X-Share-Filename', async () => {
+      await cacheEntry(await image('png'), {
+        'X-Share-Filename-Encoded': '%E5%86%99%E7%9C%9F%20a%2520b.png',
+        'X-Share-Filename': 'legacy.png',
+        'Content-Type': 'image/png',
+      });
+
+      const files = await getSharedFiles();
+
+      expect(files.map((file) => file.name)).toEqual(['写真 a%20b.png']);
+    });
+
+    it.each(['100%.png', 'a%20b.png', 'photo%E0%A4%A.png', 'café.png'])(
+      'reads the legacy X-Share-Filename %s an earlier service worker cached literally',
+      async (name) => {
+        await cacheEntry(await image('png'), { 'X-Share-Filename': name, 'Content-Type': 'image/png' });
+
+        const files = await getSharedFiles();
+
+        expect(files.map((file) => file.name)).toEqual([name]);
+      },
+    );
 
     it('types an image from its bytes when the Content-Type header is missing', async () => {
       await cacheEntry(await image('webp'), { 'X-Share-Filename': 'photo.webp' });
