@@ -1,4 +1,5 @@
 import { PaykitCreatorApplication } from '@/application/paykit-creator/paykit-creator';
+import { HttpStatusCode } from '@/libs/http/http.types';
 import { PaykitCreatorValidators } from '@/pipes/paykit-creator/paykit-creator.validators';
 import type { TPaykitCreatorControllerResult } from './paykit-creator.types';
 
@@ -14,8 +15,9 @@ export class PaykitCreatorController {
    *
    * @param params.creator - Raw `creator` query value (may be null)
    * @param params.rateLimitKeys - The caller's limiter keys (client address)
-   * @returns The answer, or a validation failure for a malformed query
-   * @throws AppError when the caller is out of lookups or Paykit cannot answer.
+   * @returns The answer, a validation failure for a malformed query, or a 429 refusal with its retry hint
+   * when a local limit is reached
+   * @throws AppError when Paykit cannot answer.
    */
   static async fetchCreatorHeld(params: {
     creator: string | null;
@@ -25,10 +27,18 @@ export class PaykitCreatorController {
     if (!validation.ok) {
       return { ok: false, message: validation.message, statusCode: validation.statusCode };
     }
-    const held = await PaykitCreatorApplication.isCreatorHeld({
+    const answer = await PaykitCreatorApplication.isCreatorHeld({
       creator: validation.creator,
       rateLimitKeys: params.rateLimitKeys,
     });
-    return { ok: true, held };
+    if (!answer.ok) {
+      return {
+        ok: false,
+        message: 'Too many requests',
+        statusCode: HttpStatusCode.TOO_MANY_REQUESTS,
+        retryAfterSeconds: answer.retryAfterSeconds,
+      };
+    }
+    return { ok: true, held: answer.held };
   }
 }

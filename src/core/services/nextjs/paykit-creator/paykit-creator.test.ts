@@ -57,7 +57,7 @@ describe('NextJsPaykitCreatorService.isCreatorHeld', () => {
   it.each([true, false])('asks /setup/creator-held with the creator alone and reads { held: %s }', async (held) => {
     vi.mocked(fetch).mockResolvedValue(heldAnswer(held));
 
-    await expect(NextJsPaykitCreatorService.isCreatorHeld(params)).resolves.toBe(held);
+    await expect(NextJsPaykitCreatorService.isCreatorHeld(params)).resolves.toEqual({ ok: true, held });
 
     const url = new URL(String(vi.mocked(fetch).mock.calls[0][0]));
     expect(`${url.origin}${url.pathname}`).toBe('https://paykit.server/setup/creator-held');
@@ -95,7 +95,7 @@ describe('NextJsPaykitCreatorService.isCreatorHeld', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
 
-    await expect(answer).resolves.toBe(true);
+    await expect(answer).resolves.toEqual({ ok: true, held: true });
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
@@ -110,14 +110,15 @@ describe('NextJsPaykitCreatorService.isCreatorHeld', () => {
     vi.mocked(fetch).mockResolvedValueOnce(refused(503));
     const answer = NextJsPaykitCreatorService.isCreatorHeld(params);
     await vi.advanceTimersByTimeAsync(1000);
-    await expect(answer).resolves.toBe(true);
+    await expect(answer).resolves.toEqual({ ok: true, held: true });
 
     // The next window has already spent one read on that retry.
     for (let i = 1; i < PAYKIT_CREATOR_GLOBAL_READS_PER_WINDOW; i += 1) {
       await NextJsPaykitCreatorService.isCreatorHeld(freshParams());
     }
-    await expect(NextJsPaykitCreatorService.isCreatorHeld(freshParams())).rejects.toMatchObject({
-      category: ErrorCategory.RateLimit,
+    await expect(NextJsPaykitCreatorService.isCreatorHeld(freshParams())).resolves.toMatchObject({
+      ok: false,
+      reason: 'rate_limited',
     });
   });
 
@@ -170,11 +171,11 @@ describe('NextJsPaykitCreatorService.isCreatorHeld', () => {
       .mockResolvedValueOnce(heldAnswer(false))
       .mockImplementation(async () => heldAnswer(true));
 
-    await expect(NextJsPaykitCreatorService.isCreatorHeld(params)).resolves.toBe(false);
+    await expect(NextJsPaykitCreatorService.isCreatorHeld(params)).resolves.toEqual({ ok: true, held: false });
     vi.advanceTimersByTime(14_000);
-    await expect(NextJsPaykitCreatorService.isCreatorHeld(params)).resolves.toBe(false);
+    await expect(NextJsPaykitCreatorService.isCreatorHeld(params)).resolves.toEqual({ ok: true, held: false });
     vi.advanceTimersByTime(2_000);
-    await expect(NextJsPaykitCreatorService.isCreatorHeld(params)).resolves.toBe(true);
+    await expect(NextJsPaykitCreatorService.isCreatorHeld(params)).resolves.toEqual({ ok: true, held: true });
     vi.advanceTimersByTime(119_000);
     await NextJsPaykitCreatorService.isCreatorHeld(params);
     expect(fetch).toHaveBeenCalledTimes(2);
@@ -187,7 +188,7 @@ describe('NextJsPaykitCreatorService.isCreatorHeld', () => {
     vi.mocked(fetch).mockResolvedValueOnce(refused(429)).mockResolvedValueOnce(heldAnswer(true));
 
     await expect(NextJsPaykitCreatorService.isCreatorHeld(params)).rejects.toThrow();
-    await expect(NextJsPaykitCreatorService.isCreatorHeld(params)).resolves.toBe(true);
+    await expect(NextJsPaykitCreatorService.isCreatorHeld(params)).resolves.toEqual({ ok: true, held: true });
   });
 
   it('shares one read between checks that arrive together', async () => {
@@ -197,7 +198,7 @@ describe('NextJsPaykitCreatorService.isCreatorHeld', () => {
       Array.from({ length: 5 }, () => NextJsPaykitCreatorService.isCreatorHeld(params)),
     );
 
-    expect(answers).toEqual(Array(5).fill(true));
+    expect(answers).toEqual(Array(5).fill({ ok: true, held: true }));
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
@@ -251,12 +252,16 @@ describe('NextJsPaykitCreatorService.isCreatorHeld', () => {
       vi.mocked(fetch).mockImplementation(hang);
       const pending = Array.from({ length: PAYKIT_CREATOR_MAX_IN_FLIGHT }, () => freshParams());
       for (const p of pending) void NextJsPaykitCreatorService.isCreatorHeld(p).catch(() => {});
+      const logged = vi.spyOn(Logger, 'error').mockImplementation(() => {});
 
-      await expect(NextJsPaykitCreatorService.isCreatorHeld(freshParams())).rejects.toMatchObject({
-        category: ErrorCategory.RateLimit,
-        context: expect.objectContaining({ retryAfter: 1 }),
+      await expect(NextJsPaykitCreatorService.isCreatorHeld(freshParams())).resolves.toEqual({
+        ok: false,
+        reason: 'rate_limited',
+        retryAfterSeconds: 1,
       });
       expect(fetch).toHaveBeenCalledTimes(PAYKIT_CREATOR_MAX_IN_FLIGHT);
+      // A local refusal is an expected answer, not an application error: nothing is logged or captured.
+      expect(logged).not.toHaveBeenCalled();
     });
 
     it('still lets a caller join a read already pending when the cap is reached', async () => {
@@ -272,7 +277,10 @@ describe('NextJsPaykitCreatorService.isCreatorHeld', () => {
       const joined = NextJsPaykitCreatorService.isCreatorHeld(params);
       release(heldAnswer(true));
 
-      await expect(Promise.all([first, joined])).resolves.toEqual([true, true]);
+      await expect(Promise.all([first, joined])).resolves.toEqual([
+        { ok: true, held: true },
+        { ok: true, held: true },
+      ]);
     });
 
     it('stops reading Paykit for the window once the shared read allowance is spent, but still serves kept answers', async () => {
@@ -282,11 +290,15 @@ describe('NextJsPaykitCreatorService.isCreatorHeld', () => {
       for (let i = 1; i < PAYKIT_CREATOR_GLOBAL_READS_PER_WINDOW; i += 1) {
         await NextJsPaykitCreatorService.isCreatorHeld(freshParams());
       }
+      const logged = vi.spyOn(Logger, 'error').mockImplementation(() => {});
 
-      await expect(NextJsPaykitCreatorService.isCreatorHeld(freshParams())).rejects.toMatchObject({
-        category: ErrorCategory.RateLimit,
+      await expect(NextJsPaykitCreatorService.isCreatorHeld(freshParams())).resolves.toEqual({
+        ok: false,
+        reason: 'rate_limited',
+        retryAfterSeconds: PAYKIT_CREATOR_RATE_LIMIT_WINDOW_MS / 1000,
       });
-      await expect(NextJsPaykitCreatorService.isCreatorHeld(kept)).resolves.toBe(true);
+      expect(logged).not.toHaveBeenCalled();
+      await expect(NextJsPaykitCreatorService.isCreatorHeld(kept)).resolves.toEqual({ ok: true, held: true });
       expect(fetch).toHaveBeenCalledTimes(PAYKIT_CREATOR_GLOBAL_READS_PER_WINDOW);
     });
   });

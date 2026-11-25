@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PAYKIT_CREATOR_RATE_LIMIT_REQUESTS, PAYKIT_CREATOR_RATE_LIMIT_WINDOW_MS } from '@/config/paykit-creator';
-import { ErrorCategory } from '@/libs/error/error.types';
+import { Logger } from '@/libs/logger/logger';
 import { NextJsPaykitCreatorService } from '@/services/nextjs/paykit-creator/paykit-creator';
 import { PaykitCreatorRateLimiter } from '@/services/nextjs/paykit-creator/paykit-creator.rate-limit';
 import { PaykitCreatorApplication } from './paykit-creator';
@@ -13,11 +13,14 @@ describe('PaykitCreatorApplication.isCreatorHeld', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     PaykitCreatorRateLimiter.resetForTests();
-    serviceSpy.mockResolvedValue(true);
+    serviceSpy.mockResolvedValue({ ok: true, held: true });
   });
 
   it('asks the service with the creator alone', async () => {
-    await expect(PaykitCreatorApplication.isCreatorHeld({ creator, rateLimitKeys: ['ip:a'] })).resolves.toBe(true);
+    await expect(PaykitCreatorApplication.isCreatorHeld({ creator, rateLimitKeys: ['ip:a'] })).resolves.toEqual({
+      ok: true,
+      held: true,
+    });
     expect(serviceSpy).toHaveBeenCalledWith({ creator });
   });
 
@@ -25,12 +28,20 @@ describe('PaykitCreatorApplication.isCreatorHeld', () => {
     for (let i = 0; i < PAYKIT_CREATOR_RATE_LIMIT_REQUESTS; i += 1) {
       await PaykitCreatorApplication.isCreatorHeld({ creator, rateLimitKeys: ['ip:a'] });
     }
+    const logged = vi.spyOn(Logger, 'error').mockImplementation(() => {});
 
-    await expect(PaykitCreatorApplication.isCreatorHeld({ creator, rateLimitKeys: ['ip:a'] })).rejects.toMatchObject({
-      category: ErrorCategory.RateLimit,
-      context: { retryAfter: PAYKIT_CREATOR_RATE_LIMIT_WINDOW_MS / 1000 },
+    await expect(PaykitCreatorApplication.isCreatorHeld({ creator, rateLimitKeys: ['ip:a'] })).resolves.toEqual({
+      ok: false,
+      reason: 'rate_limited',
+      retryAfterSeconds: PAYKIT_CREATOR_RATE_LIMIT_WINDOW_MS / 1000,
     });
     expect(serviceSpy).toHaveBeenCalledTimes(PAYKIT_CREATOR_RATE_LIMIT_REQUESTS);
-    await expect(PaykitCreatorApplication.isCreatorHeld({ creator, rateLimitKeys: ['ip:b'] })).resolves.toBe(true);
+    // A local refusal is an expected answer, not an application error: nothing is logged or captured.
+    expect(logged).not.toHaveBeenCalled();
+    logged.mockRestore();
+    await expect(PaykitCreatorApplication.isCreatorHeld({ creator, rateLimitKeys: ['ip:b'] })).resolves.toEqual({
+      ok: true,
+      held: true,
+    });
   });
 });

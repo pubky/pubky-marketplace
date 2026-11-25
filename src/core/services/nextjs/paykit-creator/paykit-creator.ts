@@ -1,8 +1,11 @@
 import { z } from 'zod';
-import type { TPaykitCreatorProbeParams } from '@/application/paykit-creator/paykit-creator.types';
+import type {
+  TPaykitCreatorAnswer,
+  TPaykitCreatorProbeParams,
+} from '@/application/paykit-creator/paykit-creator.types';
 import { getPaykitSetupUrl } from '@/config/commerce';
 import { PAYKIT_CREATOR_MAX_IN_FLIGHT } from '@/config/paykit-creator';
-import { RateLimitErrorCode, ServerErrorCode, TimeoutErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
+import { ServerErrorCode, TimeoutErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { httpResponseToError, safeFetch } from '@/libs/error/error.http';
 import { ErrorService } from '@/libs/error/error.types';
@@ -50,13 +53,14 @@ const inFlight = new Map<string, Promise<boolean>>();
  * therefore reused for the same creator (`HELD_TTL_MS`, `NOT_HELD_TTL_MS`), and concurrent callers share
  * one request. Failures are not kept, so the next caller asks again. Reads of Paykit are capped per window
  * across all callers and in how many distinct creators are pending at once (`src/config/paykit-creator.ts`);
- * past either the lookup is refused as rate limited before Paykit is asked. Kept answers and pending reads
+ * past either the lookup is answered with a `rate_limited` refusal before Paykit is asked, returned rather
+ * than thrown, because it is this server's own decision and not a failure to report. Kept answers and pending reads
  * stay available. All of this is per server instance.
  */
 export class NextJsPaykitCreatorService {
   private constructor() {}
 
-  static async isCreatorHeld({ creator }: TPaykitCreatorProbeParams): Promise<boolean> {
+  static async isCreatorHeld({ creator }: TPaykitCreatorProbeParams): Promise<TPaykitCreatorAnswer> {
     const paykitSetupUrl = getPaykitSetupUrl();
     if (!paykitSetupUrl) {
       throw Err.validation(ValidationErrorCode.MISSING_FIELD, 'No Paykit Server configured', {
@@ -69,12 +73,12 @@ export class NextJsPaykitCreatorService {
     const key = `${paykitOrigin}|${creator}`;
     const now = Date.now();
     const cached = answers.get(key);
-    if (cached && cached.expiresAt > now) return cached.held;
+    if (cached && cached.expiresAt > now) return { ok: true, held: cached.held };
     const pending = inFlight.get(key);
-    if (pending) return pending;
-    if (inFlight.size >= PAYKIT_CREATOR_MAX_IN_FLIGHT) throw rateLimited('Too many creator lookups pending', 1);
+    if (pending) return { ok: true, held: await pending };
+    if (inFlight.size >= PAYKIT_CREATOR_MAX_IN_FLIGHT) return rateLimited(1);
     const read = PaykitCreatorRateLimiter.admitRead();
-    if (!read.ok) throw rateLimited('Paykit read allowance spent', read.retryAfterSeconds);
+    if (!read.ok) return rateLimited(read.retryAfterSeconds);
 
     const probe = this.probe(paykitOrigin, creator).then((held) => {
       this.remember(key, held);
@@ -82,7 +86,7 @@ export class NextJsPaykitCreatorService {
     });
     inFlight.set(key, probe);
     try {
-      return await probe;
+      return { ok: true, held: await probe };
     } finally {
       inFlight.delete(key);
     }
@@ -165,12 +169,8 @@ export class NextJsPaykitCreatorService {
   }
 }
 
-function rateLimited(message: string, retryAfter: number) {
-  return Err.rateLimit(RateLimitErrorCode.RATE_LIMITED, message, {
-    service: ErrorService.Local,
-    operation: OPERATION,
-    context: { retryAfter },
-  });
+function rateLimited(retryAfterSeconds: number): TPaykitCreatorAnswer {
+  return { ok: false, reason: 'rate_limited', retryAfterSeconds };
 }
 
 /** Releases the connection behind an answer that is not read. */

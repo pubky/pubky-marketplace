@@ -99,18 +99,23 @@ describe('API Route: /api/paykit-creator', () => {
     await expect(response.json()).resolves.toEqual({ error: 'Invalid creator' });
   });
 
+  it('answers a refusal by a local limit with a 429 and its Retry-After', async () => {
+    vi.spyOn(PaykitCreatorController, 'fetchCreatorHeld').mockResolvedValue({
+      ok: false,
+      message: 'Too many requests',
+      statusCode: HttpStatusCode.TOO_MANY_REQUESTS,
+      retryAfterSeconds: 42,
+    });
+
+    const response = await GET(request(validQuery));
+
+    expect(response.status).toBe(HttpStatusCode.TOO_MANY_REQUESTS);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(response.headers.get('Retry-After')).toBe('42');
+    await expect(response.json()).resolves.toEqual({ error: 'Too many requests' });
+  });
+
   it.each([
-    [
-      'a refusal by the route limiter, with its Retry-After',
-      Err.rateLimit(RateLimitErrorCode.RATE_LIMITED, 'Too many creator lookups', {
-        service: ErrorService.Local,
-        operation: 'admit',
-        context: { retryAfter: 42 },
-      }),
-      HttpStatusCode.TOO_MANY_REQUESTS,
-      'Too many requests',
-      '42',
-    ],
     [
       'a 429 from Paykit, with its Retry-After',
       Err.rateLimit(RateLimitErrorCode.RATE_LIMITED, 'Too Many Requests', {

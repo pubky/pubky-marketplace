@@ -28,7 +28,13 @@ export async function GET(request: NextRequest) {
       rateLimitKeys: importRateLimitKeys(request),
     });
 
-    if (!result.ok) return failure(result.statusCode, result.message);
+    if (!result.ok) {
+      return failure(
+        result.statusCode,
+        result.message,
+        'retryAfterSeconds' in result ? result.retryAfterSeconds : undefined,
+      );
+    }
 
     return NextResponse.json({ held: result.held }, { headers: { 'Cache-Control': NO_STORE } });
   } catch (error) {
