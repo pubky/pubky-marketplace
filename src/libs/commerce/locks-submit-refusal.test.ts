@@ -81,6 +81,7 @@ describe('locksSubmitRefusalMessage', () => {
     expect(locksSubmitRefusalMessage(error, FALLBACK)).toBe(LOCKS_PREPARED_TERMS_DIFFER_COPY);
     expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).not.toContain('Cancel it');
     expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).not.toContain('Nothing was charged');
+    expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).not.toContain('can’t be paid');
     expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).toContain('no payment is in progress');
   });
 

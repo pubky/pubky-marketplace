@@ -427,6 +427,7 @@ describe('useMarketplaceLocksPayment', () => {
     it.each([
       ['not a date', 'not-a-date'],
       ['past the last supported date', new Date(8_640_000_000_000_000).toISOString()],
+      ['a valid date years away', '9999-01-01T00:00:00.000Z'],
     ])('falls back to the fifteen minute bound when the saved window is %s', async (_label, windowExpiresAt) => {
       vi.mocked(CommerceController.getMarketplaceLocksCorrelation).mockResolvedValue(
         makeCorrelation(true, windowExpiresAt),

@@ -21,10 +21,15 @@ import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplac
  */
 const LOCKS_POLL_FALLBACK_BOUND_MS = 15 * 60 * 1_000;
 
-/** The end of the registration grace, or null when the saved window is missing or not a usable date. */
+/** A payment window is minutes to hours long; a saved window ending later than this is not trusted. */
+const LOCKS_POLL_MAX_WINDOW_MS = 24 * 60 * 60 * 1_000;
+
+/** The end of the registration grace, or null when the saved window is missing, not a date, or implausibly far away. */
 function graceEndAt(windowExpiresAt: string | null | undefined): number | null {
   if (!windowExpiresAt) return null;
-  const graceEnd = Date.parse(windowExpiresAt) + LOCKS_REGISTRATION_GRACE_SECONDS * 1_000;
+  const windowEnd = Date.parse(windowExpiresAt);
+  if (!Number.isFinite(windowEnd) || windowEnd > Date.now() + LOCKS_POLL_MAX_WINDOW_MS) return null;
+  const graceEnd = windowEnd + LOCKS_REGISTRATION_GRACE_SECONDS * 1_000;
   return Number.isNaN(new Date(graceEnd).getTime()) ? null : graceEnd;
 }
 
