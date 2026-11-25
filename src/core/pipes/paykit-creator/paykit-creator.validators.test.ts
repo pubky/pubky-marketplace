@@ -27,6 +27,11 @@ describe('PaykitCreatorValidators.validateSafe', () => {
     `l${PUBKY.slice(1)}`,
     `v${PUBKY.slice(1)}`,
     `2${PUBKY.slice(1)}`,
+    // z-base-32 spellings Paykit parses and then refuses with a 400: a final character whose spare bits are
+    // set (the same key as PUBKY, written another way) and a string that decodes to no curve point.
+    `${PUBKY.slice(0, 51)}t`,
+    `pubky${PUBKY.slice(0, 51)}t`,
+    `${PUBKY.slice(0, 51)}y`,
   ])('rejects the creator %j', (creator) => {
     expect(PaykitCreatorValidators.validateSafe(creator)).toEqual({
       ok: false,
