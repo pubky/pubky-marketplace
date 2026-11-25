@@ -6,7 +6,7 @@ import { ErrorService } from '@/libs/error/error.types';
 import { getRuntimeConfig } from '@/libs/runtime-config/runtime-config';
 import { FRAME_ANCESTOR_SELF, type RuntimeConfig } from '@/libs/runtime-config/runtime-config.schema';
 import { type CliGrantConfig, getBrowserBootstrapConfig } from './config';
-import { grantDatabaseSsl } from './db-tls';
+import { grantDatabaseTls } from './db-tls';
 
 type EmbeddedShopSettings = Pick<
   RuntimeConfig,
@@ -75,7 +75,7 @@ export async function isEmbeddedShopReady(): Promise<boolean> {
   if (!config) return false;
 
   const timeoutMs = Math.min(config.databaseTimeoutMs, MAX_PROBE_TIMEOUT_MS);
-  const ssl = grantDatabaseSsl(config);
+  const tls = grantDatabaseTls(config);
   // Keep health traffic out of the auth pool. Both PostgreSQL and the caller
   // bound this one read; a stuck probe can be closed without interrupting purchases.
   const sql = (probeSql ??= postgres(config.databaseUrl, {
@@ -86,7 +86,7 @@ export async function isEmbeddedShopReady(): Promise<boolean> {
     prepare: false,
     connection: { statement_timeout: timeoutMs },
     onnotice: () => {},
-    ...(ssl ? { ssl } : {}),
+    ...tls,
   }));
   const query = sql<{ version: number }[]>`
     SELECT version FROM shop_grant_bff.schema_version WHERE singleton = TRUE

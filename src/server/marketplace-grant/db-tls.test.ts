@@ -10,13 +10,13 @@ import postgres from 'postgres';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ZodError } from 'zod';
 import {
-  databaseTlsHostFromUrl,
+  databaseTlsRouteFromUrl,
   getMarketplaceGrantConfig,
   type MarketplaceGrantConfig,
   resetMarketplaceGrantConfigForTests,
 } from './config';
 import { grantSql, resetGrantSqlForTests } from './db';
-import { grantDatabaseSsl } from './db-tls';
+import { grantDatabaseTls } from './db-tls';
 import { isEmbeddedShopReady, resetEmbeddedShopReadinessForTests } from './readiness';
 
 const mocks = vi.hoisted(() => ({
@@ -76,6 +76,8 @@ function validEnv(): NodeJS.ProcessEnv {
   };
   delete env.SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM;
   delete env.SHOP_BFF_GRANT_STATE_DATABASE_TLS_SERVER_NAME;
+  delete env.PGHOST;
+  delete env.PGPORT;
   return env;
 }
 
@@ -87,11 +89,14 @@ function configured(): MarketplaceGrantConfig {
 
 const PASSWORD = 'fake-database-password';
 
-async function driverRoute(databaseUrl: string): Promise<{ host: string[]; path: string | false }> {
-  const sql = postgres(databaseUrl, { ssl: { rejectUnauthorized: true } });
-  const { host, path } = sql.options;
+async function driverRoute(
+  databaseUrl: string,
+  options: { port?: number } = {},
+): Promise<{ host: string[]; port: number[]; path: string | false }> {
+  const sql = postgres(databaseUrl, { ssl: { rejectUnauthorized: true }, ...options });
+  const { host, port, path } = sql.options;
   await sql.end({ timeout: 0 });
-  return { host, path: path || false };
+  return { host, port, path: path || false };
 }
 
 function expectDatabaseUrlRejected(databaseUrl: string): void {
@@ -423,11 +428,33 @@ function leafPeerCertificate(): PeerCertificate {
 }
 
 describe('grant database TLS configuration', () => {
-  it('leaves both TLS settings undefined when unset or the CA is empty', () => {
-    expect(configured()).toMatchObject({ databaseCaPem: undefined, databaseTlsServerName: undefined });
-    configureCa(' \n\t ');
-    resetMarketplaceGrantConfigForTests();
-    expect(configured().databaseCaPem).toBeUndefined();
+  it('leaves the TLS settings and route undefined when unset', () => {
+    expect(configured()).toMatchObject({
+      databaseCaPem: undefined,
+      databaseTlsServerName: undefined,
+      databaseTlsHost: undefined,
+      databaseTlsPort: undefined,
+    });
+  });
+
+  it.each([
+    ['empty', ''],
+    ['whitespace-only', ' \n\t '],
+  ])('rejects an %s CA instead of turning the pin off', (_name, value) => {
+    configureCa(value);
+    let thrown: unknown;
+    try {
+      configured();
+    } catch (error) {
+      thrown = error;
+    }
+    if (!(thrown instanceof ZodError)) throw new Error('Expected a zod configuration error');
+    expect(thrown.issues).toEqual([
+      expect.objectContaining({
+        path: ['databaseCaPem'],
+        message: 'SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM must contain one to four CA certificates',
+      }),
+    ]);
   });
 
   it('loads one CA and an explicit server name', () => {
@@ -448,57 +475,74 @@ describe('grant database TLS configuration', () => {
   });
 
   it.each([
-    ['a DNS host and port', `postgres://u:${PASSWORD}@db.example:5432/db`, 'db.example'],
+    ['a DNS host and port', `postgres://u:${PASSWORD}@db.example:5432/db`, 'db.example', 5432],
     [
       'escaped @ and comma in the password',
       'postgresql://u:p%40ss%2Cw@db.example/db?sslmode=verify-full',
       'db.example',
+      5432,
     ],
-    ['an IPv4 host', `postgres://u:${PASSWORD}@127.0.0.1:6543/db`, '127.0.0.1'],
+    ['an IPv4 host', `postgres://u:${PASSWORD}@127.0.0.1:6543/db`, '127.0.0.1', 6543],
     [
       'mixed case, digits, hyphen and underscore',
       `postgres://u:${PASSWORD}@Db-1.example_internal/db`,
       'Db-1.example_internal',
+      5432,
     ],
-  ])('accepts %s as the single host the pinned driver routes to', async (_name, databaseUrl, host) => {
-    expect(await driverRoute(databaseUrl)).toEqual({ host: [host], path: false });
-    expect(databaseTlsHostFromUrl(databaseUrl)).toBe(host);
+  ])('accepts %s as the single host and port the pinned driver routes to', async (_name, databaseUrl, host, port) => {
+    expect(await driverRoute(databaseUrl)).toEqual({ host: [host], port: [port], path: false });
+    expect(databaseTlsRouteFromUrl(databaseUrl)).toEqual({ host, port });
     process.env = {
       ...validEnv(),
       SHOP_BFF_GRANT_STATE_DATABASE_URL: databaseUrl,
       SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM: certificates.caA,
     };
     const config = configured();
-    expect(config.databaseTlsHost).toBe(host);
-    expect(grantDatabaseSsl(config)?.host).toBe(host);
+    expect(config).toMatchObject({ databaseTlsHost: host, databaseTlsPort: port });
+    const tls = grantDatabaseTls(config);
+    expect(tls?.ssl.host).toBe(host);
+    expect(tls?.port).toBe(port);
+    expect(await driverRoute(databaseUrl, { port: tls?.port })).toEqual({ host: [host], port: [port], path: false });
   });
 
   it.each([
-    ['an escaped comma', `postgres://u:${PASSWORD}@h1%2Ch2/db`, { host: ['h1', 'h2'], path: false }],
+    [
+      'an escaped comma',
+      `postgres://u:${PASSWORD}@h1%2Ch2/db`,
+      { host: ['h1', 'h2'], port: [5432, 5432], path: false },
+    ],
     [
       'an escaped comma between IPv4 hosts',
       `postgres://u:${PASSWORD}@10.0.0.1%2C10.0.0.2:5433/db`,
-      { host: ['10.0.0.1', '10.0.0.2'], path: false },
+      { host: ['10.0.0.1', '10.0.0.2'], port: [5433, 5433], path: false },
     ],
     [
       'an escaped socket path',
       `postgres://u:${PASSWORD}@%2Ftmp%2C/db`,
-      { host: ['/tmp', ''], path: '/tmp,/.s.PGSQL.5432' },
+      { host: ['/tmp', ''], port: [5432, 5432], path: '/tmp,/.s.PGSQL.5432' },
     ],
     [
       'an escaped socket directory',
       `postgres://u:${PASSWORD}@%2Fvar%2Frun%2Fpostgresql/db`,
-      { host: ['%2Fvar%2Frun%2Fpostgresql'], path: false },
+      { host: ['%2Fvar%2Frun%2Fpostgresql'], port: [5432], path: false },
     ],
-    ['an escaped host letter', `postgres://u:${PASSWORD}@%68ost/db`, { host: ['%68ost'], path: false }],
-    ['a comma before a second @', `postgres://u:${PASSWORD}@a,b@host/db`, { host: ['a', 'b@host'], path: false }],
-    ['a comma after a fragment marker', `postgres://u:${PASSWORD}@h1#,h2/db`, { host: ['h1#', 'h2'], path: false }],
-    ['a bracketed IPv6 host', `postgres://u:${PASSWORD}@[::1]:5432/db`, { host: ['['], path: false }],
+    ['an escaped host letter', `postgres://u:${PASSWORD}@%68ost/db`, { host: ['%68ost'], port: [5432], path: false }],
+    [
+      'a comma before a second @',
+      `postgres://u:${PASSWORD}@a,b@host/db`,
+      { host: ['a', 'b@host'], port: [5432, 5432], path: false },
+    ],
+    [
+      'a comma after a fragment marker',
+      `postgres://u:${PASSWORD}@h1#,h2/db`,
+      { host: ['h1#', 'h2'], port: [5432, 5432], path: false },
+    ],
+    ['a bracketed IPv6 host', `postgres://u:${PASSWORD}@[::1]:5432/db`, { host: ['['], port: [5432], path: false }],
   ])(
     'rejects %s that the pinned driver routes differently, without exposing the URL',
     async (_name, databaseUrl, route) => {
       expect(await driverRoute(databaseUrl)).toEqual(route);
-      expect(databaseTlsHostFromUrl(databaseUrl)).toBeUndefined();
+      expect(databaseTlsRouteFromUrl(databaseUrl)).toBeUndefined();
       expectDatabaseUrlRejected(databaseUrl);
     },
   );
@@ -507,15 +551,38 @@ describe('grant database TLS configuration', () => {
     'rejects the libpq routing query parameter %s without exposing the URL',
     (query) => {
       const databaseUrl = `postgres://u:${PASSWORD}@db.example/db?sslmode=require&${query}`;
-      expect(databaseTlsHostFromUrl(databaseUrl)).toBeUndefined();
+      expect(databaseTlsRouteFromUrl(databaseUrl)).toBeUndefined();
       expectDatabaseUrlRejected(databaseUrl);
     },
   );
 
+  it.each([
+    ['an empty port', 'db.example:'],
+    ['a leading-zero port', 'db.example:05432'],
+    ['port zero', 'db.example:0'],
+  ])('rejects %s as non-canonical without exposing the URL', (_name, authority) => {
+    const databaseUrl = `postgres://u:${PASSWORD}@${authority}/db`;
+    expect(databaseTlsRouteFromUrl(databaseUrl)).toBeUndefined();
+    expectDatabaseUrlRejected(databaseUrl);
+  });
+
   it('rejects a malformed escape in the driver host without exposing the URL', () => {
     const databaseUrl = `postgres://u:${PASSWORD}@db%ZZ.example/db`;
-    expect(databaseTlsHostFromUrl(databaseUrl)).toBeUndefined();
+    expect(databaseTlsRouteFromUrl(databaseUrl)).toBeUndefined();
     expectDatabaseUrlRejected(databaseUrl);
+  });
+
+  it('pins the validated port so PGPORT cannot redirect a portless URL', async () => {
+    process.env = {
+      ...validEnv(),
+      PGPORT: '6543',
+      SHOP_BFF_GRANT_STATE_DATABASE_URL: `postgres://u:${PASSWORD}@db.example/db?sslmode=require`,
+      SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM: certificates.caA,
+    };
+    const config = configured();
+    expect(await driverRoute(config.databaseUrl)).toEqual({ host: ['db.example'], port: [6543], path: false });
+    expect(config.databaseTlsPort).toBe(5432);
+    expect(grantSql(config).options).toMatchObject({ host: ['db.example'], port: [5432], path: false });
   });
 
   it('does not newly validate the database URL without a CA', () => {
@@ -666,10 +733,10 @@ describe('grant database TLS configuration', () => {
   });
 });
 
-describe('grantDatabaseSsl', () => {
+describe('grantDatabaseTls', () => {
   it('returns undefined without a CA', () => {
     expect(
-      grantDatabaseSsl({
+      grantDatabaseTls({
         databaseUrl: 'postgres://127.0.0.1/db',
         databaseCaPem: undefined,
         databaseTlsServerName: undefined,
@@ -682,7 +749,7 @@ describe('grantDatabaseSsl', () => {
     const databaseUrl = `postgres://u:${password}@[]/db`;
     let thrown: unknown;
     try {
-      grantDatabaseSsl({
+      grantDatabaseTls({
         databaseUrl,
         databaseCaPem: [certificates.caA],
         databaseTlsServerName: undefined,
@@ -700,24 +767,31 @@ describe('grantDatabaseSsl', () => {
     }
   });
 
-  it('pins the CA, requires verification, leaves SNI unchanged, and checks the configured name', () => {
-    const ssl = grantDatabaseSsl({
+  it('pins the CA, port and TLS floor, requires verification, leaves SNI unchanged, and checks the configured name', () => {
+    const tls = grantDatabaseTls({
       databaseUrl: 'postgres://127.0.0.1/db',
       databaseCaPem: [certificates.caA],
       databaseTlsServerName: 'localhost',
     });
-    expect(ssl).toMatchObject({ ca: [certificates.caA], rejectUnauthorized: true });
+    expect(tls?.port).toBe(5432);
+    const ssl = tls?.ssl;
+    expect(ssl).toMatchObject({
+      ca: [certificates.caA],
+      host: '127.0.0.1',
+      minVersion: 'TLSv1.2',
+      rejectUnauthorized: true,
+    });
     expect(ssl).not.toHaveProperty('servername');
     const identity = ssl?.checkServerIdentity;
     if (!identity) throw new Error('Expected a server identity check');
     expect(identity('db.example.test', leafPeerCertificate())).toBeUndefined();
 
-    const mismatch = grantDatabaseSsl({
+    const mismatch = grantDatabaseTls({
       databaseUrl: 'postgres://127.0.0.1/db',
       databaseCaPem: [certificates.caA],
       databaseTlsServerName: 'db.example.test',
     });
-    const mismatchIdentity = mismatch?.checkServerIdentity;
+    const mismatchIdentity = mismatch?.ssl.checkServerIdentity;
     if (!mismatchIdentity) throw new Error('Expected a server identity check');
     expect(mismatchIdentity('localhost', leafPeerCertificate())).toMatchObject({
       code: 'ERR_TLS_CERT_ALTNAME_INVALID',
@@ -725,12 +799,11 @@ describe('grantDatabaseSsl', () => {
   });
 
   it('falls back to the host argument for identity when no server name is configured', () => {
-    const ssl = grantDatabaseSsl({
+    const identity = grantDatabaseTls({
       databaseUrl: 'postgres://127.0.0.1/db',
       databaseCaPem: [certificates.caA],
       databaseTlsServerName: undefined,
-    });
-    const identity = ssl?.checkServerIdentity;
+    })?.ssl.checkServerIdentity;
     if (!identity) throw new Error('Expected a server identity check');
     expect(identity('localhost', leafPeerCertificate())).toBeUndefined();
     expect(identity('db.example.test', leafPeerCertificate())).toMatchObject({ code: 'ERR_TLS_CERT_ALTNAME_INVALID' });
@@ -824,6 +897,20 @@ describe('real grant database TLS connections', () => {
     };
     await expect(runGrantQuery(unvalidated)).rejects.toMatchObject({ code: 'UNABLE_TO_GET_ISSUER_CERT' });
     expectNoStartup(intermediateTlsServer);
+  });
+
+  it('ignores PGPORT for a portless pinned URL through grantSql and readiness', async () => {
+    process.env = {
+      ...validEnv(),
+      PGPORT: String(tlsServer.port),
+      SHOP_BFF_GRANT_STATE_DATABASE_URL: 'postgres://u:p@localhost/db?sslmode=require',
+      SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM: certificates.caA,
+      SHOP_BFF_GRANT_STATE_DATABASE_TLS_SERVER_NAME: 'localhost',
+    };
+    const config = configured();
+    await expect(runGrantQuery(config)).rejects.toBeInstanceOf(Error);
+    await expect(isEmbeddedShopReady()).resolves.toBe(false);
+    expect(tlsServer.records).toHaveLength(0);
   });
 
   it('uses and verifies TLS with a pin even when the URL disables SSL', async () => {

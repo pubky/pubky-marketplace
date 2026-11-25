@@ -41,10 +41,11 @@ describe('replaceBridge (#433)', () => {
     mocks.selects.length = 0;
   });
 
-  it('omits the ssl option when no CA is configured', () => {
+  it('omits the ssl and port options when no CA is configured', () => {
     grantSql(config);
     expect(mocks.postgres).toHaveBeenCalledOnce();
     expect(mocks.postgres.mock.calls[0][1]).not.toHaveProperty('ssl');
+    expect(mocks.postgres.mock.calls[0][1]).not.toHaveProperty('port');
   });
 
   it('locks the user, then replaces their bridge when nothing changed while it waited', async () => {

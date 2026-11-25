@@ -45,8 +45,8 @@ const databaseCaPem = z
   .string()
   .optional()
   .transform((value, ctx) => {
-    const pem = value?.trim();
-    if (!pem) return undefined;
+    if (value === undefined) return undefined;
+    const pem = value.trim();
 
     const blocks: string[] = [];
     const blockPattern = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
@@ -99,14 +99,19 @@ const databaseTlsUrlMessage =
 const databaseTlsHostPattern = /^[A-Za-z0-9._-]+$/;
 const databaseRoutingQueryKeys = ['host', 'hostaddr', 'port'];
 
+const DEFAULT_DATABASE_PORT = 5432;
+
+export type DatabaseTlsRoute = { host: string; port: number };
+
 /**
  * The pinned postgres.js (3.4.9) routes by the URL-decoded text between `://` and the first `?` or
  * `/`, after its first `@`: a decoded `,` selects multiple hosts and a `/` a Unix socket, and each
  * host is cut at its first `:` (so `[::1]` becomes `[`). Only accept URLs whose driver host is
- * exactly the WHATWG host with a plain DNS name or IPv4 hostname; libpq-style routing query keys
- * are refused as well.
+ * exactly the WHATWG host with an ASCII hostname of letters, digits, dot, underscore and hyphen;
+ * libpq-style routing query keys are refused as well. Without a URL port the driver would fall
+ * back to `PGPORT`, so callers pass the returned port explicitly.
  */
-export function databaseTlsHostFromUrl(databaseUrl: string): string | undefined {
+export function databaseTlsRouteFromUrl(databaseUrl: string): DatabaseTlsRoute | undefined {
   try {
     const url = new URL(databaseUrl);
     if (url.protocol !== 'postgres:' && url.protocol !== 'postgresql:') return undefined;
@@ -114,7 +119,9 @@ export function databaseTlsHostFromUrl(databaseUrl: string): string | undefined 
     const authority = databaseUrl.slice(databaseUrl.indexOf('://') + 3).split(/[?/]/)[0];
     const driverHost = decodeURIComponent(authority.slice(authority.indexOf('@') + 1));
     if (driverHost !== url.host || !databaseTlsHostPattern.test(url.hostname)) return undefined;
-    return url.hostname;
+    const port = url.port === '' ? DEFAULT_DATABASE_PORT : Number(url.port);
+    if (port < 1) return undefined;
+    return { host: url.hostname, port };
   } catch {
     return undefined;
   }
@@ -185,17 +192,18 @@ const configSchema = z
     }
   })
   .transform((value, ctx) => {
-    if (value.databaseCaPem === undefined) return { ...value, databaseTlsHost: undefined };
-    const databaseTlsHost = databaseTlsHostFromUrl(value.databaseUrl);
-    if (databaseTlsHost === undefined) {
+    if (value.databaseCaPem === undefined) return { ...value, databaseTlsHost: undefined, databaseTlsPort: undefined };
+    const route = databaseTlsRouteFromUrl(value.databaseUrl);
+    if (route === undefined) {
       ctx.addIssue({ code: 'custom', path: ['databaseUrl'], message: databaseTlsUrlMessage });
       return z.NEVER;
     }
-    return { ...value, databaseTlsHost };
+    return { ...value, databaseTlsHost: route.host, databaseTlsPort: route.port };
   });
 
-export type MarketplaceGrantConfig = Omit<z.infer<typeof configSchema>, 'databaseTlsHost'> & {
+export type MarketplaceGrantConfig = Omit<z.infer<typeof configSchema>, 'databaseTlsHost' | 'databaseTlsPort'> & {
   databaseTlsHost?: string;
+  databaseTlsPort?: number;
 };
 
 const cliExtrasSchema = z.object({
