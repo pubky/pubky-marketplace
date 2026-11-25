@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CONFLICTING_COUNTERPARTY,
   canSellHere,
+  CONFLICTING_COUNTERPARTY,
   isSaleSubject,
   isSaleThread,
   type ListingSide,
