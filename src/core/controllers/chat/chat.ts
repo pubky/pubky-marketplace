@@ -18,6 +18,7 @@ import { isPubkyIdentifier, stripPubkyPrefix } from '@/libs/utils/utils';
 import type { ChatContext } from '@/models/chat/chat.schema';
 import type { Pubky } from '@/models/models.types';
 import {
+  contextRole,
   isSaleThread,
   listingContextKey,
   type ListingSide,
@@ -269,9 +270,10 @@ export class ChatController {
   }
 
   /**
-   * Whose listing a context names: resolved in the roles, else cached here under the peer's or the
-   * viewer's composite id, else (with `fetch`) read from the peer's and then the viewer's homeserver.
-   * `absent` requires both complete lookups; null leaves the context unresolved after a failed read.
+   * Whose listing a context names: resolved in the roles, else the viewer's composite id and then the
+   * peer's, each looked up in this browser's cache and (with `fetch`) on its owner's homeserver. The
+   * viewer's listing wins when both owners published that id. `absent` requires every lookup to
+   * complete; null leaves the context unresolved after a failed read, or without `fetch` after a miss.
    */
   private static async listingSide(
     me: string,
@@ -284,12 +286,12 @@ export class ChatController {
     if (resolved) return resolved;
     signal?.throwIfAborted();
     const owners = [
-      { owner: peer, side: 'peer' },
       { owner: me, side: 'viewer' },
+      { owner: peer, side: 'peer' },
     ] as const;
-    for (const source of ['cache', 'homeserver'] as const) {
-      if (source === 'homeserver' && !fetch) return null;
-      for (const { owner, side } of owners) {
+    for (const { owner, side } of owners) {
+      for (const source of ['cache', 'homeserver'] as const) {
+        if (source === 'homeserver' && !fetch) continue;
         try {
           const listing =
             source === 'cache'
@@ -305,7 +307,7 @@ export class ChatController {
         }
       }
     }
-    return 'absent';
+    return fetch ? 'absent' : null;
   }
 
   /** A write's own sale or unresolved context is refused before peer-level purchase history applies. */
@@ -325,7 +327,7 @@ export class ChatController {
     const missingOrderIds = new Set<string>();
     for (const candidate of contexts) {
       const orderId = candidate?.orderId;
-      if (orderId && !roles.boughtOrderIds.includes(orderId) && !roles.soldOrderIds.includes(orderId)) {
+      if (orderId && !Object.hasOwn(roles.boughtOrders, orderId) && !Object.hasOwn(roles.soldOrders, orderId)) {
         missingOrderIds.add(orderId);
       }
     }
@@ -356,16 +358,7 @@ export class ChatController {
       if (!candidate?.listingId) return null;
       return merged.listingSides[listingContextKey(peer, candidate.listingId)] ?? null;
     };
-    if (context) {
-      const orderId = context.orderId;
-      const side = sideOf(context);
-      const ownSale =
-        (orderId !== undefined && merged.soldOrderIds.includes(orderId)) ||
-        side === 'viewer' ||
-        (orderId !== undefined && !merged.boughtOrderIds.includes(orderId) && !merged.soldOrderIds.includes(orderId)) ||
-        (context.listingId !== undefined && side === null);
-      if (ownSale) return true;
-    }
+    if (context && contextRole(merged, peer, context, sideOf(context)) === 'sale') return true;
     const thread = existing ?? { peer_pubky: peer, last_context: null };
     return isSaleThread(thread, merged, getStoreSeller(), sideOf(thread.last_context));
   }

@@ -11,8 +11,8 @@ const roles = {
   viewer: 'a'.repeat(52),
   soldTo: ['b'.repeat(52)],
   boughtFrom: [],
-  soldOrderIds: ['order-1'],
-  boughtOrderIds: [],
+  soldOrders: { 'order-1': 'b'.repeat(52) },
+  boughtOrders: {},
   listingSides: {},
 };
 

@@ -124,7 +124,7 @@ describe('ChatController sale threads in a store', () => {
     }
 
     await expect(ChatController.fetchStoreThreadRoles()).rejects.toThrow('could not be placed');
-    expect(useChatStore.getState().storeThreadRoles).toMatchObject({ soldOrderIds: [], boughtOrderIds: [] });
+    expect(useChatStore.getState().storeThreadRoles).toMatchObject({ soldOrders: {}, boughtOrders: {} });
 
     expect(await ChatController.getConversations()).toEqual([]);
     expect(await ChatController.getUnreadConversationCount()).toBe(0);
@@ -248,7 +248,7 @@ describe('ChatController sale threads in a store', () => {
         context: { orderId: 'sold-to-friend' },
       }),
     ).rejects.toMatchObject(refused);
-    expect(useChatStore.getState().storeThreadRoles?.soldOrderIds).toContain('sold-to-friend');
+    expect(useChatStore.getState().storeThreadRoles?.soldOrders).toHaveProperty('sold-to-friend', FRIEND);
     await expect(
       ChatController.commitSendMessage({
         peerPubky: FRIEND,
@@ -490,11 +490,11 @@ describe('ChatController sale threads in a store', () => {
     endAuthScope();
     useAuthStore.setState({ currentUserPubky: FRIEND });
     const second = ChatController.fetchStoreThreadRoles();
-    await expect(second).resolves.toMatchObject({ soldOrderIds: [] });
+    await expect(second).resolves.toMatchObject({ soldOrders: {} });
     finishFirst([{ id: 'old-sale', buyerPubky: MY_BUYER, sellerPubky: VIEWER }] as never);
 
     await expect(first).rejects.toMatchObject({ name: 'AbortError' });
-    expect(useChatStore.getState().storeThreadRoles?.soldOrderIds).toEqual([]);
+    expect(useChatStore.getState().storeThreadRoles?.soldOrders).toEqual({});
   });
 
   it.each(['send', 'open', 'retry'] as const)(
@@ -592,8 +592,8 @@ describe('ChatController sale threads in a store', () => {
       viewer: VIEWER,
       soldTo: [],
       boughtFrom: [],
-      soldOrderIds: ['learned-sale'],
-      boughtOrderIds: [],
+      soldOrders: { 'learned-sale': MY_BUYER },
+      boughtOrders: {},
       listingSides: { [`${ASKER}:my-lamp`]: 'viewer' },
     });
     finishOrders([
@@ -603,7 +603,7 @@ describe('ChatController sale threads in a store', () => {
     await read;
 
     expect(useChatStore.getState().storeThreadRoles).toMatchObject({
-      soldOrderIds: expect.arrayContaining(['learned-sale', 'order-sold']),
+      soldOrders: expect.objectContaining({ 'learned-sale': MY_BUYER, 'order-sold': MY_BUYER }),
       listingSides: expect.objectContaining({ [`${ASKER}:my-lamp`]: 'viewer' }),
     });
   });
@@ -614,14 +614,18 @@ describe('ChatController sale threads in a store', () => {
       viewer: OTHER_SELLER,
       soldTo: [],
       boughtFrom: [FRIEND],
-      soldOrderIds: [],
-      boughtOrderIds: ['foreign-purchase'],
+      soldOrders: {},
+      boughtOrders: { 'foreign-purchase': FRIEND },
       listingSides: {},
     });
 
     const roles = await ChatController.fetchStoreThreadRoles();
 
-    expect(roles).toMatchObject({ viewer: VIEWER, boughtFrom: [STORE_SELLER], boughtOrderIds: ['order-bought'] });
+    expect(roles).toMatchObject({
+      viewer: VIEWER,
+      boughtFrom: [STORE_SELLER],
+      boughtOrders: { 'order-bought': STORE_SELLER },
+    });
     expect(useChatStore.getState().storeThreadRoles).toBe(roles);
   });
 
@@ -686,7 +690,9 @@ describe('ChatController sale threads in a store', () => {
     });
     expect(await ChatController.getConversations()).toEqual([]);
 
-    await expect(ChatController.fetchStoreThreadRoles()).resolves.toMatchObject({ boughtOrderIds: ['older-bought'] });
+    await expect(ChatController.fetchStoreThreadRoles()).resolves.toMatchObject({
+      boughtOrders: { 'older-bought': FRIEND },
+    });
     expect(peers(await ChatController.getConversations())).toEqual([FRIEND]);
   });
 
@@ -768,6 +774,135 @@ describe('ChatController sale threads in a store', () => {
 
       expect(peers(await ChatController.getConversations())).toEqual([FRIEND]);
       await expect(ChatController.commitSendMessage({ peerPubky: FRIEND, body: 'hello' })).resolves.toBe('message-id');
+    });
+  });
+
+  describe('an order of another counterparty', () => {
+    const orders = [
+      { id: 'bought-from-store', buyerPubky: VIEWER, sellerPubky: STORE_SELLER },
+      { id: 'bought-from-friend', buyerPubky: VIEWER, sellerPubky: FRIEND },
+      { id: 'sold-to-buyer', buyerPubky: MY_BUYER, sellerPubky: VIEWER },
+    ];
+
+    beforeEach(() => {
+      vi.mocked(CommerceApplication.getMarketplaceOrders).mockResolvedValue(orders as never);
+    });
+
+    it('does not open a sale thread: a purchase counts only with its seller', async () => {
+      setStoreSeller(STORE_SELLER);
+      const sale = thread(MY_BUYER, { orderId: 'bought-from-store' });
+      const purchase = thread(FRIEND, { orderId: 'bought-from-friend' });
+      vi.mocked(ChatApplication.getConversations).mockResolvedValue([sale, purchase] as never);
+      vi.mocked(ChatApplication.getConversation).mockImplementation(
+        async (_me, peer) => ([sale, purchase].find(({ peer_pubky }) => peer_pubky === peer) ?? null) as never,
+      );
+
+      await ChatController.fetchStoreThreadRoles();
+
+      expect(peers(await ChatController.getConversations())).toEqual([FRIEND]);
+      expect(await ChatController.getConversation(MY_BUYER)).toBeNull();
+      expect(await ChatController.getMessages(MY_BUYER)).toEqual([]);
+      expect(await ChatController.getUnreadConversationCount()).toBe(1);
+      await expect(ChatController.commitSendMessage({ peerPubky: MY_BUYER, body: 'hello' })).rejects.toMatchObject(
+        refused,
+      );
+      await ChatController.commitFlushOutbox();
+      const flushCalls = vi.mocked(ChatApplication.flushOutbox).mock.calls;
+      const sends = flushCalls[flushCalls.length - 1][2]?.sends;
+      expect(await sends?.({ peer_pubky: MY_BUYER, context: null })).toBe(false);
+      expect(await sends?.({ peer_pubky: FRIEND, context: null })).toBe(true);
+    });
+
+    it.each([
+      { name: 'an order bought from the store seller', context: { orderId: 'bought-from-store' }, writes: false },
+      { name: 'an order sold to another buyer', context: { orderId: 'sold-to-buyer' }, writes: false },
+      { name: 'an order bought from this peer', context: { orderId: 'bought-from-friend' }, writes: true },
+    ])('writes with $name only in the thread of its counterparty', async ({ context, writes }) => {
+      setStoreSeller(STORE_SELLER);
+      const plain = thread(FRIEND, null);
+      vi.mocked(ChatApplication.getConversations).mockResolvedValue([plain] as never);
+      vi.mocked(ChatApplication.getConversation).mockResolvedValue(plain as never);
+      await ChatController.fetchStoreThreadRoles();
+
+      const send = ChatController.commitSendMessage({ peerPubky: FRIEND, body: 'hello', context });
+      if (writes) await expect(send).resolves.toBe('message-id');
+      else await expect(send).rejects.toMatchObject(refused);
+    });
+  });
+
+  describe('a listing id both the peer and the viewer published', () => {
+    const owners = (peerHas: 'cache' | 'none', viewerHas: 'cache' | 'homeserver' | 'none') => {
+      if (peerHas === 'cache') CACHED.add(`${FRIEND}:boots`);
+      if (viewerHas === 'cache') CACHED.add(`${VIEWER}:boots`);
+      if (viewerHas === 'homeserver') ON_HOMESERVERS.add(`${VIEWER}:boots`);
+    };
+
+    afterEach(() => {
+      CACHED.delete(`${FRIEND}:boots`);
+      CACHED.delete(`${VIEWER}:boots`);
+      ON_HOMESERVERS.delete(`${VIEWER}:boots`);
+    });
+
+    it.each([
+      { peerHas: 'cache', viewerHas: 'cache', shown: false },
+      { peerHas: 'cache', viewerHas: 'homeserver', shown: false },
+      { peerHas: 'none', viewerHas: 'homeserver', shown: false },
+      { peerHas: 'cache', viewerHas: 'none', shown: true },
+    ] as const)(
+      'is the viewer sale when the viewer has it in $viewerHas and the peer in $peerHas',
+      async ({ peerHas, viewerHas, shown }) => {
+        setStoreSeller(STORE_SELLER);
+        owners(peerHas, viewerHas);
+        const row = thread(FRIEND, { listingId: 'boots' });
+        vi.mocked(ChatApplication.getConversations).mockResolvedValue([row] as never);
+        vi.mocked(ChatApplication.getConversation).mockResolvedValue(row as never);
+        vi.mocked(CommerceApplication.getMarketplaceOrders).mockResolvedValue([]);
+
+        await ChatController.fetchStoreThreadRoles();
+
+        expect(useChatStore.getState().storeThreadRoles?.listingSides[`${FRIEND}:boots`]).toBe(
+          shown ? 'peer' : 'viewer',
+        );
+        expect(peers(await ChatController.getConversations())).toEqual(shown ? [FRIEND] : []);
+        const send = ChatController.commitSendMessage({ peerPubky: FRIEND, body: 'hello' });
+        if (shown) await expect(send).resolves.toBe('message-id');
+        else await expect(send).rejects.toMatchObject(refused);
+      },
+    );
+
+    it('keeps the viewer side a slower roles read finds differently', async () => {
+      setStoreSeller(STORE_SELLER);
+      CACHED.delete(`${FRIEND}:boots`);
+      const row = thread(FRIEND, { listingId: 'boots' });
+      vi.mocked(ChatApplication.getConversations).mockResolvedValue([row] as never);
+      vi.mocked(ChatApplication.getConversation).mockResolvedValue(row as never);
+      vi.mocked(CommerceApplication.getMarketplaceOrders).mockResolvedValue([]);
+      let finishPeerLookup: (listing: never) => void = () => undefined;
+      vi.mocked(CommerceApplication.getOrFetchListingIfFound).mockImplementation(async (owner) =>
+        owner === FRIEND
+          ? await new Promise((resolve) => {
+              finishPeerLookup = resolve as never;
+            })
+          : (null as never),
+      );
+
+      const read = ChatController.fetchStoreThreadRoles();
+      await vi.waitFor(() =>
+        expect(CommerceApplication.getOrFetchListingIfFound).toHaveBeenCalledWith(FRIEND, 'boots'),
+      );
+      useChatStore.getState().setStoreThreadRoles({
+        viewer: VIEWER,
+        soldTo: [],
+        boughtFrom: [],
+        soldOrders: {},
+        boughtOrders: {},
+        listingSides: { [`${FRIEND}:boots`]: 'viewer' },
+      });
+      finishPeerLookup({ id: 'boots' } as never);
+      await read;
+
+      expect(useChatStore.getState().storeThreadRoles?.listingSides[`${FRIEND}:boots`]).toBe('viewer');
+      expect(await ChatController.getConversations()).toEqual([]);
     });
   });
 

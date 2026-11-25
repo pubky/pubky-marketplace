@@ -4,6 +4,7 @@ import {
   isSaleSubject,
   isSaleThread,
   type ListingSide,
+  mergeStoreThreadRoles,
   storeNotificationSubjects,
   storeThreadRoles,
   subjectOfAggregate,
@@ -234,12 +235,18 @@ describe('isSaleThread', () => {
   it('stays a buyer thread whenever anything makes it a purchase', () => {
     expect(isSale(STORE_SELLER, null)).toBe(false);
     expect(isSale(STORE_SELLER, { orderId: 'sold-to-store-seller' })).toBe(false);
-    expect(isSale(BUYER, { orderId: 'bought' })).toBe(false);
+    expect(isSale('p'.repeat(52), { orderId: 'bought-from-prior-peer' })).toBe(false);
     expect(isSale(BUYER, { listingId: 'boots' }, 'peer')).toBe(false);
   });
 
   it.each([
-    { name: 'order known bought', peer: OTHER, context: { orderId: 'bought' }, side: null, sale: false },
+    {
+      name: 'order known bought from this peer',
+      peer: 'p'.repeat(52),
+      context: { orderId: 'bought-from-prior-peer' },
+      side: null,
+      sale: false,
+    },
     { name: 'order known sold', peer: OTHER, context: { orderId: 'sold' }, side: null, sale: true },
     {
       name: 'order missing from the page but resolved by id as sold',
@@ -322,18 +329,43 @@ describe('isSaleThread', () => {
     },
     {
       name: 'a bought order and a listing of the peer',
-      context: { orderId: 'bought', listingId: 'boots' },
+      context: { orderId: 'bought-from-prior-peer', listingId: 'boots' },
       side: 'peer',
       sale: false,
     },
     {
       name: 'a bought order and a listing neither owner has',
-      context: { orderId: 'bought', listingId: 'gone' },
+      context: { orderId: 'bought-from-prior-peer', listingId: 'gone' },
       side: 'absent',
       sale: false,
     },
   ] as const)('judges a context with $name by its sale or unresolved half first', ({ context, side, sale }) => {
-    expect(isSale(OTHER, context, side)).toBe(sale);
+    expect(isSale(context.orderId === 'bought-from-prior-peer' ? 'p'.repeat(52) : OTHER, context, side)).toBe(sale);
+  });
+
+  it('counts an order as a purchase only in the thread with its seller', () => {
+    const prior = 'p'.repeat(52);
+    expect(isSale(prior, { orderId: 'bought-from-prior-peer' })).toBe(false);
+    expect(isSale(OTHER, { orderId: 'bought-from-prior-peer' })).toBe(true);
+    expect(isSale(BUYER, { orderId: 'bought' })).toBe(true);
+    expect(isSale(prior, { orderId: 'bought' })).toBe(true);
+    expect(isSale(prior, { orderId: 'bought', listingId: 'boots' }, 'peer')).toBe(true);
+    expect(isSale(OTHER, { orderId: 'sold' })).toBe(true);
+    expect(isSale(BUYER, { orderId: 'sold' })).toBe(true);
+  });
+
+  it('keeps a thread with a seller whose order the viewer bought even when it sold to someone else', () => {
+    expect(isSale(STORE_SELLER, { orderId: 'bought' })).toBe(false);
+    expect(isSale('p'.repeat(52), { orderId: 'bought-from-prior-peer', listingId: 'boots' }, 'peer')).toBe(false);
+  });
+
+  it('keeps a listing the viewer owns as its own when roles are merged', () => {
+    const key = `${OTHER}:boots`;
+    const learned = (side: ListingSide) => storeThreadRoles([], VIEWER, { [key]: side });
+    expect(mergeStoreThreadRoles(learned('viewer'), learned('peer')).listingSides[key]).toBe('viewer');
+    expect(mergeStoreThreadRoles(learned('viewer'), learned('absent')).listingSides[key]).toBe('viewer');
+    expect(mergeStoreThreadRoles(learned('peer'), learned('viewer')).listingSides[key]).toBe('viewer');
+    expect(mergeStoreThreadRoles(learned('absent'), learned('peer')).listingSides[key]).toBe('peer');
   });
 
   it('shows only the thread with the store seller before the roles are read', () => {
