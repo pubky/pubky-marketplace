@@ -918,6 +918,32 @@ describe('ChatController sale threads in a store', () => {
       ).rejects.toMatchObject(refused);
     });
 
+    it('keeps a context closed after a send could not look its listing up while the peer copy is cached', async () => {
+      setStoreSeller(STORE_SELLER);
+      CACHED.add(`${FRIEND}:boots`);
+      const plain = thread(FRIEND, null);
+      vi.mocked(ChatApplication.getConversations).mockResolvedValue([plain] as never);
+      vi.mocked(ChatApplication.getConversation).mockResolvedValue(plain as never);
+      vi.mocked(CommerceApplication.getMarketplaceOrders).mockResolvedValue([]);
+      await ChatController.fetchStoreThreadRoles();
+      expect(peers(await ChatController.getConversations())).toEqual([FRIEND]);
+      vi.mocked(CommerceApplication.getOrFetchListingIfFound).mockImplementation(async (owner) => {
+        if (owner === VIEWER) throw new Error('viewer homeserver unreachable');
+        return null as never;
+      });
+
+      await expect(
+        ChatController.commitSendMessage({ peerPubky: FRIEND, body: 'hello', context: { listingId: 'boots' } }),
+      ).rejects.toMatchObject(refused);
+
+      expect(useChatStore.getState().storeThreadRoles?.listingSides[`${FRIEND}:boots`]).toBe('unresolved');
+      const withListing = thread(FRIEND, { listingId: 'boots' });
+      vi.mocked(ChatApplication.getConversations).mockResolvedValue([withListing] as never);
+      vi.mocked(ChatApplication.getConversation).mockResolvedValue(withListing as never);
+      expect(await ChatController.getConversations()).toEqual([]);
+      expect(await ChatController.getConversation(FRIEND)).toBeNull();
+    });
+
     it('keeps the viewer side a slower roles read finds differently', async () => {
       setStoreSeller(STORE_SELLER);
       CACHED.delete(`${FRIEND}:boots`);

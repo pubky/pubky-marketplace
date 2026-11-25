@@ -273,7 +273,8 @@ export class ChatController {
   /**
    * Whose listing a context names: resolved in the roles, else the viewer's composite id and then the
    * peer's, each looked up in this browser's cache and (with `fetch`) on its owner's homeserver. The
-   * viewer's listing wins when both owners published that id. `absent` requires every lookup to
+   * viewer's listing wins when both owners published that id, once a fetching lookup has recorded it;
+   * without `fetch` only this browser's cache is consulted. `absent` requires every lookup to
    * complete; null leaves the context unresolved after a failed read, or without `fetch` after a miss.
    */
   private static async listingSide(
