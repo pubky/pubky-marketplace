@@ -66,9 +66,6 @@ vi.mock('@/hooks/useAuthStatus/useAuthStatus', () => ({
     hasProfile: true,
   }),
 }));
-vi.mock('@/hooks/useHotTags/useHotTags', () => ({
-  useHotTags: () => ({ tags: [], rawTags: [], isLoading: false, error: null, refetch: async () => {} }),
-}));
 
 function EmbeddedShopPage() {
   return (

@@ -312,10 +312,6 @@ vi.mock('@/hooks/useEnrichedTags/useEnrichedTags', () => ({
   useEnrichedTags: (tags: unknown[]) => ({ enrichedTags: tags, isLoading: false }),
 }));
 
-vi.mock('@/hooks/useAuthoredCollections/useAuthoredCollections', () => ({
-  useAuthoredCollections: () => ({ collections: [], isLoading: false }),
-}));
-
 vi.mock('@/hooks/useCommerceFavorite/useCommerceFavorite', () => ({
   useCommerceFavorite: () => ({ isFavorite: false, isMutating: false, toggle: vi.fn() }),
 }));

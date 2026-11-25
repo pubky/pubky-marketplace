@@ -151,9 +151,9 @@ Only these Applications can call other Applications:
 ```typescript
 // ALLOWED: PostApplication (orchestrator) calls helper applications
 // Real: src/core/application/post/post.ts
-static async commitCreate({ postUrl, compositePostId, post, fileAttachments, tags }) {
-  await FileApplication.commitCreate({ fileAttachments });
-  await TagApplication.commitCreate({ tagList: tags });
+static async fetch({ compositeId, viewerId }: TFetchPostParams) {
+  await PostStreamApplication.fetchMissingPostsFromNexus({ cacheMissPostIds: [compositeId], viewerId });
+  return await LocalPostService.readDetails({ postId: compositeId });
 }
 
 // FORBIDDEN: Helper applications cannot call others
@@ -181,30 +181,21 @@ Since the architecture uses static classes without dependency injection, these c
 ### Controller calling Service directly
 
 ```typescript
-// BAD — controller bypasses application layer
-class PostController {
-  static async commitCreate(params) {
-    await LocalPostService.create(post); // Bypass application
-  }
-}
-
-// GOOD — controller delegates to application
-// Real: src/core/controllers/post/post.ts
-class PostController {
-  static async commitCreate(params) {
-    const { post, meta } = await PostNormalizer.to(postData, authorId);
-    await PostApplication.commitCreate({ compositePostId, post, postUrl: meta.url });
-  }
+// PostController.getCounts delegates the local read to PostApplication.
+static async getCounts({ compositeId }: TCompositeId): Promise<PostCountsModelSchema | null> {
+  return await PostApplication.getCounts({ compositeId });
 }
 ```
+
+A direct call to `LocalPostService.readCounts` from the controller would bypass the application layer. [Post controller](../src/core/controllers/post/post.ts)
 
 ### Application accessing Store
 
 ```typescript
 // BAD — application reaches into UI state
 class PostApplication {
-  static async commitCreate(params) {
-    usePostStore.getState().setLoading(true); // VIOLATION
+  static async fetch(params) {
+    useAuthStore.getState().setHasProfile(true); // VIOLATION
   }
 }
 
@@ -222,9 +213,9 @@ class UserController {
 
 ```typescript
 // BAD — pipe performs IO
-class PostNormalizer {
-  static async normalize(post) {
-    const user = await LocalUserService.readDetails(post.author); // IO!
+class UserNormalizer {
+  static async normalize(userId) {
+    const user = await LocalUserService.readDetails({ userId }); // IO!
   }
 }
 

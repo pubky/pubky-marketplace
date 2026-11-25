@@ -44,28 +44,6 @@ vi.mock('dexie-react-hooks', () => ({
   }),
 }));
 
-// Mock useNotifications from direct path (used by useProfileStats)
-vi.mock('@/hooks/useNotifications/useNotifications', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/hooks/useNotifications/useNotifications')>();
-  return {
-    ...actual,
-    useNotifications: vi.fn(() => ({
-      notifications: [],
-      unreadNotifications: [],
-      count: 0,
-      unreadCount: mockNotificationsCount.current,
-      isLoading: false,
-      isLoadingMore: false,
-      hasMore: false,
-      error: null,
-      loadMore: vi.fn(),
-      refresh: vi.fn(),
-      markAllAsRead: vi.fn(),
-      isNotificationUnread: vi.fn(() => false),
-    })),
-  };
-});
-
 vi.mock('@/hooks/useTagged/useTagged', () => ({
   useTagged: vi.fn(() => ({
     tags: [],
@@ -262,7 +240,7 @@ describe('useProfileStats', () => {
   });
 
   describe('Notifications stat', () => {
-    it('returns notifications count from useNotifications hook', () => {
+    it('returns the Market notification count', () => {
       setMockNotificationsCount(15);
       setMockUserCounts({
         id: 'test-user-id',

@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderForVRT } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { Dialog, DialogContent } from '@/atoms/Dialog/Dialog';
-import { Sheet, SheetContent, SheetTitle } from '@/atoms/Sheet/Sheet';
 import { Toast, ToastProvider, ToastTitle, ToastViewport } from '@/atoms/Toast/Toast';
 import { Header } from '@/organisms/Header/Header';
 import { HeaderContainer } from '@/molecules/Header/Header';
@@ -110,10 +109,6 @@ vi.mock('@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery', () => (
   useCollectionsNavDiscovery: () => ({ showCollectionsNew: false, markCollectionsNavSeen: vi.fn() }),
 }));
 
-vi.mock('@/hooks/useHotTags/useHotTags', () => ({
-  useHotTags: () => ({ tags: [], rawTags: [], isLoading: false, error: null, refetch: async () => {} }),
-}));
-
 vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
   MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => (
     <main className="w-full py-6">{children}</main>
@@ -197,24 +192,6 @@ describe('Marketplace section tabs under the site overlays', () => {
     const tabLink = requireElement('a', requireElement('[data-testid="marketplace-section-nav"]'));
     const hit = topElementAt(tabLink.getBoundingClientRect());
     expect(hit?.getAttribute('data-slot')).toBe('dialog-overlay');
-  });
-
-  it('sits below an open sheet', async () => {
-    await renderForVRT(
-      <>
-        <Marketplace />
-        <Sheet open>
-          <SheetContent side="right">
-            <SheetTitle>Overlay probe</SheetTitle>
-          </SheetContent>
-        </Sheet>
-      </>,
-      { viewport: VRT_VIEWPORT_DESKTOP },
-    );
-    await vi.waitFor(() => requireElement('[role="dialog"]'));
-    const tabLink = requireElement('a', requireElement('[data-testid="marketplace-section-nav"]'));
-    const hit = topElementAt(tabLink.getBoundingClientRect());
-    expect(hit && tabsWrapper().contains(hit)).toBe(false);
   });
 
   it('sits below the toast viewport', async () => {

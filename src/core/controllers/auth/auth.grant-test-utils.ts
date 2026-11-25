@@ -2,7 +2,6 @@ import type { Session } from '@synonymdev/pubky';
 import { vi } from 'vitest';
 import { AuthApplication } from '@/application/auth/auth';
 import { BootstrapApplication } from '@/application/bootstrap/bootstrap';
-import { SettingsApplication } from '@/application/settings/settings';
 import { SHOP_GRANT_CLIENT_ID } from '@/config/app';
 import { clearPersistedAuthIdentity } from '@/stores/auth/auth.persisted';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -50,7 +49,6 @@ export function resetGrantTest() {
   vi.spyOn(AuthApplication, 'logout').mockResolvedValue(undefined);
   vi.spyOn(AuthApplication, 'userIsSignedUp').mockResolvedValue(false);
   vi.spyOn(BootstrapApplication, 'cancelModerationFollow').mockImplementation(() => {});
-  vi.spyOn(SettingsApplication, 'initializeSettings').mockResolvedValue(null);
   vi.spyOn(BootstrapApplication, 'initialize').mockResolvedValue(undefined);
 }
 

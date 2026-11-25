@@ -111,9 +111,6 @@ vi.mock('@/hooks/useCurrentUserProfile/useCurrentUserProfile', () => ({
 vi.mock('@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery', () => ({
   useCollectionsNavDiscovery: () => ({ showCollectionsNew: false, markCollectionsNavSeen: vi.fn() }),
 }));
-vi.mock('@/hooks/useHotTags/useHotTags', () => ({
-  useHotTags: () => ({ tags: [], rawTags: [], isLoading: false, error: null, refetch: async () => {} }),
-}));
 
 vi.mock('@/controllers/commerce/commerce', async () => {
   const { record } = await fixtures;

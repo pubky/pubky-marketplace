@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { BootstrapApplication } from '@/application/bootstrap/bootstrap';
 import { UserApplication } from '@/application/user/user';
 import { HomeserverService } from '@/services/homeserver/homeserver';
-import { NexusBootstrapService } from '@/services/nexus/bootstrap/bootstrap';
+import * as nexus from '@/services/nexus/nexus.utils';
 
 const pubky = '8kkppkmiubfq4pxn6f73nqrhhhgkb5xyfprntc9si3np9ydbotto';
 
@@ -13,14 +13,14 @@ afterEach(() => {
 
 it('starts the optional moderation follow without fetching a social feed, public preferences, or a notification cursor', async () => {
   const follow = vi.spyOn(UserApplication, 'ensureModerationFollow').mockResolvedValue(undefined);
-  const bootstrap = vi.spyOn(NexusBootstrapService, 'fetch');
+  const query = vi.spyOn(nexus, 'queryNexus');
   const list = vi.spyOn(HomeserverService, 'list');
   const read = vi.spyOn(HomeserverService, 'getJsonIfFound');
   const write = vi.spyOn(HomeserverService, 'request');
 
   await BootstrapApplication.initialize({ pubky });
   expect(follow).toHaveBeenCalledWith(expect.objectContaining({ follower: pubky, signal: expect.any(AbortSignal) }));
-  expect(bootstrap).not.toHaveBeenCalled();
+  expect(query).not.toHaveBeenCalled();
   expect(list).not.toHaveBeenCalled();
   expect(read).not.toHaveBeenCalled();
   expect(write).not.toHaveBeenCalled();

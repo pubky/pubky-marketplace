@@ -3,7 +3,6 @@ import { AuthApplication, isDefinitiveSessionAuthFailure } from '@/application/a
 import type { TKeypairParams, TRestorePersistedSessionResult } from '@/application/auth/auth.types';
 import { BootstrapApplication } from '@/application/bootstrap/bootstrap';
 import { CommerceApplication } from '@/application/commerce/commerce';
-import { postStreamQueue } from '@/application/stream/posts/muting/post-stream-queue';
 import { TagApplication } from '@/application/tag/tag';
 import type {
   HostSessionApplyStatus,
@@ -25,7 +24,6 @@ import { isGrantKeyCleanupPending } from '@/controllers/auth/grant-key-cleanup';
 import { ChatController } from '@/controllers/chat/chat';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { NotificationCoordinator } from '@/coordinators/notifications/notifications';
-import { StreamCoordinator } from '@/coordinators/streams/stream';
 import { TtlCoordinator } from '@/coordinators/ttl/ttl';
 import { clearDatabase, clearPrivateData } from '@/database/franky/franky.helpers';
 import { clearPubkyLocalStorage } from '@/libs/auth/clear-pubky-local-storage';
@@ -1092,11 +1090,7 @@ export class AuthController {
         });
       }
       TtlCoordinator.resetInstance();
-      StreamCoordinator.resetInstance();
       NotificationCoordinator.resetInstance();
-
-      // Clear in-memory feed stream queues
-      postStreamQueue.clear();
 
       this.cancelAllAuthFlows();
 

@@ -72,11 +72,6 @@ vi.mock('@/stores/search/search.store', () => ({
     removeActiveTag: vi.fn(),
   })),
 }));
-vi.mock('@/controllers/profile/profile', () => ({
-  ProfileController: {
-    read: vi.fn(() => Promise.resolve({ name: 'Test User', image: 'test-image.jpg' })),
-  },
-}));
 vi.mock('@/controllers/file/file', () => ({
   FileController: {
     getAvatarUrl: vi.fn((pubky: string) => `https://cdn.example.com/avatar/${pubky}`),

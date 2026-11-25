@@ -80,7 +80,7 @@ export async function fetchPostTags(userId: string, postId: string, limit: numbe
  * pointed at an arbitrary/internal host (SSRF). In practice every post attachment
  * is a homeserver file URI, so this reflects reality rather than restricting it.
  *
- * Uses only pure primitives (avoids the Dexie-tainted `FileController.getFileUrl`).
+ * Uses pure URL builders so the server does not load the browser database.
  * Returns `null` on any empty / non-pubky / malformed input so the caller can
  * fall back gracefully.
  */

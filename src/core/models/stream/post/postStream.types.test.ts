@@ -19,7 +19,6 @@ import {
 } from '@/models/stream/post/postStream.types';
 import { StreamSorting } from '@/services/nexus/nexus.types';
 import { StreamKind, StreamSource } from '@/services/nexus/stream/posts/postStream.types';
-import { breakDownStreamId } from '@/services/nexus/stream/posts/postStream.utils';
 
 const TEST_PUBKY = 'erztyis9oiaho93ckucetcf5xnxacecqwhbst5hnd7mmkf69dhby' as Pubky;
 const TEST_POST_ID = 'post-pubky-id';
@@ -58,17 +57,6 @@ describe('post-stream id builders', () => {
       ).toBe('timeline:wot_domain:2:all:bitcoiner,developer:second,first');
     });
 
-    it('round-trips through breakDownStreamId as named fields', () => {
-      const streamId = buildWotDomainStreamId(StreamSorting.TIMELINE, 2, StreamKind.COLLECTION, ['bitcoin']);
-      expect(breakDownStreamId(streamId)).toEqual({
-        sorting: StreamSorting.TIMELINE,
-        invokeEndpoint: StreamSource.WOT_DOMAIN,
-        kind: StreamKind.COLLECTION,
-        wotDepth: 2,
-        domainTags: 'bitcoin',
-      });
-    });
-
     it('identifies wot_domain stream ids', () => {
       expect(isWotDomainStream('timeline:wot_domain:1:all:bitcoin')).toBe(true);
       expect(isWotDomainStream('timeline:wot:all')).toBe(false);
@@ -90,44 +78,17 @@ describe('post-stream id builders', () => {
     it('produces <pubky>:author:collection', () => {
       expect(buildAuthorCollectionsStreamId(TEST_PUBKY)).toBe(`${TEST_PUBKY}:author:collection`);
     });
-
-    it('round-trips through breakDownStreamId as named fields', () => {
-      const streamId = buildAuthorCollectionsStreamId(TEST_PUBKY);
-      expect(breakDownStreamId(streamId)).toEqual({
-        sorting: TEST_PUBKY,
-        invokeEndpoint: StreamSource.AUTHOR,
-        kind: StreamKind.COLLECTION,
-      });
-    });
   });
 
   describe('buildFollowedCollectionsStreamId (Followed Collections)', () => {
     it('produces the static timeline:bookmarks:collection id', () => {
       expect(buildFollowedCollectionsStreamId()).toBe('timeline:bookmarks:collection');
     });
-
-    it('round-trips through breakDownStreamId as named fields', () => {
-      const streamId = buildFollowedCollectionsStreamId();
-      expect(breakDownStreamId(streamId)).toEqual({
-        sorting: StreamSorting.TIMELINE,
-        invokeEndpoint: StreamSource.BOOKMARKS,
-        kind: StreamKind.COLLECTION,
-      });
-    });
   });
 
   describe('buildDiscoverCollectionsStreamId (Discover Collections)', () => {
     it('produces the static total_engagement:all:collection id', () => {
       expect(buildDiscoverCollectionsStreamId()).toBe('total_engagement:all:collection');
-    });
-
-    it('round-trips through breakDownStreamId as named fields', () => {
-      const streamId = buildDiscoverCollectionsStreamId();
-      expect(breakDownStreamId(streamId)).toEqual({
-        sorting: StreamSorting.ENGAGEMENT,
-        invokeEndpoint: StreamSource.ALL,
-        kind: StreamKind.COLLECTION,
-      });
     });
   });
 
@@ -136,15 +97,6 @@ describe('post-stream id builders', () => {
       expect(buildCollectionItemsStreamId(TEST_PUBKY, TEST_POST_ID)).toBe(
         `${StreamSource.COLLECTION}:${TEST_PUBKY}:${TEST_POST_ID}`,
       );
-    });
-
-    it('round-trips through breakDownStreamId as named fields', () => {
-      const streamId = buildCollectionItemsStreamId(TEST_PUBKY, TEST_POST_ID);
-      expect(breakDownStreamId(streamId)).toEqual({
-        sorting: TEST_PUBKY,
-        invokeEndpoint: StreamSource.COLLECTION,
-        kind: TEST_POST_ID,
-      });
     });
   });
 });

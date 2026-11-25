@@ -3,7 +3,6 @@ import { renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AuthApplication } from '@/application/auth/auth';
 import { BootstrapApplication } from '@/application/bootstrap/bootstrap';
-import { SettingsApplication } from '@/application/settings/settings';
 import { AuthController } from '@/controllers/auth/auth';
 import { approve, deferred, grantSession, resetGrantTest } from '@/controllers/auth/auth.grant-test-utils';
 import { bumpAuthEpoch } from '@/controllers/auth/auth-epoch';
@@ -393,7 +392,6 @@ it.each(['alice', 'bob'])('preserves settings only when replacing with the same 
   useSettingsStore.setState({ muted: ['muted-by-alice'] });
   useSearchStore.getState().addTag('alice-private-search');
   vi.mocked(AuthApplication.userIsSignedUp).mockResolvedValue(true);
-  vi.mocked(SettingsApplication.initializeSettings).mockClear();
   const next = grantSession(pubky, 'shop.pubky.app', 'next');
   await approve(next);
   await AuthController.initializeAuthenticatedSession({ session: next });
@@ -403,7 +401,6 @@ it.each(['alice', 'bob'])('preserves settings only when replacing with the same 
   expect(useSearchStore.getState().recentTags.map((entry) => entry.tag)).toEqual(
     pubky === 'alice' ? ['alice-private-search'] : [],
   );
-  expect(SettingsApplication.initializeSettings).not.toHaveBeenCalled();
   useSettingsStore.getState().reset();
   useSearchStore.getState().reset();
 });

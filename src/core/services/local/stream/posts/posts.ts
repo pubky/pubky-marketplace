@@ -302,14 +302,8 @@ export class LocalStreamPostsService {
       this.addReplyToStream({ repliedUri: post.relationships.replied, replyPostId: postId, postReplies });
     }
 
-    // Tombstone guard. Defense-in-depth against a Nexus refetch racing a
-    // local delete: if a row already has `content === DELETED`, do NOT
-    // overwrite it with whatever Nexus is returning right now (the by-ids
-    // endpoint can be stale relative to the delete index, see
-    // `LocalPostService.delete`'s hard-delete branch). Tombstoned ids are
-    // dropped from every per-table batch below so we don't leave behind
-    // orphan counts / tags / relationships / bookmarks pointing at a
-    // deleted post.
+    // The by-ids endpoint can lag deletion. Preserve tombstones already on
+    // this device and omit their IDs from each related table's batch.
     const tombstonedIds = new Set(
       (await PostDetailsModel.findByIdsPreserveOrder(postDetails.map((d) => d.id)))
         .map((existing, i) => (existing?.content === DELETED ? postDetails[i].id : null))

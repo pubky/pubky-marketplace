@@ -44,13 +44,6 @@ process.env.SUPPORT_ACCOUNT_ID = '123';
 
 const { db } = await import('@/database/franky/franky');
 
-// Load @/config/posts before any test file registers a partial
-// `vi.mock('pubky-app-specs')` factory: the real module must already be in the
-// registry or those mocks strip exports such as `getValidMimeTypes` that
-// @/config/posts needs at import time. (Previously this happened as a side
-// effect of importing @/libs/utils/utils for the snapshot serializer.)
-await import('@/config/posts');
-
 const { resetAttestorKeyWindows } = await import('@/libs/commerce/attestor-key-windows');
 
 // Polyfill IntersectionObserver for jsdom

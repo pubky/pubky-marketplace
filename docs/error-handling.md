@@ -80,21 +80,7 @@ explicit and narrow:
 
 ### Application Layer (`src/core/application/`)
 
-```typescript
-// Real pattern from src/core/application/post/post.ts
-class PostApplication {
-  static async commitCreate({ postUrl, compositePostId, post, fileAttachments, tags }: TCreatePostInput) {
-    if (fileAttachments && fileAttachments.length > 0) {
-      await FileApplication.commitCreate({ fileAttachments });
-    }
-    await LocalPostService.create({ compositePostId, post });
-    await HomeserverService.request({ method: HttpMethod.PUT, url: postUrl, bodyJson: post.toJson() });
-    if (tags && tags.length > 0) {
-      await TagApplication.commitCreate({ tagList: tags });
-    }
-  }
-}
-```
+`TagApplication.commitCreate` propagates a failed homeserver write to its caller. If the same session is active and the operation added a local tag, it first rolls back the change. A failure during rollback is logged separately so the caller can still receive the original write error. [Tag application](../src/core/application/tag/tag.ts)
 
 Logging happens in `Err.*` factories — Application code should usually **not** log again.
 
@@ -108,11 +94,11 @@ Use `AppError` categories and codes to choose the response. UI error copy can us
 
 ```typescript
 try {
-  await PostController.commitCreate({ authorId, content, isArticle, tags, attachments });
+  await TagController.commitCreate({ taggedKind: TagKind.SHOP, taggedId: shopOwner, taggerId: viewerId, label });
 } catch (error) {
   if (error instanceof AppError) {
     if (requiresLogin(error)) {
-      router.push('/login');
+      router.push(AUTH_ROUTES.SIGN_IN);
       return;
     }
     toast({ variant: 'error', description: getErrorMessage(error) });

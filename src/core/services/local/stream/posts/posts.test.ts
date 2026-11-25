@@ -509,13 +509,12 @@ describe('LocalStreamPostsService', () => {
     // Regression coverage for the bug where Nexus's by-ids endpoint could
     // return a just-deleted post (Nexus eventual consistency between the
     // delete index and the post-by-id read path), and `bulkSave` would
-    // overwrite the local `[DELETED]` tombstone written by
-    // `LocalPostService.delete`, effectively reanimating the post.
+    // overwrite the local `[DELETED]` tombstone, making the post visible again.
 
     it('skips writing all records for ids whose existing PostDetails.content is [DELETED]', async () => {
       const compositeId = buildCompositeId({ pubky: 'author-1', id: 'tombstoned' });
 
-      // Seed the tombstone the way `LocalPostService.delete` does.
+      // Seed a tombstone retained in an existing local database.
       await PostDetailsModel.table.put({
         id: compositeId,
         content: DELETED,

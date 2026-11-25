@@ -8,34 +8,22 @@ import { UserApplication } from '@/application/user/user';
 import type { CommerceAdapterMode } from '@/config/commerce';
 import { ChatController } from '@/controllers/chat/chat';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { MuteController } from '@/controllers/mute/mute';
-import { NotificationController } from '@/controllers/notification/notification';
 import { clearDatabase } from '@/database/franky/franky.helpers';
 import { chatMessageUrl } from '@/libs/chat/paths';
 import type { PrivKeyring } from '@/libs/commerce/priv-envelope';
 import { HttpMethod } from '@/libs/http/http.types';
-import { Identity } from '@/libs/identity/identity';
 import { Logger } from '@/libs/logger/logger';
-import { NotificationType } from '@/models/notification/notification.types';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import { InboxService } from '@/services/inbox/inbox';
 import { LocalChatService } from '@/services/local/chat/chat';
 import { LocalCommerceService } from '@/services/local/commerce/commerce';
-import { LocalNotificationService } from '@/services/local/notification/notification';
-import { LocalStreamPostsService } from '@/services/local/stream/posts/posts';
-import { LocalStreamUsersService } from '@/services/local/stream/users/users';
 import { MarketplaceGatewayService } from '@/services/marketplace/marketplace';
-import type { NexusNotification } from '@/services/nexus/nexus.types';
-import { NexusPostStreamService } from '@/services/nexus/stream/posts/postStream';
-import { NexusUserStreamService } from '@/services/nexus/stream/users/userStream';
-import { NexusUserService } from '@/services/nexus/user/user';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { useNotificationStore } from '@/stores/notification/notification.store';
 import { createNotificationFixture } from '@/test/fixtures/commerce/notifications';
 import { createOrderFixture } from '@/test/fixtures/commerce/orders';
 import { installFakeHomeserver } from '@/test-utils/fake-homeserver';
-import { mockKeypair } from '@/test-utils/pubky';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';
 import { AuthController } from './auth';
@@ -159,76 +147,6 @@ describe('work started for an account writes nothing for it once its sign-out st
     });
   });
 
-  it('notification poll: an answer that arrives after sign-out starts is neither saved nor counted', async () => {
-    signIn(ALICE);
-    const nexus = deferred<NexusNotification[]>();
-    vi.spyOn(NexusUserService, 'notifications').mockReturnValue(nexus.promise);
-    const save = vi.spyOn(LocalNotificationService, 'bulkSave').mockResolvedValue(undefined);
-    vi.spyOn(LocalNotificationService, 'countFilteredUnreadSince').mockResolvedValue(4);
-
-    const poll = NotificationController.fetchNotifications({ userId: ALICE }).catch((error: unknown) => error);
-    await vi.waitFor(() => expect(NexusUserService.notifications).toHaveBeenCalled());
-    const finishSignOut = startSignOut();
-    nexus.resolve([]);
-    const outcome = await poll;
-
-    expect(save).not.toHaveBeenCalled();
-    expect(useNotificationStore.getState().unread).toBe(0);
-    expect(outcome).toMatchObject({ name: 'AbortError' });
-    await finishSignOut();
-  });
-
-  it('notification poll: a user it names, fetched as sign-out starts, is not saved after it', async () => {
-    signIn(ALICE);
-    vi.spyOn(NexusUserService, 'notifications').mockResolvedValue([
-      { timestamp: 1, body: { type: NotificationType.Follow, followed_by: BOB } },
-    ]);
-    const users = deferred<Awaited<ReturnType<typeof NexusUserStreamService.fetchByIds>>>();
-    vi.spyOn(NexusUserStreamService, 'fetchByIds').mockReturnValue(users.promise);
-    const saveUsers = vi.spyOn(LocalStreamUsersService, 'persistUsers').mockResolvedValue([]);
-    const save = vi.spyOn(LocalNotificationService, 'bulkSave').mockResolvedValue(undefined);
-
-    const poll = NotificationController.fetchNotifications({ userId: ALICE }).catch((error: unknown) => error);
-    await vi.waitFor(() => expect(NexusUserStreamService.fetchByIds).toHaveBeenCalled());
-    const finishSignOut = startSignOut();
-    users.resolve([]);
-    const outcome = await poll;
-
-    expect(saveUsers).not.toHaveBeenCalled();
-    expect(save).not.toHaveBeenCalled();
-    expect(outcome).toMatchObject({ name: 'AbortError' });
-    await finishSignOut();
-  });
-
-  it('notification poll: a post it names, fetched as sign-out starts, is not saved after it', async () => {
-    signIn(ALICE);
-    vi.spyOn(NexusUserService, 'notifications').mockResolvedValue([
-      {
-        timestamp: 1,
-        body: {
-          type: NotificationType.Reply,
-          replied_by: BOB,
-          parent_post_uri: `pubky://${ALICE}/pub/pubky.app/posts/0034A0X7NJ52G`,
-          reply_uri: `pubky://${BOB}/pub/pubky.app/posts/0034A0X7NJ52H`,
-        },
-      },
-    ]);
-    const posts = deferred<Awaited<ReturnType<typeof NexusPostStreamService.fetchByIds>>>();
-    vi.spyOn(NexusPostStreamService, 'fetchByIds').mockReturnValue(posts.promise);
-    vi.spyOn(NexusUserStreamService, 'fetchByIds').mockResolvedValue([]);
-    const savePosts = vi.spyOn(LocalStreamPostsService, 'persistPosts');
-
-    const poll = NotificationController.fetchNotifications({ userId: ALICE }).catch((error: unknown) => error);
-    await vi.waitFor(() => expect(NexusPostStreamService.fetchByIds).toHaveBeenCalled());
-    const finishSignOut = startSignOut();
-    posts.resolve([]);
-    const outcome = await poll;
-
-    expect(savePosts).not.toHaveBeenCalled();
-    expect(outcome).toMatchObject({ name: 'AbortError' });
-    await finishSignOut();
-  });
-
   it('marketplace badge: a notification list that arrives after sign-out starts does not set the badge', async () => {
     signIn(ALICE);
     const notifications = deferred<Awaited<ReturnType<typeof CommerceApplication.getMarketplaceNotifications>>>();
@@ -243,45 +161,6 @@ describe('work started for an account writes nothing for it once its sign-out st
     expect(useNotificationStore.getState().marketplaceUnread).toBe(0);
     expect(outcome).toMatchObject({ name: 'AbortError' });
     await finishSignOut();
-  });
-
-  it('mute sync: a mute list read before sign-out starts is not saved after it', async () => {
-    signIn(ALICE);
-    const listing = deferred<string[]>();
-    vi.spyOn(HomeserverService, 'list').mockReturnValue(listing.promise);
-    const save = vi.spyOn(LocalStreamUsersService, 'upsert').mockResolvedValue(undefined);
-
-    const refresh = MuteController.fetchMutedUsers(ALICE).catch((error: unknown) => error);
-    await vi.waitFor(() => expect(HomeserverService.list).toHaveBeenCalled());
-    const finishSignOut = startSignOut();
-    listing.resolve([`pubky://${ALICE}/pub/pubky.app/mutes/${BOB}`]);
-    const outcome = await refresh;
-
-    expect(save).not.toHaveBeenCalled();
-    expect(outcome).toMatchObject({ name: 'AbortError' });
-    await finishSignOut();
-  });
-
-  it('mute sync: a mute list read for one account is not saved after another account signs in over it', async () => {
-    signIn(ALICE);
-    const listing = deferred<string[]>();
-    vi.spyOn(HomeserverService, 'list').mockReturnValue(listing.promise);
-    const save = vi.spyOn(LocalStreamUsersService, 'upsert').mockResolvedValue(undefined);
-    vi.spyOn(Identity, 'keypairFromMnemonic').mockReturnValue(mockKeypair());
-    vi.spyOn(Identity, 'z32FromSession').mockReturnValue(BOB);
-    vi.spyOn(AuthApplication, 'signIn').mockResolvedValue(
-      asOpaque<Awaited<ReturnType<typeof AuthApplication.signIn>>>({ session: grantSession(BOB) }),
-    );
-
-    const refresh = MuteController.fetchMutedUsers(ALICE).catch((error: unknown) => error);
-    await vi.waitFor(() => expect(HomeserverService.list).toHaveBeenCalled());
-    await AuthController.loginWithMnemonic({ mnemonic: 'test mnemonic phrase' });
-    expect(useAuthStore.getState().currentUserPubky).toBe(BOB);
-    listing.resolve([`pubky://${ALICE}/pub/pubky.app/mutes/${BOB}`]);
-    const outcome = await refresh;
-
-    expect(save).not.toHaveBeenCalled();
-    expect(outcome).toMatchObject({ name: 'AbortError' });
   });
 
   describe('watchlist sync', () => {

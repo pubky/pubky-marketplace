@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ACCOUNT_ROUTES, APP_ROUTES, AUTH_ROUTES, PROFILE_ROUTES } from '@/app/routes';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { NotificationController } from '@/controllers/notification/notification';
 import type { PollingServiceConfig } from '@/coordinators/base/coordinators.types';
 import { NotificationCoordinator } from '@/coordinators/notifications/notifications';
 import type { NotificationCoordinatorConfig } from '@/coordinators/notifications/notifications.types';
@@ -1275,13 +1274,11 @@ describe('NotificationCoordinator', () => {
   });
 
   it('refreshes the Market badge without polling the social notification stream', async () => {
-    const social = vi.spyOn(NotificationController, 'fetchNotifications');
     const { spy, coordinator } = setupAuthenticatedTest();
     coordinator.configure({ pollOnStart: true, intervalMs: 1_000 });
     coordinator.start();
     await flushPromises();
     expect(spy).toHaveBeenCalledOnce();
-    expect(social).not.toHaveBeenCalled();
   });
   afterEach(() => {
     NotificationCoordinator.resetInstance();
