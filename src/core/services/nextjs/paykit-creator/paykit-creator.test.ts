@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PAYKIT_CREATOR_GLOBAL_READS_PER_WINDOW, PAYKIT_CREATOR_MAX_IN_FLIGHT } from '@/config/paykit-creator';
 import { ErrorCategory } from '@/libs/error/error.types';
+import { Logger } from '@/libs/logger/logger';
 import { NextJsPaykitCreatorService } from './paykit-creator';
 import { PaykitCreatorRateLimiter } from './paykit-creator.rate-limit';
 
@@ -123,6 +124,17 @@ describe('NextJsPaykitCreatorService.isCreatorHeld', () => {
     await expect(NextJsPaykitCreatorService.isCreatorHeld(params)).rejects.toMatchObject({
       category: ErrorCategory.Network,
     });
+  });
+
+  it('keeps the creator out of what a network failure logs', async () => {
+    const logged = vi.spyOn(Logger, 'error').mockImplementation(() => {});
+    vi.mocked(fetch).mockRejectedValue(new TypeError('fetch failed'));
+
+    await expect(NextJsPaykitCreatorService.isCreatorHeld(params)).rejects.toMatchObject({
+      context: expect.objectContaining({ url: 'https://paykit.server/setup/creator-held' }),
+    });
+    expect(logged).toHaveBeenCalled();
+    expect(JSON.stringify(logged.mock.calls)).not.toContain(PUBKY);
   });
 
   it('reuses a not-held answer for fifteen seconds and a held one for two minutes', async () => {

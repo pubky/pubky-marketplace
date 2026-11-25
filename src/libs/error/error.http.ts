@@ -205,6 +205,8 @@ function findAppError(error: unknown): AppError | null {
  * @param options - Fetch options (RequestInit)
  * @param service - Which service is making the request
  * @param operation - Which operation is being performed
+ * @param contextUrl - The URL recorded in the error's context, which is logged; defaults to `url`. Pass a
+ *   query-free URL when the query carries something that must not reach the logs.
  * @returns Response object if successful
  * @throws AppError for network failures and abort/timeout
  *
@@ -221,6 +223,7 @@ export async function safeFetch(
   options: RequestInit,
   service: ErrorService,
   operation: string,
+  contextUrl: string = url,
 ): Promise<Response> {
   try {
     return await fetch(url, options);
@@ -234,7 +237,7 @@ export async function safeFetch(
       throw Err.timeout(TimeoutErrorCode.REQUEST_ABORTED, 'Request was aborted', {
         service,
         operation,
-        context: { url },
+        context: { url: contextUrl },
         cause: error,
       });
     }
@@ -246,7 +249,7 @@ export async function safeFetch(
     throw Err.network(errorCode, message, {
       service,
       operation,
-      context: { url, offline: typeof navigator !== 'undefined' ? !navigator.onLine : undefined },
+      context: { url: contextUrl, offline: typeof navigator !== 'undefined' ? !navigator.onLine : undefined },
       cause: error,
     });
   }

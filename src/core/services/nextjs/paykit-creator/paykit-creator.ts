@@ -107,7 +107,7 @@ export class NextJsPaykitCreatorService {
     const signal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
 
     try {
-      let response = await this.ask(url.href, signal);
+      let response = await this.ask(url.href, endpoint, signal);
       if (response.status === HttpStatusCode.SERVICE_UNAVAILABLE) {
         const waitMs = (parseRetryAfterHeader(response.headers.get('retry-after')) ?? 1) * 1000;
         if (
@@ -117,7 +117,7 @@ export class NextJsPaykitCreatorService {
         ) {
           discardBody(response);
           await sleep(waitMs);
-          response = await this.ask(url.href, signal);
+          response = await this.ask(url.href, endpoint, signal);
         }
       }
 
@@ -153,12 +153,14 @@ export class NextJsPaykitCreatorService {
     }
   }
 
-  private static ask(href: string, signal: AbortSignal): Promise<Response> {
+  /** `endpoint` is the query-free URL a transport error records, so the creator's key is never logged. */
+  private static ask(href: string, endpoint: string, signal: AbortSignal): Promise<Response> {
     return safeFetch(
       href,
       { method: HttpMethod.GET, credentials: 'omit', redirect: 'manual', cache: 'no-store', signal },
       ErrorService.Paykit,
       OPERATION,
+      endpoint,
     );
   }
 }
