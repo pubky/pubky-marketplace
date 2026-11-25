@@ -246,7 +246,7 @@ describe('useMarketplaceOrders', () => {
       expect(toast).toHaveBeenCalledWith({
         variant: 'error',
         description:
-          'Cancelling is paused while this payment is still in progress. You can cancel it once the payment has finished or its payment time has ended.',
+          'Cancelling is paused while this payment is still in progress. Try again once it is no longer in progress.',
       });
       expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain("We've seen a payment");
       expect(CommerceController.getMarketplaceOrders).toHaveBeenCalledTimes(reads);

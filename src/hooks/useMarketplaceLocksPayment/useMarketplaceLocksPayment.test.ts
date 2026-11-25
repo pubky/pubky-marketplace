@@ -424,6 +424,33 @@ describe('useMarketplaceLocksPayment', () => {
       expect(onPaymentChanged).not.toHaveBeenCalled();
     });
 
+    it.each([
+      ['not a date', 'not-a-date'],
+      ['past the last supported date', new Date(8_640_000_000_000_000).toISOString()],
+    ])('falls back to the fifteen minute bound when the saved window is %s', async (_label, windowExpiresAt) => {
+      vi.mocked(CommerceController.getMarketplaceLocksCorrelation).mockResolvedValue(
+        makeCorrelation(true, windowExpiresAt),
+      );
+      vi.mocked(CommerceController.fetchMarketplaceLocksAdmission).mockResolvedValue({
+        kind: 'in_flight',
+        readerWalletSetupNeeded: false,
+        stalled: false,
+      });
+      const onPaymentChanged = vi.fn();
+      renderHook(() => useMarketplaceLocksPayment({ order, payment, digitalLock, isBuyer: true, onPaymentChanged }));
+      const reads = () => vi.mocked(CommerceController.fetchMarketplaceLocksAdmission).mock.calls.length;
+      await act(async () => {});
+      await act(async () => vi.advanceTimersByTimeAsync(50));
+      expect(reads()).toBe(2);
+
+      vi.setSystemTime(Date.now() + 15 * 60_000 + 1_000);
+      await act(async () => vi.advanceTimersByTimeAsync(50));
+      const stopped = reads();
+      await act(async () => vi.advanceTimersByTimeAsync(1_000));
+      expect(reads()).toBe(stopped);
+      expect(onPaymentChanged).not.toHaveBeenCalled();
+    });
+
     it('bounds explicitly resumed admission polling and allows another bounded resume', async () => {
       vi.mocked(CommerceController.getMarketplaceLocksCorrelation).mockResolvedValue(
         makeCorrelation(true, new Date(Date.now() - 3_600_000).toISOString()),

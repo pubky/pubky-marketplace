@@ -28,6 +28,28 @@ describe('locksCancelPausedMessage', () => {
     );
   });
 
+  it('rounds the earliest time up to the next whole minute', () => {
+    expect(
+      locksCancelPausedMessage({
+        holdExpiresAt: '2026-11-24T19:55:30.000Z',
+        registered: false,
+        now: Date.parse('2026-11-24T20:00:00.000Z'),
+        ...FORMAT,
+      }),
+    ).toBe('Cancelling is paused while this payment is still in progress. The earliest you can cancel it is 8:06 PM.');
+  });
+
+  it('states no exact time when the hold and the grace pass the last supported date', () => {
+    expect(
+      locksCancelPausedMessage({
+        holdExpiresAt: new Date(8_640_000_000_000_000).toISOString(),
+        registered: false,
+        now: Date.parse('2026-11-24T20:00:00.000Z'),
+        ...FORMAT,
+      }),
+    ).toBe(LOCKS_CANCEL_PAUSED_IN_PROGRESS_COPY);
+  });
+
   it.each([
     ['registered', { holdExpiresAt: '2026-11-24T20:05:00.000Z', registered: true }],
     ['null', { holdExpiresAt: null, registered: false }],
@@ -38,7 +60,7 @@ describe('locksCancelPausedMessage', () => {
     const now = Date.parse(_label === 'past' ? '2026-11-24T20:06:00.000Z' : '2026-11-24T20:00:00.000Z');
     expect(locksCancelPausedMessage({ ...input, now, ...FORMAT })).toBe(LOCKS_CANCEL_PAUSED_IN_PROGRESS_COPY);
     expect(LOCKS_CANCEL_PAUSED_IN_PROGRESS_COPY).toBe(
-      'Cancelling is paused while this payment is still in progress. You can cancel it once the payment has finished or its payment time has ended.',
+      'Cancelling is paused while this payment is still in progress. Try again once it is no longer in progress.',
     );
   });
 });

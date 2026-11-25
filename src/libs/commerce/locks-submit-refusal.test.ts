@@ -80,7 +80,8 @@ describe('locksSubmitRefusalMessage', () => {
     });
     expect(locksSubmitRefusalMessage(error, FALLBACK)).toBe(LOCKS_PREPARED_TERMS_DIFFER_COPY);
     expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).not.toContain('Cancel it');
-    expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).toContain('payment time has ended');
+    expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).not.toContain('Nothing was charged');
+    expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).toContain('no payment is in progress');
   });
 
   it('never carries server text into any copy', () => {

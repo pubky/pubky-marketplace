@@ -21,6 +21,13 @@ import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplac
  */
 const LOCKS_POLL_FALLBACK_BOUND_MS = 15 * 60 * 1_000;
 
+/** The end of the registration grace, or null when the saved window is missing or not a usable date. */
+function graceEndAt(windowExpiresAt: string | null | undefined): number | null {
+  if (!windowExpiresAt) return null;
+  const graceEnd = Date.parse(windowExpiresAt) + LOCKS_REGISTRATION_GRACE_SECONDS * 1_000;
+  return Number.isNaN(new Date(graceEnd).getTime()) ? null : graceEnd;
+}
+
 export interface MarketplaceLocksDelivery {
   objectUrl: string;
   fileName: string;
@@ -110,9 +117,7 @@ export function useMarketplaceLocksPayment({
     const boundAt =
       pollResume?.paymentId === payment.id
         ? pollResume.boundAt
-        : correlation.window_expires_at
-          ? Date.parse(correlation.window_expires_at) + LOCKS_REGISTRATION_GRACE_SECONDS * 1_000
-          : Date.now() + LOCKS_POLL_FALLBACK_BOUND_MS;
+        : (graceEndAt(correlation.window_expires_at) ?? Date.now() + LOCKS_POLL_FALLBACK_BOUND_MS);
     let active = true;
     let timer: number | undefined;
     let reading = false;
