@@ -210,11 +210,11 @@ export function mergeStoreThreadRoles(base: StoreThreadRoles, addition: StoreThr
  * Whether a chat thread is the viewer's sale, for a viewer who cannot sell in `storeSeller`'s store.
  * The store seller's own thread always stays. Before the roles are read, nothing else is shown. A
  * latest context that is an order the viewer bought or a listing of the peer keeps the thread. A
- * context that remains unresolved (an order in neither list, or a listing whose lookup failed) makes
- * it a sale, whatever else the viewer bought from that peer. Past that, the thread stays when the peer
- * sold to the viewer, and is a sale when the latest context is an order the viewer sold or a listing of
- * the viewer's, or the peer bought from the viewer. A plain thread, and a listing lookup that completed
- * without finding either owner's listing, place nothing.
+ * context that is the viewer's sale (an order it sold or a listing of its own) or remains unresolved
+ * (an order in neither list, or a listing whose lookup failed) makes it a sale, whatever else the
+ * viewer bought from that peer. A context that places nothing, a plain thread or a listing lookup
+ * that completed without finding either owner's listing, follows the peer: the thread stays when the
+ * peer sold to the viewer, and is a sale when the peer bought from the viewer.
  */
 export function isSaleThread(
   thread: { peer_pubky: string; last_context: ChatContext | null },
@@ -232,7 +232,7 @@ export function isSaleThread(
   const contextPurchase = (orderId !== undefined && roles.boughtOrderIds.includes(orderId)) || listingSide === 'peer';
   const contextSale = (orderId !== undefined && roles.soldOrderIds.includes(orderId)) || listingSide === 'viewer';
   if (contextPurchase) return false;
-  if (!orderPlaced || !listingPlaced) return true;
+  if (contextSale || !orderPlaced || !listingPlaced) return true;
   if (roles.boughtFrom.includes(peer)) return false;
-  return contextSale || roles.soldTo.includes(peer);
+  return roles.soldTo.includes(peer);
 }

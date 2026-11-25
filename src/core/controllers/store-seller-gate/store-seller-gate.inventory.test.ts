@@ -580,7 +580,7 @@ const SPECIFIER_LITERAL = /\b(?:from|import|require)\s*\(?\s*(['"`])([^'"`\n]+)\
  * (which reads past comments) and a literal scan both name candidates; a specifier is judged after
  * normalising, as the resolver would.
  */
-export function mayImportTargets(text: string, file: string, targets: readonly string[]): boolean {
+function mayImportTargets(text: string, file: string, targets: readonly string[]): boolean {
   const scanned = ts.preProcessFile(text, true, true).importedFiles.map(({ fileName }) => fileName);
   const literals = [...text.matchAll(SPECIFIER_LITERAL)].map((match) => match[2]);
   return [...scanned, ...literals].some((specifier) => specifierCanReachTargets(specifier, file, targets));
@@ -600,7 +600,7 @@ const importEdge = (file: string, target: string) => `${path.relative(SRC, file)
 type UnresolvedValueImport = { specifier: string; names: string[] | '*'; locals: Map<string, string> };
 type ValueImport = { target: string; names: string[] | '*'; locals: Map<string, string> };
 
-export function valueImportsInSource(source: ts.SourceFile): UnresolvedValueImport[] {
+function valueImportsInSource(source: ts.SourceFile): UnresolvedValueImport[] {
   const found: UnresolvedValueImport[] = [];
   const visit = (node: ts.Node) => {
     if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
@@ -673,15 +673,15 @@ const isSellingApplication = (file: string) => SELLING_APPLICATION_DIRS.some((di
 
 type SellingApplicationUsage = { calls: string[]; invalid: string[] };
 
-/** Only a call of `Class.member` or `Class['member']` may consume an exempt application import. */
-export function sellingApplicationUsesInSource(
+/** Only a call of `Class.member` or `Class['member']` may consume a selling application import; type positions use none. */
+function sellingApplicationUsesInSource(
   source: ts.SourceFile,
   classes: ReadonlyMap<string, string>,
 ): SellingApplicationUsage {
   const calls = new Set<string>();
   const invalid = new Set<string>();
   const visit = (node: ts.Node) => {
-    if (ts.isImportDeclaration(node) || ts.isImportEqualsDeclaration(node)) return;
+    if (ts.isImportDeclaration(node) || ts.isImportEqualsDeclaration(node) || ts.isTypeNode(node)) return;
     if (ts.isIdentifier(node)) {
       const imported = classes.get(node.text);
       if (imported) {
@@ -724,7 +724,7 @@ const hasModifier = (node: ts.Node, kind: ts.SyntaxKind) =>
   ts.canHaveModifiers(node) && (ts.getModifiers(node) ?? []).some((modifier) => modifier.kind === kind);
 
 /** Exported runtime names, excluding type-only declarations and export specifiers. */
-export function runtimeExportsInSource(source: ts.SourceFile): string[] {
+function runtimeExportsInSource(source: ts.SourceFile): string[] {
   return source.statements.flatMap((statement) => {
     if (ts.isExportDeclaration(statement)) {
       if (statement.isTypeOnly) return [];
@@ -780,7 +780,7 @@ function staticFunctions(source: string, className: string): { name: string; isP
 const STORE_SELLER_SIDE_TESTS = ['commerce/commerce.store-seller-side.test.ts', 'chat/chat.store-seller-side.test.ts'];
 
 /** The methods invoked as `className.method(...)`, not property reads or aliases. */
-export function controllerCallsInSource(source: ts.SourceFile, className: string): string[] {
+function controllerCallsInSource(source: ts.SourceFile, className: string): string[] {
   const calls = new Set<string>();
   const visit = (node: ts.Node) => {
     if (
@@ -840,7 +840,7 @@ const DUMMY_ARGS = ['x', 'x', 'x', 'x'];
 
 type ApplicationCall = { name: string; gateViewers: (string | null)[] };
 
-export function applicationCallsBeforeGate(calls: readonly ApplicationCall[], viewer: string): string[] {
+function applicationCallsBeforeGate(calls: readonly ApplicationCall[], viewer: string): string[] {
   return calls.filter((call) => !call.gateViewers.includes(viewer)).map(({ name }) => name);
 }
 
@@ -914,6 +914,15 @@ describe('store seller gate inventory', () => {
   );
 
   it.each(CONTROLLERS.map((controller) => [controller.source, controller] as const))(
+    '%s: consumes a selling application only by calling one of its members',
+    (source) => {
+      const usage = sellingApplicationUsage(path.join(CONTROLLERS_DIR, source));
+      expect(usage.calls.length).toBeGreaterThan(0);
+      expect(usage.invalid).toEqual([]);
+    },
+  );
+
+  it.each(CONTROLLERS.map((controller) => [controller.source, controller] as const))(
     '%s: exports only its controller and pinned helper values',
     (source, controller) => {
       expect(runtimeExportsInSource(parse(path.join(CONTROLLERS_DIR, source))).sort()).toEqual(
@@ -965,6 +974,16 @@ describe('store seller gate inventory', () => {
       classes,
     );
     expect(rejected.invalid).toHaveLength(6);
+
+    const typed = sellingApplicationUsesInSource(
+      parseText(`
+        type Row = Awaited<ReturnType<typeof CommerceApplication.getMarketplaceOrders>>;
+        type Args = Parameters<(typeof CommerceApplication)['restoreInventorySession']>;
+        CommerceApplication.getMarketplaceOrders('x');
+      `),
+      classes,
+    );
+    expect(typed).toEqual({ calls: ['CommerceApplication.getMarketplaceOrders'], invalid: [] });
   });
 
   it('detects a value import from a non-selling application to a selling application', () => {

@@ -643,6 +643,33 @@ describe('ChatController sale threads in a store', () => {
     ).rejects.toMatchObject(refused);
   });
 
+  it.each([
+    { name: 'an order it sold', context: { orderId: 'sold-to-friend' } },
+    { name: 'an order it sold and its own listing', context: { orderId: 'sold-to-friend', listingId: 'my-lamp' } },
+  ])(
+    'closes a thread whose latest context is $name even after the viewer bought from that peer',
+    async ({ context }) => {
+      setStoreSeller(STORE_SELLER);
+      const sale = thread(FRIEND, context);
+      vi.mocked(ChatApplication.getConversations).mockResolvedValue([sale] as never);
+      vi.mocked(ChatApplication.getConversation).mockResolvedValue(sale as never);
+      vi.mocked(CommerceApplication.getMarketplaceOrders).mockResolvedValue([
+        { id: 'bought-from-friend', buyerPubky: VIEWER, sellerPubky: FRIEND },
+        { id: 'sold-to-friend', buyerPubky: FRIEND, sellerPubky: VIEWER },
+      ] as never);
+
+      await ChatController.fetchStoreThreadRoles();
+
+      expect(useChatStore.getState().storeThreadRoles?.boughtFrom).toEqual([FRIEND]);
+      expect(await ChatController.getConversations()).toEqual([]);
+      expect(await ChatController.getConversation(FRIEND)).toBeNull();
+      expect(await ChatController.getMessages(FRIEND)).toEqual([]);
+      await expect(ChatController.commitSendMessage({ peerPubky: FRIEND, body: 'hello' })).rejects.toMatchObject(
+        refused,
+      );
+    },
+  );
+
   it('keeps every thread and reads no orders for the store seller and outside store mode', async () => {
     for (const storeSeller of [VIEWER, undefined]) {
       setStoreSeller(storeSeller);

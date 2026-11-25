@@ -998,6 +998,24 @@ describe('CommerceApplication.publishOrderReceipts without the seller side', () 
     expect(reads.mock.calls.filter(([url]) => url === invalidUrl)).toHaveLength(2);
   });
 
+  it('runs one migration pass per owner at a time and shares its result with an overlapping load', async () => {
+    const record = await publishedRecord();
+    CommerceApplication.resetReceiptPublicationMemo();
+    homeserver.files.clear();
+    plantSellerReceipts(record, 550);
+    homeserver.files.set(legacyUrl(BUYER, '018f47d2-6a27-7c23-a49d-6b21ba770202'), { invalid: true });
+    vi.spyOn(Logger, 'warn').mockImplementation(() => {});
+    const list = vi.spyOn(CommerceHomeserverService, 'list');
+
+    const results = await Promise.all([
+      CommerceApplication.publishOrderReceipts(BUYER, [], { sellerSide: false }),
+      CommerceApplication.publishOrderReceipts(BUYER, [], { sellerSide: false }),
+    ]);
+
+    expect(results).toEqual(['unavailable', 'unavailable']);
+    expect(list).toHaveBeenCalledTimes(5);
+  });
+
   it('finishes after a full seller-only page followed by an empty page', async () => {
     const record = await publishedRecord();
     CommerceApplication.resetReceiptPublicationMemo();

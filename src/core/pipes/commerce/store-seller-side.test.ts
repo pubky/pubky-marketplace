@@ -215,6 +215,7 @@ describe('isSaleThread', () => {
       { id: 'sold', buyerPubky: BUYER, sellerPubky: VIEWER },
       { id: 'resolved-sold', buyerPubky: 'r'.repeat(52), sellerPubky: VIEWER },
       { id: 'sold-to-store-seller', buyerPubky: STORE_SELLER, sellerPubky: VIEWER },
+      { id: 'sold-to-prior-peer', buyerPubky: 'p'.repeat(52), sellerPubky: VIEWER },
     ],
     VIEWER,
   );
@@ -275,6 +276,15 @@ describe('isSaleThread', () => {
     },
   ] as const)('classifies $name fail closed where needed', ({ peer, context, side, sale }) => {
     expect(isSale(peer, context, side)).toBe(sale);
+  });
+
+  it('closes a thread whose latest context is the viewer sale even when the viewer bought from that peer too', () => {
+    const peer = 'p'.repeat(52);
+    expect(isSale(peer, { orderId: 'sold-to-prior-peer' })).toBe(true);
+    expect(isSale(peer, { orderId: 'sold-to-prior-peer', listingId: 'my-lamp' }, 'viewer')).toBe(true);
+    expect(isSale(peer, { listingId: 'my-lamp' }, 'viewer')).toBe(true);
+    expect(isSale(peer, { orderId: 'bought-from-prior-peer' })).toBe(false);
+    expect(isSale(peer, { listingId: 'boots' }, 'peer')).toBe(false);
   });
 
   it('closes a thread whose latest context is unresolved even when the peer sold to the viewer before', () => {

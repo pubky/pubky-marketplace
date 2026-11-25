@@ -1853,6 +1853,7 @@ export class CommerceApplication {
     this.plaintextSellerReceiptUrls.clear();
     this.receiptMigrationCursors.clear();
     this.receiptMigrationFailedCycles.clear();
+    this.receiptMigrationRuns.clear();
     this.ownReviewHomeserverMisses.clear();
     this.deletedOwnReviews.clear();
     CommercePrivKeyringApplication.clear();
@@ -2855,6 +2856,7 @@ export class CommerceApplication {
     this.plaintextSellerReceiptUrls.clear();
     this.receiptMigrationCursors.clear();
     this.receiptMigrationFailedCycles.clear();
+    this.receiptMigrationRuns.clear();
   }
 
   /**
@@ -2874,7 +2876,25 @@ export class CommerceApplication {
    * cycle that reaches the end is done only when none of its passes failed;
    * after a failed cycle, the next pass starts again from the beginning.
    */
-  private static async migratePlaintextReceipts(
+  private static migratePlaintextReceipts(
+    ownerPubky: string,
+    keyring: PrivKeyring,
+    sellerSide: boolean,
+  ): Promise<'done' | 'incomplete' | 'needs_reauth'> {
+    const key = `${ownerPubky}\0${sellerSide}`;
+    const active = this.receiptMigrationRuns.get(key);
+    if (active) return active;
+    const run = this.runPlaintextReceiptMigration(ownerPubky, keyring, sellerSide).finally(() => {
+      if (this.receiptMigrationRuns.get(key) === run) this.receiptMigrationRuns.delete(key);
+    });
+    this.receiptMigrationRuns.set(key, run);
+    return run;
+  }
+
+  /** One pass per owner and side at a time: every orders load starts one, and overlapping passes would race on the cycle's memos. */
+  private static receiptMigrationRuns = new Map<string, Promise<'done' | 'incomplete' | 'needs_reauth'>>();
+
+  private static async runPlaintextReceiptMigration(
     ownerPubky: string,
     keyring: PrivKeyring,
     sellerSide: boolean,
