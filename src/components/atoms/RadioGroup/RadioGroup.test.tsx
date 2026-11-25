@@ -93,23 +93,32 @@ describe('RadioGroup - Rendering', () => {
     expect(container.querySelector('.rounded-lg')).not.toBeInTheDocument();
   });
 
-  it('wraps the item in a bordered card for the box variant', () => {
+  it('selects the radio when the bordered card is clicked', () => {
     const { container } = render(
-      <RadioGroup defaultValue="starter">
+      <RadioGroup>
         <RadioGroupItem value="starter" label="Starter Plan" description="Perfect for small businesses" variant="box" />
       </RadioGroup>,
     );
-    const box = container.querySelector('.rounded-lg');
-    expect(box).toHaveClass('rounded-lg', 'border', 'border-border', 'p-4');
-    expect(box).toContainElement(screen.getByRole('radio'));
+    const radio = screen.getByRole('radio', { name: 'Starter Plan' });
+    const box = container.querySelector('.rounded-lg')!;
+    expect(box).toHaveClass('border', 'border-border', 'p-4');
+    expect(box).toContainElement(radio);
+    expect(radio).not.toBeChecked();
+    fireEvent.click(box);
+    expect(radio).toBeChecked();
   });
 
-  it('is disabled when the item is disabled', () => {
+  it('does not select a disabled option when its description is clicked', () => {
+    const onValueChange = vi.fn();
     render(
-      <RadioGroup>
-        <RadioGroupItem value="one" label="One" disabled />
+      <RadioGroup onValueChange={onValueChange}>
+        <RadioGroupItem value="one" label="One" description="Unavailable" disabled variant="box" />
       </RadioGroup>,
     );
-    expect(screen.getByRole('radio')).toBeDisabled();
+    const radio = screen.getByRole('radio', { name: 'One' });
+    expect(radio).toBeDisabled();
+    fireEvent.click(screen.getByText('Unavailable'));
+    expect(radio).not.toBeChecked();
+    expect(onValueChange).not.toHaveBeenCalled();
   });
 });

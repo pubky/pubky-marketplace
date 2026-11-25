@@ -27,6 +27,9 @@ function paint(element: Element, ink: Rgba = [0, 0, 0, 0]): Rgba {
   let pixel = ink;
   for (let node: Element | null = element; node; node = node.parentElement) {
     const style = getComputedStyle(node);
+    // The default button paints a uniform translucent gradient over its hover fill.
+    const wash = style.backgroundImage.match(/^linear-gradient\((.+), \1\)$/)?.[1];
+    if (wash) pixel = over(pixel, rgba(wash));
     pixel = over(pixel, rgba(style.backgroundColor));
     pixel[3] *= Number(style.opacity);
   }

@@ -40,7 +40,7 @@ Toast.displayName = ToastPrimitives.Root.displayName;
 const ToastAction = React.forwardRef<
   React.ComponentRef<typeof ToastPrimitives.Action>,
   React.ComponentPropsWithoutRef<typeof ToastPrimitives.Action> & VariantProps<typeof toastActionVariants>
->(({ className, variant = 'default', ...props }, ref) => (
+>(({ className, variant = 'muted', ...props }, ref) => (
   <ToastPrimitives.Action ref={ref} className={cn(toastActionVariants({ variant }), className)} {...props} />
 ));
 ToastAction.displayName = ToastPrimitives.Action.displayName;

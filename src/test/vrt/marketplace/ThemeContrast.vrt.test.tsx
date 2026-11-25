@@ -11,7 +11,7 @@ import { toast } from '@/molecules/Toaster/toast';
 import { Toaster } from '@/molecules/Toaster/Toaster';
 import { WordSlot } from '@/molecules/WordSlot/WordSlot';
 import { TIMEFRAME } from '@/stores/hot/hot.types';
-import { expectGraphicContrast, expectTextContrast } from '@/test-utils/color-contrast';
+import { expectColorContrast, expectGraphicContrast, expectTextContrast } from '@/test-utils/color-contrast';
 import { renderForVRT } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP } from '@/test-utils/vrt.viewports';
 
@@ -51,35 +51,51 @@ describe.each(['bg-background', 'bg-card', 'bg-card/80', 'bg-popover'])('Field v
   });
 });
 
-describe('Multiline field focus', () => {
-  it.each(['dark', 'light'] as const)(
-    'shows keyboard focus and preserves an invalid border in %s mode',
-    async (theme) => {
+for (const [name, Field] of [
+  ['Name', InputField],
+  ['Bio', TextareaField],
+] as const) {
+  describe(`${name} keyboard focus`, () => {
+    it.each(['dark', 'light'] as const)('shows the default and invalid focus rings in %s mode', async (theme) => {
       const screen = await renderForVRT(
-        <main className="bg-card">
-          <TextareaField value="My bio" variant="dashed" readOnly />
-          <TextareaField value="My bio" variant="dashed" status="error" readOnly />
+        <main
+          className="bg-card"
+          style={{ borderColor: 'var(--ring)', color: 'color-mix(in oklab, var(--ring) 50%, transparent)' }}
+        >
+          <Field value="My profile" variant="dashed" readOnly />
+          <section
+            style={{
+              borderColor: 'var(--destructive)',
+              color: `color-mix(in oklab, var(--destructive) ${theme === 'light' ? 20 : 40}%, transparent)`,
+            }}
+          >
+            <Field value="My profile" variant="dashed" status="error" readOnly />
+          </section>
         </main>,
         { viewport: VRT_VIEWPORT_DESKTOP, theme },
       );
-      const [bio, invalidBio] = screen.getByRole('textbox').all();
-      const bioFrame = bio.element().parentElement!;
-      const invalidFrame = invalidBio.element().parentElement!;
-      const idleBorder = getComputedStyle(bioFrame).borderTopColor;
-      const errorBorder = getComputedStyle(invalidFrame).borderTopColor;
-      const idleShadow = getComputedStyle(invalidFrame).boxShadow;
-
-      expect(getComputedStyle(invalidBio.element()).color).toBe(getComputedStyle(bio.element()).color);
-      await userEvent.tab();
-      await expect.element(bio).toHaveFocus();
-      expect(getComputedStyle(bioFrame).borderTopColor).not.toBe(idleBorder);
-      await userEvent.tab();
-      await expect.element(invalidBio).toHaveFocus();
-      expect(getComputedStyle(invalidFrame).borderTopColor).toBe(errorBorder);
-      expect(getComputedStyle(invalidFrame).boxShadow).not.toBe(idleShadow);
-    },
-  );
-});
+      const [normal, invalid] = screen.getByRole('textbox').all();
+      if (Field === TextareaField) {
+        expect(getComputedStyle(invalid.element()).color).toBe(getComputedStyle(normal.element()).color);
+      }
+      const card = screen.getByRole('main').element();
+      for (const field of [normal, invalid]) {
+        const wrapper = field.element().parentElement!;
+        const expected = getComputedStyle(wrapper.parentElement!);
+        const ringSize = '0px 0px 0px 3px';
+        expect(getComputedStyle(wrapper).boxShadow).not.toContain(ringSize);
+        await userEvent.tab();
+        await expect.element(field).toHaveFocus();
+        const style = getComputedStyle(wrapper);
+        expect(style.borderTopColor).toBe(expected.borderTopColor);
+        expectColorContrast(style.borderTopColor, card);
+        const ring = style.boxShadow.split(/,(?![^()]*\))/).find((shadow) => shadow.includes(ringSize));
+        expect(ring).toBeDefined();
+        expect(ring!.replace(ringSize, '').trim()).toBe(expected.color);
+      }
+    });
+  });
+}
 
 describe.each(['var(--card)', '#000', '#606060', '#fff'])('Success toast over %s', (backdrop) => {
   it.each(['dark', 'light'] as const)('keeps its text and OK button readable in %s mode', async (theme) => {
@@ -99,12 +115,74 @@ describe.each(['var(--card)', '#000', '#606060', '#fff'])('Success toast over %s
       expectTextContrast(description.element());
       await title.hover();
       expectTextContrast(dismiss.element());
-      const idleFill = getComputedStyle(dismiss.element()).backgroundColor;
+      const idle = getComputedStyle(dismiss.element());
+      expect(idle.paddingLeft).toBe('14px');
+      expect(idle.paddingRight).toBe('14px');
+      expect(idle.fontSize).toBe('12px');
+      expect(idle.lineHeight).toBe('16px');
+      const idleFill = idle.backgroundColor;
       await dismiss.hover();
       await expect.poll(() => getComputedStyle(dismiss.element()).backgroundColor).not.toBe(idleFill);
+      expect(getComputedStyle(dismiss.element()).backgroundImage).toMatch(/^linear-gradient/);
       expectTextContrast(dismiss.element());
       await dismiss.click();
       await expect.element(dismiss).not.toBeInTheDocument();
+    } finally {
+      handle.dismiss();
+    }
+  });
+});
+
+it.each(['dark', 'light'] as const)('shows keyboard focus on OK against the %s success surface', async (theme) => {
+  const screen = await renderForVRT(<Toaster />, { viewport: VRT_VIEWPORT_DESKTOP, theme });
+  const handle = toast({ title: 'Saved', dismissButton: true, persistent: true });
+  try {
+    const ok = screen.getByRole('button', { name: 'OK' });
+    await expect.element(ok).toBeVisible();
+    await screen.getByText('Saved', { exact: true }).click();
+    await userEvent.keyboard('{F8}');
+    await userEvent.tab();
+    await userEvent.tab();
+    await expect.element(ok).toHaveFocus();
+    const style = getComputedStyle(ok.element());
+    expect(style.boxShadow).toContain('0px 0px 0px 3px');
+    expectColorContrast(style.getPropertyValue('--tw-ring-color'), ok.element().closest('[data-cy="toast"]')!);
+    expectTextContrast(ok.element());
+  } finally {
+    handle.dismiss();
+  }
+});
+
+describe.each([
+  ['default', 'Undo'],
+  ['error', 'Retry'],
+] as const)('%s toast action', (variant, label) => {
+  it.each(['dark', 'light'] as const)('shows keyboard focus on a neutral button in %s mode', async (theme) => {
+    const screen = await renderForVRT(
+      <main className="fixed inset-0" style={{ backgroundColor: '#606060' }}>
+        <Toaster />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP, theme },
+    );
+    const handle = toast({
+      title: 'Item updated',
+      variant,
+      persistent: true,
+      action: { label, altText: label, onClick: () => {} },
+    });
+    try {
+      const action = screen.getByRole('button', { name: label });
+      await expect.element(action).toBeVisible();
+      await screen.getByText('Item updated', { exact: true }).click();
+      await userEvent.keyboard('{F8}');
+      await userEvent.tab();
+      await userEvent.tab();
+      await expect.element(action).toHaveFocus();
+      const style = getComputedStyle(action.element());
+      expect(style.outlineStyle).toBe('solid');
+      expect(style.outlineWidth).toBe('2px');
+      expect(style.outlineOffset).toBe('-2px');
+      expectColorContrast(style.outlineColor, action.element());
     } finally {
       handle.dismiss();
     }

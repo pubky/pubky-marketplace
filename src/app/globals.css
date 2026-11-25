@@ -62,13 +62,16 @@ body {
   --color-glass-hover: var(--glass-hover);
   --color-glass-strong: var(--glass-strong);
   --color-button-outline: var(--button-outline);
+  /* Paint the page surface at 10% over the default button’s 32% hover fill. */
+  --background-image-button-hover: linear-gradient(
+    color-mix(in oklab, var(--background) 10%, transparent),
+    color-mix(in oklab, var(--background) 10%, transparent)
+  );
   --color-action-pill: var(--action-pill);
   --color-embed: var(--embed);
   --color-warning-foreground: var(--warning-foreground);
   --color-notice-foreground: var(--notice-foreground);
   --color-toast-success: var(--toast-success);
-  --color-toast-action-brand: var(--toast-action-brand);
-  --color-toast-action-brand-hover: var(--toast-action-brand-hover);
   --color-toast-action-muted: var(--toast-action-muted);
   --color-toast-action-muted-hover-border: var(--toast-action-muted-hover-border);
   --color-transparent: var(--transparent);
@@ -150,8 +153,6 @@ body {
    * Light mode uses the card surface, so these buttons read lighter than the page.
    */
   --button-outline: color-mix(in oklab, var(--color-white) 4.5%, transparent);
-  /* Figma paints this 10% background wash on top of the default button’s 32% hover fill. */
-  --button-hover-wash: color-mix(in oklab, var(--background) 10%, transparent);
   /** Surface of the post action pills (tag / reply / repost / save / more): secondary in dark, page in light. */
   --action-pill: var(--secondary);
   /** Surface of a post or link embedded in a post (repost preview, link preview): muted in dark, page in light. */
@@ -163,9 +164,9 @@ body {
    */
   --warning-foreground: var(--color-amber-300);
   --notice-foreground: var(--color-amber-200);
-  /** Label on solid brand fills: the dark page colour in dark mode, a fixed dark ink in light mode. */
-  --brand-foreground: var(--background);
-  /** Ink for bright button, badge and checkbox fills: primary foreground in dark mode, dark ink in light mode. */
+  /** Text and icons on solid brand fills. */
+  --brand-foreground: var(--primary-foreground);
+  /** Text on bright status fills, such as the orange order badge. */
   --bright-fill-foreground: var(--primary-foreground);
   /**
    * Filled destructive controls and alerts. Dark mode keeps the translucent `/60` and `/90` mixes
@@ -179,8 +180,6 @@ body {
   --field-error: var(--color-red-400);
   /* Blend with the page color so text stays readable over photos. */
   --toast-success: color-mix(in srgb, var(--brand) 25%, var(--background));
-  --toast-action-brand: color-mix(in srgb, var(--brand) 32%, var(--background));
-  --toast-action-brand-hover: color-mix(in srgb, var(--brand) 40%, var(--background));
   --toast-action-muted: oklch(0.218 0.006 286);
   --toast-action-muted-hover-border: oklch(0.277 0.006 286);
   --transparent: oklch(0.118 0.014 284.115 / 0);

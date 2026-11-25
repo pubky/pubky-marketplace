@@ -21,14 +21,14 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          'border-brand bg-brand/16 text-brand hover:!bg-brand/32 hover:bg-[image:linear-gradient(var(--button-hover-wash),var(--button-hover-wash))] focus-visible:border-brand focus-visible:bg-brand/32 focus-visible:ring-ring disabled:bg-brand/8 disabled:opacity-30',
+          'border-brand bg-brand/16 text-brand hover:!bg-brand/32 hover:bg-button-hover focus-visible:border-brand focus-visible:bg-brand/32 focus-visible:ring-ring disabled:bg-brand/8 disabled:opacity-30',
         destructive:
           'bg-destructive-button text-destructive-foreground hover:bg-destructive-button-hover focus-visible:ring-destructive/20 focus-visible:ring-destructive/40',
         'destructive-soft': 'bg-destructive/16 text-destructive hover:!bg-destructive/30 border-destructive',
         outline: 'bg-button-outline hover:bg-accent hover:text-accent-foreground border-border hover:bg-input/50',
         secondary: 'bg-secondary text-secondary-foreground hover:bg-accent',
         ghost: 'hover:bg-accent hover:text-accent-foreground hover:bg-accent/50 border-none [.light_&]:shadow-none',
-        brand: 'bg-brand text-bright-fill-foreground border-brand hover:bg-brand/90',
+        brand: 'bg-brand text-brand-foreground border-brand hover:bg-brand/90',
         link: 'text-primary underline-offset-4 hover:underline',
         dark: 'border-card bg-card text-foreground hover:bg-muted [.light_&]:border-neutral-900 [.light_&]:bg-neutral-900 [.light_&]:text-white [.light_&]:hover:border-neutral-800 [.light_&]:hover:bg-neutral-800',
         'dark-outline':
@@ -38,7 +38,7 @@ const buttonVariants = cva(
         default: 'h-10 gap-2 px-4 py-2 has-[>svg]:px-4',
         sm: 'h-8 gap-1.5 px-3 has-[>svg]:px-3.5',
         icon: 'size-9',
-        lg: 'h-auto gap-2 px-8 py-5 text-sm font-bold leading-normal',
+        lg: 'h-auto gap-2 px-8 py-5 text-sm leading-normal',
       },
     },
     defaultVariants: {

@@ -31,7 +31,7 @@ describe('Toast Components', () => {
   });
 
   it.each([
-    ['default', ['rounded-md', 'border-brand/50', 'bg-toast-success']],
+    ['default', ['border-brand/50', 'bg-toast-success']],
     ['error', ['border-destructive/32', 'bg-destructive/8']],
     ['warning', ['border-yellow-500/32', 'bg-yellow-500/8']],
     ['info', ['border-accent/32', 'bg-accent/8']],
@@ -39,7 +39,7 @@ describe('Toast Components', () => {
     const { container } = renderToast(variant);
     const toast = container.querySelector(`[data-variant="${variant}"]`);
     expect(toast).toBeInTheDocument();
-    expect(toast).toHaveClass(...classes);
+    expect(toast).toHaveClass('rounded-md', ...classes);
   });
 
   it('renders the viewport with its positioning classes', () => {
@@ -56,14 +56,12 @@ describe('Toast Components', () => {
 
 describe('ToastAction', () => {
   it.each([
-    ['default', ['border-brand', 'bg-toast-action-brand', 'text-brand']],
-    ['error', ['bg-toast-action-muted', 'text-foreground']],
-    ['warning', ['bg-toast-action-muted', 'text-foreground']],
-    ['info', ['bg-toast-action-muted', 'text-foreground']],
+    ['brand', ['border-brand', 'bg-brand/16', 'text-brand']],
+    ['muted', ['bg-toast-action-muted', 'text-foreground']],
   ] as const)('applies variant="%s" classes', (variant, classes) => {
     render(
       <ToastProvider>
-        <Toast variant={variant} open>
+        <Toast open>
           <ToastAction altText="OK" variant={variant}>
             OK
           </ToastAction>

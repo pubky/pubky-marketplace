@@ -16,11 +16,11 @@ describe('Badge - Rendering', () => {
     render(<Badge>Default Badge</Badge>);
     const badge = screen.getByText('Default Badge');
     expect(badge).toHaveAttribute('data-slot', 'badge');
-    expect(badge).toHaveClass('bg-brand', 'text-bright-fill-foreground');
+    expect(badge).toHaveClass('bg-brand', 'text-brand-foreground');
   });
 
   it.each([
-    ['default', ['bg-brand', 'text-bright-fill-foreground']],
+    ['default', ['bg-brand', 'text-brand-foreground']],
     ['secondary', ['bg-secondary', 'text-secondary-foreground']],
     ['destructive', ['bg-destructive/60', 'text-white']],
     ['outline', ['text-foreground', 'bg-background']],
