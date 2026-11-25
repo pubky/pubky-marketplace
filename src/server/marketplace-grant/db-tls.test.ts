@@ -1,11 +1,13 @@
 // @vitest-environment node
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { X509Certificate } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import tls, { type PeerCertificate } from 'node:tls';
+import tls, { type PeerCertificate, type SecureVersion } from 'node:tls';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import postgres from 'postgres';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ZodError } from 'zod';
@@ -16,7 +18,7 @@ import {
   resetMarketplaceGrantConfigForTests,
 } from './config';
 import { grantSql, resetGrantSqlForTests } from './db';
-import { grantDatabaseTls } from './db-tls';
+import { grantDatabaseTls, pinnedTlsMinVersion } from './db-tls';
 import { isEmbeddedShopReady, resetEmbeddedShopReadinessForTests } from './readiness';
 
 const mocks = vi.hoisted(() => ({
@@ -45,9 +47,11 @@ type Certificates = {
   intermediate: string;
   intermediateLeaf: string;
   intermediateLeafKey: string;
+  intermediateWithoutAuthorityKeyId: string;
+  selfSignedNonCa: string;
 };
 
-type ServerIdentity = { key: string; cert: string };
+type ServerIdentity = { key: string; cert: string; minVersion?: SecureVersion; maxVersion?: SecureVersion };
 
 type ConnectionRecord = {
   tlsHandshake: boolean;
@@ -134,6 +138,10 @@ function generateCertificates(directory: string): Certificates {
   writeFileSync(
     path('leaf.ext'),
     '[leaf]\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:localhost\n',
+  );
+  writeFileSync(
+    path('ca-no-akid.ext'),
+    '[ca-no-akid]\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign,cRLSign\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=none\n',
   );
   for (const name of ['ca-a', 'ca-b']) {
     openssl([
@@ -227,13 +235,30 @@ function generateCertificates(directory: string): Certificates {
       '-extfile',
       path(extensions),
       '-extensions',
-      extensions === 'ca.ext' ? 'ca' : 'leaf',
+      extensions.replace(/\.ext$/, ''),
       '-out',
       path(`${name}.pem`),
     ]);
   };
   signed('intermediate', '/CN=intermediate-ca', 'ca-a', 'ca.ext');
   signed('intermediate-leaf', '/CN=localhost', 'intermediate', 'leaf.ext');
+  signed('intermediate-no-akid', '/CN=intermediate-no-akid', 'ca-a', 'ca-no-akid.ext');
+  openssl([
+    'x509',
+    '-req',
+    '-in',
+    path('leaf.csr'),
+    '-signkey',
+    path('leaf.key'),
+    '-days',
+    '1',
+    '-extfile',
+    path('leaf.ext'),
+    '-extensions',
+    'leaf',
+    '-out',
+    path('self-signed-non-ca.pem'),
+  ]);
   const read = (name: string) => readFileSync(path(name), 'utf8');
   return {
     caA: read('ca-a.pem'),
@@ -243,6 +268,8 @@ function generateCertificates(directory: string): Certificates {
     intermediate: read('intermediate.pem'),
     intermediateLeaf: read('intermediate-leaf.pem'),
     intermediateLeafKey: read('intermediate-leaf.key'),
+    intermediateWithoutAuthorityKeyId: read('intermediate-no-akid.pem'),
+    selfSignedNonCa: read('self-signed-non-ca.pem'),
   };
 }
 
@@ -345,6 +372,7 @@ let certificates: Certificates;
 let tlsServer: FakePostgresServer;
 let noTlsServer: FakePostgresServer;
 let intermediateTlsServer: FakePostgresServer;
+let tls12OnlyServer: FakePostgresServer;
 
 beforeAll(async () => {
   directory = mkdtempSync(join(tmpdir(), 'shop-grant-db-tls-'));
@@ -356,7 +384,17 @@ beforeAll(async () => {
     key: certificates.intermediateLeafKey,
     cert: certificates.intermediateLeaf + certificates.intermediate,
   }));
-  await Promise.all([tlsServer.listen(), noTlsServer.listen(), intermediateTlsServer.listen()]);
+  tls12OnlyServer = new FakePostgresServer(true, () => ({
+    ...rootIdentity(),
+    minVersion: 'TLSv1.2',
+    maxVersion: 'TLSv1.2',
+  }));
+  await Promise.all([
+    tlsServer.listen(),
+    noTlsServer.listen(),
+    intermediateTlsServer.listen(),
+    tls12OnlyServer.listen(),
+  ]);
 });
 
 beforeEach(() => {
@@ -365,6 +403,7 @@ beforeEach(() => {
   tlsServer.reset();
   noTlsServer.reset();
   intermediateTlsServer.reset();
+  tls12OnlyServer.reset();
 });
 
 afterEach(async () => {
@@ -374,7 +413,12 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-  await Promise.all([tlsServer?.close(), noTlsServer?.close(), intermediateTlsServer?.close()]);
+  await Promise.all([
+    tlsServer?.close(),
+    noTlsServer?.close(),
+    intermediateTlsServer?.close(),
+    tls12OnlyServer?.close(),
+  ]);
   if (directory) rmSync(directory, { recursive: true, force: true });
 });
 
@@ -408,6 +452,72 @@ function expectTlsStartup(server: FakePostgresServer): void {
 function expectNoStartup(server: FakePostgresServer): void {
   expect(server.records.length).toBeGreaterThan(0);
   expect(server.records.every((record) => !record.startupMessage)).toBe(true);
+}
+
+const TLS_PROTOCOL_VERSION_ERROR = 'ERR_SSL_TLSV1_ALERT_PROTOCOL_VERSION';
+
+function expectNoTlsSession(server: FakePostgresServer): void {
+  expect(server.records.length).toBeGreaterThan(0);
+  expect(server.records.every((record) => !record.tlsHandshake && !record.startupMessage)).toBe(true);
+}
+
+type PinnedTlsChildResult = {
+  processMinimum: string;
+  pinnedMinimum: string;
+  grant?: unknown;
+  ready?: boolean;
+};
+
+const execFileAsync = promisify(execFile);
+const SOURCE_DIRECTORY = fileURLToPath(new URL('.', import.meta.url));
+
+// Runs the real pools in a fresh Node process so command-line TLS flags apply as in production.
+async function runPinnedTlsChild(flags: string[], mode: 'grant' | 'ready'): Promise<PinnedTlsChildResult> {
+  const script = join(directory, 'pinned-tls-child.mts');
+  const source = (name: string) => JSON.stringify(join(SOURCE_DIRECTORY, name));
+  writeFileSync(
+    script,
+    [
+      "import tls from 'node:tls';",
+      `import { getMarketplaceGrantConfig } from ${source('config.ts')};`,
+      `import { grantSql } from ${source('db.ts')};`,
+      `import { grantDatabaseTls } from ${source('db-tls.ts')};`,
+      `import { isEmbeddedShopReady } from ${source('readiness.ts')};`,
+      'const config = getMarketplaceGrantConfig();',
+      "if (!config) throw new Error('Expected enabled grant configuration');",
+      'const result = { processMinimum: tls.DEFAULT_MIN_VERSION, pinnedMinimum: grantDatabaseTls(config)?.ssl.minVersion };',
+      "if (process.argv[2] === 'grant') {",
+      "  try { await grantSql(config)`SELECT 1`; result.grant = 'connected'; }",
+      '  catch (error) { result.grant = { name: error.name, code: error.code }; }',
+      '} else {',
+      '  result.ready = await isEmbeddedShopReady();',
+      '}',
+      'console.log(JSON.stringify(result));',
+      'process.exit(0);',
+    ].join('\n'),
+  );
+  const env: NodeJS.ProcessEnv = {
+    ...validEnv(),
+    SHOP_BFF_GRANT_STATE_DATABASE_URL: `postgres://u:p@127.0.0.1:${tls12OnlyServer.port}/db?sslmode=require`,
+    SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM: certificates.caA,
+    SHOP_BFF_GRANT_STATE_DATABASE_TLS_SERVER_NAME: 'localhost',
+    NEXT_PUBLIC_APP_VERSION: ENV.NEXT_PUBLIC_APP_VERSION ?? '0.0.0-test',
+    NEXT_PUBLIC_BASE_PATH: '/shop-embed',
+    NEXT_PUBLIC_DB_NAME: 'shop-franky',
+    NEXT_PUBLIC_SOCIAL_HOST: '',
+    PUBKY_RUNTIME_EMBEDDED: 'true',
+    PUBKY_RUNTIME_FRAME_ANCESTORS: "'self'",
+    PUBKY_RUNTIME_SHOP_PUBLIC_PATH: '/shop',
+    PUBKY_RUNTIME_DEFAULT_URL: 'https://app.example',
+    PUBKY_RUNTIME_MARKETPLACE_GRANT_FLOW_ENABLED: 'true',
+  };
+  const { stdout } = await execFileAsync(process.execPath, [...flags, '--import', 'tsx', script, mode], {
+    cwd: join(SOURCE_DIRECTORY, '../../..'),
+    env,
+    timeout: 20_000,
+  });
+  const lines = stdout.trim().split('\n');
+  return JSON.parse(lines[lines.length - 1]) as PinnedTlsChildResult;
 }
 
 function leafPeerCertificate(): PeerCertificate {
@@ -702,6 +812,42 @@ describe('grant database TLS configuration', () => {
     }
   });
 
+  it('refuses an intermediate without an authority key identifier beside a same-name root by its signature', () => {
+    const intermediate = new X509Certificate(certificates.intermediateWithoutAuthorityKeyId);
+    expect(intermediate.checkIssued(new X509Certificate(certificates.caB))).toBe(true);
+    expect(intermediate.verify(new X509Certificate(certificates.caB).publicKey)).toBe(false);
+
+    configureCa(`${certificates.caB}\n${certificates.intermediateWithoutAuthorityKeyId}`);
+    expect(() => configured()).toThrow(
+      'SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM must include the self-signed root CA of every intermediate CA',
+    );
+
+    configureCa(`${certificates.caA}\n${certificates.intermediateWithoutAuthorityKeyId}`);
+    resetMarketplaceGrantConfigForTests();
+    expect(configured().databaseCaPem).toEqual([
+      certificates.caA.trim(),
+      certificates.intermediateWithoutAuthorityKeyId.trim(),
+    ]);
+  });
+
+  it('refuses a self-signed non-CA certificate with the CA-count message', () => {
+    expect(new X509Certificate(certificates.selfSignedNonCa).ca).toBe(false);
+    configureCa(certificates.selfSignedNonCa);
+    let thrown: unknown;
+    try {
+      configured();
+    } catch (error) {
+      thrown = error;
+    }
+    if (!(thrown instanceof ZodError)) throw new Error('Expected a zod configuration error');
+    expect(thrown.issues).toEqual([
+      expect.objectContaining({
+        path: ['databaseCaPem'],
+        message: 'SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM must contain one to four CA certificates',
+      }),
+    ]);
+  });
+
   it('rejects a server name without a CA', () => {
     process.env = { ...validEnv(), SHOP_BFF_GRANT_STATE_DATABASE_TLS_SERVER_NAME: 'localhost' };
     expect(() => configured()).toThrow('SHOP_BFF_GRANT_STATE_DATABASE_TLS_SERVER_NAME');
@@ -908,8 +1054,25 @@ describe('real grant database TLS connections', () => {
       SHOP_BFF_GRANT_STATE_DATABASE_TLS_SERVER_NAME: 'localhost',
     };
     const config = configured();
-    await expect(runGrantQuery(config)).rejects.toBeInstanceOf(Error);
-    await expect(isEmbeddedShopReady()).resolves.toBe(false);
+    const destinations: unknown[][] = [];
+    const connect = vi.spyOn(net.Socket.prototype, 'connect').mockImplementation(function (
+      this: net.Socket,
+      ...args: unknown[]
+    ) {
+      destinations.push(args.slice(0, 2));
+      process.nextTick(() => this.destroy(Object.assign(new Error('connect intercepted'), { code: 'ECONNREFUSED' })));
+      return this;
+    });
+    try {
+      await expect(runGrantQuery(config)).rejects.toMatchObject({ code: 'ECONNREFUSED' });
+      expect(destinations).toEqual([[5432, 'localhost']]);
+
+      destinations.length = 0;
+      await expect(isEmbeddedShopReady()).resolves.toBe(false);
+      expect(destinations).toEqual([[5432, 'localhost']]);
+    } finally {
+      connect.mockRestore();
+    }
     expect(tlsServer.records).toHaveLength(0);
   });
 
@@ -918,4 +1081,81 @@ describe('real grant database TLS connections', () => {
     await expect(runGrantQuery(config)).rejects.toMatchObject({ name: 'PostgresError', code: '28P01' });
     expectTlsStartup(tlsServer);
   });
+});
+
+describe('pinned TLS minimum', () => {
+  const processMinimum = tls.DEFAULT_MIN_VERSION;
+
+  afterEach(() => {
+    tls.DEFAULT_MIN_VERSION = processMinimum;
+  });
+
+  function pinnedConfig() {
+    return {
+      databaseUrl: 'postgres://127.0.0.1/db',
+      databaseCaPem: [certificates.caA],
+      databaseTlsServerName: 'localhost',
+    };
+  }
+
+  it.each([
+    ['TLSv1', 'TLSv1.2'],
+    ['TLSv1.1', 'TLSv1.2'],
+    ['TLSv1.2', 'TLSv1.2'],
+    ['TLSv1.3', 'TLSv1.3'],
+  ] as const)('maps a process minimum of %s to a pinned minimum of %s', (minimum, pinned) => {
+    tls.DEFAULT_MIN_VERSION = minimum;
+    expect(pinnedTlsMinVersion()).toBe(pinned);
+    expect(grantDatabaseTls(pinnedConfig())?.ssl.minVersion).toBe(pinned);
+  });
+
+  it('keeps a process minimum newer than the versions it knows', () => {
+    Reflect.set(tls, 'DEFAULT_MIN_VERSION', 'TLSv1.4');
+    expect(pinnedTlsMinVersion()).toBe('TLSv1.4');
+  });
+
+  it('connects to a TLS 1.2-only server at the default minimum through grantSql and readiness', async () => {
+    const config = databaseConfig(tls12OnlyServer, certificates.caA, 'localhost');
+    await expect(runGrantQuery(config)).rejects.toMatchObject({ name: 'PostgresError', code: '28P01' });
+    expectTlsStartup(tls12OnlyServer);
+
+    tls12OnlyServer.reset();
+    await expect(isEmbeddedShopReady()).resolves.toBe(false);
+    expectTlsStartup(tls12OnlyServer);
+  });
+
+  it('refuses a TLS 1.2-only server before startup through grantSql and readiness when the process minimum is TLS 1.3', async () => {
+    tls.DEFAULT_MIN_VERSION = 'TLSv1.3';
+    const config = databaseConfig(tls12OnlyServer, certificates.caA, 'localhost');
+    await expect(runGrantQuery(config)).rejects.toMatchObject({ code: TLS_PROTOCOL_VERSION_ERROR });
+    expectNoTlsSession(tls12OnlyServer);
+
+    tls12OnlyServer.reset();
+    await expect(isEmbeddedShopReady()).resolves.toBe(false);
+    expectNoTlsSession(tls12OnlyServer);
+  });
+
+  it.each([
+    ['without a TLS flag', [], 'TLSv1.2'],
+    ['with --tls-min-v1.3', ['--tls-min-v1.3'], 'TLSv1.3'],
+  ])(
+    'applies the process minimum in a real Node process %s through grantSql and readiness',
+    async (_name, flags, minimum) => {
+      const grant = await runPinnedTlsChild(flags, 'grant');
+      expect(grant).toMatchObject({ processMinimum: minimum, pinnedMinimum: minimum });
+      const ready = await runPinnedTlsChild(flags, 'ready');
+      expect(ready).toMatchObject({ processMinimum: minimum, pinnedMinimum: minimum, ready: false });
+      if (minimum === 'TLSv1.2') {
+        expect(grant.grant).toEqual({ name: 'PostgresError', code: '28P01' });
+        expect(tls12OnlyServer.records.filter((record) => record.tlsHandshake && record.startupMessage)).toHaveLength(
+          2,
+        );
+      } else {
+        expect(grant.grant).toMatchObject({ code: TLS_PROTOCOL_VERSION_ERROR });
+        expect(tls12OnlyServer.records).toHaveLength(2);
+        expectNoTlsSession(tls12OnlyServer);
+      }
+    },
+    30_000,
+  );
 });
