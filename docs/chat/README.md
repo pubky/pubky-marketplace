@@ -57,13 +57,17 @@ background loops and every tab renders through Dexie live queries.
 
 In store mode, `ChatController` hides the sale threads of a signed-in user other than the store seller and refuses to
 send, retry or flush messages to them. Queued messages in those threads stay queued on every flush, including one that
-follows a sync. Roles use the newest service order page, 50 by default in durable modes, plus conversations and listing
-contexts. An older order named by a context is read by id, but a plain thread with a buyer whose only order is older than
-the page stays visible. A thread whose latest context is the user's sale is closed even when the user also bought from that peer. An order neither the lists nor a by-id read resolves, or a listing lookup that failed, is treated
-as a sale and closed, even when the user bought from that peer before, except in the thread with the store seller. The
-open-thread screen explains that restriction and decides again whenever the roles change. `useStoreThreadRoles` reads the
-roles and retries a read that failed or in which an order or listing lookup threw. Until they arrive, only the thread with the store seller
-is shown. See [Store mode](../environment.md#store-mode-runtime).
+follows a sync, and the ping a sent message in such a thread still owes stays owed instead of being sent. Roles use the
+newest service order page, 50 by default in durable modes, plus conversations and listing contexts. An older order named
+by a context is read by id, but a plain thread with a buyer whose only order is older than the page stays visible. A
+thread whose latest context is the user's sale is closed even when the user also bought from that peer, and even when the
+same context also names an order the user bought or a listing of the peer. An order neither the lists nor a by-id read
+resolves, or a listing lookup that failed, is treated as a sale and closed in the same way, even when the user bought
+from that peer before, except in the thread with the store seller. Only a context that is wholly a purchase keeps the
+thread. The open-thread screen explains that restriction and decides again whenever the roles change.
+`useStoreThreadRoles` reads the roles and retries a read that failed or in which an order or listing lookup threw or
+found nothing. Until they arrive, only the thread with the store seller is shown. The Shop still receives and stores
+messages of closed threads locally; it never shows, answers or pings them. See [Store mode](../environment.md#store-mode-runtime).
 
 Session capabilities: `CAPABILITIES` in `src/config/app.ts`. Runtime config:
 `inboxUrl` / `inboxAudience` in `src/libs/runtime-config/runtime-config.schema.ts`.

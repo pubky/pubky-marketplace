@@ -57,6 +57,7 @@ import type {
   ChatIdentityModelSchema,
   ChatMessageDirection,
   ChatMessageModelSchema,
+  ChatSyncStateModelSchema,
 } from '@/models/chat/chat.schema';
 import { ChatHomeserverService } from '@/services/homeserver/chat/chat-storage';
 import { HomeserverService } from '@/services/homeserver/homeserver';
@@ -456,7 +457,7 @@ export class ChatApplication {
     await withExclusiveLock(CHAT_LOCKS.outbox(me), async () => {
       signal?.throwIfAborted();
       await this.sendDueMessages(me, signal, sends);
-      await this.flushPings(me, signal);
+      await this.flushPings(me, signal, sends);
     });
   }
 
@@ -553,13 +554,16 @@ export class ChatApplication {
    * backoff (a 429 `Retry-After` wins), and while the peer has never written
    * back the newest file is pinged again every {@link CHAT_PING_REPEAT_MS}, so a
    * dropped or expired first-contact ping still ends in a wake-up. Once the
-   * peer has replied they stream and reconcile the folder themselves.
+   * peer has replied they stream and reconcile the folder themselves. A peer
+   * `sends` refuses by its thread alone is not pinged, and its ping stays due.
    */
-  static async flushPings(me: string, signal?: AbortSignal): Promise<void> {
+  static async flushPings(me: string, signal?: AbortSignal, sends?: ChatOutboxSends): Promise<void> {
     const now = Date.now();
-    const due = (await LocalChatService.listSyncStates(me)).filter(
-      (state) => state.ping_file !== null && (state.ping_next_at ?? 0) <= now,
-    );
+    const due: ChatSyncStateModelSchema[] = [];
+    for (const state of await LocalChatService.listSyncStates(me)) {
+      if (state.ping_file === null || (state.ping_next_at ?? 0) > now) continue;
+      if (!sends || (await sends({ peer_pubky: state.peer_pubky, context: null }))) due.push(state);
+    }
     if (due.length === 0) return;
     let availability: InboxAvailability;
     try {

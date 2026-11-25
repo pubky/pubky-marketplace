@@ -295,6 +295,47 @@ describe('isSaleThread', () => {
     expect(isSale(peer, { listingId: 'gone' }, 'absent')).toBe(false);
   });
 
+  it.each([
+    {
+      name: 'a bought order and its own listing',
+      context: { orderId: 'bought', listingId: 'my-lamp' },
+      side: 'viewer',
+      sale: true,
+    },
+    {
+      name: 'a bought order and a listing whose lookup failed',
+      context: { orderId: 'bought', listingId: 'unreadable' },
+      side: null,
+      sale: true,
+    },
+    {
+      name: 'an order in neither list and a listing of the peer',
+      context: { orderId: 'unknown', listingId: 'boots' },
+      side: 'peer',
+      sale: true,
+    },
+    {
+      name: 'a sold order and a listing of the peer',
+      context: { orderId: 'sold', listingId: 'boots' },
+      side: 'peer',
+      sale: true,
+    },
+    {
+      name: 'a bought order and a listing of the peer',
+      context: { orderId: 'bought', listingId: 'boots' },
+      side: 'peer',
+      sale: false,
+    },
+    {
+      name: 'a bought order and a listing neither owner has',
+      context: { orderId: 'bought', listingId: 'gone' },
+      side: 'absent',
+      sale: false,
+    },
+  ] as const)('judges a context with $name by its sale or unresolved half first', ({ context, side, sale }) => {
+    expect(isSale(OTHER, context, side)).toBe(sale);
+  });
+
   it('shows only the thread with the store seller before the roles are read', () => {
     const unread = (peer: string, context: { orderId?: string } | null) =>
       isSaleThread({ peer_pubky: peer, last_context: context }, null, STORE_SELLER, null);

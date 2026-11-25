@@ -9,7 +9,7 @@ import { StoreSellerGate } from '@/controllers/store-seller-gate/store-seller-ga
 import { isChatPingSlot } from '@/libs/chat/paths';
 import { isChatPing } from '@/libs/chat/schemas';
 import { type AppError, isAppError } from '@/libs/error/error';
-import { ValidationErrorCode } from '@/libs/error/error.codes';
+import { ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { isAbortError } from '@/libs/error/error.utils';
@@ -181,7 +181,16 @@ export class ChatController {
     }
     signal.throwIfAborted();
     const roles = this.publishStoreThreadRoles(me, storeThreadRoles([...orders, ...resolvedOrders], me, listingSides));
-    if (failed) throw new Error('Some chat contexts could not be placed; the roles read retries');
+    if (failed) {
+      throw Err.server(
+        ServerErrorCode.SERVICE_UNAVAILABLE,
+        'Some chat contexts could not be placed; the roles read retries',
+        {
+          service: ErrorService.Marketplace,
+          operation: 'readStoreThreadRoles',
+        },
+      );
+    }
     return roles;
   }
 
@@ -208,6 +217,7 @@ export class ChatController {
             const parties = await CommerceApplication.getMarketplaceOrderParties(me, orderId);
             signal.throwIfAborted();
             if (parties === null) {
+              failed = true;
               Logger.warn('Could not resolve the order a chat context names', { orderId });
               return;
             }

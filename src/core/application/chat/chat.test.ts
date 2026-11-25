@@ -378,6 +378,33 @@ describe('ChatApplication', () => {
       expect(ping).toHaveBeenCalledTimes(1);
     });
 
+    it('leaves the ping of a peer the sends filter refuses owed and pings the others', async () => {
+      const ping = vi.spyOn(InboxService, 'ping').mockResolvedValue(undefined);
+      await ChatApplication.ensureIdentity(ALICE);
+      await ChatApplication.ensureIdentity(BOB);
+      await ChatApplication.ensureIdentity(CAROL);
+      await ChatApplication.openConversation(ALICE, BOB);
+      await ChatApplication.openConversation(ALICE, CAROL);
+      await ChatApplication.queueMessage(ALICE, { peer: BOB, body: 'about a sale' });
+      await ChatApplication.queueMessage(ALICE, { peer: CAROL, body: 'about a purchase' });
+      await ChatApplication.flushOutbox(ALICE);
+      expect(ping).not.toHaveBeenCalled();
+      expect((await LocalChatService.getSyncState(ALICE, BOB))?.ping_file).toBeTruthy();
+      expect((await LocalChatService.getSyncState(ALICE, CAROL))?.ping_file).toBeTruthy();
+
+      vi.spyOn(InboxService, 'isConfigured').mockReturnValue(true);
+      vi.spyOn(InboxService, 'ensureSession').mockResolvedValue('ready');
+      const sends = vi.fn(async ({ peer_pubky }: { peer_pubky: string }) => peer_pubky === CAROL);
+      await ChatApplication.flushOutbox(ALICE, undefined, { sends });
+
+      expect(sends).toHaveBeenCalledWith({ peer_pubky: BOB, context: null });
+      expect(ping.mock.calls.map(([, params]) => params.recipient)).toEqual([CAROL]);
+      expect((await LocalChatService.getSyncState(ALICE, BOB))?.ping_file).toBeTruthy();
+
+      await ChatApplication.flushOutbox(ALICE, undefined, { sends: async () => true });
+      expect(ping.mock.calls.map(([, params]) => params.recipient)).toEqual([CAROL, BOB]);
+    });
+
     it('keeps a message to an unreachable peer queued without blocking other peers', async () => {
       await ChatApplication.ensureIdentity(ALICE);
       await ChatApplication.ensureIdentity(CAROL);
