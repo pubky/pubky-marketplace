@@ -1,5 +1,7 @@
 /** @vitest-environment node */
 // FormData, File and Request must come from one implementation for a multipart POST to parse.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import sharp from 'sharp';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { POST_SUPPORTED_ATTACHMENT_MIME_TYPES } from '@/config/posts';
@@ -102,6 +104,29 @@ function avifBrandAt(offset: number): Uint8Array<ArrayBuffer> {
   box.fill(0, 12, 16);
   ascii('avif', offset);
   return box;
+}
+
+const MANIFEST_SHARE_FILES = (
+  JSON.parse(readFileSync(join(__dirname, '../../../public/manifest.json'), 'utf8')) as {
+    share_target: { params: { files: { name: string; accept: string[] }[] } };
+  }
+).share_target.params.files;
+
+const IMAGE_FORMATS: Readonly<Record<string, 'png' | 'jpeg' | 'gif' | 'webp' | 'avif'>> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpeg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/avif': 'avif',
+};
+
+/** A real file of `type`: encoded image bytes, SVG or HTML markup, or a WAV body under a media type. */
+async function sampleFile(type: string): Promise<File> {
+  const format = IMAGE_FORMATS[type];
+  if (format) return new File([await image(format)], `sample.${format}`, { type });
+  if (type === 'image/svg+xml') return new File([SVG], 'sample.svg', { type });
+  if (type === 'text/html') return new File([HTML], 'sample.html', { type });
+  return new File([wavFile()], 'sample', { type });
 }
 
 /**
@@ -272,6 +297,38 @@ describe('shareTarget utilities', () => {
         await expect(sharedFileType(chromiumFile([HTML], 'clip', declared))).resolves.toBeNull();
       },
     );
+  });
+
+  describe('manifest share_target', () => {
+    const offered = MANIFEST_SHARE_FILES.flatMap((files) => files.accept);
+    const candidates = [
+      ...new Set([
+        ...offered,
+        'image/png',
+        'image/jpeg',
+        'image/gif',
+        'image/webp',
+        'image/avif',
+        'image/svg+xml',
+        'text/html',
+        'audio/mpeg',
+        'audio/wav',
+        'audio/ogg',
+        'audio/webm',
+        'video/mp4',
+        'video/webm',
+        'video/ogg',
+      ]),
+    ];
+
+    it('sends shared files in the media field the service worker reads', () => {
+      expect(MANIFEST_SHARE_FILES.map((files) => files.name)).toEqual(['media']);
+    });
+
+    it.each(candidates)('offers %s only if a real file of that type is kept under it', async (type) => {
+      const kept = (await sharedFileType(await sampleFile(type))) === type;
+      expect(offered.includes(type)).toBe(kept);
+    });
   });
 
   describe('handleShareTarget', () => {
