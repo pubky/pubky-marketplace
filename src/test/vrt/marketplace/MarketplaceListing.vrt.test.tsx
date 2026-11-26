@@ -4,6 +4,7 @@ import { createMarketplaceVrtAuthStore, createMarketplaceVrtCommerceController }
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderForVRT, VRT_DENSE_CHROME_SCREENSHOT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
+import { SocialProfileService } from '@/services/homeserver/social-profile';
 import { MarketplaceListing } from '@/templates/Marketplace/MarketplaceListing';
 
 // Deterministic BTC/USD rate for the capture (1 BTC = $100,000): the "≈"
@@ -429,6 +430,8 @@ async function setView(overrides: Partial<typeof view>) {
 // across test files — pin the defaults so captures never depend on what a
 // previously-run file left behind.
 beforeEach(async () => {
+  // This standalone fixture has a legacy profile and a writable Shop session.
+  vi.spyOn(SocialProfileService, 'getEpoch').mockResolvedValue('legacy');
   const { useMarketplaceDisplayStore } = await import('@/stores/marketplace-display/marketplace-display.store');
   useMarketplaceDisplayStore.setState({ showFxEstimate: true, measurementSystem: 'metric' });
 });
@@ -742,6 +745,7 @@ describe('Marketplace listing detail — visual regression', () => {
     const screen = await renderForVRT(<MarketplaceListing sellerPubky={seller} listingId="boots_01" />, {
       viewport: VRT_VIEWPORT_DESKTOP,
     });
+    await expect.element(screen.getByRole('button', { name: 'Add new tag' })).toBeVisible();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-community-tags-desktop');
   });
 
