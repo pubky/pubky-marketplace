@@ -1,3 +1,5 @@
+import { X509Certificate } from 'node:crypto';
+import { isIP } from 'node:net';
 import { z } from 'zod';
 
 const exactOrigin = z
@@ -15,6 +17,116 @@ const canonicalBase64Key = z.string().refine((value) => {
 }, 'Expected canonical padded Base64 for 32 bytes');
 const signingSeed = z.string().regex(/^[0-9a-f]{64}$/);
 const keyId = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/);
+const databaseCaPemMessage = 'SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM must contain one to four CA certificates';
+const databaseCaRootMessage =
+  'SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM must include the self-signed root CA of every intermediate CA';
+
+function issuedBy(certificate: X509Certificate, issuer: X509Certificate): boolean {
+  return certificate.checkIssued(issuer) && certificate.verify(issuer.publicKey);
+}
+
+// Node verifies without X509_V_FLAG_PARTIAL_CHAIN, so a trusted chain must end at a self-signed
+// root: an intermediate is usable only when the bundle also holds the root it chains to.
+function caBundleAnchoredAtRoots(certificates: X509Certificate[]): boolean {
+  const anchored = new Set(certificates.filter((certificate) => issuedBy(certificate, certificate)));
+  let added = anchored.size > 0;
+  while (added) {
+    added = false;
+    for (const certificate of certificates) {
+      if (anchored.has(certificate) || ![...anchored].some((issuer) => issuedBy(certificate, issuer))) continue;
+      anchored.add(certificate);
+      added = true;
+    }
+  }
+  return anchored.size === certificates.length;
+}
+
+const databaseCaPem = z
+  .string()
+  .optional()
+  .transform((value, ctx) => {
+    if (value === undefined) return undefined;
+    const pem = value.trim();
+
+    const blocks: string[] = [];
+    const blockPattern = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
+    let position = 0;
+    for (const match of pem.matchAll(blockPattern)) {
+      const separator = pem.slice(position, match.index);
+      if ((blocks.length === 0 && separator !== '') || (blocks.length > 0 && !/^\s+$/.test(separator))) {
+        ctx.addIssue({ code: 'custom', message: databaseCaPemMessage });
+        return z.NEVER;
+      }
+      blocks.push(match[0]);
+      position = match.index + match[0].length;
+    }
+    if (position !== pem.length || blocks.length < 1 || blocks.length > 4) {
+      ctx.addIssue({ code: 'custom', message: databaseCaPemMessage });
+      return z.NEVER;
+    }
+
+    const certificates: X509Certificate[] = [];
+    for (const block of blocks) {
+      try {
+        const certificate = new X509Certificate(block);
+        if (certificate.ca) {
+          certificates.push(certificate);
+          continue;
+        }
+      } catch {
+        // The static issue below intentionally omits certificate content.
+      }
+      ctx.addIssue({ code: 'custom', message: databaseCaPemMessage });
+      return z.NEVER;
+    }
+    if (!caBundleAnchoredAtRoots(certificates)) {
+      ctx.addIssue({ code: 'custom', message: databaseCaRootMessage });
+      return z.NEVER;
+    }
+    return blocks;
+  })
+  .optional();
+const databaseTlsServerName = z
+  .string()
+  .refine((value) => {
+    if (value.length > 253 || isIP(value) !== 0) return false;
+    return value.split('.').every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label));
+  }, 'SHOP_BFF_GRANT_STATE_DATABASE_TLS_SERVER_NAME must be a lowercase DNS name')
+  .optional();
+const databaseTlsUrlMessage =
+  'SHOP_BFF_GRANT_STATE_DATABASE_URL must be a valid single-host PostgreSQL URL when a CA is configured';
+
+const databaseTlsHostPattern = /^[A-Za-z0-9._-]+$/;
+const databaseRoutingQueryKeys = ['host', 'hostaddr', 'port'];
+
+const DEFAULT_DATABASE_PORT = 5432;
+
+export type DatabaseTlsRoute = { host: string; port: number };
+
+/**
+ * The pinned postgres.js (3.4.9) routes by the URL-decoded text between `://` and the first `?` or
+ * `/`, after its first `@`: a decoded `,` selects multiple hosts and a `/` a Unix socket, and each
+ * host is cut at its first `:` (so `[::1]` becomes `[`). Only accept URLs whose driver host is
+ * exactly the WHATWG host with an ASCII hostname of letters, digits, dot, underscore and hyphen;
+ * libpq-style routing query keys are refused as well. Without a URL port the driver would fall
+ * back to `PGPORT`, so callers pass the returned port explicitly.
+ */
+export function databaseTlsRouteFromUrl(databaseUrl: string): DatabaseTlsRoute | undefined {
+  try {
+    const url = new URL(databaseUrl);
+    if (url.protocol !== 'postgres:' && url.protocol !== 'postgresql:') return undefined;
+    if (databaseRoutingQueryKeys.some((key) => url.searchParams.has(key))) return undefined;
+    const authority = databaseUrl.slice(databaseUrl.indexOf('://') + 3).split(/[?/]/)[0];
+    const driverHost = decodeURIComponent(authority.slice(authority.indexOf('@') + 1));
+    if (driverHost !== url.host || !databaseTlsHostPattern.test(url.hostname)) return undefined;
+    const port = url.port === '' ? DEFAULT_DATABASE_PORT : Number(url.port);
+    if (port < 1) return undefined;
+    return { host: url.hostname, port };
+  } catch {
+    return undefined;
+  }
+}
+
 export const CLAIM_LEASE_MARGIN_SECONDS = 5;
 export const CLAIM_SERVICE_CALLS = 4;
 
@@ -31,6 +143,8 @@ const configSchema = z
     publicOrigin: exactOrigin,
     serviceUrl: exactOrigin,
     databaseUrl: z.string().min(1),
+    databaseCaPem,
+    databaseTlsServerName,
     cronSecret: z.string().min(32),
     assertionIssuer: exactOrigin,
     assertionKeyId: keyId,
@@ -49,6 +163,13 @@ const configSchema = z
     serviceTimeoutMs: z.coerce.number().int().min(2000).max(10000).default(5000),
   })
   .superRefine((value, ctx) => {
+    if (value.databaseTlsServerName !== undefined && value.databaseCaPem === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['databaseTlsServerName'],
+        message: 'SHOP_BFF_GRANT_STATE_DATABASE_TLS_SERVER_NAME requires SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM',
+      });
+    }
     if (value.assertionIssuer !== value.publicOrigin) {
       ctx.addIssue({ code: 'custom', path: ['assertionIssuer'], message: 'Issuer must equal SHOP_PUBLIC_ORIGIN' });
     }
@@ -69,9 +190,21 @@ const configSchema = z
         message: `Claim lease must be at least ${CLAIM_SERVICE_CALLS}× service timeout plus ${CLAIM_LEASE_MARGIN_SECONDS}s (${minimumLeaseSeconds}s)`,
       });
     }
+  })
+  .transform((value, ctx) => {
+    if (value.databaseCaPem === undefined) return { ...value, databaseTlsHost: undefined, databaseTlsPort: undefined };
+    const route = databaseTlsRouteFromUrl(value.databaseUrl);
+    if (route === undefined) {
+      ctx.addIssue({ code: 'custom', path: ['databaseUrl'], message: databaseTlsUrlMessage });
+      return z.NEVER;
+    }
+    return { ...value, databaseTlsHost: route.host, databaseTlsPort: route.port };
   });
 
-export type MarketplaceGrantConfig = z.infer<typeof configSchema>;
+export type MarketplaceGrantConfig = Omit<z.infer<typeof configSchema>, 'databaseTlsHost' | 'databaseTlsPort'> & {
+  databaseTlsHost?: string;
+  databaseTlsPort?: number;
+};
 
 const cliExtrasSchema = z.object({
   challengeTtlSeconds: z.coerce.number().int().min(30).max(120).default(60),
@@ -120,6 +253,8 @@ export function getMarketplaceGrantConfig(): MarketplaceGrantConfig | null {
     publicOrigin: process.env.SHOP_PUBLIC_ORIGIN,
     serviceUrl: process.env.MARKETPLACE_SERVICE_URL,
     databaseUrl: process.env.SHOP_BFF_GRANT_STATE_DATABASE_URL,
+    databaseCaPem: process.env.SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM,
+    databaseTlsServerName: process.env.SHOP_BFF_GRANT_STATE_DATABASE_TLS_SERVER_NAME,
     cronSecret: process.env.CRON_SECRET,
     assertionIssuer: process.env.SHOP_GRANT_ASSERTION_ISSUER,
     assertionKeyId: process.env.SHOP_GRANT_ASSERTION_KEY_ID,
