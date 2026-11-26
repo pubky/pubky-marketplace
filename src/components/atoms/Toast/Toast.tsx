@@ -40,7 +40,7 @@ Toast.displayName = ToastPrimitives.Root.displayName;
 const ToastAction = React.forwardRef<
   React.ComponentRef<typeof ToastPrimitives.Action>,
   React.ComponentPropsWithoutRef<typeof ToastPrimitives.Action> & VariantProps<typeof toastActionVariants>
->(({ className, variant = 'default', ...props }, ref) => (
+>(({ className, variant = 'muted', ...props }, ref) => (
   <ToastPrimitives.Action ref={ref} className={cn(toastActionVariants({ variant }), className)} {...props} />
 ));
 ToastAction.displayName = ToastPrimitives.Action.displayName;
@@ -63,7 +63,10 @@ const ToastDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <ToastPrimitives.Description
     ref={ref}
-    className={cn('min-w-0 text-sm wrap-anywhere text-popover-foreground', className)}
+    className={cn(
+      'min-w-0 text-sm wrap-anywhere text-popover-foreground group-data-[variant=default]:text-secondary-foreground',
+      className,
+    )}
     {...props}
   />
 ));

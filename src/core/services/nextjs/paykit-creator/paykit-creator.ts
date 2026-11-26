@@ -1,0 +1,179 @@
+import { z } from 'zod';
+import type {
+  TPaykitCreatorAnswer,
+  TPaykitCreatorProbeParams,
+} from '@/application/paykit-creator/paykit-creator.types';
+import { getPaykitSetupUrl } from '@/config/commerce';
+import { PAYKIT_CREATOR_MAX_IN_FLIGHT } from '@/config/paykit-creator';
+import { ServerErrorCode, TimeoutErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
+import { Err } from '@/libs/error/error.factories';
+import { httpResponseToError, safeFetch } from '@/libs/error/error.http';
+import { ErrorService } from '@/libs/error/error.types';
+import { HttpMethod, HttpStatusCode } from '@/libs/http/http.types';
+import { parseRetryAfterHeader } from '@/libs/http/response.utils';
+import { sleep } from '@/libs/utils/utils';
+import { PaykitCreatorRateLimiter } from './paykit-creator.rate-limit';
+
+const PROBE_TIMEOUT_MS = 6000;
+const OPERATION = 'NextJsPaykitCreatorService.isCreatorHeld';
+
+/**
+ * A 503 from `/setup/creator-held` is passing storage trouble (Paykit sends `Retry-After: 1`), so it is
+ * asked once more after that wait when the wait is this short and fits the timeout. A 429 is not
+ * retried here: Paykit sends `Retry-After: 60`, so the dialog's Try again is the retry.
+ */
+const MAX_UNAVAILABLE_WAIT_MS = 2000;
+
+/**
+ * How long an answer is reused. A creator Paykit holds stays held until someone removes it, so that answer
+ * covers a retry, a reopened dialog and the diagnosis after a failed setup. "Not held" is kept shorter
+ * because a creator can finish a setup in between.
+ */
+const HELD_TTL_MS = 120_000;
+const NOT_HELD_TTL_MS = 15_000;
+/** Bounds memory when many creators ask; the oldest answers go first. */
+const MAX_CACHED_ANSWERS = 500;
+
+const creatorHeldResponseSchema = z.object({ held: z.boolean() });
+
+const answers = new Map<string, { held: boolean; expiresAt: number }>();
+const inFlight = new Map<string, Promise<boolean>>();
+
+/**
+ * Server-only read of whether the Paykit Server holds a creator.
+ *
+ * Paykit's `GET /setup/creator-held?creator=…` answers `{ "held": true | false }` and does nothing
+ * else: no setup flow, no pending-flow capacity and no setup-start budget. It has its own per-client-IP
+ * read limit (600 a minute by default) and refuses with 429 when that is spent and 503 when its storage
+ * cannot answer, so neither is ever read as "not held". A 400 means Paykit rejected the query. The
+ * Paykit Server sends no `Access-Control-Allow-Origin`, so the app asks it from here, the way
+ * `/api/fx-rate` reaches an API a browser cannot.
+ *
+ * Every caller of this route shares the app server's address, and so that read limit. An answer is
+ * therefore reused for the same creator (`HELD_TTL_MS`, `NOT_HELD_TTL_MS`), and concurrent callers share
+ * one request. Failures are not kept, so the next caller asks again. Reads of Paykit are capped per window
+ * across all callers and in how many distinct creators are pending at once (`src/config/paykit-creator.ts`);
+ * past either the lookup is answered with a `rate_limited` refusal before Paykit is asked, returned rather
+ * than thrown, because it is this server's own decision and not a failure to report. Kept answers and pending reads
+ * stay available. All of this is per server instance.
+ */
+export class NextJsPaykitCreatorService {
+  private constructor() {}
+
+  static async isCreatorHeld({ creator }: TPaykitCreatorProbeParams): Promise<TPaykitCreatorAnswer> {
+    const paykitSetupUrl = getPaykitSetupUrl();
+    if (!paykitSetupUrl) {
+      throw Err.validation(ValidationErrorCode.MISSING_FIELD, 'No Paykit Server configured', {
+        service: ErrorService.Paykit,
+        operation: OPERATION,
+      });
+    }
+    // The setup page and `/setup/creator-held` are served by the same Paykit Server.
+    const paykitOrigin = new URL(paykitSetupUrl).origin;
+    const key = `${paykitOrigin}|${creator}`;
+    const now = Date.now();
+    const cached = answers.get(key);
+    if (cached && cached.expiresAt > now) return { ok: true, held: cached.held };
+    const pending = inFlight.get(key);
+    if (pending) return { ok: true, held: await pending };
+    if (inFlight.size >= PAYKIT_CREATOR_MAX_IN_FLIGHT) return rateLimited(1);
+    const read = PaykitCreatorRateLimiter.admitRead();
+    if (!read.ok) return rateLimited(read.retryAfterSeconds);
+
+    const probe = this.probe(paykitOrigin, creator).then((held) => {
+      this.remember(key, held);
+      return held;
+    });
+    inFlight.set(key, probe);
+    try {
+      return { ok: true, held: await probe };
+    } finally {
+      inFlight.delete(key);
+    }
+  }
+
+  private static remember(key: string, held: boolean): void {
+    const now = Date.now();
+    for (const [stored, answer] of answers) if (answer.expiresAt <= now) answers.delete(stored);
+    while (answers.size >= MAX_CACHED_ANSWERS) {
+      const oldest = answers.keys().next().value;
+      if (oldest === undefined) break;
+      answers.delete(oldest);
+    }
+    answers.set(key, { held, expiresAt: now + (held ? HELD_TTL_MS : NOT_HELD_TTL_MS) });
+  }
+
+  private static async probe(paykitOrigin: string, creator: string): Promise<boolean> {
+    const url = new URL('/setup/creator-held', paykitOrigin);
+    url.searchParams.set('creator', creator);
+    const endpoint = url.origin + url.pathname;
+    const deadline = Date.now() + PROBE_TIMEOUT_MS;
+    // The deadline aborts with the timeout itself, so `safeFetch` and the body read rethrow that one error
+    // instead of reporting a network failure (or an unreadable answer) for the same request first.
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort(
+        Err.timeout(TimeoutErrorCode.REQUEST_TIMEOUT, 'Paykit did not answer in time', {
+          service: ErrorService.Paykit,
+          operation: OPERATION,
+          context: { endpoint },
+        }),
+      );
+    }, PROBE_TIMEOUT_MS);
+    const { signal } = controller;
+
+    try {
+      let response = await this.ask(url.href, endpoint, signal);
+      if (response.status === HttpStatusCode.SERVICE_UNAVAILABLE) {
+        const waitMs = (parseRetryAfterHeader(response.headers.get('retry-after')) ?? 1) * 1000;
+        if (waitMs <= MAX_UNAVAILABLE_WAIT_MS && Date.now() + waitMs < deadline) {
+          discardBody(response);
+          await sleep(waitMs);
+          // Charged now, so a retry that lands in the next window counts against that window.
+          if (PaykitCreatorRateLimiter.admitRead().ok) response = await this.ask(url.href, endpoint, signal);
+        }
+      }
+
+      if (response.status !== HttpStatusCode.OK) {
+        discardBody(response);
+        throw httpResponseToError(response, ErrorService.Paykit, OPERATION, endpoint);
+      }
+      const json = await response.json().catch((error: unknown) => {
+        // A body cut off by the deadline is a timeout; anything else unreadable is a malformed answer.
+        if (signal.aborted) throw error;
+        return undefined;
+      });
+      const body = creatorHeldResponseSchema.safeParse(json);
+      if (!body.success) {
+        throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Paykit creator-held response is invalid', {
+          service: ErrorService.Paykit,
+          operation: OPERATION,
+          context: { endpoint },
+        });
+      }
+      return body.data.held;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** `endpoint` is the query-free URL a transport error records, so the creator's key is never logged. */
+  private static ask(href: string, endpoint: string, signal: AbortSignal): Promise<Response> {
+    return safeFetch(
+      href,
+      { method: HttpMethod.GET, credentials: 'omit', redirect: 'manual', cache: 'no-store', signal },
+      ErrorService.Paykit,
+      OPERATION,
+      endpoint,
+    );
+  }
+}
+
+function rateLimited(retryAfterSeconds: number): TPaykitCreatorAnswer {
+  return { ok: false, reason: 'rate_limited', retryAfterSeconds };
+}
+
+/** Releases the connection behind an answer that is not read. */
+function discardBody(response: Response): void {
+  void response.body?.cancel().catch(() => {});
+}
