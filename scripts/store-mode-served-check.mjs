@@ -79,8 +79,9 @@ function check(id, ok, detail) {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${id}${detail ? ` — ${detail}` : ''}`);
 }
 
-async function get(path) {
+async function get(path, headers = {}) {
   const response = await fetch(`${ORIGIN}${BASE_PATH}${path}`, {
+    headers,
     redirect: 'manual',
     signal: AbortSignal.timeout(60_000),
   });
@@ -166,6 +167,14 @@ try {
 
   const health = await get('/api/marketplace/health');
   check('kept /api/marketplace/health', health.body.includes('pubky-shop-bff'), `status ${health.status}`);
+
+  // The handler refuses a missing creator before any Paykit read, so this needs no Paykit Server.
+  const paykitCreator = await get('/api/paykit-creator', { 'Sec-Fetch-Site': 'same-origin' });
+  check(
+    'kept /api/paykit-creator',
+    paykitCreator.status === 400 && paykitCreator.body.includes('Invalid creator'),
+    `status ${paykitCreator.status}`,
+  );
 
   const home = await get('/marketplace');
   const shop = `/marketplace/shop/${STORE_SELLER}`;

@@ -228,6 +228,14 @@ describe('decideStoreRoute', () => {
     expect(decide(pathname)).toBe('allow');
   });
 
+  it('serves the Paykit creator lookup to the store seller payment setup without a viewer gate', () => {
+    expect(STORE_ROUTE_HANDLER_POLICY['/api/paykit-creator']?.policy).toEqual({ mode: 'both' });
+    expect(decide('/api/paykit-creator')).toBe('allow');
+    expect(decideStoreRoute('/api/paykit-creator', OTHER_SELLER).kind).toBe('allow');
+    expect(isStoreSellerViewerRoute('/api/paykit-creator')).toBe(false);
+    expect(decide('/api/paykit-creator/extra')).toBe('not-found');
+  });
+
   it('hides API paths no route handler serves', () => {
     expect(decide('/api')).toBe('not-found');
     expect(decide('/api/not-a-handler')).toBe('not-found');

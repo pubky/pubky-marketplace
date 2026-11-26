@@ -166,6 +166,11 @@ export const STORE_ROUTE_HANDLER_POLICY: Readonly<Record<string, StoreRouteHandl
     policy: MARKETPLACE_ONLY,
     reason: 'Link previews in social posts; no store page shows them, and it fetches arbitrary URLs.',
   },
+  '/api/paykit-creator': {
+    policy: BOTH,
+    reason:
+      "Whether Paykit already holds a creator, for the store seller's Bitkit setup in its payment settings; it holds no credential and answers only held or not.",
+  },
   '/api/report': {
     policy: MARKETPLACE_ONLY,
     reason: "Reports posts, listings and reviews to the hosted Market's support desk using its server secrets.",
