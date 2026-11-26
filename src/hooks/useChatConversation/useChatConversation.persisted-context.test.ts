@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '@/libs/error/error';
 import { AuthErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
+import { storeThreadRoles } from '@/pipes/commerce/store-seller-side';
 import { useChatStore } from '@/stores/chat/chat.store';
 import { useChatConversation } from './useChatConversation';
 
@@ -121,6 +122,87 @@ describe('useChatConversation with a persisted context that changes while the th
     await storeMessageChangingContext(true);
 
     expect(mocks.commitOpenConversation).toHaveBeenCalledTimes(1);
+    expect(result.current.openState).toBe('ready');
+  });
+
+  it('opens with the route context only on mount and decides again without it', async () => {
+    const route = { orderId: 'route-order' };
+    mocks.commitOpenConversation.mockResolvedValue({ state: 'ready' });
+    const { result } = renderHook(() => useChatConversation(PEER, route));
+    await waitFor(() => expect(result.current.openState).toBe('ready'));
+    await waitFor(() => expect(mocks.getConversationShown).toHaveBeenCalled());
+
+    mocks.commitOpenConversation.mockRejectedValueOnce(storeRefusal());
+    await storeMessageChangingContext(false);
+    await waitFor(() => expect(result.current.openState).toBe('store_restricted'));
+    await act(async () => {
+      useChatStore.getState().setStoreThreadRoles(storeThreadRoles([], 'm'.repeat(52)));
+    });
+    await waitFor(() => expect(mocks.commitOpenConversation).toHaveBeenCalledTimes(3));
+
+    expect(mocks.commitOpenConversation.mock.calls).toEqual([[PEER, route], [PEER], [PEER]]);
+  });
+
+  it('restricts the thread as soon as a sale message arrives, before the open decides', async () => {
+    mocks.commitOpenConversation.mockResolvedValueOnce({ state: 'ready' });
+    const { result } = renderHook(() => useChatConversation(PEER));
+    await waitFor(() => expect(result.current.openState).toBe('ready'));
+    await waitFor(() => expect(mocks.getConversationShown).toHaveBeenCalled());
+
+    mocks.commitOpenConversation.mockReturnValueOnce(new Promise(() => undefined));
+    await storeMessageChangingContext(false);
+
+    expect(result.current.openState).toBe('store_restricted');
+    expect(mocks.commitOpenConversation).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a thread closed when a sale message overtakes a reopen held after a purchase message', async () => {
+    mocks.commitOpenConversation.mockRejectedValueOnce(storeRefusal());
+    mocks.getConversationShown.mockResolvedValue(false);
+    const { result } = renderHook(() => useChatConversation(PEER));
+    await waitFor(() => expect(result.current.openState).toBe('store_restricted'));
+    await waitFor(() => expect(mocks.getConversationShown).toHaveBeenCalled());
+
+    let finishReopen: (value: { state: 'ready' }) => void = () => undefined;
+    mocks.commitOpenConversation.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishReopen = resolve;
+      }),
+    );
+    await storeMessageChangingContext(true);
+    mocks.commitOpenConversation.mockRejectedValueOnce(storeRefusal());
+    await storeMessageChangingContext(false);
+    expect(result.current.openState).toBe('store_restricted');
+
+    await act(async () => {
+      finishReopen({ state: 'ready' });
+      await Promise.resolve();
+    });
+
+    expect(result.current.openState).toBe('store_restricted');
+    expect(mocks.commitOpenConversation.mock.calls).toEqual([[PEER, undefined], [PEER], [PEER]]);
+  });
+
+  it('takes the first answer for another peer as its baseline', async () => {
+    const OTHER = 'o'.repeat(52);
+    mocks.commitOpenConversation.mockResolvedValue({ state: 'ready' });
+    mocks.getConversationShown.mockImplementation(async (peer: string) => peer === PEER);
+    const { result, rerender } = renderHook(({ peer }) => useChatConversation(peer), {
+      initialProps: { peer: PEER },
+    });
+    await waitFor(() => expect(result.current.openState).toBe('ready'));
+    await waitFor(() => expect(mocks.getConversationShown).toHaveBeenCalledWith(PEER));
+
+    rerender({ peer: OTHER });
+    await waitFor(() => expect(mocks.getConversationShown).toHaveBeenCalledWith(OTHER));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(mocks.commitOpenConversation.mock.calls).toEqual([
+      [PEER, undefined],
+      [OTHER, undefined],
+    ]);
     expect(result.current.openState).toBe('ready');
   });
 });

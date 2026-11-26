@@ -767,6 +767,52 @@ describe('ChatController sale threads in a store', () => {
     await expect(ChatController.commitOpenConversation(FRIEND, purchase)).resolves.toEqual({ state: 'ready' });
   });
 
+  it('refuses an open held between a purchase message and a sale message, and keeps the judged context', async () => {
+    setStoreSeller(STORE_SELLER);
+    const purchase = { orderId: 'bought-from-friend' };
+    let persisted = thread(FRIEND, purchase);
+    vi.mocked(ChatApplication.getConversations).mockImplementation(async () => [persisted] as never);
+    vi.mocked(ChatApplication.getConversation).mockImplementation(async () => persisted as never);
+    vi.mocked(CommerceApplication.getMarketplaceOrders).mockResolvedValue([
+      { id: 'bought-from-friend', buyerPubky: VIEWER, sellerPubky: FRIEND },
+      { id: 'sold-to-friend', buyerPubky: FRIEND, sellerPubky: VIEWER },
+    ] as never);
+    await ChatController.fetchStoreThreadRoles();
+    let release: () => void = () => undefined;
+    vi.mocked(ChatApplication.openConversation).mockImplementation(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return { state: 'ready' };
+    });
+
+    const opening = ChatController.commitOpenConversation(FRIEND, purchase);
+    await vi.waitFor(() => expect(ChatApplication.openConversation).toHaveBeenCalled());
+    persisted = thread(FRIEND, { orderId: 'sold-to-friend' });
+    release();
+
+    await expect(opening).rejects.toMatchObject(refused);
+    expect(ChatApplication.openConversation).toHaveBeenCalledWith(VIEWER, FRIEND, purchase, expect.anything(), {
+      judgedContext: purchase,
+    });
+  });
+
+  it('opens without a write context when the stored context it judged is still stored', async () => {
+    setStoreSeller(STORE_SELLER);
+    const purchase = thread(FRIEND, { orderId: 'bought-from-friend' });
+    vi.mocked(ChatApplication.getConversations).mockResolvedValue([purchase] as never);
+    vi.mocked(ChatApplication.getConversation).mockResolvedValue(purchase as never);
+    vi.mocked(CommerceApplication.getMarketplaceOrders).mockResolvedValue([
+      { id: 'bought-from-friend', buyerPubky: VIEWER, sellerPubky: FRIEND },
+    ] as never);
+    await ChatController.fetchStoreThreadRoles();
+
+    await expect(ChatController.commitOpenConversation(FRIEND)).resolves.toEqual({ state: 'ready' });
+    expect(ChatApplication.openConversation).toHaveBeenCalledWith(VIEWER, FRIEND, undefined, expect.anything(), {
+      judgedContext: { orderId: 'bought-from-friend' },
+    });
+  });
+
   it('shows a thread with no local row yet and every thread for the store seller', async () => {
     setStoreSeller(STORE_SELLER);
     vi.mocked(ChatApplication.getConversation).mockResolvedValue(null);

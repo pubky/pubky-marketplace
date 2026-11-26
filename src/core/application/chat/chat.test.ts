@@ -207,6 +207,68 @@ describe('ChatApplication', () => {
     });
   });
 
+  describe('opening while a message changes the stored context', () => {
+    const purchase = { orderId: 'bought-from-bob' };
+    const sale = { orderId: 'sold-to-bob' };
+
+    /** Holds the open at its identity read until `release` runs. */
+    const holdOpenAtIdentity = () => {
+      const ensureIdentity = ChatApplication.ensureIdentity.bind(ChatApplication);
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      vi.spyOn(ChatApplication, 'ensureIdentity').mockImplementation(async (...args) => {
+        await gate;
+        return await ensureIdentity(...args);
+      });
+      return () => release();
+    };
+
+    beforeEach(async () => {
+      await ChatApplication.ensureIdentity(ALICE);
+      await ChatApplication.ensureIdentity(BOB);
+      await ChatApplication.openConversation(ALICE, BOB);
+      await LocalChatService.touchConversation(ALICE, BOB, {
+        sentAt: 1,
+        body: 'About my order',
+        direction: 'received',
+        context: purchase,
+      });
+      await LocalChatService.updateConversation(ALICE, BOB, { priv_state_dirty: false });
+    });
+
+    it('keeps a sale context a message stored after the open was judged on the purchase', async () => {
+      const release = holdOpenAtIdentity();
+      const opening = ChatApplication.openConversation(ALICE, BOB, purchase, undefined, { judgedContext: purchase });
+      await LocalChatService.touchConversation(ALICE, BOB, {
+        sentAt: 2,
+        body: 'About the sale',
+        direction: 'received',
+        context: sale,
+      });
+      await LocalChatService.updateConversation(ALICE, BOB, { priv_state_dirty: false });
+      release();
+      await opening;
+
+      expect(await LocalChatService.getConversation(ALICE, BOB)).toMatchObject({
+        last_context: sale,
+        priv_state_dirty: false,
+      });
+    });
+
+    it('writes the route context while the stored context is still the judged one', async () => {
+      await ChatApplication.openConversation(ALICE, BOB, { listingId: 'boots' }, undefined, {
+        judgedContext: purchase,
+      });
+
+      expect(await LocalChatService.getConversation(ALICE, BOB)).toMatchObject({
+        last_context: { listingId: 'boots' },
+        priv_state_dirty: true,
+      });
+    });
+  });
+
   describe('outbox', () => {
     it('backs off on retryable failures and fails permanently on others', async () => {
       await ChatApplication.ensureIdentity(ALICE);

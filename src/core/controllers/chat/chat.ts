@@ -6,6 +6,7 @@ import { CHAT_FETCH_CONCURRENCY, CHAT_PING_MAX_HANDLING_ATTEMPTS } from '@/confi
 import { getStoreSeller } from '@/config/store-mode';
 import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import { StoreSellerGate } from '@/controllers/store-seller-gate/store-seller-gate';
+import { sameChatContext } from '@/libs/chat/context';
 import { isChatPingSlot } from '@/libs/chat/paths';
 import { isChatPing } from '@/libs/chat/schemas';
 import { type AppError, isAppError } from '@/libs/error/error';
@@ -411,9 +412,23 @@ export class ChatController {
     const signal = captureAuthScope();
     const sellsHere = StoreSellerGate.canSellHere(me);
     const peer = this.normalizePeer(peerPubky);
-    if (!sellsHere) await this.assertNotSaleThread(me, peer, context, signal);
+    if (sellsHere) return await ChatApplication.openConversation(me, peer, context, signal);
+    // Read before the check, so a message that stores a newer context while the open is in flight keeps it,
+    // and the thread is judged again under that context.
+    const judgedContext = await this.storedContext(me, peer);
+    await this.assertNotSaleThread(me, peer, context, signal);
     signal.throwIfAborted();
-    return await ChatApplication.openConversation(me, peer, context, signal);
+    const result = await ChatApplication.openConversation(me, peer, context, signal, { judgedContext });
+    const stored = await this.storedContext(me, peer);
+    signal.throwIfAborted();
+    if (!sameChatContext(stored, judgedContext) && !sameChatContext(stored, context ?? judgedContext)) {
+      await this.assertNotSaleThread(me, peer, undefined, signal);
+    }
+    return result;
+  }
+
+  private static async storedContext(me: string, peer: string): Promise<ChatContext | null> {
+    return (await ChatApplication.getConversation(me, peer))?.last_context ?? null;
   }
 
   /** Queues locally (the UI updates at once), then starts delivery. Returns the message row id. */

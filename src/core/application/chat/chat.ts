@@ -323,16 +323,20 @@ export class ChatApplication {
 
   // =========================================================== conversations
 
-  /** Makes sure a conversation row exists and reports whether the peer can be messaged. */
+  /**
+   * Makes sure a conversation row exists and reports whether the peer can be messaged. With `judgedContext`,
+   * the stored context the caller decided on, `context` is written only while that is still the stored one.
+   */
   static async openConversation(
     me: string,
     peer: string,
     context?: ChatContext,
     signal?: AbortSignal,
+    { judgedContext }: { judgedContext?: ChatContext | null } = {},
   ): Promise<ChatOpenResult> {
     this.assertPeer(me, peer);
     if ((await this.ensureIdentity(me, signal)) !== 'ready') return { state: 'needs_reauth' };
-    const row = await this.ensureConversationRow(me, peer, 'local', { context, signal });
+    const row = await this.ensureConversationRow(me, peer, 'local', { context, judgedContext, signal });
     // Opening is a user action: a peer who had no key last time gets one more look.
     const keys = await this.resolvePeerKey(me, peer, { force: row.peer_state === 'no_key', signal });
     return keys.state === 'ready' ? { state: 'ready' } : { state: 'peer_not_enabled' };
@@ -344,19 +348,18 @@ export class ChatApplication {
     origin: ChatConversationOrigin,
     {
       context,
+      judgedContext,
       extra = {},
       signal,
-    }: { context?: ChatContext; extra?: Partial<ChatConversationModelSchema>; signal?: AbortSignal } = {},
+    }: {
+      context?: ChatContext;
+      judgedContext?: ChatContext | null;
+      extra?: Partial<ChatConversationModelSchema>;
+      signal?: AbortSignal;
+    } = {},
   ): Promise<ChatConversationModelSchema> {
     const existing = await LocalChatService.getConversation(me, peer);
-    if (existing) {
-      if (context && !sameChatContext(existing.last_context, context)) {
-        signal?.throwIfAborted();
-        await LocalChatService.updateConversation(me, peer, { last_context: context, priv_state_dirty: true });
-        return { ...existing, last_context: context };
-      }
-      return existing;
-    }
+    if (existing) return await this.writeConversationContext(me, peer, existing, { context, judgedContext, signal });
     const identity = await this.requireIdentity(me, signal);
     const now = Date.now();
     const row: ChatConversationModelSchema = {
@@ -381,8 +384,33 @@ export class ChatApplication {
       ...extra,
     };
     signal?.throwIfAborted();
-    await LocalChatService.upsertConversation(row);
-    return row;
+    // A message may have created the row while the identity was read; its context and facts stay.
+    const stored = await LocalChatService.addConversation(row);
+    if (stored === row) return row;
+    return await this.writeConversationContext(me, peer, stored, { context, judgedContext, signal });
+  }
+
+  /**
+   * Writes a context to an existing row. Without `judgedContext` it replaces whatever is stored; with it,
+   * only while the stored context is still the judged one, so a newer context a message stored stays.
+   */
+  private static async writeConversationContext(
+    me: string,
+    peer: string,
+    row: ChatConversationModelSchema,
+    {
+      context,
+      judgedContext,
+      signal,
+    }: { context?: ChatContext; judgedContext?: ChatContext | null; signal?: AbortSignal },
+  ): Promise<ChatConversationModelSchema> {
+    if (!context || sameChatContext(row.last_context, context)) return row;
+    signal?.throwIfAborted();
+    if (judgedContext === undefined) {
+      await LocalChatService.updateConversation(me, peer, { last_context: context, priv_state_dirty: true });
+      return { ...row, last_context: context };
+    }
+    return (await LocalChatService.replaceConversationContext(me, peer, judgedContext, context)) ?? row;
   }
 
   // ==================================================================== send
