@@ -45,7 +45,7 @@ describe('Button', () => {
 
     rerender(<Button variant="dark">Dark</Button>);
     button = screen.getByRole('button');
-    expect(button).toHaveClass('bg-neutral-900', 'text-white');
+    expect(button).toHaveClass('bg-card', 'border-card', 'text-foreground');
 
     rerender(<Button variant="dark-outline">Dark Outline</Button>);
     button = screen.getByRole('button');
@@ -197,13 +197,13 @@ describe('Button - Attributes and refs', () => {
     render(<Button tabIndex={0}>Focusable Button</Button>);
     const button = screen.getByRole('button');
     expect(button).toHaveAttribute('tabIndex', '0');
-    expect(button).toHaveClass('focus-visible:border-ring', 'focus-visible:ring-ring/50');
+    expect(button).toHaveClass('focus-visible:border-brand', 'focus-visible:ring-ring');
   });
 
   it('handles hover states correctly', () => {
     render(<Button variant="default">Hover Button</Button>);
     const button = screen.getByRole('button');
-    expect(button).toHaveClass('hover:!bg-brand/30');
+    expect(button).toHaveClass('hover:!bg-brand/32');
   });
 
   it('handles invalid states correctly', () => {
@@ -235,10 +235,10 @@ describe('Button - Attributes and refs', () => {
       'text-sm',
       'transition-all',
       'disabled:pointer-events-none',
-      'disabled:opacity-50',
+      'disabled:opacity-30',
       'shrink-0',
       'outline-none',
-      'font-semibold',
+      'font-bold',
       'cursor-pointer',
       'rounded-full',
       'border',
