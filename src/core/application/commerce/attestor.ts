@@ -93,8 +93,8 @@ export class CommerceAttestorApplication {
    * outcome has expired, so until it settles that outcome confirms nothing), or last settled as a
    * failed read. A failed re-read keeps the recorded windows in use but does not make the expired
    * outcome current, so the attestor stays unconfirmed until a read verifies the profile or finds it
-   * absent. An absent profile whose earlier verified windows still narrow the trust list is listed
-   * by {@link retainedCutoffProfileAttestors} instead.
+   * absent. An absent profile whose earlier verified windows still end a key's effective window is
+   * listed by {@link retainedCutoffProfileAttestors} instead.
    */
   static unconfirmedProfileAttestors(): string[] {
     if (getCommerceAdapterMode() === 'sandbox') return [];
@@ -106,20 +106,42 @@ export class CommerceAttestorApplication {
 
   /**
    * Configured attestors whose profile was last found absent while windows recorded from an earlier
-   * verified copy still narrow the configured trust list. The recorded windows stay in use, because
-   * a profile can only narrow trust and a missing profile does not undo a cutoff it stated, but
-   * nothing current confirms them: a process that never verified the profile applies the configured
-   * windows instead.
+   * verified copy still end a key's effective window. The recorded windows stay in use, because a
+   * profile can only narrow trust and a missing profile does not undo a cutoff it stated, but nothing
+   * current confirms them: a process that never verified the profile applies only the configured
+   * windows and the currently verified profiles.
+   *
+   * The baseline is the configured list narrowed by the currently verified profiles. An absent
+   * profile is listed when, for some key, its windows end the window earlier than the baseline and
+   * at the same end as all absent profiles together: a cutoff that a verified profile already
+   * matches or beats changes nothing, and of two absent profiles cutting one key, only the one whose
+   * cutoff applies is listed (both, when they state the same end).
    */
   static retainedCutoffProfileAttestors(): string[] {
     if (getCommerceAdapterMode() === 'sandbox') return [];
     const configured = configuredMarketplaceTrustedAttestors();
-    return this.configuredAttestorIds().filter((attestorId) => {
-      const read = this.profileReads.get(attestorId);
-      if (read === undefined || read.pending !== null || read.outcome !== 'absent') return false;
-      const narrowed = narrowTrustedAttestors(configured, attestorProfileKeyWindowsFrom(attestorId));
-      return narrowed.some((entry, index) => entry.validUntil !== configured[index]?.validUntil);
-    });
+    const attestorIds = this.configuredAttestorIds();
+    const verifiedWindows = attestorIds
+      .filter((attestorId) => this.settledAs(attestorId, 'verified'))
+      .flatMap((attestorId) => attestorProfileKeyWindowsFrom(attestorId));
+    const absentIds = attestorIds.filter((attestorId) => this.settledAs(attestorId, 'absent'));
+    const baseline = narrowTrustedAttestors(configured, verifiedWindows);
+    const retained = narrowTrustedAttestors(configured, [
+      ...verifiedWindows,
+      ...absentIds.flatMap((attestorId) => attestorProfileKeyWindowsFrom(attestorId)),
+    ]);
+    return absentIds.filter((attestorId) =>
+      narrowTrustedAttestors(configured, [...verifiedWindows, ...attestorProfileKeyWindowsFrom(attestorId)]).some(
+        (entry, index) =>
+          entry.validUntil !== baseline[index]?.validUntil && entry.validUntil === retained[index]?.validUntil,
+      ),
+    );
+  }
+
+  /** Whether the attestor's last profile read settled with this outcome and no read is in flight. */
+  private static settledAs(attestorId: string, outcome: AttestorProfileReadOutcome): boolean {
+    const read = this.profileReads.get(attestorId);
+    return read !== undefined && read.pending === null && read.outcome === outcome;
   }
 
   private static configuredAttestorIds(): string[] {

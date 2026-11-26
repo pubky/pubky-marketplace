@@ -426,6 +426,153 @@ describe('CommerceAttestorApplication.loadKeyWindows', () => {
     });
   });
 
+  describe('when several profiles cut the same keys and some are later absent', () => {
+    const FEB = '2026-02-01T00:00:00Z';
+    const MAY = '2026-05-01T00:00:00Z';
+    const SEP = '2026-09-01T00:00:00Z';
+    const first = createAttestorTestKey();
+    const second = createAttestorTestKey();
+    const third = createAttestorTestKey();
+    type TestKey = typeof first;
+    type Served = ReturnType<typeof servedAttestorProfile> | null;
+
+    /** A verified profile signed by `signer` that ends each listed key's window at its cutoff. */
+    function profileOf(signer: TestKey, cutoffs: [TestKey, string][]) {
+      const entries = [
+        ...(cutoffs.some(([key]) => key === signer) ? [] : [{ pubky: signer.pubky, validFrom: FROM }]),
+        ...cutoffs.map(([key, compromisedFrom]) => ({ pubky: key.pubky, validFrom: FROM, compromisedFrom })),
+      ];
+      return servedAttestorProfile(signer.pubky, signedAttestorProfile(signer, entries));
+    }
+
+    /** Each attestor answers its reads in turn (its last answer repeats); an attestor without answers is absent. */
+    function serve(answers: Map<TestKey, Served[]>) {
+      const reads = new Map<string, number>();
+      vi.spyOn(NexusMarketplaceService, 'fetchAttestorProfile').mockImplementation(async ({ attestor_id }) => {
+        const queue = [...answers].find(([key]) => key.pubky === attestor_id)?.[1];
+        if (queue === undefined) return null;
+        const count = reads.get(attestor_id) ?? 0;
+        reads.set(attestor_id, count + 1);
+        return queue[Math.min(count, queue.length - 1)] ?? null;
+      });
+    }
+
+    /** The first read verifies every profile; the read after the TTL finds some of them absent. */
+    async function verifyThenRefresh(answers: Map<TestKey, Served[]>) {
+      serve(answers);
+      await CommerceAttestorApplication.loadKeyWindows();
+      vi.advanceTimersByTime(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+      await CommerceAttestorApplication.loadKeyWindows();
+    }
+
+    const untilOf = (key: TestKey) =>
+      marketplaceTrustedAttestors().find(({ pubky }) => pubky === key.pubky)?.validUntil;
+    const iso = (at: string) => new Date(at).toISOString();
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      trust(first, second, third);
+    });
+
+    it('does not list an absent profile whose cutoff a verified profile beats', async () => {
+      await verifyThenRefresh(
+        new Map([
+          [first, [profileOf(first, [[first, MAY]]), null]],
+          [second, [profileOf(second, [[first, FEB]])]],
+        ]),
+      );
+
+      expect(untilOf(first)).toBe(iso(FEB));
+      expect(CommerceAttestorApplication.retainedCutoffProfileAttestors()).toEqual([]);
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+    });
+
+    it('does not list an absent profile whose cutoff a verified profile matches', async () => {
+      await verifyThenRefresh(
+        new Map([
+          [first, [profileOf(first, [[first, MAY]]), null]],
+          [second, [profileOf(second, [[first, MAY]])]],
+        ]),
+      );
+
+      expect(untilOf(first)).toBe(iso(MAY));
+      expect(CommerceAttestorApplication.retainedCutoffProfileAttestors()).toEqual([]);
+    });
+
+    it('lists an absent profile whose cutoff is earlier than the configured bounds and every verified profile', async () => {
+      await verifyThenRefresh(
+        new Map([
+          [first, [profileOf(first, [[first, MAY]]), null]],
+          [second, [profileOf(second, [[first, SEP]])]],
+        ]),
+      );
+
+      expect(untilOf(first)).toBe(iso(MAY));
+      expect(CommerceAttestorApplication.retainedCutoffProfileAttestors()).toEqual([first.pubky]);
+      expect(CommerceAttestorApplication.unconfirmedProfileAttestors()).toEqual([]);
+    });
+
+    it('lists an absent profile when only one of its cutoffs is still earlier than a verified profile', async () => {
+      await verifyThenRefresh(
+        new Map([
+          [
+            first,
+            [
+              profileOf(first, [
+                [first, MAY],
+                [third, MAY],
+              ]),
+              null,
+            ],
+          ],
+          [second, [profileOf(second, [[first, FEB]])]],
+        ]),
+      );
+
+      expect(untilOf(first)).toBe(iso(FEB));
+      expect(untilOf(third)).toBe(iso(MAY));
+      expect(CommerceAttestorApplication.retainedCutoffProfileAttestors()).toEqual([first.pubky]);
+    });
+
+    it('lists only the absent profile that still narrows a key when a verified profile beats the other', async () => {
+      await verifyThenRefresh(
+        new Map([
+          [first, [profileOf(first, [[first, MAY]]), null]],
+          [second, [profileOf(second, [[second, MAY]]), null]],
+          [third, [profileOf(third, [[first, FEB]])]],
+        ]),
+      );
+
+      expect(untilOf(first)).toBe(iso(FEB));
+      expect(untilOf(second)).toBe(iso(MAY));
+      expect(CommerceAttestorApplication.retainedCutoffProfileAttestors()).toEqual([second.pubky]);
+    });
+
+    it('lists only the absent profile whose cutoff applies when two absent profiles cut one key', async () => {
+      await verifyThenRefresh(
+        new Map([
+          [first, [profileOf(first, [[third, FEB]]), null]],
+          [second, [profileOf(second, [[third, MAY]]), null]],
+        ]),
+      );
+
+      expect(untilOf(third)).toBe(iso(FEB));
+      expect(CommerceAttestorApplication.retainedCutoffProfileAttestors()).toEqual([first.pubky]);
+    });
+
+    it('lists both absent profiles when they cut one key at the same time', async () => {
+      await verifyThenRefresh(
+        new Map([
+          [first, [profileOf(first, [[third, MAY]]), null]],
+          [second, [profileOf(second, [[third, MAY]]), null]],
+        ]),
+      );
+
+      expect(untilOf(third)).toBe(iso(MAY));
+      expect(CommerceAttestorApplication.retainedCutoffProfileAttestors()).toEqual([first.pubky, second.pubky]);
+    });
+  });
+
   describe('while a profile refresh is pending past the bounded wait', () => {
     type ServedProfile = ReturnType<typeof servedAttestorProfile> | null;
 

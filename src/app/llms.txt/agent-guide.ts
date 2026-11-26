@@ -70,10 +70,11 @@ before; a rating computed from them is unconfirmed and may be higher or lower th
       : `\n\nCutoffs kept from a profile the index no longer serves:\n${retainedCutoffAttestorIds
           .map(
             (pubky) =>
-              `- ${pubky}: this Shop verified this attestor's signed profile earlier, and the windows above still end
-  where that profile ended them, but INDEX/v0/marketplace/attestor/${pubky}/profile now answers 404. A profile
-  can only narrow trust, so this Shop keeps a cutoff the profile stated rather than reopen the window when the
-  profile disappears; a Shop server that never verified the profile applies the configured windows instead.`,
+              `- ${pubky}: this Shop verified this attestor's signed profile earlier, and at least one window above
+  still ends where that profile ended it, earlier than the configured bounds and the profiles verified now would
+  end it, but INDEX/v0/marketplace/attestor/${pubky}/profile now answers 404. A profile can only narrow trust, so
+  this Shop keeps a cutoff the profile stated rather than reopen the window when the profile disappears; a Shop
+  server that never verified the profile applies only the configured bounds and the profiles verified now.`,
           )
           .join('\n')}
 

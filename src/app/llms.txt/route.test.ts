@@ -497,9 +497,11 @@ describe('GET /llms.txt', () => {
       }
       expect(afterAbsent).toContain(`${RETAINED_HEADING}\n- ${signer.pubky}:`);
       expect(copy).toContain(
-        `this Shop verified this attestor's signed profile earlier, and the windows above still end where that profile ended them, but INDEX/v0/marketplace/attestor/${signer.pubky}/profile now answers 404.`,
+        `this Shop verified this attestor's signed profile earlier, and at least one window above still ends where that profile ended it, earlier than the configured bounds and the profiles verified now would end it, but INDEX/v0/marketplace/attestor/${signer.pubky}/profile now answers 404.`,
       );
-      expect(copy).toContain('a Shop server that never verified the profile applies the configured windows instead.');
+      expect(copy).toContain(
+        'a Shop server that never verified the profile applies only the configured bounds and the profiles verified now.',
+      );
       expect(copy).toContain(
         'every configured key window above is unconfirmed while a cutoff is listed here, and another Shop server may publish later window ends for the same keys.',
       );
@@ -561,6 +563,132 @@ describe('GET /llms.txt', () => {
       expect(body).not.toContain(RETAINED_HEADING);
       expect(body).not.toContain('Configured bounds, profile not verified:');
       expect(body).not.toContain('[window not confirmed');
+    });
+  });
+
+  describe('when a profile that cut a key answers 404 while other profiles cut the same keys', () => {
+    const validFrom = '2026-01-01T00:00:00Z';
+    const FEB = '2026-02-01T00:00:00Z';
+    const MAY = '2026-05-01T00:00:00Z';
+    const SEP = '2026-09-01T00:00:00Z';
+    const RETAINED_HEADING = 'Cutoffs kept from a profile the index no longer serves:';
+    const first = createAttestorTestKey();
+    const second = createAttestorTestKey();
+    const third = createAttestorTestKey();
+    type TestKey = typeof first;
+    type Served = ReturnType<typeof servedAttestorProfile> | null;
+
+    function profileOf(signer: TestKey, cutoffs: [TestKey, string][]) {
+      const entries = [
+        ...(cutoffs.some(([key]) => key === signer) ? [] : [{ pubky: signer.pubky, validFrom }]),
+        ...cutoffs.map(([key, compromisedFrom]) => ({ pubky: key.pubky, validFrom, compromisedFrom })),
+      ];
+      return servedAttestorProfile(signer.pubky, signedAttestorProfile(signer, entries));
+    }
+
+    /** Serves the guide twice: once while every profile verifies, then after the TTL, when some answer 404. */
+    async function guideAfterRefresh(answers: Map<TestKey, Served[]>) {
+      vi.useFakeTimers();
+      vi.stubEnv(
+        'PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS',
+        JSON.stringify(
+          [first, second, third].map(({ pubky }, index) => ({ pubky, label: `Runtime ${index + 1}`, validFrom })),
+        ),
+      );
+      const reads = new Map<string, number>();
+      vi.mocked(NexusMarketplaceService.fetchAttestorProfile).mockImplementation(async ({ attestor_id }) => {
+        const queue = [...answers].find(([key]) => key.pubky === attestor_id)?.[1];
+        if (queue === undefined) return null;
+        const count = reads.get(attestor_id) ?? 0;
+        reads.set(attestor_id, count + 1);
+        return queue[Math.min(count, queue.length - 1)] ?? null;
+      });
+      await GET();
+      vi.advanceTimersByTime(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
+      return (await GET()).text();
+    }
+
+    const window = (key: TestKey, until: string) =>
+      `${key.pubky}:${Math.ceil(Date.parse(validFrom) / 1000)}:${Math.ceil(Date.parse(until) / 1000)}`;
+    const notice = (body: string) =>
+      body.includes(RETAINED_HEADING)
+        ? body.slice(body.indexOf(RETAINED_HEADING), body.indexOf('Because no current profile confirms these cutoffs'))
+        : '';
+    const listed = (body: string) =>
+      notice(body)
+        .split('\n')
+        .filter((line) => line.startsWith('- '))
+        .map((line) => line.slice(2, 54));
+
+    it('adds no notice and no marker when a verified profile cuts the key earlier than the absent one did', async () => {
+      const body = await guideAfterRefresh(
+        new Map([
+          [first, [profileOf(first, [[first, MAY]]), null]],
+          [second, [profileOf(second, [[first, FEB]])]],
+        ]),
+      );
+
+      expect(body).toContain(window(first, FEB));
+      expect(body).not.toContain(RETAINED_HEADING);
+      expect(body).not.toContain('[window not confirmed');
+    });
+
+    it('adds no notice when a verified profile cuts the key at the same time as the absent one did', async () => {
+      const body = await guideAfterRefresh(
+        new Map([
+          [first, [profileOf(first, [[first, MAY]]), null]],
+          [second, [profileOf(second, [[first, MAY]])]],
+        ]),
+      );
+
+      expect(body).toContain(window(first, MAY));
+      expect(body).not.toContain(RETAINED_HEADING);
+      expect(body).not.toContain('[window not confirmed');
+    });
+
+    it('warns and marks every window when the absent cutoff is earlier than every verified one', async () => {
+      const body = await guideAfterRefresh(
+        new Map([
+          [first, [profileOf(first, [[first, MAY]]), null]],
+          [second, [profileOf(second, [[first, SEP]])]],
+        ]),
+      );
+      const keyLines = body.split('\n').filter((line) => /^- [a-z0-9]{52} \(/.test(line));
+
+      expect(body).toContain(window(first, MAY));
+      expect(listed(body)).toEqual([first.pubky]);
+      expect(keyLines.length).toBe(MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS.length + 3);
+      for (const line of keyLines) {
+        expect(line).toContain(
+          '[window not confirmed: a cutoff listed below comes from a profile the index no longer serves]',
+        );
+      }
+    });
+
+    it('names only the absent profile that still narrows a key when a verified profile beats the other', async () => {
+      const body = await guideAfterRefresh(
+        new Map([
+          [first, [profileOf(first, [[first, MAY]]), null]],
+          [second, [profileOf(second, [[second, MAY]]), null]],
+          [third, [profileOf(third, [[first, FEB]])]],
+        ]),
+      );
+
+      expect(body).toContain(window(first, FEB));
+      expect(body).toContain(window(second, MAY));
+      expect(listed(body)).toEqual([second.pubky]);
+    });
+
+    it('names only the absent profile whose cutoff applies when two absent profiles cut one key', async () => {
+      const body = await guideAfterRefresh(
+        new Map([
+          [first, [profileOf(first, [[third, FEB]]), null]],
+          [second, [profileOf(second, [[third, MAY]]), null]],
+        ]),
+      );
+
+      expect(body).toContain(window(third, FEB));
+      expect(listed(body)).toEqual([first.pubky]);
     });
   });
 
