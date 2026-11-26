@@ -17,6 +17,7 @@ import {
 import sellerPaidShippingAddress from '@/test/fixtures/commerce/seller-paid-shipping-address.json';
 import { REFUND_FIXTURE_ADDRESS, USDT_ORDER_REFUND_DESTINATION_WIRE } from '@/test/fixtures/commerce/usdt-refund.wire';
 import {
+  formatMarketplaceOrderZodIssues,
   isMarketplaceAwardCheckoutEligible,
   marketplaceBidHistorySchema,
   marketplaceBitcoinQuoteSchema,
@@ -27,6 +28,7 @@ import {
   marketplaceOrderSchema,
   marketplaceParticipantOrderSchema,
   marketplaceSellerListingProjectionSchema,
+  parseMarketplaceOrderList,
   stripSellerReserveAuthorityFields,
 } from './marketplace-projections';
 
@@ -979,5 +981,128 @@ describe('marketplace order projection — the single Paykit bind', () => {
     expect(parsed.paykitObservation?.txid).toBe('abc');
     expect(parsed.paykitObservation?.asset).toBeUndefined();
     expect(parsed.paykitObservation?.otherRailAsset).toBeUndefined();
+  });
+});
+
+describe('parseMarketplaceOrderList and upstream_inconsistent review_reason (#581)', () => {
+  const validPendingOrder = createOrderFixture('pending_payment', {
+    id: '06cc87e9-60f8-4942-b1f2-1ca6c24b4535',
+    paymentMethod: 'paykit',
+  });
+  const upstreamInconsistentOrder = toCamelCaseWire({
+    ...createOrderFixture('cancelled', {
+      id: '470c02d8-9326-4d89-98f6-199df5a2ffcb',
+      cancellationReason: 'payment window elapsed',
+      receiptId: null,
+      paymentMethod: 'bitcoin',
+    }),
+    payment: {
+      id: '018f47d2-6a27-7c23-a49d-000000000801',
+      order_id: '470c02d8-9326-4d89-98f6-199df5a2ffcb',
+      buyer_pubky: validPendingOrder.buyerPubky,
+      seller_pubky: validPendingOrder.sellerPubky,
+      revision: 2,
+      adapter: 'paykit',
+      state: 'manual_review',
+      confirmations: 0,
+      review_reason: 'upstream_inconsistent',
+      amount: { amount_minor: 13_700, currency: 'USD', exponent: 2 },
+      created_at: '2026-11-26T16:00:00.000Z',
+      updated_at: '2026-11-26T16:10:00.000Z',
+    },
+  });
+  const malformedOrder = toCamelCaseWire({
+    ...createOrderFixture('cancelled', {
+      id: '999c02d8-9326-4d89-98f6-199df5a2ffcb',
+      receiptId: null,
+    }),
+    payment: {
+      id: '018f47d2-6a27-7c23-a49d-000000000802',
+      order_id: '999c02d8-9326-4d89-98f6-199df5a2ffcb',
+      buyer_pubky: validPendingOrder.buyerPubky,
+      seller_pubky: validPendingOrder.sellerPubky,
+      revision: 2,
+      adapter: 'paykit',
+      state: 'manual_review',
+      confirmations: 0,
+      review_reason: 'brand_new_future_reason',
+      amount: { amount_minor: 13_700, currency: 'USD', exponent: 2 },
+      created_at: '2026-11-26T16:00:00.000Z',
+      updated_at: '2026-11-26T16:10:00.000Z',
+    },
+  });
+
+  it('parses upstream_inconsistent and returns valid orders alongside inline parse errors for malformed rows', () => {
+    const reported: unknown[] = [];
+    const result = parseMarketplaceOrderList(
+      { orders: [validPendingOrder, malformedOrder, upstreamInconsistentOrder] },
+      (errors) => reported.push(...errors),
+    );
+
+    expect(result.orders).toHaveLength(2);
+    expect(result.orders[0]?.id).toBe('06cc87e9-60f8-4942-b1f2-1ca6c24b4535');
+    expect(result.orders[1]?.id).toBe('470c02d8-9326-4d89-98f6-199df5a2ffcb');
+    expect(result.orders[1]?.payment?.reviewReason).toBe('upstream_inconsistent');
+
+    expect(result.parseErrors).toHaveLength(1);
+    expect(result.parseErrors[0]).toMatchObject({
+      kind: 'parse_error',
+      index: 1,
+      orderId: '999c02d8-9326-4d89-98f6-199df5a2ffcb',
+    });
+    expect(result.parseErrors[0]?.issues[0]?.path).toBe('orders[1].payment.reviewReason');
+    expect(result.parseErrors[0]?.issues[0]?.message).toContain('invalid value "brand_new_future_reason"');
+    expect(reported).toEqual(result.parseErrors);
+  });
+
+  it('handles non-object malformed order rows with null orderId', () => {
+    const result = parseMarketplaceOrderList({ orders: [validPendingOrder, null] });
+    expect(result.orders).toHaveLength(1);
+    expect(result.parseErrors).toEqual([
+      expect.objectContaining({
+        kind: 'parse_error',
+        index: 1,
+        orderId: null,
+        issues: [expect.objectContaining({ path: 'orders[1]' })],
+      }),
+    ]);
+  });
+
+  it('throws INVALID_RESPONSE with parseIssues only when the top-level orders envelope is invalid', () => {
+    let caught: unknown;
+    try {
+      parseMarketplaceOrderList({ notOrders: [] });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({
+      code: 'INVALID_RESPONSE',
+      context: {
+        parseIssues: [expect.stringContaining('orders:')],
+      },
+    });
+  });
+
+  it('never echoes deliveryAddress values in formatted Zod parse issues', () => {
+    const sentinel = '123 Secret Street';
+    const raw = {
+      deliveryAddress: { format: sentinel, address: { name: sentinel } },
+    };
+    const issues = [
+      {
+        code: 'invalid_value',
+        path: ['deliveryAddress', 'format'],
+        message: 'Invalid option: expected one of "plaintext_v1"|"hpke_v1"',
+        values: ['plaintext_v1', 'hpke_v1'],
+      },
+    ] as Parameters<typeof formatMarketplaceOrderZodIssues>[0];
+    const formatted = formatMarketplaceOrderZodIssues(issues, raw, 'order');
+    expect(formatted).toEqual([
+      {
+        path: 'order.deliveryAddress.format',
+        message: 'Invalid option: expected one of "plaintext_v1"|"hpke_v1"',
+      },
+    ]);
+    expect(JSON.stringify(formatted)).not.toContain(sentinel);
   });
 });

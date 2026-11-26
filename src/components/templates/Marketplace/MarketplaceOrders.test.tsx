@@ -30,6 +30,12 @@ const routerReplace = vi.hoisted(() => vi.fn());
 const ordersState = vi.hoisted(() => ({
   currentUserPubky: 'b'.repeat(52),
   orders: [] as unknown[],
+  parseErrors: [] as Array<{
+    kind: 'parse_error';
+    index: number;
+    orderId: string | null;
+    issues: Array<{ path: string; message: string }>;
+  }>,
   adapterMode: 'sandbox' as string,
   needsSession: false,
   error: null as string | null,
@@ -38,6 +44,7 @@ const ordersState = vi.hoisted(() => ({
 vi.mock('@/hooks/useMarketplaceOrders/useMarketplaceOrders', () => ({
   useMarketplaceOrders: () => ({
     orders: ordersState.orders,
+    parseErrors: ordersState.parseErrors,
     isLoading: false,
     error: ordersState.error,
     needsSession: ordersState.needsSession,
@@ -115,6 +122,7 @@ vi.mock('next/navigation', () => ({
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  ordersState.parseErrors = [];
   useMarketplaceDisplayStore.setState({ showFxEstimate: false, measurementSystem: null });
 });
 
@@ -1938,5 +1946,62 @@ describe('MarketplaceOrders in a region where commerce is blocked', () => {
     expect(screen.queryByRole('status', { name: /region/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/aren't available in your region/)).not.toBeInTheDocument();
     expect(fetchStub).not.toHaveBeenCalled();
+  });
+});
+
+describe('MarketplaceOrders inline parse errors (#581)', () => {
+  beforeEach(() => {
+    ordersState.currentUserPubky = CURRENT_USER;
+    ordersState.adapterMode = 'transaction-service';
+    ordersState.needsSession = false;
+    ordersState.error = null;
+    ordersState.orders = [];
+    ordersState.parseErrors = [];
+    window.history.replaceState(null, '', '/marketplace/orders');
+  });
+
+  it('renders valid orders alongside an inline parse error card for a malformed order', async () => {
+    ordersState.orders = [orderView('pending_payment', 'Valid boots', 'buyer')];
+    ordersState.parseErrors = [
+      {
+        kind: 'parse_error',
+        index: 1,
+        orderId: '470c02d8-9326-4d89-98f6-199df5a2ffcb',
+        issues: [
+          {
+            path: 'orders[1].payment.reviewReason',
+            message: 'invalid value "future_reason"',
+          },
+        ],
+      },
+    ];
+
+    render(<MarketplaceOrders />);
+
+    expect(await screen.findByText('Valid boots')).toBeInTheDocument();
+    const errorCard = screen.getByTestId('marketplace-order-parse-error');
+    expect(errorCard).toHaveAttribute('role', 'alert');
+    expect(errorCard).toHaveTextContent('Order could not be displayed');
+    expect(errorCard).toHaveTextContent('470c02d8-9326-4d89-98f6-199df5a2ffcb');
+    expect(errorCard).toHaveTextContent('orders[1].payment.reviewReason: invalid value "future_reason"');
+  });
+
+  it('shows inline parse error cards instead of No orders yet when every order failed to parse', () => {
+    ordersState.orders = [];
+    ordersState.parseErrors = [
+      {
+        kind: 'parse_error',
+        index: 0,
+        orderId: null,
+        issues: [{ path: 'orders[0]', message: 'Invalid input: expected object, received null' }],
+      },
+    ];
+
+    render(<MarketplaceOrders />);
+
+    expect(screen.queryByText('No orders yet')).not.toBeInTheDocument();
+    const errorCard = screen.getByTestId('marketplace-order-parse-error');
+    expect(errorCard).toHaveTextContent('Order entry #1');
+    expect(errorCard).toHaveTextContent('orders[0]: Invalid input: expected object, received null');
   });
 });

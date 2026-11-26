@@ -25,6 +25,13 @@ beforeAll(() => {
 const view = vi.hoisted(() => ({
   items: [] as unknown[],
   orders: [] as unknown[],
+  orderParseErrors: [] as Array<{
+    kind: 'parse_error';
+    index: number;
+    orderId: string | null;
+    issues: Array<{ path: string; message: string }>;
+  }>,
+  ordersError: null as string | null,
   isLoading: false,
   adapterMode: 'sandbox' as string,
   paykitServerApi: 'fork' as 'fork' | 'upstream',
@@ -271,8 +278,9 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
 vi.mock('@/hooks/useMarketplaceOrders/useMarketplaceOrders', () => ({
   useMarketplaceOrders: () => ({
     orders: view.orders,
+    parseErrors: view.orderParseErrors,
     isLoading: false,
-    error: null,
+    error: view.ordersError,
     needsSession: false,
     adapterMode: view.adapterMode,
     refresh: vi.fn(),
@@ -376,6 +384,8 @@ vi.mock('@/hooks/useMarketplaceSellerSummary/useMarketplaceSellerSummary', () =>
 
 function resetCheckoutView() {
   view.orders = [];
+  view.orderParseErrors = [];
+  view.ordersError = null;
   checkoutActions.pay.mockClear();
   checkoutActions.setFulfillmentChoice.mockReset();
   checkoutActions.remove.mockClear();
@@ -3115,5 +3125,60 @@ describe('MarketplaceCheckout drop-claim path', () => {
 
       expect(await screen.findByText('This drop listing could not be loaded.')).toBeInTheDocument();
     });
+  });
+});
+
+describe('MarketplaceCheckout paying view parse resilience (#581)', () => {
+  beforeEach(() => {
+    resetCheckoutView();
+    view.adapterMode = 'transaction-service';
+  });
+
+  it('finds and displays a valid paying order when another unrelated order in the list is malformed', () => {
+    const paying = createPaykitOrderFixture('unpaid', {
+      holdExpiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+    });
+    view.orders = [paying];
+    view.orderParseErrors = [
+      {
+        kind: 'parse_error',
+        index: 1,
+        orderId: '470c02d8-9326-4d89-98f6-199df5a2ffcb',
+        issues: [{ path: 'orders[1].payment.reviewReason', message: 'invalid value "future_reason"' }],
+      },
+    ];
+    searchParams.current = new URLSearchParams({ order: paying.order.id });
+
+    render(<MarketplaceCheckout />);
+
+    const payingView = screen.getByTestId('marketplace-checkout-paying');
+    expect(within(payingView).getByText(/Awaiting payment · Item reserved/)).toBeInTheDocument();
+    expect(within(payingView).getByText(new RegExp(paying.order.id.slice(0, 8), 'i'))).toBeInTheDocument();
+    expect(within(payingView).queryByTestId('marketplace-order-parse-error')).not.toBeInTheDocument();
+    expect(within(payingView).queryByText('This checkout is no longer waiting for payment.')).not.toBeInTheDocument();
+  });
+
+  it('surfaces the inline parse error card instead of a blank view when the paying order itself fails to parse', () => {
+    const malformedOrderId = '470c02d8-9326-4d89-98f6-199df5a2ffcb';
+    view.orders = [];
+    view.orderParseErrors = [
+      {
+        kind: 'parse_error',
+        index: 0,
+        orderId: malformedOrderId,
+        issues: [{ path: 'orders[0].payment.reviewReason', message: 'invalid value "future_reason"' }],
+      },
+    ];
+    searchParams.current = new URLSearchParams({ order: malformedOrderId });
+
+    render(<MarketplaceCheckout />);
+
+    const payingView = screen.getByTestId('marketplace-checkout-paying');
+    const errorCard = within(payingView).getByTestId('marketplace-order-parse-error');
+    expect(errorCard).toHaveAttribute('role', 'alert');
+    expect(errorCard).toHaveTextContent(malformedOrderId);
+    expect(errorCard).toHaveTextContent('orders[0].payment.reviewReason: invalid value "future_reason"');
+    expect(within(payingView).queryByText('This checkout is no longer waiting for payment.')).not.toBeInTheDocument();
+    expect(within(payingView).getByRole('link', { name: 'View orders' })).toBeInTheDocument();
   });
 });

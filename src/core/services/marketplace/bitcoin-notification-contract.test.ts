@@ -37,6 +37,7 @@ const REVIEW_SENTENCES = {
   confirmation_failed: 'A confirmed Bitcoin payment could not be applied to this order',
   seller_confirmation_window_elapsed: 'The confirmation window ended before you confirmed this payment',
   seller_response_overdue: 'This Bitcoin payment has waited two business days for your decision',
+  upstream_inconsistent: 'The payment provider reported an inconsistent state and needs review',
 } as const;
 
 describe('seller Bitcoin notification contract', () => {
@@ -56,6 +57,7 @@ describe('seller Bitcoin notification contract', () => {
     expect(quarantined).toEqual([expect.objectContaining({ kind: 'unrecognized', type: 'future_bitcoin_notice' })]);
     expect(recognized.map((entry) => entry.type)).toEqual([
       'bitcoin_payment_seen',
+      'bitcoin_manual_review',
       'bitcoin_manual_review',
       'bitcoin_manual_review',
       'bitcoin_manual_review',

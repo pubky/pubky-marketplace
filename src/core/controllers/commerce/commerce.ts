@@ -1377,6 +1377,12 @@ export class CommerceController {
     }
   }
 
+  static async getMarketplaceOrderList() {
+    const result = await CommerceApplication.getMarketplaceOrderList(this.getCurrentUserPubky());
+    this.noteOrderListings(result.orders);
+    return result;
+  }
+
   static async getMarketplaceOrders() {
     const orders = await CommerceApplication.getMarketplaceOrders(this.getCurrentUserPubky());
     this.noteOrderListings(orders);

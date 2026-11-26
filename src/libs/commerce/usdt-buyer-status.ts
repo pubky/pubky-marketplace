@@ -1,4 +1,4 @@
-import { PAYMENT_RECEIVED_REVIEW_COPY } from './bitcoin-buyer-status';
+import { PAYMENT_RECEIVED_REVIEW_COPY, PAYMENT_UPSTREAM_INCONSISTENT_BUYER_COPY } from './bitcoin-buyer-status';
 import { CHECKOUT_HOLD_COPY } from './checkout-hold';
 import { formatCommerceMoney } from './format';
 import { observedPaymentRail } from './paykit-rail';
@@ -160,6 +160,8 @@ export const USDT_SELLER_REVIEW_COPY = {
     'This USDT payment arrived after the payment window ended, so you decide the outcome below. No funds are held by this marketplace.',
   amount_mismatch:
     "This USDT payment doesn't match the order total, so you decide the outcome below. No funds are held by this marketplace.",
+  upstream_inconsistent:
+    'The payment provider reported an inconsistent state for this USDT payment, so an operator needs to review it. No settlement is assumed. No funds are held by this marketplace.',
 } as const;
 
 export const USDT_PHASE_BADGE_LABEL: Record<UsdtSettlementPhase, string> = {
@@ -191,11 +193,14 @@ export function usdtPhaseCopy(order: UsdtStatusOrder, payment: UsdtStatusPayment
  */
 export function usdtSellerReviewCopy(payment: UsdtStatusPayment): string | null {
   const reason = payment?.reviewReason;
-  return reason === 'late_settlement' || reason === 'amount_mismatch' ? USDT_SELLER_REVIEW_COPY[reason] : null;
+  return reason === 'late_settlement' || reason === 'amount_mismatch' || reason === 'upstream_inconsistent'
+    ? USDT_SELLER_REVIEW_COPY[reason]
+    : null;
 }
 
 function usdtBuyerReviewCopy(payment: UsdtStatusPayment): string {
   if (payment?.reviewReason === 'refund_required') return CHECKOUT_HOLD_COPY.refundRequiredBuyer;
+  if (payment?.reviewReason === 'upstream_inconsistent') return PAYMENT_UPSTREAM_INCONSISTENT_BUYER_COPY;
   if (payment?.reviewReason === 'amount_mismatch') return USDT_AMOUNT_MISMATCH_COPY;
   return PAYMENT_RECEIVED_REVIEW_COPY;
 }

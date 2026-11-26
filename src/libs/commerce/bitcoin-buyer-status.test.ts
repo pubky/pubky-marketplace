@@ -212,7 +212,7 @@ describe('bitcoin buyer status', () => {
       },
     );
 
-    it.each([null, 'unpinned_legacy'] as const)(
+    it.each([null, 'unpinned_legacy', 'upstream_inconsistent'] as const)(
       'does not count a resolved review with reason %s as on-chain',
       (reviewReason) => {
         const payment = { state: 'confirmed', confirmations: 0, reviewReason, resolutionOutcome: 'paid' };
@@ -280,6 +280,11 @@ describe('bitcoin buyer status', () => {
         expect(bitcoinConfirmationExists(order, { ...payment, reviewReason })).toBe(true);
       },
     );
+
+    it('does not count an upstream_inconsistent review on a confirmed request as on-chain', () => {
+      const { order, payment } = capturedReaperReview();
+      expect(bitcoinConfirmationExists(order, { ...payment, reviewReason: 'upstream_inconsistent' })).toBe(false);
+    });
 
     it('does not count a confirmed request outside a review as on-chain', () => {
       const order = { ...seenOrder, paykitRequestState: 'confirmed' as const };

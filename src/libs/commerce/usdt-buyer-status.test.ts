@@ -157,11 +157,15 @@ describe('USDT status copy', () => {
 
   it('says the buyer review states in USDT terms, reusing the existing review sentences', () => {
     const { order } = createUsdtOrderFixture('final');
-    const review = (reviewReason: 'amount_mismatch' | 'late_settlement' | 'refund_required') =>
-      usdtPhaseCopy(order, createPaymentFixture('manual_review', { adapter: 'paykit', reviewReason }), true);
+    const review = (
+      reviewReason: 'amount_mismatch' | 'late_settlement' | 'refund_required' | 'upstream_inconsistent',
+    ) => usdtPhaseCopy(order, createPaymentFixture('manual_review', { adapter: 'paykit', reviewReason }), true);
     expect(review('amount_mismatch')).toBe('The USDT amount does not match. The seller is reviewing it.');
     expect(review('late_settlement')).toBe('Payment received — the seller is reviewing it.');
     expect(review('refund_required')).toMatch(/another buyer took this item/);
+    expect(review('upstream_inconsistent')).toBe(
+      'The payment provider reported an inconsistent payment state, so this payment is under review. No settlement is assumed until an operator reviews it.',
+    );
     expect(usdtPhaseCopy(order, createPaymentFixture('manual_review', { adapter: 'paykit' }), false)).toBeNull();
   });
 });

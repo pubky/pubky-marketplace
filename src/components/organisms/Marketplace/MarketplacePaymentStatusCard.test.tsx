@@ -2390,4 +2390,42 @@ describe('MarketplacePaymentStatusCard', () => {
       expect(deadline).not.toHaveTextContent('left');
     });
   });
+
+  describe('upstream_inconsistent manual review (#581)', () => {
+    it.each([
+      ['bitcoin' as const, true],
+      ['bitcoin' as const, false],
+      ['paykit' as const, true],
+      ['paykit' as const, false],
+    ])('shows accurate under-review copy with no settlement assumed for %s (%s buyer)', (paymentMethod, isBuyer) => {
+      const payment = createPaymentFixture('manual_review', {
+        adapter: 'paykit',
+        reviewReason: 'upstream_inconsistent',
+        confirmations: 0,
+      });
+      render(
+        <MarketplacePaymentStatusCard
+          order={createOrderFixture('cancelled', {
+            paymentId: payment.id,
+            paymentMethod,
+            paykitRequestState: null,
+            receiptId: null,
+          })}
+          payment={payment}
+          isBuyer={isBuyer}
+          adapterMode="transaction-service"
+          advancePayment={async () => false}
+          onPaymentChanged={() => {}}
+        />,
+      );
+
+      const copy = screen.getByTestId('payment-manual-review-copy');
+      expect(copy).toHaveTextContent(/inconsistent/i);
+      expect(copy).toHaveTextContent(/No settlement is assumed/i);
+      expect(copy).not.toHaveTextContent(/A verified event arrived/);
+      if (!isBuyer) {
+        expect(copy).toHaveTextContent(/No funds are held by this marketplace\./);
+      }
+    });
+  });
 });

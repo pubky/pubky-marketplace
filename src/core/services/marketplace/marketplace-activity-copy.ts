@@ -131,6 +131,10 @@ export const BITCOIN_REVIEW_REASON_COPY = {
     label: 'This Bitcoin payment has waited two business days for your decision',
     action: 'flagged a Bitcoin payment that has waited two business days',
   },
+  upstream_inconsistent: {
+    label: 'The payment provider reported an inconsistent state and needs review',
+    action: 'flagged a payment whose provider reported an inconsistent state',
+  },
 } as const satisfies Record<NonNullable<MarketplaceNotification['reviewReason']>, { label: string; action: string }>;
 
 export type BitcoinNotificationReviewReason = keyof typeof BITCOIN_REVIEW_REASON_COPY;

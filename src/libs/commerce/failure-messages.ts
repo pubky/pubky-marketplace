@@ -87,6 +87,7 @@ export const MARKETPLACE_FAILURE_MESSAGES = {
   notificationPreferencesFailed: 'Could not update commerce notification preferences.',
   ordersUnavailable: 'Market orders are unavailable.',
   unavailable: 'The marketplace service is temporarily unavailable.',
+  invalidResponse: 'The marketplace service returned a response that could not be read.',
   shopSettings: 'Could not save shop settings.',
   savedSearch: 'Could not save this search.',
   savedSearchDelete: 'Could not delete this saved search.',
@@ -103,7 +104,7 @@ type MarketplaceFailureCode = string | null | undefined;
 export const APPROVAL_OTHER_TAB = 'This approval belongs to another tab. Start again here.';
 
 const CODE_MESSAGES: ReadonlyMap<string, string> = new Map([
-  ['INVALID_RESPONSE', MARKETPLACE_FAILURE_MESSAGES.unavailable],
+  ['INVALID_RESPONSE', MARKETPLACE_FAILURE_MESSAGES.invalidResponse],
   ['SESSION_EXPIRED', MARKETPLACE_FAILURE_MESSAGES.session],
   ['UNAUTHORIZED', MARKETPLACE_FAILURE_MESSAGES.session],
   ['shop_session_missing', MARKETPLACE_FAILURE_MESSAGES.sessionMissing],
@@ -238,6 +239,14 @@ export function marketplaceOfferFailureMessage(code: MarketplaceFailureCode, mes
   return marketplaceFailureMessage(code, MARKETPLACE_FAILURE_MESSAGES.sendOffer);
 }
 
+/** Client-authored Zod parse issue lines attached to an `INVALID_RESPONSE` AppError, if any. */
+export function marketplaceInvalidResponseDetails(error: unknown): string[] {
+  if (!isAppError(error) || error.code !== 'INVALID_RESPONSE') return [];
+  const raw = error.context?.parseIssues;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+}
+
 export function marketplaceFailureMessage(code: MarketplaceFailureCode, fallback: string, error?: unknown): string {
   if (
     isAppError(error) &&
@@ -245,6 +254,12 @@ export function marketplaceFailureMessage(code: MarketplaceFailureCode, fallback
     Object.values(ValidationErrorCode).includes(error.code as ValidationErrorCode)
   ) {
     return error.message;
+  }
+  if (code === 'INVALID_RESPONSE') {
+    const details = marketplaceInvalidResponseDetails(error);
+    if (details.length > 0) {
+      return `${MARKETPLACE_FAILURE_MESSAGES.invalidResponse} (${details.join('; ')})`;
+    }
   }
   return (code && CODE_MESSAGES.get(code)) || fallback;
 }
@@ -314,7 +329,7 @@ export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, str
   ['invalid_pubky', 'The seller identity on this payment configuration is not valid.'],
   ['invalid_sats', 'Enter a whole-number amount greater than ₿0.'],
   ['invalid_transaction_ref', 'The payment reference is not valid.'],
-  ['INVALID_RESPONSE', MARKETPLACE_FAILURE_MESSAGES.unavailable],
+  ['INVALID_RESPONSE', MARKETPLACE_FAILURE_MESSAGES.invalidResponse],
   ['listing_removed', 'The seller removed this listing.'],
   ['locks_managed', 'A Locks-correlated payment advances only by server-side verification.'],
   ['method_mismatch', 'The payment method does not match this checkout.'],

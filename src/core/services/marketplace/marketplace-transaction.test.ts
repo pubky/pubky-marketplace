@@ -1119,6 +1119,104 @@ describe('MarketplaceTransactionService read projections', () => {
     });
   });
 
+  it('parses upstream_inconsistent and isolates malformed orders in /v1/orders with diagnostic reporting (#581)', async () => {
+    await establishSession();
+    const upstreamOrderId = '470c02d8-9326-4d89-98f6-199df5a2ffcb';
+    const badOrderId = '999c02d8-9326-4d89-98f6-199df5a2ffcb';
+    const payload = {
+      orders: [
+        orderWire({
+          id: upstreamOrderId,
+          state: 'cancelled',
+          cancellation_reason: 'payment window elapsed',
+          payment: {
+            ...paymentWire(),
+            order_id: upstreamOrderId,
+            adapter: 'paykit',
+            state: 'manual_review',
+            review_reason: 'upstream_inconsistent',
+          },
+        }),
+        orderWire({
+          id: badOrderId,
+          state: 'cancelled',
+          payment: {
+            ...paymentWire(),
+            order_id: badOrderId,
+            adapter: 'paykit',
+            state: 'manual_review',
+            review_reason: 'unrecognized_future_reason',
+          },
+        }),
+      ],
+    };
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse(200, payload))
+      .mockResolvedValueOnce(jsonResponse(200, payload))
+      .mockResolvedValueOnce(jsonResponse(200, payload));
+    const loggerError = vi.spyOn(Logger, 'error');
+
+    const first = await MarketplaceTransactionService.getOrderList(ACTOR);
+    const second = await MarketplaceTransactionService.getOrderList(ACTOR);
+    const ordersOnly = await MarketplaceTransactionService.getOrders(ACTOR);
+
+    expect(first.orders).toHaveLength(1);
+    expect(first.orders[0]).toMatchObject({
+      id: upstreamOrderId,
+      payment: { state: 'manual_review', reviewReason: 'upstream_inconsistent' },
+    });
+    expect(ordersOnly).toEqual(first.orders);
+    expect(first.parseErrors).toEqual([
+      expect.objectContaining({
+        kind: 'parse_error',
+        index: 1,
+        orderId: badOrderId,
+        issues: [
+          expect.objectContaining({
+            path: 'orders[1].payment.reviewReason',
+            message: expect.stringContaining('invalid value "unrecognized_future_reason"'),
+          }),
+        ],
+      }),
+    ]);
+    // Deduplicated across polls in the same session.
+    expect(second.parseErrors).toEqual(first.parseErrors);
+    expect(loggerError).toHaveBeenCalledOnce();
+    expect(loggerError.mock.calls[0]?.[1]).toBe('Marketplace order list had unparseable entries.');
+    loggerError.mockRestore();
+  });
+
+  it('attaches Zod parse issues when a single-order fetch fails to parse', async () => {
+    await establishSession();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse(
+        200,
+        orderWire({
+          payment: {
+            ...paymentWire(),
+            adapter: 'paykit',
+            state: 'manual_review',
+            review_reason: 'unrecognized_future_reason',
+          },
+        }),
+      ),
+    );
+
+    const error = (await MarketplaceTransactionService.getOrder(ACTOR, ORDER_ID).catch(
+      (caught: unknown) => caught,
+    )) as AppError;
+
+    expect(error).toMatchObject({
+      code: 'INVALID_RESPONSE',
+      context: {
+        orderId: ORDER_ID,
+        parseIssues: [
+          expect.stringContaining('order.payment.reviewReason: invalid value "unrecognized_future_reason"'),
+        ],
+      },
+    });
+  });
+
   it('reads a single payment and returns null for foreign/absent payments', async () => {
     await establishSession();
     vi.mocked(fetch)

@@ -370,6 +370,27 @@ describe('MarketplacePaymentStatusCard — USDT orders', () => {
     );
   });
 
+  it('shows accurate upstream_inconsistent review copy for USDT buyer and seller (#581)', () => {
+    const { order } = createUsdtOrderFixture('final');
+    const payment = createPaymentFixture('manual_review', {
+      adapter: 'paykit',
+      reviewReason: 'upstream_inconsistent',
+    });
+
+    const buyer = renderCard(order, payment, true);
+    expect(screen.getByTestId('payment-manual-review-copy')).toHaveTextContent(
+      'The payment provider reported an inconsistent payment state, so this payment is under review. No settlement is assumed until an operator reviews it.',
+    );
+    buyer.unmount();
+
+    renderCard(order, payment, false);
+    const sellerCopy = screen.getByTestId('payment-manual-review-copy');
+    expect(sellerCopy).toHaveTextContent(/inconsistent state/i);
+    expect(sellerCopy).toHaveTextContent(/USDT/);
+    expect(sellerCopy).toHaveTextContent(/No funds are held by this marketplace\./);
+    expect(sellerCopy).not.toHaveTextContent(/A verified event arrived/);
+  });
+
   it('names USDT, not Bitcoin, when the seller must return money for a USDT payment', () => {
     const { order } = createUsdtOrderFixture('final');
     const { container } = renderCard(

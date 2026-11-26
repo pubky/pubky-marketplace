@@ -73,6 +73,7 @@ import { takeDocumentFragment } from '@/libs/navigation/document-fragment';
 import { ArbiscanLookupLink } from '@/molecules/Marketplace/ArbiscanLookupLink';
 import { MarketplaceCheckoutStatusLabels } from '@/molecules/Marketplace/MarketplaceCheckoutStatusLabels';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
+import { MarketplaceOrderParseErrorCard } from '@/molecules/Marketplace/MarketplaceOrderParseErrorCard';
 import { MarketplacePaymentStatusLabels } from '@/molecules/Marketplace/MarketplacePaymentStatusBadge';
 import { ChatEntryButton } from '@/organisms/Chat/ChatEntryButton';
 import { DropEditionBadge, DropEditionReceiptLine } from '@/organisms/Marketplace/DropEditionBadge';
@@ -115,8 +116,17 @@ export function MarketplaceOrders() {
   const staysOnOrder = readStaysOnOrder(searchParams);
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const receiptsPublicationStatus = useCommerceStore((state) => state.receiptsPublicationStatus);
-  const { orders, isLoading, error, needsSession, refresh, advancePayment, actOnOrder, adapterMode } =
-    useMarketplaceOrders();
+  const {
+    orders,
+    parseErrors = [],
+    isLoading,
+    error,
+    needsSession,
+    refresh,
+    advancePayment,
+    actOnOrder,
+    adapterMode,
+  } = useMarketplaceOrders();
   const isSandbox = adapterMode === 'sandbox';
   const hasTransactionBackend = isTransactionalCommerceMode(adapterMode);
   const [activeTab, setActiveTab] = useState<OrdersTab>('all');
@@ -173,7 +183,16 @@ export function MarketplaceOrders() {
     const anchorId = anchorOrderId;
     if (!anchorId) return;
     const view = orders.find((candidate) => candidate.order.id === anchorId);
-    if (!view) return;
+    if (!view) {
+      if (parseErrors.some((entry) => entry.orderId === anchorId) && scrolledAnchorRef.current !== anchorId) {
+        const anchor = document.getElementById(orderAnchorId(anchorId));
+        if (anchor) {
+          scrolledAnchorRef.current = anchorId;
+          anchor.scrollIntoView({ block: 'center' });
+        }
+      }
+      return;
+    }
     // A checkout in progress sits above the tabs, in its own list (#363).
     const inCheckoutList = isBuyerCheckoutInProgress(view.order, currentUserPubky);
     if (!inCheckoutList && !isOrderInTab(view, activeTab, currentUserPubky)) {
@@ -190,7 +209,7 @@ export function MarketplaceOrders() {
     if (!anchor) return;
     scrolledAnchorRef.current = anchorId;
     anchor.scrollIntoView({ block: 'center' });
-  }, [activeTab, anchorOrderId, currentUserPubky, isLoading, orders]);
+  }, [activeTab, anchorOrderId, currentUserPubky, isLoading, orders, parseErrors]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -274,8 +293,18 @@ export function MarketplaceOrders() {
           <div role="alert" className="rounded-md border border-destructive/40 p-4">
             {error}
           </div>
-        ) : orders.length ? (
+        ) : orders.length > 0 || parseErrors.length > 0 ? (
           <>
+            {parseErrors.length > 0 && (
+              <div className="grid gap-3" data-testid="marketplace-order-parse-errors">
+                {parseErrors.map((parseError) => (
+                  <MarketplaceOrderParseErrorCard
+                    key={`parse-error:${parseError.index}:${parseError.orderId ?? 'unknown'}`}
+                    error={parseError}
+                  />
+                ))}
+              </div>
+            )}
             {linkedUnlistedOrder && (
               <div className="grid gap-3" data-testid="marketplace-linked-order">
                 <Heading level={2} size="sm" className="text-xl font-semibold">

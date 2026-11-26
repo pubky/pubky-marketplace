@@ -51,6 +51,12 @@ export const PAYMENT_AMOUNT_MISMATCH_REVIEW_COPY =
 
 export const PAYMENT_AMOUNT_MISMATCH_UNCONFIRMED_COPY = 'The amount does not match. The seller is reviewing it.';
 
+export const PAYMENT_UPSTREAM_INCONSISTENT_BUYER_COPY =
+  'The payment provider reported an inconsistent payment state, so this payment is under review. No settlement is assumed until an operator reviews it.';
+
+export const PAYMENT_UPSTREAM_INCONSISTENT_SELLER_COPY =
+  'The payment provider reported an inconsistent payment state, so an operator needs to review this order. No settlement is assumed. No funds are held by this marketplace.';
+
 export const PAYMENT_CONFIRMED_WAITING_SELLER_COPY =
   'Payment confirmed on-chain. Waiting for the seller to confirm they received it.';
 
@@ -106,7 +112,13 @@ export type BitcoinBuyerStatusRow = {
   enteredFrom: string;
   paykitRequestState: 'preparing' | 'pending' | 'detected' | 'confirmed' | 'awaiting_seller_confirmation';
   paymentState: 'awaiting_entitlement' | 'detected' | 'confirmed' | 'expired' | 'manual_review';
-  reviewReason: 'late_settlement' | 'refund_required' | 'amount_mismatch' | 'unpinned_legacy' | null;
+  reviewReason:
+    | 'late_settlement'
+    | 'refund_required'
+    | 'amount_mismatch'
+    | 'unpinned_legacy'
+    | 'upstream_inconsistent'
+    | null;
   confirmations: number;
   confirmationExists: boolean;
   progress: string;
@@ -356,6 +368,30 @@ export const BITCOIN_BUYER_STATUS_TABLE: readonly BitcoinBuyerStatusRow[] = [
     wallet: PAYMENT_RECEIVED_REVIEW_COPY,
     forbidsPayLabels: true,
   },
+  {
+    id: 'review-upstream-inconsistent',
+    enteredFrom: 'upstream_inconsistent when Paykit reports a broken payment lifecycle',
+    paykitRequestState: 'pending',
+    paymentState: 'manual_review',
+    reviewReason: 'upstream_inconsistent',
+    confirmations: 0,
+    confirmationExists: false,
+    progress: PAYMENT_UPSTREAM_INCONSISTENT_BUYER_COPY,
+    wallet: PAYMENT_UPSTREAM_INCONSISTENT_BUYER_COPY,
+    forbidsPayLabels: true,
+  },
+  {
+    id: 'review-upstream-inconsistent-confirmed-request',
+    enteredFrom: 'upstream_inconsistent on a confirmed request with no chain confirmation',
+    paykitRequestState: 'confirmed',
+    paymentState: 'manual_review',
+    reviewReason: 'upstream_inconsistent',
+    confirmations: 0,
+    confirmationExists: false,
+    progress: PAYMENT_UPSTREAM_INCONSISTENT_BUYER_COPY,
+    wallet: PAYMENT_UPSTREAM_INCONSISTENT_BUYER_COPY,
+    forbidsPayLabels: true,
+  },
 ];
 
 function isBitcoinOrder(order: BitcoinStatusOrder): boolean {
@@ -380,7 +416,9 @@ export function bitcoinConfirmationExists(order: BitcoinStatusOrder, payment: Bi
  * Review reasons the service stamps only from Paykit's confirmed (on-chain)
  * observation. A review with no reason can come from the 24-hour
  * seller-window reaper, which marks the request `confirmed` with no chain
- * fact, and `unpinned_legacy` has no writer, so neither counts.
+ * fact; `unpinned_legacy` has no writer; and `upstream_inconsistent` comes
+ * from an inconsistent provider status with no settlement assumed — so none
+ * of those count.
  */
 function isChainObservationReviewReason(reason: string | null | undefined): boolean {
   return reason === 'late_settlement' || reason === 'amount_mismatch' || reason === 'refund_required';
@@ -462,6 +500,7 @@ export function bitcoinSeenBadgeLabel(order: BitcoinStatusOrder, payment: Bitcoi
 export function buyerBitcoinReviewCopy(order: BitcoinStatusOrder, payment: BitcoinStatusPayment): string | null {
   if (payment?.state !== 'manual_review') return null;
   if (payment.reviewReason === 'refund_required') return CHECKOUT_HOLD_COPY.refundRequiredBuyer;
+  if (payment.reviewReason === 'upstream_inconsistent') return PAYMENT_UPSTREAM_INCONSISTENT_BUYER_COPY;
   const confirmed = bitcoinConfirmationExists(order, payment);
   if (payment.reviewReason === 'amount_mismatch') {
     return confirmed ? PAYMENT_AMOUNT_MISMATCH_REVIEW_COPY : PAYMENT_AMOUNT_MISMATCH_UNCONFIRMED_COPY;

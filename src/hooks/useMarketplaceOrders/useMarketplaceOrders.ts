@@ -31,7 +31,12 @@ import { CONFIRM_REFUND_DESTINATION_KIND, usdtRefundRefusalMessage } from '@/lib
 import { isPaymentNotFinalRefusal } from '@/libs/commerce/usdt-settlement-contract';
 import { isMarketplaceCommandValidationError, isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import { toast } from '@/molecules/Toaster/toast';
-import type { MarketplaceOrder, MarketplacePayment, MarketplaceReceipt } from '@/services/marketplace/marketplace';
+import type {
+  MarketplaceOrder,
+  MarketplaceOrderParseError,
+  MarketplacePayment,
+  MarketplaceReceipt,
+} from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { ORDER_COMMAND_UNSENDABLE_COPY } from '../useMarketplaceOrderAction/useMarketplaceOrderAction.types';
@@ -64,11 +69,13 @@ export function useMarketplaceOrders() {
   const adapterMode = getCommerceAdapterMode();
   const isTransactional = isTransactionalCommerceMode(adapterMode);
   const [orders, setOrders] = useState<MarketplaceOrderView[]>([]);
+  const [parseErrors, setParseErrors] = useState<MarketplaceOrderParseError[]>([]);
   const [isLoading, setIsLoading] = useState(isTransactional && Boolean(currentUserPubky));
   const [error, setError] = useState<string | null>(null);
   const [needsSession, setNeedsSession] = useState(false);
 
-  const readOrders = () => loadOrders(currentUserPubky, setOrders, setIsLoading, setError, setNeedsSession);
+  const readOrders = () =>
+    loadOrders(currentUserPubky, setOrders, setParseErrors, setIsLoading, setError, setNeedsSession);
   const refresh = async () => {
     await readOrders();
   };
@@ -79,9 +86,9 @@ export function useMarketplaceOrders() {
       return;
     }
     let active = true;
-    void loadOrders(currentUserPubky, setOrders, setIsLoading, setError, setNeedsSession);
+    void loadOrders(currentUserPubky, setOrders, setParseErrors, setIsLoading, setError, setNeedsSession);
     const timer = window.setInterval(() => {
-      if (active) void loadOrders(currentUserPubky, setOrders, setIsLoading, setError, setNeedsSession);
+      if (active) void loadOrders(currentUserPubky, setOrders, setParseErrors, setIsLoading, setError, setNeedsSession);
     }, getCommercePollIntervalMs());
     return () => {
       active = false;
@@ -247,7 +254,7 @@ export function useMarketplaceOrders() {
     }
   };
 
-  return { orders, isLoading, error, needsSession, refresh, advancePayment, actOnOrder, adapterMode };
+  return { orders, parseErrors, isLoading, error, needsSession, refresh, advancePayment, actOnOrder, adapterMode };
 }
 
 /**
@@ -294,6 +301,7 @@ async function publishReviewRecord(
 async function loadOrders(
   currentUserPubky: string | null,
   setOrders: Dispatch<SetStateAction<MarketplaceOrderView[]>>,
+  setParseErrors: Dispatch<SetStateAction<MarketplaceOrderParseError[]>>,
   setIsLoading: Dispatch<SetStateAction<boolean>>,
   setError: Dispatch<SetStateAction<string | null>>,
   setNeedsSession: Dispatch<SetStateAction<boolean>>,
@@ -309,7 +317,10 @@ async function loadOrders(
   // responses published to the responder's homeserver).
   void CommerceController.resumeOwnReviewResponsePublications().catch(() => undefined);
   try {
-    const orders = await CommerceController.getMarketplaceOrders();
+    const { orders, parseErrors } =
+      typeof CommerceController.getMarketplaceOrderList === 'function'
+        ? await CommerceController.getMarketplaceOrderList()
+        : { orders: await CommerceController.getMarketplaceOrders(), parseErrors: [] };
     const views = await Promise.all(
       orders.map(async (order) => {
         // The durable service embeds the payment projection in the order
@@ -320,6 +331,7 @@ async function loadOrders(
       }),
     );
     setOrders(views);
+    setParseErrors(parseErrors);
     setError(null);
     setNeedsSession(false);
     // Portable order receipts (credible exit): best-effort publication of
@@ -328,6 +340,7 @@ async function loadOrders(
     void CommerceController.publishOrderReceipts(orders).catch(() => undefined);
     return views;
   } catch (loadError) {
+    setParseErrors([]);
     // A missing/expired marketplace session is not a dead end: flag it so the
     // surface renders the session-connect affordance with static guidance.
     setNeedsSession(isMarketplaceSessionRequiredError(loadError));

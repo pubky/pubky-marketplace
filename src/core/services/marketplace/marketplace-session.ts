@@ -14,6 +14,7 @@ import {
   pairMarketplaceBffSession,
 } from './marketplace-grant-client';
 import { resetMarketplaceNotificationDiagnostics } from './marketplace-notification-diagnostics';
+import { resetMarketplaceOrderDiagnostics } from './marketplace-order-diagnostics';
 import {
   LEGACY_SHOP_SIGN_IN_GRANT,
   MARKETPLACE_CLAIMABLE_GRANTS,
@@ -230,6 +231,7 @@ export class MarketplaceSessionService {
     const ended = this.session;
     this.session = null;
     resetMarketplaceNotificationDiagnostics();
+    resetMarketplaceOrderDiagnostics();
     if (!ended) return;
     this.removePersistedSessionIfOwned(ended.token);
     if (getMarketplaceGrantFlowEnabled() && ended.sessionId) void clearMarketplaceBffSession(ended.sessionId);
@@ -258,6 +260,7 @@ export class MarketplaceSessionService {
     const persisted = this.persistedBearer();
     this.session = null;
     resetMarketplaceNotificationDiagnostics();
+    resetMarketplaceOrderDiagnostics();
     this.removePersistedSession();
     if (ended) this.notifySessionEnded({ reason: 'cleared', issuedAt: ended.issuedAt });
     revokeHeldMarketplaceSessions([ended, persisted]);
@@ -330,6 +333,7 @@ export class MarketplaceSessionService {
     });
     this.writePersistedSession(parsed);
     resetMarketplaceNotificationDiagnostics();
+    resetMarketplaceOrderDiagnostics();
     return this.toPublicInfo(installed);
   }
 

@@ -71,7 +71,10 @@ import { HttpStatusCode } from '@/libs/http/http.types';
 import { PARSE_JSON_WITH_BODY_EXCERPT, parseResponseOrThrow } from '@/libs/http/response.utils';
 import { marketplaceSessionRequired } from './marketplace-approval-failure';
 import { reportMarketplaceNotificationInvalidTypes } from './marketplace-notification-diagnostics';
+import { reportMarketplaceOrderParseErrors } from './marketplace-order-diagnostics';
 import {
+  formatMarketplaceOrderIssueLines,
+  formatMarketplaceOrderZodIssues,
   listingHasSellerReserveAuthority,
   type MarketplaceBidHistory,
   marketplaceBidHistorySchema,
@@ -83,9 +86,9 @@ import {
   type MarketplaceOffer,
   marketplaceOfferSchema,
   type MarketplaceOrder,
+  type MarketplaceOrderListResult,
   marketplaceOrderSchema,
   type MarketplaceParticipantOrder,
-  marketplaceParticipantOrderSchema,
   type MarketplacePayment,
   marketplacePaymentSchema,
   type MarketplacePublicDrop,
@@ -101,6 +104,7 @@ import {
   type MarketplaceSellerListingProjection,
   marketplaceSellerListingProjectionSchema,
   parseMarketplaceNotificationEntries,
+  parseMarketplaceOrderList,
   stripSellerReserveAuthorityFields,
 } from './marketplace-projections';
 import { MarketplaceSessionService } from './marketplace-session';
@@ -367,19 +371,22 @@ export class MarketplaceTransactionService {
    * `GET /v1/orders`: participant-scoped orders, each carrying its embedded
    * `payment` projection plus shipment/return/refund/review
    * sub-objects. `receipt_id` stays null until payment confirmation issues
-   * the durable receipt.
+   * the durable receipt. Each order is parsed independently so one malformed
+   * row surfaces inline diagnostics without hiding valid orders.
    */
+  static async getOrderList(
+    actor: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<MarketplaceOrderListResult> {
+    const raw = await this.readProjection('getOrders', actor, '/v1/orders', { signal: options.signal });
+    return parseMarketplaceOrderList(raw, reportMarketplaceOrderParseErrors);
+  }
+
   static async getOrders(
     actor: string,
     options: { signal?: AbortSignal } = {},
   ): Promise<MarketplaceParticipantOrder[]> {
-    const raw = await this.readProjection('getOrders', actor, '/v1/orders', { signal: options.signal });
-    return this.parseProjection(
-      'getOrders',
-      z.object({ orders: z.array(marketplaceParticipantOrderSchema) }),
-      raw,
-      'Marketplace returned invalid orders.',
-    ).orders;
+    return (await this.getOrderList(actor, options)).orders;
   }
 
   /** `GET /v1/payments/{id}`: participants only; foreign payments are 404. */
@@ -388,12 +395,20 @@ export class MarketplaceTransactionService {
       nullOnNotFound: true,
     });
     if (raw === null) return null;
-    return this.parseProjection(
-      'getPayment',
-      marketplacePaymentSchema,
-      raw,
-      'Marketplace returned an invalid payment.',
-    );
+    const parsed = marketplacePaymentSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Marketplace returned an invalid payment.', {
+        service: ErrorService.Marketplace,
+        operation: 'getPayment',
+        context: {
+          paymentId,
+          parseIssues: formatMarketplaceOrderIssueLines(
+            formatMarketplaceOrderZodIssues(parsed.error.issues, raw, 'payment'),
+          ),
+        },
+      });
+    }
+    return parsed.data;
   }
 
   /** `GET /v1/receipts/{id}`: issuer and recipient only; foreign receipts are 404. */
@@ -422,7 +437,20 @@ export class MarketplaceTransactionService {
       signal: options.signal,
     });
     if (raw === null) return null;
-    return this.parseProjection('getOrder', marketplaceOrderSchema, raw, 'Marketplace returned an invalid order.');
+    const parsed = marketplaceOrderSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Marketplace returned an invalid order.', {
+        service: ErrorService.Marketplace,
+        operation: 'getOrder',
+        context: {
+          orderId,
+          parseIssues: formatMarketplaceOrderIssueLines(
+            formatMarketplaceOrderZodIssues(parsed.error.issues, raw, 'order'),
+          ),
+        },
+      });
+    }
+    return parsed.data;
   }
 
   /**
@@ -1455,13 +1483,17 @@ export class MarketplaceTransactionService {
   }
 
   private static parseOrderEnvelope(operation: string, raw: unknown): MarketplaceOrder {
-    const parsed = this.parseProjection(
-      operation,
-      z.object({ order: marketplaceOrderSchema }),
-      raw,
-      'Marketplace returned an invalid order response.',
-    );
-    return parsed.order;
+    const parsed = z.object({ order: marketplaceOrderSchema }).safeParse(raw);
+    if (!parsed.success) {
+      throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Marketplace returned an invalid order response.', {
+        service: ErrorService.Marketplace,
+        operation,
+        context: {
+          parseIssues: formatMarketplaceOrderIssueLines(formatMarketplaceOrderZodIssues(parsed.error.issues, raw, '')),
+        },
+      });
+    }
+    return parsed.data.order;
   }
 
   private static async readProjection(

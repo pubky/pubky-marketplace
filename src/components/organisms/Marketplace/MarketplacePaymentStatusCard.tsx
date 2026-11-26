@@ -48,6 +48,8 @@ import {
   buyerBitcoinWalletCopy,
   holdCountdownCopy,
   PAYMENT_SEEN_HOLD_COPY,
+  PAYMENT_UPSTREAM_INCONSISTENT_BUYER_COPY,
+  PAYMENT_UPSTREAM_INCONSISTENT_SELLER_COPY,
   SELLER_CONFIRMED_BEFORE_CHAIN_BUYER_COPY,
   SELLER_CONFIRMED_BEFORE_CHAIN_SELLER_COPY,
   sellerBitcoinConfirmPrompt,
@@ -111,6 +113,7 @@ import {
   USDT_BUYER_PHASE_COPY,
   USDT_FINALITY_EXPECTATION_COPY,
   USDT_FUNDS_HINT,
+  USDT_SELLER_REVIEW_COPY,
   USDT_WALLET_HINT,
   usdtAmountLabel,
   usdtFulfilmentWaitsForFinality,
@@ -472,11 +475,17 @@ export function MarketplacePaymentStatusCard({
         )}
       {visibleStatus === 'manual_review' && !refundRequired && (
         <Typography as="p" className="text-sm text-muted-foreground" data-testid="payment-manual-review-copy">
-          {isBuyer && rail === 'bitcoin'
-            ? buyerBitcoinReviewCopy(order, payment)
-            : isBuyer && rail === 'usdt'
-              ? usdtPhaseCopy(order, payment, true)
-              : ((!isBuyer && rail === 'usdt' ? usdtSellerReviewCopy(payment) : null) ?? GENERIC_MANUAL_REVIEW_COPY)}
+          {payment.reviewReason === 'upstream_inconsistent'
+            ? isBuyer
+              ? PAYMENT_UPSTREAM_INCONSISTENT_BUYER_COPY
+              : rail === 'usdt'
+                ? USDT_SELLER_REVIEW_COPY.upstream_inconsistent
+                : PAYMENT_UPSTREAM_INCONSISTENT_SELLER_COPY
+            : isBuyer && rail === 'bitcoin'
+              ? buyerBitcoinReviewCopy(order, payment)
+              : isBuyer && rail === 'usdt'
+                ? usdtPhaseCopy(order, payment, true)
+                : ((!isBuyer && rail === 'usdt' ? usdtSellerReviewCopy(payment) : null) ?? GENERIC_MANUAL_REVIEW_COPY)}
         </Typography>
       )}
 
