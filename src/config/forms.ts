@@ -32,3 +32,19 @@ export const FORM_REQUIRED_LABEL_CLASSES =
 
 /** Standard Pubky form field surface used by profile and marketplace forms. */
 export const FORM_FIELD_SURFACE_CLASSES = '!bg-background rounded-md border border-dashed border-border font-medium';
+
+/** The outer field owns the focus indicator so the status border survives keyboard focus. */
+export const FIELD_STATUS_CLASSES = {
+  default: 'focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50',
+  success: 'border-brand text-brand focus-within:ring-[3px] focus-within:ring-ring/50',
+  error:
+    'border-destructive text-field-error focus-within:ring-[3px] focus-within:ring-destructive/40 [.light_&]:focus-within:ring-destructive/20',
+} as const;
+
+export const FIELD_MESSAGE_CLASSES = {
+  default: 'text-muted-foreground',
+  info: 'text-blue-500',
+  alert: 'text-yellow-500 [.light_&]:text-yellow-700',
+  error: 'text-field-error',
+  success: 'text-brand',
+} as const;
