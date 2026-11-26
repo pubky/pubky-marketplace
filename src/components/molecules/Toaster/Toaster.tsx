@@ -32,7 +32,7 @@ export function Toaster() {
               {action && (
                 <ToastAction
                   altText={action.altText}
-                  variant="info"
+                  variant="muted"
                   onClick={() => {
                     dismiss(id);
                     action.onClick();
@@ -42,7 +42,11 @@ export function Toaster() {
                 </ToastAction>
               )}
               {dismissButton && (
-                <ToastAction altText={'OK'} variant={variant} onClick={() => dismiss(id)}>
+                <ToastAction
+                  altText={'OK'}
+                  variant={variant === 'default' ? 'brand' : 'muted'}
+                  onClick={() => dismiss(id)}
+                >
                   {'OK'}
                 </ToastAction>
               )}
