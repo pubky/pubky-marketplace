@@ -1,4 +1,5 @@
 import { Client, Pubky, PublicKey, resolvePubky } from '@synonymdev/pubky';
+import { IMAGE_MAX_UPLOAD_SIZE } from '@/config/images';
 import { getPkarrRelays } from '@/config/network';
 import { isValidMarketplaceMediaUri } from '@/libs/commerce/media-url';
 import { AppError } from '@/libs/error/error';
@@ -6,6 +7,7 @@ import { ClientErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { HttpStatusCode } from '@/libs/http/http.types';
+import { readRasterImage } from '@/libs/media/image-bytes';
 
 const mediaClient = new Client({ pkarr: { relays: getPkarrRelays() } });
 const mediaSdk = Pubky.withClient(mediaClient);
@@ -45,6 +47,23 @@ export class MarketplaceMediaService {
         context: { statusCode: response.status },
       });
     }
-    return await response.blob();
+    // The owner's homeserver chooses the declared type, so the blob is typed
+    // from its bytes. Media that is not a raster image, or is larger than the
+    // Shop writes, is shown as no image, like removed media.
+    const image = await readRasterImage(response, IMAGE_MAX_UPLOAD_SIZE);
+    if (!image.ok) {
+      throw new AppError({
+        category: ErrorCategory.Client,
+        code: image.reason === 'too_large' ? ClientErrorCode.PAYLOAD_TOO_LARGE : ClientErrorCode.UNPROCESSABLE,
+        message:
+          image.reason === 'too_large'
+            ? 'Marketplace media is too large.'
+            : 'Marketplace media is not a supported image.',
+        service: ErrorService.Marketplace,
+        operation: 'fetchMedia',
+        context: { reason: image.reason, maxBytes: IMAGE_MAX_UPLOAD_SIZE },
+      });
+    }
+    return image.blob;
   }
 }

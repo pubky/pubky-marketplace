@@ -1,17 +1,18 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ElementType } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { toast } from '@/molecules/Toaster/toast';
 import { setSocialHost } from '@/test-utils/social-host';
 import { ShareTarget } from './ShareTarget';
 
 // Mock next/navigation
 const mockPush = vi.fn();
 const mockSearchParams = new Map<string, string>();
+// Next returns the same object until the URL changes, so the page's effect runs once per URL.
+const mockSearchParamsReader = { get: (key: string) => mockSearchParams.get(key) ?? null };
 
 vi.mock('next/navigation', () => ({
-  useSearchParams: () => ({
-    get: (key: string) => mockSearchParams.get(key) ?? null,
-  }),
+  useSearchParams: () => mockSearchParamsReader,
   useRouter: () => ({
     push: mockPush,
   }),
@@ -28,6 +29,8 @@ vi.mock('@/libs/share/shareTarget', async () => {
     getSharedFiles: () => mockGetSharedFiles(),
   };
 });
+
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 
 // Mock Atoms
 vi.mock('@/atoms/Button/Button', () => {
@@ -125,7 +128,7 @@ describe('ShareTarget', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSearchParams.clear();
-    mockGetSharedFiles.mockResolvedValue([]);
+    mockGetSharedFiles.mockResolvedValue({ files: [], refused: 0 });
   });
 
   it('renders without errors', async () => {
@@ -223,7 +226,7 @@ describe('ShareTarget', () => {
   it('retrieves shared files when hasFiles is true', async () => {
     mockSearchParams.set('hasFiles', 'true');
     const mockFile = new File(['test'], 'test.png', { type: 'image/png' });
-    mockGetSharedFiles.mockResolvedValue([mockFile]);
+    mockGetSharedFiles.mockResolvedValue({ files: [mockFile], refused: 0 });
 
     render(<ShareTarget />);
 
@@ -267,7 +270,7 @@ describe('ShareTarget', () => {
   it('passes initial attachments to PostInput when files are shared', async () => {
     mockSearchParams.set('hasFiles', 'true');
     const mockFile = new File(['test'], 'test.png', { type: 'image/png' });
-    mockGetSharedFiles.mockResolvedValue([mockFile]);
+    mockGetSharedFiles.mockResolvedValue({ files: [mockFile], refused: 0 });
 
     render(<ShareTarget />);
 
@@ -276,4 +279,109 @@ describe('ShareTarget', () => {
       expect(postInput).toHaveAttribute('data-has-attachments', 'true');
     });
   });
+
+  it('tells the user how many shared files were not added', async () => {
+    mockSearchParams.set('hasFiles', 'true');
+    mockSearchParams.set('refusedFiles', '2');
+    mockGetSharedFiles.mockResolvedValue({
+      files: [new File(['test'], 'test.png', { type: 'image/png' })],
+      refused: 0,
+    });
+
+    render(<ShareTarget />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('post-input')).toHaveAttribute('data-has-attachments', 'true');
+    });
+    expect(toast).toHaveBeenCalledWith({
+      variant: 'error',
+      description:
+        '2 shared files were not added. You can share JPEG, PNG, GIF and WebP images, MP3 and WAV audio, and MP4 video.',
+    });
+  });
+
+  it('tells the user when the only shared file was not added', async () => {
+    mockSearchParams.set('refusedFiles', '1');
+
+    render(<ShareTarget />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('post-input')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('post-input')).not.toHaveAttribute('data-has-attachments', 'true');
+    expect(mockGetSharedFiles).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith({
+      variant: 'error',
+      description:
+        'A shared file was not added. You can share JPEG, PNG, GIF and WebP images, MP3 and WAV audio, and MP4 video.',
+    });
+  });
+
+  it('tells the user when the only file an older service worker cached was refused on read', async () => {
+    mockSearchParams.set('hasFiles', 'true');
+    mockGetSharedFiles.mockResolvedValue({ files: [], refused: 1 });
+
+    render(<ShareTarget />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('post-input')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('post-input')).not.toHaveAttribute('data-has-attachments', 'true');
+    expect(toast).toHaveBeenCalledTimes(1);
+    expect(toast).toHaveBeenCalledWith({
+      variant: 'error',
+      description:
+        'A shared file was not added. You can share JPEG, PNG, GIF and WebP images, MP3 and WAV audio, and MP4 video.',
+    });
+  });
+
+  it('adds the files refused on read to the redirect count in one notice', async () => {
+    mockSearchParams.set('hasFiles', 'true');
+    mockSearchParams.set('refusedFiles', '1');
+    mockGetSharedFiles.mockResolvedValue({
+      files: [new File(['test'], 'test.png', { type: 'image/png' })],
+      refused: 2,
+    });
+
+    render(<ShareTarget />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('post-input')).toHaveAttribute('data-has-attachments', 'true');
+    });
+    expect(toast).toHaveBeenCalledTimes(1);
+    expect(toast).toHaveBeenCalledWith({
+      variant: 'error',
+      description:
+        '3 shared files were not added. You can share JPEG, PNG, GIF and WebP images, MP3 and WAV audio, and MP4 video.',
+    });
+  });
+
+  it('shows no toast when every shared file was added', async () => {
+    mockSearchParams.set('hasFiles', 'true');
+    mockGetSharedFiles.mockResolvedValue({
+      files: [new File(['test'], 'test.png', { type: 'image/png' })],
+      refused: 0,
+    });
+
+    render(<ShareTarget />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('post-input')).toHaveAttribute('data-has-attachments', 'true');
+    });
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it.each(['Infinity', '1e3', '0x10', '-1', '1.5', 'abc'])(
+    'shows no toast for a refusedFiles value of %s',
+    async (value) => {
+      mockSearchParams.set('refusedFiles', value);
+
+      render(<ShareTarget />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('post-input')).toBeInTheDocument();
+      });
+      expect(toast).not.toHaveBeenCalled();
+    },
+  );
 });
