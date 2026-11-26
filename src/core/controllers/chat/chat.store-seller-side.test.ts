@@ -738,6 +738,45 @@ describe('ChatController sale threads in a store', () => {
     expect(vi.mocked(CommerceApplication.getMarketplaceOrderParties).mock.calls.length).toBeGreaterThan(partyReads);
   });
 
+  it('decides the open thread again from its persisted context when a sale-order message arrives', async () => {
+    setStoreSeller(STORE_SELLER);
+    let persisted = thread(FRIEND, { orderId: 'bought-from-friend' });
+    vi.mocked(ChatApplication.getConversations).mockImplementation(async () => [persisted] as never);
+    vi.mocked(ChatApplication.getConversation).mockImplementation(async () => persisted as never);
+    vi.mocked(CommerceApplication.getMarketplaceOrders).mockResolvedValue([
+      { id: 'bought-from-friend', buyerPubky: VIEWER, sellerPubky: FRIEND },
+      { id: 'sold-to-friend', buyerPubky: FRIEND, sellerPubky: VIEWER },
+    ] as never);
+    await ChatController.fetchStoreThreadRoles();
+    const roles = useChatStore.getState().storeThreadRoles;
+    const purchase = { orderId: 'bought-from-friend' };
+
+    expect(await ChatController.getConversationShown(FRIEND)).toBe(true);
+    await expect(ChatController.commitOpenConversation(FRIEND, purchase)).resolves.toEqual({ state: 'ready' });
+
+    persisted = thread(FRIEND, { orderId: 'sold-to-friend' });
+
+    expect(useChatStore.getState().storeThreadRoles).toBe(roles);
+    expect(await ChatController.getConversationShown(FRIEND)).toBe(false);
+    expect(await ChatController.getMessages(FRIEND)).toEqual([]);
+    await expect(ChatController.commitOpenConversation(FRIEND, purchase)).rejects.toMatchObject(refused);
+
+    persisted = thread(FRIEND, purchase);
+
+    expect(await ChatController.getConversationShown(FRIEND)).toBe(true);
+    await expect(ChatController.commitOpenConversation(FRIEND, purchase)).resolves.toEqual({ state: 'ready' });
+  });
+
+  it('shows a thread with no local row yet and every thread for the store seller', async () => {
+    setStoreSeller(STORE_SELLER);
+    vi.mocked(ChatApplication.getConversation).mockResolvedValue(null);
+    expect(await ChatController.getConversationShown(MY_BUYER)).toBe(true);
+
+    useAuthStore.setState({ currentUserPubky: STORE_SELLER });
+    vi.mocked(ChatApplication.getConversation).mockResolvedValue(thread(MY_BUYER, { orderId: 'order-sold' }) as never);
+    expect(await ChatController.getConversationShown(MY_BUYER)).toBe(true);
+  });
+
   it('refuses a first send when the failed roles read published nothing for this account', async () => {
     setStoreSeller(STORE_SELLER);
     const purchase = thread(FRIEND, { orderId: 'bought-from-friend' });

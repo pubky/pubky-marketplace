@@ -73,11 +73,12 @@ local reads until a later read resolves it. An order that neither the order list
 listing lookup that failed, is treated as a sale and closed in the same way, even when the user bought from that peer
 before, except in the thread with the store seller. A context that is wholly a purchase keeps the thread, and one that
 names only a listing neither side published follows the peer's history like a thread with no context. The open-thread
-screen explains that restriction and decides again whenever the roles change. `useStoreThreadRoles` reads the roles and
-retries a read that failed, an order or listing lookup that threw, or an order by-id lookup that found nothing. A send
-that starts while such a read fails part way uses what that read verified for the same account. Until the roles arrive,
-only the thread with the store seller is shown. The Shop still receives and stores messages of closed threads locally;
-it never shows, answers or pings them. See [Store mode](../environment.md#store-mode-runtime).
+screen explains that restriction and decides again whenever the roles change or a received message changes whether the
+thread's latest context keeps it shown. `useStoreThreadRoles` reads the roles and retries a read that failed, an order
+or listing lookup that threw, or an order by-id lookup that found nothing. A send that starts while such a read fails
+part way uses what that read verified for the same account. Until the roles arrive, only the thread with the store
+seller is shown. The Shop still receives and stores messages of closed threads locally; it never shows, answers or pings
+them. See [Store mode](../environment.md#store-mode-runtime).
 
 Session capabilities: `CAPABILITIES` in `src/config/app.ts`. Runtime config:
 `inboxUrl` / `inboxAudience` in `src/libs/runtime-config/runtime-config.schema.ts`.

@@ -114,6 +114,11 @@ export class ChatController {
     return await ChatApplication.getMessages(me, peerPubky, options);
   }
 
+  /** Whether the thread with a peer is shown under its persisted context; one with no local row yet is. */
+  static async getConversationShown(peerPubky: string): Promise<boolean> {
+    return await this.showsThread(this.me(), peerPubky);
+  }
+
   static async getMessageCount(peerPubky: string): Promise<number> {
     const me = this.me();
     if (!(await this.showsThread(me, peerPubky))) return 0;

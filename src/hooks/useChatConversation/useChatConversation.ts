@@ -35,6 +35,7 @@ export function useChatConversation(peerPubky: string, context?: ChatContext): U
   const openStateRef = useRef(openState);
   const openRun = useRef(0);
   const rolesSeen = useRef(false);
+  const shownSeen = useRef<boolean | undefined>(undefined);
   const isSelf = currentUserPubky === peerPubky;
   const contextKey = `${context?.listingId ?? ''}|${context?.orderId ?? ''}`;
   const updateOpenState = (state: UseChatConversationResult['openState']) => {
@@ -106,6 +107,21 @@ export function useChatConversation(peerPubky: string, context?: ChatContext): U
     if (!currentUserPubky) return null;
     return await ChatController.getConversation(peerPubky);
   }, [currentUserPubky, peerPubky, storeThreadRoles]);
+
+  const shown = useLiveQuery(async () => {
+    if (!currentUserPubky) return true;
+    return await ChatController.getConversationShown(peerPubky);
+  }, [currentUserPubky, peerPubky, storeThreadRoles]);
+
+  useEffect(() => {
+    // A message that changes the thread's persisted context can open or close it with the roles unchanged.
+    if (shown === undefined) return;
+    const previous = shownSeen.current;
+    shownSeen.current = shown;
+    if (previous === undefined || previous === shown) return;
+    void open();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a change of the access decision reopens the thread
+  }, [shown]);
 
   const page = useLiveQuery(async () => {
     if (!currentUserPubky) return { messages: [] as ChatMessageView[], total: 0 };

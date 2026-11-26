@@ -310,6 +310,7 @@ const CHAT_INVENTORY: Record<string, Entry> = {
   // Buyer threads stay; sale threads are hidden, closed to writing and left unsent
   getConversations: split,
   getConversation: split,
+  getConversationShown: split,
   getMessages: split,
   getMessageCount: split,
   getUnreadConversationCount: split,
