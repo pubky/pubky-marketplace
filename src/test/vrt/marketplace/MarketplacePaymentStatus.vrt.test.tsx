@@ -22,7 +22,7 @@ setupFixedDateLocale('en-US');
  * Every buyer-visible payment state of the truthful status card (plan task
  * 4.6), rendered for baselines (task 4.8):
  *
- * - `locks-paykit` mode: awaiting (start / registered / poll-bound reached),
+ * - `locks-paykit` mode: awaiting (start / registered),
  *   confirmed with the digital delivery view (locked and unlocked), expired,
  *   and manual review. Detection and confirmation counts are deliberately
  *   absent from every one of these — the upstream contract keeps them
@@ -49,7 +49,6 @@ const view = vi.hoisted(() => ({
     isUnlocking: false,
     delivery: null as unknown,
     error: null as string | null,
-    pollExhausted: false,
     admission: null as unknown,
   },
   sellerConfig: {
@@ -267,14 +266,14 @@ describe('Marketplace payment status card — visual regression', () => {
   }
 
   it('renders awaiting entitlement with the wallet payment request action (locks-paykit) at desktop viewport', async () => {
-    view.locks = { ...view.locks, correlation: null, delivery: null, error: null, pollExhausted: false };
+    view.locks = { ...view.locks, correlation: null, delivery: null, error: null };
     const screen = await renderCard('awaiting_entitlement', 'locks-paykit', { adapter: 'sandbox' });
     await expect.element(screen.getByRole('button', { name: /Request payment in your wallet/ })).toBeVisible();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-awaiting-start-desktop');
   });
 
   it('renders awaiting entitlement with the wallet payment request action at mobile viewport', async () => {
-    view.locks = { ...view.locks, correlation: null, delivery: null, error: null, pollExhausted: false };
+    view.locks = { ...view.locks, correlation: null, delivery: null, error: null };
     const screen = await renderCard('awaiting_entitlement', 'locks-paykit', {
       adapter: 'sandbox',
       viewport: VRT_VIEWPORT_MOBILE,
@@ -289,7 +288,6 @@ describe('Marketplace payment status card — visual regression', () => {
       correlation: makeCorrelation(true),
       delivery: null,
       error: null,
-      pollExhausted: false,
     };
     const screen = await renderCard('awaiting_entitlement', 'locks-paykit', { adapter: 'locks' });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-awaiting-registered-desktop');
@@ -301,7 +299,6 @@ describe('Marketplace payment status card — visual regression', () => {
       correlation: makeCorrelation(true),
       delivery: null,
       error: null,
-      pollExhausted: false,
       admission: { kind: 'in_flight', readerWalletSetupNeeded: true },
     };
     const screen = await renderCard('awaiting_entitlement', 'locks-paykit', { adapter: 'locks' });
@@ -314,23 +311,10 @@ describe('Marketplace payment status card — visual regression', () => {
       correlation: makeCorrelation(true),
       delivery: null,
       error: null,
-      pollExhausted: false,
       admission: { kind: 'failed', failure: 'reader_not_payable' },
     };
     const screen = await renderCard('awaiting_entitlement', 'locks-paykit', { adapter: 'locks' });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-locks-not-payable-desktop');
-  });
-
-  it('renders the bounded-poll limit with its explicit resume action at desktop viewport', async () => {
-    view.locks = {
-      ...view.locks,
-      correlation: makeCorrelation(true),
-      delivery: null,
-      error: null,
-      pollExhausted: true,
-    };
-    const screen = await renderCard('awaiting_entitlement', 'locks-paykit', { adapter: 'locks' });
-    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-poll-exhausted-desktop');
   });
 
   it('renders a confirmed payment with the locked digital delivery at desktop viewport', async () => {
@@ -339,7 +323,6 @@ describe('Marketplace payment status card — visual regression', () => {
       correlation: makeCorrelation(true),
       delivery: null,
       error: null,
-      pollExhausted: false,
     };
     const screen = await renderCard('confirmed', 'locks-paykit', { adapter: 'locks' });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-confirmed-locked-desktop');
@@ -351,7 +334,6 @@ describe('Marketplace payment status card — visual regression', () => {
       correlation: makeCorrelation(true),
       delivery: { objectUrl: 'blob:vrt-fixture', fileName: 'archive.zip', byteSize: 48_213 },
       error: null,
-      pollExhausted: false,
     };
     const screen = await renderCard('confirmed', 'locks-paykit', { adapter: 'locks' });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-delivery-unlocked-desktop');
@@ -363,7 +345,6 @@ describe('Marketplace payment status card — visual regression', () => {
       correlation: makeCorrelation(true),
       delivery: null,
       error: null,
-      pollExhausted: false,
     };
     const screen = await renderCard('expired', 'locks-paykit', { adapter: 'locks' });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-expired-desktop');
@@ -375,7 +356,6 @@ describe('Marketplace payment status card — visual regression', () => {
       correlation: makeCorrelation(true),
       delivery: null,
       error: null,
-      pollExhausted: false,
     };
     const screen = await renderCard('manual_review', 'locks-paykit', { adapter: 'locks' });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-manual-review-desktop');

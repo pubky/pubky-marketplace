@@ -274,6 +274,12 @@ describe('CommerceApplication Locks payment start (pubky/locks#72 no-resubmit ru
 
       expect(error).toMatchObject({ name: 'AppError', context: { preparedTermsDiffer: true } });
       expect(locksSubmitRefusalMessage(error, 'fallback')).toBe(LOCKS_PREPARED_TERMS_DIFFER_COPY);
+      expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).not.toContain('Cancel it');
+      expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).not.toContain('Nothing was charged');
+      expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).not.toContain('can’t be paid');
+      expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).not.toContain('no payment is in progress');
+      expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).toContain('check this order’s status');
+      expect(LOCKS_PREPARED_TERMS_DIFFER_COPY).toContain('only if it still offers that option');
       expect(submit).not.toHaveBeenCalled();
       expect(find).not.toHaveBeenCalled();
       expect(LocksGatewayService.generateBundleId).not.toHaveBeenCalled();
