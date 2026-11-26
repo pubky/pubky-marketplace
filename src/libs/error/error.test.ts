@@ -145,5 +145,19 @@ describe('Error Library', () => {
         appError,
       );
     });
+
+    it('records the context URL it is given instead of the request URL', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')));
+
+      await expect(
+        safeFetch(
+          'https://example.com/a?secret=1',
+          {},
+          ErrorService.NextJsServer,
+          'fetchMetadata',
+          'https://example.com/a',
+        ),
+      ).rejects.toMatchObject({ context: expect.objectContaining({ url: 'https://example.com/a' }) });
+    });
   });
 });

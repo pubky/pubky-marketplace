@@ -58,10 +58,7 @@ export function MarketplacePaymentStatusBadge({
       : BUYER_VISIBLE_STATUS_LABELS[visibleStatus]);
 
   return (
-    <Badge
-      variant={settled ? 'default' : 'outline'}
-      className={settled ? 'bg-brand text-bright-fill-foreground' : undefined}
-    >
+    <Badge variant={settled ? 'default' : 'outline'}>
       {settled && <Check aria-hidden="true" />}
       {visibleStatusLabel}
     </Badge>
