@@ -125,7 +125,7 @@ describe('useChatConversation with a persisted context that changes while the th
     expect(result.current.openState).toBe('ready');
   });
 
-  it('opens with the route context only on mount and decides again without it', async () => {
+  it('writes the route context only on mount and judges it without writing when it decides again', async () => {
     const route = { orderId: 'route-order' };
     mocks.commitOpenConversation.mockResolvedValue({ state: 'ready' });
     const { result } = renderHook(() => useChatConversation(PEER, route));
@@ -140,7 +140,11 @@ describe('useChatConversation with a persisted context that changes while the th
     });
     await waitFor(() => expect(mocks.commitOpenConversation).toHaveBeenCalledTimes(3));
 
-    expect(mocks.commitOpenConversation.mock.calls).toEqual([[PEER, route], [PEER], [PEER]]);
+    expect(mocks.commitOpenConversation.mock.calls).toEqual([
+      [PEER, route],
+      [PEER, route, { write: false }],
+      [PEER, route, { write: false }],
+    ]);
   });
 
   it('restricts the thread as soon as a sale message arrives, before the open decides', async () => {
@@ -180,7 +184,61 @@ describe('useChatConversation with a persisted context that changes while the th
     });
 
     expect(result.current.openState).toBe('store_restricted');
-    expect(mocks.commitOpenConversation.mock.calls).toEqual([[PEER, undefined], [PEER], [PEER]]);
+    expect(mocks.commitOpenConversation.mock.calls).toEqual([
+      [PEER, undefined],
+      [PEER, undefined, { write: false }],
+      [PEER, undefined, { write: false }],
+    ]);
+  });
+
+  describe('a route context the store refuses', () => {
+    const saleRoute = { orderId: 'sold-to-peer' };
+    const refusesTheSaleRoute = async (_peer: string, context?: { orderId?: string }) => {
+      if (context?.orderId === saleRoute.orderId) throw storeRefusal();
+      return { state: 'ready' as const };
+    };
+
+    it('stays restricted when the roles change after the route open was refused', async () => {
+      mocks.commitOpenConversation.mockImplementation(refusesTheSaleRoute);
+      const { result } = renderHook(() => useChatConversation(PEER, saleRoute));
+      await waitFor(() => expect(result.current.openState).toBe('store_restricted'));
+
+      await act(async () => {
+        useChatStore.getState().setStoreThreadRoles(storeThreadRoles([], 'm'.repeat(52)));
+      });
+      await waitFor(() => expect(mocks.commitOpenConversation).toHaveBeenCalledTimes(2));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(result.current.openState).toBe('store_restricted');
+      expect(mocks.commitOpenConversation.mock.calls[1]).toEqual([PEER, saleRoute, { write: false }]);
+    });
+
+    it('stays restricted when the roles change while the route open is pending', async () => {
+      let finishRouteOpen: (error: unknown) => void = () => undefined;
+      mocks.commitOpenConversation
+        .mockReturnValueOnce(
+          new Promise((_resolve, reject) => {
+            finishRouteOpen = reject;
+          }),
+        )
+        .mockImplementation(refusesTheSaleRoute);
+      const { result } = renderHook(() => useChatConversation(PEER, saleRoute));
+      await waitFor(() => expect(mocks.commitOpenConversation).toHaveBeenCalledTimes(1));
+
+      await act(async () => {
+        useChatStore.getState().setStoreThreadRoles(storeThreadRoles([], 'm'.repeat(52)));
+      });
+      await waitFor(() => expect(result.current.openState).toBe('store_restricted'));
+      await act(async () => {
+        finishRouteOpen(storeRefusal());
+        await Promise.resolve();
+      });
+
+      expect(result.current.openState).toBe('store_restricted');
+      expect(mocks.commitOpenConversation.mock.calls[1]).toEqual([PEER, saleRoute, { write: false }]);
+    });
   });
 
   it('takes the first answer for another peer as its baseline', async () => {

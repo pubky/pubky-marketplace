@@ -349,16 +349,20 @@ export class ChatApplication {
     {
       context,
       judgedContext,
+      keepExistingRow = false,
       extra = {},
       signal,
     }: {
       context?: ChatContext;
       judgedContext?: ChatContext | null;
+      /** An existing row, found at once or created meanwhile, is returned as it is: `context` only seeds a new row. */
+      keepExistingRow?: boolean;
       extra?: Partial<ChatConversationModelSchema>;
       signal?: AbortSignal;
     } = {},
   ): Promise<ChatConversationModelSchema> {
     const existing = await LocalChatService.getConversation(me, peer);
+    if (existing && keepExistingRow) return existing;
     if (existing) return await this.writeConversationContext(me, peer, existing, { context, judgedContext, signal });
     const identity = await this.requireIdentity(me, signal);
     const now = Date.now();
@@ -386,7 +390,7 @@ export class ChatApplication {
     signal?.throwIfAborted();
     // A message may have created the row while the identity was read; its context and facts stay.
     const stored = await LocalChatService.addConversation(row);
-    if (stored === row) return row;
+    if (stored === row || keepExistingRow) return stored;
     return await this.writeConversationContext(me, peer, stored, { context, judgedContext, signal });
   }
 
@@ -429,7 +433,9 @@ export class ChatApplication {
         operation: 'queueMessage',
       });
     }
-    await this.ensureConversationRow(me, peer, 'local', { context, signal });
+    // An existing row's context moves only with touchConversation, in message order, so a newer message's
+    // context stored after this send was judged stays and the outbox judges the send under it.
+    await this.ensureConversationRow(me, peer, 'local', { context, keepExistingRow: true, signal });
     const messageId = crypto.randomUUID();
     const sentAt = Date.now();
     const row: ChatMessageModelSchema = {
@@ -877,18 +883,18 @@ export class ChatApplication {
       const records = await ChatHomeserverService.listConversationStates(me);
       for (const record of records) {
         if (record.peer === me) continue;
-        const existing = await LocalChatService.getConversation(me, record.peer);
-        if (!existing) {
-          await this.ensureConversationRow(me, record.peer, 'remote', {
-            context: record.context ?? undefined,
-            extra: {
-              last_read_at: record.last_read_at,
-              priv_state_dirty: false,
-              created_at: record.created_at,
-            },
-            signal,
-          });
-        } else if (record.last_read_at > existing.last_read_at) {
+        // A row a ping, send or open created meanwhile keeps its context; only the read checkpoint advances.
+        const row = await this.ensureConversationRow(me, record.peer, 'remote', {
+          context: record.context ?? undefined,
+          keepExistingRow: true,
+          extra: {
+            last_read_at: record.last_read_at,
+            priv_state_dirty: false,
+            created_at: record.created_at,
+          },
+          signal,
+        });
+        if (record.last_read_at > row.last_read_at) {
           signal?.throwIfAborted();
           await LocalChatService.updateConversation(me, record.peer, { last_read_at: record.last_read_at });
         }

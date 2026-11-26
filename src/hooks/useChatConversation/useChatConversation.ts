@@ -45,16 +45,16 @@ export function useChatConversation(peerPubky: string, context?: ChatContext): U
 
   /**
    * Only an open for the route (mount, a new route context, a retry) writes the route's context. An open
-   * that decides again after the roles or the stored context changed passes none, so it never replaces a
-   * context a message stored.
+   * that decides again after the roles or the stored context changed judges the route's context but never
+   * writes it, so a refused one stays refused and a context a message stored is never replaced.
    */
-  const open = async ({ withRouteContext }: { withRouteContext: boolean }) => {
+  const open = async ({ write }: { write: boolean }) => {
     if (!currentUserPubky || isSelf) return;
     const run = ++openRun.current;
     try {
-      const result = withRouteContext
+      const result = write
         ? await ChatController.commitOpenConversation(peerPubky, context)
-        : await ChatController.commitOpenConversation(peerPubky);
+        : await ChatController.commitOpenConversation(peerPubky, context, { write: false });
       if (run !== openRun.current) return;
       updateOpenState(result.state);
       if (result.state === 'ready') {
@@ -83,7 +83,7 @@ export function useChatConversation(peerPubky: string, context?: ChatContext): U
   useEffect(() => {
     updateOpenState('opening');
     rolesSeen.current = storeThreadRoles;
-    void open({ withRouteContext: true });
+    void open({ write: true });
     const refresh = () => {
       if (openStateRef.current === 'store_restricted') return;
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
@@ -105,7 +105,7 @@ export function useChatConversation(peerPubky: string, context?: ChatContext): U
     // closed one that was not: a newer open supersedes any open still in flight.
     if (rolesSeen.current === storeThreadRoles) return;
     rolesSeen.current = storeThreadRoles;
-    void open({ withRouteContext: false });
+    void open({ write: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only a change of the roles reopens the thread
   }, [storeThreadRoles]);
 
@@ -129,7 +129,7 @@ export function useChatConversation(peerPubky: string, context?: ChatContext): U
     accessSeen.current = access;
     if (previous?.key !== access.key || previous.shown === access.shown) return;
     if (!access.shown) updateOpenState('store_restricted');
-    void open({ withRouteContext: false });
+    void open({ write: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only a change of the access decision reopens the thread
   }, [access]);
 
@@ -161,7 +161,7 @@ export function useChatConversation(peerPubky: string, context?: ChatContext): U
     hasMore: (page?.total ?? 0) > messages.length,
     loadOlder: () => setLimit((current) => current + CHAT_THREAD_PAGE),
     openState,
-    reopen: () => open({ withRouteContext: true }),
+    reopen: () => open({ write: true }),
     retryMessage,
     isSelf,
   };

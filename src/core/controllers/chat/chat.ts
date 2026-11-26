@@ -407,22 +407,31 @@ export class ChatController {
 
   // ------------------------------------------------------------------ writes
 
-  static async commitOpenConversation(peerPubky: string, context?: ChatContext): Promise<ChatOpenResult> {
+  /**
+   * Opens the thread with a peer about `context`. With `write: false` the context is judged like a write
+   * but not stored, for an open that decides again after the roles or the stored context changed.
+   */
+  static async commitOpenConversation(
+    peerPubky: string,
+    context?: ChatContext,
+    { write = true }: { write?: boolean } = {},
+  ): Promise<ChatOpenResult> {
     const me = this.me();
     const signal = captureAuthScope();
     const sellsHere = StoreSellerGate.canSellHere(me);
     const peer = this.normalizePeer(peerPubky);
-    if (sellsHere) return await ChatApplication.openConversation(me, peer, context, signal);
+    const stores = write ? context : undefined;
+    if (sellsHere) return await ChatApplication.openConversation(me, peer, stores, signal);
     // Read before the check, so a message that stores a newer context while the open is in flight keeps it,
     // and the thread is judged again under that context.
     const judgedContext = await this.storedContext(me, peer);
     await this.assertNotSaleThread(me, peer, context, signal);
     signal.throwIfAborted();
-    const result = await ChatApplication.openConversation(me, peer, context, signal, { judgedContext });
+    const result = await ChatApplication.openConversation(me, peer, stores, signal, { judgedContext });
     const stored = await this.storedContext(me, peer);
     signal.throwIfAborted();
     if (!sameChatContext(stored, judgedContext) && !sameChatContext(stored, context ?? judgedContext)) {
-      await this.assertNotSaleThread(me, peer, undefined, signal);
+      await this.assertNotSaleThread(me, peer, context, signal);
     }
     return result;
   }

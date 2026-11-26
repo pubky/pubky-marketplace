@@ -257,6 +257,36 @@ describe('ChatApplication', () => {
       });
     });
 
+    it('keeps a sale context a newer message stored after a send was judged on the purchase', async () => {
+      await LocalChatService.touchConversation(ALICE, BOB, {
+        sentAt: Date.now() + 60_000,
+        body: 'About the sale',
+        direction: 'received',
+        context: sale,
+      });
+
+      await ChatApplication.queueMessage(ALICE, { peer: BOB, body: 'About my order', context: purchase });
+
+      expect(await LocalChatService.getConversation(ALICE, BOB)).toMatchObject({
+        last_context: sale,
+        last_message_direction: 'received',
+      });
+    });
+
+    it('records the send context when the send is the newest message', async () => {
+      await ChatApplication.queueMessage(ALICE, {
+        peer: BOB,
+        body: 'About the boots',
+        context: { listingId: 'boots' },
+      });
+
+      expect(await LocalChatService.getConversation(ALICE, BOB)).toMatchObject({
+        last_context: { listingId: 'boots' },
+        last_message_direction: 'sent',
+        priv_state_dirty: true,
+      });
+    });
+
     it('writes the route context while the stored context is still the judged one', async () => {
       await ChatApplication.openConversation(ALICE, BOB, { listingId: 'boots' }, undefined, {
         judgedContext: purchase,
@@ -265,6 +295,106 @@ describe('ChatApplication', () => {
       expect(await LocalChatService.getConversation(ALICE, BOB)).toMatchObject({
         last_context: { listingId: 'boots' },
         priv_state_dirty: true,
+      });
+    });
+  });
+
+  describe('a message that creates the row while it is being created', () => {
+    const sale = { orderId: 'sold-to-carol' };
+
+    /** Holds the next identity read, the one before a new row is added, until `release` runs. */
+    const holdRowCreation = () => {
+      const getIdentity = LocalChatService.getIdentity.bind(LocalChatService);
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let held = false;
+      vi.spyOn(ChatApplication, 'ensureIdentity').mockResolvedValue('ready');
+      vi.spyOn(LocalChatService, 'getIdentity').mockImplementation(async (owner) => {
+        if (!held) {
+          held = true;
+          await gate;
+        }
+        return await getIdentity(owner);
+      });
+      return {
+        release: () => release(),
+        waitUntilHeld: () => vi.waitFor(() => expect(held).toBe(true)),
+      };
+    };
+
+    /** The row a received message creates: its context, its preview and an unread message. */
+    const storeReceivedRow = async () => {
+      const identity = await LocalChatService.getIdentity(ALICE);
+      await LocalChatService.upsertConversation({
+        id: ChatConversationModel.conversationId(ALICE, CAROL),
+        owner_id: ALICE,
+        peer_pubky: CAROL,
+        folder_id: null,
+        own_folder_id: null,
+        peer_key_id: null,
+        peer_public_key: null,
+        my_key_id: identity?.kid ?? 'kid',
+        peer_state: 'no_key',
+        origin: 'ping',
+        last_message_at: 10,
+        last_message_preview: 'About the sale',
+        last_message_direction: 'received',
+        last_read_at: 0,
+        last_context: sale,
+        priv_state_dirty: true,
+        created_at: 10,
+        updated_at: 10,
+      });
+    };
+
+    beforeEach(async () => {
+      await ChatApplication.ensureIdentity(ALICE);
+    });
+
+    it('keeps the message context when an open adds the row meanwhile', async () => {
+      const hold = holdRowCreation();
+      const opening = ChatApplication.openConversation(ALICE, CAROL, { orderId: 'route' }, undefined, {
+        judgedContext: null,
+      });
+      await hold.waitUntilHeld();
+      await storeReceivedRow();
+      hold.release();
+      await opening;
+
+      expect(await LocalChatService.getConversation(ALICE, CAROL)).toMatchObject({
+        last_context: sale,
+        last_message_at: 10,
+        last_message_direction: 'received',
+      });
+    });
+
+    it('keeps the message context and advances the read checkpoint when a rebuild adds the row meanwhile', async () => {
+      const identity = await LocalChatService.getIdentity(ALICE);
+      vi.spyOn(ChatHomeserverService, 'listConversationStates').mockResolvedValue([
+        {
+          v: 0,
+          peer: CAROL,
+          folder_id: '0'.repeat(32),
+          peer_kid: identity?.kid ?? 'kid',
+          created_at: 1,
+          last_read_at: 5,
+          context: { orderId: 'older-purchase' },
+        },
+      ]);
+      vi.spyOn(ChatApplication, 'syncAll').mockResolvedValue(undefined);
+      const hold = holdRowCreation();
+      const rebuilding = ChatApplication.rebuildFromHomeserver(ALICE);
+      await hold.waitUntilHeld();
+      await storeReceivedRow();
+      hold.release();
+      await rebuilding;
+
+      expect(await LocalChatService.getConversation(ALICE, CAROL)).toMatchObject({
+        last_context: sale,
+        last_message_at: 10,
+        last_read_at: 5,
       });
     });
   });

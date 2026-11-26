@@ -7,6 +7,7 @@ import { endAuthScope } from '@/controllers/auth/auth-scope';
 import { ChatController, isStoreThreadRefusal } from '@/controllers/chat/chat';
 import type { ChatContext } from '@/models/chat/chat.schema';
 import { CONFLICTING_COUNTERPARTY } from '@/pipes/commerce/store-seller-side';
+import { LocalChatService } from '@/services/local/chat/chat';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useChatStore } from '@/stores/chat/chat.store';
 import { setStoreSeller } from '@/test-utils/store-mode';
@@ -811,6 +812,98 @@ describe('ChatController sale threads in a store', () => {
     expect(ChatApplication.openConversation).toHaveBeenCalledWith(VIEWER, FRIEND, undefined, expect.anything(), {
       judgedContext: { orderId: 'bought-from-friend' },
     });
+  });
+
+  it('judges the route context on a reopen without writing it', async () => {
+    setStoreSeller(STORE_SELLER);
+    const purchase = { orderId: 'bought-from-friend' };
+    const persisted = thread(FRIEND, purchase);
+    vi.mocked(ChatApplication.getConversations).mockResolvedValue([persisted] as never);
+    vi.mocked(ChatApplication.getConversation).mockResolvedValue(persisted as never);
+    vi.mocked(CommerceApplication.getMarketplaceOrders).mockResolvedValue([
+      { id: 'bought-from-friend', buyerPubky: VIEWER, sellerPubky: FRIEND },
+      { id: 'sold-to-friend', buyerPubky: FRIEND, sellerPubky: VIEWER },
+    ] as never);
+    await ChatController.fetchStoreThreadRoles();
+
+    await expect(
+      ChatController.commitOpenConversation(FRIEND, { orderId: 'sold-to-friend' }, { write: false }),
+    ).rejects.toMatchObject(refused);
+    expect(ChatApplication.openConversation).not.toHaveBeenCalled();
+
+    await expect(ChatController.commitOpenConversation(FRIEND, purchase, { write: false })).resolves.toEqual({
+      state: 'ready',
+    });
+    expect(ChatApplication.openConversation).toHaveBeenCalledWith(VIEWER, FRIEND, undefined, expect.anything(), {
+      judgedContext: purchase,
+    });
+  });
+
+  it('holds a send that a newer sale message overtook while the send was being judged', async () => {
+    setStoreSeller(STORE_SELLER);
+    const purchase = { orderId: 'bought-from-friend' };
+    const sale = { orderId: 'sold-to-friend' };
+    vi.mocked(ChatApplication.getConversations).mockResolvedValue([thread(FRIEND, purchase)] as never);
+    vi.mocked(CommerceApplication.getMarketplaceOrders).mockResolvedValue([
+      { id: 'bought-from-friend', buyerPubky: VIEWER, sellerPubky: FRIEND },
+      { id: 'sold-to-friend', buyerPubky: FRIEND, sellerPubky: VIEWER },
+    ] as never);
+    await ChatController.fetchStoreThreadRoles();
+    vi.mocked(ChatApplication.getConversation).mockRestore();
+    vi.mocked(ChatApplication.queueMessage).mockRestore();
+    await LocalChatService.clearAll();
+    await LocalChatService.upsertConversation({
+      id: `${VIEWER}:${FRIEND}`,
+      owner_id: VIEWER,
+      peer_pubky: FRIEND,
+      folder_id: null,
+      own_folder_id: null,
+      peer_key_id: null,
+      peer_public_key: null,
+      my_key_id: 'kid',
+      peer_state: 'ready',
+      origin: 'local',
+      last_message_at: 1,
+      last_message_preview: 'About my order',
+      last_message_direction: 'received',
+      last_read_at: 0,
+      last_context: purchase,
+      priv_state_dirty: false,
+      created_at: 1,
+      updated_at: 1,
+    });
+    let release: () => void = () => undefined;
+    vi.mocked(CommerceApplication.getMarketplaceOrderParties).mockImplementation(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return { buyerPubky: VIEWER, sellerPubky: FRIEND };
+    });
+
+    try {
+      const sending = ChatController.commitSendMessage({
+        peerPubky: FRIEND,
+        body: 'And the second one?',
+        context: { orderId: 'later-purchase' },
+      });
+      await vi.waitFor(() => expect(CommerceApplication.getMarketplaceOrderParties).toHaveBeenCalled());
+      await LocalChatService.touchConversation(VIEWER, FRIEND, {
+        sentAt: Date.now() + 60_000,
+        body: 'About the sale',
+        direction: 'received',
+        context: sale,
+      });
+      release();
+      await expect(sending).resolves.toEqual(expect.any(String));
+
+      expect(await LocalChatService.getConversation(VIEWER, FRIEND)).toMatchObject({ last_context: sale });
+      await ChatController.commitFlushOutbox();
+      const flushCalls = vi.mocked(ChatApplication.flushOutbox).mock.calls;
+      const flushSends = flushCalls[flushCalls.length - 1][2]?.sends;
+      expect(await flushSends?.({ peer_pubky: FRIEND, context: { orderId: 'later-purchase' } })).toBe(false);
+    } finally {
+      await LocalChatService.clearAll();
+    }
   });
 
   it('shows a thread with no local row yet and every thread for the store seller', async () => {
