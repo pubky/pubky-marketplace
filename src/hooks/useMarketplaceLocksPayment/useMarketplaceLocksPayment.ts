@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getCommerceAdapterMode, getCommercePollIntervalMs, isLocksPaykitCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { MARKETPLACE_FAILURE_MESSAGES, marketplaceFailureMessage } from '@/libs/commerce/failure-messages';
+import { LOCKS_REGISTRATION_GRACE_SECONDS } from '@/libs/commerce/locks-cancel-paused';
 import type { LocksAdmissionView } from '@/libs/commerce/locks-lifecycle';
 import { locksSubmitRefusalMessage } from '@/libs/commerce/locks-submit-refusal';
 import type { CommerceDigitalLock } from '@/libs/commerce/marketplace-records';
@@ -13,11 +14,24 @@ import { toast } from '@/molecules/Toaster/toast';
 import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
 
 /**
- * Fallback polling bound when the registration's marketplace payment window
- * is unknown (e.g. resumed before registration succeeded). Polling never runs
- * unbounded: it stops here at the latest and the user resumes it explicitly.
+ * Bound for the Lock Server task poll when a registered correlation has no
+ * marketplace payment window, and for each explicit resume ("Check again").
+ * The task poll never runs unbounded: it stops here at the latest and the
+ * user resumes it explicitly.
  */
 const LOCKS_POLL_FALLBACK_BOUND_MS = 15 * 60 * 1_000;
+
+/** A payment window is minutes to hours long; a saved window ending later than this is not trusted. */
+const LOCKS_POLL_MAX_WINDOW_MS = 24 * 60 * 60 * 1_000;
+
+/** The end of the registration grace, or null when the saved window is missing, not a date, or implausibly far away. */
+function graceEndAt(windowExpiresAt: string | null | undefined): number | null {
+  if (!windowExpiresAt) return null;
+  const windowEnd = Date.parse(windowExpiresAt);
+  if (!Number.isFinite(windowEnd) || windowEnd > Date.now() + LOCKS_POLL_MAX_WINDOW_MS) return null;
+  const graceEnd = windowEnd + LOCKS_REGISTRATION_GRACE_SECONDS * 1_000;
+  return Number.isNaN(new Date(graceEnd).getTime()) ? null : graceEnd;
+}
 
 export interface MarketplaceLocksDelivery {
   objectUrl: string;
@@ -43,11 +57,12 @@ export interface MarketplaceLocksDelivery {
  *   task says (pubky/locks#72). Once the marketplace marks the payment
  *   expired it reads the task one last time, for the Lock Server's terminal
  *   reason.
- * - Status polling reads the order projection back from the transaction
- *   service. THE CLIENT NEVER ADVANCES THE PAYMENT: the service's worker
- *   independently verifies the Locks lifecycle and confirms exactly once.
- *   Polling is abortable (unmount), bounded (the registration's payment
- *   window, or a fallback bound), and resumable — the correlation is
+ * - Payment status comes only from the order projection the surface already
+ *   reloads (`useMarketplaceOrders`), passed in as `payment`; this hook adds
+ *   no status poll of its own. THE CLIENT NEVER ADVANCES THE PAYMENT: the
+ *   service's worker independently verifies the Locks lifecycle and confirms
+ *   exactly once, including a confirmation that lands while the service holds
+ *   the order past its window for a live Lock Server task. The correlation is
  *   persisted, so a reload re-reads the durable state and picks up where the
  *   buyer left off.
  * - `unlock` redeems a confirmed payment for the guarded digital content and
@@ -76,7 +91,6 @@ export function useMarketplaceLocksPayment({
   const [error, setError] = useState<string | null>(null);
   // An explicit resume starts a new read window for this payment only.
   const [pollResume, setPollResume] = useState<{ paymentId: string; boundAt: number } | null>(null);
-  const [pollExhausted, setPollExhausted] = useState(false);
   const [admission, setAdmission] = useState<LocksAdmissionView | null>(null);
   const deliveryRef = useRef<MarketplaceLocksDelivery | null>(null);
 
@@ -96,35 +110,6 @@ export function useMarketplaceLocksPayment({
     void loadCorrelation();
   }, [loadCorrelation]);
 
-  // Bounded, abortable status polling while the payment can still move.
-  // The projection read is the ONLY source of payment progress.
-  useEffect(() => {
-    if (!enabled || !payment || !correlation) return;
-    if (payment.state !== 'awaiting_entitlement' && payment.state !== 'detected') return;
-    const boundAt =
-      pollResume?.paymentId === payment.id
-        ? pollResume.boundAt
-        : correlation.window_expires_at
-          ? Date.parse(correlation.window_expires_at) + 60_000
-          : Date.now() + LOCKS_POLL_FALLBACK_BOUND_MS;
-    let active = true;
-    setPollExhausted(false);
-    const timer = window.setInterval(() => {
-      if (!active) return;
-      if (Date.now() > boundAt) {
-        window.clearInterval(timer);
-        setPollExhausted(true);
-        return;
-      }
-      void Promise.resolve(onPaymentChanged()).catch(() => undefined);
-    }, getCommercePollIntervalMs());
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, payment?.id, payment?.state, correlation?.id, correlation?.window_expires_at, pollResume]);
-
   // Bounded polling of the Lock Server task while the request is in flight.
   // It stops at the first terminal answer and never resubmits the bundle.
   useEffect(() => {
@@ -137,9 +122,7 @@ export function useMarketplaceLocksPayment({
     const boundAt =
       pollResume?.paymentId === payment.id
         ? pollResume.boundAt
-        : correlation.window_expires_at
-          ? Date.parse(correlation.window_expires_at) + 60_000
-          : Date.now() + LOCKS_POLL_FALLBACK_BOUND_MS;
+        : (graceEndAt(correlation.window_expires_at) ?? Date.now() + LOCKS_POLL_FALLBACK_BOUND_MS);
     let active = true;
     let timer: number | undefined;
     let reading = false;
@@ -271,7 +254,6 @@ export function useMarketplaceLocksPayment({
 
   const resumePolling = () => {
     if (!enabled || !payment) return;
-    setPollExhausted(false);
     setPollResume({ paymentId: payment.id, boundAt: Date.now() + LOCKS_POLL_FALLBACK_BOUND_MS });
   };
 
@@ -281,7 +263,6 @@ export function useMarketplaceLocksPayment({
     isUnlocking,
     delivery,
     error,
-    pollExhausted,
     admission,
     start,
     unlock,

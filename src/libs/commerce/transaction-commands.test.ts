@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   CONFIRM_REFUND_DESTINATION_WIRE_COMMAND,
   REFUND_FIXTURE_ADDRESS,
@@ -308,6 +308,30 @@ describe('orderCommandPayloadIssues', () => {
         }),
       ).toEqual(['payload.transactionId']);
     });
+  });
+});
+
+describe('marketplace command refusal responses', () => {
+  it('keeps an optional refusal reason after parsing', () => {
+    const refused = marketplaceCommandResponseSchema.parse({
+      ok: false,
+      error: {
+        code: 'INVALID_STATE',
+        message: 'This payment is still in progress.',
+        reason: 'locks_task_live',
+      },
+    });
+    expect(refused).toMatchObject({ error: { reason: 'locks_task_live' } });
+
+    const withoutReason = marketplaceCommandResponseSchema.parse({
+      ok: false,
+      error: { code: 'INVALID_STATE', message: 'This order cannot be cancelled.' },
+    });
+    expect(withoutReason).toMatchObject({ error: { code: 'INVALID_STATE' } });
+    if (!withoutReason.ok) {
+      expect(withoutReason.error.reason).toBeUndefined();
+      expectTypeOf(withoutReason.error.reason).toEqualTypeOf<string | undefined>();
+    }
   });
 });
 
