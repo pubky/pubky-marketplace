@@ -41,7 +41,7 @@ it('handles click events', () => {
 it('handles hover states correctly', () => {
   render(<Button variant="default">Hover Button</Button>);
   const button = screen.getByRole('button');
-  expect(button).toHaveClass('hover:!bg-brand/30');
+  expect(button).toHaveClass('hover:!bg-brand/32');
 });
 ```
 
