@@ -1,7 +1,5 @@
 import { shopStorageKey } from '@/libs/storage-namespace/storage-namespace';
 
-export const COLLECTIONS_NAV_NEW_BADGE_ENABLED = true;
-export const COLLECTIONS_NAV_NEW_BADGE_STORAGE_ID = 'collections-nav-v1';
 export const MARKETPLACE_PROMO_STORAGE_ID = 'marketplace-promo-v1';
 export const MARKETPLACE_NAV_SWIPE_STORAGE_ID = 'marketplace-nav-swipe-v1';
 /** The chat privacy note: shown until the account dismisses it once. */

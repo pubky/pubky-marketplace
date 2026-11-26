@@ -284,6 +284,48 @@ describe('Commerce tags on the social Nexus', () => {
     expect(page.completeResource).toBe(false);
   });
 
+  it('reads subsequent pages before a backfilled resource can retire stale labels', async () => {
+    const { socialNexusServesV1 } = await import('@/services/nexus/social-v1');
+    vi.mocked(socialNexusServesV1).mockResolvedValueOnce(true);
+    const tags = Array.from({ length: 100 }, (_, index) => ({
+      label: String(index),
+      taggers: [],
+      taggers_count: 1,
+      tag_uri: null,
+    }));
+    vi.mocked(fetchNexusIfFound).mockResolvedValueOnce({ tags }).mockResolvedValueOnce({ tags: [] });
+    const page = await NexusMarketplaceService.fetchShopTags({ seller_id: seller });
+    expect(page.tags).toHaveLength(tags.length);
+    expect(page.completeResource).toBe(true);
+    expect(new URL(vi.mocked(fetchNexusIfFound).mock.calls.at(-1)![0].url).searchParams.get('skip_tags')).toBe('100');
+  });
+
+  it.each(['removed', 'reordered'] as const)('handles a resource that is %s during pagination', async (change) => {
+    const { socialNexusServesV1 } = await import('@/services/nexus/social-v1');
+    vi.mocked(socialNexusServesV1).mockResolvedValueOnce(true);
+    const tags = Array.from({ length: 100 }, (_, index) => ({
+      label: String(index),
+      taggers: [],
+      taggers_count: 1,
+      tag_uri: null,
+    }));
+    vi.mocked(fetchNexusIfFound)
+      .mockResolvedValueOnce({ tags })
+      .mockResolvedValueOnce(change === 'removed' ? null : { tags: [tags[0]] });
+    const page = await NexusMarketplaceService.fetchShopTags({ seller_id: seller });
+    expect(page.tags).toHaveLength(change === 'removed' ? 0 : 100);
+    expect(page.completeResource).toBe(change === 'removed');
+  });
+
+  it('rejects malformed resource data before reconciling the cache', async () => {
+    const { socialNexusServesV1 } = await import('@/services/nexus/social-v1');
+    vi.mocked(socialNexusServesV1).mockResolvedValueOnce(true);
+    vi.mocked(fetchNexusIfFound).mockResolvedValueOnce({});
+    await expect(NexusMarketplaceService.fetchShopTags({ seller_id: seller })).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+  });
+
   it('keeps the legacy Market projection partial even when its page is empty', async () => {
     const { socialNexusServesV1 } = await import('@/services/nexus/social-v1');
     vi.mocked(socialNexusServesV1).mockResolvedValueOnce(false);

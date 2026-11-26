@@ -28,6 +28,15 @@ const GUIDE_COPY_CHANGES = [
     'INDEX serves marketplace records and reviews. SOCIAL serves community tags on Social v1.\n' +
       'The marketplace API reference is at INDEX/api-docs/v0/openapi.json.',
   ],
+  [
+    'Related: INDEX/v0/listing/{seller_id}/{listing_id}/tags (community tags),\n' +
+      'INDEX/v0/listing/{seller_id}/{listing_id}/reviews (reviews of this listing).',
+    'Get listing reviews at INDEX/v0/listing/{seller_id}/{listing_id}/reviews.\n' +
+      "For community tags, check GET SOCIAL/v1/info. On success, URL-encode the listing's full\n" +
+      '`uri` from the response above and read GET SOCIAL/v1/resource/by-uri?uri={encoded_uri}&skip_tags=0&limit_tags=5.\n' +
+      'Read the `tags` array. A 404 from this resource lookup means the listing has no indexed tags.\n' +
+      'If SOCIAL/v1/info returns 404, read the legacy tags at INDEX/v0/listing/{seller_id}/{listing_id}/tags.',
+  ],
 ];
 
 describe('GET /llms.txt', () => {
@@ -78,9 +87,7 @@ describe('GET /llms.txt', () => {
       expect(expected.split(before)).toHaveLength(2);
       expected = expected.replace(before, after);
     }
-    const oldListingInstructions = /Related: INDEX\/v0\/listing\/[^\n]*\nINDEX\/v0\/listing\/[^\n]*\n/;
-    const newListingInstructions = /Get listing reviews at [\s\S]*?(?=Media URIs are records)/;
-    expect(body.replace(newListingInstructions, '')).toBe(expected.replace(oldListingInstructions, ''));
+    expect(body).toBe(expected);
     expect(body).not.toMatch(/\bsats\b/);
   });
 

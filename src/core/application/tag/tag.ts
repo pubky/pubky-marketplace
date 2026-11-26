@@ -4,9 +4,12 @@ import {
   type TDeleteTagInput,
   type TTagEventParams,
 } from '@/application/tag/tag.types';
+import { LEGACY_SOCIAL_PATHS } from '@/config/social-paths';
 import { marketplaceTagCopyUrls } from '@/libs/commerce/tag-uri';
 import { AppError } from '@/libs/error/error';
-import { ClientErrorCode } from '@/libs/error/error.codes';
+import { ClientErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
+import { Err } from '@/libs/error/error.factories';
+import { ErrorService } from '@/libs/error/error.types';
 import { HttpMethod } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
@@ -71,7 +74,14 @@ export class TagApplication {
 
   static async prepareTag(params: TTagEventParams) {
     const epoch = await SocialWriteService.requireEpoch(params.taggerId, 'tags');
-    return epoch === 'v1' ? TagNormalizer.fromV1(params) : TagNormalizer.from(params);
+    const tag = epoch === 'v1' ? TagNormalizer.fromV1(params) : TagNormalizer.from(params);
+    if (params.preserveLabel && tag.label !== params.label) {
+      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'This tag spelling requires a migrated Pubky account.', {
+        service: ErrorService.PubkyAppSpecs,
+        operation: 'prepareTag',
+      });
+    }
+    return tag;
   }
 
   /**
@@ -88,7 +98,7 @@ export class TagApplication {
       try {
         assertCurrent();
         if (tagBody) {
-          await HomeserverService.putBlob({ url: tagUrl, blob: tagBody });
+          await HomeserverService.putBlob({ url: tagUrl, blob: tagBody, bounded: true });
         } else {
           await HomeserverService.request({ method: HttpMethod.PUT, url: tagUrl, bodyJson: tagJson });
         }
@@ -147,7 +157,7 @@ export class TagApplication {
                 taggerId,
                 tagUrl,
                 storedUrl,
-                HomeserverService.canCurrentUserSessionWrite(taggerId, '/pub/pubky.app/tags/'),
+                HomeserverService.canCurrentUserSessionWrite(taggerId, LEGACY_SOCIAL_PATHS.tags),
               )
             : [];
         // The migrator keeps the 0.x record. Delete verified copies first so a retry can still remove the active tag.

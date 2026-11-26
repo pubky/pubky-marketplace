@@ -26,7 +26,7 @@ import {
  *
  *   1. No key: a marketplace session minted without the `/priv` grant is
  *      refused the key, so watchlist sync and receipt publication report
- *      `needs_marketplace_approval` (the recovery-key export `needs_reauth`);
+ *      `needs_marketplace_approval`;
  *      nothing is written and the plaintext stays.
  *   1b. Homeserver refusal: a homeserver session whose grant cannot write
  *      `/priv/pubky.app/` reports `needs_reauth` without requesting a key,
@@ -35,7 +35,7 @@ import {
  *      key; without Web Locks the watchlist sync refuses to run; every plaintext record is sealed, read back, and only then
  *      deleted, in that order on the wire; a second paid order's receipt is
  *      written sealed from its attestation; the released keys match the
- *      pinned wire fixture's shape; the exported recovery key alone opens
+ *      pinned wire fixture's shape; the released data keys alone open
  *      every entry, receipts found only by listing their family, with an
  *      independent node:crypto implementation of the documented recipe.
  *   3. Fresh device: an empty IndexedDB and a new session get the same key
@@ -430,9 +430,9 @@ async function legacyReceiptRecord(ownerPubky: string, receiptId: string): Promi
 // The documented recipe, independently (node:crypto + @noble/ciphers only)
 // ---------------------------------------------------------------------------
 
-type RecoveryFile = { owner: string; keys: { keyId: string; key: string }[] };
+type ReleasedDataKeys = { owner: string; keys: { keyId: string; key: string }[] };
 
-function recipe(file: RecoveryFile) {
+function recipe(file: ReleasedDataKeys) {
   const subkey = (key: string, info: string) =>
     new Uint8Array(hkdfSync('sha256', Buffer.from(key, 'base64url'), 'pubky-priv-aead/v1', info, 32));
   const pathKey = subkey(file.keys[0].key, 'path');
@@ -446,7 +446,7 @@ function recipe(file: RecoveryFile) {
     /** Opens the envelope read from the entry `name` (its last path segment). */
     open(envelope: { kid: string; nonce: string; ct: string }, family: string, name: string): unknown {
       const entry = file.keys.find(({ keyId }) => keyId === envelope.kid);
-      if (!entry) throw new Error('recovery file lacks the envelope key');
+      if (!entry) throw new Error('released keyring lacks the envelope key');
       const aad = new TextEncoder().encode(`${file.owner}|${family}|${name}|${envelope.kid}`);
       const plaintext = xchacha20poly1305(
         subkey(entry.key, 'record'),
@@ -667,7 +667,7 @@ describe('encrypted /priv — LIVE proof on the deployed staging stack', () => {
       'needs_marketplace_approval',
     );
     await m.CommerceAttentionSeenApplication.pull(buyer.pubky);
-    expect(await m.CommercePrivKeyringApplication.exportRecoveryKey(buyer.pubky)).toEqual({ kind: 'needs_reauth' });
+    expect(await m.CommercePrivKeyringApplication.get(buyer.pubky)).toEqual({ kind: 'needs_reauth' });
     expect(writesSince(mark)).toEqual([]);
     for (const url of legacyUrls) expect(await exists(url), url).toBe(true);
     expect(
@@ -825,9 +825,10 @@ describe('encrypted /priv — LIVE proof on the deployed staging stack', () => {
       '[priv-live] 2c. badge checkpoints: v1 carried into sealed entries and deleted; a new seen moment pruned the older entry',
     );
 
-    const exported = await m.CommercePrivKeyringApplication.exportRecoveryKey(buyer.pubky);
-    if (exported.kind !== 'file') throw new Error(`export refused: ${exported.kind}`);
-    const recovery = recipe(JSON.parse(exported.file.contents) as RecoveryFile);
+    const recovery = recipe({
+      owner: rawKeysBody.owner,
+      keys: rawKeysBody.keys.map(({ key_id, key }) => ({ keyId: key_id, key })),
+    });
     expect(recovery.entryUrl('watchlist', 'watchlist')).toBe(watchlistUrl);
     expect(
       recovery.open(
@@ -867,7 +868,7 @@ describe('encrypted /priv — LIVE proof on the deployed staging stack', () => {
       ),
     ).toMatchObject({ version: 1, seenAt: activityAfterSeen.max });
     console.info(
-      '[priv-live] 2d. exported recovery key alone opens the watchlist, both receipts found by listing (no receipt ids), and a checkpoint, with node:crypto',
+      '[priv-live] 2d. released data keys alone open the watchlist, both receipts found by listing (no receipt ids), and a checkpoint, with node:crypto',
     );
 
     // ── 3. Fresh device: empty IndexedDB, new session, same key ────────────

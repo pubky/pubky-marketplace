@@ -54,7 +54,6 @@ the same PNG as the `opengraph-image` routes.
 - Image route segments: `revalidate = 300` (literal, kept in sync).
 - Rendered PNGs: `Cache-Control: public, max-age=300, s-maxage=300,
 stale-while-revalidate=86400` (`OG_COMMERCE_CACHE_HEADERS`).
-- Social/post/profile OG routes keep their existing 1-hour policy.
 
 Platforms additionally cache unfurls on their side (often 24h+); after content
 changes, re-scrape with the platform debugger (below).

@@ -2,10 +2,10 @@ import { act, renderHook } from '@testing-library/react';
 import type { RefObject } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TAG_MAX_LENGTH } from '@/config/posts';
+import { normalizeSocialTagLabel } from '@/libs/tag-label';
 import { mockClipboardEvent } from '@/test-utils/react-events';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { useTagInput } from './useTagInput';
-import { normalizeSocialTagLabel } from './useTagInput.utils';
 
 // Mock useEmojiInsert
 vi.mock('../useEmojiInsert/useEmojiInsert', () => ({

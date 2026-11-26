@@ -1,4 +1,6 @@
 // @vitest-environment node
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Env } from '@/libs/env/env';
 import { GET } from './route';
@@ -60,4 +62,24 @@ describe('retired social route handoff', () => {
       expect((await enter(segments)).status).toBe(404);
     },
   );
+});
+
+describe('served handoff script', () => {
+  const script = readFileSync('public/social-handoff.js', 'utf8');
+
+  it.each([false, true])('preserves deep-link fragments when top navigation is blocked: %s', (blocked) => {
+    const link = { href: 'https://app.example/post/abc/123?tag=a' };
+    const destinations: string[] = [];
+    const replace = (href: string) => {
+      destinations.push(href);
+      if (blocked) throw new DOMException('Requires user activation', 'SecurityError');
+    };
+    runInNewContext(script, {
+      URL,
+      document: { querySelector: (selector: string) => (selector === 'a[target="_top"]' ? link : null) },
+      window: { location: { hash: '#reply-42' }, top: { location: { replace } } },
+    });
+    expect(link.href).toBe('https://app.example/post/abc/123?tag=a#reply-42');
+    expect(destinations).toEqual([link.href]);
+  });
 });

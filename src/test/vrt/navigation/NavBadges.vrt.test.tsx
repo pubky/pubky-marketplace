@@ -13,7 +13,7 @@ const commerce = vi.hoisted(() => ({ mode: 'unavailable' as 'unavailable' | 'san
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
-  usePathname: () => '/home',
+  usePathname: () => '/marketplace',
 }));
 
 vi.mock('@/config/commerce', async () => {
@@ -39,10 +39,6 @@ vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({
   useMarketplaceCartCount: () => cart.count,
 }));
 
-vi.mock('@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery', () => ({
-  useCollectionsNavDiscovery: () => ({ showCollectionsNew: false, markCollectionsNavSeen: vi.fn() }),
-}));
-
 vi.mock('@/hooks/useRequireAuth/useRequireAuth', () => ({
   useRequireAuth: () => ({ requireAuth: <T,>(action: () => T) => action() }),
 }));
@@ -66,10 +62,6 @@ vi.mock('@/hooks/usePublicRoute/usePublicRoute', () => ({
 vi.mock('@/stores/notification/notification.store', () => ({
   useNotificationStore: (selector: (state: Record<string, unknown>) => unknown) =>
     selector({ selectMarketplaceUnread: () => 0 }),
-}));
-
-vi.mock('@/stores/localFiles/localFiles.store', () => ({
-  useLocalFilesStore: (selector: (state: Record<string, unknown>) => unknown) => selector({ profile: null }),
 }));
 
 describe('Market navigation badges — visual regression', () => {

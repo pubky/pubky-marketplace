@@ -60,13 +60,10 @@ import { useAuthStore } from '@/stores/auth/auth.store';
 import type { GrantSigner } from '@/stores/auth/auth.types';
 import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
-import { useHomeStore } from '@/stores/home/home.store';
-import { useHotStore } from '@/stores/hot/hot.store';
-import { useLocalFilesStore } from '@/stores/localFiles/localFiles.store';
 import { useMigrationStore } from '@/stores/migration/migration.store';
 import { useNotificationStore } from '@/stores/notification/notification.store';
+import { clearRetiredSocialStores } from '@/stores/persistedKeys';
 import { AUTH_PERSIST_KEY } from '@/stores/persistedKeys';
-import { useSearchStore } from '@/stores/search/search.store';
 import { useSettingsStore } from '@/stores/settings/settings.store';
 import { useSignInStore } from '@/stores/signIn/signIn.store';
 
@@ -962,11 +959,8 @@ export class AuthController {
           useMigrationStore.getState().reset();
           // Keep browser preferences separate across accounts. Same-account renewal preserves them.
           useSettingsStore.getState().reset();
-          useSearchStore.getState().reset();
+          clearRetiredSocialStores();
           useNotificationStore.getState().reset();
-          useHomeStore.getState().reset();
-          useHotStore.getState().reset();
-          useLocalFilesStore.getState().reset();
           useCommerceStore.getState().reset();
           resetBuyerCountry();
           for (const departed of new Set([captured?.pubky, currentPubky, persistedPubky])) {
@@ -1100,13 +1094,10 @@ export class AuthController {
       // Reset all Zustand stores.
       useAuthStore.getState().reset();
       useSignInStore.getState().reset();
-      useLocalFilesStore.getState().reset();
       useCommerceStore.getState().reset();
       // The buyer country is personal data of the signing-out account: gone from memory and from the device.
       resetBuyerCountry();
-      useHomeStore.getState().reset();
-      useHotStore.getState().reset();
-      useSearchStore.getState().reset();
+      clearRetiredSocialStores();
       useNotificationStore.getState().reset();
       useSettingsStore.getState().reset();
       // Entries keyed by the leaving pubky (orders checkpoint, own drops, feature-discovery flags). An
@@ -1586,32 +1577,5 @@ export class AuthController {
       capturedRecordIds,
       preservePublicCache: false,
     });
-  }
-
-  /** Resume Market initialization under the same account after profile creation. */
-  static async completeProfileSetup() {
-    const authStore = useAuthStore.getState();
-    const pubky = authStore.selectCurrentUserPubky();
-    const session = authStore.session;
-    const generation = this.logoutGeneration;
-    const scope = captureAuthScope();
-    const isCurrent = () =>
-      !scope.aborted &&
-      generation === this.logoutGeneration &&
-      useAuthStore.getState().session === session &&
-      Boolean(session);
-    if (!isCurrent()) return;
-    try {
-      // Bootstrap writes private data. A sign-out takes this lock before its
-      // wipe, so anything written before the scope ended is cleared after it.
-      await withAuthFinalizationLock(async () => {
-        if (isCurrent()) await this.hydrateMeImAlive({ pubky, isCurrent, signal: scope });
-      });
-    } catch (error) {
-      if (scope.aborted) return;
-      throw error;
-    }
-    if (!isCurrent()) return;
-    authStore.setHasProfile(true);
   }
 }

@@ -24,6 +24,7 @@ describe('community tag reads across account changes', () => {
   });
 
   it.each([
+    ['the same viewer refreshes again', () => {}],
     ['the host ends this auth scope', () => endAuthScope()],
     ['another tab signs out', () => bumpAuthEpoch()],
     ['the viewer is replaced', () => useAuthStore.setState({ currentUserPubky: seller })],

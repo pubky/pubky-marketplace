@@ -1,5 +1,9 @@
 import { buildMarketUri } from 'pubky-market-specs';
+import { z } from 'zod';
 import { MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS } from '@/config/commerce';
+import { ServerErrorCode } from '@/libs/error/error.codes';
+import { Err } from '@/libs/error/error.factories';
+import { ErrorService } from '@/libs/error/error.types';
 import { getMarketplaceTagsBackfilled } from '@/libs/runtime-config/runtime-config';
 import { marketplaceApi } from '@/services/nexus/marketplace/marketplace.api';
 import type {
@@ -23,7 +27,14 @@ import { buildUrlWithQuery, fetchNexus, fetchNexusIfFound, queryNexus } from '@/
 import { socialNexusServesV1 } from '@/services/nexus/social-v1';
 
 /** A complete first page is authoritative only after historical Market tags were backfilled. */
-export type MarketplaceTagPage = { tags: NexusTag[]; completeResource: boolean };
+export type MarketplaceTagPage = { tags: NexusTag[]; completeResource: boolean; probeFailure?: unknown };
+
+const resourceTagSchema = z.object({
+  label: z.string(),
+  taggers: z.array(z.string()),
+  taggers_count: z.number().int().nonnegative(),
+  tag_uri: z.string().nullish(),
+});
 
 /**
  * Nexus Marketplace Service
@@ -81,11 +92,11 @@ export class NexusMarketplaceService {
    * @returns A tag page and whether it contains the complete canonical aggregate
    */
   static async fetchListingTags(params: TListingTagsParams): Promise<MarketplaceTagPage> {
-    if (await socialNexusServesV1()) {
-      return this.fetchResourceTags(buildMarketUri(params.seller_id, 'listing', params.listing_id), params);
-    }
-    const tags = await queryNexus<NexusTag[]>({ url: marketplaceApi.listingTags(params) });
-    return { tags, completeResource: false };
+    return this.fetchTags(
+      buildMarketUri(params.seller_id, 'listing', params.listing_id),
+      params,
+      marketplaceApi.listingTags(params),
+    );
   }
 
   /**
@@ -97,24 +108,65 @@ export class NexusMarketplaceService {
    * @returns A tag page and whether it contains the complete canonical aggregate
    */
   static async fetchShopTags(params: TShopTagsParams): Promise<MarketplaceTagPage> {
-    if (await socialNexusServesV1()) {
-      return this.fetchResourceTags(buildMarketUri(params.seller_id, 'shop'), params);
+    return this.fetchTags(buildMarketUri(params.seller_id, 'shop'), params, marketplaceApi.shopTags(params));
+  }
+
+  private static async fetchTags(uri: string, params: TShopTagsParams, legacyUrl: string): Promise<MarketplaceTagPage> {
+    let canonical: boolean;
+    try {
+      canonical = await socialNexusServesV1();
+    } catch (probeFailure) {
+      // During backfill a separate Market index still holds valid historical tags.
+      // After cutover it may contain deleted tags and cannot substitute for the social index.
+      if (getMarketplaceTagsBackfilled()) throw probeFailure;
+      const tags = await queryNexus<NexusTag[]>({ url: legacyUrl }).catch(() => {
+        throw probeFailure;
+      });
+      return { tags, completeResource: false, probeFailure };
     }
-    const tags = await queryNexus<NexusTag[]>({ url: marketplaceApi.shopTags(params) });
+    if (canonical) return this.fetchResourceTags(uri, params);
+    const tags = await queryNexus<NexusTag[]>({ url: legacyUrl });
     return { tags, completeResource: false };
   }
 
-  /** On a v1 Nexus a missing resource has no tags. Its old Market projection may still contain removed tags. */
-  private static async fetchResourceTags(uri: string, { skip_tags = 0, limit_tags = 5, viewer_id }: TShopTagsParams) {
-    const url = buildUrlWithQuery({
-      baseRoute: 'v1/resource/by-uri',
-      params: { uri, skip_tags, limit_tags, viewer_id },
-    });
-    const view = await fetchNexusIfFound<{ tags: (Omit<NexusTag, 'relationship'> & { tag_uri: string | null })[] }>({
-      url,
-    });
-    const tags = (view?.tags ?? []).map((tag) => ({ ...tag, relationship: tag.tag_uri != null }));
-    return { tags, completeResource: getMarketplaceTagsBackfilled() && skip_tags === 0 && tags.length < limit_tags };
+  /** On a v1 Nexus a missing resource has no tags. Only a fully backfilled aggregate can remove old local labels. */
+  private static async fetchResourceTags(
+    uri: string,
+    { skip_tags, limit_tags, viewer_id }: TShopTagsParams,
+  ): Promise<MarketplaceTagPage> {
+    const backfilled = getMarketplaceTagsBackfilled();
+    const fetchAll = backfilled && skip_tags === undefined && limit_tags === undefined;
+    const limit = limit_tags ?? (fetchAll ? 100 : 5);
+    let skip = skip_tags ?? 0;
+    const tags = new Map<string, NexusTag>();
+    // Nexus accepts skip_tags up to 10,000. A larger aggregate remains partial.
+    do {
+      const url = buildUrlWithQuery({
+        baseRoute: 'v1/resource/by-uri',
+        params: { uri, skip_tags: skip, limit_tags: limit, viewer_id },
+      });
+      const view = await fetchNexusIfFound<unknown>({ url });
+      if (view === null) return { tags: [], completeResource: backfilled && !skip_tags };
+      const page = z.object({ tags: z.array(resourceTagSchema).max(limit) }).safeParse(view);
+      if (!page.success) {
+        throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Invalid resource tag page', {
+          service: ErrorService.Nexus,
+          operation: 'fetchResourceTags',
+        });
+      }
+      let shifted = false;
+      for (const tag of page.data.tags) {
+        if (tags.has(tag.label)) shifted = true;
+        tags.set(tag.label, { ...tag, relationship: tag.tag_uri != null });
+      }
+      // A repeated label means the popularity order changed between offset reads.
+      // Keep previous labels until a stable traversal can confirm which ones disappeared.
+      if (shifted || page.data.tags.length < limit) {
+        return { tags: [...tags.values()], completeResource: !shifted && backfilled && !skip_tags };
+      }
+      skip += limit;
+    } while (fetchAll && skip <= 10_000);
+    return { tags: [...tags.values()], completeResource: false };
   }
 
   /**

@@ -38,7 +38,15 @@ export interface MarketplaceCommunityTagsProps {
  * seller's own metadata.
  */
 export function MarketplaceCommunityTags({ target, variant = 'card' }: MarketplaceCommunityTagsProps) {
-  const { tags, socialHandoffUrl, normalizeLabel, handleTagAdd, handleTagToggle } = useMarketplaceTags(target);
+  const {
+    tags,
+    socialHandoffUrl,
+    readOnly,
+    embeddedTaggingUnavailable,
+    normalizeLabel,
+    handleTagAdd,
+    handleTagToggle,
+  } = useMarketplaceTags(target);
   const taggedId = target.kind === TagKind.LISTING ? `${target.sellerPubky}:${target.listingId}` : target.ownerPubky;
 
   const nexusTags = useMemo(
@@ -52,7 +60,7 @@ export function MarketplaceCommunityTags({ target, variant = 'card' }: Marketpla
         taggedId={taggedId}
         taggedKind={target.kind}
         tags={nexusTags}
-        readOnly={Boolean(socialHandoffUrl)}
+        readOnly={readOnly}
         normalizeLabel={normalizeLabel}
         showCount
         showAddButton
@@ -60,6 +68,11 @@ export function MarketplaceCommunityTags({ target, variant = 'card' }: Marketpla
         onTagClick={(tag) => void handleTagToggle(tag)}
         onTagAdd={(label) => void handleTagAdd(label)}
       />
+      {embeddedTaggingUnavailable && (
+        <span className="text-sm text-muted-foreground">
+          Tagging is currently unavailable for this account in Shop.
+        </span>
+      )}
       {socialHandoffUrl && (
         <a className="text-sm underline" href={socialHandoffUrl} target="_top">
           Open in Pubky App to tag

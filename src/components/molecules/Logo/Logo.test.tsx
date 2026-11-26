@@ -2,7 +2,6 @@ import { usePathname } from 'next/navigation';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LOGO_LANDING_ROUTES } from '@/app/routes';
-import { FORCE_FEED_SCROLL_TOP_KEY } from '@/config/feed';
 import { setSocialHost } from '@/test-utils/social-host';
 import { Logo } from './Logo';
 
@@ -111,7 +110,7 @@ describe('Logo', () => {
 
     fireEvent.click(link!);
     expect(window.scrollTo).not.toHaveBeenCalled();
-    expect(setItemSpy).toHaveBeenCalledWith(FORCE_FEED_SCROLL_TOP_KEY, '1');
+    expect(setItemSpy).not.toHaveBeenCalled();
   });
 
   it.each(LOGO_LANDING_ROUTES)('links to the root URL on %s', (pathname) => {

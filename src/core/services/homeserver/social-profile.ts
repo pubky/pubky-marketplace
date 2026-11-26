@@ -1,3 +1,4 @@
+import { userUriBuilder } from 'pubky-app-specs';
 import { buildUri } from 'pubky-social-specs';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 
@@ -10,7 +11,7 @@ export class SocialProfileService {
     if (current.found) return { epoch: 'v1', json: current.json };
 
     const legacy = await HomeserverService.getJsonIfFound({
-      url: `pubky://${pubky}/pub/pubky.app/profile.json`,
+      url: userUriBuilder(pubky),
       publicRead: true,
     });
     return legacy.found ? { epoch: 'legacy', json: legacy.json } : { epoch: 'missing' };

@@ -40,6 +40,7 @@ const mockState = vi.hoisted(() => ({
   publicStorageExists: vi.fn(),
   publicStorageList: vi.fn(),
   // Pubky methods
+  eventStreamFor: vi.fn(),
   getHomeserverOf: vi.fn(),
   restoreSession: vi.fn(),
   sessionRestore: vi.fn(),
@@ -50,7 +51,6 @@ const mockState = vi.hoisted(() => ({
   grantStoreList: vi.fn(),
   grantStoreIsAvailable: vi.fn(),
   authFlowKindSignin: vi.fn(),
-  eventStreamForUser: vi.fn(),
   // Auth store session
   currentSession: null as Session | null,
 }));
@@ -93,10 +93,10 @@ vi.mock('@/stores/auth/auth.store', () => ({
 
 vi.mock('@synonymdev/pubky', () => {
   const createMockPubkyInstance = () => ({
+    eventStreamFor: mockState.eventStreamFor,
     getHomeserverOf: (...args: unknown[]) => mockState.getHomeserverOf(...args),
     restoreSession: (...args: unknown[]) => mockState.restoreSession(...args),
     startGrantAuthFlow: (...args: unknown[]) => mockState.grantStartDelegated(...args),
-    eventStreamForUser: (...args: unknown[]) => mockState.eventStreamForUser(...args),
     client: {
       fetch: (...args: unknown[]) => mockState.clientFetch(...args),
     },
@@ -252,11 +252,6 @@ describe('HomeserverService', () => {
     mockState.sessionStorageDelete.mockResolvedValue(undefined);
     mockState.sessionStorageList.mockResolvedValue([]);
     mockState.authFlowKindSignin.mockReturnValue('signin-kind');
-    mockState.eventStreamForUser.mockReturnValue({
-      path: vi.fn().mockReturnThis(),
-      live: vi.fn().mockReturnThis(),
-      subscribe: vi.fn().mockResolvedValue(new ReadableStream()),
-    });
 
     // Reset module cache and re-import
     vi.resetModules();
@@ -282,9 +277,8 @@ describe('HomeserverService', () => {
         'putBlob',
         'list',
         'delete',
-        'get',
         'exists',
-        'subscribeUserEventStreamForPath',
+        'subscribeHomeserverEventStream',
       ] as const;
 
       expectedMethods.forEach((method) => {
@@ -1602,53 +1596,6 @@ describe('HomeserverService', () => {
       });
     });
 
-    describe('get', () => {
-      it('should use publicStorage.get for fetching', async () => {
-        const testUrl = 'pubky://user/pub/public.json';
-        const mockResponse = new Response(JSON.stringify({ data: 'public' }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-        mockState.publicStorageGet.mockResolvedValue(mockResponse);
-
-        const result = await HomeserverService.get(testUrl);
-
-        expect(mockState.publicStorageGet).toHaveBeenCalledWith(testUrl);
-        expect(result).toBeInstanceOf(Response);
-        const jsonData = await result.json();
-        expect(jsonData).toEqual({ data: 'public' });
-      });
-
-      it('should use session.storage.get for owned paths when session is set', async () => {
-        mockState.currentSession = createMockSession();
-        const testUrl = 'pubky://user/pub/private.json';
-        const mockResponse = new Response(JSON.stringify({ data: 'private' }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-        mockState.sessionStorageGet.mockResolvedValue(mockResponse);
-
-        const result = await HomeserverService.get(testUrl);
-
-        expect(mockState.sessionStorageGet).toHaveBeenCalledWith('/pub/private.json');
-        expect(mockState.publicStorageGet).not.toHaveBeenCalled();
-        expect(result).toBeInstanceOf(Response);
-        const jsonData = await result.json();
-        expect(jsonData).toEqual({ data: 'private' });
-      });
-
-      it('should wrap errors from publicStorage.get as AppError', async () => {
-        const testUrl = 'pubky://user/pub/data.json';
-        const networkError = new Error('Network request failed');
-        mockState.publicStorageGet.mockRejectedValue(networkError);
-
-        await expect(HomeserverService.get(testUrl)).rejects.toMatchObject({
-          category: ErrorCategory.Server,
-          code: ServerErrorCode.INTERNAL_ERROR,
-        });
-      });
-    });
-
     describe('exists', () => {
       const testUrl = 'pubky://user/pub/resource.json';
 
@@ -1838,38 +1785,39 @@ describe('HomeserverService', () => {
       });
     });
 
-    describe('subscribeUserEventStreamForPath', () => {
-      it('normalizes SDK events and disposes raw WASM objects internally', async () => {
-        const free = vi.fn();
-        const path = vi.fn().mockReturnThis();
-        const live = vi.fn().mockReturnThis();
-        const subscribe = vi.fn().mockResolvedValue(
+    it('normalizes commerce stream events before releasing the SDK resource', async () => {
+      const free = vi.fn();
+      const path = '/pub/pubky.app/marketplace/listings/item';
+      const resource = { owner: { z32: () => 'seller' }, path };
+      const addUsers = vi.fn().mockReturnThis();
+      mockState.eventStreamFor.mockReturnValue({
+        addUsers,
+        path: vi.fn().mockReturnThis(),
+        live: vi.fn().mockReturnThis(),
+        subscribe: vi.fn().mockResolvedValue(
           new ReadableStream({
             start(controller) {
-              controller.enqueue({ cursor: 'cursor-1', eventType: 'PUT', free });
+              controller.enqueue({ cursor: 'next', eventType: 'PUT', resource, free });
               controller.close();
             },
           }),
-        );
-
-        mockState.eventStreamForUser.mockReturnValue({ path, live, subscribe });
-
-        const stream = await HomeserverService.subscribeUserEventStreamForPath({
-          userZ32: 'user-pubky',
-          cursor: 'cursor-0',
-          pathPrefix: '/pub/pubky.app/mutes/',
-        });
-        const reader = stream.getReader();
-
-        const result = await reader.read();
-
-        expect(path).toHaveBeenCalledWith('/pub/pubky.app/mutes/');
-        expect(live).toHaveBeenCalled();
-        expect(subscribe).toHaveBeenCalled();
-        expect(result.value).toEqual({ cursor: 'cursor-1', eventType: 'PUT', owner: '', path: '' });
-        expect(result.value).not.toHaveProperty('free');
-        expect(free).toHaveBeenCalledTimes(1);
+        ),
       });
+
+      const stream = await HomeserverService.subscribeHomeserverEventStream({
+        homeserver: 'homeserver',
+        users: [['seller', null]],
+        pathPrefixes: [path],
+      });
+
+      expect((await stream.getReader().read()).value).toEqual({
+        cursor: 'next',
+        eventType: 'PUT',
+        owner: 'seller',
+        path,
+      });
+      expect(addUsers).toHaveBeenCalledWith([['seller', null]]);
+      expect(free).toHaveBeenCalledTimes(1);
     });
 
     describe('URL resolution', () => {

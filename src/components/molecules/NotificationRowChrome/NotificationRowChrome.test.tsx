@@ -39,6 +39,7 @@ describe('NotificationActorAvatar', () => {
     );
 
     expect(screen.getByRole('link')).toHaveAttribute('href', '/profile/oliver');
+    expect(screen.getByRole('link')).toHaveAttribute('target', '_top');
     expect(screen.getByTestId('avatar-with-fallback')).toHaveAttribute('data-name', 'Oliver');
   });
 
@@ -64,6 +65,7 @@ describe('NotificationActorHeading', () => {
     );
 
     expect(screen.getByRole('link', { name: 'Oliver' })).toHaveAttribute('href', '/profile/oliver');
+    expect(screen.getByRole('link', { name: 'Oliver' })).toHaveAttribute('target', '_top');
     expect(screen.getByRole('link', { name: 'followed you' })).toHaveAttribute('href', '/post/oliver/123');
   });
 

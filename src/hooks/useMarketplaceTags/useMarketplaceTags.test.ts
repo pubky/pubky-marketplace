@@ -3,7 +3,12 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TagKind } from '@/application/tag/tag.types';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { TagController } from '@/controllers/tag/tag';
+import { AppError } from '@/libs/error/error';
+import { NetworkErrorCode } from '@/libs/error/error.codes';
+import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { getTtlRetryDelayMs } from '@/libs/runtime-config/runtime-config';
+import { toast } from '@/molecules/Toaster/toast';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import { SocialProfileService } from '@/services/homeserver/social-profile';
 import { socialNexusServesV1 } from '@/services/nexus/social-v1';
@@ -11,6 +16,7 @@ import { useAuthStore } from '@/stores/auth/auth.store';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { type MarketplaceTagTarget, useMarketplaceTags } from './useMarketplaceTags';
 
+vi.mock('@/molecules/Toaster/toast', () => ({ toast: vi.fn() }));
 vi.mock('dexie-react-hooks', () => ({ useLiveQuery: () => [] }));
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: { fetchListingTags: vi.fn(), fetchShopTags: vi.fn() },
@@ -30,6 +36,51 @@ describe('Market community tag controls', () => {
   });
 
   afterEach(() => vi.useRealTimers());
+
+  it('holds writes until the epoch is known and preserves the identity of a selected tag', async () => {
+    const pending = Promise.withResolvers<'legacy'>();
+    vi.spyOn(SocialProfileService, 'getEpoch').mockReturnValue(pending.promise);
+    const write = vi.spyOn(TagController, 'commitCreate').mockResolvedValue(undefined);
+    const { result } = renderHook(() => useMarketplaceTags(target));
+    expect(result.current.readOnly).toBe(true);
+    await act(async () => {
+      await result.current.handleTagAdd('art');
+      pending.resolve('legacy');
+    });
+    await waitFor(() => expect(result.current.readOnly).toBe(false));
+    await act(async () => result.current.handleTagToggle({ label: 'Ärger', relationship: false }));
+    expect(write).not.toHaveBeenCalled();
+    await act(async () => result.current.handleTagToggle({ label: 'ärger', relationship: false }));
+    expect(write).toHaveBeenCalledWith({
+      taggedId: owner,
+      taggedKind: TagKind.SHOP,
+      label: 'ärger',
+      taggerId: owner,
+      preserveLabel: true,
+    });
+    vi.mocked(toast).mockClear();
+    write.mockRejectedValueOnce(new DOMException('Session ended', 'AbortError'));
+    await act(async () => {
+      await result.current.handleTagAdd('other');
+    });
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it('keeps an embedded viewer on the item and rechecks access when the index becomes available', async () => {
+    vi.useFakeTimers();
+    useAuthStore.setState({ sessionOwner: 'host' });
+    vi.spyOn(SocialProfileService, 'getEpoch').mockResolvedValue('v1');
+    vi.mocked(socialNexusServesV1).mockResolvedValueOnce(false).mockResolvedValue(true);
+    const { result } = renderHook(() => useMarketplaceTags(target));
+    await act(async () => vi.advanceTimersByTimeAsync(0));
+    expect(result.current).toMatchObject({
+      embeddedTaggingUnavailable: true,
+      readOnly: true,
+      socialHandoffUrl: undefined,
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(getTtlRetryDelayMs()));
+    expect(result.current.readOnly).toBe(false);
+  });
 
   it('keeps legacy controls available while the public v1 index serves resource tags', async () => {
     vi.spyOn(SocialProfileService, 'getEpoch').mockResolvedValue('legacy');
@@ -61,7 +112,15 @@ describe('Market community tag controls', () => {
     vi.useFakeTimers();
     const profile = vi
       .spyOn(SocialProfileService, 'getEpoch')
-      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce(
+        new AppError({
+          category: ErrorCategory.Network,
+          code: NetworkErrorCode.OFFLINE,
+          message: 'Offline',
+          service: ErrorService.Nexus,
+          operation: 'read',
+        }),
+      )
       .mockResolvedValue('v1');
     const { result } = renderHook(() => useMarketplaceTags(target));
     await act(async () => vi.advanceTimersByTimeAsync(0));
@@ -78,15 +137,39 @@ describe('Market community tag controls', () => {
     vi.useFakeTimers();
     const oldProfile = Promise.withResolvers<'legacy'>();
     const profile = vi.spyOn(SocialProfileService, 'getEpoch').mockReturnValueOnce(oldProfile.promise);
-    vi.mocked(CommerceController.fetchShopTags).mockRejectedValue(new Error('offline'));
-    vi.mocked(CommerceController.fetchListingTags).mockRejectedValue(new Error('offline'));
+    vi.mocked(CommerceController.fetchShopTags).mockRejectedValue(
+      new AppError({
+        category: ErrorCategory.Network,
+        code: NetworkErrorCode.OFFLINE,
+        message: 'Offline',
+        service: ErrorService.Nexus,
+        operation: 'read',
+      }),
+    );
+    vi.mocked(CommerceController.fetchListingTags).mockRejectedValue(
+      new AppError({
+        category: ErrorCategory.Network,
+        code: NetworkErrorCode.OFFLINE,
+        message: 'Offline',
+        service: ErrorService.Nexus,
+        operation: 'read',
+      }),
+    );
     const initialProps: { item: MarketplaceTagTarget } = { item: target };
     const hook = renderHook(({ item }) => useMarketplaceTags(item), { initialProps });
     await act(async () => vi.advanceTimersByTimeAsync(0));
     act(() => useAuthStore.setState({ currentUserPubky: null, session: null, sessionOwner: null }));
     hook.rerender({ item: { kind: TagKind.LISTING, sellerPubky: owner, listingId: 'boots' } });
     await act(async () => {
-      oldProfile.reject(new Error('offline'));
+      oldProfile.reject(
+        new AppError({
+          category: ErrorCategory.Network,
+          code: NetworkErrorCode.OFFLINE,
+          message: 'Offline',
+          service: ErrorService.Nexus,
+          operation: 'read',
+        }),
+      );
       await vi.advanceTimersByTimeAsync(getTtlRetryDelayMs());
     });
     expect(profile).toHaveBeenCalledTimes(1);

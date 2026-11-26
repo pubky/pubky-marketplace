@@ -31,7 +31,7 @@ type TChatwootConfig = {
  * - Creating conversations
  *
  * Business logic (email building, inbox selection, message formatting) belongs
- * in the Application layer (ReportApplication, FeedbackApplication).
+ * in the Application layer (ReportApplication).
  *
  * This service runs on the server and requires server-side environment variables:
  * - BASE_URL_SUPPORT

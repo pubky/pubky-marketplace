@@ -59,6 +59,12 @@ describe('ProfileApplication', () => {
       await expect(ProfileApplication.readProfileSeed({ pubky })).resolves.toMatchObject({ name: 'Rc31 Name' });
     });
 
+    it('uses the older Bitkit profile when reading the newer file fails', async () => {
+      withFiles({ [bitkitUrl]: {}, [bitkitLegacyUrl]: { display_name: 'Fallback Alice' } });
+      vi.mocked(HomeserverService.request).mockRejectedValueOnce(new Error('network'));
+      await expect(ProfileApplication.readProfileSeed({ pubky })).resolves.toMatchObject({ name: 'Fallback Alice' });
+    });
+
     it('returns null when no profile exists, without reading any file', async () => {
       withFiles({});
 

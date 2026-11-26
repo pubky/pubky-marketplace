@@ -1273,13 +1273,6 @@ describe('NotificationCoordinator', () => {
     expect(spy).toHaveBeenCalledTimes(1);
   });
 
-  it('refreshes the Market badge without polling the social notification stream', async () => {
-    const { spy, coordinator } = setupAuthenticatedTest();
-    coordinator.configure({ pollOnStart: true, intervalMs: 1_000 });
-    coordinator.start();
-    await flushPromises();
-    expect(spy).toHaveBeenCalledOnce();
-  });
   afterEach(() => {
     NotificationCoordinator.resetInstance();
     // Restore document visibility to visible for subsequent tests

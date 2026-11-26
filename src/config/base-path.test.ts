@@ -25,7 +25,7 @@ describe('base path config', () => {
 
   it('serves from the origin root by default', () => {
     expect(getBasePath()).toBe('');
-    expect(withBasePath('/api/feedback')).toBe('/api/feedback');
+    expect(withBasePath('/api/report')).toBe('/api/report');
     expect(withoutBasePath('/marketplace')).toBe('/marketplace');
     expect(getShopBaseUrl()).toBe('https://pubky.app');
     expect(getShopPublicPath()).toBe('');
@@ -35,7 +35,7 @@ describe('base path config', () => {
   it('prefixes paths and builds the public URL under a mount path', () => {
     setBasePath('/shop');
     expect(getBasePath()).toBe('/shop');
-    expect(withBasePath('/api/feedback')).toBe('/shop/api/feedback');
+    expect(withBasePath('/api/report')).toBe('/shop/api/report');
     expect(withoutBasePath('/shop/marketplace')).toBe('/marketplace');
     expect(getShopBaseUrl()).toBe('https://pubky.app/shop');
   });
@@ -67,7 +67,7 @@ describe('base path config', () => {
 
   it('can serve a standalone build at the origin root while a public path is set', () => {
     runtime.publicPath = '/shop';
-    expect(withBasePath('/api/feedback')).toBe('/api/feedback');
+    expect(withBasePath('/api/report')).toBe('/api/report');
     expect(withPublicPath('/profile/abc')).toBe('/shop/profile/abc');
   });
 });

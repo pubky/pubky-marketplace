@@ -143,39 +143,7 @@ When hydrating a post from Nexus, `PostStreamApplication.fetchMissingPostsFromNe
 
 ## Optimistic Updates
 
-For immediate UI feedback, controllers manage store state while application handles persistence:
-
-```typescript
-// Controller reads store state before delegating to application
-// Real pattern: src/core/controllers/user/user.ts
-class UserController {
-  static async commitFollow(eventType, { follower, followee }) {
-    const normalizedFollowee = stripPubkyPrefix(followee);
-    const { meta, follow } = FollowNormalizer.to({ follower, followee: normalizedFollowee });
-    const activeStreamId = this.getActiveStreamId(); // Controller reads from store
-
-    await UserApplication.commitFollow({
-      eventType,
-      followUrl: meta.url,
-      followJson: follow.toJson(),
-      follower,
-      followee: normalizedFollowee,
-      activeStreamId,
-    });
-  }
-}
-
-// Application handles local-first persistence
-// Real pattern: src/core/application/user/user.ts
-class UserApplication {
-  static async commitFollow({ eventType, followUrl, followJson, follower, followee, activeStreamId }) {
-    // 1. Write to IndexedDB first
-    await LocalFollowService.create({ follower, followee, activeStreamId });
-    // 2. Sync to homeserver
-    await HomeserverService.request({ method: eventType, url: followUrl, bodyJson: followJson });
-  }
-}
-```
+On a seller follow, `UserController.commitFollow` captures the auth scope and asks `UserApplication.prepareFollow` to resolve the owner's write format. `UserApplication.commitFollow` updates the local relationship before publishing it to the homeserver. Keep the session guard across both steps. [Controller](../src/core/controllers/user/user.ts) · [Application](../src/core/application/user/user.ts)
 
 ## Quick Checklist
 

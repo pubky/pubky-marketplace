@@ -61,6 +61,23 @@ describe('community tags on an open Shop page', () => {
       expect(request.mock.calls.some(([input]) => String(input).startsWith(market))).toBe(false);
     },
   );
+  it('reads the legacy Market during a pre-backfill probe outage then refreshes from the recovered social index', async () => {
+    const { target } = targets[1];
+    let recovered = false;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === `${social}/v1/info`) return recovered ? Response.json({}) : new Response(null, { status: 503 });
+      if (url.startsWith(market)) return Response.json([tag('historical')]);
+      if (url.startsWith(`${social}/v1/resource/by-uri?`)) return Response.json({ tags: [tag('current')] });
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const { result } = renderHook(() => useMarketplaceTags(target));
+    const labels = () => result.current.tags.map((tag) => tag.label).sort();
+    await waitFor(() => expect(labels()).toEqual(['historical']));
+    recovered = true;
+    await waitFor(() => expect(labels()).toEqual(['current', 'historical']));
+  });
+
   it.each(targets)(
     'retains historical $target.kind tags until the social index is backfilled',
     async ({ target, rowId }) => {

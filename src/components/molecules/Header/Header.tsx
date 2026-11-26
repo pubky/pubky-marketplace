@@ -14,13 +14,11 @@ import { getCommerceAdapterMode } from '@/config/commerce';
 import { getGithubLink, getTelegramLink, getTwitterGetpubkyLink } from '@/config/externalLinks';
 import { getSocialHostUrl, usesSocialHostNavigation } from '@/config/social';
 import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
-import { useCollectionsNavDiscovery } from '@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery';
 import { useMarketplaceCartCount } from '@/hooks/useMarketplaceCartCount/useMarketplaceCartCount';
 import { useMarketplaceNavAttention } from '@/hooks/useMarketplaceNavAttention/useMarketplaceNavAttention';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import { Github2, Telegram, XTwitter } from '@/icons';
 import { marketplaceNavAccessibleName } from '@/libs/commerce/marketplace-attention';
-import { handleFeedNavClick } from '@/libs/utils/feedScrollTop';
 import { cn } from '@/libs/utils/utils';
 import { AvatarWithFallback } from '@/organisms/AvatarWithFallback/AvatarWithFallback';
 import { SearchInput } from '@/organisms/SearchInput/SearchInput';
@@ -94,7 +92,6 @@ type NavigationItemConfig = {
   label: string;
   dataCy?: string;
   activePrefix?: string;
-  isFeedRoute?: boolean;
   /** Off-site link (the social host): plain `<a>`, never active, never auth-gated. */
   external?: boolean;
 };
@@ -131,7 +128,6 @@ const getSocialNavigationItems = (): NavigationItemConfig[] => [
     icon: Home,
     label: 'Home',
     dataCy: 'header-home-btn',
-    isFeedRoute: true,
   },
   {
     href: APP_ROUTES.HOT,
@@ -157,16 +153,14 @@ const getSocialNavigationItems = (): NavigationItemConfig[] => [
   },
 ];
 const getNavigationItems = (): NavigationItemConfig[] => {
-  const items = getSocialNavigationItems();
-  if (!usesSocialHostNavigation()) return items;
-  // Shop messages remain in the marketplace section nav. Global items mirror Pubky App.
-  return items
-    .filter((item) => item.href !== APP_ROUTES.MESSAGES)
-    .map((item) =>
-      item.href === APP_ROUTES.MARKETPLACE
-        ? { ...item, label: 'Shop' }
-        : { ...item, href: getSocialHostUrl(item.href), external: true, isFeedRoute: false },
-    );
+  const mirrorApp = usesSocialHostNavigation();
+  return getSocialNavigationItems()
+    .filter((item) => !mirrorApp || item.href !== APP_ROUTES.MESSAGES)
+    .map((item) => {
+      if (item.href === APP_ROUTES.MARKETPLACE) return mirrorApp ? { ...item, label: 'Shop' } : item;
+      if (item.href === APP_ROUTES.MESSAGES) return item;
+      return { ...item, href: getSocialHostUrl(item.href), external: true };
+    });
 };
 
 type NavigationButtonProps = {
@@ -179,7 +173,6 @@ type NavigationButtonProps = {
   label: string;
   isActive: boolean;
   dataCy?: string;
-  isFeedRoute?: boolean;
   external?: boolean;
   showNew?: boolean;
   newLabel?: string;
@@ -195,7 +188,6 @@ const NavigationButton = ({
   label,
   isActive,
   dataCy,
-  isFeedRoute,
   external = false,
   showNew = false,
   newLabel,
@@ -264,11 +256,6 @@ const NavigationButton = ({
       prefetch={false}
       data-cy={dataCy}
       className={needsRelativeWrap ? 'relative inline-flex' : undefined}
-      onClick={(event) => {
-        onClick?.();
-        if (!isFeedRoute) return;
-        handleFeedNavClick(event, { isActive, smoothScrollWhenActive: true });
-      }}
     >
       {content}
     </Link>
@@ -284,7 +271,6 @@ export function HeaderNavigationButtons({
   className,
 }: HeaderNavigationButtonsProps) {
   const pathname = usePathname();
-  const { markCollectionsNavSeen } = useCollectionsNavDiscovery();
   // Honest badge: conversations on THIS device whose last received message
   // postdates the local read checkpoint — never a server-claimed count.
   const unreadMessages = useChatUnread({ enabled: !usesSocialHostNavigation() });
@@ -297,19 +283,16 @@ export function HeaderNavigationButtons({
   return (
     <Container className={cn('hidden w-auto flex-row items-center justify-start gap-3 lg:flex', className)}>
       {getNavigationItems().map((item) => {
-        const isCollectionsItem = item.href === APP_ROUTES.COLLECTIONS;
         const isMessagesItem = item.href === APP_ROUTES.MESSAGES;
         const isMarketplaceItem = item.href === APP_ROUTES.MARKETPLACE;
         return (
           <NavigationButton
             key={item.href}
             href={item.href}
-            onClick={isCollectionsItem ? markCollectionsNavSeen : undefined}
             icon={item.icon}
             label={item.label}
             isActive={!item.external && isNavItemActive(pathname, item)}
             dataCy={item.dataCy}
-            isFeedRoute={item.isFeedRoute}
             external={item.external}
             badgeCount={
               isMessagesItem ? unreadMessages : isMarketplaceItem ? marketplaceCartCount + marketplaceAttention : 0
@@ -324,7 +307,12 @@ export function HeaderNavigationButtons({
         );
       })}
 
-      <Link data-cy="header-nav-profile-btn" className="relative" href={profileHref} target="_self">
+      <Link
+        data-cy="header-nav-profile-btn"
+        className="relative"
+        href={profileHref}
+        target={usesSocialHostNavigation() ? '_top' : '_self'}
+      >
         <AvatarWithFallback
           avatarUrl={avatarImage}
           name={avatarName}

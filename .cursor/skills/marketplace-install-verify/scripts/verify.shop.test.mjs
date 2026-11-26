@@ -45,6 +45,8 @@ test('Shop verifier reads the social CDN from the framed build', async (t) => {
   const config = join(dir, 'stack.env');
 
   const scenarios = [
+    { name: 'detects a Market index configured for social reads', expectedSocial: social, actualNexus: market, actualCdn: social + '/static', failure: 'runtime.nexusUrl' },
+    { name: 'detects a guide pointing social reads to the Market index', expectedSocial: social, guideSocial: market, actualCdn: social + '/static', failure: 'llms.social' },
     { name: 'defaults to the social static endpoint', expectedSocial: social, actualCdn: `${social}/static/` },
     {
       name: 'rejects avatars still served by the Market index',
@@ -66,16 +68,16 @@ test('Shop verifier reads the social CDN from the framed build', async (t) => {
       actualCdn: `${market}/static`,
     },
   ];
-  for (const { name, expectedSocial, expectedCdn, actualCdn, fails } of scenarios) {
+  for (const { name, expectedSocial, expectedCdn, actualCdn, actualNexus, guideSocial, fails, failure } of scenarios) {
     await t.test(name, async () => {
       runtime = {
-        nexusUrl: expectedSocial ?? market,
+        nexusUrl: actualNexus ?? expectedSocial ?? market,
         marketplaceNexusUrl: expectedSocial && market,
         cdnUrl: actualCdn,
         shopPublicPath: '/shop',
         inboxUrl: origin,
       };
-      guide = `INDEX = ${market}\n` + (expectedSocial ? `SOCIAL = ${expectedSocial}\n` : '');
+      guide = `INDEX = ${market}\n` + (expectedSocial ? `SOCIAL = ${guideSocial ?? expectedSocial}\n` : '');
       await writeFile(
         config,
         [
@@ -94,9 +96,10 @@ test('Shop verifier reads the social CDN from the framed build', async (t) => {
         { env: {} },
       ).catch((error) => error);
       const report = JSON.parse(result.stdout);
-      assert.equal(result.code ?? 0, fails ? 1 : 0);
+      assert.equal(result.code ?? 0, fails || failure ? 1 : 0);
       const failed = report.results.filter((check) => check.status === 'FAIL').map((check) => check.id);
-      assert.deepEqual(failed, fails ? [`shop.runtime.${new URL(origin).host}.cdnUrl`] : []);
+      const [group, field] = (failure ?? 'runtime.cdnUrl').split('.');
+      assert.deepEqual(failed, fails || failure ? [`shop.${group}.${new URL(origin).host}.${field}`] : []);
     });
   }
 });

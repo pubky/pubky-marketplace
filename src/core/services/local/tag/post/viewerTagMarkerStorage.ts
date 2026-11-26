@@ -1,5 +1,6 @@
 import { MARKER_TTL_MS, VIEWER_TAG_MARKER_STORAGE_PREFIX } from '@/config/viewerTagMarker';
 import { HttpMethod } from '@/libs/http/http.types';
+import { normalizeSocialTagLabel } from '@/libs/tag-label';
 import type { Pubky } from '@/models/models.types';
 
 /** PUT = viewer created the tag, DELETE = viewer removed it. */
@@ -12,7 +13,7 @@ interface ViewerTagMarker {
 }
 
 function buildKey(pubky: Pubky, postId: string, label: string): string {
-  return `${VIEWER_TAG_MARKER_STORAGE_PREFIX}${pubky}:${postId}:${label.replace(/[A-Z]/g, (letter) => letter.toLowerCase())}`;
+  return `${VIEWER_TAG_MARKER_STORAGE_PREFIX}${pubky}:${postId}:${normalizeSocialTagLabel(label)}`;
 }
 
 function userPrefix(pubky: Pubky): string {

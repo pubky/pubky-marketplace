@@ -33,7 +33,7 @@ process.env.PUBKY_RUNTIME_DEFAULT_HTTP_RELAY = 'http://localhost:15412/inbox/';
 process.env.PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS = JSON.stringify([TEST_TRUSTED_ATTESTOR]);
 process.env.NEXT_PUBLIC_APP_VERSION = '0.0.0-test';
 
-// Chatwoot configuration (required for feedback feature)
+// Chatwoot configuration (used by the reporting forms)
 process.env.BASE_URL_SUPPORT = 'https://chatwoot.example.com';
 process.env.SUPPORT_API_ACCESS_TOKEN = 'test-token';
 process.env.SUPPORT_ACCOUNT_ID = '123';

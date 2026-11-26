@@ -47,6 +47,7 @@ import {
   seatSource,
   shopCapabilities,
 } from './seats.mjs';
+import { signOutThroughShopSettings } from './shop-sign-out.mjs';
 import { removeRunStorefront, storefrontExists } from './storefront-cleanup.mjs';
 
 const { chromium } = repoRequire('playwright');
@@ -247,27 +248,26 @@ async function qrDomLeak(page, authUrl) {
   );
 }
 
-async function signOutThroughSettings(page) {
-  await page.goto(at('/settings/account'), { waitUntil: 'domcontentloaded', timeout: 180_000 });
-  await waitForAppReady(page);
-  const button = page.locator('#sign-out-btn');
-  const viaSettings = await button
-    .waitFor({ state: 'visible', timeout: 30_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (viaSettings) await button.click();
-  else await page.goto(at('/logout'), { waitUntil: 'domcontentloaded', timeout: 180_000 });
-  await page.waitForFunction(
-    () => {
-      const raw = localStorage.getItem('shop-auth-store') ?? localStorage.getItem('auth-store');
-      const state = raw ? (JSON.parse(raw).state ?? {}) : {};
-      return !state.currentUserPubky && !state.grantSessionRecordId && !state.sessionExport;
-    },
-    null,
-    { timeout: 120_000 },
-  );
-  await page.waitForTimeout(2500);
-  return viaSettings;
+async function openShopSettingsFromCatalog(page, catalogUrl, settingsUrl, screenshot) {
+  await page.goto(catalogUrl, { waitUntil: 'domcontentloaded' });
+  const sections = page.getByRole('navigation', { name: 'Market sections' });
+  await sections.waitFor({ state: 'visible', timeout: 60_000 });
+  await shot(page, screenshot);
+
+  let link = sections.getByRole('link', { name: 'Shop settings', exact: true });
+  let via = 'Market sections';
+  if (!(await link.isVisible())) {
+    await sections.getByRole('link', { name: 'My shop', exact: true }).click();
+    link = page
+      .getByRole('navigation', { name: 'Shop actions' })
+      .getByRole('link', { name: 'Shop settings', exact: true });
+    via = 'My shop';
+  }
+
+  await link.click({ timeout: 60_000 });
+  await page.waitForURL(settingsUrl, { timeout: 60_000 });
+  await page.locator('#sign-out-btn').waitFor({ state: 'visible', timeout: 60_000 });
+  return via;
 }
 
 async function newContext(browser) {
@@ -842,15 +842,10 @@ try {
       checkActivity(act, 'seller');
 
       const deletesBefore = net.filter((e) => e.tag === 'grant' && e.method === 'DELETE').length;
-      const viaSettings = await signOutThroughSettings(page);
+      const viaSettings = await signOutThroughShopSettings(page, at('/marketplace/settings'));
       await shot(page, '11-signed-out.png');
       const deletes = net.filter((e) => e.tag === 'grant' && e.method === 'DELETE').slice(deletesBefore);
-      check(
-        '6',
-        'sign-out from Settings → Account clears the Shop state',
-        viaSettings,
-        viaSettings ? '#sign-out-btn' : 'fell back to /logout',
-      );
+      check('6', 'sign-out from Shop settings clears the Shop state', viaSettings, '#sign-out-btn');
       check(
         '6',
         'sign-out ends the grant session (DELETE /auth/grant/session 2xx)',
@@ -920,7 +915,7 @@ try {
         new URL(page.url()).pathname,
       );
       const netBefore = net.length;
-      const viaSettings = await signOutThroughSettings(page);
+      const viaSettings = await signOutThroughShopSettings(page, at('/marketplace/settings'));
       await shot(page, '05-bitkit-signed-out.png');
       const teardown = net.slice(netBefore).filter((e) => e.method === 'DELETE' || e.tag === 'grant');
       check(
@@ -1013,7 +1008,7 @@ try {
           );
           check('4', 'cart emptied afterwards', co.cartLeft === 0);
         }
-        await signOutThroughSettings(page);
+        await signOutThroughShopSettings(page, at('/marketplace/settings'));
         const deletes = net.filter((e) => e.tag === 'grant' && e.method === 'DELETE');
         check(
           '4',
@@ -1144,48 +1139,29 @@ try {
         commands.filter((row) => /^(checkout|order|payment)\./i.test(row.kind)).length === 0,
         JSON.stringify(commands),
       );
-      const navSettings = async () =>
-        await page.evaluate(
-          (settingsPath) =>
-            [...document.querySelectorAll('a[href]')].filter((el) => {
-              const path = new URL(el.href, location.origin).pathname;
-              const box = el.getBoundingClientRect();
-              return path.startsWith(settingsPath) && box.width > 0 && box.height > 0;
-            }).length,
-          `${BASE_PATH}/settings`,
-        );
-      await page.goto(at('/marketplace'), { waitUntil: 'domcontentloaded' });
-      await waitForAppReady(page);
-      await page.waitForTimeout(3000);
-      grantBuyer.desktopSettingsLinks = await navSettings();
-      await shot(page, '13-nav-desktop.png');
-      check(
-        '7',
-        'desktop: the shared navigation shows a Settings link (#118, #119)',
-        grantBuyer.desktopSettingsLinks >= 1,
-        `links=${grantBuyer.desktopSettingsLinks}`,
-      );
-      await page.setViewportSize({ width: 390, height: 844 });
-      await page.reload({ waitUntil: 'domcontentloaded' });
-      await waitForAppReady(page);
-      await page.waitForTimeout(3000);
-      grantBuyer.mobileSettingsLinks = await navSettings();
-      await shot(page, '14-nav-mobile.png');
-      if (grantBuyer.mobileSettingsLinks === 0) {
-        const menu = page.getByRole('button', { name: /menu|navigation/i }).first();
-        if (await menu.isVisible().catch(() => false)) {
-          await menu.click();
-          await page.waitForTimeout(1500);
-          grantBuyer.mobileSettingsLinks = await navSettings();
-          await shot(page, '15-nav-mobile-menu.png');
+      for (const [viewport, size, screenshot] of [
+        ['desktop', { width: 1440, height: 1000 }, '13-nav-desktop.png'],
+        ['mobile', { width: 390, height: 844 }, '14-nav-mobile.png'],
+      ]) {
+        await page.setViewportSize(size);
+        try {
+          const via = await openShopSettingsFromCatalog(
+            page,
+            at('/marketplace'),
+            at('/marketplace/settings'),
+            screenshot,
+          );
+          grantBuyer[viewport + 'SettingsVia'] = via;
+          check('7', viewport + ': Shop settings opens from the Market navigation (#118, #119)', true, via);
+        } catch (error) {
+          check(
+            '7',
+            viewport + ': Shop settings opens from the Market navigation (#118, #119)',
+            false,
+            String(error?.message ?? error).slice(0, 240),
+          );
         }
       }
-      check(
-        '7',
-        'mobile: Settings is reachable from the navigation',
-        grantBuyer.mobileSettingsLinks >= 1,
-        `links=${grantBuyer.mobileSettingsLinks}`,
-      );
       await page.goto(at(href), { waitUntil: 'domcontentloaded' });
       await waitForAppReady(page);
       await page.waitForTimeout(3000);
@@ -1207,7 +1183,7 @@ try {
         grantBuyer.sellerBitcoin.bitcoinAvailable === true && grantBuyer.sellerBitcoin.serviceOffer === true,
         JSON.stringify(grantBuyer.sellerBitcoin),
       );
-      const viaSettings = await signOutThroughSettings(page);
+      const viaSettings = await signOutThroughShopSettings(page, at('/marketplace/settings'));
       check('7', 'grant buyer signed out from Settings', viaSettings);
     } catch (error) {
       await shot(page, 'grant-buyer-journey-error.png').catch(() => {});
@@ -1257,7 +1233,7 @@ try {
       }
       check('8', 'surfaces sent no command', commands.length === 0, JSON.stringify(commands));
       await page.setViewportSize({ width: 1440, height: 1000 });
-      const viaSettings = await signOutThroughSettings(page);
+      const viaSettings = await signOutThroughShopSettings(page, at('/marketplace/settings'));
       check('8', 'seller signed out from Settings', viaSettings);
     } catch (error) {
       await shot(page, 'surfaces-journey-error.png').catch(() => {});
@@ -1480,7 +1456,11 @@ try {
           btc.cartLeft = await emptyCart(page);
           check('9', 'cart emptied afterwards', btc.cartLeft === 0);
         }
-        check('9', 'buyer signed out from Settings', await signOutThroughSettings(page));
+        check(
+          '9',
+          'buyer signed out from Settings',
+          await signOutThroughShopSettings(page, at('/marketplace/settings')),
+        );
       }
     } catch (error) {
       await shot(page, 'bitcoin-journey-error.png').catch(() => {});
@@ -1519,7 +1499,11 @@ try {
         usdtRequests.length === 0,
         JSON.stringify(usdtRequests.slice(0, 5)),
       );
-      check('10', 'seller signed out from Settings', await signOutThroughSettings(page));
+      check(
+        '10',
+        'seller signed out from Settings',
+        await signOutThroughShopSettings(page, at('/marketplace/settings')),
+      );
     } catch (error) {
       await shot(page, 'usdt-journey-error.png').catch(() => {});
       check('10', 'USDT-invisible journey ran to completion', false, String(error?.message ?? error).slice(0, 240));
@@ -1578,7 +1562,11 @@ try {
         !net.some((e) => e.tag === 'connectors' && e.method !== 'GET'),
         JSON.stringify(net.filter((e) => e.tag === 'connectors').map((e) => `${e.method} ${e.status}`)),
       );
-      check('11', 'seller signed out from Settings', await signOutThroughSettings(page));
+      check(
+        '11',
+        'seller signed out from Settings',
+        await signOutThroughShopSettings(page, at('/marketplace/settings')),
+      );
     } catch (error) {
       await shot(page, 'store-connections-error.png').catch(() => {});
       check('11', 'store connections journey ran to completion', false, String(error?.message ?? error).slice(0, 240));
@@ -1605,7 +1593,7 @@ try {
         checkActivity(act, 'buyer');
         opened = act.opened;
         openedBy = 'buyer';
-        await signOutThroughSettings(page);
+        await signOutThroughShopSettings(page, at('/marketplace/settings'));
         const deletes = net.filter((e) => e.tag === 'grant' && e.method === 'DELETE');
         check(
           '5',

@@ -1,4 +1,4 @@
-import { readAuthEpoch } from './auth-epoch';
+import { readAuthEpoch } from '@/controllers/auth/auth-epoch';
 
 /**
  * Same-tab fence for work done on behalf of the signed-in identity.

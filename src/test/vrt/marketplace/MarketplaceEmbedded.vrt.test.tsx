@@ -54,9 +54,6 @@ vi.mock('@/hooks/useCurrentUserProfile/useCurrentUserProfile', () => ({
     currentUserPubky: USER,
   }),
 }));
-vi.mock('@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery', () => ({
-  useCollectionsNavDiscovery: () => ({ showCollectionsNew: false, markCollectionsNavSeen: vi.fn() }),
-}));
 vi.mock('@/hooks/useAuthStatus/useAuthStatus', () => ({
   useAuthStatus: () => ({
     isFullyAuthenticated: true,
@@ -83,7 +80,6 @@ function EmbeddedShopPage() {
 
 function expectNoShopChrome(root: HTMLElement) {
   expect(root.querySelector('header'), 'the Shop header').toBeNull();
-  expect(root.querySelector('[data-testid="new-post-cta"]'), 'the floating action button').toBeNull();
   expect(root.querySelector('button[aria-label="Account menu"]'), 'the mobile footer account menu').toBeNull();
   expect(root.querySelector('[data-testid="marketplace-section-nav"]'), 'the Shop section bar').not.toBeNull();
   expect(root.querySelector('[data-testid="embedded-legal-footer"]'), 'the legal strip').not.toBeNull();
@@ -114,7 +110,6 @@ describe('Shop embedded in another app — visual regression', () => {
     const root = screen.getByTestId(VRT_ROOT_TESTID).element() as HTMLElement;
     expect(root.querySelector('header')).not.toBeNull();
     expect(root.querySelector('[aria-label="Market sections"]')).not.toBeNull();
-    expect(root.querySelector('[data-testid="new-post-cta"]')).toBeNull();
     expect(root.querySelector('[data-testid="embedded-legal-footer"]')).toBeNull();
   });
 });

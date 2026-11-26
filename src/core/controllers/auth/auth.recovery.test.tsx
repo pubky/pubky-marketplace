@@ -16,8 +16,7 @@ import { pendingOwnedGrants } from '@/services/homeserver/owned-grant-storage';
 import { clearPersistedAuthIdentity } from '@/stores/auth/auth.persisted';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
-import { AUTH_PERSIST_KEY } from '@/stores/persistedKeys';
-import { useSearchStore } from '@/stores/search/search.store';
+import { AUTH_PERSIST_KEY, SEARCH_PERSIST_KEY } from '@/stores/persistedKeys';
 import { useSettingsStore } from '@/stores/settings/settings.store';
 import { asOpaque } from '@/test-utils/type-assertions';
 
@@ -390,7 +389,7 @@ it.each(['alice', 'bob'])('preserves settings only when replacing with the same 
   await AuthController.initializeAuthenticatedSession({ session: old });
   useSettingsStore.getState().setHideSearch(true);
   useSettingsStore.setState({ muted: ['muted-by-alice'] });
-  useSearchStore.getState().addTag('alice-private-search');
+  localStorage.setItem(SEARCH_PERSIST_KEY, 'alice-private-search');
   vi.mocked(AuthApplication.userIsSignedUp).mockResolvedValue(true);
   const next = grantSession(pubky, 'shop.pubky.app', 'next');
   await approve(next);
@@ -398,11 +397,9 @@ it.each(['alice', 'bob'])('preserves settings only when replacing with the same 
   const settings = useSettingsStore.getState();
   expect(settings.privacy.hideSearch).toBe(pubky === 'alice');
   expect(settings.muted).toEqual(pubky === 'alice' ? ['muted-by-alice'] : []);
-  expect(useSearchStore.getState().recentTags.map((entry) => entry.tag)).toEqual(
-    pubky === 'alice' ? ['alice-private-search'] : [],
-  );
+  expect(localStorage.getItem(SEARCH_PERSIST_KEY)).toBe(pubky === 'alice' ? 'alice-private-search' : null);
   useSettingsStore.getState().reset();
-  useSearchStore.getState().reset();
+  localStorage.removeItem(SEARCH_PERSIST_KEY);
 });
 
 it('does not let a record-removal marker erase the key of an unresolved retirement', async () => {

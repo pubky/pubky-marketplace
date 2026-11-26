@@ -10,8 +10,6 @@ import { Logger } from '@/libs/logger/logger';
 import { cn } from '@/libs/utils/utils';
 import { ModerationType } from '@/models/moderation/moderation.schema';
 import { FacehashAvatar } from '@/molecules/FacehashAvatar/FacehashAvatar';
-import { useAuthStore } from '@/stores/auth/auth.store';
-import { useLocalFilesStore } from '@/stores/localFiles/localFiles.store';
 import type { AvatarWithFallbackProps } from './AvatarWithFallback.types';
 import {
   extractUserIdFromAvatarUrl,
@@ -32,7 +30,7 @@ export function AvatarWithFallback({
 }: AvatarWithFallbackProps) {
   const [imageError, setImageError] = useState(false);
 
-  // Extract userId from CDN URL for moderation and local avatar resolution
+  // Extract userId from CDN URL for moderation
   const userId = extractUserIdFromAvatarUrl(avatarUrl);
   const resolvedFallbackSeed = resolveAvatarFallbackSeed({
     fallbackSeed,
@@ -44,16 +42,6 @@ export function AvatarWithFallback({
     seed: resolvedFallbackSeed,
   });
 
-  // Check if this avatar belongs to the current user
-  const currentUserPubky = useAuthStore((s) => s.currentUserPubky);
-  const isCurrentUser = userId === currentUserPubky;
-
-  // Only subscribe to localProfile changes if this is the current user
-  // Non-current-user avatars won't re-render when localProfile changes (selector returns stable null)
-  const localProfile = useLocalFilesStore((s) => (isCurrentUser ? s.profile : null));
-
-  // Use local blob URL for current user if available, otherwise use CDN URL
-  const resolvedAvatarUrl = localProfile ?? avatarUrl;
   const moderationStatus = useLiveQuery(async () => {
     try {
       if (!userId) return null;
@@ -77,15 +65,15 @@ export function AvatarWithFallback({
   // Reset error state when avatar URL changes
   useEffect(() => {
     setImageError(false);
-  }, [resolvedAvatarUrl]);
+  }, [avatarUrl]);
   return (
     // `key` forces remount so Radix Avatar resets its 'loaded' state and shows the fallback (#526).
     // TODO: cover with E2E/VRT — jsdom can't reproduce real image loading.
-    <Avatar key={resolvedAvatarUrl ?? 'fallback'} size={size} className={className} data-testid={dataTestId}>
-      {resolvedAvatarUrl && !imageError && (
+    <Avatar key={avatarUrl ?? 'fallback'} size={size} className={className} data-testid={dataTestId}>
+      {avatarUrl && !imageError && (
         <>
           <AvatarImage
-            src={resolvedAvatarUrl}
+            src={avatarUrl}
             alt={alt || name}
             onError={() => setImageError(true)}
             className={cn(shouldBlur && 'blur-xs')}

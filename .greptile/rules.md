@@ -49,7 +49,6 @@ Shop account creation is retired. Existing accounts retain sign-in and `/complet
 
 - **Stock Lucide**: `import { IconName } from 'lucide-react'` — import stock icons directly from `lucide-react`.
 - **Custom / brand SVGs**: `import { CustomMark } from '@/icons'` — alias → `src/libs/icons/icons.tsx` (see `docs/components.md`).
-- **URL → icon**: `getIconFromUrl` from `@/libs/utils/urlToIcon` (`src/libs/utils/urlToIcon.ts`), not from `@/icons`.
 
 ## Code Quality
 
@@ -116,8 +115,8 @@ Components follow the same rule: under `src/components`, import concrete modules
 ```typescript
 // GOOD — concrete component module
 import { Button } from '@/atoms/Button/Button';
-import { FilterContent } from '@/molecules/Filters/FilterContent/FilterContent';
-import { PostHeader } from '@/organisms/PostHeader/PostHeader';
+import { Logo } from '@/molecules/Logo/Logo';
+import { AvatarWithFallback } from '@/organisms/AvatarWithFallback/AvatarWithFallback';
 ```
 
 ```typescript

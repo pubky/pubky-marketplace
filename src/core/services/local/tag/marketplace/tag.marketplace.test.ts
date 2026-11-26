@@ -153,6 +153,8 @@ describe('LocalMarketplaceTagService', () => {
       await LocalMarketplaceTagService.create(createTagParams('pending'));
       await LocalMarketplaceTagService.create(createTagParams('removed'));
       await LocalMarketplaceTagService.delete(createTagParams('removed'));
+      // A second tab shares Dexie but has fresh sessionStorage.
+      window.sessionStorage.clear();
       await LocalMarketplaceTagService.mergeTags({
         taggedId: listingRowId,
         viewerId: viewer,

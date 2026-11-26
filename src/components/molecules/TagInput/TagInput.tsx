@@ -10,8 +10,9 @@ import { TAG_MAX_LENGTH } from '@/config/posts';
 import { useListboxNavigation } from '@/hooks/useListboxNavigation/useListboxNavigation';
 import { useTagInput } from '@/hooks/useTagInput/useTagInput';
 import { TAG_INPUT_BLUR_DELAY_MS } from '@/hooks/useTagInput/useTagInput.constants';
-import { mergeTagSuggestions, normalizeLegacyTagLabel } from '@/hooks/useTagInput/useTagInput.utils';
+import { mergeTagSuggestions } from '@/hooks/useTagInput/useTagInput.utils';
 import { useTagSuggestions } from '@/hooks/useTagSuggestions/useTagSuggestions';
+import { normalizeLegacyTagLabel } from '@/libs/tag-label';
 import { cn } from '@/libs/utils/utils';
 import { EmojiPickerDialog } from '../EmojiPickerDialog/EmojiPickerDialog';
 import type { TagInputHandle, TagInputProps } from './TagInput.types';
@@ -85,6 +86,7 @@ export const TagInput = forwardRef<TagInputHandle, TagInputProps>(function TagIn
   const { suggestions: apiSuggestions } = useTagSuggestions({
     query: inputValue,
     excludeTags: apiExcludeTags,
+    normalizeLabel,
     enabled: enableApiSuggestions && showSuggestions,
   });
   const displaySuggestions = mergeTagSuggestions(

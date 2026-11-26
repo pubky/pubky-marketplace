@@ -21,15 +21,15 @@ import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceCon
  * everywhere else it renders the page untouched. While the visitor's region is still being read it
  * shows nothing rather than flashing the studio.
  */
-export function SellingUnavailableGate({ children }: { children: ReactNode }) {
+export function SellingUnavailableGate({ children, whileHeld }: { children: ReactNode; whileHeld?: ReactNode }) {
   const selling = useSellingAvailability();
 
   if (!selling.held) return <>{children}</>;
 
   return (
     <MarketplaceContentLayout className="marketplace-surface">
-      {selling.blocked && selling.sellingMessage && selling.info && (
-        <Container overrideDefaults className="w-full">
+      <Container overrideDefaults className="flex w-full flex-col gap-6">
+        {selling.blocked && selling.sellingMessage && selling.info && (
           <Card className="rounded-md p-0" data-testid="selling-unavailable">
             <CardContent className="flex flex-col items-center gap-4 p-8 text-center">
               <Store className="size-10 text-muted-foreground" aria-hidden="true" />
@@ -47,8 +47,9 @@ export function SellingUnavailableGate({ children }: { children: ReactNode }) {
               </Button>
             </CardContent>
           </Card>
-        </Container>
-      )}
+        )}
+        {whileHeld}
+      </Container>
     </MarketplaceContentLayout>
   );
 }

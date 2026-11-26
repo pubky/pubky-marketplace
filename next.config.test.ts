@@ -102,6 +102,13 @@ describe('Next redirects', () => {
       );
     });
 
+    it('allows an App-hosted Shop under a separate mount', async () => {
+      vi.stubEnv('PUBKY_RUNTIME_DEFAULT_URL', 'https://staging.pubky.app');
+      vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', 'https://staging.pubky.app');
+      vi.stubEnv('NEXT_PUBLIC_BASE_PATH', '/shop-embed');
+      await expect(redirects()).resolves.toBeDefined();
+    });
+
     it("fails the build when the host is the Shop's configured canonical URL", async () => {
       vi.stubEnv('PUBKY_RUNTIME_DEFAULT_URL', 'https://shop.pubky.app');
       vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', 'https://shop.pubky.app');

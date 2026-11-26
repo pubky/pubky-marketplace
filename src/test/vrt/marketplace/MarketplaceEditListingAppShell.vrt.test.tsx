@@ -108,10 +108,6 @@ vi.mock('@/hooks/useCurrentUserProfile/useCurrentUserProfile', () => ({
     currentUserPubky: SELLER,
   }),
 }));
-vi.mock('@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery', () => ({
-  useCollectionsNavDiscovery: () => ({ showCollectionsNew: false, markCollectionsNavSeen: vi.fn() }),
-}));
-
 vi.mock('@/controllers/commerce/commerce', async () => {
   const { record } = await fixtures;
   return {

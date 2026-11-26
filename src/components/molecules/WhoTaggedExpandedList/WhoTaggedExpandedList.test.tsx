@@ -3,14 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaggerWithAvatar } from '@/molecules/TaggedItem/TaggedItem.types';
 import { WhoTaggedExpandedList } from './WhoTaggedExpandedList';
 
-// Mock next/navigation
-const mockPush = vi.fn();
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({
-    push: mockPush,
-  }),
-}));
-
 // Mock useFollowUser hook
 const mockToggleFollow = vi.fn();
 const mockIsUserLoading = vi.fn().mockReturnValue(false);
@@ -47,22 +39,17 @@ vi.mock('@/molecules/TaggerUserRow/TaggerUserRow', () => {
   return {
     TaggerUserRow: ({
       tagger,
-      onUserClick,
       onFollowClick,
       isLoading,
       isCurrentUser,
     }: {
       tagger: { id: string; name?: string };
-      onUserClick?: (id: string) => void;
       onFollowClick?: (id: string, isFollowing: boolean, displayName: string) => void;
       isLoading?: boolean;
       isCurrentUser?: boolean;
     }) => (
       <div data-testid={`user-list-item-${tagger.id}`} data-loading={isLoading} data-current-user={isCurrentUser}>
         <span>{tagger.name || tagger.id}</span>
-        <button data-testid={`user-click-${tagger.id}`} onClick={() => onUserClick?.(tagger.id)}>
-          View Profile
-        </button>
         <button
           data-testid={`follow-click-${tagger.id}`}
           onClick={() => onFollowClick?.(tagger.id, false, tagger.name ?? tagger.id)}
@@ -84,7 +71,6 @@ const mockTaggerIds = mockTaggers.map((tagger) => tagger.id);
 describe('WhoTaggedExpandedList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockPush.mockClear();
   });
 
   it('renders with default props', () => {
@@ -109,12 +95,6 @@ describe('WhoTaggedExpandedList', () => {
     expect(screen.getByTestId('who-tagged-expanded-list-skeleton')).toBeInTheDocument();
     expect(screen.queryByTestId('who-tagged-expanded-list')).not.toBeInTheDocument();
     expect(screen.queryByTestId('user-list-item-user1')).not.toBeInTheDocument();
-  });
-
-  it('navigates to user profile when user is clicked', () => {
-    render(<WhoTaggedExpandedList taggerIds={mockTaggerIds} />);
-    fireEvent.click(screen.getByTestId('user-click-user1'));
-    expect(mockPush).toHaveBeenCalledWith('/profile/user1');
   });
 
   it('calls toggleFollow when follow button is clicked', () => {

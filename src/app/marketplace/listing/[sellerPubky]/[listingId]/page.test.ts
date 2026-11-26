@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { generateMetadata } from './page';
+import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
+import MarketplaceListingPage, { generateMetadata } from './page';
 
 const { fetchListingMock } = vi.hoisted(() => ({
   fetchListingMock: vi.fn(),
@@ -37,5 +38,25 @@ describe('marketplace listing metadata', () => {
         }),
       }),
     ).resolves.toMatchObject({ title: 'Pubky Market' });
+  });
+});
+
+describe('listing share origin from server configuration', () => {
+  it.each([
+    [undefined, undefined],
+    ['https://pubky.app', 'https://pubky.app'],
+    ['https://catalog.example', 'https://catalog.example'],
+  ])('passes the explicitly configured alias %s to the listing', async (setting, expected) => {
+    vi.stubEnv('PUBKY_RUNTIME_DEFAULT_URL', setting);
+    resetRuntimeConfigForTests();
+    try {
+      const listing = await MarketplaceListingPage({
+        params: Promise.resolve({ sellerPubky: 'seller', listingId: 'listing' }),
+      });
+      expect(listing.props.shareOrigin).toBe(expected);
+    } finally {
+      vi.unstubAllEnvs();
+      resetRuntimeConfigForTests();
+    }
   });
 });

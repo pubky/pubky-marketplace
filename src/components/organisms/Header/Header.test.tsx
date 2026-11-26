@@ -88,7 +88,7 @@ vi.mock('@/stores/auth/auth.store', () => ({
     selector({ currentUserPubky: mockCurrentUserPubky, session: mockHasSession && mockCurrentUserPubky ? {} : null }),
 }));
 vi.mock('@/stores/notification/notification.store', () => ({
-  useNotificationStore: () => ({ selectUnread: () => 0 }),
+  useNotificationStore: () => ({ selectMarketplaceUnread: () => 0 }),
 }));
 vi.mock('@/controllers/file/file', () => ({
   FileController: {

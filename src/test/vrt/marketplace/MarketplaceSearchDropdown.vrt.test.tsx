@@ -1,7 +1,8 @@
 // Intentional import order — browser-mode mock factories rely on stable aliases.
 /* eslint-disable simple-import-sort/imports */
 import { createMarketplaceVrtAuthStore } from '@/test/mocks/marketplace-vrt';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setSocialHost } from '@/test-utils/social-host';
 import { renderForVRT } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { Dialog, DialogContent } from '@/atoms/Dialog/Dialog';
@@ -105,10 +106,6 @@ vi.mock('@/hooks/useCurrentUserProfile/useCurrentUserProfile', () => ({
   }),
 }));
 
-vi.mock('@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery', () => ({
-  useCollectionsNavDiscovery: () => ({ showCollectionsNew: false, markCollectionsNavSeen: vi.fn() }),
-}));
-
 vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
   MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => (
     <main className="w-full py-6">{children}</main>
@@ -161,12 +158,15 @@ describe.each([
   { name: 'desktop', mobile: false },
   { name: 'mobile', mobile: true },
 ])('Marketplace header at $name viewport', ({ mobile }) => {
+  beforeEach(() => setSocialHost('https://staging.pubky.app'));
+  afterEach(() => setSocialHost(undefined));
+
   it('opens search in the App and keeps the section tabs above listings and below the header', async () => {
     await renderForVRT(<MarketplaceWithHeader mobile={mobile} />, {
       viewport: mobile ? VRT_VIEWPORT_MOBILE : VRT_VIEWPORT_DESKTOP,
     });
     const search = requireElement('a[data-cy="header-search"]');
-    expect(search.getAttribute('href')).toBe('https://pubky.app/search');
+    expect(search.getAttribute('href')).toBe('https://staging.pubky.app/search');
     expect(search.getAttribute('target')).toBe('_top');
     const header = requireElement('header');
     const tabs = tabsWrapper();

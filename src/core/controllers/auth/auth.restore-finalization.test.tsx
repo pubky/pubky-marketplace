@@ -10,6 +10,7 @@ import { AuthStatus } from '@/hooks/useAuthStatus/useAuthStatus.types';
 import { Identity } from '@/libs/identity/identity';
 import type { Pubky } from '@/models/models.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { useSignInStore } from '@/stores/signIn/signIn.store';
 import { mockSession } from '@/test-utils/pubky';
 
 vi.mock('@/database/franky/franky.helpers', () => ({
@@ -60,6 +61,7 @@ describe('AuthController restore finalization — real useAuthStatus', () => {
   });
 
   it('checks again when the same account completed its profile in Pubky App', async () => {
+    useSignInStore.getState().reset();
     useAuthStore.setState({ hasProfile: false });
     const session = mockSession();
     vi.spyOn(AuthApplication, 'restorePersistedSession').mockResolvedValue({ status: 'restored', session });
@@ -68,6 +70,7 @@ describe('AuthController restore finalization — real useAuthStatus', () => {
     await expect(AuthController.restorePersistedSession()).resolves.toMatchObject({ status: 'restored' });
     expect(AuthApplication.userIsSignedUp).toHaveBeenCalledWith({ pubky: PREVIOUS_PUBKY });
     expect(useAuthStore.getState().hasProfile).toBe(true);
+    expect(useSignInStore.getState().marketReady).toBe(true);
   });
 
   it('keeps useAuthStatus loading until init on identity-change restore', async () => {

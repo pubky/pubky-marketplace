@@ -26,8 +26,9 @@ import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
-import { getShopBaseUrl } from '@/config/base-path';
+import { withPublicPath } from '@/config/base-path';
 import { getCommerceAdapterMode, isDurableCommerceMode, isTransactionalCommerceMode } from '@/config/commerce';
+import { getDefaultUrl } from '@/config/metadata';
 import { getSocialHostUrl } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useCommerceFavorite } from '@/hooks/useCommerceFavorite/useCommerceFavorite';
@@ -116,11 +117,12 @@ import { useAuthStore } from '@/stores/auth/auth.store';
 import { MarketplaceListingDetailSkeleton } from './Marketplace.skeleton';
 
 export interface MarketplaceListingProps {
+  shareOrigin?: string;
   sellerPubky: string;
   listingId: string;
 }
 
-export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListingProps) {
+export function MarketplaceListing({ sellerPubky, listingId, shareOrigin }: MarketplaceListingProps) {
   const [error, setError] = useState<string | null>(null);
   // Local cache answers `null` instantly for a listing this device has never
   // seen, while the network fetch is still in flight — without tracking the
@@ -699,7 +701,10 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                   href={getSocialHostUrl(
                     '/share?' +
                       new URLSearchParams({
-                        url: getShopBaseUrl() + getMarketplaceListingRoute(record.ownerPubky, record.listingId),
+                        url: new URL(
+                          withPublicPath(getMarketplaceListingRoute(record.ownerPubky, record.listingId)),
+                          shareOrigin ?? (typeof window === 'undefined' ? getDefaultUrl() : window.location.origin),
+                        ).href,
                       }),
                   )}
                   target="_top"

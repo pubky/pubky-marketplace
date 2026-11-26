@@ -492,6 +492,30 @@ describe('Tag Application', () => {
       },
     );
 
+    it('restores the optimistic viewer tag when the legacy copy cannot be verified', async () => {
+      const { deleteSpy, createSpy, requestSpy } = setupMarketplaceMocks();
+      deleteSpy.mockResolvedValue(true);
+      createSpy.mockResolvedValue(true);
+      const tagUrl = 'pubky://tagger123/pub/social/v1/tags/01BHZZZZZZZZZZZZZZZZZZZZZZ.json';
+      vi.spyOn(LocalMarketplaceTagService, 'getViewerTagUrl').mockResolvedValue(tagUrl);
+      vi.spyOn(HomeserverService, 'canCurrentUserSessionWrite').mockReturnValue(true);
+      const failure = new Error('offline');
+      vi.spyOn(HomeserverService, 'getJsonIfFound').mockRejectedValueOnce(failure);
+      await expect(
+        TagApplication.commitDelete(
+          { ...shopTagData, tagUrl, targetUri: 'pubky://shopowner123/pub/pubky.app/marketplace/v1/shop.json' },
+          assertCurrent,
+        ),
+      ).rejects.toBe(failure);
+      expect(requestSpy).not.toHaveBeenCalled();
+      expect(createSpy).toHaveBeenCalledWith({
+        taggedId: 'shop:shopowner123',
+        label: shopTagData.label,
+        taggerId: shopTagData.taggerId,
+        tagUri: tagUrl,
+      });
+    });
+
     it('never touches the post or user tag services for marketplace kinds', async () => {
       const { createSpy, requestSpy } = setupMarketplaceMocks();
       const postCreateSpy = vi.spyOn(LocalPostTagService, 'create');

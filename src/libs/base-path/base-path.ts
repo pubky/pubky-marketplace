@@ -59,7 +59,7 @@ export function normalizeAssetPrefix(raw: string | undefined): string | undefine
 }
 
 /**
- * Prefix an app-absolute path (`/api/feedback`, `/images/x.webp`) with the mount
+ * Prefix an app-absolute path (`/api/report`, `/images/x.webp`) with the mount
  * path. Absolute URLs, protocol-relative URLs, hash/query-only references and
  * paths that already carry the prefix pass through untouched, so the helper is
  * idempotent and safe to apply to values of unknown origin. With an empty mount

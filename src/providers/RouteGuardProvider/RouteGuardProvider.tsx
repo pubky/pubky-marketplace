@@ -186,13 +186,9 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
     router.push(returnTo);
   }, [status, isLoading, pathname, router]);
 
-  // Determine if the current route is accessible based on authentication status
+  const isPublicRoute = PUBLIC_ROUTES.includes(pathname) || isDynamicPublicRoute(pathname);
   const isRouteAccessible = useMemo(() => {
-    // Static public routes are ALWAYS accessible, even during loading
-    if (PUBLIC_ROUTES.includes(pathname)) return true;
-
-    // Dynamic public routes (e.g., /post/[x]/[y], /profile/[pubky]) are also always accessible
-    if (isDynamicPublicRoute(pathname)) return true;
+    if (isPublicRoute) return true;
 
     // Wait for authentication status to be determined before allowing access to protected routes
     if (isLoading) return false;
@@ -206,7 +202,7 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
     return routeAccess.allowedRoutes.some((route) =>
       matchesAllowedRoute(pathname, route, { restrictExploreSubRoutes }),
     );
-  }, [isLoading, pathname, status]);
+  }, [isLoading, isPublicRoute, pathname, status]);
 
   // Handle automatic redirects when user tries to access unauthorized routes
   useEffect(() => {
@@ -217,11 +213,7 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
       pendingReturnToNavigationRef.current = null;
     }
 
-    // Static public routes never redirect
-    if (PUBLIC_ROUTES.includes(pathname)) return;
-
-    // Dynamic public routes never redirect
-    if (isDynamicPublicRoute(pathname)) return;
+    if (isPublicRoute) return;
 
     // Wait for authentication status to be determined for protected routes
     if (isLoading) return;
@@ -266,13 +258,13 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
       }
       router.push(redirectTo);
     }
-  }, [status, pathname, router, isLoading, isRouteAccessible]);
+  }, [status, pathname, router, isLoading, isRouteAccessible, isPublicRoute]);
 
   // Show loading spinner while:
   // 1. Authentication status is being determined (isLoading = true)
   // 2. Route access check has completed but user doesn't have access (will trigger redirect)
-  // 3. Migration re-sync is in progress (wasDbReset = true)
-  if (!isRouteAccessible || wasDbReset) {
+  // 3. A protected route is waiting for private watchlist recovery after DB recreation.
+  if (!isRouteAccessible || (wasDbReset && !isPublicRoute)) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">

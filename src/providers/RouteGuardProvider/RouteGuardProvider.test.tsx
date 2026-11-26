@@ -67,7 +67,7 @@ vi.mock('@/app/routes', () => ({
     SELL: '/marketplace/sell',
     OFFERS: '/marketplace/offers',
   },
-  PUBLIC_ROUTES: ['/landing'],
+  PUBLIC_ROUTES: ['/landing', '/marketplace'],
   isDynamicPublicRoute: (path: string) => {
     const segments = path.split('/').filter(Boolean);
     return (
@@ -326,6 +326,22 @@ describe('RouteGuardProvider — migration resync', () => {
       await vi.runAllTimersAsync();
     });
     expect(mocks.mockResync).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the public catalog available during a stalled grant restore after DB recreation', () => {
+    mocks.wasDbReset = true;
+    mocks.pathname = '/marketplace';
+    mocks.isLoading = true;
+    mocks.session = null;
+    render(
+      <RouteGuardProvider>
+        <div>Public catalog</div>
+      </RouteGuardProvider>,
+    );
+
+    expect(screen.getByText('Public catalog')).toBeVisible();
+    expect(mocks.mockResync).not.toHaveBeenCalled();
+    expect(mocks.resetMigrationStore).not.toHaveBeenCalled();
   });
 
   it('shows loading spinner while wasDbReset is true', () => {

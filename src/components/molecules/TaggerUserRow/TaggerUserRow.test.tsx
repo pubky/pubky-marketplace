@@ -19,7 +19,6 @@ vi.mock('@/organisms/UserListItem/UserListItem', () => {
       isLoading,
       isStatusLoading,
       isCurrentUser,
-      onUserClick,
       onFollowClick,
     }: {
       user: { id: string; name?: string; avatarUrl?: string };
@@ -28,7 +27,6 @@ vi.mock('@/organisms/UserListItem/UserListItem', () => {
       isLoading?: boolean;
       isStatusLoading?: boolean;
       isCurrentUser?: boolean;
-      onUserClick?: (id: string) => void;
       onFollowClick?: (id: string, isFollowing: boolean, displayName: string) => void;
     }) => (
       <div
@@ -42,9 +40,6 @@ vi.mock('@/organisms/UserListItem/UserListItem', () => {
         data-is-status-loading={isStatusLoading}
         data-is-current-user={isCurrentUser}
       >
-        <button data-testid="user-click" onClick={() => onUserClick?.(user.id)}>
-          View Profile
-        </button>
         <button
           data-testid="follow-click"
           onClick={() => onFollowClick?.(user.id, isFollowing ?? false, user.name ?? user.id)}
@@ -66,7 +61,6 @@ const defaultProps = {
   tagger: mockTagger,
   isLoading: false,
   isCurrentUser: false,
-  onUserClick: vi.fn(),
   onFollowClick: vi.fn(),
 };
 
@@ -134,13 +128,6 @@ describe('TaggerUserRow', () => {
     render(<TaggerUserRow {...defaultProps} isCurrentUser={true} />);
     const userListItem = screen.getByTestId('user-list-item');
     expect(userListItem).toHaveAttribute('data-is-current-user', 'true');
-  });
-
-  it('calls onUserClick when user is clicked', () => {
-    const onUserClick = vi.fn();
-    render(<TaggerUserRow {...defaultProps} onUserClick={onUserClick} />);
-    screen.getByTestId('user-click').click();
-    expect(onUserClick).toHaveBeenCalledWith('user-123');
   });
 
   it('calls onFollowClick when follow button is clicked', () => {

@@ -72,17 +72,42 @@ describe('service worker runtime routes', () => {
     expect(manifest).not.toHaveProperty('share_target');
   });
 
-  it('lets the server reject a share POST from a previously installed Shop', async () => {
-    const worker = Object.assign(new EventTarget(), { skipWaiting: vi.fn(), registration: {} });
-    vi.stubGlobal('self', worker);
-    await import('./sw');
+  it.each(['/', '/shop-embed/'])(
+    'rejects old OS shares locally and limits cleanup to a root worker (%s)',
+    async (scope) => {
+      vi.resetModules();
+      const cacheDelete = vi.fn().mockResolvedValue(true);
+      const worker = Object.assign(new EventTarget(), {
+        skipWaiting: vi.fn(),
+        location: window.location,
+        registration: { scope: new URL(scope, window.location.origin).href },
+        caches: { delete: cacheDelete },
+      });
+      vi.stubGlobal('self', worker);
+      const { Serwist: WorkerSerwist } = await import('serwist');
+      const listeners = vi.spyOn(WorkerSerwist.prototype, 'addEventListeners').mockImplementation(() => {});
+      try {
+        await import('./sw');
+        const request = new Request(new URL('/share', window.location.origin), {
+          method: 'POST',
+          body: new FormData(),
+        });
+        const respondWith = vi.fn<(response: Response) => void>();
+        worker.dispatchEvent(Object.assign(new TestFetchEvent(request, Promise.resolve(undefined)), { respondWith }));
+        if (scope === '/') expect(respondWith.mock.calls[0]?.[0].status).toBe(405);
+        else expect(respondWith).not.toHaveBeenCalled();
+        expect(fetchMock).not.toHaveBeenCalled();
 
-    const request = new Request(new URL('/share', window.location.origin), { method: 'POST', body: new FormData() });
-    const respondWith = vi.fn((response: Promise<Response>) => response.catch(() => {}));
-    worker.dispatchEvent(Object.assign(new TestFetchEvent(request, Promise.resolve(undefined)), { respondWith }));
-
-    expect(respondWith).not.toHaveBeenCalled();
-  });
+        const event = new TestExtendableEvent('activate');
+        worker.dispatchEvent(event);
+        await Promise.all(event.lifetime);
+        if (scope === '/') expect(cacheDelete).toHaveBeenCalledWith('share-target-files');
+        else expect(cacheDelete).not.toHaveBeenCalled();
+      } finally {
+        listeners.mockRestore();
+      }
+    },
+  );
 
   it('leaves same-origin subresource requests to the browser', () => {
     expect(handle(serwist, requestWithMode('/_next/static/chunks/main.js', 'no-cors'))).toBeUndefined();

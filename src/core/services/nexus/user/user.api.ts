@@ -1,7 +1,6 @@
 import type { TUserId } from '@/services/nexus/nexus.types';
 import { buildNexusUrl, buildUrlWithQuery, encodePathSegment } from '@/services/nexus/nexus.utils';
 import {
-  type TUserPaginationParams,
   type TUserRelationshipParams,
   type TUserTagsParams,
   type TUserViewParams,
@@ -17,6 +16,7 @@ import {
 const PREFIX = 'v0/user';
 
 export const userApi = {
+  ingest: (params: TUserId) => buildNexusUrl(`v0/ingest/${encodePathSegment(params.user_id)}`),
   view: (params: TUserViewParams) => {
     const userId = encodePathSegment(params.user_id);
     return buildUrlWithQuery({ baseRoute: `${PREFIX}/${userId}`, params, excludeKeys: USER_PATH_PARAMS });
@@ -49,14 +49,6 @@ export const userApi = {
     const userId = encodePathSegment(params.user_id);
     return buildUrlWithQuery({
       baseRoute: `${PREFIX}/${userId}/friends`,
-      params,
-      excludeKeys: USER_PATH_PARAMS,
-    });
-  },
-  notifications: (params: TUserPaginationParams) => {
-    const userId = encodePathSegment(params.user_id);
-    return buildUrlWithQuery({
-      baseRoute: `${PREFIX}/${userId}/notifications`,
       params,
       excludeKeys: USER_PATH_PARAMS,
     });

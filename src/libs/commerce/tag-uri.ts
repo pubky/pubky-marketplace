@@ -1,13 +1,16 @@
-const LEGACY_TAGS_PATH = '/pub/pubky.app/tags/';
+import { LEGACY_SOCIAL_PATHS } from '@/config/social-paths';
+
 const SOCIAL_TAGS_PATH = '/pub/social/v1/tags/';
 
 export function parseViewerTagUrl(owner: string, url: string | null | undefined) {
   const ownerUrl = `pubky://${owner}`;
   if (!url?.startsWith(ownerUrl + '/')) return;
   const path = url.slice(ownerUrl.length);
-  const legacy = path.startsWith(LEGACY_TAGS_PATH);
+  const legacy = path.startsWith(LEGACY_SOCIAL_PATHS.tags);
   if (!legacy && !(path.startsWith(SOCIAL_TAGS_PATH) && path.endsWith('.json'))) return;
-  const id = legacy ? path.slice(LEGACY_TAGS_PATH.length) : path.slice(SOCIAL_TAGS_PATH.length, -'.json'.length);
+  const id = legacy
+    ? path.slice(LEGACY_SOCIAL_PATHS.tags.length)
+    : path.slice(SOCIAL_TAGS_PATH.length, -'.json'.length);
   if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(id)) return;
   return { id, legacy };
 }
@@ -27,7 +30,7 @@ export function marketplaceTagCopyUrls(
   const copies: string[] = [];
   const ownerUrl = `pubky://${owner}`;
   if (active.legacy || canDeleteLegacy) {
-    for (const id of ids) copies.push(`${ownerUrl}${LEGACY_TAGS_PATH}${id}`);
+    for (const id of ids) copies.push(`${ownerUrl}${LEGACY_SOCIAL_PATHS.tags}${id}`);
   }
   if (!active.legacy) {
     for (const id of ids) copies.push(`${ownerUrl}${SOCIAL_TAGS_PATH}${id}.json`);

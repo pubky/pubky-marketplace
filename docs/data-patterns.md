@@ -146,29 +146,7 @@ const id = CommerceRecordNormalizer.entityId(listingId);
 return await CommerceApplication.getOrFetchListing(owner, id);
 ```
 
-```typescript
-// Application also normalizes data before persisting
-// Real: src/core/application/profile/profile.ts
-class ProfileApplication {
-  static async commitUpdate({ pubky, name, bio, image, links }) {
-    const { user, meta } = UserNormalizer.to({ name, bio, image, links, status }, pubky);
-    await HomeserverService.request({ method: HttpMethod.PUT, url: meta.url, bodyJson: user.toJson() });
-    await LocalProfileService.updateDetails(user, pubky);
-  }
-}
-```
-
-### Never Return Un-normalized Data
-
-```typescript
-// BAD: Returning raw external shape
-return await HomeserverService.request<RawSettings>({ method: HttpMethod.GET, url });
-
-// GOOD: Normalize through pipes
-// Real: src/core/application/settings/settings.ts
-const settingsJson = await HomeserverService.request<RawSettings>({ method: HttpMethod.GET, url });
-return SettingsNormalizer.from(settingsJson);
-```
+The watchlist application converts homeserver records with `watchlistRecordToState` before merging them with local items and tombstones. The same pipe converts local rows into the merge representation. [Watchlist pipe](../src/core/pipes/commerce/commerce.watchlist.ts)
 
 ## Data Model Reference
 

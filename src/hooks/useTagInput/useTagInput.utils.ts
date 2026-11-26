@@ -1,9 +1,7 @@
+import { normalizeLegacyTagLabel } from '@/libs/tag-label';
 import { TAG_SUGGESTIONS_DEFAULT_LIMIT } from '../useTagSuggestions/useTagSuggestions.constants';
 import { TAG_INPUT_MAX_SUGGESTIONS } from './useTagInput.constants';
 import type { TagLabel } from './useTagInput.types';
-
-export const normalizeLegacyTagLabel = (label: string) => label.toLowerCase();
-export const normalizeSocialTagLabel = (label: string) => label.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
 
 /**
  * Merge local tag suggestions with API suggestions (local first, deduplicated, capped).

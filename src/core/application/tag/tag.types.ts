@@ -5,6 +5,8 @@ export interface TTagEventParams {
   taggedId: Pubky;
   label: string;
   taggedKind: TagKind;
+  /** Preserve an exact indexed label when toggling its existing pill. */
+  preserveLabel?: boolean;
 }
 
 export interface TCreateTagInput extends TTagEventParams {

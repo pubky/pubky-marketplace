@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { getProfileRoute, PROFILE_ROUTES } from '@/app/routes';
 import { getSocialHostUrl } from '@/config/social';
 import { UserController } from '@/controllers/user/user';
+import { AuthErrorCode } from '@/libs/error/error.codes';
 import { isAppError } from '@/libs/error/error.utils';
 import { HttpMethod } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
@@ -79,7 +80,7 @@ export function useFollowUser(): UseFollowUserResult {
 
         return true;
       } catch (err) {
-        if (isAppError(err) && err.operation === 'socialWrite') {
+        if (isAppError(err) && err.code === AuthErrorCode.SOCIAL_WRITE_UNAVAILABLE) {
           toast({
             variant: 'info',
             description: err.message,

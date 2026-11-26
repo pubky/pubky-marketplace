@@ -27,7 +27,7 @@ The cookie-based vibe consumer and `#s=` handoff are removed. Keep `NEXT_PUBLIC_
 
 ### Social App links
 
-The Shop serves the catalog, watchlist, messages, orders, Shop settings and profile completion. Social profiles, posts, feeds, tags search, collections, settings and the share composer open in the social App. Set `NEXT_PUBLIC_SOCIAL_HOST` to its exact HTTPS origin for a custom deployment. Standalone defaults to `https://pubky.app`. The same-origin `/shop-embed` build defaults to the current origin, so staging and self-hosted App wrappers can share the artifact. A change to the explicit origin requires a rebuild. Development builds also accept `http://localhost:<port>`.
+The Shop serves the catalog, watchlist, messages, orders, Shop settings and profile completion. Social profiles, posts, feeds, tags search, collections, settings and the share composer open in the social App. Set `NEXT_PUBLIC_SOCIAL_HOST` to its exact HTTPS origin for a custom deployment. Standalone uses `https://staging.pubky.app` for the staging deployment and `https://pubky.app` for production. Set the explicit origin when running a custom App locally. The same-origin `/shop-embed` build defaults to the current origin, so staging and self-hosted App wrappers can share the artifact. A change to the explicit origin requires a rebuild. Development builds also accept `http://localhost:<port>`.
 
 - Legacy social links retain their path and query. `/profile/<pubky>/posts` opens the canonical `/profile/<pubky>`, and `/profile/notifications` opens the local `/marketplace/notifications`.
 - The embedded Shop opens the social App in the top window. A framed deep link offers an ordinary link when the browser requires a click to leave the frame.
@@ -270,10 +270,6 @@ The Shop settings (`PUBKY_RUNTIME_REGION_MODES`, or the older `PUBKY_RUNTIME_EU_
 - The blocked state reads the visitor's IP country from `PUBKY_RUNTIME_CLIENT_REGION_HEADER`. Set the header on the Shop backend before blocking a region, or every visitor reads as unknown and is blocked.
 
 Framing, embedding and storage keys (`PUBKY_RUNTIME_FRAME_ANCESTORS`, `PUBKY_RUNTIME_EMBEDDED`, `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY`, `PUBKY_RUNTIME_SHOP_PUBLIC_PATH`, `PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID`) are described in [Framing and embedded mode](#framing-and-embedded-mode-runtime) and [`launch/shop-embedding.md`](launch/shop-embedding.md).
-
-### Homeserver mute list sync
-
-Cross-session mute alignment uses the `@synonymdev/pubky` homeserver **event stream** (SSE). Debouncing uses a fixed delay in [`src/config/mute-sync.ts`](../src/config/mute-sync.ts) (`MUTE_SYNC_DEBOUNCE_MS`), not an environment variable.
 
 ### Chat
 

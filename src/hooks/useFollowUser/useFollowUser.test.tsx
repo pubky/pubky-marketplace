@@ -119,7 +119,7 @@ describe('useFollowUser', () => {
     mockCommitFollow.mockRejectedValue(
       new AppError({
         category: ErrorCategory.Auth,
-        code: AuthErrorCode.FORBIDDEN,
+        code: AuthErrorCode.SOCIAL_WRITE_UNAVAILABLE,
         service: ErrorService.Homeserver,
         message: 'Open Pubky App to follow this account.',
         operation: 'socialWrite',

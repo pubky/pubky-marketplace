@@ -1,12 +1,4 @@
 /**
- * Maximum height for search suggestions dropdown
- * - Prevents dropdown from taking up entire screen on mobile
- * - Enables scrolling when content exceeds this height
- * - Applied consistently across all device sizes
- */
-const SEARCH_SUGGESTIONS_MAX_HEIGHT = 300;
-
-/**
  * Search bar closed state style (pill shape)
  * - Gradient from theme tokens so light and dark both stay readable
  * - Backdrop blur for glass effect
@@ -14,25 +6,4 @@ const SEARCH_SUGGESTIONS_MAX_HEIGHT = 300;
 export const SEARCH_CLOSED_STYLE = {
   background: 'linear-gradient(180deg, var(--search-closed-from) 0%, var(--search-closed-to) 100%)',
   backdropFilter: 'blur(20px)',
-} as const;
-
-/**
- * Search input expanded state style (when dropdown is open)
- * - Solid background to seamlessly connect with dropdown
- */
-export const SEARCH_INPUT_EXPANDED_STYLE = {
-  background: 'linear-gradient(180deg, var(--background) 0%, var(--background) 100%)',
-} as const;
-
-/**
- * Search suggestions dropdown style
- * - Gradient that fades to transparent
- * - Backdrop blur for glass effect
- * - Drop shadow for depth
- */
-export const SEARCH_EXPANDED_STYLE = {
-  background: 'linear-gradient(180deg, var(--background) 0%, var(--search-expanded-fade, rgba(5, 5, 10, 0.50)) 100%)',
-  backdropFilter: 'blur(25px)',
-  boxShadow: '0px 50px 100px var(--search-expanded-shadow)',
-  maxHeight: `${SEARCH_SUGGESTIONS_MAX_HEIGHT}px`,
 } as const;

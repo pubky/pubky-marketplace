@@ -403,10 +403,6 @@ export class CommerceRecordNormalizer {
     return this.parse(commercePubkySchema, input, 'pubky');
   }
 
-  static pubkyList(input: unknown): string[] {
-    return this.parse(z.array(commercePubkySchema), input, 'pubkyList');
-  }
-
   static entityId(input: unknown): string {
     return this.parse(commerceEntityIdSchema, input, 'entityId');
   }

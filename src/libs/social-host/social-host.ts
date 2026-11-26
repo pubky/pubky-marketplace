@@ -75,7 +75,7 @@ function withoutWww(origin: string): string {
 }
 
 /**
- * Unset or empty → `undefined` (link-out off). An invalid value throws so a bad
+ * Unset or empty → `undefined` (use the mount and deployment defaults). An invalid value throws so a bad
  * build fails loudly. So does a value naming one of `shopOrigins`, with or
  * without a leading `www.` on either side: every social route would 307 back
  * to itself.
@@ -100,11 +100,6 @@ export function parseSocialHost(
     );
   }
   return value;
-}
-
-/** Published Shop builds hand off to the App. A /shop-embed mount shares the App origin. */
-export function socialHostForMount(configured: string | undefined, basePath: string | undefined): string {
-  return configured || (basePath === '/shop-embed' ? '' : 'https://pubky.app');
 }
 
 /** Only the retired public routes can be handed to the App. */

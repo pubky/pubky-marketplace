@@ -30,7 +30,6 @@ import { getCommerceAdapterMode } from '@/config/commerce';
 import { getSocialHostUrl, usesSocialHostNavigation } from '@/config/social';
 import { FileController } from '@/controllers/file/file';
 import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
-import { useCollectionsNavDiscovery } from '@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery';
 import { useCurrentUserProfile } from '@/hooks/useCurrentUserProfile/useCurrentUserProfile';
 import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
 import { useKeyboardOffset } from '@/hooks/useKeyboardOffset/useKeyboardOffset';
@@ -38,11 +37,9 @@ import { useMarketplaceCartCount } from '@/hooks/useMarketplaceCartCount/useMark
 import { useMarketplaceNavAttention } from '@/hooks/useMarketplaceNavAttention/useMarketplaceNavAttention';
 import { usePublicRoute } from '@/hooks/usePublicRoute/usePublicRoute';
 import { marketplaceNavAccessibleName } from '@/libs/commerce/marketplace-attention';
-import { handleFeedNavClick } from '@/libs/utils/feedScrollTop';
 import { cn } from '@/libs/utils/utils';
 import { AvatarWithFallback } from '@/organisms/AvatarWithFallback/AvatarWithFallback';
 import { useAuthStore } from '@/stores/auth/auth.store';
-import { useLocalFilesStore } from '@/stores/localFiles/localFiles.store';
 import { useNotificationStore } from '@/stores/notification/notification.store';
 
 export interface MobileFooterProps {
@@ -54,7 +51,6 @@ type FooterNavItem = {
   activePrefix?: string;
   icon: typeof Store;
   label: string;
-  isFeedRoute?: boolean;
 };
 
 /**
@@ -70,7 +66,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
   const { isPublicExploreRoute } = usePublicRoute();
   const { userDetails, currentUserPubky } = useCurrentUserProfile();
   const socialHostNav = usesSocialHostNavigation();
-  // Social unread plus marketplace unread — one badge for the whole surface.
+  // Shop notifications and unread conversations share the account badge.
   const unreadNotifications = useNotificationStore((state) => state.selectMarketplaceUnread());
   // Honest device-local unread: conversations whose last received message
   // postdates the local read checkpoint.
@@ -78,17 +74,14 @@ export function MobileFooter({ className }: MobileFooterProps) {
   const marketplaceCartCount = useMarketplaceCartCount();
   const marketplaceAttention = useMarketplaceNavAttention();
   const accountUnread = unreadNotifications + unreadMessages;
-  const localAvatarUrl = useLocalFilesStore((state) => state.profile);
   const { isKeyboardVisible } = useKeyboardOffset();
-  const { markCollectionsNavSeen } = useCollectionsNavDiscovery();
   const isEmbedded = useIsEmbedded();
 
   // Get avatar URL and fallback initial - same logic as desktop header
   const avatarUrl =
-    localAvatarUrl ??
-    (currentUserPubky && userDetails?.image
+    currentUserPubky && userDetails?.image
       ? FileController.getAvatarUrl(currentUserPubky, userDetails.indexed_at)
-      : undefined);
+      : undefined;
   const avatarName = userDetails?.name || 'U';
   // Marketplace stays out of primary navigation until the commerce adapter is
   // explicitly configured; production defaults to 'unavailable' (ADR 0019).
@@ -108,13 +101,11 @@ export function MobileFooter({ className }: MobileFooterProps) {
       href: APP_ROUTES.HOME,
       icon: Home,
       label: 'Home',
-      isFeedRoute: true,
     },
     {
       href: APP_ROUTES.SEARCH,
       icon: Search,
       label: 'Search',
-      isFeedRoute: true,
     },
     {
       href: APP_ROUTES.HOT,
@@ -154,34 +145,25 @@ export function MobileFooter({ className }: MobileFooterProps) {
       >
         {navItems.map((item) => {
           const Icon = item.icon;
-          const externalHref =
-            !socialHostNav || item.href === APP_ROUTES.MARKETPLACE ? null : getSocialHostUrl(item.href);
-          const itemIsActive = !externalHref && isNavItemActive(pathname, item);
-          const isCollectionsItem = item.href === APP_ROUTES.COLLECTIONS;
-          const itemBadgeCount = item.href === APP_ROUTES.MARKETPLACE ? marketplaceCartCount + marketplaceAttention : 0;
+          const isShop = item.href === APP_ROUTES.MARKETPLACE;
+          const NavLink = isShop ? Link : 'a';
+          const itemIsActive = isShop && isNavItemActive(pathname, item);
+          const itemBadgeCount = isShop ? marketplaceCartCount + marketplaceAttention : 0;
           const marketplaceLabel =
-            item.href === APP_ROUTES.MARKETPLACE && marketplaceAttention > 0
+            isShop && marketplaceAttention > 0
               ? marketplaceNavAccessibleName(marketplaceCartCount, marketplaceAttention)
               : null;
           return (
-            <Link
+            <NavLink
               key={item.href}
-              href={externalHref ?? item.href}
-              prefetch={false}
+              href={isShop ? item.href : getSocialHostUrl(item.href)}
+              {...(isShop ? { prefetch: false } : { target: '_top' })}
               aria-label={
                 marketplaceLabel ??
                 (itemBadgeCount > 0
                   ? `${item.label}, ${itemBadgeCount} ${itemBadgeCount === 1 ? 'item' : 'items'} in cart`
                   : item.label)
               }
-              onClick={(event) => {
-                if (externalHref) return;
-                if (isAuthenticated && isCollectionsItem) {
-                  markCollectionsNavSeen();
-                }
-                if (!item.isFeedRoute) return;
-                handleFeedNavClick(event, { isActive: itemIsActive, smoothScrollWhenActive: true });
-              }}
               className={cn(
                 socialHostNav
                   ? 'flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full p-2 transition-all sm:p-3'
@@ -205,12 +187,13 @@ export function MobileFooter({ className }: MobileFooterProps) {
                   </Typography>
                 </Badge>
               )}
-            </Link>
+            </NavLink>
           );
         })}
         {isAuthenticated && socialHostNav ? (
           <a
-            href={getSocialHostUrl(APP_ROUTES.PROFILE)!}
+            href={getSocialHostUrl(APP_ROUTES.PROFILE)}
+            target="_top"
             aria-label="Profile"
             data-cy="footer-nav-profile-btn"
             className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full"
@@ -261,10 +244,14 @@ export function MobileFooter({ className }: MobileFooterProps) {
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" align="end" sideOffset={12} className="w-72 p-2">
               <DropdownMenuItem asChild>
-                <Link href={PROFILE_ROUTES.PROFILE_PAGE} className="min-h-12 gap-2 px-4 py-2 text-sm font-medium">
+                <a
+                  href={getSocialHostUrl(PROFILE_ROUTES.PROFILE_PAGE)}
+                  target="_top"
+                  className="min-h-12 gap-2 px-4 py-2 text-sm font-medium"
+                >
                   <UserRound className="size-5 shrink-0" aria-hidden="true" />
                   Profile
-                </Link>
+                </a>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link href={MARKETPLACE_ROUTES.NOTIFICATIONS} className="min-h-12 gap-2 px-4 py-2 text-sm font-medium">
@@ -285,10 +272,14 @@ export function MobileFooter({ className }: MobileFooterProps) {
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href={PROFILE_ROUTES.POSTS} className="min-h-12 gap-2 px-4 py-2 text-sm font-medium">
+                <a
+                  href={getSocialHostUrl(PROFILE_ROUTES.POSTS)}
+                  target="_top"
+                  className="min-h-12 gap-2 px-4 py-2 text-sm font-medium"
+                >
                   <FileText className="size-5 shrink-0" aria-hidden="true" />
                   My posts
-                </Link>
+                </a>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link href={MARKETPLACE_ROUTES.SETTINGS} className="min-h-12 gap-2 px-4 py-2 text-sm font-medium">

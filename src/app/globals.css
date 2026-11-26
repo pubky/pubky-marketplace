@@ -60,14 +60,12 @@ body {
   --color-foreground-strong: var(--foreground-strong);
   --color-glass: var(--glass);
   --color-glass-hover: var(--glass-hover);
-  --color-glass-strong: var(--glass-strong);
   --color-button-outline: var(--button-outline);
   /* Paint the page surface at 10% over the default button’s 32% hover fill. */
   --background-image-button-hover: linear-gradient(
     color-mix(in oklab, var(--background) 10%, transparent),
     color-mix(in oklab, var(--background) 10%, transparent)
   );
-  --color-action-pill: var(--action-pill);
   --color-embed: var(--embed);
   --color-warning-foreground: var(--warning-foreground);
   --color-notice-foreground: var(--notice-foreground);
@@ -147,14 +145,12 @@ body {
    */
   --glass: color-mix(in oklab, var(--color-white) 5%, transparent);
   --glass-hover: color-mix(in oklab, var(--color-white) 10%, transparent);
-  --glass-strong: color-mix(in oklab, var(--color-white) 12%, transparent);
   /**
    * Outline buttons and checkbox/radio wells share Figma’s 4.5% white wash.
    * Light mode uses the card surface, so these buttons read lighter than the page.
    */
   --button-outline: color-mix(in oklab, var(--color-white) 4.5%, transparent);
   /** Surface of the post action pills (tag / reply / repost / save / more): secondary in dark, page in light. */
-  --action-pill: var(--secondary);
   /** Surface of a post or link embedded in a post (repost preview, link preview): muted in dark, page in light. */
   --embed: var(--muted);
   /**
@@ -200,49 +196,6 @@ body {
    * ================================================================== */
 
   /**
-   * Desktop header height (profile page header)
-   * - Used for sticky positioning of filter bars and sidebars
-   * - Matches ProfilePageHeader height on desktop (lg+)
-   * - Applied: ProfilePageFilterBar, ProfilePageSidebar sticky top offset
-   * - Responsive: Desktop only (hidden on mobile via lg:flex)
-   */
-  --header-height: 146px;
-
-  /**
-   * Mobile header height (full chrome) — KNOWN STALE VALUE, do not trust without audit.
-   * - Actual full-chrome MobileHeader (p-6, side buttons) is 96px; this is still 80px.
-   * - MobileTabBar uses the compact header offset for Hot, Profile, and Settings
-   *   (see --header-height-settings).
-   * - ProfilePageLayout also reads this for min-height calc, but that page's header is 72px.
-   * - Intentionally left as-is until a broader mobile layout refactor; changing it now
-   *   would ripple through tab-bar positioning and profile feed height across the PR.
-   */
-  --header-height-mobile: 80px;
-
-  /**
-   * Compact mobile header height
-   * - Matches MobileHeader with `containerClassName="pb-0"` (logo-only chrome)
-   * - Applied: SettingsMobileMenu, ProfilePageMobileMenu sticky top offset;
-   *   Settings ContentLayout top padding via --settings-mobile-chrome-height
-   * - Responsive: Mobile only (hidden on desktop via lg:hidden)
-   */
-  --header-height-settings: 72px;
-
-  /**
-   * Mobile tab bar height (icon row)
-   * - Matches the 48px MobileTabBar stack plus its 1px bottom border
-   * - Applied: Settings content top padding below header + tab bar
-   * - Responsive: Mobile only (hidden on desktop via lg:hidden)
-   */
-  --mobile-tab-bar-height: 49px;
-
-  /**
-   * Settings mobile chrome height (header + tab bar)
-   * - Applied: Settings ContentLayout mobile top padding
-   */
-  --settings-mobile-chrome-height: calc(var(--header-height-settings) + var(--mobile-tab-bar-height));
-
-  /**
    * Main content header offset
    * - Vertical offset for sticky sidebars and floating elements below main header
    * - Used by: ContentLayout sidebars, NewPostsButton when in fixed/floating mode
@@ -254,7 +207,6 @@ body {
    * - Total header visual height: 144px (24px outer padding + 96px nav + 24px outer padding)
    * - Ensures sidebars and floating elements appear clearly below header
    *
-   * Note: Profile pages use --header-height (146px) for ProfilePageHeader.
    */
   --header-offset-main: 144px;
 
@@ -263,7 +215,6 @@ body {
    * - Vertical offset for sticky elements below the full-chrome MobileHeader (< lg)
    * - Value: p-6 (24px top + 24px bottom) around the 48px button row = 96px
    * - Used by: listing editor mobile step bar
-   * - --header-height-mobile (80px) is stale and still drives tab-bar layout,
    *   so it is not reused here.
    */
   --header-offset-mobile: 96px;
@@ -332,29 +283,6 @@ body {
   --popover-bio-max-height: 150px;
 
   /**
-   * Mention popover width
-   * - Width for user suggestion popover in post input
-   * - Applied to: MentionPopover component
-   *
-   * Rationale for 300px:
-   * - Provides adequate space for user avatar, name, and truncated ID
-   * - Consistent with other popover widths in the app
-   */
-  --mention-popover-width: 300px;
-
-  /**
-   * Mention popover max height
-   * - Maximum height for mention suggestions before scrolling
-   * - Applied to: MentionPopover component
-   *
-   * Rationale for 200px:
-   * - Shows approximately 4-5 user suggestions at once
-   * - Prevents popover from obscuring too much of the textarea
-   * - Enables scrolling when more results are available
-   */
-  --mention-popover-max-height: 200px;
-
-  /**
    * Who tagged expanded list width
    * - Width for the expanded list of users who tagged a post/content
    * - Applied to: WhoTaggedExpandedList component
@@ -377,30 +305,6 @@ body {
    * - Enables scrolling when more users are available
    */
   --who-tagged-expanded-list-max-height: 300px;
-
-  /**
-   * Avatar zoom modal size
-   * - Size of the avatar when displayed in the zoom modal
-   * - Used for full-screen avatar preview on profile page
-   * - Applied to: AvatarZoomModal component
-   *
-   * Rationale:
-   * - 362px provides optimal viewing size on desktop
-   * - min() function ensures responsive sizing on mobile devices
-   * - 90vw (90% of viewport width) prevents overflow on small screens
-   * - Maintains aspect ratio across all device sizes
-   * - Ensures avatar is prominently displayed without overwhelming the viewport
-   *
-   * Responsive behavior:
-   * - Desktop (≥402px width): 362px (max size)
-   * - Mobile (<402px width):  90% of viewport width
-   * - Examples:
-   *   → 1920px viewport: 362px
-   *   → 768px viewport:  362px
-   *   → 375px viewport:  337px (90% of 375px)
-   *   → 320px viewport:  288px (90% of 320px)
-   */
-  --avatar-zoom-size: min(362px, 90vw);
 
   /* ==================================================================
    * Z-INDEX LAYERS (Stacking Order)
@@ -521,9 +425,7 @@ body {
   --foreground-strong: var(--foreground);
   --glass: var(--card);
   --glass-hover: var(--accent);
-  --glass-strong: var(--card);
   --button-outline: var(--card);
-  --action-pill: var(--background);
   --embed: var(--background);
   --warning-foreground: var(--color-amber-800);
   --notice-foreground: var(--color-amber-800);
@@ -595,11 +497,6 @@ body {
 
 @layer utilities {
   /* Shadow utilities */
-
-  /* Gradient fade effect for mobile tab menus (Profile, Settings) */
-  .mobile-menu-gradient-fade::after {
-    @apply pointer-events-none absolute top-full right-0 left-0 h-6 bg-linear-to-b from-background to-transparent content-[''];
-  }
 
   /* White caret for focused inputs (used by PostTagInput) */
   .caret-white {
@@ -747,35 +644,6 @@ body {
       padding-bottom: 0;
       background-color: transparent;
     }
-    @keyframes accordion-down {
-      from {
-        height: 0;
-      }
-      to {
-        height: var(--radix-accordion-content-height);
-      }
-    }
-
-    @keyframes accordion-up {
-      from {
-        height: var(--radix-accordion-content-height);
-      }
-      to {
-        height: 0;
-      }
-    }
-
-    .animate-accordion-down {
-      animation: accordion-down 0.2s ease-out;
-    }
-
-    .animate-accordion-up {
-      animation: accordion-up 0.2s ease-out;
-    }
-  }
-
-  .max-width-profile-page-header {
-    max-width: calc(100vw - 6rem);
   }
 
   .h-screen-without-page-header-auth-pages {

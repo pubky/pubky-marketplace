@@ -1,7 +1,7 @@
 import { buildUrlWithQuery, encodePathSegment } from '@/services/nexus/nexus.utils';
 import {
   SEARCH_PATH_PARAMS,
-  type TPrefixSearchParams,
+  type TTagPrefixSearchParams,
   type TTagSearchParams,
 } from '@/services/nexus/search/search.types';
 
@@ -22,26 +22,10 @@ export const searchApi = {
       excludeKeys: SEARCH_PATH_PARAMS,
     });
   },
-  byPrefix: (params: TPrefixSearchParams) => {
+  byPrefix: ({ version = 'v0', ...params }: TTagPrefixSearchParams) => {
     const prefix = encodePathSegment(params.prefix);
     return buildUrlWithQuery({
-      baseRoute: `${PREFIX}/tags/by_prefix/${prefix}`,
-      params,
-      excludeKeys: SEARCH_PATH_PARAMS,
-    });
-  },
-  byUser: (params: TPrefixSearchParams) => {
-    const prefix = encodePathSegment(params.prefix);
-    return buildUrlWithQuery({
-      baseRoute: `${PREFIX}/users/by_id/${prefix}`,
-      params,
-      excludeKeys: SEARCH_PATH_PARAMS,
-    });
-  },
-  byUsername: (params: TPrefixSearchParams) => {
-    const prefix = encodePathSegment(params.prefix);
-    return buildUrlWithQuery({
-      baseRoute: `${PREFIX}/users/by_name/${prefix}`,
+      baseRoute: `${version}/search/tags/by_prefix/${prefix}`,
       params,
       excludeKeys: SEARCH_PATH_PARAMS,
     });

@@ -149,23 +149,6 @@ describe('CommerceController', () => {
     expect(fetchCatalog).toHaveBeenCalledWith({ endingSoonest: true });
   });
 
-  it('validates the followed pubkys before refreshing the followed-sellers shelf', async () => {
-    const fetchFollowed = vi
-      .spyOn(CommerceApplication, 'fetchFollowedSellerCatalogListings')
-      .mockResolvedValue(undefined);
-
-    await CommerceController.fetchFollowedSellerListings([COMMERCE_FIXTURE_SELLER, COMMERCE_FIXTURE_BUYER]);
-    expect(fetchFollowed).toHaveBeenCalledWith([COMMERCE_FIXTURE_SELLER, COMMERCE_FIXTURE_BUYER]);
-
-    await expect(CommerceController.fetchFollowedSellerListings(['not-a-pubky'])).rejects.toMatchObject({
-      code: 'INVALID_INPUT',
-    });
-    await expect(CommerceController.fetchFollowedSellerListings('not-a-list')).rejects.toMatchObject({
-      code: 'INVALID_INPUT',
-    });
-    expect(fetchFollowed).toHaveBeenCalledTimes(1);
-  });
-
   it('validates local listing lookup identity before calling application', async () => {
     const getListing = vi.spyOn(CommerceApplication, 'getListing').mockResolvedValue(null);
 

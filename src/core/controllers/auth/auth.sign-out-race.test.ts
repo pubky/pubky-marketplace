@@ -27,7 +27,7 @@ import { installFakeHomeserver } from '@/test-utils/fake-homeserver';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';
 import { AuthController } from './auth';
-import { deferred, grantSession, resetGrantTest } from './auth.grant-test-utils';
+import { approve, deferred, grantSession, resetGrantTest } from './auth.grant-test-utils';
 import { AUTH_FINALIZATION_LOCK_NAME } from './auth-finalization-lock';
 import { captureAuthScope } from './auth-scope';
 
@@ -120,29 +120,34 @@ describe('work started for an account writes nothing for it once its sign-out st
 
     it('sign-out waits for a running bootstrap, which leaves the session unprepared', async () => {
       const lockRequests = recordLockRequests();
-      signIn(ALICE, false);
+      vi.mocked(AuthApplication.userIsSignedUp).mockResolvedValue(true);
       vi.mocked(BootstrapApplication.initialize).mockRestore();
       const events: string[] = [];
       const inFlight = deferred<void>();
       vi.spyOn(BootstrapApplication, 'initialize').mockReturnValue(inFlight.promise);
-      vi.mocked(clearDatabase).mockImplementation(async () => {
-        events.push('local data cleared');
-      });
+      const session = grantSession(ALICE);
+      await approve(session);
+      const bootstrap = AuthController.initializeAuthenticatedSession({ session }).catch(() => {});
 
-      const bootstrap = AuthController.completeProfileSetup().then(() => events.push('bootstrap settled'));
       await vi.waitFor(() => expect(BootstrapApplication.initialize).toHaveBeenCalled());
+      vi.mocked(clearDatabase)
+        .mockClear()
+        .mockImplementation(async () => {
+          events.push('local data cleared');
+        });
       const requestsBeforeSignOut = lockRequests.length;
       const signOut = AuthController.logout();
       // The sign-out is queued behind the bootstrap, so it cannot clear anything yet.
       await vi.waitFor(() => expect(lockRequests.slice(requestsBeforeSignOut)).toContain(AUTH_FINALIZATION_LOCK_NAME));
       expect(clearDatabase).not.toHaveBeenCalled();
 
+      events.push('bootstrap released');
       inFlight.resolve();
       await bootstrap;
       await signOut;
 
-      expect(events).toEqual(['bootstrap settled', 'local data cleared']);
-      expect(useNotificationStore.getState().unread).toBe(0);
+      expect(events).toEqual(['bootstrap released', 'local data cleared']);
+      expect(useNotificationStore.getState().marketplaceUnread).toBe(0);
       expect(useAuthStore.getState().hasProfile).not.toBe(true);
     });
   });
@@ -186,7 +191,7 @@ describe('work started for an account writes nothing for it once its sign-out st
     });
 
     it('a watchlist the sign-in sync reads as sign-out starts is neither applied locally nor written back', async () => {
-      signIn(ALICE);
+      vi.mocked(AuthApplication.userIsSignedUp).mockResolvedValue(true);
       const homeserver = installFakeHomeserver();
       homeserver.files.set(`pubky://${ALICE}/priv/pubky.app/marketplace/v1/watchlist.json`, {
         schemaVersion: 1,
@@ -205,7 +210,9 @@ describe('work started for an account writes nothing for it once its sign-out st
       const rounds = vi.spyOn(CommerceApplication, 'syncWatchlist');
       const warn = vi.spyOn(Logger, 'warn');
 
-      await AuthController.completeProfileSetup();
+      const session = grantSession(ALICE);
+      await approve(session);
+      await AuthController.initializeAuthenticatedSession({ session });
       await vi.waitFor(() => expect(CommercePrivKeyringApplication.get).toHaveBeenCalledWith(ALICE));
       const finishSignOut = startSignOut();
       keys.resolve({ kind: 'keys', keyring: KEYRING });

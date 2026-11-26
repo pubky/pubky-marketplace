@@ -1,11 +1,12 @@
 import { TagKind } from '@/application/tag/tag.types';
+import { MARKER_TTL_MS } from '@/config/viewerTagMarker';
 import { db } from '@/database/franky/franky';
 import { parseViewerTagUrl } from '@/libs/commerce/tag-uri';
 import { DatabaseErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { HttpMethod } from '@/libs/http/http.types';
-import { MarketplaceTagsModel, type MarketplaceTagsModelSchema } from '@/models/marketplace/tags/marketplaceTags';
+import { MarketplaceTagsModel } from '@/models/marketplace/tags/marketplaceTags';
 import type { Pubky } from '@/models/models.types';
 import { ViewerTagMarkerStorage } from '@/services/local/tag/post/viewerTagMarkerStorage';
 import type { TLocalTagParams } from '@/services/local/tag/tag.types';
@@ -33,9 +34,7 @@ export function buildMarketplaceTagRowId(kind: MarketplaceTagKind, taggedId: str
  *   (`PostCountsModel` equivalents), so only the tag aggregate row is written.
  * - Rows are keyed by the kind-prefixed target id (see `buildMarketplaceTagRowId`).
  *
- * Viewer-mutation markers reuse `ViewerTagMarkerStorage`, passing the row id
- * as the target key, so `mergeTags` can ignore stale Nexus responses for the
- * same ~5-minute window the post flow uses.
+ * Pending writes share the aggregate’s transaction and expire after the index-lag window.
  */
 export class LocalMarketplaceTagService {
   /**
@@ -50,14 +49,15 @@ export class LocalMarketplaceTagService {
     let mutated = false;
     try {
       mutated = await db.transaction('rw', [MarketplaceTagsModel.table], async () => {
-        const model = await MarketplaceTagsModel.getOrCreate<string, MarketplaceTagsModelSchema>(taggedId);
+        const model =
+          (await MarketplaceTagsModel.findById(taggedId)) ?? new MarketplaceTagsModel({ id: taggedId, tags: [] });
         const status = model.addTagger(label, taggerId);
         if (status === null) {
           return false;
         }
         const changed = model.findByLabel(label);
         if (changed && tagUri) changed.tag_uri = tagUri;
-        await MarketplaceTagsModel.upsert({ id: taggedId, tags: model.tags as NexusTag[] });
+        await this.saveMutation(model, taggerId, label, HttpMethod.PUT);
         return true;
       });
     } catch (error) {
@@ -67,10 +67,6 @@ export class LocalMarketplaceTagService {
         context: { taggedId, label, taggerId },
         cause: error,
       });
-    }
-
-    if (mutated) {
-      ViewerTagMarkerStorage.set({ pubky: taggerId, postId: taggedId, label, op: HttpMethod.PUT });
     }
 
     return mutated;
@@ -92,7 +88,7 @@ export class LocalMarketplaceTagService {
         if (!tagsData) return false;
         const model = new MarketplaceTagsModel(tagsData);
         if (model.removeTagger(label, taggerId) === null) return false;
-        await MarketplaceTagsModel.upsert({ id: taggedId, tags: model.tags as NexusTag[] });
+        await this.saveMutation(model, taggerId, label, HttpMethod.DELETE);
         return true;
       });
     } catch (error) {
@@ -104,8 +100,18 @@ export class LocalMarketplaceTagService {
       });
     }
 
-    if (deleted) ViewerTagMarkerStorage.set({ pubky: taggerId, postId: taggedId, label, op: HttpMethod.DELETE });
     return deleted;
+  }
+
+  private static async saveMutation(
+    model: MarketplaceTagsModel,
+    viewer: Pubky,
+    label: string,
+    op: HttpMethod.PUT | HttpMethod.DELETE,
+  ) {
+    const pending = model.pending.filter((entry) => entry.viewer !== viewer || entry.label !== label);
+    pending.push({ viewer, label, op, expiresAt: Date.now() + MARKER_TTL_MS });
+    await MarketplaceTagsModel.upsert({ id: model.id, tags: model.tags, pending });
   }
 
   /** A resource tag can have a migrated id. Use only this viewer's own social tag file. */
@@ -162,12 +168,20 @@ export class LocalMarketplaceTagService {
         if (isCurrent && !isCurrent()) return;
         const existingTags = existing?.tags ?? [];
 
+        const pending = existing?.pending ?? [];
+        const viewerMarkers = new Map(
+          pending.filter((entry) => entry.viewer === viewerId).map((entry) => [entry.label, entry]),
+        );
+        // Read markers made before the upgrade until their original deadline.
+        const markerFor = (label: string) =>
+          viewerId
+            ? (viewerMarkers.get(label) ?? ViewerTagMarkerStorage.get({ pubky: viewerId, postId: taggedId, label }))
+            : null;
         const tagMap = new Map<string, NexusTag>();
         for (const tag of existingTags) {
           if (clearMissing) {
-            const marker =
-              viewerId && ViewerTagMarkerStorage.get({ pubky: viewerId, postId: taggedId, label: tag.label });
-            if (!marker || marker.op !== HttpMethod.PUT) continue;
+            const marker = markerFor(tag.label);
+            if (!viewerId || marker?.op !== HttpMethod.PUT) continue;
             // Only this viewer's pending addition is known to survive the index change.
             tagMap.set(tag.label, { ...tag, taggers: [viewerId], taggers_count: 1, relationship: true });
             continue;
@@ -179,9 +193,7 @@ export class LocalMarketplaceTagService {
           const key = newTag.label;
           const existingTag = tagMap.get(key);
 
-          const marker = viewerId
-            ? ViewerTagMarkerStorage.get({ pubky: viewerId, postId: taggedId, label: newTag.label })
-            : null;
+          const marker = markerFor(newTag.label);
           const nexusSaysViewerIsTagger = Boolean(newTag.relationship);
           const viewerIsTagger = marker ? marker.op === HttpMethod.PUT : nexusSaysViewerIsTagger;
 
@@ -214,6 +226,7 @@ export class LocalMarketplaceTagService {
         await MarketplaceTagsModel.upsert({
           id: taggedId,
           tags: Array.from(tagMap.values()),
+          pending,
         });
       });
     } catch (error) {

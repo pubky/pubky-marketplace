@@ -7,10 +7,11 @@ import { TagKind } from '@/application/tag/tag.types';
 import { getSocialHostUrl } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { TagController } from '@/controllers/tag/tag';
-import { normalizeLegacyTagLabel, normalizeSocialTagLabel } from '@/hooks/useTagInput/useTagInput.utils';
 import { AppError, isAppError } from '@/libs/error/error';
-import { isRetryable } from '@/libs/error/error.utils';
+import { AuthErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
+import { isAbortError, isRetryable } from '@/libs/error/error.utils';
 import { getTtlRetryDelayMs } from '@/libs/runtime-config/runtime-config';
+import { normalizeLegacyTagLabel, normalizeSocialTagLabel } from '@/libs/tag-label';
 import type { TagWithAvatars } from '@/molecules/TaggedItem/TaggedItem.types';
 import { transformTagsForViewer } from '@/molecules/TaggedItem/TaggedItem.utils';
 import { toast } from '@/molecules/Toaster/toast';
@@ -23,6 +24,8 @@ export type MarketplaceTagTarget =
 export interface UseMarketplaceTagsResult {
   tags: TagWithAvatars[];
   socialHandoffUrl?: string;
+  readOnly: boolean;
+  embeddedTaggingUnavailable: boolean;
   normalizeLabel: (label: string) => string;
   handleTagAdd: (label: string) => Promise<{ success: boolean; error?: string }>;
   handleTagToggle: (tag: { label: string; relationship?: boolean }) => Promise<void>;
@@ -33,22 +36,30 @@ function targetTaggedId(target: MarketplaceTagTarget): string {
 }
 
 /** Retry transient failures while this effect still owns the resource or session. A successful read stops the timer. */
-function refreshTagRead<T>(read: () => Promise<T>, onSuccess?: (value: T) => void) {
+function refreshTagRead<T>(read: () => Promise<T>, onSuccess?: (value: T) => boolean | void, refreshOnFocus = false) {
   let active = true;
   let timer: number | undefined;
+  let pending = false;
   const attempt = async () => {
+    if (!active || pending) return;
+    pending = true;
+    window.clearTimeout(timer);
     try {
       const value = await read();
-      if (active) onSuccess?.(value);
+      if (active && onSuccess?.(value)) timer = window.setTimeout(attempt, getTtlRetryDelayMs());
     } catch (error) {
-      if (active && (!isAppError(error) || isRetryable(error))) {
+      if (active && isAppError(error) && isRetryable(error) && error.code !== ServerErrorCode.INVALID_RESPONSE) {
         timer = window.setTimeout(attempt, getTtlRetryDelayMs());
       }
+    } finally {
+      pending = false;
     }
   };
+  if (refreshOnFocus) window.addEventListener('focus', attempt);
   void attempt();
   return () => {
     active = false;
+    window.removeEventListener('focus', attempt);
     window.clearTimeout(timer);
   };
 }
@@ -61,8 +72,13 @@ function socialListingOrShopUrl(target: MarketplaceTagTarget) {
   return getSocialHostUrl(`/shop${path}`);
 }
 
-function showWriteError(error: unknown, fallback: string, target: MarketplaceTagTarget) {
-  if (error instanceof AppError && error.operation === 'socialWrite') {
+function showWriteError(error: unknown, fallback: string, target: MarketplaceTagTarget, embedded: boolean) {
+  if (isAbortError(error)) return;
+  if (error instanceof AppError && error.code === AuthErrorCode.SOCIAL_WRITE_UNAVAILABLE) {
+    if (embedded) {
+      toast({ variant: 'info', description: 'Tagging is currently unavailable for this account in Shop.' });
+      return;
+    }
     toast({
       variant: 'info',
       description: error.message,
@@ -93,7 +109,11 @@ export function useMarketplaceTags(target: MarketplaceTagTarget | null): UseMark
     if (!viewerId || !session) return;
     return refreshTagRead(
       () => TagController.fetchWriteEpoch(viewerId),
-      (epoch) => setAccess({ owner: viewerId, session, sessionOwner, epoch }),
+      (epoch) => {
+        setAccess({ owner: viewerId, session, sessionOwner, epoch });
+        return epoch === null && sessionOwner === 'host';
+      },
+      true,
     );
   }, [viewerId, session, sessionOwner]);
   const epoch =
@@ -101,12 +121,10 @@ export function useMarketplaceTags(target: MarketplaceTagTarget | null): UseMark
       ? access?.epoch
       : undefined;
   const normalizeLabel = epoch === 'legacy' ? normalizeLegacyTagLabel : normalizeSocialTagLabel;
+  const readOnly = Boolean(viewerId && !epoch);
+  const embeddedTaggingUnavailable = epoch === null && sessionOwner === 'host';
   const socialHandoffUrl =
-    epoch === null && target
-      ? sessionOwner === 'host'
-        ? getSocialHostUrl('/')
-        : socialListingOrShopUrl(target)
-      : undefined;
+    epoch === null && target && !embeddedTaggingUnavailable ? socialListingOrShopUrl(target) : undefined;
   const targetKey = target ? `${target.kind}:${targetTaggedId(target)}` : null;
 
   const localTags = useLiveQuery(
@@ -142,6 +160,8 @@ export function useMarketplaceTags(target: MarketplaceTagTarget | null): UseMark
       if (!target) return { success: false, error: 'Tag target is required' };
       if (!viewerId) return { success: false, error: 'You must be logged in to add tags' };
 
+      if (readOnly) return { success: false, error: 'Tagging is currently unavailable' };
+
       const existingTag = (localTags ?? []).find((t) => t.label === normalizeLabel(label));
       if (existingTag?.relationship || existingTag?.taggers?.includes(viewerId)) {
         return { success: false, error: 'You have already added this tag' };
@@ -157,17 +177,21 @@ export function useMarketplaceTags(target: MarketplaceTagTarget | null): UseMark
         toast({ title: `Tag added: ${label}` });
         return { success: true };
       } catch (error) {
-        showWriteError(error, `Could not add tag: ${label}`, target);
+        showWriteError(error, `Could not add tag: ${label}`, target, sessionOwner === 'host');
         return { success: false, error: 'Failed to add tag' };
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- targetKey encodes every field of target
-    [targetKey, viewerId, localTags, normalizeLabel],
+    [targetKey, viewerId, localTags, normalizeLabel, readOnly, sessionOwner],
   );
 
   const handleTagToggle = useCallback(
     async (tag: { label: string; relationship?: boolean }): Promise<void> => {
-      if (!target || !viewerId) return;
+      if (!target || !viewerId || readOnly) return;
+      if (normalizeLabel(tag.label) !== tag.label) {
+        toast({ variant: 'info', description: 'This tag uses a spelling that requires a migrated Pubky account.' });
+        return;
+      }
 
       const currentTag = (localTags ?? []).find((t) => t.label === tag.label);
       const userIsTagger =
@@ -178,6 +202,7 @@ export function useMarketplaceTags(target: MarketplaceTagTarget | null): UseMark
           await TagController.commitDelete({
             taggedId: targetTaggedId(target),
             label: tag.label,
+            preserveLabel: true,
             taggerId: viewerId,
             taggedKind: target.kind,
           });
@@ -186,6 +211,7 @@ export function useMarketplaceTags(target: MarketplaceTagTarget | null): UseMark
           await TagController.commitCreate({
             taggedId: targetTaggedId(target),
             label: tag.label,
+            preserveLabel: true,
             taggerId: viewerId,
             taggedKind: target.kind,
           });
@@ -196,12 +222,21 @@ export function useMarketplaceTags(target: MarketplaceTagTarget | null): UseMark
           error,
           userIsTagger ? `Could not remove tag: ${tag.label}` : `Could not add tag: ${tag.label}`,
           target,
+          sessionOwner === 'host',
         );
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- targetKey encodes every field of target
-    [targetKey, viewerId, localTags],
+    [targetKey, viewerId, localTags, normalizeLabel, readOnly, sessionOwner],
   );
 
-  return { tags, socialHandoffUrl, normalizeLabel, handleTagAdd, handleTagToggle };
+  return {
+    tags,
+    socialHandoffUrl,
+    embeddedTaggingUnavailable,
+    readOnly,
+    normalizeLabel,
+    handleTagAdd,
+    handleTagToggle,
+  };
 }

@@ -21,16 +21,14 @@ export class BootstrapApplication {
     if (signal?.aborted) return;
     const controller = new AbortController();
     this.moderationFollowAbortController = controller;
-    const followSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
-    void this.ensureModerationFollow(pubky, controller, followSignal);
+    const abort = () => controller.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    void this.ensureModerationFollow(pubky, controller).finally(() => signal?.removeEventListener('abort', abort));
   }
 
   /** Keep the one-time default follow off the authentication critical path. */
-  private static async ensureModerationFollow(
-    pubky: Pubky,
-    controller: AbortController,
-    signal: AbortSignal,
-  ): Promise<void> {
+  private static async ensureModerationFollow(pubky: Pubky, controller: AbortController): Promise<void> {
+    const { signal } = controller;
     try {
       await UserApplication.ensureModerationFollow({
         follower: pubky,

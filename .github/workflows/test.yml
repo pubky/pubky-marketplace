@@ -117,6 +117,10 @@ jobs:
         if: env.RUN_TESTS == 'true'
         run: bun install
 
+      - name: Check the Shop installation verifier
+        if: env.RUN_TESTS == 'true' && matrix.shard == 1
+        run: node --test .cursor/skills/marketplace-install-verify/scripts/verify.shop.test.mjs
+
       - name: Run Vitest Shard ${{ matrix.shard }}
         if: env.RUN_TESTS == 'true'
         env:

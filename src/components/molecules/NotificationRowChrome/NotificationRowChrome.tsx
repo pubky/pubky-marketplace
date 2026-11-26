@@ -32,7 +32,7 @@ export function NotificationActorAvatar({
 }: NotificationActorAvatarProps) {
   if (userProfileLink) {
     return (
-      <Link href={userProfileLink} className="shrink-0 transition-opacity hover:opacity-80">
+      <a target="_top" href={userProfileLink} className="shrink-0 transition-opacity hover:opacity-80">
         <AvatarWithFallback
           avatarUrl={avatarUrl}
           name={userName}
@@ -40,7 +40,7 @@ export function NotificationActorAvatar({
           size="sm"
           className="lg:size-8"
         />
-      </Link>
+      </a>
     );
   }
 
@@ -77,12 +77,13 @@ export function NotificationActorHeading({
     >
       {/* Username - truncated independently so long names do not overlap timestamp/icon */}
       {userProfileLink ? (
-        <Link
+        <a
+          target="_top"
           href={userProfileLink}
           className="inline-block max-w-full min-w-0 truncate align-bottom no-underline hover:no-underline"
         >
           {userName}
-        </Link>
+        </a>
       ) : (
         <span className="inline-block max-w-full min-w-0 truncate align-bottom">{userName}</span>
       )}{' '}
