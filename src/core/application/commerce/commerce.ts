@@ -100,6 +100,7 @@ import {
   reviewListingAggregateId,
   reviewOfListing,
   reviewsOfReviewer,
+  reviewWindowClosesAtMs,
 } from '@/libs/commerce/order-reviews';
 import {
   PAYKIT_ENDPOINT_MAX_BYTES,
@@ -527,6 +528,12 @@ type OwnReviewRead =
 export type OwnReviewDeleteOutcome = 'removed' | 'queued' | 'absent';
 
 const OWN_REVIEW_WITHDRAW_ATTEMPTS = 3;
+/**
+ * How far past the service's review edit window this device's clock must be
+ * before an automatic cleanup treats a withdrawal as final, so a device clock
+ * up to this much fast cannot delete an edit the service still accepts.
+ */
+const OWN_REVIEW_EDIT_WINDOW_CLOCK_MARGIN_MS = 60 * 60 * 1000;
 
 const ownReviewRemovalPayloadSchema = z.object({
   url: z.string().min(1),
@@ -3892,10 +3899,10 @@ export class CommerceApplication {
   /**
    * Rebuilds the local own-review row from the reviewer's homeserver after
    * a cache miss. Homeserver writes are limited to the overwrite repair
-   * ({@link republishOverwrittenOwnReview}) and deletion of a record the
-   * service freshly holds withdrawn. A 404 or identity mismatch stays
-   * unresolved (the order card's waiting copy), never a false published or
-   * unpublished claim.
+   * ({@link republishOverwrittenOwnReview}) and deletion of a record whose
+   * withdrawal is final ({@link retractWithdrawnOwnReview}). A 404 or
+   * identity mismatch stays unresolved (the order card's waiting copy), never
+   * a false published or unpublished claim.
    */
   private static async hydrateOwnReviewFromHomeserver(
     actorPubky: string,
@@ -3934,11 +3941,7 @@ export class CommerceApplication {
           read.model,
           signal,
         );
-        if (
-          retracted ||
-          withdrawalState === 'owed' ||
-          (read.model.record.orderRef === undefined && withdrawalState === 'removed')
-        ) {
+        if (retracted || withdrawalState === 'owed') {
           this.ownReviewHomeserverMisses.add(this.ownReviewMissKey(actorPubky, order.id));
         }
         return null;
@@ -4188,7 +4191,7 @@ export class CommerceApplication {
    * is read from its deterministic path. A missing record stays unresolved
    * instead of claiming unpublished. Homeserver writes are limited to the
    * overwrite repair ({@link republishOverwrittenOwnReview}) and deletion of
-   * a record the service freshly holds withdrawn.
+   * a record whose withdrawal is final ({@link retractWithdrawnOwnReview}).
    */
   static async getOwnMarketplaceOrderReviews(
     actorPubky: string,
@@ -4229,7 +4232,8 @@ export class CommerceApplication {
    * Rebuilds the local rows of the listings that have none, from one read of
    * the order's review attestations and one GET per record. Homeserver writes
    * are limited to the overwrite repair ({@link republishOverwrittenOwnReview})
-   * and deletion of a record the service freshly holds withdrawn.
+   * and deletion of a record whose withdrawal is final
+   * ({@link retractWithdrawnOwnReview}).
    */
   private static async hydrateOwnReviewItemsFromHomeserver(
     actorPubky: string,
@@ -4284,11 +4288,7 @@ export class CommerceApplication {
         const withdrawalState = await this.ownReviewWithdrawalState(actorPubky, order, listingId, signal);
         if (withdrawalState !== 'live') {
           const retracted = await this.retractWithdrawnOwnReview(actorPubky, order.id, listingId, read.model, signal);
-          if (
-            retracted ||
-            withdrawalState === 'owed' ||
-            (read.model.record.orderRef === undefined && withdrawalState === 'removed')
-          ) {
+          if (retracted || withdrawalState === 'owed') {
             this.ownReviewHomeserverMisses.add(this.ownReviewItemMissKey(actorPubky, order.id, listingId));
           }
           continue;
@@ -4307,17 +4307,21 @@ export class CommerceApplication {
   }
 
   /**
-   * Deletes the owner's per-order record only while the service freshly holds
-   * that item withdrawn. A legacy per-listing record (no `orderRef`) can be
-   * another order's record and is never deleted. The order lock excludes
+   * Deletes the owner's record of an item once its withdrawal is final: the
+   * service freshly holds it withdrawn and the reviewer's edit window has
+   * closed ({@link ownReviewWithdrawalFinal}), so no edit can lift the
+   * withdrawal and publish a newer record at this path. Inside the window the
+   * record stays for a later hydration. A legacy per-listing record (no
+   * `orderRef`) sits at a path every order of the listing shares, so it is
+   * read again just before the DEL and deleted only while it still embeds the
+   * attestation the hydration matched to this order. The homeserver has no
+   * conditional DELETE, so a write to that shared path landing between the
+   * re-read and the DEL is not protected. The order lock excludes
    * publications and outbox removals on this account. An owed removal or a
    * local row owns the next action. This sends no service command and writes
-   * no outbox job or local row. The homeserver has no conditional DELETE: an
-   * edit another device publishes between the fresh service read and the DEL
-   * is deleted, the same window {@link sendOwnReviewRemoval} has between its
-   * withdrawal and its DEL. False sets no miss memo and leaves cleanup for a
-   * later hydration. The DEL is a single attempt so no retry backoff outlives
-   * the captured scope; a failed DEL is retried by a later hydration.
+   * no outbox job or local row. True means the record is gone. The DEL is a
+   * single attempt so no retry backoff outlives the captured scope; a failed
+   * DEL is retried by a later hydration.
    */
   private static async retractWithdrawnOwnReview(
     actorPubky: string,
@@ -4326,23 +4330,26 @@ export class CommerceApplication {
     model: CommerceReviewModelSchema,
     signal?: AbortSignal,
   ): Promise<boolean> {
-    if (model.record.orderRef === undefined) return false;
     return await this.withOwnReviewLock(actorPubky, orderId, async () => {
       if (signal?.aborted || !this.liveIdentityMatches(actorPubky)) return false;
       if (await LocalCommerceService.hasOwedOwnReviewRemoval(actorPubky, orderId, listingId)) return false;
       if ((await LocalCommerceService.getOwnReviewById(model.id)) !== undefined) return false;
-      const removal = await this.fetchOwnReviewRemovalState(actorPubky, orderId, listingId, signal);
-      if (removal !== 'removed') return false;
+      const readStartedAtMs = Date.now();
+      const fresh = await this.fetchOwnReviewOrder(actorPubky, orderId, listingId, signal);
+      if (fresh === null || reviewOfListing(fresh, actorPubky, listingId)?.publicRemoved !== true) return false;
+      if (!this.ownReviewWithdrawalFinal(fresh, actorPubky, readStartedAtMs)) return false;
       if (signal?.aborted || !this.liveIdentityMatches(actorPubky)) return false;
 
+      const url = CommerceRecordNormalizer.reviewUri(actorPubky, model.review_id);
       try {
-        await CommerceHomeserverService.delete(
-          CommerceRecordNormalizer.reviewUri(actorPubky, model.review_id),
-          undefined,
-          {
-            singleAttempt: true,
-          },
-        );
+        if (model.record.orderRef === undefined) {
+          const current = await CommerceHomeserverService.fetchJsonIfFound(url);
+          if (!current.found) return true;
+          const embedded = (current.json as { eligibilityAttestation?: unknown } | null)?.eligibilityAttestation;
+          if (embedded !== model.record.eligibilityAttestation) return false;
+          if (signal?.aborted || !this.liveIdentityMatches(actorPubky)) return false;
+        }
+        await CommerceHomeserverService.delete(url, undefined, { singleAttempt: true });
         return true;
       } catch (error) {
         if (isAppError(error) && isNotFound(error)) return true;
@@ -4354,6 +4361,23 @@ export class CommerceApplication {
         return false;
       }
     });
+  }
+
+  /**
+   * Whether the actor's withdrawal of this order can no longer be lifted: the
+   * service refuses `review.update`, the only command that clears it, and
+   * `review.create` once its clock passes the reviewer's edit window, counted
+   * from their first review of the order. `readStartedAtMs` is this device's
+   * clock before the fresh read and must be past that window by
+   * {@link OWN_REVIEW_EDIT_WINDOW_CLOCK_MARGIN_MS}.
+   */
+  private static ownReviewWithdrawalFinal(
+    fresh: MarketplaceOrder,
+    actorPubky: string,
+    readStartedAtMs: number,
+  ): boolean {
+    const closesAtMs = reviewWindowClosesAtMs(reviewsOfReviewer(fresh, actorPubky));
+    return closesAtMs !== null && readStartedAtMs > closesAtMs + OWN_REVIEW_EDIT_WINDOW_CLOCK_MARGIN_MS;
   }
 
   /**
@@ -4486,10 +4510,12 @@ export class CommerceApplication {
    * idempotent (a withdrawal already recorded and a 404 both count as done),
    * so the job simply retries from the top. Any other failure keeps the job,
    * with its attempt count and cause recorded. Once `signal` aborts, nothing
-   * more is sent or recorded and the job stays as it was. If the scope ends
-   * after the service accepts the withdrawal, the job stays. If a wipe drops
-   * that job, the owner's next hydration deletes the record the service holds
-   * withdrawn.
+   * more is sent or recorded and the job stays as it was. With a `signal` the
+   * DEL is a single attempt, so no transport backoff outlives the scope and
+   * the outbox owns the retry. If the scope ends after the service accepts
+   * the withdrawal, the job stays. If a wipe drops that job, the owner's
+   * hydration deletes the record once the withdrawal is final
+   * ({@link retractWithdrawnOwnReview}).
    */
   private static async sendOwnReviewRemoval(
     actorPubky: string,
@@ -4508,7 +4534,7 @@ export class CommerceApplication {
       return false;
     }
     try {
-      await CommerceHomeserverService.delete(url);
+      await CommerceHomeserverService.delete(url, undefined, { singleAttempt: signal !== undefined });
     } catch (error) {
       if (signal?.aborted) return false;
       if (!(isAppError(error) && isNotFound(error))) {

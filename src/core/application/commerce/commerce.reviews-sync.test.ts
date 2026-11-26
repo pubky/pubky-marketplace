@@ -1,3 +1,4 @@
+import type { Session } from '@synonymdev/pubky';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/database/franky/franky';
 import { HttpMethod } from '@/libs/http/http.types';
@@ -5,6 +6,8 @@ import { CommerceReviewModel, CommerceSyncJobModel } from '@/models/commerce/com
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
+import { HomeserverService } from '@/services/homeserver/homeserver';
+import { installHomeserverWriteRetryDependenciesForTests } from '@/services/homeserver/write-retry';
 import { LocalCommerceService } from '@/services/local/commerce/commerce';
 import { MarketplaceGatewayService, type MarketplaceOrder } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -12,10 +15,35 @@ import { createOrderFixture, ORDER_FIXTURE_BUYER } from '@/test/fixtures/commerc
 import { type FakeHomeserver, installFakeHomeserver } from '@/test-utils/fake-homeserver';
 import { type FakeMarketplaceService, installFakeMarketplaceService } from '@/test-utils/fake-marketplace-service';
 import { issuedAttestation, reviewResult } from '@/test-utils/review-attestation';
+import { asOpaque } from '@/test-utils/type-assertions';
 import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';
 import { CommerceApplication } from './commerce';
 
 const REVIEW_ID = '018f47d2-6a27-7c23-a49d-0000000000aa';
+
+/** The fixture review was created at 2026-08-21T10:00Z, so the service accepts edits until 2026-08-22T10:00Z. */
+const INSIDE_EDIT_WINDOW = '2026-08-22T09:00:00.000Z';
+/** Past the window, but not by this device's clock margin of one hour. */
+const PAST_EDIT_WINDOW_WITHIN_CLOCK_MARGIN = '2026-08-22T10:30:00.000Z';
+const PAST_EDIT_WINDOW_AND_CLOCK_MARGIN = '2026-08-22T11:30:00.000Z';
+
+/** Moves this device's clock to `iso` while it keeps running; the returned setter moves it again. */
+function shiftClock(iso: string): (next: string) => void {
+  const realNow = Date.now.bind(Date);
+  let offset = Date.parse(iso) - realNow();
+  vi.spyOn(Date, 'now').mockImplementation(() => realNow() + offset);
+  return (next) => {
+    offset = Date.parse(next) - realNow();
+  };
+}
+
+/** A transient failure as the Pubky SDK rejects a write with it. */
+function sdkRequestError(statusCode: number): Error {
+  return Object.assign(new Error(`Request failed: Server responded with an error: ${statusCode}`), {
+    name: 'RequestError',
+    data: { statusCode },
+  });
+}
 
 function withOwnReview(order: MarketplaceOrder): MarketplaceOrder {
   return {
@@ -400,6 +428,58 @@ describe.each([
 
       expect(withdraws()).toEqual([]);
       expect(deletes()).toHaveLength(1);
+    });
+
+    describe('through the real homeserver transport', () => {
+      const sdkDelete = vi.fn();
+
+      /** Sends DELs through `HomeserverService.request` and its retry policy to a signed-in SDK session. */
+      const useRealTransport = () => {
+        vi.mocked(HomeserverService.request).mockRestore();
+        sdkDelete.mockReset();
+        useAuthStore.setState({
+          session: asOpaque<Session>({
+            info: { publicKey: { z32: () => ORDER_FIXTURE_BUYER } },
+            storage: { delete: (...args: unknown[]) => sdkDelete(...args) },
+          }),
+          isLoggingOut: false,
+        });
+        installHomeserverWriteRetryDependenciesForTests({ sleep: async () => {}, random: () => 0, now: () => 0 });
+      };
+
+      afterEach(() => {
+        installHomeserverWriteRetryDependenciesForTests(null);
+        useAuthStore.setState({ session: null });
+      });
+
+      it('a retry whose scope ends on a transient DEL failure sends no second DEL and leaves the job as it was', async () => {
+        homeserver.failNext(HttpMethod.DELETE, url, 500);
+        await expect(CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id)).resolves.toBe('queued');
+        const [before] = await jobs();
+        useRealTransport();
+        const scope = new AbortController();
+        sdkDelete.mockImplementationOnce(async () => {
+          scope.abort(new DOMException('Signed out', 'AbortError'));
+          throw sdkRequestError(503);
+        });
+        sdkDelete.mockResolvedValue(undefined);
+
+        await expect(CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, scope.signal)).resolves.toBe(0);
+
+        expect(sdkDelete).toHaveBeenCalledTimes(1);
+        expect(await jobs()).toEqual([before]);
+      });
+
+      it('a removal the user starts still retries a transient DEL failure', async () => {
+        useRealTransport();
+        sdkDelete.mockRejectedValueOnce(sdkRequestError(503));
+        sdkDelete.mockResolvedValue(undefined);
+
+        await expect(CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id)).resolves.toBe('removed');
+
+        expect(sdkDelete).toHaveBeenCalledTimes(2);
+        expect(await jobs()).toEqual([]);
+      });
     });
   });
 
@@ -969,6 +1049,7 @@ describe.each([
       const reads = () => homeserver.log.filter((entry) => entry === `${HttpMethod.GET} ${legacyUrl}`);
       const anyDeletes = () => homeserver.log.filter((entry) => entry.startsWith(`${HttpMethod.DELETE} `));
       service.failNext('getOrder');
+      service.failNext('getOrder');
 
       await expect(
         CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, service.order(), new AbortController().signal),
@@ -976,61 +1057,165 @@ describe.each([
 
       expect(reads()).toHaveLength(1);
       expect(anyDeletes()).toEqual([]);
+      expect(homeserver.files.has(legacyUrl)).toBe(true);
 
       await expect(
         CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, service.order(), new AbortController().signal),
       ).resolves.toBeNull();
 
-      expect(reads()).toHaveLength(2);
-      expect(anyDeletes()).toEqual([]);
-      expect(homeserver.files.has(legacyUrl)).toBe(true);
+      expect(reads()).toHaveLength(3);
+      expect(anyDeletes()).toEqual([`${HttpMethod.DELETE} ${legacyUrl}`]);
+      expect(homeserver.files.has(legacyUrl)).toBe(false);
     });
 
-    it('memoizes a legacy record as hidden once the service confirms the withdrawal', async () => {
+    it.each(['single-order read', 'order list'] as const)(
+      'deletes a legacy record that embeds this order attestation through the %s, then memoizes it',
+      async (entryPoint) => {
+        const legacyUrl = await leaveLegacyRecordWithdrawnAfterWipe();
+        if (entryPoint === 'order list') mockItemAttestations();
+        const hydrate = async () =>
+          entryPoint === 'single-order read'
+            ? await CommerceApplication.getOwnMarketplaceReview(
+                ORDER_FIXTURE_BUYER,
+                service.order(),
+                new AbortController().signal,
+              )
+            : await CommerceApplication.getOwnMarketplaceOrderReviews(
+                ORDER_FIXTURE_BUYER,
+                service.order(),
+                new AbortController().signal,
+              );
+
+        await expect(hydrate()).resolves.toEqual(entryPoint === 'single-order read' ? null : []);
+
+        expect(homeserver.files.has(legacyUrl)).toBe(false);
+        expect(homeserver.log.filter((entry) => entry.startsWith(`${HttpMethod.DELETE} `))).toEqual([
+          `${HttpMethod.DELETE} ${legacyUrl}`,
+        ]);
+        expect(await localRow()).toBeUndefined();
+        expect(await jobs()).toEqual([]);
+        expect(service.log.filter((entry) => entry === 'review.withdraw')).toHaveLength(1);
+
+        homeserver.log.length = 0;
+        await expect(hydrate()).resolves.toEqual(entryPoint === 'single-order read' ? null : []);
+        expect(homeserver.log).toEqual([]);
+      },
+    );
+
+    it('leaves another order review that took the shared legacy path before the cleanup DEL', async () => {
       const legacyUrl = await leaveLegacyRecordWithdrawnAfterWipe();
-      const reads = () => homeserver.log.filter((entry) => entry === `${HttpMethod.GET} ${legacyUrl}`);
+      const anotherOrder = {
+        ...(homeserver.files.get(legacyUrl) as Record<string, unknown>),
+        text: 'Another order of the same listing.',
+        eligibilityAttestation: issuedAttestation('boots', 'ef'.repeat(32)).jws,
+      };
+      const parked = parkSecondRemovalStateRead(true);
+      const hydration = CommerceApplication.getOwnMarketplaceReview(
+        ORDER_FIXTURE_BUYER,
+        service.order(),
+        new AbortController().signal,
+      );
+      await parked.reached;
+      homeserver.files.set(legacyUrl, anotherOrder);
+      parked.release();
 
-      await expect(
-        CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, service.order(), new AbortController().signal),
-      ).resolves.toBeNull();
+      await expect(hydration).resolves.toBeNull();
 
-      expect(reads()).toHaveLength(1);
-
-      await expect(
-        CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, service.order(), new AbortController().signal),
-      ).resolves.toBeNull();
-
-      expect(reads()).toHaveLength(1);
       expect(homeserver.log.filter((entry) => entry.startsWith(`${HttpMethod.DELETE} `))).toEqual([]);
-      expect(homeserver.files.has(legacyUrl)).toBe(true);
-    });
-
-    it('withdrawn cleanup leaves a legacy per-listing record in place', async () => {
-      await leaveRecordWithdrawnAfterWipe();
-      const { orderRef: _orderRef, ...unscoped } = published.record;
-      const { PubkySpecsBuilder } = await import('pubky-app-specs');
-      const legacy = new PubkySpecsBuilder(ORDER_FIXTURE_BUYER).createMarketplaceReview({
-        ...unscoped,
-        reviewId: '',
-      });
-      const legacyUrl = CommerceRecordNormalizer.reviewUri(ORDER_FIXTURE_BUYER, legacy.meta.id);
-      homeserver.files.delete(url);
-      homeserver.files.set(legacyUrl, legacy.marketplace_review.toJson());
-
-      await expect(
-        CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, service.order(), new AbortController().signal),
-      ).resolves.toBeNull();
-
-      expect(homeserver.files.has(legacyUrl)).toBe(true);
-      expect(homeserver.log.filter((entry) => entry.startsWith(`${HttpMethod.DELETE} `))).toEqual([]);
+      expect(homeserver.files.get(legacyUrl)).toEqual(anotherOrder);
       expect(await localRow()).toBeUndefined();
       expect(await jobs()).toEqual([]);
+    });
 
-      homeserver.log.length = 0;
+    it.each(['single-order read', 'order list'] as const)(
+      'keeps an edit another device publishes after the %s cleanup read the withdrawal inside the edit window',
+      async (entryPoint) => {
+        await leaveRecordWithdrawnAfterWipe();
+        if (entryPoint === 'order list') mockItemAttestations();
+        shiftClock(INSIDE_EDIT_WINDOW);
+        const edit = otherDeviceEdit(2, 'Edited on the other device.');
+        const parked = parkSecondRemovalStateRead(true);
+        const hydration =
+          entryPoint === 'single-order read'
+            ? CommerceApplication.getOwnMarketplaceReview(
+                ORDER_FIXTURE_BUYER,
+                service.order(),
+                new AbortController().signal,
+              )
+            : CommerceApplication.getOwnMarketplaceOrderReviews(
+                ORDER_FIXTURE_BUYER,
+                service.order(),
+                new AbortController().signal,
+              );
+        await parked.reached;
+        service.reinstate();
+        homeserver.files.set(url, edit);
+        parked.release();
+
+        await expect(hydration).resolves.toEqual(entryPoint === 'single-order read' ? null : []);
+
+        expect(deletes()).toEqual([]);
+        expect(homeserver.files.get(url)).toEqual(edit);
+      },
+    );
+
+    it('defers the cleanup inside the edit window and finishes it on a hydration once the window closed', async () => {
+      await leaveRecordWithdrawnAfterWipe();
+      const setClock = shiftClock(INSIDE_EDIT_WINDOW);
+      const hydrate = async () =>
+        await CommerceApplication.getOwnMarketplaceReview(
+          ORDER_FIXTURE_BUYER,
+          service.order(),
+          new AbortController().signal,
+        );
+
+      await expect(hydrate()).resolves.toBeNull();
+      expect(deletes()).toEqual([]);
+      expect(homeserver.files.has(url)).toBe(true);
+
+      setClock(PAST_EDIT_WINDOW_WITHIN_CLOCK_MARGIN);
+      await expect(hydrate()).resolves.toBeNull();
+      expect(deletes()).toEqual([]);
+      expect(homeserver.files.has(url)).toBe(true);
+
+      setClock(PAST_EDIT_WINDOW_AND_CLOCK_MARGIN);
+      await expect(hydrate()).resolves.toBeNull();
+      expect(deletes()).toHaveLength(1);
+      expect(homeserver.files.has(url)).toBe(false);
+      expect(await localRow()).toBeUndefined();
+      expect(await jobs()).toEqual([]);
+      expect(service.log.filter((entry) => entry === 'review.withdraw')).toHaveLength(1);
+    });
+
+    it('judges the edit window by the clock before the fresh read, so a read that stalls past it sends no DEL', async () => {
+      await leaveRecordWithdrawnAfterWipe();
+      const setClock = shiftClock(INSIDE_EDIT_WINDOW);
+      const parked = parkSecondRemovalStateRead(false);
+      const hydration = CommerceApplication.getOwnMarketplaceReview(
+        ORDER_FIXTURE_BUYER,
+        service.order(),
+        new AbortController().signal,
+      );
+      await parked.reached;
+      setClock(PAST_EDIT_WINDOW_AND_CLOCK_MARGIN);
+      parked.release();
+
+      await expect(hydration).resolves.toBeNull();
+
+      expect(deletes()).toEqual([]);
+      expect(homeserver.files.has(url)).toBe(true);
+    });
+
+    it('defers a legacy record inside the edit window too', async () => {
+      const legacyUrl = await leaveLegacyRecordWithdrawnAfterWipe();
+      shiftClock(INSIDE_EDIT_WINDOW);
+
       await expect(
         CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, service.order(), new AbortController().signal),
       ).resolves.toBeNull();
-      expect(homeserver.log).toEqual([]);
+
+      expect(homeserver.log.filter((entry) => entry.startsWith(`${HttpMethod.DELETE} `))).toEqual([]);
+      expect(homeserver.files.has(legacyUrl)).toBe(true);
     });
   });
 
