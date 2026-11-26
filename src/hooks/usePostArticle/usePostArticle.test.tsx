@@ -155,7 +155,7 @@ describe('usePostArticle', () => {
       expect(mockGetMetadata).not.toHaveBeenCalled();
     });
 
-    it('loads cover image when attachment is an image', async () => {
+    it('keeps the feed variant for a JPEG cover image', async () => {
       const content = JSON.stringify({ title: 'Test', body: 'Content' });
       const attachments = ['pubky://user123/pub/pubky.app/files/file456'];
       const mockMetadata = createMockImageMetadata('user123:file456', 'beautiful-cover.jpg');
@@ -181,8 +181,28 @@ describe('usePostArticle', () => {
       });
       expect(result.current.coverImage).toEqual({
         src: 'https://cdn.example.com/user123:file456/feed',
+        mainSrc: 'https://cdn.example.com/user123:file456/main',
         alt: 'beautiful-cover.jpg',
       });
+    });
+
+    it('resolves an SVG cover with a requested feed variant to main', async () => {
+      const content = JSON.stringify({ title: 'Test', body: 'Content' });
+      const attachments = ['pubky://user123/pub/pubky.app/files/file456'];
+      mockGetMetadata.mockResolvedValue([
+        { ...createMockImageMetadata('user123:file456', 'vector-cover.svg'), content_type: 'image/svg+xml' },
+      ]);
+
+      const { result } = renderHook(() =>
+        usePostArticle({ content, attachments, coverImageVariant: FileVariant.FEED }),
+      );
+
+      await waitFor(() => {
+        expect(result.current.coverImage).not.toBeNull();
+      });
+      expect(mockGetFileUrl).toHaveBeenCalledWith({ fileId: 'user123:file456', variant: FileVariant.MAIN });
+      expect(mockGetFileUrl).not.toHaveBeenCalledWith({ fileId: 'user123:file456', variant: FileVariant.FEED });
+      expect(result.current.coverImage?.src).toBe('https://cdn.example.com/user123:file456/main');
     });
 
     it('uses correct variant for cover image URL', async () => {
@@ -208,6 +228,9 @@ describe('usePostArticle', () => {
         fileId: 'user123:file456',
         variant: FileVariant.MAIN,
       });
+      expect(mockGetFileUrl).not.toHaveBeenCalledWith({ fileId: 'user123:file456', variant: FileVariant.FEED });
+      expect(result.current.coverImage?.src).toBe('https://cdn.example.com/user123:file456/main');
+      expect(result.current.coverImage?.mainSrc).toBe('https://cdn.example.com/user123:file456/main');
     });
 
     it('does not set cover image when attachment is not an image', async () => {

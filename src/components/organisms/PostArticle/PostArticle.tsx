@@ -6,6 +6,7 @@ import { Image } from '@/atoms/Image/Image';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useLinkConfirmation } from '@/hooks/useLinkConfirmation/useLinkConfirmation';
 import { usePostArticle } from '@/hooks/usePostArticle/usePostArticle';
+import { useVariantImageFallback } from '@/hooks/useVariantImageFallback/useVariantImageFallback';
 import { cn } from '@/libs/utils/utils';
 import type { PostDetailsModel } from '@/models/post/details/postDetails';
 import { PostText } from '@/molecules/PostText/PostText';
@@ -30,10 +31,13 @@ export const PostArticle = ({ content, attachments, localAttachments, className 
   const { dialogOpen, setDialogOpen, clickedLink, handleLinkClick } = useLinkConfirmation();
 
   const localCoverImage = localAttachments?.[0]?.type.startsWith('image')
-    ? { src: localAttachments[0].urls.main, alt: localAttachments[0].name }
+    ? { src: localAttachments[0].urls.main, mainSrc: localAttachments[0].urls.main, alt: localAttachments[0].name }
     : null;
 
   const finalCoverImage = localCoverImage || coverImage;
+  const mainCoverSrc = finalCoverImage?.mainSrc ?? finalCoverImage?.src ?? '';
+  const variantCoverSrc = finalCoverImage && finalCoverImage.src !== mainCoverSrc ? finalCoverImage.src : undefined;
+  const { src: coverSrc, onError } = useVariantImageFallback(variantCoverSrc, mainCoverSrc);
 
   return (
     <>
@@ -51,8 +55,9 @@ export const PostArticle = ({ content, attachments, localAttachments, className 
 
         {finalCoverImage && (
           <Image
-            src={finalCoverImage.src}
+            src={coverSrc}
             alt={finalCoverImage.alt}
+            onError={onError}
             className="aspect-video h-auto w-full rounded-md object-cover object-center lg:aspect-auto lg:h-25 lg:w-45 @max-xl/grid:aspect-video! @max-xl/grid:h-auto! @max-xl/grid:w-full!"
             width={180}
             height={100}

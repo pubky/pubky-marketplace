@@ -5,10 +5,9 @@ import { fetchUserAndPostForMetadata } from '@/libs/post/postMetadata';
 import { deriveTextPreview } from '@/libs/post/postPreview';
 import { truncateByGraphemes } from '@/libs/utils/truncate';
 import { isPostDeleted, resolveDisplayName } from '@/libs/utils/utils';
-import { FileVariant } from '@/services/nexus/file/file.types';
 import { OgFrame, OgHeader } from './OgComponents';
 import { OG_TOKENS, OG_TRUNCATE } from './ogConstants';
-import { buildAvatarUrl, fetchImageAsDataUri, resolvePostAttachmentUrl } from './ogData';
+import { buildAvatarUrl, fetchAttachmentImageAsDataUri, fetchImageAsDataUri } from './ogData';
 import { NewspaperIcon } from './OgIcons';
 import { ogImageResponse } from './ogImageResponse';
 import { renderCollectionOg } from './renderCollectionOg';
@@ -106,10 +105,9 @@ export async function renderPostOg({ userId, postId }: { userId: string; postId:
     }
 
     // Feed variant is sufficient — the image only ever renders in this small
-    // preview card, so the full-res MAIN variant would be wasted bytes.
-    const imageUrl =
-      !isDeleted && post.kind === 'image' ? resolvePostAttachmentUrl(post.attachments?.[0], FileVariant.FEED) : null;
-    const imageSrc = imageUrl ? await fetchImageAsDataUri(imageUrl) : null;
+    // preview card — with MAIN only for types that have no feed variant.
+    const imageSrc =
+      !isDeleted && post.kind === 'image' ? await fetchAttachmentImageAsDataUri(post.attachments?.[0]) : null;
 
     if (imageSrc) {
       const text = truncateByGraphemes(preview, OG_TRUNCATE.postImageText);

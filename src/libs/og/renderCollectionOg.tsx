@@ -3,10 +3,9 @@ import { parseCollectionContent } from '@/libs/post/collectionContent';
 import { fetchUserAndPostForMetadata } from '@/libs/post/postMetadata';
 import { truncateByGraphemes } from '@/libs/utils/truncate';
 import { generateRandomColor, getDisplayTags, isPostDeleted, resolveDisplayName } from '@/libs/utils/utils';
-import { FileVariant } from '@/services/nexus/file/file.types';
 import { OgAvatar, OgFrame, OgHeader } from './OgComponents';
 import { OG_SIZE, OG_TOKENS, OG_TRUNCATE } from './ogConstants';
-import { buildAvatarUrl, fetchImageAsDataUri, fetchPostTags, resolvePostAttachmentUrl } from './ogData';
+import { buildAvatarUrl, fetchAttachmentImageAsDataUri, fetchImageAsDataUri, fetchPostTags } from './ogData';
 import { LibraryIcon, StickyNoteIcon } from './OgIcons';
 import { ogImageResponse } from './ogImageResponse';
 import { renderFallbackOg } from './renderFallbackOg';
@@ -126,10 +125,11 @@ export async function renderCollectionOg({ userId, postId }: { userId: string; p
     // The cover resolver is the SSRF-hardened attachment path: only `pubky://`
     // file URIs (our own CDN) are ever fetched server-side. A legacy absolute
     // http(s) cover renders in-app but the OG card falls back to the muted,
-    // cover-less background. FEED variant for card-size parity with the app.
+    // cover-less background. FEED variant for card-size parity with the app, MAIN
+    // when the cover type has no feed variant.
     const [avatarSrc, coverSrc, tags] = await Promise.all([
       fetchImageAsDataUri(buildAvatarUrl(user)),
-      fetchImageAsDataUri(resolvePostAttachmentUrl(collection.cover_image, FileVariant.FEED)),
+      fetchAttachmentImageAsDataUri(collection.cover_image),
       tagsPromise,
     ]);
 

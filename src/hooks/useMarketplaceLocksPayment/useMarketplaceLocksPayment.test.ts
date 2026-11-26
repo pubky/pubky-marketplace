@@ -226,7 +226,11 @@ describe('useMarketplaceLocksPayment', () => {
       bytes: new Uint8Array([1, 2, 3, 4]),
       contentPath: 'downloads/premium.txt',
     });
-    const objectUrlSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url');
+    const blobs: Blob[] = [];
+    const objectUrlSpy = vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      if (blob instanceof Blob) blobs.push(blob);
+      return 'blob:mock-url';
+    });
 
     const { result } = renderHook(() =>
       useMarketplaceLocksPayment({
@@ -244,6 +248,7 @@ describe('useMarketplaceLocksPayment', () => {
 
     expect(CommerceController.unlockMarketplaceLocksContent).toHaveBeenCalledWith(confirmed.id);
     expect(result.current.delivery).toEqual({ objectUrl: 'blob:mock-url', fileName: 'premium.txt', byteSize: 4 });
+    expect(blobs.map((blob) => blob.type)).toEqual(['application/octet-stream']);
     objectUrlSpy.mockRestore();
   });
 

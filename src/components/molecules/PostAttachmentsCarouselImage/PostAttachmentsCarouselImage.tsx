@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { Image } from '@/atoms/Image/Image';
+import { supportsResizedVariants } from '@/libs/file/fileVariant';
 import type { AttachmentConstructed } from '@/organisms/PostAttachments/PostAttachments.types';
 
 type PostAttachmentsCarouselImageProps = {
@@ -9,16 +10,23 @@ type PostAttachmentsCarouselImageProps = {
 };
 
 export const PostAttachmentsCarouselImage = ({ image, id }: PostAttachmentsCarouselImageProps) => {
-  const [isMainLoaded, setIsMainLoaded] = useState(image.type === 'image/gif');
+  const hasFeedPlaceholder =
+    supportsResizedVariants(image.type) &&
+    image.type !== 'image/gif' &&
+    !!image.urls.feed &&
+    image.urls.feed !== image.urls.main;
+  const [isMainLoaded, setIsMainLoaded] = useState(!hasFeedPlaceholder);
+  const [hasPlaceholderFailed, setHasPlaceholderFailed] = useState(false);
 
   return (
     <>
       {/* Feed image shown as placeholder while main loads */}
-      {!isMainLoaded && (
+      {!isMainLoaded && hasFeedPlaceholder && !hasPlaceholderFailed && (
         <Image
-          src={image.urls.feed as string}
+          src={image.urls.feed!}
           alt={image.name}
           className="max-h-[75dvh] w-full rounded-md object-contain"
+          onError={() => setHasPlaceholderFailed(true)}
         />
       )}
 

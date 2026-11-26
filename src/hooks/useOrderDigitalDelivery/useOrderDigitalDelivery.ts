@@ -49,9 +49,13 @@ export function orderDigitalReadFailureMessage(error: unknown): string {
   return DIGITAL_READ_REFUSAL_COPY.failed;
 }
 
-/** Hands decrypted bytes to the browser as a download, then drops the object URL. */
-export function saveDigitalFile(bytes: Uint8Array, fileName: string, contentType: string): void {
-  const blob = new Blob([new Uint8Array(bytes)], { type: contentType });
+/**
+ * Hands decrypted bytes to the browser as a download, then drops the object
+ * URL. The seller chose the pinned content type, so the blob is typed
+ * `application/octet-stream`: browsers only ever save it, never render it.
+ */
+export function saveDigitalFile(bytes: Uint8Array, fileName: string): void {
+  const blob = new Blob([new Uint8Array(bytes)], { type: 'application/octet-stream' });
   bytes.fill(0);
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
@@ -97,7 +101,7 @@ export function useOrderDigitalDelivery(order: MarketplaceOrder) {
           setLine(lineIndex, { status: 'failed', message: DIGITAL_FILE_OPEN_FAILURE_COPY[opened.reason] });
           return;
         }
-        saveDigitalFile(opened.bytes, opened.fileName, opened.contentType);
+        saveDigitalFile(opened.bytes, opened.fileName);
         setLine(lineIndex, { status: 'started', message: null });
         return;
       } else {

@@ -36,14 +36,41 @@ describe('splitAttachmentsByMediaType', () => {
     mockGetFileUrl.mockImplementation(({ fileId, variant }) => `${fileId}/${variant}`);
   });
 
-  it('sets a feed url only for images, not videos', () => {
-    const { imagesAndVideos } = splitAttachmentsByMediaType([meta('img', 'image/png'), meta('vid', 'video/mp4')]);
+  it('sets the feed URL for PNG images', () => {
+    const { imagesAndVideos } = splitAttachmentsByMediaType([meta('img', 'image/png')]);
 
-    const image = imagesAndVideos.find((a) => a.type === 'image/png');
-    const video = imagesAndVideos.find((a) => a.type === 'video/mp4');
+    expect(imagesAndVideos[0].urls.feed).toBe(`img/${FileVariant.FEED}`);
+    expect(imagesAndVideos[0].urls.main).toBe(`img/${FileVariant.MAIN}`);
+  });
 
-    expect(image?.urls.feed).toBe(`img/${FileVariant.FEED}`);
-    expect(video?.urls.feed).toBeUndefined();
-    expect(video?.urls.main).toBe(`vid/${FileVariant.MAIN}`);
+  it('sets the feed URL for JPEG content types with parameters', () => {
+    const { imagesAndVideos } = splitAttachmentsByMediaType([meta('img', 'image/JPEG; charset=binary')]);
+
+    expect(imagesAndVideos[0].urls.feed).toBe(`img/${FileVariant.FEED}`);
+  });
+
+  it('uses main only for SVG images', () => {
+    const { imagesAndVideos } = splitAttachmentsByMediaType([meta('svg', 'image/svg+xml')]);
+
+    expect(imagesAndVideos[0].urls.feed).toBeUndefined();
+    expect(imagesAndVideos[0].urls.main).toBe(`svg/${FileVariant.MAIN}`);
+  });
+
+  it('ignores a stored feed URL for SVG images', () => {
+    const svg = {
+      ...meta('svg', 'image/svg+xml'),
+      urls: { main: 'stored/main', feed: 'stored/feed', small: 'stored/small' },
+    };
+    const { imagesAndVideos } = splitAttachmentsByMediaType([svg]);
+
+    expect(imagesAndVideos[0].urls.feed).toBeUndefined();
+    expect(imagesAndVideos[0].urls.main).toBe(`svg/${FileVariant.MAIN}`);
+  });
+
+  it('does not set a feed URL for videos', () => {
+    const { imagesAndVideos } = splitAttachmentsByMediaType([meta('vid', 'video/mp4')]);
+
+    expect(imagesAndVideos[0].urls.feed).toBeUndefined();
+    expect(imagesAndVideos[0].urls.main).toBe(`vid/${FileVariant.MAIN}`);
   });
 });

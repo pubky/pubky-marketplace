@@ -1,4 +1,5 @@
 import { FileController } from '@/controllers/file/file';
+import { supportsResizedVariants } from '@/libs/file/fileVariant';
 import { FileVariant } from '@/services/nexus/file/file.types';
 import type { AttachmentConstructed, CategorizedAttachments } from './PostAttachments.types';
 
@@ -31,7 +32,7 @@ export function splitAttachmentsByMediaType(metadata: FileMetadata[]): Categoriz
       name,
       urls: {
         main: FileController.getFileUrl({ fileId: id, variant: FileVariant.MAIN }),
-        feed: content_type.startsWith('image')
+        feed: supportsResizedVariants(content_type)
           ? FileController.getFileUrl({ fileId: id, variant: FileVariant.FEED })
           : undefined,
       },

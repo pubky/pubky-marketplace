@@ -183,7 +183,9 @@ Expected user-flow states are not failures and must not reach the factory:
   older than the connector routes) is built with `new AppError(...)` in `MarketplaceConnectorsService`: the
   Shop hides store connections there. A connector 404 that names another refusal stays on `Err.*`.
 - Marketplace media its owner has removed (404/410 from the owner's homeserver) is built the same way in
-  `MarketplaceMediaService.fetchMedia`: the UI shows no image. Other media failures stay on `Err.*`.
+  `MarketplaceMediaService.fetchMedia`: the UI shows no image. So is media whose bytes are not a JPEG, PNG, GIF, WebP
+  or AVIF image, or that is larger than `IMAGE_MAX_UPLOAD_SIZE`: the blob is typed from its bytes by
+  `src/libs/media/image-bytes.ts`, never from the declared Content-Type. Other media failures stay on `Err.*`.
 - A Shop-owned sign-in started while the Shop is embedded in Pubky App ("Continue sign-in in Pubky App.",
   `AuthController.assertStandaloneMode`) is also built with `new AppError(...)`: App owns sign-in there.
 

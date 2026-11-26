@@ -6,11 +6,23 @@ import { getShopHomeRoute } from '@/app/routes';
 import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
 import { Typography } from '@/atoms/Typography/Typography';
-import { composeShareContent, getSharedFiles } from '@/libs/share/shareTarget';
+import { composeShareContent, getSharedFiles, refusedFileCount } from '@/libs/share/shareTarget';
+import { toast } from '@/molecules/Toaster/toast';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { PostInput } from '@/organisms/PostInput/PostInput';
 import { POST_INPUT_VARIANT } from '@/organisms/PostInput/PostInput.constants';
 import { ShareTargetSkeleton } from './ShareTarget.skeleton';
+
+function notifyRefusedFiles(count: number) {
+  if (count <= 0) return;
+  toast({
+    variant: 'error',
+    description:
+      count === 1
+        ? 'A shared file was not added. You can share JPEG, PNG, GIF and WebP images, MP3 and WAV audio, and MP4 video.'
+        : `${count} shared files were not added. You can share JPEG, PNG, GIF and WebP images, MP3 and WAV audio, and MP4 video.`,
+  });
+}
 
 export function ShareTarget() {
   const searchParams = useSearchParams();
@@ -25,19 +37,22 @@ export function ShareTarget() {
     const text = searchParams.get('text') ?? undefined;
     const url = searchParams.get('url') ?? undefined;
     const hasFiles = searchParams.get('hasFiles') === 'true';
+    const refusedFiles = refusedFileCount(searchParams.get('refusedFiles'));
 
     const content = composeShareContent({ title, text, url });
     setInitialContent(content);
 
     if (hasFiles) {
       getSharedFiles()
-        .then((files) => {
+        .then(({ files, refused }) => {
           if (files.length > 0) {
             setInitialAttachments(files);
           }
+          notifyRefusedFiles(refusedFiles + refused);
         })
         .finally(() => setIsLoading(false));
     } else {
+      notifyRefusedFiles(refusedFiles);
       setIsLoading(false);
     }
   }, [searchParams]);

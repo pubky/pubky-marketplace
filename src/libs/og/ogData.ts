@@ -204,3 +204,20 @@ export async function fetchImageAsDataUri(
     return null;
   }
 }
+
+/**
+ * Fetches a post attachment for an OG card as a PNG data URI, preferring the
+ * FEED variant and retrying MAIN once when FEED is unavailable. Nexus builds
+ * FEED only for JPEG, PNG, GIF, and WebP, and the attachment's content type is
+ * not known here.
+ */
+export async function fetchAttachmentImageAsDataUri(
+  attachmentUri: string | null | undefined,
+  fetcher: (input: string, init?: RequestInit) => Promise<Response> = fetch,
+): Promise<string | null> {
+  const feedUrl = resolvePostAttachmentUrl(attachmentUri, FileVariant.FEED);
+  if (!feedUrl) return null;
+  const feedSrc = await fetchImageAsDataUri(feedUrl, fetcher);
+  if (feedSrc) return feedSrc;
+  return fetchImageAsDataUri(resolvePostAttachmentUrl(attachmentUri, FileVariant.MAIN), fetcher);
+}

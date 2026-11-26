@@ -4,6 +4,8 @@ import { Button } from '@/atoms/Button/Button';
 import { Image } from '@/atoms/Image/Image';
 import { Video } from '@/atoms/Video/Video';
 import { usePostAttachmentsMedia } from '@/hooks/usePostAttachmentsMedia/usePostAttachmentsMedia';
+import { useVariantImageFallback } from '@/hooks/useVariantImageFallback/useVariantImageFallback';
+import { supportsResizedVariants } from '@/libs/file/fileVariant';
 import { cn } from '@/libs/utils/utils';
 import { PostAttachmentsImagesAndVideos } from '@/molecules/PostAttachmentsImagesAndVideos/PostAttachmentsImagesAndVideos';
 
@@ -19,11 +21,11 @@ export function PostListMediaThumbnail({ postId }: PostListMediaThumbnailProps) 
   );
   const previewMedia = previewIndex === -1 ? undefined : mediaItems[previewIndex];
   const isVideoPreview = previewMedia?.type.startsWith('video') ?? false;
-  const previewSrc = isVideoPreview
-    ? previewMedia?.urls.main
-    : previewMedia?.type === 'image/gif'
-      ? previewMedia.urls.main
-      : (previewMedia?.urls.feed ?? previewMedia?.urls.main);
+  const variantSrc =
+    !isVideoPreview && previewMedia && supportsResizedVariants(previewMedia.type) && previewMedia.type !== 'image/gif'
+      ? previewMedia.urls.feed
+      : undefined;
+  const { src: previewSrc, onError } = useVariantImageFallback(variantSrc, previewMedia?.urls.main ?? '');
 
   if (!previewSrc) {
     return null;
@@ -53,7 +55,7 @@ export function PostListMediaThumbnail({ postId }: PostListMediaThumbnailProps) 
               className="pointer-events-none h-full w-full object-cover"
             />
           ) : (
-            <Image src={previewSrc} alt="" fill className="object-cover" sizes="71px" />
+            <Image src={previewSrc} alt="" fill className="object-cover" sizes="71px" onError={onError} />
           )}
         </Button>
       )}

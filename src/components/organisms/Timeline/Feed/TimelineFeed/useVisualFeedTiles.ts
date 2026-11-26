@@ -6,6 +6,7 @@ import type { EnrichedPostDetails } from '@/application/moderation/moderation.ty
 import { FileController } from '@/controllers/file/file';
 import { ModerationController } from '@/controllers/moderation/moderation';
 import { PostController } from '@/controllers/post/post';
+import { supportsResizedVariants } from '@/libs/file/fileVariant';
 import { Logger } from '@/libs/logger/logger';
 import { isPostDeleted } from '@/libs/utils/utils';
 import type { FileDetailsModelSchema } from '@/models/file/fileDetails.schema';
@@ -99,7 +100,9 @@ function buildLocalTile(
   const attachmentId = `${post.id}:local:${attachment.name}:${index}`;
   const mediaKind = getVisualMediaKind(attachment.type);
   const previewSrc =
-    attachment.type === 'image/gif' ? attachment.urls.main : (attachment.urls.feed ?? attachment.urls.main);
+    attachment.type !== 'image/gif' && supportsResizedVariants(attachment.type)
+      ? (attachment.urls.feed ?? attachment.urls.main)
+      : attachment.urls.main;
 
   return {
     id: attachmentId,
@@ -126,9 +129,9 @@ function buildRemoteTile(post: EnrichedPostDetails, file: FileDetailsModelSchema
   const metadataHeight = parseMediaDimension(file.metadata?.height);
   const mainSrc = FileController.getFileUrl({ fileId: file.id, variant: FileVariant.MAIN });
   const previewSrc =
-    file.content_type === 'image/gif'
-      ? mainSrc
-      : FileController.getFileUrl({ fileId: file.id, variant: FileVariant.FEED });
+    file.content_type !== 'image/gif' && supportsResizedVariants(file.content_type)
+      ? FileController.getFileUrl({ fileId: file.id, variant: FileVariant.FEED })
+      : mainSrc;
 
   return {
     id: `${post.id}:${file.id}`,

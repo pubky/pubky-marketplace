@@ -12,6 +12,7 @@ vi.mock('@/atoms/Image/Image', () => {
       className,
       id,
       onLoad,
+      onError,
       'data-testid': dataTestId,
     }: {
       src: string;
@@ -19,6 +20,7 @@ vi.mock('@/atoms/Image/Image', () => {
       className?: string;
       id?: string;
       onLoad?: () => void;
+      onError?: () => void;
       'data-testid'?: string;
     }) => (
       <img
@@ -28,6 +30,7 @@ vi.mock('@/atoms/Image/Image', () => {
         className={className}
         id={id}
         onLoad={onLoad}
+        onError={onError}
       />
     ),
   };
@@ -145,6 +148,18 @@ describe('PostAttachmentsCarouselImage', () => {
       expect(screen.queryByTestId('image-feed')).not.toBeInTheDocument();
     });
 
+    it('hides a failed feed placeholder without retrying it', () => {
+      const image = createMockImage();
+      render(<PostAttachmentsCarouselImage image={image} id="test-id" />);
+
+      const feedImage = screen.getByTestId('image-feed');
+      fireEvent.error(feedImage);
+
+      expect(screen.queryByTestId('image-feed')).not.toBeInTheDocument();
+      expect(screen.getByTestId('image-main')).toHaveAttribute('src', image.urls.main);
+      expect(screen.getByTestId('image-main')).toHaveClass('size-0');
+    });
+
     it('shows main image with full styling after it loads', () => {
       const image = createMockImage();
       render(<PostAttachmentsCarouselImage image={image} id="test-id" />);
@@ -206,12 +221,13 @@ describe('PostAttachmentsCarouselImage', () => {
       expect(screen.getByTestId('image-main')).toBeInTheDocument();
     });
 
-    it('handles SVG images correctly', () => {
+    it('renders only the main image for SVG images', () => {
       const svg = createMockImage({ type: 'image/svg+xml' });
       render(<PostAttachmentsCarouselImage image={svg} id="test-id" />);
 
-      expect(screen.getByTestId('image-feed')).toBeInTheDocument();
-      expect(screen.getByTestId('image-main')).toBeInTheDocument();
+      expect(screen.queryByTestId('image-feed')).not.toBeInTheDocument();
+      expect(screen.getByTestId('image-main')).toHaveAttribute('src', svg.urls.main);
+      expect(screen.getByTestId('image-main')).not.toHaveClass('size-0');
     });
   });
 

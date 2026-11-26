@@ -249,7 +249,11 @@ export function useMarketplaceLocksPayment({
     setError(null);
     try {
       const { bytes, contentPath } = await CommerceController.unlockMarketplaceLocksContent(payment.id);
-      const objectUrl = URL.createObjectURL(new Blob([bytes.buffer as ArrayBuffer]));
+      // The download link can also be opened in a tab, so the seller's bytes
+      // are typed to be saved, never rendered on this origin.
+      const objectUrl = URL.createObjectURL(
+        new Blob([bytes.buffer as ArrayBuffer], { type: 'application/octet-stream' }),
+      );
       if (deliveryRef.current) URL.revokeObjectURL(deliveryRef.current.objectUrl);
       setDelivery({
         objectUrl,

@@ -115,14 +115,9 @@
             "image/jpeg",
             "image/gif",
             "image/webp",
-            "image/svg+xml",
             "audio/mpeg",
-            "audio/ogg",
             "audio/wav",
-            "audio/webm",
-            "video/mp4",
-            "video/webm",
-            "video/ogg"
+            "video/mp4"
           ]
         }
       ]
