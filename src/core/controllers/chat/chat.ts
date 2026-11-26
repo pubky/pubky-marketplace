@@ -237,7 +237,11 @@ export class ChatController {
     return { orders: resolved, failed };
   }
 
-  /** The roles this tab has, read first when it has none; null when they cannot be read now. */
+  /**
+   * The roles this tab has, read first when it has none. A read that failed part way still published what
+   * it verified for this account, and those roles are used while the read is retried; null when nothing
+   * was verified for this account.
+   */
   private static async knownStoreThreadRoles(me: string, signal: AbortSignal): Promise<StoreThreadRoles | null> {
     const known = useChatStore.getState().storeThreadRoles;
     if (known?.viewer === me) return known;
@@ -247,7 +251,8 @@ export class ChatController {
       signal.throwIfAborted();
       if (isAbortError(error)) throw error;
       if (!isAppError(error)) Logger.warn('Could not read the store thread roles', { error });
-      return null;
+      const published = useChatStore.getState().storeThreadRoles;
+      return published?.viewer === me ? published : null;
     }
   }
 
