@@ -1,5 +1,6 @@
 import { HttpMethod } from '@/libs/http/http.types';
 import type { Pubky } from '@/models/models.types';
+import { fetchByIdsInChunks } from '@/services/nexus/nexus.by-ids';
 import type { NexusUser, NexusUserIdsStream } from '@/services/nexus/nexus.types';
 import { queryNexus } from '@/services/nexus/nexus.utils';
 import { userStreamApi } from '@/services/nexus/stream/users/userStream.api';
@@ -61,7 +62,9 @@ export class NexusUserStreamService {
     if (params.user_ids.length === 0) {
       return [];
     }
-    const { url, body } = userStreamApi.usersByIds(params);
-    return await queryNexus<NexusUser[]>({ url, method: HttpMethod.POST, body: JSON.stringify(body) });
+    return fetchByIdsInChunks(params.user_ids, async (chunk) => {
+      const { url, body } = userStreamApi.usersByIds({ ...params, user_ids: chunk });
+      return queryNexus<NexusUser[]>({ url, method: HttpMethod.POST, body: JSON.stringify(body) });
+    });
   }
 }

@@ -1,5 +1,6 @@
 import { HttpMethod } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
+import { fetchByIdsInChunks } from '@/services/nexus/nexus.by-ids';
 import type { NexusFileDetails } from '@/services/nexus/nexus.types';
 import { queryNexus } from '@/services/nexus/nexus.utils';
 import { filesApi } from './file.api';
@@ -23,11 +24,13 @@ export class NexusFileService {
       return [];
     }
 
-    const { url, body } = filesApi.getFiles(fileUris);
-    const files = await queryNexus<NexusFileDetails[]>({
-      url,
-      method: HttpMethod.POST,
-      body: JSON.stringify(body),
+    const files = await fetchByIdsInChunks(fileUris, async (chunk) => {
+      const { url, body } = filesApi.getFiles(chunk);
+      return queryNexus<NexusFileDetails[]>({
+        url,
+        method: HttpMethod.POST,
+        body: JSON.stringify(body),
+      });
     });
 
     Logger.debug('Files fetched successfully from Nexus', { count: files.length });

@@ -56,15 +56,22 @@ body {
   --color-destructive-button: var(--destructive-button);
   --color-destructive-button-hover: var(--destructive-button-hover);
   --color-error-foreground: var(--error-foreground);
+  --color-field-error: var(--field-error);
   --color-foreground-strong: var(--foreground-strong);
   --color-glass: var(--glass);
   --color-glass-hover: var(--glass-hover);
   --color-glass-strong: var(--glass-strong);
   --color-button-outline: var(--button-outline);
+  /* Paint the page surface at 10% over the default button’s 32% hover fill. */
+  --background-image-button-hover: linear-gradient(
+    color-mix(in oklab, var(--background) 10%, transparent),
+    color-mix(in oklab, var(--background) 10%, transparent)
+  );
   --color-action-pill: var(--action-pill);
   --color-embed: var(--embed);
   --color-warning-foreground: var(--warning-foreground);
   --color-notice-foreground: var(--notice-foreground);
+  --color-toast-success: var(--toast-success);
   --color-toast-action-muted: var(--toast-action-muted);
   --color-toast-action-muted-hover-border: var(--toast-action-muted-hover-border);
   --color-transparent: var(--transparent);
@@ -131,7 +138,7 @@ body {
   --foreground-strong: var(--color-white);
   /**
    * Translucent chrome fill for outline-style controls (nav buttons, FAB,
-   * sidebar "See all", checkbox/radio wells). Mirrors the Figma variable
+   * sidebar "See all"). Mirrors the Figma variable
    * `custom/background dark:input\30`: a faint white wash in dark mode and
    * the opaque card surface in light mode, so these controls read lighter
    * than the grey light page. Hover follows `custom/accent dark:input\50`.
@@ -142,10 +149,10 @@ body {
   --glass-hover: color-mix(in oklab, var(--color-white) 10%, transparent);
   --glass-strong: color-mix(in oklab, var(--color-white) 12%, transparent);
   /**
-   * Surface of the `outline` Button variant. Dark mode matches `bg-input/30`.
+   * Outline buttons and checkbox/radio wells share Figma’s 4.5% white wash.
    * Light mode uses the card surface, so these buttons read lighter than the page.
    */
-  --button-outline: color-mix(in oklab, var(--input) 30%, transparent);
+  --button-outline: color-mix(in oklab, var(--color-white) 4.5%, transparent);
   /** Surface of the post action pills (tag / reply / repost / save / more): secondary in dark, page in light. */
   --action-pill: var(--secondary);
   /** Surface of a post or link embedded in a post (repost preview, link preview): muted in dark, page in light. */
@@ -157,9 +164,9 @@ body {
    */
   --warning-foreground: var(--color-amber-300);
   --notice-foreground: var(--color-amber-200);
-  /** Label on solid brand fills: the dark page colour in dark mode, a fixed dark ink in light mode. */
-  --brand-foreground: var(--background);
-  /** Badges on bright fills retain their original primary ink in dark mode. */
+  /** Text and icons on solid brand fills. */
+  --brand-foreground: var(--primary-foreground);
+  /** Text on bright status fills, such as the orange order badge. */
   --bright-fill-foreground: var(--primary-foreground);
   /**
    * Filled destructive controls and alerts. Dark mode keeps the translucent `/60` and `/90` mixes
@@ -169,6 +176,10 @@ body {
   --destructive-button-hover: color-mix(in oklab, var(--destructive) 90%, transparent);
   /** Validation values and messages; fill colours remain independent. */
   --error-foreground: var(--color-red-500);
+  /* Field errors must remain readable on raised and translucent form surfaces. */
+  --field-error: var(--color-red-400);
+  /* Blend with the page color so text stays readable over photos. */
+  --toast-success: color-mix(in srgb, var(--brand) 25%, var(--background));
   --toast-action-muted: oklch(0.218 0.006 286);
   --toast-action-muted-hover-border: oklch(0.277 0.006 286);
   --transparent: oklch(0.118 0.014 284.115 / 0);
@@ -219,11 +230,11 @@ body {
 
   /**
    * Mobile tab bar height (icon row)
-   * - Matches MobileTabBar tab cell + button + icon stack
+   * - Matches the 48px MobileTabBar stack plus its 1px bottom border
    * - Applied: Settings content top padding below header + tab bar
    * - Responsive: Mobile only (hidden on desktop via lg:hidden)
    */
-  --mobile-tab-bar-height: 48px;
+  --mobile-tab-bar-height: 49px;
 
   /**
    * Settings mobile chrome height (header + tab bar)
@@ -521,6 +532,7 @@ body {
   --destructive-button: var(--color-red-700);
   --destructive-button-hover: var(--color-red-800);
   --error-foreground: var(--color-red-700);
+  --field-error: var(--error-foreground);
   --toast-action-muted: #f4f4f9;
   --toast-action-muted-hover-border: #e4e4ec;
   --transparent: rgb(255 255 255 / 0);

@@ -7,7 +7,7 @@ describe('PageSubtitle', () => {
     render(<PageSubtitle>Test subtitle</PageSubtitle>);
     const subtitle = screen.getByText('Test subtitle');
     expect(subtitle.tagName).toBe('H2');
-    expect(subtitle).toHaveClass('text-xl', 'leading-normal', 'font-medium', 'text-muted-foreground', 'lg:text-2xl');
+    expect(subtitle).toHaveClass('text-xl/7', 'font-light', 'text-muted-foreground', 'lg:text-2xl/8');
   });
 
   it.each(['h2', 'h5', 'p'] as const)('renders as <%s> when as="%s"', (as) => {
@@ -28,7 +28,7 @@ describe('PageSubtitle', () => {
 
   it('merges a custom className with the default classes', () => {
     render(<PageSubtitle className="custom-subtitle">Subtitle</PageSubtitle>);
-    expect(screen.getByText('Subtitle')).toHaveClass('text-xl', 'text-muted-foreground', 'custom-subtitle');
+    expect(screen.getByText('Subtitle')).toHaveClass('text-xl/7', 'text-muted-foreground', 'custom-subtitle');
   });
 
   it('passes through html attributes', () => {
