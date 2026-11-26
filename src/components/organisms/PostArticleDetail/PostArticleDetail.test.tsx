@@ -282,6 +282,18 @@ describe('PostArticleDetail', () => {
     expect(screen.getByTestId('cover-image')).toHaveAttribute('alt', 'Cover image');
   });
 
+  it('renders the main cover source directly', () => {
+    mockUsePostArticle.mockReturnValue({
+      title: 'Test Title',
+      body: 'Test body',
+      coverImage: { src: 'https://cdn.test/cover/main', mainSrc: 'https://cdn.test/cover/main', alt: 'Cover image' },
+    });
+
+    render(<PostArticleDetail {...defaultProps} />);
+
+    expect(screen.getByTestId('cover-image')).toHaveAttribute('src', 'https://cdn.test/cover/main');
+  });
+
   it('places inline tags and actions between the user header and cover image in columns layout', () => {
     mockUsePostArticle.mockReturnValue({
       title: 'Test Title',

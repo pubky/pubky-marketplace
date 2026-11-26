@@ -247,14 +247,25 @@ vi.mock('@/atoms/Image/Image', () => {
       alt,
       fill,
       className,
+      onError,
       'data-testid': dataTestId,
     }: {
       src: string;
       alt: string;
       fill?: boolean;
       className?: string;
+      onError?: () => void;
       'data-testid'?: string;
-    }) => <img data-testid={dataTestId || 'image'} src={src} alt={alt} data-fill={fill} className={className} />,
+    }) => (
+      <img
+        data-testid={dataTestId || 'image'}
+        src={src}
+        alt={alt}
+        data-fill={fill}
+        className={className}
+        onError={onError}
+      />
+    ),
   };
 });
 
@@ -468,6 +479,33 @@ describe('PostAttachmentsImagesAndVideos', () => {
 
       const image = screen.getByTestId('image');
       expect(image).toHaveAttribute('src', 'https://example.com/feed-thumb.jpg');
+    });
+
+    it('renders main URL for SVG images even when a feed URL is present', () => {
+      const svg = createMockImage({
+        type: 'image/svg+xml',
+        urls: { main: 'https://example.com/main.svg', feed: 'https://example.com/feed.svg' },
+      });
+      render(<PostAttachmentsImagesAndVideos imagesAndVideos={[svg]} />);
+
+      expect(screen.getByTestId('image')).toHaveAttribute('src', 'https://example.com/main.svg');
+    });
+
+    it('falls back from a failed feed URL to main exactly once', () => {
+      const png = createMockImage({
+        type: 'image/png',
+        urls: { main: 'https://example.com/main.png', feed: 'https://example.com/feed.png' },
+      });
+      render(<PostAttachmentsImagesAndVideos imagesAndVideos={[png]} />);
+
+      const image = screen.getByTestId('image');
+      expect(image).toHaveAttribute('src', 'https://example.com/feed.png');
+
+      fireEvent.error(image);
+      expect(image).toHaveAttribute('src', 'https://example.com/main.png');
+
+      fireEvent.error(image);
+      expect(image).toHaveAttribute('src', 'https://example.com/main.png');
     });
 
     it('renders main URL for GIF images', () => {

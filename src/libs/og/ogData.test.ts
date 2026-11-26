@@ -26,6 +26,7 @@ vi.mock('@/services/nexus/file/file.api', () => ({
 
 const {
   buildAvatarUrl,
+  fetchAttachmentImageAsDataUri,
   fetchImageAsDataUri,
   fetchPostTags,
   fetchProfileForMetadata,
@@ -421,5 +422,47 @@ describe('fetchImageAsDataUri', () => {
     const result = await fetchImageAsDataUri('https://cdn.test/a.png');
 
     expect(result).toMatch(/^data:image\/png;base64,/);
+  });
+});
+
+describe('fetchAttachmentImageAsDataUri', () => {
+  const attachmentUri = 'pubky://userpk/pub/pubky.app/files/file123';
+  const feedUrl = 'https://cdn.test/files/userpk/file123/feed';
+  const mainUrl = 'https://cdn.test/files/userpk/file123/main';
+  const imageResponse = () =>
+    new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'Content-Type': 'image/svg+xml' } });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('uses the feed variant when it is available', async () => {
+    const fetcher = vi.fn(async (_url: string) => imageResponse());
+
+    await expect(fetchAttachmentImageAsDataUri(attachmentUri, fetcher)).resolves.toMatch(/^data:image\/png;base64,/);
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([feedUrl]);
+  });
+
+  it('falls back to main once when the feed variant is unavailable', async () => {
+    const fetcher = vi.fn(async (url: string) =>
+      url === feedUrl ? new Response('no variant', { status: 400 }) : imageResponse(),
+    );
+
+    await expect(fetchAttachmentImageAsDataUri(attachmentUri, fetcher)).resolves.toMatch(/^data:image\/png;base64,/);
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([feedUrl, mainUrl]);
+  });
+
+  it('returns null when both variants are unavailable', async () => {
+    const fetcher = vi.fn(async (_url: string) => new Response('missing', { status: 404 }));
+
+    await expect(fetchAttachmentImageAsDataUri(attachmentUri, fetcher)).resolves.toBeNull();
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('fetches nothing for a non-pubky reference', async () => {
+    const fetcher = vi.fn(async (_url: string) => imageResponse());
+
+    await expect(fetchAttachmentImageAsDataUri('https://example.com/a.svg', fetcher)).resolves.toBeNull();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });

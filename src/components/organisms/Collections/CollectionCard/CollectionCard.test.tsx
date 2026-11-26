@@ -95,6 +95,13 @@ vi.mock('@/controllers/moderation/moderation', () => ({
   },
 }));
 
+vi.mock('@/controllers/file/file', () => ({
+  FileController: {
+    getFileUrl: ({ fileId, variant }: { fileId: string; variant: string }) =>
+      `https://cdn.example.com/${fileId}/${variant}`,
+  },
+}));
+
 vi.mock('@/stores/auth/auth.store', () => ({
   useAuthStore: (selector: (state: { currentUserPubky: string | null }) => unknown) => mockUseAuthStore(selector),
 }));
@@ -379,6 +386,32 @@ describe('CollectionCard', () => {
 
       expect(overlay).not.toBeNull();
       expect(overlay!.getAttribute('style')).toContain('https://example.com/cover.png');
+    });
+
+    it('switches a pubky cover from feed to main once when the probe fails', () => {
+      setPostDetails(
+        JSON.stringify({
+          name: 'Based Bitcoin',
+          description: null,
+          items: [],
+          cover_image: `pubky://${AUTHOR_PUBKY}/pub/pubky.app/files/cover`,
+        }),
+      );
+      const { container } = render(<CollectionCard authorPubky={AUTHOR_PUBKY} postId={POST_ID} />);
+      const overlay = findCoverOverlay(container);
+      const probe = screen.getByTestId('collection-cover-probe');
+      const feedUrl = `https://cdn.example.com/${AUTHOR_PUBKY}:cover/feed`;
+      const mainUrl = `https://cdn.example.com/${AUTHOR_PUBKY}:cover/main`;
+
+      expect(probe).toHaveAttribute('src', feedUrl);
+      expect(overlay!.getAttribute('style')).toContain(feedUrl);
+
+      fireEvent.error(probe);
+      expect(overlay!.getAttribute('style')).toContain(mainUrl);
+      expect(overlay!.getAttribute('style')).not.toContain(feedUrl);
+
+      fireEvent.error(probe);
+      expect(overlay!.getAttribute('style')).toContain(mainUrl);
     });
   });
 

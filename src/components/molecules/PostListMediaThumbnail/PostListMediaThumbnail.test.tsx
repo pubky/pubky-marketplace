@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EnrichedPostDetails } from '@/application/moderation/moderation.types';
 import { FileController } from '@/controllers/file/file';
@@ -16,13 +16,25 @@ vi.mock('@/atoms/Image/Image', () => ({
     fill,
     className,
     sizes,
+    onError,
   }: {
     src: string;
     alt: string;
     fill?: boolean;
     className?: string;
     sizes?: string;
-  }) => <img data-testid="image" src={src} alt={alt} data-fill={fill} className={className} sizes={sizes} />,
+    onError?: () => void;
+  }) => (
+    <img
+      data-testid="image"
+      src={src}
+      alt={alt}
+      data-fill={fill}
+      className={className}
+      sizes={sizes}
+      onError={onError}
+    />
+  ),
 }));
 
 vi.mock('@/atoms/Video/Video', () => ({
@@ -144,6 +156,44 @@ describe('PostListMediaThumbnail', () => {
 
     const image = await screen.findByTestId('image');
     expect(image).toHaveAttribute('src', 'blob:http://localhost/photo-feed');
+  });
+
+  it('switches a raster thumbnail from feed to main once after a load error', async () => {
+    selectLocalFiles({
+      'pk:test:post': [
+        {
+          type: 'image/png',
+          name: 'photo.png',
+          urls: { main: 'https://example.com/photo/main', feed: 'https://example.com/photo/feed' },
+        },
+      ],
+    });
+
+    render(<PostListMediaThumbnail postId="pk:test:post" />);
+
+    const image = await screen.findByTestId('image');
+    expect(image).toHaveAttribute('src', 'https://example.com/photo/feed');
+    fireEvent.error(image);
+    expect(image).toHaveAttribute('src', 'https://example.com/photo/main');
+    fireEvent.error(image);
+    expect(image).toHaveAttribute('src', 'https://example.com/photo/main');
+  });
+
+  it('renders an SVG thumbnail from its main URL', async () => {
+    selectLocalFiles({
+      'pk:test:post': [
+        {
+          type: 'image/svg+xml',
+          name: 'icon.svg',
+          urls: { main: 'https://example.com/icon.svg', feed: 'https://example.com/icon-feed.svg' },
+        },
+      ],
+    });
+
+    render(<PostListMediaThumbnail postId="pk:test:post" />);
+
+    const image = await screen.findByTestId('image');
+    expect(image).toHaveAttribute('src', 'https://example.com/icon.svg');
   });
 
   it('renders a video thumbnail from local attachments', async () => {
