@@ -232,7 +232,7 @@ export function mergeStoreThreadRoles(base: StoreThreadRoles, addition: StoreThr
 }
 
 /** What a thread's latest context says about the viewer's role with the peer. */
-export type ContextRole = 'sale' | 'purchase' | 'peer';
+type ContextRole = 'sale' | 'purchase' | 'peer';
 
 /**
  * Reads a context against the roles. `sale`: it names an order the viewer sold or a listing it owns, or
