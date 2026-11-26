@@ -16,7 +16,7 @@ describe('Toggle', () => {
 
     const toggle = screen.getByRole('button');
     expect(toggle).toHaveClass('inline-flex', 'items-center', 'justify-center', 'rounded-md', 'text-sm');
-    expect(toggle).toHaveClass('h-9', 'px-2', 'min-w-9');
+    expect(toggle).toHaveClass('h-9', 'px-3', 'min-w-9');
     expect(toggle).not.toHaveClass('border');
   });
 
@@ -27,9 +27,9 @@ describe('Toggle', () => {
   });
 
   it.each([
-    ['default', ['h-9', 'px-2', 'min-w-9']],
-    ['sm', ['h-8', 'px-1.5', 'min-w-8']],
-    ['lg', ['h-10', 'px-2.5', 'min-w-10']],
+    ['default', ['h-9', 'px-3', 'min-w-9']],
+    ['sm', ['h-8', 'px-2.5', 'min-w-8']],
+    ['lg', ['h-10', 'px-3.5', 'min-w-10']],
   ] as const)('applies size="%s" classes', (size, classes) => {
     render(<Toggle size={size}>Toggle</Toggle>);
 

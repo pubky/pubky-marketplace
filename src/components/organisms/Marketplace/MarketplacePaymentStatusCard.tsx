@@ -15,10 +15,11 @@ import {
   X,
 } from 'lucide-react';
 import { Controller, type UseFormReturn } from 'react-hook-form';
-import { Button, buttonVariants } from '@/atoms/Button/Button';
+import { Button } from '@/atoms/Button/Button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/atoms/Collapsible/Collapsible';
 import { Input } from '@/atoms/Input/Input';
 import { Label } from '@/atoms/Label/Label';
+import { secondarySelectClasses } from '@/atoms/Select/Select.variants';
 import { Typography } from '@/atoms/Typography/Typography';
 import {
   type CommerceAdapterMode,
@@ -1553,11 +1554,7 @@ function SellerBitcoinResolutionReview({
           control={form.control}
           name="outcome"
           render={({ field }) => (
-            <select
-              {...field}
-              id="bitcoin-resolution-outcome"
-              className={`${buttonVariants({ variant: 'secondary' })} w-full`}
-            >
+            <select {...field} id="bitcoin-resolution-outcome" className={`${secondarySelectClasses()} w-full`}>
               {allowPaid && <option value="paid">Paid</option>}
               <option value="refunded">Refunded</option>
               <option value="abandoned">Abandoned</option>
