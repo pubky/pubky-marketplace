@@ -1,6 +1,8 @@
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+import sharp from 'sharp';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { IMAGE_MAX_UPLOAD_SIZE } from '@/config/images';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { MarketplaceGatewayService } from './marketplace';
 
@@ -254,6 +256,61 @@ describe('MarketplaceGatewayService', () => {
     });
     const downloaded = await MarketplaceGatewayService.fetchAttachment(SELLER, '00000000-0000-4000-8000-000000000990');
     expect(new Uint8Array(await downloaded.arrayBuffer())).toEqual(bytes);
+  });
+
+  it('types a downloaded attachment from its bytes, not the declared type', async () => {
+    const bytes = new Uint8Array(
+      await sharp({ create: { width: 2, height: 2, channels: 3, background: '#0a78c8' } })
+        .png()
+        .toBuffer(),
+    );
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(bytes, {
+        status: 200,
+        headers: { 'content-type': 'text/html', 'x-content-hash': bytesToHex(blake3(bytes)) },
+      }),
+    );
+
+    const downloaded = await MarketplaceGatewayService.fetchAttachment(SELLER, 'attachment-id');
+
+    expect(downloaded.type).toBe('image/png');
+  });
+
+  it('refuses an attachment whose bytes are not a raster image', async () => {
+    const bytes = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" onload="document.title=1"/>');
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(bytes, {
+        status: 200,
+        headers: { 'content-type': 'image/png', 'x-content-hash': bytesToHex(blake3(bytes)) },
+      }),
+    );
+
+    await expect(MarketplaceGatewayService.fetchAttachment(SELLER, 'attachment-id')).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+      message: 'Marketplace attachment is not a supported image.',
+    });
+  });
+
+  it('refuses an attachment over the upload limit before reading it', async () => {
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          pulled += 1;
+          controller.enqueue(new Uint8Array(1024));
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(body, { status: 200, headers: { 'content-length': String(IMAGE_MAX_UPLOAD_SIZE + 1) } }),
+    );
+
+    await expect(MarketplaceGatewayService.fetchAttachment(SELLER, 'attachment-id')).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+      message: 'Marketplace attachment is larger than the upload limit.',
+    });
+    expect(pulled).toBe(0);
   });
 });
 

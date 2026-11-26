@@ -23,7 +23,7 @@ vi.mock('postgres', () => ({ default: mocks.postgres }));
 const ENV = { ...process.env };
 
 function configure() {
-  process.env = {
+  const env: NodeJS.ProcessEnv = {
     ...ENV,
     SHOP_BFF_GRANT_FLOW_ENABLED: 'true',
     SHOP_ALLOWED_ORIGINS: '["https://app.example"]',
@@ -41,6 +41,9 @@ function configure() {
     SHOP_BFF_GRANT_STATE_ENCRYPTION_KEY_B64: Buffer.alloc(32, 3).toString('base64'),
     SHOP_BFF_GRANT_STATE_KEY_EPOCH: '1',
   };
+  delete env.SHOP_BFF_GRANT_STATE_DATABASE_CA_PEM;
+  delete env.SHOP_BFF_GRANT_STATE_DATABASE_TLS_SERVER_NAME;
+  process.env = env;
 }
 
 beforeEach(() => {
@@ -203,6 +206,8 @@ describe('embedded BFF readiness', () => {
     expect(mocks.sql.mock.calls[0][0].join('')).toMatch(
       /^\s*SELECT version FROM shop_grant_bff.schema_version WHERE singleton = TRUE\s*$/,
     );
+    expect(mocks.postgres.mock.calls[0][1]).not.toHaveProperty('ssl');
+    expect(mocks.postgres.mock.calls[0][1]).not.toHaveProperty('port');
   });
 
   it.each([{ rows: [] }, { rows: [{ version: 1 }] }, { rows: [{ version: 2 }, { version: 2 }] }])(

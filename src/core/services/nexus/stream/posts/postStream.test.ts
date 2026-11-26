@@ -3,6 +3,7 @@ import type { NexusPost } from '@/services/nexus/nexus.types';
 import { queryNexus } from '@/services/nexus/nexus.utils';
 import { NexusPostStreamService } from './postStream';
 import { postStreamApi } from './postStream.api';
+import type { TStreamPostsByIdsParams } from './postStream.types';
 
 vi.mock('@/services/nexus/nexus.utils', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/nexus/nexus.utils')>();
@@ -109,6 +110,8 @@ describe('NexusPostStreamService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks keeps queued mockResolvedValueOnce values.
+    mockQueryNexus.mockReset();
   });
 
   describe('fetchByIds', () => {
@@ -170,6 +173,56 @@ describe('NexusPostStreamService', () => {
         body: JSON.stringify({ post_ids: [], include_attachment_metadata: true }),
       });
       expect(result).toEqual([]);
+    });
+
+    it.each([
+      { count: 101, chunkSizes: [100, 1] },
+      { count: 250, chunkSizes: [100, 100, 50] },
+    ])(
+      'fetches $count post IDs in $chunkSizes.length requests with the same options',
+      async ({ count, chunkSizes }) => {
+        const postIds = Array.from({ length: count }, (_, index) => `post-id-${index}`);
+        let offset = 0;
+        const responses = chunkSizes.map((chunkSize) => {
+          const response = postIds
+            .slice(offset, offset + chunkSize)
+            .map((id) => ({ details: { id, author: 'author-id' } }) as NexusPost);
+          offset += chunkSize;
+          return response;
+        });
+        mockQueryNexus.mockResolvedValue([]);
+        responses.forEach((response) => mockQueryNexus.mockResolvedValueOnce(response));
+
+        const result = await NexusPostStreamService.fetchByIds({
+          post_ids: postIds,
+          viewer_id: mockViewerId,
+          include_attachment_metadata: false,
+        });
+
+        expect(mockQueryNexus).toHaveBeenCalledTimes(chunkSizes.length);
+        expect(result).toEqual(responses.flat());
+        const requests = mockQueryNexus.mock.calls.map(([params]) => params);
+        requests.forEach((request) => {
+          expect(request.url).toMatch(/v0\/stream\/posts\/by_ids$/);
+          expect(request.method).toBe('POST');
+        });
+        const bodies = requests.map((request) => JSON.parse(String(request.body)) as TStreamPostsByIdsParams);
+        expect(bodies.map((body) => body.post_ids.length)).toEqual(chunkSizes);
+        expect(bodies.flatMap((body) => body.post_ids)).toEqual(postIds);
+        bodies.forEach((body) => {
+          expect(body.viewer_id).toBe(mockViewerId);
+          expect(body.include_attachment_metadata).toBe(false);
+        });
+      },
+    );
+
+    it('propagates a rejection from the second request without requesting later chunks', async () => {
+      const postIds = Array.from({ length: 250 }, (_, index) => `post-id-${index}`);
+      const error = new Error('Post request failed');
+      mockQueryNexus.mockResolvedValueOnce([]).mockRejectedValueOnce(error).mockResolvedValueOnce([]);
+
+      await expect(NexusPostStreamService.fetchByIds({ post_ids: postIds })).rejects.toBe(error);
+      expect(mockQueryNexus).toHaveBeenCalledTimes(2);
     });
   });
 });

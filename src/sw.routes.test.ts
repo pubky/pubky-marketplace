@@ -1,6 +1,7 @@
 import { Serwist } from 'serwist';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { asOpaque } from '@/test-utils/type-assertions';
+import manifest from '../public/manifest.json';
 import { buildRuntimeCaching } from './sw.routes';
 
 class TestExtendableEvent extends Event {
@@ -65,6 +66,22 @@ describe('service worker runtime routes', () => {
     expect(await response?.text()).toBe('from network');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect((fetchMock.mock.calls[0]?.[0] as Request).url).toBe(request.url);
+  });
+
+  it('keeps the standalone Shop off the OS file-sharing sheet', () => {
+    expect(manifest).not.toHaveProperty('share_target');
+  });
+
+  it('lets the server reject a share POST from a previously installed Shop', async () => {
+    const worker = Object.assign(new EventTarget(), { skipWaiting: vi.fn(), registration: {} });
+    vi.stubGlobal('self', worker);
+    await import('./sw');
+
+    const request = new Request(new URL('/share', window.location.origin), { method: 'POST', body: new FormData() });
+    const respondWith = vi.fn((response: Promise<Response>) => response.catch(() => {}));
+    worker.dispatchEvent(Object.assign(new TestFetchEvent(request, Promise.resolve(undefined)), { respondWith }));
+
+    expect(respondWith).not.toHaveBeenCalled();
   });
 
   it('leaves same-origin subresource requests to the browser', () => {

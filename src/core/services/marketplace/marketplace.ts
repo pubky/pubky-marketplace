@@ -2,6 +2,7 @@ import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { z } from 'zod';
 import { getCommerceAdapterMode, getMarketplaceUrl, isDurableCommerceMode } from '@/config/commerce';
+import { IMAGE_MAX_UPLOAD_SIZE } from '@/config/images';
 import type { MarketplaceReviewAttestationPending } from '@/libs/commerce/attestation';
 import type {
   MarketplaceDigitalDeliveryCapability,
@@ -31,6 +32,7 @@ import { Err } from '@/libs/error/error.factories';
 import { safeFetch } from '@/libs/error/error.http';
 import { ErrorService } from '@/libs/error/error.types';
 import { PARSE_JSON_WITH_BODY_EXCERPT, parseResponseOrThrow } from '@/libs/http/response.utils';
+import { rasterImageMimeType, readBodyWithin } from '@/libs/media/image-bytes';
 import { marketplaceSessionRequired } from './marketplace-approval-failure';
 import { reportMarketplaceNotificationInvalidTypes } from './marketplace-notification-diagnostics';
 import {
@@ -777,7 +779,14 @@ export class MarketplaceGatewayService {
       ErrorService.Marketplace,
       'fetchAttachment',
     );
-    const bytes = new Uint8Array(await response.arrayBuffer());
+    const bytes = await readBodyWithin(response, IMAGE_MAX_UPLOAD_SIZE);
+    if (!bytes) {
+      throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Marketplace attachment is larger than the upload limit.', {
+        service: ErrorService.Marketplace,
+        operation: 'fetchAttachment',
+        context: { statusCode: response.status, maxBytes: IMAGE_MAX_UPLOAD_SIZE },
+      });
+    }
     const expectedHash = response.headers.get('x-content-hash');
     if (!expectedHash || bytesToHex(blake3(bytes)) !== expectedHash) {
       throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Marketplace attachment integrity check failed.', {
@@ -786,7 +795,15 @@ export class MarketplaceGatewayService {
         context: { statusCode: response.status },
       });
     }
-    return new Blob([bytes], { type: response.headers.get('content-type') ?? 'application/octet-stream' });
+    const type = rasterImageMimeType(bytes);
+    if (!type) {
+      throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Marketplace attachment is not a supported image.', {
+        service: ErrorService.Marketplace,
+        operation: 'fetchAttachment',
+        context: { statusCode: response.status },
+      });
+    }
+    return new Blob([bytes], { type });
   }
 
   /**
