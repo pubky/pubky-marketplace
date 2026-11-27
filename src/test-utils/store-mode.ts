@@ -10,3 +10,9 @@ export function setStoreSeller(seller: string | undefined): void {
   else process.env[PUBKY_RUNTIME_ENV_NAMES.storeSeller] = seller;
   resetRuntimeConfigForTests();
 }
+
+export function setStoreMode(mode: 'single_seller' | undefined): void {
+  if (mode === undefined) delete process.env[PUBKY_RUNTIME_ENV_NAMES.storeMode];
+  else process.env[PUBKY_RUNTIME_ENV_NAMES.storeMode] = mode;
+  resetRuntimeConfigForTests();
+}

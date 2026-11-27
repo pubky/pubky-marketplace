@@ -1,5 +1,6 @@
 import { renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import { setStoreStateForTests } from '@/config/store-mode';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { setStoreSeller } from '@/test-utils/store-mode';
 import { useCanSellHere } from './useCanSellHere';
@@ -10,12 +11,19 @@ const BUYER = 'o'.repeat(52);
 describe('useCanSellHere', () => {
   afterEach(() => {
     setStoreSeller(undefined);
+    setStoreStateForTests(undefined);
     useAuthStore.setState({ currentUserPubky: null });
   });
 
   it('lets everyone sell outside store mode', () => {
     useAuthStore.setState({ currentUserPubky: BUYER });
     expect(renderHook(() => useCanSellHere()).result.current).toBe(true);
+  });
+
+  it.each(['unclaimed', 'unavailable'] as const)('lets nobody sell while the store is %s', (kind) => {
+    setStoreStateForTests({ kind, claimMode: true });
+    useAuthStore.setState({ currentUserPubky: STORE_SELLER });
+    expect(renderHook(() => useCanSellHere()).result.current).toBe(false);
   });
 
   it.each([

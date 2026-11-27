@@ -12,12 +12,17 @@ import {
   STORE_STATIC_FILES,
   storeRouteUrlSegments,
 } from '@/app/store-route-policy';
+import type { StoreState } from '@/config/store-mode';
 
 const APP_DIR = path.join(process.cwd(), 'src/app');
 const PUBLIC_DIR = path.join(process.cwd(), 'public');
 
 const STORE_SELLER = 'o'.repeat(52);
 const OTHER_SELLER = 'y'.repeat(52);
+const PINNED: StoreState = { kind: 'claimed', seller: STORE_SELLER, source: 'pinned', claimMode: false };
+const CLAIMED: StoreState = { kind: 'claimed', seller: STORE_SELLER, source: 'claim', claimMode: true };
+const UNCLAIMED: StoreState = { kind: 'unclaimed', claimMode: true };
+const UNAVAILABLE: StoreState = { kind: 'unavailable', claimMode: true };
 
 function filesUnder(dir: string): string[] {
   return readdirSync(dir, { recursive: true, withFileTypes: true })
@@ -92,7 +97,7 @@ describe('store route policy table', () => {
     expect(STORE_NOT_FOUND_PATHNAME).toBe('/_not-found');
     expect(appFiles).toContain('not-found.tsx');
     expect(matchStoreRoute(STORE_NOT_FOUND_PATHNAME)).toBeNull();
-    expect(decideStoreRoute(STORE_NOT_FOUND_PATHNAME, STORE_SELLER).kind).toBe('not-found');
+    expect(decideStoreRoute(STORE_NOT_FOUND_PATHNAME, PINNED).kind).toBe('not-found');
   });
 });
 
@@ -123,7 +128,7 @@ describe('matchStoreRoute', () => {
 });
 
 describe('decideStoreRoute', () => {
-  const decide = (pathname: string) => decideStoreRoute(pathname, STORE_SELLER).kind;
+  const decide = (pathname: string) => decideStoreRoute(pathname, PINNED).kind;
 
   it.each(['/', '/marketplace'])('opens the store seller shop from %s', (pathname) => {
     expect(decide(pathname)).toBe('store-home');
@@ -230,7 +235,7 @@ describe('decideStoreRoute', () => {
   it('serves the Paykit creator lookup to the store seller payment setup without a viewer gate', () => {
     expect(STORE_ROUTE_HANDLER_POLICY['/api/paykit-creator']?.policy).toEqual({ mode: 'both' });
     expect(decide('/api/paykit-creator')).toBe('allow');
-    expect(decideStoreRoute('/api/paykit-creator', OTHER_SELLER).kind).toBe('allow');
+    expect(decideStoreRoute('/api/paykit-creator', { ...PINNED, seller: OTHER_SELLER }).kind).toBe('allow');
     expect(isStoreSellerViewerRoute('/api/paykit-creator')).toBe(false);
     expect(decide('/api/paykit-creator/extra')).toBe('not-found');
   });
@@ -276,6 +281,67 @@ describe('decideStoreRoute', () => {
     expect(decide('/marketplace/twitter-image')).toBe('allow');
     expect(decide(`/marketplace/shop/${OTHER_SELLER}/opengraph-image`)).toBe('not-found');
     expect(decide(`/profile/${STORE_SELLER}/twitter-image`)).toBe('not-found');
+  });
+});
+
+describe('decideStoreRoute across store states', () => {
+  it('applies no store policy when store mode is off', () => {
+    expect(decideStoreRoute('/', { kind: 'off' })).toEqual({ kind: 'allow' });
+    expect(decideStoreRoute('/hot', { kind: 'off' })).toEqual({ kind: 'allow' });
+  });
+
+  it('serves setup only to an unclaimed store or a store claimed through setup', () => {
+    expect(decideStoreRoute('/setup', UNCLAIMED)).toEqual({ kind: 'allow' });
+    expect(decideStoreRoute('/setup', CLAIMED)).toEqual({ kind: 'allow' });
+    expect(decideStoreRoute('/setup', PINNED)).toEqual({ kind: 'not-found' });
+  });
+
+  it.each([
+    '/',
+    '/setup',
+    '/sign-in',
+    '/logout',
+    '/complete-profile',
+    '/api/build',
+    '/api/marketplace/health',
+    '/api/marketplace/store',
+    '/api/marketplace/session',
+    '/api/marketplace/grant-flows',
+    '/api/marketplace/grant-flows/abc/status',
+    '/api/marketplace/bootstrap-challenges',
+    '/api/marketplace/bootstrap-challenges/abc/verify',
+    '/favicon.ico',
+    '/_next/static/chunks/main.js',
+  ])('serves %s while unclaimed', (pathname) => {
+    expect(decideStoreRoute(pathname, UNCLAIMED)).toEqual({ kind: 'allow' });
+  });
+
+  it.each([
+    '/marketplace',
+    '/marketplace/cart',
+    '/marketplace/checkout',
+    '/marketplace/dashboard',
+    '/messages',
+    '/settings',
+    `/marketplace/shop/${STORE_SELLER}`,
+    '/api/fx-rate',
+    '/api/marketplace/client-region',
+    '/not-a-page',
+  ])('hides %s while unclaimed', (pathname) => {
+    expect(decideStoreRoute(pathname, UNCLAIMED)).toEqual({ kind: 'not-found' });
+  });
+
+  it('does not redirect the unclaimed holding page or its RSC read', () => {
+    expect(decideStoreRoute('/', UNCLAIMED)).toEqual({ kind: 'allow' });
+    expect(decideStoreRoute('/index.rsc', UNCLAIMED)).toEqual({ kind: 'not-found' });
+    expect(decideStoreRoute('/.rsc', UNCLAIMED)).toEqual({ kind: 'allow' });
+  });
+
+  it('marks every document unavailable but keeps static files available', () => {
+    expect(decideStoreRoute('/', UNAVAILABLE)).toEqual({ kind: 'unavailable' });
+    expect(decideStoreRoute('/api/marketplace/store', UNAVAILABLE)).toEqual({ kind: 'unavailable' });
+    expect(decideStoreRoute('/favicon.ico', UNAVAILABLE)).toEqual({ kind: 'allow' });
+    expect(decideStoreRoute('/_next/static/chunks/main.js', UNAVAILABLE)).toEqual({ kind: 'allow' });
   });
 });
 

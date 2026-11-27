@@ -30,7 +30,7 @@ import {
   isTransactionalCommerceMode,
 } from '@/config/commerce';
 import { IMAGE_MAX_UPLOAD_SIZE } from '@/config/images';
-import { getStoreSeller } from '@/config/store-mode';
+import { getStoreState } from '@/config/store-mode';
 import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import { captureTagViewer } from '@/controllers/commerce/tag-viewer';
 import { StoreSellerGate } from '@/controllers/store-seller-gate/store-seller-gate';
@@ -118,7 +118,7 @@ export class CommerceController {
 
   /**
    * Subscribe once at app coordinator start. Every `clearSession` then nulls
-   * the store — including gateway paths that never return through command
+   * the store - including gateway paths that never return through command
    * wrappers. Idempotent. Inventory uses a second bearer; identity 401 must
    * not wipe it.
    */
@@ -347,7 +347,7 @@ export class CommerceController {
    *
    * Maps the catalog filter state onto what Nexus can evaluate server-side:
    * sale format (when not 'all'), condition (only when exactly one is
-   * selected — Nexus accepts a single condition), and the ending-soon sort
+   * selected - Nexus accepts a single condition), and the ending-soon sort
    * (served by the auction end-time stream, `sorting=ends_at`). Everything
    * else (text query, hierarchical category prefix, minor-unit price range,
    * the remaining sorts) stays client-side in `filterMarketplaceCatalog`, so
@@ -1010,7 +1010,7 @@ export class CommerceController {
     );
   }
 
-  /** Seller kill switch: announced/live → ended_cancelled (CAS). */
+  /** Seller kill switch: announced/live to ended_cancelled (CAS). */
   static async cancelDrop(dropId: string, expectedRevision: number) {
     return await CommerceApplication.cancelDrop(this.sellerPubky(), dropId, expectedRevision);
   }
@@ -1038,7 +1038,7 @@ export class CommerceController {
   /**
    * Buyer-side heal (durable modes only): asks the transaction service to
    * fetch the canonical seller-signed record from the homeserver and
-   * register the listing from it. Any signed-in user may trigger it — the
+   * register the listing from it. Any signed-in user may trigger it - the
    * seller is not required.
    */
   static async syncListingRegistration(sellerPubky: unknown, listingId: unknown) {
@@ -1268,7 +1268,7 @@ export class CommerceController {
     return await CommerceShippingApplication.getLabel(this.sellerPubky(), orderId);
   }
 
-  /** Seller's PayPal receipt confirmation — this is what pays the order. */
+  /** Seller's PayPal receipt confirmation - this is what pays the order. */
   /** `releaseDigital` also releases the order's instant digital lines when they wait for the seller. */
   static async confirmFiatReceived(orderId: string, releaseDigital = false) {
     return await CommerceApplication.confirmFiatReceived(this.sellerPubky(), orderId, releaseDigital);
@@ -1347,7 +1347,7 @@ export class CommerceController {
 
   /**
    * Publishes (or revises) the current user's response to a review they are
-   * the subject of — a homeserver record on the user's OWN homeserver
+   * the subject of - a homeserver record on the user's OWN homeserver
    * (subject-only, one revisable response per review; there is no service
    * command for responses).
    */
@@ -1413,7 +1413,7 @@ export class CommerceController {
     const sellsHere = this.sellsHere();
     const viewerPubky = this.getCurrentUserPubky();
     const offers = await CommerceApplication.getMarketplaceOffers(viewerPubky);
-    return sellsHere ? offers : withoutSalesOutsideStoreSeller(offers, viewerPubky, getStoreSeller());
+    return sellsHere ? offers : withoutSalesOutsideStoreSeller(offers, viewerPubky, getStoreState());
   }
 
   static async getMarketplaceNotifications() {
@@ -1430,7 +1430,7 @@ export class CommerceController {
     const notifications = await CommerceApplication.getMarketplaceNotifications(viewerPubky, { sellerSide: sellsHere });
     if (sellsHere) return notifications;
     const roles = await this.resolveStoreNotificationRoles(viewerPubky, storeNotificationSubjects(notifications));
-    return withoutSalesNotificationsOutsideStoreSeller(notifications, viewerPubky, getStoreSeller(), roles);
+    return withoutSalesNotificationsOutsideStoreSeller(notifications, viewerPubky, getStoreState(), roles);
   }
 
   /**
@@ -1483,7 +1483,7 @@ export class CommerceController {
   /**
    * Marketplace notifications shaped for the app's general notification
    * surface: normalized to the redacted feed shape (type, actor, aggregate
-   * reference, timestamp, deep link — ADR-0019 §8 allows nothing more), with
+   * reference, timestamp, deep link - ADR-0019 §8 allows nothing more), with
    * `isUnread` honest per adapter mode. Returns [] when signed out or when
    * the mode has no transactional backend, so the shared surface renders
    * exactly what it renders today for those sessions.
@@ -1507,7 +1507,7 @@ export class CommerceController {
    * so only sandbox rows can contribute: in `transaction-service` mode the
    * durable service delivers immutable outbox rows the user could never mark
    * read, and a badge count that can never be cleared is a count the user
-   * cannot act on — it stays 0 there (and in the modes with no backend at
+   * cannot act on - it stays 0 there (and in the modes with no backend at
    * all) without even fetching. Signed-out sessions also clear to 0.
    */
   static async refreshMarketplaceNotificationBadge(): Promise<void> {
@@ -1530,7 +1530,7 @@ export class CommerceController {
    * the general notifications page does for social notifications. Sandbox
    * only: the durable service has no `notification.mark_read` command
    * (delivered notifications are immutable outbox rows), so in
-   * `transaction-service` mode this is a no-op instead of a fake write — the
+   * `transaction-service` mode this is a no-op instead of a fake write - the
    * badge there is already 0 because durable rows never count as unread.
    *
    * The store's marketplace badge is cleared only after every mark-read
@@ -1579,7 +1579,7 @@ export class CommerceController {
     const sellsHere = this.sellsHere();
     const viewerPubky = this.getCurrentUserPubky();
     const read = await CommerceApplication.getMarketplaceOrders(viewerPubky);
-    const orders = sellsHere ? read : withoutSalesOutsideStoreSeller(read, viewerPubky, getStoreSeller());
+    const orders = sellsHere ? read : withoutSalesOutsideStoreSeller(read, viewerPubky, getStoreState());
     this.noteOrderListings(orders);
     return orders;
   }
@@ -1664,12 +1664,12 @@ export class CommerceController {
   // to a store or to Dexie. The buyer's reveal and the seller's owner-read
   // copy are returned to the caller and held in memory only (§A1).
 
-  /** The deployment's `pickup_available` capability (§A7) — false unless the durable service reports pickup on. */
+  /** The deployment's `pickup_available` capability (§A7) - false unless the durable service reports pickup on. */
   static async fetchPickupAvailable(): Promise<boolean> {
     return await CommerceApplication.fetchPickupAvailable();
   }
 
-  /** The deployment's digital delivery capability (§6 B5) — unavailable unless the durable service reports it on. */
+  /** The deployment's digital delivery capability (§6 B5) - unavailable unless the durable service reports it on. */
   static async fetchDigitalDeliveryCapability(): Promise<MarketplaceDigitalDeliveryCapability> {
     return await CommerceApplication.fetchDigitalDeliveryCapability();
   }
@@ -1780,7 +1780,7 @@ export class CommerceController {
     });
   }
 
-  // --- Digital delivery seller setup (digital delivery design §2, §6 C1–C5) ---
+  // --- Digital delivery seller setup (digital delivery design §2, §6 C1-C5) ---
 
   /** The current seller's owner read of one listing's digital delivery. Held in memory only. */
   static async fetchSellerDigitalDelivery(listingId: unknown) {
@@ -2385,7 +2385,7 @@ export class CommerceController {
   /**
    * Advances the signed-in account's activity checkpoint to now, in this
    * browser and in the account's private homeserver document. Not service
-   * read state — the durable service has none.
+   * read state - the durable service has none.
    */
   static async markActivityRead(): Promise<void> {
     if (!useAuthStore.getState().currentUserPubky) return;
@@ -2414,7 +2414,7 @@ export class CommerceController {
     if (trimmedName.length === 0 || trimmedName.length > COMMERCE_SAVED_SEARCH_NAME_MAX_CHARS) {
       throw Err.validation(
         ValidationErrorCode.INVALID_INPUT,
-        `A saved search needs a name of 1–${COMMERCE_SAVED_SEARCH_NAME_MAX_CHARS} characters.`,
+        `A saved search needs a name of 1-${COMMERCE_SAVED_SEARCH_NAME_MAX_CHARS} characters.`,
         {
           service: ErrorService.Local,
           operation: 'commitCreateSavedSearch',
@@ -2563,7 +2563,7 @@ export class CommerceController {
   /**
    * Invariant: ending a marketplace session (local TTL via getActiveSession,
    * 401/SESSION_EXPIRED from the transport, or sign-out) always nulls the
-   * zustand copy here — the controller owns the store; the service never does.
+   * zustand copy here - the controller owns the store; the service never does.
    * Last write wins by `issuedAt`: a connect that finishes after a clear keeps
    * the new session and must never resurrect the cleared one.
    */

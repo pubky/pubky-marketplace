@@ -11,7 +11,7 @@ import {
 } from '@/app/routes';
 import { isStoreSellerViewerRoute } from '@/app/store-route-policy';
 import { Spinner } from '@/atoms/Spinner/Spinner';
-import { getStoreSeller } from '@/config/store-mode';
+import { getStoreState } from '@/config/store-mode';
 import { AuthController } from '@/controllers/auth/auth';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useAuthStatus } from '@/hooks/useAuthStatus/useAuthStatus';
@@ -63,9 +63,9 @@ interface RouteGuardProviderProps {
  * - Allows dynamic public routes (/post/[x]/[y], /profile/[pubky]) without auth
  *
  * Route access is configured via ROUTE_ACCESS_MAP which maps:
- * - UNAUTHENTICATED users → signin/explore routes
- * - AUTHENTICATED users → app routes (feed, profile, etc.)
- * - NEEDS_PROFILE_CREATION users → profile creation route
+ * - UNAUTHENTICATED users to signin/explore routes
+ * - AUTHENTICATED users to app routes (feed, profile, etc.)
+ * - NEEDS_PROFILE_CREATION users to profile creation route
  */
 export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
   const hosted = useIsShopHosted();
@@ -107,7 +107,7 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
     if (!grantSessionRecordId && !shouldAttemptSessionRestore(sessionExport)) {
       // Rehydrate set isRestoringSession when the predicate read true; if the
       // situation changed before this effect ran (e.g. logout suppression
-      // landed in between), no restore will run — clear the flag so it cannot
+      // landed in between), no restore will run - clear the flag so it cannot
       // stick and strand useAuthStatus in its loading branch.
       if (isRestoringSession) {
         useAuthStore.getState().setIsRestoringSession(false);
@@ -270,12 +270,12 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
   }, [status, pathname, router, isLoading, isRouteAccessible, isPublicRoute]);
 
   // A store's selling tools exist only for the store seller; the proxy cannot see who is signed in.
-  const storeSeller = getStoreSeller();
+  const storeState = getStoreState();
   if (
-    storeSeller !== null &&
+    storeState.kind === 'claimed' &&
     status === AuthStatus.AUTHENTICATED &&
     !isLoading &&
-    currentUserPubky !== storeSeller &&
+    currentUserPubky !== storeState.seller &&
     isStoreSellerViewerRoute(pathname)
   ) {
     return <NotFound />;

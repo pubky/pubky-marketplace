@@ -1,4 +1,4 @@
-import { getStoreSeller } from '@/config/store-mode';
+import { getStoreState } from '@/config/store-mode';
 import { isPubkyIdentifier } from '@/libs/utils/utils';
 
 export const ROOT_ROUTES = '/';
@@ -130,7 +130,7 @@ export enum COPYRIGHT_ROUTES {
 }
 
 export enum DEV_ROUTES {
-  /** Sentry verification harness — gated to non-production by the page itself. */
+  /** Sentry verification harness - gated to non-production by the page itself. */
   SENTRY_TEST = '/sentry-test',
 }
 
@@ -159,7 +159,7 @@ export const PUBLIC_ROUTES: string[] = [
   // The page returns 404 in production via isSentryTestHarnessEnabled().
   DEV_ROUTES.SENTRY_TEST,
   // Catalog home is guest HTML (SSR of the public Nexus listing stream + OG).
-  // Exact match only — `PUBLIC_ROUTES.includes(pathname)` — so writable
+  // Exact match only - `PUBLIC_ROUTES.includes(pathname)` - so writable
   // surfaces under `/marketplace/...` stay behind the auth gate.
   APP_ROUTES.MARKETPLACE,
 ];
@@ -196,10 +196,10 @@ export function getShopHomeRoute(): string {
   return getMarketplaceHomeRoute();
 }
 
-/** The Market's landing page: the catalog, or in store mode the store seller's shop. */
+/** The Market's landing page: the catalog, or in a claimed store the store seller's shop. */
 export function getMarketplaceHomeRoute(): string {
-  const storeSeller = getStoreSeller();
-  return storeSeller === null ? APP_ROUTES.MARKETPLACE : getMarketplaceShopRoute(storeSeller);
+  const state = getStoreState();
+  return state.kind === 'claimed' ? getMarketplaceShopRoute(state.seller) : APP_ROUTES.MARKETPLACE;
 }
 
 export const AUTHENTICATED_ROUTES = {
@@ -260,7 +260,7 @@ type MatchesAllowedRouteOptions = {
  * Whether `pathname` is reachable via an allowed route entry.
  *
  * Non-explore routes keep prefix matching (e.g. settings sub-pages). Explore
- * routes optionally match exactly — see `restrictExploreSubRoutes`.
+ * routes optionally match exactly - see `restrictExploreSubRoutes`.
  */
 export function matchesAllowedRoute(
   pathname: string,
@@ -307,10 +307,10 @@ export function isLogoLandingRoute(pathname: string | null): boolean {
  * @example
  * ```ts
  * // For logged-in user
- * getProfileRoute(PROFILE_ROUTES.FOLLOWERS) // => '/profile/followers'
+ * getProfileRoute(PROFILE_ROUTES.FOLLOWERS) // returns '/profile/followers'
  *
  * // For specific user
- * getProfileRoute(PROFILE_ROUTES.FOLLOWERS, 'n1zpc53jzy') // => '/profile/n1zpc53jzy/followers'
+ * getProfileRoute(PROFILE_ROUTES.FOLLOWERS, 'n1zpc53jzy') // returns '/profile/n1zpc53jzy/followers'
  * ```
  */
 export function getProfileRoute(route: PROFILE_ROUTES, pubky?: string): string {
@@ -431,7 +431,7 @@ type NavItemActiveConfig = {
 /**
  * Returns whether a pathname should highlight a primary nav item.
  *
- * Uses `activePrefix` when set (e.g. Settings → any `/settings/*` route),
+ * Uses `activePrefix` when set (e.g. Settings to any `/settings/*` route),
  * otherwise falls back to exact href match and sub-routes under `href`.
  */
 export function isNavItemActive(pathname: string, item: NavItemActiveConfig): boolean {

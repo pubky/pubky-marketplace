@@ -2,11 +2,13 @@ import './globals.css';
 import type { Viewport } from 'next';
 import { TooltipProvider } from '@/atoms/Tooltip/Tooltip';
 import { getSiteName } from '@/config/metadata';
+import { serializeStoreState, setStoreStateForRender } from '@/config/store-mode';
 import { COLORS } from '@/config/theme';
 import { TOOLTIP_DELAY_MS } from '@/config/ui';
 import { buildMarketplacePromoPrepaintScript } from '@/libs/commerce/promo-prepaint';
 import { MARKETPLACE_STATIC_SEO } from '@/libs/commerce/seo';
 import { renderPerRequestOutsideVercel } from '@/libs/runtime-config/render-mode';
+import { resolveStoreState } from '@/libs/store-state/store-state.server';
 import { RootContainer } from '@/molecules/ContainerRoot/ContainerRoot';
 import { EmbeddedDocumentFlag } from '@/molecules/EmbeddedDocumentFlag/EmbeddedDocumentFlag';
 import { EmbeddedExternalLinks } from '@/molecules/EmbeddedExternalLinks/EmbeddedExternalLinks';
@@ -42,9 +44,11 @@ export function generateMetadata() {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   await renderPerRequestOutsideVercel();
+  const storeState = await resolveStoreState();
+  setStoreStateForRender(storeState);
 
   return (
-    <RootContainer>
+    <RootContainer storeStateScript={storeState.kind === 'off' ? null : serializeStoreState(storeState)}>
       {/* Raw inline script: it must run during parsing, before the promo's first paint. */}
       <script
         id="marketplace-promo-prepaint-check"

@@ -1,22 +1,25 @@
+import type { StoreState } from '@/config/store-mode';
 import { parseListingAggregateId } from '@/libs/commerce/listing-aggregate';
 import type { ChatContext } from '@/models/chat/chat.schema';
 
 /**
  * A store's selling tools belong to the store seller. Any other account signed in to a store sees
- * and runs only its buyer side. `storeSeller` is `null` outside store mode, where everyone sells as
- * before. Controllers ask through `StoreSellerGate`, never here directly.
+ * and runs only its buyer side. Outside store mode everyone sells as before. Controllers ask through
+ * `StoreSellerGate`, never here directly.
  */
-export function canSellHere(viewerPubky: string | null, storeSeller: string | null): boolean {
-  return storeSeller === null || viewerPubky === storeSeller;
+export function canSellHere(viewerPubky: string | null, state: StoreState): boolean {
+  if (state.kind === 'off') return true;
+  if (state.kind !== 'claimed') return false;
+  return viewerPubky === state.seller;
 }
 
 /** Service rows that name their seller (orders, offers), without the viewer's sales where it cannot sell. */
 export function withoutSalesOutsideStoreSeller<T extends { sellerPubky: string }>(
   rows: T[],
   viewerPubky: string,
-  storeSeller: string | null,
+  state: StoreState,
 ): T[] {
-  if (canSellHere(viewerPubky, storeSeller)) return rows;
+  if (canSellHere(viewerPubky, state)) return rows;
   return rows.filter((row) => row.sellerPubky !== viewerPubky);
 }
 
@@ -138,10 +141,10 @@ export type StoreNotificationRoles = {
 export function withoutSalesNotificationsOutsideStoreSeller<T extends SubjectNotification>(
   notifications: T[],
   viewerPubky: string,
-  storeSeller: string | null,
+  state: StoreState,
   roles: StoreNotificationRoles,
 ): T[] {
-  if (canSellHere(viewerPubky, storeSeller)) return notifications;
+  if (canSellHere(viewerPubky, state)) return notifications;
   const sellerOf = (kind: 'order' | 'offer', id: string) =>
     (kind === 'order' ? roles.orderSellers : roles.offerSellers).get(id) ?? null;
   const isBuyerSide = ({ kind, type, aggregateId, moderationDecision }: T): boolean => {
@@ -258,7 +261,7 @@ export function contextRole(
 }
 
 /**
- * Whether a chat thread is the viewer's sale, for a viewer who cannot sell in `storeSeller`'s store.
+ * Whether a chat thread is the viewer's sale, for a viewer who cannot sell in the claimed store.
  * The store seller's own thread always stays. Before the roles are read, nothing else is shown. The
  * latest context decides first ({@link contextRole}): the viewer's sale, or a context that cannot be
  * placed with this peer, makes it a sale even when the same context also names an order the viewer
@@ -271,11 +274,11 @@ export function contextRole(
 export function isSaleThread(
   thread: { peer_pubky: string; last_context: ChatContext | null },
   roles: StoreThreadRoles | null,
-  storeSeller: string | null,
+  state: StoreState,
   listingSide: ListingSide | null,
 ): boolean {
   const { peer_pubky: peer, last_context: context } = thread;
-  if (peer === storeSeller) return false;
+  if (state.kind === 'claimed' && peer === state.seller) return false;
   if (roles === null) return true;
   const role = contextRole(roles, peer, context, listingSide);
   if (role === 'sale') return true;

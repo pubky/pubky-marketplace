@@ -16,7 +16,7 @@ import { parseRegionModes } from '../commerce/region-modes';
  *    analytics, and external-link values that deployers may override without rebuilding.
  *
  * This module is a leaf (zod only, no `Env`, no logger) so the runtime-config resolver never
- * pulls in the heavy `env -> libs/error -> logger -> env` import cycle.
+ * pulls in the heavy `env, libs/error, logger, env` import cycle.
  *
  * Two schemas are intentionally provided because the two inputs differ in shape:
  *  - env vars arrive as STRINGS (e.g. `PKARR_RELAYS` is a JSON string, `TESTNET` is "true"/"false")
@@ -33,7 +33,7 @@ const urlValue = z.url();
 const homeserverValue = z.string().min(1);
 /**
  * Declared deploy identity. Drives environment-gated behavior (e.g. the staging
- * homeserver sign-in guard) — declared explicitly instead of inferred from
+ * homeserver sign-in guard) - declared explicitly instead of inferred from
  * network values, so config drift can never silently flip it (see
  * `isStagingHomeserverDeploy` in `@/config/network`).
  */
@@ -120,7 +120,7 @@ function parsePkarrRelaysString(val: string): string[] {
   return parseJsonStringArray(val, 'PKARR_RELAYS');
 }
 
-// String-input transforms (env var -> parsed value)
+// String-input transforms from env values to parsed values
 const pkarrRelaysFromString = z.string().transform((val, ctx) => {
   try {
     return parsePkarrRelaysString(val);
@@ -340,6 +340,9 @@ const optionalShopGrantClientIdFromString = optionalTrimmedString.pipe(shopGrant
 
 /** The store seller's pubky in z-base-32; set, it turns store mode on. */
 const optionalStoreSellerFromString = optionalTrimmedString.pipe(pubkyValue.optional());
+const storeModeValue = z.enum(['single_seller']);
+export type StoreMode = z.infer<typeof storeModeValue>;
+const optionalStoreModeFromString = optionalTrimmedString.pipe(storeModeValue.optional());
 
 /**
  * The per-region commerce modes (`SELECTOR=MODE` list, see `@/libs/commerce/region-modes`). The
@@ -379,7 +382,7 @@ const sampleRateFromString = z
 
 /**
  * The runtime values `locks-paykit` mode depends on. The mode may only activate when every
- * one of them is EXPLICITLY configured — the localhost defaults exist for local development
+ * one of them is EXPLICITLY configured - the localhost defaults exist for local development
  * of the other modes and must never silently become a real payment deployment's endpoints.
  */
 export const LOCKS_PAYKIT_REQUIRED_CONFIG_KEYS = ['marketplaceUrl', 'locksUrl', 'paykitSetupUrl'] as const;
@@ -388,7 +391,7 @@ export const LOCKS_PAYKIT_REQUIRED_CONFIG_KEYS = ['marketplaceUrl', 'locksUrl', 
  * Fail-closed activation gate for `locks-paykit` mode, applied to BOTH env-input schemas
  * (strict deployed parse and lenient dev parse) BEFORE defaults are layered, so "explicitly
  * set" is checkable. A partial payment-rail configuration makes the whole config parse fail
- * loudly — the deployment refuses to start rather than pointing real-payment flows at
+ * loudly - the deployment refuses to start rather than pointing real-payment flows at
  * defaulted URLs. `unavailable` remains the schema default when the mode is unset.
  *
  * Secrets are deliberately NOT part of the client config: the Locks verification keys
@@ -474,22 +477,65 @@ function validatePaykitServerApiEnvInput(
  * into an embedded one, so store mode takes neither.
  */
 function validateStoreModeEnvInput(
-  input: { storeSeller?: string; embedded?: boolean; frameAncestors?: string[] },
+  input: {
+    storeSeller?: string;
+    storeMode?: StoreMode;
+    embedded?: boolean;
+    frameAncestors?: string[];
+    marketplaceGrantSessionEnabled?: boolean;
+    marketplaceUrl?: string;
+  },
   ctx: z.RefinementCtx,
+  allowLoopbackHttp: boolean,
 ): void {
-  if (input.storeSeller === undefined) return;
+  const claimMode = input.storeMode === 'single_seller' && input.storeSeller === undefined;
+  if (input.storeSeller === undefined && input.storeMode === undefined) return;
+  const modeKey = claimMode ? 'storeMode' : 'storeSeller';
+  const modeName = claimMode
+    ? `${PUBKY_RUNTIME_ENV_NAMES.storeMode}=single_seller without ${PUBKY_RUNTIME_ENV_NAMES.storeSeller} (claim mode)`
+    : `${PUBKY_RUNTIME_ENV_NAMES.storeSeller} (store mode)`;
   if (input.embedded === true) {
     ctx.addIssue({
       code: 'custom',
-      path: ['storeSeller'],
-      message: `${PUBKY_RUNTIME_ENV_NAMES.storeSeller} (store mode) cannot be combined with ${PUBKY_RUNTIME_ENV_NAMES.embedded}=true.`,
+      path: [modeKey],
+      message: `${modeName} cannot be combined with ${PUBKY_RUNTIME_ENV_NAMES.embedded}=true.`,
     });
   }
   if (input.frameAncestors !== undefined && input.frameAncestors.length > 0) {
     ctx.addIssue({
       code: 'custom',
-      path: ['storeSeller'],
-      message: `${PUBKY_RUNTIME_ENV_NAMES.storeSeller} (store mode) cannot be combined with ${PUBKY_RUNTIME_ENV_NAMES.frameAncestors}; a store is not framed.`,
+      path: [modeKey],
+      message: `${modeName} cannot be combined with ${PUBKY_RUNTIME_ENV_NAMES.frameAncestors}; a store is not framed.`,
+    });
+  }
+  if (!claimMode) return;
+  if (input.marketplaceGrantSessionEnabled !== true) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['storeMode'],
+      message: `${modeName} requires ${PUBKY_RUNTIME_ENV_NAMES.marketplaceGrantSessionEnabled}=true.`,
+    });
+  }
+  const marketplaceUrl = input.marketplaceUrl;
+  let validOrigin = false;
+  if (marketplaceUrl !== undefined) {
+    try {
+      const url = new URL(marketplaceUrl);
+      const exactOrigin = url.origin === marketplaceUrl.replace(/\/$/, '');
+      const loopback =
+        allowLoopbackHttp &&
+        url.protocol === 'http:' &&
+        (LOCAL_DEV_HOSTNAMES.has(url.hostname) || url.hostname === '[::1]');
+      validOrigin = exactOrigin && (url.protocol === 'https:' || loopback);
+    } catch {
+      validOrigin = false;
+    }
+  }
+  if (!validOrigin) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['storeMode'],
+      message: `${modeName} requires ${PUBKY_RUNTIME_ENV_NAMES.marketplaceUrl} to be an exact https:// origin${allowLoopbackHttp ? ', or a loopback http:// origin in local development and tests' : ''}.`,
     });
   }
 }
@@ -694,7 +740,7 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
     .default(APP_RUNTIME_DEFAULTS.marketplaceGrantPollMilliseconds),
   /**
    * Whether the Shop offers Pubky Passport ("Continue with Google"). Runtime
-   * rollback: `false` hides every Passport entry point without a rebuild — the
+   * rollback: `false` hides every Passport entry point without a rebuild - the
    * sign-in button and the Passport purchase approval. A Passport sign-in that
    * is already active stays signed in, but its purchase approval is refused
    * with the grant-session copy, as for a Bitkit sign-in with the grant flow off.
@@ -775,9 +821,12 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
   /**
    * Store mode: the one seller this deployment serves (a z-base-32 Pubky). Set, the Shop is that
    * seller's store: `/` opens their shop and routes outside it return 404 (see
-   * `src/app/store-route-policy.ts`). Absent means the full Market, as before.
+   * `src/app/store-route-policy.ts`). A pin implies single-seller mode; without a pin, `storeMode`
+   * may enable claiming. With neither value the full Market runs as before.
    */
   storeSeller: pubkyValue.optional(),
+  /** Single-seller mode without a seller pin enables first-boot claiming. */
+  storeMode: storeModeValue.optional(),
   /**
    * Whether the Shop's grant sign-in asks the signer for the `e` action on
    * `/priv/pubky.app/marketplace/` (priv-encryption Phase 4), so the user's
@@ -844,7 +893,7 @@ const lenientRuntimeConfigValueSchema = runtimeConfigValueSchema.extend({
 export type RuntimeConfig = z.infer<typeof runtimeConfigValueSchema>;
 
 /**
- * Strict env-input schema (string inputs -> parsed `RuntimeConfig`). NO defaults for the
+ * Strict env-input schema from string inputs to parsed `RuntimeConfig`. NO defaults for the
  * required network tier: a missing value THROWS. Used for the production parse of
  * `PUBKY_RUNTIME_*` so partial deploy config fails loudly instead of silently resolving to a
  * staging URL. Optional public values stay optional here (for example, absent moderationId
@@ -907,6 +956,7 @@ export const runtimeEnvInputSchema = z
     storageAdoptLegacy: optionalBooleanFromString,
     shopPublicPath: optionalShopPublicPathFromString,
     storeSeller: optionalStoreSellerFromString,
+    storeMode: optionalStoreModeFromString,
     privEncryptionKeys: optionalBooleanFromString,
     passportPrivEncryptionKeys: optionalBooleanFromString,
     privEncryptionKeysHomeservers: optionalHomeserverArrayFromString('PRIV_ENCRYPTION_KEYS_HOMESERVERS'),
@@ -937,7 +987,7 @@ export const runtimeEnvInputSchema = z
   .superRefine(validatePaykitServerApiEnvInput)
   .superRefine(validateAuctionDurationsEnvInput)
   .superRefine(validateStagingEndpointsEnvInput)
-  .superRefine(validateStoreModeEnvInput)
+  .superRefine((input, ctx) => validateStoreModeEnvInput(input, ctx, false))
   .pipe(runtimeConfigValueSchema);
 
 /**
@@ -1016,6 +1066,7 @@ export const runtimeEnvInputSchemaWithDefaults = z
     storageAdoptLegacy: optionalBooleanFromString,
     shopPublicPath: optionalShopPublicPathFromString,
     storeSeller: optionalStoreSellerFromString,
+    storeMode: optionalStoreModeFromString,
     privEncryptionKeys: optionalBooleanFromString,
     passportPrivEncryptionKeys: optionalBooleanFromString,
     privEncryptionKeysHomeservers: optionalHomeserverArrayFromString('PRIV_ENCRYPTION_KEYS_HOMESERVERS'),
@@ -1045,11 +1096,12 @@ export const runtimeEnvInputSchemaWithDefaults = z
   .superRefine(validateLocksPaykitEnvInput)
   .superRefine(validatePaykitServerApiEnvInput)
   .superRefine(validateAuctionDurationsEnvInput)
-  .superRefine(validateStoreModeEnvInput)
+  // The lenient schema is the existing local development and test boundary for loopback HTTP.
+  .superRefine((input, ctx) => validateStoreModeEnvInput(input, ctx, true))
   .pipe(lenientRuntimeConfigValueSchema);
 
 // ---------------------------------------------------------------------------
-// Env-name <-> config-key mapping
+// Env-name and config-key mapping
 // ---------------------------------------------------------------------------
 
 /**
@@ -1116,6 +1168,7 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   storageAdoptLegacy: 'PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY',
   shopPublicPath: 'PUBKY_RUNTIME_SHOP_PUBLIC_PATH',
   storeSeller: 'PUBKY_RUNTIME_STORE_SELLER',
+  storeMode: 'PUBKY_RUNTIME_STORE_MODE',
   privEncryptionKeys: 'PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS',
   passportPrivEncryptionKeys: 'PUBKY_RUNTIME_PASSPORT_PRIV_ENCRYPTION_KEYS',
   privEncryptionKeysHomeservers: 'PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS_HOMESERVERS',

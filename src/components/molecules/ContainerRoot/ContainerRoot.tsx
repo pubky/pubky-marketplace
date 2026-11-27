@@ -19,9 +19,10 @@ const interTight = Inter_Tight({
 
 interface RootContainerProps {
   children: React.ReactNode;
+  storeStateScript?: string | null;
 }
 
-export function RootContainer({ children }: RootContainerProps) {
+export function RootContainer({ children, storeStateScript }: RootContainerProps) {
   const plausibleDomain = getPlausibleDomain();
   const plausibleScriptUrl = getPlausibleScriptUrl();
 
@@ -39,12 +40,13 @@ export function RootContainer({ children }: RootContainerProps) {
           <script> element rendered first in <body>: App Router's next/script with
           strategy="beforeInteractive" serializes inline content into the `self.__next_s`
           queue, which the client runtime executes only AFTER the main bundle's module scope
-          — i.e. after instrumentation-client.ts has already evaluated (and missed the
+          - i.e. after instrumentation-client.ts has already evaluated (and missed the
           config, silently disabling client Sentry). A raw inline script is emitted as-is in
           the SSR HTML and executes during document parsing, before any async bundle.
           NOTE: if a Content-Security-Policy is added later, this inline script needs a nonce.
         */}
         <script id="pubky-runtime-config" dangerouslySetInnerHTML={{ __html: serializeRuntimeConfig() }} />
+        {storeStateScript && <script id="pubky-store-state" dangerouslySetInnerHTML={{ __html: storeStateScript }} />}
         {/*
           Raw inline script for the same reason: it applies pubky-app's shared `pubky-theme`
           during parsing, before the first paint, so a light visitor never sees the dark base.

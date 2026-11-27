@@ -11,6 +11,7 @@ import {
   runtimeConfigValueSchema,
   runtimeEnvInputSchema,
   runtimeEnvInputSchemaWithDefaults,
+  type StoreMode,
 } from './runtime-config.schema';
 
 /**
@@ -23,7 +24,7 @@ import {
  * - dev/test: reads the same `PUBKY_RUNTIME_*` names leniently (honoring `.env.local` /
  *   `src/config/test.ts` partial overrides), with staging defaults filling the gaps.
  *
- * This module must NOT import `Env` (keeps the import graph a leaf, avoids the env<->logger cycle).
+ * This module must NOT import `Env` (keeps the import graph a leaf, avoids the env/logger cycle).
  */
 
 export const RUNTIME_CONFIG_WINDOW_KEY = '__PUBKY_CONFIG__';
@@ -97,15 +98,21 @@ function parseLenientConfig(): RuntimeConfig {
  * Next inlines these build-time values.
  */
 function validateBuildBoundConfig(config: RuntimeConfig): RuntimeConfig {
+  const claimMode = config.storeMode === 'single_seller' && config.storeSeller === undefined;
+  if (claimMode && isVercelBuild()) {
+    throw new Error(
+      'PUBKY_RUNTIME_STORE_MODE=single_seller without PUBKY_RUNTIME_STORE_SELLER (claim mode) cannot run on a Vercel build; pin a seller instead.',
+    );
+  }
   if (config.embedded && normalizeBasePath(process.env.NEXT_PUBLIC_BASE_PATH) !== '/shop-embed') {
     throw new Error(
       'PUBKY_RUNTIME_EMBEDDED=true requires NEXT_PUBLIC_BASE_PATH=/shop-embed. Rebuild with the supported Shop mount.',
     );
   }
   // Social link-out sends the social routes and the buyer's sign-out to the social app; a store has neither.
-  if (config.storeSeller && process.env.NEXT_PUBLIC_SOCIAL_HOST?.trim()) {
+  if ((config.storeSeller || claimMode) && process.env.NEXT_PUBLIC_SOCIAL_HOST?.trim()) {
     throw new Error(
-      'PUBKY_RUNTIME_STORE_SELLER (store mode) requires a build without NEXT_PUBLIC_SOCIAL_HOST. Rebuild with it unset.',
+      `${claimMode ? 'PUBKY_RUNTIME_STORE_MODE=single_seller without PUBKY_RUNTIME_STORE_SELLER (claim mode)' : 'PUBKY_RUNTIME_STORE_SELLER (store mode)'} requires a build without NEXT_PUBLIC_SOCIAL_HOST. Rebuild with it unset.`,
     );
   }
   return config;
@@ -113,7 +120,7 @@ function validateBuildBoundConfig(config: RuntimeConfig): RuntimeConfig {
 
 /** Exported for unit tests; prefer `getRuntimeConfig()` in app code. */
 export function readServerConfig(): RuntimeConfig {
-  // Deployed/required mode: strict parse — ALL required network values must be set and valid.
+  // Deployed/required mode: strict parse - ALL required network values must be set and valid.
   // Partial deploy config fails loudly instead of silently resolving to staging defaults.
   if (isRuntimeConfigRequired() && (!isProductionBuildPhase() || isVercelBuild())) {
     const result = runtimeEnvInputSchema.safeParse(readRuntimeEnvInput());
@@ -225,9 +232,12 @@ export const getModeratedTags = (): string[] => getRuntimeConfig().moderatedTags
 export const getAuctionDurationsMinutes = (): number[] => getRuntimeConfig().auctionDurationsMinutes;
 export const getExchangeRateApi = (): string => getRuntimeConfig().exchangeRateApi;
 export const getMarketplaceUrl = (): string => getRuntimeConfig().marketplaceUrl;
+/** Server-only service read base, with the public marketplace origin as its fallback. */
+export const getMarketplaceServiceUrl = (): string =>
+  process.env.MARKETPLACE_SERVICE_URL?.trim() || getRuntimeConfig().marketplaceUrl;
 /**
  * Nexus base URL for marketplace/commerce index reads ONLY. Falls back to the
- * main `nexusUrl` when `PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL` is unset — the
+ * main `nexusUrl` when `PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL` is unset - the
  * override exists because official Nexus deployments do not serve the
  * marketplace index endpoints yet. Social surfaces must keep using
  * `getNexusUrl`.
@@ -298,6 +308,8 @@ export const getStorageAdoptLegacyOverride = (): boolean | undefined => getRunti
 export const getShopPublicPathOverride = (): string | undefined => getRuntimeConfig().shopPublicPath;
 /** The one seller a store-mode deployment serves; `undefined` runs the full Market. */
 export const getStoreSeller = (): string | undefined => getRuntimeConfig().storeSeller;
+/** Declared single-seller mode; a seller pin still works without this key. */
+export const getStoreMode = (): StoreMode | undefined => getRuntimeConfig().storeMode;
 /** Deployer override for the grant sign-in client id; `undefined` keeps the built-in default. */
 export const getShopGrantClientIdOverride = (): string | undefined => getRuntimeConfig().shopGrantClientId;
 /** Runtime additions to the review attestor trust list (see `marketplaceTrustedAttestors` in `@/config/commerce`). */
