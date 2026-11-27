@@ -389,7 +389,7 @@ export class CommerceController {
    * for the same sign-in unless `retryAfterFailure` (an explicit user retry).
    */
   static async ensureMarketplaceSessionFromGrant(
-    options: { retryAfterFailure?: boolean } = {},
+    options: { retryAfterFailure?: boolean; throwOnFailure?: boolean; forceFresh?: boolean } = {},
   ): Promise<MarketplaceSessionInfo | null> {
     if (!getMarketplaceGrantSessionEnabled()) return null;
     const auth = useAuthStore.getState();
@@ -398,14 +398,16 @@ export class CommerceController {
     if (!session || !grant || auth.isLoggingOut) return null;
     const pubky = session.info.publicKey.z32();
     const current = useCommerceStore.getState().marketplaceSession;
-    if (CommerceApplication.hasActiveMarketplaceSession() && current?.pubky === pubky) return current;
+    if (!options.forceFresh && CommerceApplication.hasActiveMarketplaceSession() && current?.pubky === pubky) {
+      return current;
+    }
     if (this.grantSessionMint?.session === session) return await this.grantSessionMint.promise;
     if (this.grantSessionFailures.has(session) && !options.retryAfterFailure) return null;
 
     const isCurrent = () => useAuthStore.getState().session === session && !useAuthStore.getState().isLoggingOut;
     const attempt = (async (): Promise<MarketplaceSessionInfo | null> => {
       try {
-        const restored = this.restorePersistedMarketplaceSession(pubky);
+        const restored = options.forceFresh ? null : this.restorePersistedMarketplaceSession(pubky);
         if (restored) return restored;
         const minted = await CommerceApplication.mintMarketplaceSessionFromGrant({ grant, pubky });
         if (!isCurrent()) {
@@ -431,6 +433,7 @@ export class CommerceController {
             errorName: error instanceof Error ? error.name : typeof error,
           });
         }
+        if (options.throwOnFailure) throw error;
         return null;
       }
     })();

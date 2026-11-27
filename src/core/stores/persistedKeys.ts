@@ -14,6 +14,7 @@ export const SETTINGS_PERSIST_KEY = shopStorageKey('settings-storage');
 export const MARKETPLACE_DISPLAY_PERSIST_KEY = shopStorageKey('marketplace-display-storage');
 export const BUYER_COUNTRY_PERSIST_KEY = shopStorageKey('buyer-country-storage');
 export const SELLER_PAYMENT_CONFIRM_PERSIST_KEY = shopStorageKey('seller-payment-confirm-storage');
+export const STORE_SETUP_PERSIST_KEY = shopStorageKey('store-setup-storage');
 export const MIGRATION_STORE_KEY = 'migration-store';
 
 // Keep retired Shop store names in the registry so earlier installations can still be cleaned on identity changes.
@@ -36,6 +37,7 @@ export const PERSISTED_STORE_KEYS = [
   SETTINGS_PERSIST_KEY,
   MARKETPLACE_DISPLAY_PERSIST_KEY,
   BUYER_COUNTRY_PERSIST_KEY,
+  STORE_SETUP_PERSIST_KEY,
 ] as const;
 
 /**

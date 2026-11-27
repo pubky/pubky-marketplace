@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server';
-import { getMarketplaceShopRoute } from '@/app/routes';
+import { APP_ROUTES, getMarketplaceShopRoute } from '@/app/routes';
 import { decideStoreRoute, STORE_NOT_FOUND_PATHNAME, STORE_UNAVAILABLE_PATHNAME } from '@/app/store-route-policy';
 import type { StoreState } from '@/config/store-mode';
 import { getEmbeddedFlag, getFrameAncestors } from '@/libs/runtime-config/runtime-config';
@@ -17,7 +17,13 @@ import { resolveStoreState } from '@/libs/store-state/store-state.server';
  * In store mode it also applies the store route policy (`src/app/store-route-policy.ts`).
  */
 export async function proxy(request: NextRequest) {
-  const response = storeModeResponse(request, await resolveStoreState()) ?? NextResponse.next();
+  const state = await resolveStoreState();
+  const response = storeModeResponse(request, state) ?? NextResponse.next();
+  const pathname = request.nextUrl.pathname;
+  if (state.kind !== 'off' && state.claimMode && (pathname === '/' || pathname === APP_ROUTES.SETUP)) {
+    response.headers.set('X-Robots-Tag', 'noindex');
+  }
+  if (pathname === APP_ROUTES.SETUP) response.headers.set('Referrer-Policy', 'no-referrer');
   for (const { key, value } of buildFramingHeaders(getFrameAncestors(), getEmbeddedFlag())) {
     response.headers.set(key, value);
   }

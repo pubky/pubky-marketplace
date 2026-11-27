@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { StoreState } from '@/config/store-mode';
-import StoreUnavailablePage from './page';
+import StoreUnavailablePage, { metadata } from './page';
 
 const runtime = vi.hoisted(() => ({ state: { kind: 'off' } as StoreState }));
 vi.mock('@/config/store-mode', () => ({ getStoreState: () => runtime.state }));
@@ -21,5 +21,7 @@ describe('StoreUnavailablePage', () => {
     runtime.state = { kind: 'unavailable', claimMode: true };
     render(<StoreUnavailablePage />);
     expect(screen.getByRole('heading', { name: 'This shop is temporarily unavailable' })).toBeInTheDocument();
+    expect(screen.getByText('Please check back soon.')).toBeInTheDocument();
+    expect(metadata.robots).toEqual({ index: false, follow: false });
   });
 });

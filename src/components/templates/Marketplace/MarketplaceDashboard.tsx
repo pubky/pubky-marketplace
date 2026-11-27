@@ -64,6 +64,7 @@ import { SellingUnavailableNotice } from '@/molecules/Marketplace/SellingUnavail
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { toast } from '@/molecules/Toaster/toast';
 import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
+import { MarketplaceFinishSetupPanel } from '@/organisms/Marketplace/MarketplaceFinishSetupPanel';
 import { MarketplaceListingDeleteDialog } from '@/organisms/Marketplace/MarketplaceListingDeleteDialog';
 import {
   ListingPagination,
@@ -303,6 +304,7 @@ export function MarketplaceDashboard() {
             Store connections
           </SellingNavLink>
         </nav>
+        <MarketplaceFinishSetupPanel catalogEmpty={!dashboard.isLoading && dashboard.listings.length === 0} />
 
         {dashboard.isLoading ? (
           <Skeleton className="h-48 w-full" />

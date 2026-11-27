@@ -126,13 +126,19 @@ describe('MarketplaceGrantSessionService.mint', () => {
     expect(HomeserverService.delete).toHaveBeenCalledWith(PROOF_URI);
   });
 
-  it('writes nothing when the service refuses the challenge request', async () => {
-    service({ challenge: async () => respond(429, { error: 'too_many_challenges' }) });
+  it('writes nothing when the service refuses the challenge request and preserves Retry-After', async () => {
+    service({
+      challenge: async () =>
+        new Response(JSON.stringify({ error: 'too_many_challenges' }), {
+          status: 429,
+          headers: { 'content-type': 'application/json', 'retry-after': '7' },
+        }),
+    });
     const { grant: session, createCustomPop } = grant();
 
     await expect(MarketplaceGrantSessionService.mint({ grant: session, pubky: PUBKY })).rejects.toMatchObject({
       message: 'too_many_challenges',
-      context: { statusCode: 429 },
+      context: { statusCode: 429, retryAfter: 7 },
     });
     expect(createCustomPop).toHaveBeenCalledTimes(1);
     expect(HomeserverService.request).not.toHaveBeenCalled();

@@ -88,10 +88,14 @@ export function stripConversationQueryParam(value: string): string {
   return stripped.replace(/\?&+/g, '?').replace(/&&+/g, '&').replace(/\?#/g, '#').replace(/[?&]$/g, '');
 }
 
+export function stripStoreClaimFragment(value: string): string {
+  return value.replace(/#claim=[^#]*/gi, '').replace(/&claim=[^&#]*/gi, '');
+}
+
 function scrubSensitiveStringPatterns(value: string): string {
   if (value.length > SENTRY_REDACTION_MAX_STRING_LENGTH) return SENTRY_LIMIT_REDACTED;
 
-  const scrubbed = stripConversationQueryParam(value)
+  const scrubbed = stripStoreClaimFragment(stripConversationQueryParam(value))
     .replace(PUBKY_URI_PATTERN, PUBKY_REDACTED)
     .replace(PUBKY_HTTP_HOST_PATTERN, PUBKY_REDACTED)
     .replace(PUBKY_COMPACT_URI_PATTERN, PUBKY_REDACTED)
@@ -392,7 +396,7 @@ function scrubAdditionalEventCarriers(event: Sentry.ErrorEvent | TransactionEven
 }
 
 /**
- * Defensive PII filter — redacts user-provided identifiers across application-owned
+ * Defensive PII filter: redacts user-provided identifiers across application-owned
  * event surfaces (messages, exception values, breadcrumb data, extras, and AppError context).
  *
  * The browser/server initializers also set sendDefaultPii: false; this hook is a

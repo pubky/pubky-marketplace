@@ -15,6 +15,7 @@ import { EmbeddedExternalLinks } from '@/molecules/EmbeddedExternalLinks/Embedde
 import { EmbeddedLegalFooter } from '@/molecules/EmbeddedLegalFooter/EmbeddedLegalFooter';
 import { Metadata } from '@/molecules/Metadata/Metadata';
 import { ServiceWorkerRegistration } from '@/molecules/ServiceWorkerRegistration/ServiceWorkerRegistration';
+import { StoreClaimLandingRetry } from '@/molecules/StoreClaim/StoreClaimLandingRetry';
 import { StructuredData } from '@/molecules/StructuredData/StructuredData';
 import { ThemeSync } from '@/molecules/ThemeSync/ThemeSync';
 import { Toaster } from '@/molecules/Toaster/Toaster';
@@ -46,6 +47,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   await renderPerRequestOutsideVercel();
   const storeState = await resolveStoreState();
   setStoreStateForRender(storeState);
+  const storeDocument = storeState.kind === 'unclaimed' || storeState.kind === 'unavailable';
 
   return (
     <RootContainer storeStateScript={storeState.kind === 'off' ? null : serializeStoreState(storeState)}>
@@ -59,8 +61,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         descendant): those are client components that gate {children} behind IndexedDB/auth
         readiness, so anything inside them is missing from the initial server-rendered HTML.
       */}
-      <StructuredData />
+      {!storeDocument && <StructuredData />}
       <ThemeSync />
+      <StoreClaimLandingRetry />
       <TooltipProvider delayDuration={TOOLTIP_DELAY_MS}>
         <GlobalErrorHandlerProvider>
           <ErrorBoundaryProvider>
@@ -71,11 +74,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   <ServiceWorkerRegistration />
                   <EmbeddedDocumentFlag />
                   <EmbeddedExternalLinks />
-                  <Header />
+                  {!storeDocument && <Header />}
                   {children}
                   <EmbeddedLegalFooter />
                   <Toaster />
-                  <DialogSignIn />
+                  {!storeDocument && <DialogSignIn />}
                 </RouteGuardProvider>
                 {/* Outside RouteGuardProvider: it waits on the restore this dialog answers. */}
               </ShopHostSessionProvider>

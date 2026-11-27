@@ -173,6 +173,19 @@ describe('proxy in store mode', () => {
     );
   });
 
+  it('sets noindex on the unclaimed holding and setup pages', async () => {
+    runtime.state = { kind: 'unclaimed', claimMode: true };
+
+    expect((await proxy(request('/'))).headers.get('x-robots-tag')).toBe('noindex');
+    expect((await proxy(request('/setup'))).headers.get('x-robots-tag')).toBe('noindex');
+  });
+
+  it('sets no-referrer on setup responses', async () => {
+    runtime.state = { kind: 'unclaimed', claimMode: true };
+
+    expect((await proxy(request('/setup'))).headers.get('referrer-policy')).toBe('no-referrer');
+  });
+
   it('rewrites unavailable documents to the 503 page', async () => {
     runtime.state = { kind: 'unavailable', claimMode: true };
     const response = await proxy(request('/marketplace?tab=all'));

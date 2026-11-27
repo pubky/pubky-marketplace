@@ -24,6 +24,8 @@ export enum APP_ROUTES {
   PROFILE = '/profile',
   WHO_TO_FOLLOW = '/who-to-follow',
   SHARE = '/share',
+  SETUP = '/setup',
+  STORE_UNAVAILABLE = '/store-unavailable',
 }
 
 export enum MARKETPLACE_ROUTES {
@@ -176,13 +178,21 @@ export const ALLOWED_ROUTES = [
   APP_ROUTES.PROFILE,
   APP_ROUTES.WHO_TO_FOLLOW,
   APP_ROUTES.SHARE,
+  APP_ROUTES.SETUP,
   POST_ROUTES.POST,
   AUTH_ROUTES.LOGOUT,
 ];
 
 // Route guard configurations for different authentication states
 export const UNAUTHENTICATED_ROUTES = {
-  allowedRoutes: [ROOT_ROUTES, AUTH_ROUTES.SIGN_IN, ...EXPLORE_ROUTES, AUTH_ROUTES.LOGOUT, COPYRIGHT_ROUTES.COPYRIGHT],
+  allowedRoutes: [
+    ROOT_ROUTES,
+    AUTH_ROUTES.SIGN_IN,
+    ...EXPLORE_ROUTES,
+    AUTH_ROUTES.LOGOUT,
+    COPYRIGHT_ROUTES.COPYRIGHT,
+    APP_ROUTES.SETUP,
+  ],
   redirectTo: ROOT_ROUTES,
 };
 
