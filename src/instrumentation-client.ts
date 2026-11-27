@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/nextjs';
+import { installTranslatorDomGuard } from '@/libs/dom/translator-dom-guard';
 import { getSentryInitBase, shouldEnableSentry } from '@/libs/observability/sentry';
 import {
   getSentryReplaysOnErrorSampleRate,
@@ -11,6 +12,9 @@ import { consumeFragmentSessionExport } from '@/libs/vibe-session/fragment';
 // Strip `#s=` before any client routing or network that depends on auth.
 // Always, including when consumer mode is off — never leave a session export in the URL.
 consumeFragmentSessionExport();
+
+// Before React hydrates: a page translator rewriting React-owned text nodes otherwise crashes the route.
+installTranslatorDomGuard();
 
 // Safe to read runtime config here: ContainerRoot emits `window.__PUBKY_CONFIG__` as a raw
 // inline <script> at the top of <body>, which the browser executes during HTML parsing —

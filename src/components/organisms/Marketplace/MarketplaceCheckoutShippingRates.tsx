@@ -20,6 +20,21 @@ function estimate(quote: ShippingQuote): string {
     : `${quote.estimatedMinDays}-${quote.estimatedMaxDays} days`;
 }
 
+function message(state: Exclude<ShippingGroupView['state'], { status: 'ready' }>): string {
+  switch (state.status) {
+    case 'loading':
+      return 'Loading shipping prices.';
+    case 'unreadable':
+      return 'This seller’s shipping prices could not be read.';
+    case 'asset-mismatch':
+      return 'This seller’s shipping rates are priced in a different currency than the item.';
+    case 'needs-destination':
+      return 'Enter your delivery country to see shipping prices.';
+    case 'refused':
+      return groupQuoteRefusalCopy(state.code);
+  }
+}
+
 /** One rate choice per shipping group whose price depends on the delivery country. */
 export function MarketplaceCheckoutShippingRates({ groups, onChange, disabled = false }: Props) {
   if (groups.length === 0) return null;
@@ -53,12 +68,9 @@ export function MarketplaceCheckoutShippingRates({ groups, onChange, disabled = 
               </Select>
             ) : (
               <Typography as="p" id={selectId} className="text-sm text-muted-foreground" role="status">
-                {state.status === 'loading' && 'Loading shipping prices.'}
-                {state.status === 'unreadable' && 'This seller’s shipping prices could not be read.'}
-                {state.status === 'asset-mismatch' &&
-                  'This seller’s shipping rates are priced in a different currency than the item.'}
-                {state.status === 'needs-destination' && 'Enter your delivery country to see shipping prices.'}
-                {state.status === 'refused' && groupQuoteRefusalCopy(state.code)}
+                {/* Keyed so a new message replaces the span: a page translator detaches the text nodes React
+                    owns, and swapping only the text would leave the old translated message on screen. */}
+                <span key={message(state)}>{message(state)}</span>
               </Typography>
             )}
           </div>
