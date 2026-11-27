@@ -18,6 +18,7 @@ import {
   verifiedAttestorProfileKeyWindows,
 } from '@/libs/commerce/attestor-records';
 import { Logger } from '@/libs/logger/logger';
+import type { MarketplaceTrustedAttestor } from '@/libs/runtime-config/runtime-config.schema';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import { NexusMarketplaceService } from '@/services/nexus/marketplace/marketplace';
 
@@ -36,6 +37,12 @@ interface AttestorProfileRead {
   outcome: AttestorProfileReadOutcome | undefined;
   /** The earliest time the next read may start (a success lasts longer than a failure). */
   nextReadAt: number;
+}
+
+/** Exclusive end in whole attestation seconds. All empty windows end at their configured start. */
+function usableWindowEnd(entry: MarketplaceTrustedAttestor): number {
+  if (entry.validUntil === undefined) return Number.POSITIVE_INFINITY;
+  return Math.ceil(Math.max(Date.parse(entry.validFrom), Date.parse(entry.validUntil)) / 1000);
 }
 
 /**
@@ -133,7 +140,8 @@ export class CommerceAttestorApplication {
     return absentIds.filter((attestorId) =>
       narrowTrustedAttestors(configured, [...verifiedWindows, ...attestorProfileKeyWindowsFrom(attestorId)]).some(
         (entry, index) =>
-          entry.validUntil !== baseline[index]?.validUntil && entry.validUntil === retained[index]?.validUntil,
+          entry.validUntil === retained[index]?.validUntil &&
+          usableWindowEnd(entry) < usableWindowEnd(baseline[index]!),
       ),
     );
   }

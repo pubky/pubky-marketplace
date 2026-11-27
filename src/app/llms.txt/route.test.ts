@@ -605,10 +605,10 @@ describe('GET /llms.txt', () => {
     type TestKey = typeof first;
     type Served = ReturnType<typeof servedAttestorProfile> | null;
 
-    function profileOf(signer: TestKey, cutoffs: [TestKey, string][]) {
+    function profileOf(signer: TestKey, cutoffs: [TestKey, string][], profileFrom = validFrom) {
       const entries = [
-        ...(cutoffs.some(([key]) => key === signer) ? [] : [{ pubky: signer.pubky, validFrom }]),
-        ...cutoffs.map(([key, compromisedFrom]) => ({ pubky: key.pubky, validFrom, compromisedFrom })),
+        ...(cutoffs.some(([key]) => key === signer) ? [] : [{ pubky: signer.pubky, validFrom: profileFrom }]),
+        ...cutoffs.map(([key, compromisedFrom]) => ({ pubky: key.pubky, validFrom: profileFrom, compromisedFrom })),
       ];
       return servedAttestorProfile(signer.pubky, signedAttestorProfile(signer, entries));
     }
@@ -646,6 +646,35 @@ describe('GET /llms.txt', () => {
         .split('\n')
         .filter((line) => line.startsWith('- '))
         .map((line) => line.slice(2, 54));
+
+    it('omits the retained warning when a verified cutoff already excludes the entire configured window', async () => {
+      const profileFrom = '2020-01-01T00:00:00Z';
+      const absent = profileOf(first, [[first, '2024-01-01T00:00:00Z']], profileFrom);
+      const verified = profileOf(second, [[first, '2025-01-01T00:00:00Z']], profileFrom);
+      const query = (body: string) =>
+        body.split('\n').find((line) => line.startsWith('GET INDEX/v0/shop/') && line.includes('reputation?'));
+      const warm = await guideAfterRefresh(
+        new Map([
+          [first, [absent, null]],
+          [second, [verified]],
+        ]),
+      );
+
+      CommerceAttestorApplication.resetSession();
+      resetAttestorKeyWindows();
+      const cold = await guideAfterRefresh(
+        new Map([
+          [first, [null]],
+          [second, [verified]],
+        ]),
+      );
+
+      expect(query(warm)).toBeDefined();
+      expect(query(warm)).toBe(query(cold));
+      expect(query(warm)).not.toContain(first.pubky);
+      expect(warm).not.toContain(RETAINED_HEADING);
+      expect(cold).not.toContain(RETAINED_HEADING);
+    });
 
     it('adds no notice and no marker when a verified profile cuts the key earlier than the absent one did', async () => {
       const body = await guideAfterRefresh(
