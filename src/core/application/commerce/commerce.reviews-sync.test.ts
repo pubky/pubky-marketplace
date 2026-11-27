@@ -213,6 +213,28 @@ describe.each([
       expect(deletes()).toHaveLength(2);
     });
 
+    it('without the seller side, retries only the removal of a review of an order the user bought', async () => {
+      homeserver.failNext(HttpMethod.DELETE, url, 500);
+      await CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id);
+      const readOrder = vi.spyOn(MarketplaceGatewayService, 'getOrder');
+
+      readOrder.mockResolvedValueOnce({ ...order, buyerPubky: 'o'.repeat(52), sellerPubky: ORDER_FIXTURE_BUYER });
+      await expect(
+        CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, { sellerSide: false }),
+      ).resolves.toBe(0);
+      readOrder.mockRejectedValueOnce(new Error('offline'));
+      await expect(
+        CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, { sellerSide: false }),
+      ).resolves.toBe(0);
+      expect(deletes()).toHaveLength(1);
+
+      await expect(
+        CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, { sellerSide: false }),
+      ).resolves.toBe(1);
+      expect(deletes()).toHaveLength(2);
+      expect(await jobs()).toEqual([]);
+    });
+
     it('keeps the job and counts the attempt when the retry fails too', async () => {
       homeserver.failNext(HttpMethod.DELETE, url, 500);
       homeserver.failNext(HttpMethod.DELETE, url, 500);

@@ -1,4 +1,5 @@
 import { ConnectorsApplication } from '@/application/connectors/connectors';
+import { StoreSellerGate } from '@/controllers/store-seller-gate/store-seller-gate';
 import type {
   ConnectorChangeResolution,
   ConnectorConnection,
@@ -11,12 +12,14 @@ import type {
 import type { LinkableListing } from '@/pipes/commerce/connector-listing-links';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
-/** Store connections (WooCommerce, Shopify) for the signed-in seller. */
+/** Store connections (WooCommerce, Shopify) for the signed-in seller; all of it is selling. */
 export class ConnectorsController {
   private constructor() {}
 
   private static actor(): string {
-    return useAuthStore.getState().selectCurrentUserPubky();
+    const pubky = useAuthStore.getState().selectCurrentUserPubky();
+    StoreSellerGate.assertCanSellHere(pubky);
+    return pubky;
   }
 
   static async fetchConnections() {

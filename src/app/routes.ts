@@ -1,3 +1,4 @@
+import { getStoreSeller } from '@/config/store-mode';
 import { isPubkyIdentifier } from '@/libs/utils/utils';
 
 export const ROOT_ROUTES = '/';
@@ -190,9 +191,15 @@ export const NEEDS_PROFILE_CREATION_ROUTES = {
   redirectTo: ACCOUNT_ROUTES.COMPLETE_PROFILE,
 };
 
-/** The Shop's own landing page, including after signing in. */
-export function getShopHomeRoute(): APP_ROUTES.MARKETPLACE {
-  return APP_ROUTES.MARKETPLACE;
+/** The Shop's landing page, including after sign-in. */
+export function getShopHomeRoute(): string {
+  return getMarketplaceHomeRoute();
+}
+
+/** The Market's landing page: the catalog, or in store mode the store seller's shop. */
+export function getMarketplaceHomeRoute(): string {
+  const storeSeller = getStoreSeller();
+  return storeSeller === null ? APP_ROUTES.MARKETPLACE : getMarketplaceShopRoute(storeSeller);
 }
 
 export const AUTHENTICATED_ROUTES = {

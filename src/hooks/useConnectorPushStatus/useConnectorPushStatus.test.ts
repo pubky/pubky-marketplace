@@ -1,11 +1,12 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OrderPushRow, StorePushOverview } from '@/application/connectors/connectors';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import { connectorAlertSchema, connectorPushSchema } from '@/libs/commerce/connectors';
 import { toast } from '@/molecules/Toaster/toast';
 import { bareHttpFailure, connectorRefusal } from '@/test-utils/connector-errors';
 import { connectionFixture } from '@/test-utils/connector-fixtures';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { resetConnectorsUnavailableMemoForTests, useConnectorPushStatus } from './useConnectorPushStatus';
 
 const mode = vi.hoisted(() => ({ value: 'transaction-service' as string }));
@@ -74,6 +75,8 @@ describe('useConnectorPushStatus', () => {
     resetConnectorsUnavailableMemoForTests();
   });
 
+  afterEach(() => setStoreSeller(undefined));
+
   it('is hidden for a seller with no store and no alerts', async () => {
     vi.mocked(ConnectorsController.fetchPushOverview).mockResolvedValue(overview({ connections: [] }));
     const { result } = renderHook(() => useConnectorPushStatus());
@@ -100,6 +103,19 @@ describe('useConnectorPushStatus', () => {
     mode.value = 'sandbox';
     renderHook(() => useConnectorPushStatus());
     expect(ConnectorsController.fetchPushOverview).not.toHaveBeenCalled();
+  });
+
+  it('does not read in a store the signed-in seller does not sell in, and reads in its own store', async () => {
+    vi.mocked(ConnectorsController.fetchPushOverview).mockResolvedValue(overview());
+    setStoreSeller('s'.repeat(52));
+    const elsewhere = renderHook(() => useConnectorPushStatus());
+    expect(ConnectorsController.fetchPushOverview).not.toHaveBeenCalled();
+    expect(elsewhere.result.current.visible).toBe(false);
+    elsewhere.unmount();
+
+    setStoreSeller('y'.repeat(52));
+    const own = renderHook(() => useConnectorPushStatus());
+    await waitFor(() => expect(own.result.current.visible).toBe(true));
   });
 
   it('stops asking for a while once the service says it has no connectors, so Orders is not refused on every visit', async () => {

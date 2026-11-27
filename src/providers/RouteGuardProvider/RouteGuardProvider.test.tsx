@@ -6,6 +6,7 @@ import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
 import { resetFragmentSessionExportCache } from '@/libs/vibe-session/fragment';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { RouteGuardProvider } from './RouteGuardProvider';
 
 // Hoisted mocks
@@ -43,6 +44,7 @@ const mocks = vi.hoisted(() => {
     isLoading: false,
     // Route defaults
     pathname: '/feed',
+    marketplaceHome: '/marketplace',
   };
 });
 
@@ -68,6 +70,7 @@ vi.mock('@/app/routes', () => ({
     OFFERS: '/marketplace/offers',
   },
   PUBLIC_ROUTES: ['/landing', '/marketplace'],
+  getMarketplaceHomeRoute: () => mocks.marketplaceHome,
   isDynamicPublicRoute: (path: string) => {
     const segments = path.split('/').filter(Boolean);
     return (
@@ -1014,5 +1017,90 @@ describe('RouteGuardProvider — session restore', () => {
     expect(screen.getByText('Redirecting...')).toBeInTheDocument();
     expect(mocks.mockRouterPush).toHaveBeenCalledWith('/login');
     expect(screen.queryByText('Protected Content')).not.toBeInTheDocument();
+  });
+});
+
+describe('RouteGuardProvider — store mode', () => {
+  const STORE_SELLER = 'ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u';
+  const STORE_HOME = `/marketplace/shop/${STORE_SELLER}`;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.history.replaceState(null, '', '/');
+    window.sessionStorage.clear();
+    resetFragmentSessionExportCache();
+    mocks.hasHydrated = true;
+    mocks.session = {};
+    mocks.sessionExport = null;
+    mocks.currentUserPubky = STORE_SELLER;
+    mocks.wasDbReset = false;
+    mocks.status = 'AUTHENTICATED';
+    mocks.isLoading = false;
+    mocks.pathname = '/marketplace/sell';
+    mocks.restorePersistedSession.mockResolvedValue({ status: 'restored' });
+  });
+
+  afterEach(() => {
+    setStoreSeller(undefined);
+    mocks.marketplaceHome = '/marketplace';
+  });
+
+  const renderGuard = () =>
+    render(
+      <RouteGuardProvider>
+        <div>Selling tools</div>
+      </RouteGuardProvider>,
+    );
+
+  it('opens the selling tools for the store seller', () => {
+    setStoreSeller(STORE_SELLER);
+    renderGuard();
+
+    expect(screen.getByText('Selling tools')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Not Found' })).not.toBeInTheDocument();
+  });
+
+  it.each(['/marketplace/sell', '/marketplace/dashboard', `/marketplace/listing/${STORE_SELLER}/1/edit`])(
+    'shows not found at %s to a signed-in user who is not the store seller',
+    (pathname) => {
+      setStoreSeller(STORE_SELLER);
+      mocks.currentUserPubky = 'b'.repeat(52);
+      mocks.pathname = pathname;
+      renderGuard();
+
+      expect(screen.getByRole('heading', { name: 'Not Found' })).toBeInTheDocument();
+      expect(screen.queryByText('Selling tools')).not.toBeInTheDocument();
+      expect(mocks.mockRouterPush).not.toHaveBeenCalled();
+    },
+  );
+
+  it('serves shared pages to any signed-in user', () => {
+    setStoreSeller(STORE_SELLER);
+    mocks.currentUserPubky = 'b'.repeat(52);
+    mocks.pathname = '/marketplace/cart';
+    renderGuard();
+
+    expect(screen.getByText('Selling tools')).toBeInTheDocument();
+  });
+
+  it('keeps the selling tools open to every seller outside store mode', () => {
+    mocks.currentUserPubky = 'b'.repeat(52);
+    renderGuard();
+
+    expect(screen.getByText('Selling tools')).toBeInTheDocument();
+  });
+
+  it('opens sign-in on the store seller shop for a guest deep link', () => {
+    setStoreSeller(STORE_SELLER);
+    mocks.marketplaceHome = STORE_HOME;
+    mocks.session = null;
+    mocks.currentUserPubky = null;
+    mocks.status = 'UNAUTHENTICATED';
+    renderGuard();
+
+    expect(screen.queryByRole('heading', { name: 'Not Found' })).not.toBeInTheDocument();
+    expect(mocks.mockRouterPush).toHaveBeenCalledWith(STORE_HOME);
+    expect(mocks.mockSetShowSignInDialog).toHaveBeenCalledWith(true);
+    expect(window.sessionStorage.getItem('pubky.routeGuard.returnTo')).toBe('/marketplace/sell');
   });
 });

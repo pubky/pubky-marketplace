@@ -50,10 +50,41 @@ background loops and every tab renders through Dexie live queries.
 | UI/coordinator entry point           | `src/core/controllers/chat/chat.ts` (`ChatController`)                        |
 | Background loops, leader election    | `src/core/coordinators/chat-sync/chat-sync.ts` (`ChatSyncCoordinator`)        |
 | Status store (identity, inbox, sync) | `src/core/stores/chat/`                                                       |
-| Hooks                                | `src/hooks/useChat*`                                                          |
+| Hooks                                | `src/hooks/useChat*`, `src/hooks/useStoreThreadRoles/`                        |
 | Components                           | `src/components/organisms/Chat/`, `src/components/templates/Chat/`            |
 | Pages                                | `src/app/messages/page.tsx`, `src/app/messages/[pubky]/page.tsx`              |
 | Two-account live proof               | `src/test/e2e/chat-two-accounts.mjs` (`npm run test:e2e:chat`)                |
+
+In store mode, `ChatController` hides the sale threads of a signed-in user other than the store seller and refuses to
+send, retry or flush messages to them. Queued messages in those threads stay queued on every flush, including one that
+follows a sync, and the ping a sent message in such a thread still owes stays owed instead of being sent. Roles use the
+newest service order page, 50 by default in durable modes, plus conversations and listing contexts. An older order named
+by a context is read by id, but a plain thread with a peer the user sold to only before that page stays visible, because
+the peer's role cannot be told without the order history. A thread whose latest context is the user's sale is closed
+even when the user also bought from that peer, and even when the same context also names an order the user bought or a
+listing of the peer. An order counts as a purchase only in the thread with its seller: an order the user bought from
+someone other than the peer closes the thread like an unplaced order, even when the user bought from that peer before.
+A listing id that both the user and the peer published counts as the user's once the roles read or a write has looked it
+up: those lookups check the user's copy first, in this browser's cache and then on its homeserver, and a side recorded
+as the user's is never replaced by a slower read. Until one of them records the context, the inbox and the unread badge
+judge it from this browser's cache alone. An order that two reads place with different counterparties counts as a
+purchase in no thread, and a listing lookup that failed is remembered as unresolved, so its context stays closed on
+local reads until a later read resolves it. An order that neither the order lists nor a by-id read resolves, or a
+listing lookup that failed, is treated as a sale and closed in the same way, even when the user bought from that peer
+before, except in the thread with the store seller. A context that is wholly a purchase keeps the thread, and one that
+names only a listing neither side published follows the peer's history like a thread with no context. The open-thread
+screen explains that restriction and decides again whenever the roles change or a received message changes whether the
+thread's latest context keeps it shown; a thread that closes is restricted at once, and these decisions judge the
+route's context but never write it, so a route context the store refuses keeps the screen restricted. An open writes the
+route's context only while the stored context is still the one it judged, so a context a message stores meanwhile
+stays, and the thread is judged again under it. When a buyer queues a message, the latest-message update checks that
+the thread still has the context used to allow the send. A sale context that arrived during the check stays in place.
+The outbox checks the thread again after the peer's key is ready and before each delivery attempt, including retries. A rebuild that finds a row created meanwhile only advances its read checkpoint.
+`useStoreThreadRoles` reads the roles and retries a read that failed, an order or listing lookup that threw, or an
+order by-id lookup that found nothing. A send that starts while such a read fails part way uses what that read verified
+for the same account. Until the roles arrive, only the thread with the store seller is shown. The Shop still receives
+and stores messages of closed threads locally; it never shows, answers or pings them. See
+[Store mode](../environment.md#store-mode-runtime).
 
 Session capabilities: `CAPABILITIES` in `src/config/app.ts`. Runtime config:
 `inboxUrl` / `inboxAudience` in `src/libs/runtime-config/runtime-config.schema.ts`.

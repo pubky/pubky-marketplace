@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import type { OrderPushRow, StorePushOverview } from '@/application/connectors/connectors';
 import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
+import { StoreSellerGate } from '@/controllers/store-seller-gate/store-seller-gate';
 import {
   type ConnectorAlert,
   connectorErrorMessage,
@@ -41,12 +42,16 @@ const RETRY_REFUSALS: Readonly<Record<string, string>> = {
  * unresolved alerts. Pushes keep running while a store needs attention, so every
  * listed connection that is not a draft counts. Hidden (`visible` false) when
  * the seller has no such store and no alert, or the service has no connectors
- * (`connectors_disabled`), so the orders page is unchanged for everyone else.
+ * (`connectors_disabled`), so the orders page is unchanged for everyone else,
+ * and for a viewer who cannot sell in this store, which never asks.
  */
 export function useConnectorPushStatus() {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
-  const enabled = isDurableCommerceMode(getCommerceAdapterMode()) && Boolean(currentUserPubky);
+  const enabled =
+    isDurableCommerceMode(getCommerceAdapterMode()) &&
+    Boolean(currentUserPubky) &&
+    StoreSellerGate.canSellHere(currentUserPubky);
   const [overview, setOverview] = useState<StorePushOverview | null>(null);
   const [retryingOrderId, setRetryingOrderId] = useState<string | null>(null);
 
@@ -144,7 +149,7 @@ export function useConnectorPushStatus() {
   };
 
   return {
-    visible: (overview?.connections.length ?? 0) > 0 || (overview?.alerts.length ?? 0) > 0,
+    visible: enabled && ((overview?.connections.length ?? 0) > 0 || (overview?.alerts.length ?? 0) > 0),
     pushes: overview?.pushes ?? [],
     needsAttention,
     alerts: alertsWithoutPush,

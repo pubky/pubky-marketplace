@@ -109,6 +109,42 @@ describe('LocalChatService', () => {
     expect(await LocalChatService.countUnreadConversations(OWNER)).toBe(0);
   });
 
+  it('adds a conversation only when the pair has none', async () => {
+    const stored = conversation(PEER, { last_context: { orderId: 'sale' }, last_message_at: 5 });
+    await LocalChatService.upsertConversation(stored);
+
+    expect(await LocalChatService.addConversation(conversation(PEER))).toEqual(stored);
+    expect(await LocalChatService.getConversation(OWNER, PEER)).toEqual(stored);
+    const fresh = conversation(OTHER);
+    expect(await LocalChatService.addConversation(fresh)).toBe(fresh);
+    expect(await LocalChatService.getConversation(OWNER, OTHER)).toEqual(fresh);
+  });
+
+  it('replaces a conversation context only while it is still the expected one', async () => {
+    await LocalChatService.upsertConversation(conversation(PEER, { last_context: { orderId: 'sale' } }));
+
+    const kept = await LocalChatService.replaceConversationContext(
+      OWNER,
+      PEER,
+      { orderId: 'purchase' },
+      { listingId: 'boots' },
+    );
+    expect(kept).toMatchObject({ last_context: { orderId: 'sale' }, priv_state_dirty: false });
+
+    const replaced = await LocalChatService.replaceConversationContext(
+      OWNER,
+      PEER,
+      { orderId: 'sale' },
+      { listingId: 'boots' },
+    );
+    expect(replaced).toMatchObject({ last_context: { listingId: 'boots' }, priv_state_dirty: true });
+    expect(await LocalChatService.getConversation(OWNER, PEER)).toMatchObject({
+      last_context: { listingId: 'boots' },
+      priv_state_dirty: true,
+    });
+    expect(await LocalChatService.replaceConversationContext(OWNER, OTHER, null, { listingId: 'boots' })).toBeNull();
+  });
+
   it('touches the conversation monotonically', async () => {
     await LocalChatService.upsertConversation(conversation(PEER));
     await LocalChatService.touchConversation(OWNER, PEER, {

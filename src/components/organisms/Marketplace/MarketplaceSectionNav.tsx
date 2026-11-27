@@ -18,6 +18,7 @@ import { Badge } from '@/atoms/Badge/Badge';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { usesSocialHostNavigation } from '@/config/social';
+import { useCanSellHere } from '@/hooks/useCanSellHere/useCanSellHere';
 import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
 import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
 import { useMarketplaceActivityUnread } from '@/hooks/useMarketplaceActivityUnread/useMarketplaceActivityUnread';
@@ -34,7 +35,7 @@ type MarketplaceSectionItem = {
   activePrefixes?: readonly string[];
 };
 
-const getItems = (socialLinkOut: boolean): readonly MarketplaceSectionItem[] => [
+const getItems = (socialLinkOut: boolean, canSellHere: boolean): readonly MarketplaceSectionItem[] => [
   {
     label: 'Market',
     href: APP_ROUTES.MARKETPLACE,
@@ -58,18 +59,23 @@ const getItems = (socialLinkOut: boolean): readonly MarketplaceSectionItem[] => 
   { label: 'Offers', href: MARKETPLACE_ROUTES.OFFERS, icon: HandCoins },
   { label: 'Orders', href: MARKETPLACE_ROUTES.ORDERS, icon: ReceiptText, badge: 'orders' },
   { label: 'Activity', href: MARKETPLACE_ROUTES.NOTIFICATIONS, icon: Bell, badge: 'activity' },
-  {
-    label: 'My shop',
-    href: MARKETPLACE_ROUTES.DASHBOARD,
-    icon: Package,
-    activePrefixes: [
-      MARKETPLACE_ROUTES.DASHBOARD,
-      MARKETPLACE_ROUTES.SELL,
-      MARKETPLACE_ROUTES.MY_SHOP,
-      ...(!socialLinkOut ? [MARKETPLACE_ROUTES.SETTINGS] : []),
-    ],
-  },
-  ...(socialLinkOut ? [{ label: 'Shop settings', href: MARKETPLACE_ROUTES.SETTINGS, icon: Settings }] : []),
+  // A store's selling tools exist only for its seller; the route guard answers not-found to anyone else.
+  ...(canSellHere
+    ? [
+        {
+          label: 'My shop',
+          href: MARKETPLACE_ROUTES.DASHBOARD,
+          icon: Package,
+          activePrefixes: [
+            MARKETPLACE_ROUTES.DASHBOARD,
+            MARKETPLACE_ROUTES.SELL,
+            MARKETPLACE_ROUTES.MY_SHOP,
+            ...(!socialLinkOut ? [MARKETPLACE_ROUTES.SETTINGS] : []),
+          ],
+        },
+        ...(socialLinkOut ? [{ label: 'Shop settings', href: MARKETPLACE_ROUTES.SETTINGS, icon: Settings }] : []),
+      ]
+    : []),
 ];
 
 export function MarketplaceSectionNav({
@@ -81,6 +87,7 @@ export function MarketplaceSectionNav({
 }) {
   const pathname = usePathname();
   const socialLinkOut = usesSocialHostNavigation();
+  const canSellHere = useCanSellHere();
   const isEmbedded = useIsEmbedded();
   const cartCount = useMarketplaceCartCount();
   // The global navigation carries the unread count when it is shown; with
@@ -110,7 +117,7 @@ export function MarketplaceSectionNav({
         className="w-full min-w-0 overflow-x-auto sm:overflow-visible"
       >
         <div className="flex w-full min-w-max flex-nowrap sm:min-w-0 sm:flex-wrap">
-          {getItems(socialLinkOut).map(({ label, href, icon: Icon, badge, activePrefixes }) => {
+          {getItems(socialLinkOut, canSellHere).map(({ label, href, icon: Icon, badge, activePrefixes }) => {
             const prefixes = activePrefixes ?? [href];
             const active =
               typeof pathname === 'string' &&

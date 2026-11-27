@@ -7,6 +7,7 @@ import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { DatabaseProvider } from '@/providers/DatabaseProvider/DatabaseProvider';
 import { useMigrationStore } from '@/stores/migration/migration.store';
+import { setStoreSeller } from '@/test-utils/store-mode';
 
 vi.mock('@/database/franky/franky.namespace-migration', () => ({
   migrateLegacyDatabases: vi.fn(async () => ({ status: 'nothing', alreadyDone: true, rows: 0 })),
@@ -198,5 +199,74 @@ describe('DatabaseProvider', () => {
 
     expect(screen.queryByText('Test Content')).not.toBeInTheDocument();
     expect(screen.getByTestId('database-error-screen')).toBeInTheDocument();
+  });
+
+  describe('secure context', () => {
+    const STORE_SELLER = 'ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u';
+
+    function setSecureContext(secure: boolean): void {
+      Object.defineProperty(window, 'isSecureContext', { configurable: true, value: secure });
+    }
+
+    afterEach(() => {
+      setStoreSeller(undefined);
+      setSecureContext(true);
+    });
+
+    it('shows the HTTPS screen and never opens the database outside a secure context', async () => {
+      setStoreSeller(STORE_SELLER);
+      setSecureContext(false);
+      const initialize = vi.spyOn(db, 'initialize');
+
+      render(
+        <DatabaseProvider>
+          <div>Test Content</div>
+        </DatabaseProvider>,
+      );
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(screen.getByTestId('store-secure-context-screen')).toBeInTheDocument();
+      expect(screen.queryByText('Test Content')).not.toBeInTheDocument();
+      expect(migrateLegacyDatabases).not.toHaveBeenCalled();
+      expect(initialize).not.toHaveBeenCalled();
+    });
+
+    it('opens the database as usual in a secure context', async () => {
+      setStoreSeller(STORE_SELLER);
+      setSecureContext(true);
+      vi.spyOn(db, 'initialize').mockResolvedValueOnce({ wasDbReset: false });
+
+      render(
+        <DatabaseProvider>
+          <div>Test Content</div>
+        </DatabaseProvider>,
+      );
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(screen.getByText('Test Content')).toBeInTheDocument();
+      expect(screen.queryByTestId('store-secure-context-screen')).not.toBeInTheDocument();
+      expect(db.initialize).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores the secure context outside store mode', async () => {
+      setSecureContext(false);
+      vi.spyOn(db, 'initialize').mockResolvedValueOnce({ wasDbReset: false });
+
+      render(
+        <DatabaseProvider>
+          <div>Test Content</div>
+        </DatabaseProvider>,
+      );
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(screen.getByText('Test Content')).toBeInTheDocument();
+      expect(db.initialize).toHaveBeenCalledTimes(1);
+    });
   });
 });

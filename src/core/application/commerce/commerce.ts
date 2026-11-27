@@ -424,6 +424,8 @@ const WATCHLIST_PRIV_ENTRY_ID = 'watchlist';
 
 /** Plaintext receipts moved per orders load; the rest move on later loads. */
 const RECEIPT_MIGRATION_BATCH = 100;
+/** Pages one migration pass may list past the seller receipts a store leaves in place. */
+const RECEIPT_MIGRATION_MAX_PAGES = 5;
 
 /**
  * Read-back retries for an acked listing write (see
@@ -1849,6 +1851,10 @@ export class CommerceApplication {
 
   private static clearSessionScopedState(): void {
     this.publishedReceiptUrls.clear();
+    this.plaintextSellerReceiptUrls.clear();
+    this.receiptMigrationCursors.clear();
+    this.receiptMigrationFailedCycles.clear();
+    this.receiptMigrationRuns.clear();
     this.ownReviewHomeserverMisses.clear();
     this.deletedOwnReviews.clear();
     CommercePrivKeyringApplication.clear();
@@ -1908,11 +1914,13 @@ export class CommerceApplication {
    * end-to-end encrypted, no service writer can attest them, and a row naming
    * a sender would show who wrote without the mute list being consulted.
    * Durable messaging is surfaced only by the inbox, which applies it.
+   * Without `sellerSide`, a released review is retried only when the actor
+   * wrote it as the buyer.
    */
-  static async getMarketplaceNotifications(actorPubky: string) {
+  static async getMarketplaceNotifications(actorPubky: string, { sellerSide = true }: { sellerSide?: boolean } = {}) {
     const notifications = await MarketplaceGatewayService.getNotifications(actorPubky);
     if (!isDurableCommerceMode(getCommerceAdapterMode())) return notifications;
-    this.retryReleasedReviews(actorPubky, notifications);
+    this.retryReleasedReviews(actorPubky, notifications, { sellerSide });
     return notifications.filter((notification) => notification.type !== 'message_received');
   }
 
@@ -1931,14 +1939,18 @@ export class CommerceApplication {
    * next orders load. The retry runs beside the notification read, never in
    * front of it, and a failure is logged inside the retry.
    */
-  private static retryReleasedReviews(actorPubky: string, notifications: MarketplaceNotificationEntry[]): void {
+  private static retryReleasedReviews(
+    actorPubky: string,
+    notifications: MarketplaceNotificationEntry[],
+    { sellerSide }: { sellerSide: boolean },
+  ): void {
     for (const notification of notifications) {
       if (!isRecognizedMarketplaceNotification(notification) || notification.type !== 'review_released') continue;
       const orderId = orderIdFromMarketplaceAggregateId(notification.aggregateId);
       const seen = `${actorPubky}|${notification.id}`;
       if (orderId === null || this.releaseNotificationsSeen.has(seen)) continue;
       this.releaseNotificationsSeen.add(seen);
-      void this.resumeAwaitingReleaseReviews(actorPubky, orderId).catch((error) => {
+      void this.resumeAwaitingReleaseReviews(actorPubky, orderId, { sellerSide }).catch((error) => {
         Logger.warn('Retrying a released review failed', { orderId, error });
       });
     }
@@ -2158,6 +2170,31 @@ export class CommerceApplication {
 
   static async getMarketplaceOrder(actorPubky: string, orderId: string) {
     return await MarketplaceGatewayService.getOrder(actorPubky, orderId);
+  }
+
+  /**
+   * The buyer and seller of one of the actor's orders, or null when the actor has no such order. The
+   * durable service reads it by id; sandbox has no single-order read, so it is found in the actor's
+   * orders.
+   */
+  static async getMarketplaceOrderParties(
+    actorPubky: string,
+    orderId: string,
+  ): Promise<{ buyerPubky: string; sellerPubky: string } | null> {
+    if (getCommerceAdapterMode() === 'sandbox') {
+      return (await MarketplaceGatewayService.getOrders(actorPubky)).find(({ id }) => id === orderId) ?? null;
+    }
+    return await MarketplaceGatewayService.getOrder(actorPubky, orderId);
+  }
+
+  /** Whether the actor is the buyer of an order; false when the order does not read. */
+  private static async boughtOrder(actorPubky: string, orderId: string): Promise<boolean> {
+    try {
+      return (await this.getMarketplaceOrderParties(actorPubky, orderId))?.buyerPubky === actorPubky;
+    } catch (error) {
+      Logger.warn('An order did not read; its review removal waits for the next orders load', { orderId, error });
+      return false;
+    }
   }
 
   static async uploadMarketplaceAttachment(actorPubky: string, recipientPubky: string, file: File) {
@@ -2809,9 +2846,22 @@ export class CommerceApplication {
    */
   private static publishedReceiptUrls = new Set<string>();
 
-  /** Test support: clears the session-scoped published-receipt memo. */
+  /** Plaintext seller receipts a pass without the seller side left in place, so later passes skip them unread. */
+  private static plaintextSellerReceiptUrls = new Set<string>();
+
+  /** Where the last pass without the seller side stopped listing plaintext receipts, by owner. */
+  private static receiptMigrationCursors = new Map<string, string>();
+
+  /** Owners whose current migration cycle included a receipt or listing failure. */
+  private static receiptMigrationFailedCycles = new Set<string>();
+
+  /** Test support: clears the session-scoped published-receipt and migration memos. */
   static resetReceiptPublicationMemo(): void {
     this.publishedReceiptUrls.clear();
+    this.plaintextSellerReceiptUrls.clear();
+    this.receiptMigrationCursors.clear();
+    this.receiptMigrationFailedCycles.clear();
+    this.receiptMigrationRuns.clear();
   }
 
   /**
@@ -2823,28 +2873,102 @@ export class CommerceApplication {
    * overwritten, and both copies stay. One bounded batch per call; a file
    * that does not parse, or names another receipt than its path, stays in
    * place and leaves the pass incomplete.
+   *
+   * Without `sellerSide`, seller receipts stay in place and do not count
+   * toward the batch: the pass lists on past them (up to
+   * RECEIPT_MIGRATION_MAX_PAGES pages) and the next pass resumes where it
+   * stopped, so buyer receipts behind any number of seller receipts move. A
+   * cycle that reaches the end is done only when none of its passes failed;
+   * after a failed cycle, the next pass starts again from the beginning.
    */
-  private static async migratePlaintextReceipts(
+  private static migratePlaintextReceipts(
     ownerPubky: string,
     keyring: PrivKeyring,
+    sellerSide: boolean,
   ): Promise<'done' | 'incomplete' | 'needs_reauth'> {
-    let urls: string[];
-    try {
-      urls = await CommerceHomeserverService.list(
-        CommerceRecordNormalizer.orderReceiptDirectoryUri(ownerPubky),
-        RECEIPT_MIGRATION_BATCH,
-        PRIV_V1_LOG_PATH,
+    const key = `${ownerPubky}\0${sellerSide}`;
+    const active = this.receiptMigrationRuns.get(key);
+    if (active) return active;
+    const run = this.runPlaintextReceiptMigration(ownerPubky, keyring, sellerSide).finally(() => {
+      if (this.receiptMigrationRuns.get(key) === run) this.receiptMigrationRuns.delete(key);
+    });
+    this.receiptMigrationRuns.set(key, run);
+    return run;
+  }
+
+  /** One pass per owner and side at a time: every orders load starts one, and overlapping passes would race on the cycle's memos. */
+  private static receiptMigrationRuns = new Map<string, Promise<'done' | 'incomplete' | 'needs_reauth'>>();
+
+  private static async runPlaintextReceiptMigration(
+    ownerPubky: string,
+    keyring: PrivKeyring,
+    sellerSide: boolean,
+  ): Promise<'done' | 'incomplete' | 'needs_reauth'> {
+    const directory = CommerceRecordNormalizer.orderReceiptDirectoryUri(ownerPubky);
+    let cursor = sellerSide ? undefined : this.receiptMigrationCursors.get(ownerPubky);
+    let incomplete = false;
+    let moved = 0;
+    for (let page = 1; ; page += 1) {
+      let urls: string[];
+      try {
+        urls = await CommerceHomeserverService.list(directory, RECEIPT_MIGRATION_BATCH, PRIV_V1_LOG_PATH, cursor);
+      } catch (error) {
+        if (this.isPrivateAccessDenied(error)) return 'needs_reauth';
+        if (!sellerSide) this.receiptMigrationFailedCycles.add(ownerPubky);
+        Logger.warn(
+          'Listing plaintext order receipts failed; the move retries on the next orders load',
+          privErrorSummary(error),
+        );
+        return 'incomplete';
+      }
+      const result = await this.migratePlaintextReceiptPage(
+        ownerPubky,
+        keyring,
+        sellerSide,
+        urls,
+        RECEIPT_MIGRATION_BATCH - moved,
       );
-    } catch (error) {
-      if (this.isPrivateAccessDenied(error)) return 'needs_reauth';
-      Logger.warn(
-        'Listing plaintext order receipts failed; the move retries on the next orders load',
-        privErrorSummary(error),
-      );
-      return 'incomplete';
+      if (result === 'needs_reauth') return 'needs_reauth';
+      if (result === 'revoked') {
+        if (!sellerSide) this.receiptMigrationFailedCycles.add(ownerPubky);
+        return 'incomplete';
+      }
+      moved += result.moved;
+      incomplete ||= result.incomplete;
+      if (result.incomplete && !sellerSide) this.receiptMigrationFailedCycles.add(ownerPubky);
+      if (result.processed === urls.length && urls.length < RECEIPT_MIGRATION_BATCH) {
+        this.receiptMigrationCursors.delete(ownerPubky);
+        if (!sellerSide) {
+          const failed = this.receiptMigrationFailedCycles.delete(ownerPubky);
+          return failed || incomplete ? 'incomplete' : 'done';
+        }
+        break;
+      }
+      cursor = urls[result.processed - 1];
+      if (sellerSide || moved >= RECEIPT_MIGRATION_BATCH || page >= RECEIPT_MIGRATION_MAX_PAGES) {
+        if (!sellerSide) this.receiptMigrationCursors.set(ownerPubky, cursor);
+        incomplete = true;
+        break;
+      }
     }
-    let incomplete = urls.length >= RECEIPT_MIGRATION_BATCH;
+    return incomplete ? 'incomplete' : 'done';
+  }
+
+  /** Counts inspected URLs separately from receipts charged to the budget so the next pass resumes mid-page. */
+  private static async migratePlaintextReceiptPage(
+    ownerPubky: string,
+    keyring: PrivKeyring,
+    sellerSide: boolean,
+    urls: string[],
+    remaining: number,
+  ): Promise<{ moved: number; processed: number; incomplete: boolean } | 'needs_reauth' | 'revoked'> {
+    let moved = 0;
+    let incomplete = false;
+    let processed = 0;
     for (const url of urls) {
+      if (moved === remaining) break;
+      processed += 1;
+      if (!sellerSide && this.plaintextSellerReceiptUrls.has(url)) continue;
       const receiptId = url.slice(url.lastIndexOf('/') + 1);
       try {
         const sealedUrl = privEntryUrl(keyring, 'order_receipt', receiptId);
@@ -2855,6 +2979,11 @@ export class CommerceApplication {
           incomplete = true;
           continue;
         }
+        if (!sellerSide && legacy.role === 'seller') {
+          this.plaintextSellerReceiptUrls.add(url);
+          continue;
+        }
+        moved += 1;
         const sealed = await CommercePrivStoreService.read(keyring, 'order_receipt', receiptId);
         if (sealed === null) {
           await CommercePrivStoreService.write(keyring, 'order_receipt', receiptId, { ...legacy });
@@ -2870,7 +2999,7 @@ export class CommerceApplication {
         }
       } catch (error) {
         if (this.isPrivateAccessDenied(error)) return 'needs_reauth';
-        if (isPrivKeyringRevoked(error)) return 'incomplete';
+        if (isPrivKeyringRevoked(error)) return 'revoked';
         Logger.warn(
           'Moving a plaintext order receipt failed; it retries on the next orders load',
           privErrorSummary(error),
@@ -2878,7 +3007,7 @@ export class CommerceApplication {
         incomplete = true;
       }
     }
-    return incomplete ? 'incomplete' : 'done';
+    return { moved, processed, incomplete };
   }
 
   /** Whether a decrypted sealed receipt is exactly the validated plaintext one. */
@@ -2936,10 +3065,14 @@ export class CommerceApplication {
    * `needs_reauth` instead of returning without a trace. Without a key
    * nothing is written; a sealed entry that does not decrypt is never
    * overwritten.
+   *
+   * Without `sellerSide` (a store the owner does not sell in) only receipts of
+   * its purchases are published or moved; those of its sales stay as they are.
    */
   static async publishOrderReceipts(
     ownerPubky: string,
     orders: MarketplaceOrder[],
+    { sellerSide = true }: { sellerSide?: boolean } = {},
   ): Promise<CommerceReceiptPublicationStatus> {
     if (!isDurableCommerceMode(getCommerceAdapterMode())) return 'skipped';
     if (!HomeserverService.hasActiveSession()) return 'skipped';
@@ -2957,12 +3090,13 @@ export class CommerceApplication {
     }
     if (keys.kind !== 'keys') return keys.kind === 'needs_reauth' ? 'needs_marketplace_approval' : keys.kind;
     const { keyring } = keys;
-    const migration = await this.migratePlaintextReceipts(ownerPubky, keyring);
+    const migration = await this.migratePlaintextReceipts(ownerPubky, keyring, sellerSide);
     if (migration === 'needs_reauth') return 'needs_reauth';
 
     const eligible = orders.filter(
       (order) =>
-        typeof order.receiptId === 'string' && (order.buyerPubky === ownerPubky || order.sellerPubky === ownerPubky),
+        typeof order.receiptId === 'string' &&
+        (order.buyerPubky === ownerPubky || (sellerSide && order.sellerPubky === ownerPubky)),
     );
 
     // Derived now, while the keyring is known live; a revoked keyring stops here.
@@ -4387,15 +4521,21 @@ export class CommerceApplication {
    * Retries every removal whose service withdrawal or homeserver DEL never
    * landed. Each job is
    * re-read under its order's lock first, so two tabs retrying one job send
-   * one DEL. Returns the number of removals that completed.
+   * one DEL. Returns the number of removals that completed. Without
+   * `sellerSide` only removals of reviews written as the order's buyer run;
+   * the order is read to tell, and one that does not read waits.
    */
-  static async resumeOwnReviewRemovals(actorPubky: string): Promise<number> {
+  static async resumeOwnReviewRemovals(
+    actorPubky: string,
+    { sellerSide = true }: { sellerSide?: boolean } = {},
+  ): Promise<number> {
     const jobs = await LocalCommerceService.getOwnReviewRemovalJobs(actorPubky);
     let removed = 0;
     for (const queued of jobs) {
       const target = ownReviewRemovalTarget(queued.payload);
       if (target === null) continue;
       const { orderId, listingId } = target;
+      if (!sellerSide && !(await this.boughtOrder(actorPubky, orderId))) continue;
       removed += await this.withOwnReviewLock(actorPubky, orderId, async () => {
         const job = await LocalCommerceService.getSyncJob(queued.id);
         const url = job ? ownReviewRemovalUrl(job.payload) : null;
@@ -4674,11 +4814,17 @@ export class CommerceApplication {
    * marks it synced, and re-reads the attestations of reviews a double-blind
    * window still withheld ({@link resumeAwaitingReleaseReviews}). Called when
    * the orders surface loads, so a failed publication heals on the next visit
-   * instead of rotting silently.
+   * instead of rotting silently. Without `sellerSide` only reviews written as
+   * the order's buyer are retried.
    */
-  static async resumeOwnReviewPublications(actorPubky: string): Promise<number> {
-    const pending = await LocalCommerceService.getPendingOwnReviews(actorPubky);
-    let published = await this.resumeAwaitingReleaseReviews(actorPubky);
+  static async resumeOwnReviewPublications(
+    actorPubky: string,
+    { sellerSide = true }: { sellerSide?: boolean } = {},
+  ): Promise<number> {
+    const pending = (await LocalCommerceService.getPendingOwnReviews(actorPubky)).filter(
+      (row) => sellerSide || row.record.role === 'buyer_reviewing_seller',
+    );
+    let published = await this.resumeAwaitingReleaseReviews(actorPubky, undefined, { sellerSide });
     for (const queued of pending) {
       const url = CommerceRecordNormalizer.reviewUri(queued.owner_id, queued.review_id);
       published += await this.withOwnReviewLock(queued.owner_id, queued.order_id, async () => {
@@ -4817,11 +4963,20 @@ export class CommerceApplication {
    * set of records), and the attestations are asked for again. Still
    * withheld leaves the job as it is, a released answer publishes the item
    * records in line order, and a review the user removed meanwhile never
-   * publishes. With `orderId` only that order is retried. Returns the number
-   * of records published.
+   * publishes. With `orderId` only that order is retried; without `sellerSide`
+   * only reviews held for an order the actor bought. Returns the number of
+   * records published.
    */
-  static async resumeAwaitingReleaseReviews(actorPubky: string, orderId?: string): Promise<number> {
-    const jobs = await LocalCommerceService.getAwaitingReleaseReviewJobs(actorPubky, orderId);
+  static async resumeAwaitingReleaseReviews(
+    actorPubky: string,
+    orderId?: string,
+    { sellerSide = true }: { sellerSide?: boolean } = {},
+  ): Promise<number> {
+    const jobs = (await LocalCommerceService.getAwaitingReleaseReviewJobs(actorPubky, orderId)).filter((job) => {
+      if (sellerSide) return true;
+      const held = awaitingReleasePayloadSchema.safeParse(job.payload);
+      return held.success && held.data.sellerPubky !== actorPubky;
+    });
     let published = 0;
     for (const queued of jobs) {
       if (!this.liveIdentityMatches(actorPubky)) break;

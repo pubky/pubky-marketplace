@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resetEmbeddedForTests } from '@/libs/embedded/embedded';
 import { setEmbedded } from '@/test-utils/embedded';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { isShopEmbedded } from './embedded';
 
 const runtime = vi.hoisted(() => ({ forced: false, frameAncestors: [] as string[] }));
@@ -22,6 +23,7 @@ describe('isShopEmbedded', () => {
     Object.defineProperty(window, 'top', { configurable: true, value: window });
     setEmbedded(false);
     resetEmbeddedForTests();
+    setStoreSeller(undefined);
   });
 
   it('is false for a top-level Shop with default configuration', () => {
@@ -50,5 +52,18 @@ describe('isShopEmbedded', () => {
     runtime.forced = false;
     setEmbedded(true);
     expect(isShopEmbedded()).toBe(true);
+  });
+
+  it('ignores ?embedded=1 in store mode', () => {
+    setStoreSeller('o'.repeat(52));
+    setEmbedded(true);
+    expect(isShopEmbedded()).toBe(false);
+  });
+
+  it('ignores a frame in store mode, whatever the framing settings', () => {
+    setStoreSeller('o'.repeat(52));
+    runtime.frameAncestors = ["'self'"];
+    frameWindow();
+    expect(isShopEmbedded()).toBe(false);
   });
 });

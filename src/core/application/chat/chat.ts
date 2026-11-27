@@ -57,16 +57,19 @@ import type {
   ChatIdentityModelSchema,
   ChatMessageDirection,
   ChatMessageModelSchema,
+  ChatSyncStateModelSchema,
 } from '@/models/chat/chat.schema';
 import { ChatHomeserverService } from '@/services/homeserver/chat/chat-storage';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import type { THomeserverResourceEvent } from '@/services/homeserver/homeserver.types';
+import { isHomeserverPublishConflict } from '@/services/homeserver/write-retry';
 import { InboxService } from '@/services/inbox/inbox';
 import type { InboxAvailability, InboxPing, InboxPingRef } from '@/services/inbox/inbox.types';
 import { LocalChatService } from '@/services/local/chat/chat';
 import type {
   ChatIdentityState,
   ChatOpenResult,
+  ChatOutboxSends,
   ChatPeerKeyResult,
   ChatPeerKeys,
   ChatQueueParams,
@@ -321,16 +324,20 @@ export class ChatApplication {
 
   // =========================================================== conversations
 
-  /** Makes sure a conversation row exists and reports whether the peer can be messaged. */
+  /**
+   * Makes sure a conversation row exists and reports whether the peer can be messaged. With `judgedContext`,
+   * the stored context the caller decided on, `context` is written only while that is still the stored one.
+   */
   static async openConversation(
     me: string,
     peer: string,
     context?: ChatContext,
     signal?: AbortSignal,
+    { judgedContext }: { judgedContext?: ChatContext | null } = {},
   ): Promise<ChatOpenResult> {
     this.assertPeer(me, peer);
     if ((await this.ensureIdentity(me, signal)) !== 'ready') return { state: 'needs_reauth' };
-    const row = await this.ensureConversationRow(me, peer, 'local', { context, signal });
+    const row = await this.ensureConversationRow(me, peer, 'local', { context, judgedContext, signal });
     // Opening is a user action: a peer who had no key last time gets one more look.
     const keys = await this.resolvePeerKey(me, peer, { force: row.peer_state === 'no_key', signal });
     return keys.state === 'ready' ? { state: 'ready' } : { state: 'peer_not_enabled' };
@@ -342,19 +349,22 @@ export class ChatApplication {
     origin: ChatConversationOrigin,
     {
       context,
+      judgedContext,
+      keepExistingRow = false,
       extra = {},
       signal,
-    }: { context?: ChatContext; extra?: Partial<ChatConversationModelSchema>; signal?: AbortSignal } = {},
+    }: {
+      context?: ChatContext;
+      judgedContext?: ChatContext | null;
+      /** An existing row, found at once or created meanwhile, is returned as it is: `context` only seeds a new row. */
+      keepExistingRow?: boolean;
+      extra?: Partial<ChatConversationModelSchema>;
+      signal?: AbortSignal;
+    } = {},
   ): Promise<ChatConversationModelSchema> {
     const existing = await LocalChatService.getConversation(me, peer);
-    if (existing) {
-      if (context && !sameChatContext(existing.last_context, context)) {
-        signal?.throwIfAborted();
-        await LocalChatService.updateConversation(me, peer, { last_context: context, priv_state_dirty: true });
-        return { ...existing, last_context: context };
-      }
-      return existing;
-    }
+    if (existing && keepExistingRow) return existing;
+    if (existing) return await this.writeConversationContext(me, peer, existing, { context, judgedContext, signal });
     const identity = await this.requireIdentity(me, signal);
     const now = Date.now();
     const row: ChatConversationModelSchema = {
@@ -379,8 +389,33 @@ export class ChatApplication {
       ...extra,
     };
     signal?.throwIfAborted();
-    await LocalChatService.upsertConversation(row);
-    return row;
+    // A message may have created the row while the identity was read; its context and facts stay.
+    const stored = await LocalChatService.addConversation(row);
+    if (stored === row || keepExistingRow) return stored;
+    return await this.writeConversationContext(me, peer, stored, { context, judgedContext, signal });
+  }
+
+  /**
+   * Writes a context to an existing row. Without `judgedContext` it replaces whatever is stored; with it,
+   * only while the stored context is still the judged one, so a newer context a message stored stays.
+   */
+  private static async writeConversationContext(
+    me: string,
+    peer: string,
+    row: ChatConversationModelSchema,
+    {
+      context,
+      judgedContext,
+      signal,
+    }: { context?: ChatContext; judgedContext?: ChatContext | null; signal?: AbortSignal },
+  ): Promise<ChatConversationModelSchema> {
+    if (!context || sameChatContext(row.last_context, context)) return row;
+    signal?.throwIfAborted();
+    if (judgedContext === undefined) {
+      await LocalChatService.updateConversation(me, peer, { last_context: context, priv_state_dirty: true });
+      return { ...row, last_context: context };
+    }
+    return (await LocalChatService.replaceConversationContext(me, peer, judgedContext, context)) ?? row;
   }
 
   // ==================================================================== send
@@ -399,7 +434,8 @@ export class ChatApplication {
         operation: 'queueMessage',
       });
     }
-    await this.ensureConversationRow(me, peer, 'local', { context, signal });
+    // Only seed a new row here. The latest-message update compares the context a restricted send was judged on.
+    await this.ensureConversationRow(me, peer, 'local', { context, keepExistingRow: true, signal });
     const messageId = crypto.randomUUID();
     const sentAt = Date.now();
     const row: ChatMessageModelSchema = {
@@ -421,14 +457,25 @@ export class ChatApplication {
     signal?.throwIfAborted();
     await LocalChatService.putMessage(row);
     signal?.throwIfAborted();
-    await LocalChatService.touchConversation(me, peer, { sentAt, body, direction: 'sent', context: context ?? null });
+    await LocalChatService.touchConversation(
+      me,
+      peer,
+      { sentAt, body, direction: 'sent', context: context ?? null },
+      params.judgedContext,
+    );
     return row.id;
   }
 
-  /** Puts a failed message back in the queue for the next flush. */
-  static async retryMessage(me: string, id: string, signal?: AbortSignal): Promise<void> {
+  /** Puts a failed message back in the queue for the next flush, unless `sends` refuses it. */
+  static async retryMessage(
+    me: string,
+    id: string,
+    signal?: AbortSignal,
+    { sends }: { sends?: ChatOutboxSends } = {},
+  ): Promise<void> {
     const row = await LocalChatService.getMessage(id);
     if (!row || row.owner_id !== me || row.status !== 'failed') return;
+    if (sends && !(await sends(row))) return;
     signal?.throwIfAborted();
     await LocalChatService.updateMessage(id, { status: 'queued', next_attempt_at: null, last_error: null });
   }
@@ -437,25 +484,30 @@ export class ChatApplication {
    * Sends every due queued message in file order: encrypt, PUT to my folder,
    * mark sent, then ping the inbox for every conversation that is owed one.
    * Exclusive per account across tabs. Retryable failures back off; permanent
-   * ones mark the message `failed`.
+   * ones mark the message `failed`. A message `sends` refuses stays queued.
    */
-  static async flushOutbox(me: string, signal?: AbortSignal): Promise<void> {
+  static async flushOutbox(
+    me: string,
+    signal?: AbortSignal,
+    { sends }: { sends?: ChatOutboxSends } = {},
+  ): Promise<void> {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     signal?.throwIfAborted();
     await withExclusiveLock(CHAT_LOCKS.outbox(me), async () => {
       signal?.throwIfAborted();
-      await this.sendDueMessages(me, signal);
-      await this.flushPings(me, signal);
+      await this.sendDueMessages(me, signal, sends);
+      await this.flushPings(me, signal, sends);
     });
   }
 
-  private static async sendDueMessages(me: string, signal?: AbortSignal): Promise<void> {
+  private static async sendDueMessages(me: string, signal?: AbortSignal, sends?: ChatOutboxSends): Promise<void> {
     const due = await LocalChatService.listDueOutbox(me, Date.now());
-    if (due.length === 0) return;
-    const identity = await this.requireIdentity(me, signal);
+    let identity: ChatIdentityModelSchema | undefined;
     const keysByPeer = new Map<string, ChatPeerKeyResult>();
 
     for (const row of due) {
+      if (sends && !(await sends(row))) continue;
+      identity ??= await this.requireIdentity(me, signal);
       let keys = keysByPeer.get(row.peer_pubky);
       if (!keys) {
         // A message waiting on a keyless peer re-probes them on a short cadence:
@@ -471,6 +523,7 @@ export class ChatApplication {
         }
         keysByPeer.set(row.peer_pubky, keys);
       }
+      if (sends && !(await sends(row))) continue;
       signal?.throwIfAborted();
       if (keys.state !== 'ready') {
         await LocalChatService.updateMessage(row.id, {
@@ -498,10 +551,14 @@ export class ChatApplication {
           aad: chatAad(me, row.peer_pubky, path),
           plaintext,
         });
-        await ChatHomeserverService.putMessageFile(me, keys.ownFolderId, row.file_name, envelope);
+        // A restricted outbox must judge the thread again before a retry after network backoff.
+        await ChatHomeserverService.putMessageFile(me, keys.ownFolderId, row.file_name, envelope, {
+          singleAttempt: !!sends,
+        });
       } catch (error) {
         const attempts = row.attempts + 1;
-        const permanent = !(isAppError(error) && isRetryable(error)) || attempts >= CHAT_SEND_MAX_ATTEMPTS;
+        const retryable = (isAppError(error) && isRetryable(error)) || (!!sends && isHomeserverPublishConflict(error));
+        const permanent = !retryable || attempts >= CHAT_SEND_MAX_ATTEMPTS;
         signal?.throwIfAborted();
         await LocalChatService.updateMessage(row.id, {
           attempts,
@@ -530,7 +587,7 @@ export class ChatApplication {
         ping_attempts: 0,
       });
     }
-    await this.flushPrivState(me, signal);
+    if (identity) await this.flushPrivState(me, signal);
   }
 
   /**
@@ -539,13 +596,16 @@ export class ChatApplication {
    * backoff (a 429 `Retry-After` wins), and while the peer has never written
    * back the newest file is pinged again every {@link CHAT_PING_REPEAT_MS}, so a
    * dropped or expired first-contact ping still ends in a wake-up. Once the
-   * peer has replied they stream and reconcile the folder themselves.
+   * peer has replied they stream and reconcile the folder themselves. A peer
+   * `sends` refuses by its thread alone is not pinged, and its ping stays due.
    */
-  static async flushPings(me: string, signal?: AbortSignal): Promise<void> {
+  static async flushPings(me: string, signal?: AbortSignal, sends?: ChatOutboxSends): Promise<void> {
     const now = Date.now();
-    const due = (await LocalChatService.listSyncStates(me)).filter(
-      (state) => state.ping_file !== null && (state.ping_next_at ?? 0) <= now,
-    );
+    const due: ChatSyncStateModelSchema[] = [];
+    for (const state of await LocalChatService.listSyncStates(me)) {
+      if (state.ping_file === null || (state.ping_next_at ?? 0) > now) continue;
+      if (!sends || (await sends({ peer_pubky: state.peer_pubky, context: null }))) due.push(state);
+    }
     if (due.length === 0) return;
     let availability: InboxAvailability;
     try {
@@ -562,6 +622,7 @@ export class ChatApplication {
       const conversation = await LocalChatService.getConversation(me, peer);
       if (!conversation?.own_folder_id) continue;
       const replied = await LocalChatService.hasReceivedFrom(me, peer);
+      if (sends && !(await sends({ peer_pubky: peer, context: null }))) continue;
       signal?.throwIfAborted();
       try {
         await InboxService.ping(me, {
@@ -598,7 +659,7 @@ export class ChatApplication {
   static async syncConversation(
     me: string,
     peer: string,
-    options: { reason: ChatSyncReason; hintFile?: string; signal?: AbortSignal },
+    options: { reason: ChatSyncReason; hintFile?: string; signal?: AbortSignal; sends?: ChatOutboxSends },
   ): Promise<ChatSyncOutcome> {
     let outcome: ChatSyncOutcome = 'skipped';
     const ran = await runInOneTab(CHAT_LOCKS.sync(me, peer), async () => {
@@ -610,7 +671,7 @@ export class ChatApplication {
   private static async syncConversationLocked(
     me: string,
     peer: string,
-    options: { reason: ChatSyncReason; hintFile?: string; signal?: AbortSignal },
+    options: { reason: ChatSyncReason; hintFile?: string; signal?: AbortSignal; sends?: ChatOutboxSends },
   ): Promise<ChatSyncOutcome> {
     const { signal } = options;
     const row = await LocalChatService.getConversation(me, peer);
@@ -624,7 +685,9 @@ export class ChatApplication {
     if (keys.state !== 'ready') return 'peer_not_enabled';
     if (row.peer_state === 'no_key') {
       // The peer just became reachable: anything queued for them can go now.
-      void this.flushOutbox(me, signal).catch((error: unknown) => Logger.warn('Chat outbox flush failed', { error }));
+      void this.flushOutbox(me, signal, { sends: options.sends }).catch((error: unknown) =>
+        Logger.warn('Chat outbox flush failed', { error }),
+      );
     }
     const identity = await this.requireIdentity(me, signal);
     const state = await LocalChatService.getSyncState(me, peer);
@@ -772,7 +835,12 @@ export class ChatApplication {
   }
 
   /** Every known conversation, most recent first, a few at a time. Errors are per conversation. */
-  static async syncAll(me: string, reason: ChatSyncReason, signal?: AbortSignal): Promise<void> {
+  static async syncAll(
+    me: string,
+    reason: ChatSyncReason,
+    signal?: AbortSignal,
+    { sends }: { sends?: ChatOutboxSends } = {},
+  ): Promise<void> {
     await this.flushPrivState(me, signal);
     const conversations = await LocalChatService.listConversations(me);
     const queue = reason === 'reconcile' ? await this.dueForReconcile(me, conversations) : [...conversations];
@@ -782,7 +850,7 @@ export class ChatApplication {
         const next = queue.shift();
         if (!next) return;
         try {
-          await this.syncConversation(me, next.peer_pubky, { reason, signal });
+          await this.syncConversation(me, next.peer_pubky, { reason, signal, sends });
         } catch (error) {
           Logger.warn('Chat conversation sync failed', { error });
         }
@@ -814,29 +882,33 @@ export class ChatApplication {
    * Sign-in and new device: the conversation index from `/priv`, then every
    * folder on both sides. Runs in one tab.
    */
-  static async rebuildFromHomeserver(me: string, signal?: AbortSignal): Promise<void> {
+  static async rebuildFromHomeserver(
+    me: string,
+    signal?: AbortSignal,
+    { sends }: { sends?: ChatOutboxSends } = {},
+  ): Promise<void> {
     await runInOneTab(CHAT_LOCKS.rebuild(me), async () => {
       if ((await this.ensureIdentity(me, signal)) !== 'ready') return;
       const records = await ChatHomeserverService.listConversationStates(me);
       for (const record of records) {
         if (record.peer === me) continue;
-        const existing = await LocalChatService.getConversation(me, record.peer);
-        if (!existing) {
-          await this.ensureConversationRow(me, record.peer, 'remote', {
-            context: record.context ?? undefined,
-            extra: {
-              last_read_at: record.last_read_at,
-              priv_state_dirty: false,
-              created_at: record.created_at,
-            },
-            signal,
-          });
-        } else if (record.last_read_at > existing.last_read_at) {
+        // A row a ping, send or open created meanwhile keeps its context; only the read checkpoint advances.
+        const row = await this.ensureConversationRow(me, record.peer, 'remote', {
+          context: record.context ?? undefined,
+          keepExistingRow: true,
+          extra: {
+            last_read_at: record.last_read_at,
+            priv_state_dirty: false,
+            created_at: record.created_at,
+          },
+          signal,
+        });
+        if (record.last_read_at > row.last_read_at) {
           signal?.throwIfAborted();
           await LocalChatService.updateConversation(me, record.peer, { last_read_at: record.last_read_at });
         }
       }
-      await this.syncAll(me, 'rebuild', signal);
+      await this.syncAll(me, 'rebuild', signal, { sends });
     });
   }
 
@@ -844,7 +916,12 @@ export class ChatApplication {
    * Order/offer counterparties and other known contacts: a conversation row
    * is created only when the peer has already written to me.
    */
-  static async seedConversations(me: string, peers: string[], signal?: AbortSignal): Promise<void> {
+  static async seedConversations(
+    me: string,
+    peers: string[],
+    signal?: AbortSignal,
+    { sends }: { sends?: ChatOutboxSends } = {},
+  ): Promise<void> {
     if ((await this.ensureIdentity(me, signal)) !== 'ready') return;
     for (const peer of new Set(peers)) {
       signal?.throwIfAborted();
@@ -873,7 +950,7 @@ export class ChatApplication {
           },
           signal,
         });
-        await this.syncConversation(me, peer, { reason: 'rebuild', signal });
+        await this.syncConversation(me, peer, { reason: 'rebuild', signal, sends });
       } catch (error) {
         Logger.warn('Chat discovery failed for a counterparty', { error });
       }
@@ -881,7 +958,12 @@ export class ChatApplication {
   }
 
   /** An inbox ping: the server-asserted sender identifies the peer; the payload is only a hint. */
-  static async handlePing(me: string, ping: InboxPing, signal?: AbortSignal): Promise<void> {
+  static async handlePing(
+    me: string,
+    ping: InboxPing,
+    signal?: AbortSignal,
+    { sends }: { sends?: ChatOutboxSends } = {},
+  ): Promise<void> {
     const peer = ping.sender;
     if (!peer || peer === me) return;
     if ((await this.ensureIdentity(me, signal)) !== 'ready') return;
@@ -905,7 +987,7 @@ export class ChatApplication {
     }
     if (keys.state !== 'ready') return;
     const hintFile = payload && payload.folder === keys.peerFolderId ? payload.file : undefined;
-    await this.syncConversation(me, peer, { reason: 'ping', hintFile, signal });
+    await this.syncConversation(me, peer, { reason: 'ping', hintFile, signal, sends });
   }
 
   // ============================================================== read state
