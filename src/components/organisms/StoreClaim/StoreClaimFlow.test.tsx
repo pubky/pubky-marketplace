@@ -1,3 +1,4 @@
+import { renderToStaticMarkup } from 'react-dom/server';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '@/libs/error/error';
@@ -345,6 +346,8 @@ describe('StoreClaimFlow', () => {
     render(<StoreClaimFlow />);
     const input = screen.getByLabelText('Setup code');
     expect(input.closest('.sentry-block')).not.toBeNull();
+    expect(input).toHaveAttribute('autocomplete', 'off');
+    expect(input).toHaveAttribute('spellcheck', 'false');
 
     fireEvent.change(input, { target: { value: 'too-short' } });
     expect(
@@ -439,5 +442,40 @@ describe('StoreClaimFlow', () => {
 
     expect(screen.getByLabelText('Setup code')).toHaveValue('');
     expect(screen.getByRole('button', { name: 'Claim this shop' })).toBeDisabled();
+  });
+
+  it('renders no natively submittable setup form in SSR HTML before hydration', () => {
+    window.sessionStorage.clear();
+    runtime.pubky = null;
+    runtime.session = false;
+
+    const signedOutHtml = renderToStaticMarkup(<StoreClaimFlow />);
+    expect(signedOutHtml).not.toMatch(/<form\b/i);
+    expect(signedOutHtml).not.toMatch(/type="submit"/i);
+
+    const host = document.createElement('div');
+    host.innerHTML = signedOutHtml;
+    const input = host.querySelector<HTMLInputElement>('input[name="code"]');
+    expect(input).not.toBeNull();
+    expect(input?.form).toBeNull();
+    expect(input?.disabled).toBe(true);
+    expect(input?.getAttribute('autocomplete')).toBe('off');
+    expect(input?.getAttribute('spellcheck')).toBe('false');
+
+    runtime.pubky = PUBKY;
+    runtime.session = true;
+    const signedInHtml = renderToStaticMarkup(<StoreClaimFlow />);
+    expect(signedInHtml).not.toMatch(/<form\b/i);
+    expect(signedInHtml).not.toMatch(/type="submit"/i);
+
+    host.innerHTML = signedInHtml;
+    const signedInInput = host.querySelector<HTMLInputElement>('input[name="code"]');
+    const claimButton = Array.from(host.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Claim this shop'),
+    );
+    expect(signedInInput?.form).toBeNull();
+    expect(signedInInput?.disabled).toBe(true);
+    expect(claimButton?.getAttribute('type')).toBe('button');
+    expect(claimButton?.disabled).toBe(true);
   });
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useWatch } from 'react-hook-form';
 import { isStoreModeInsecureContext } from '@/config/store-mode';
@@ -37,6 +37,10 @@ type StoreClaimNotice = {
   capability?: boolean;
   retry?: 'mint' | 'claim';
 };
+
+const subscribeHydration = () => () => undefined;
+const isHydratedClient = () => true;
+const isHydratedServer = () => false;
 
 const wait = (milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 
@@ -78,6 +82,7 @@ function mintFailure(error: unknown): StoreClaimNotice {
 }
 
 export function useStoreClaim() {
+  const hydrated = useSyncExternalStore(subscribeHydration, isHydratedClient, isHydratedServer);
   const pubky = useAuthStore((state) => state.currentUserPubky);
   const hasSession = useAuthStore((state) => Boolean(state.session));
   const { userDetails } = useUserDetails(pubky);
@@ -328,6 +333,7 @@ export function useStoreClaim() {
 
   return {
     form,
+    hydrated,
     validCode,
     pubky: hasSession ? pubky : null,
     profileName: userDetails?.name ?? null,

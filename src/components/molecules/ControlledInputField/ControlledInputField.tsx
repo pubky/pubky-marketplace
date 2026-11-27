@@ -28,6 +28,7 @@ export function ControlledInputField<T extends FieldValues>({
   inputClassName,
   type,
   autoComplete,
+  spellCheck,
   dataCy,
 }: ControlledInputFieldProps<T>) {
   const field = (
@@ -55,6 +56,7 @@ export function ControlledInputField<T extends FieldValues>({
           inputClassName={inputClassName}
           type={type}
           autoComplete={autoComplete}
+          spellCheck={spellCheck}
           dataCy={dataCy}
           aria-required={markRequired || undefined}
           status={fieldState.error ? 'error' : 'default'}

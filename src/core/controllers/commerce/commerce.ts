@@ -392,7 +392,8 @@ export class CommerceController {
    * Resolves null when the flag is off, the sign-in is not grant-backed, or
    * the service refused; the caller then offers the approval flow. A failed
    * attempt, or a minted session the service later rejected, is not repeated
-   * for the same sign-in unless `retryAfterFailure` (an explicit user retry).
+   * for the same sign-in unless `retryAfterFailure` or `forceFresh` (an
+   * explicit retry or forced refresh).
    */
   static async ensureMarketplaceSessionFromGrant(
     options: { retryAfterFailure?: boolean; throwOnFailure?: boolean; forceFresh?: boolean } = {},
@@ -418,7 +419,7 @@ export class CommerceController {
       await inFlight.promise;
       return await this.ensureMarketplaceSessionFromGrant(options);
     }
-    if (this.grantSessionFailures.has(session) && !options.retryAfterFailure) return null;
+    if (this.grantSessionFailures.has(session) && !options.retryAfterFailure && !options.forceFresh) return null;
 
     const isCurrent = () => useAuthStore.getState().session === session && !useAuthStore.getState().isLoggingOut;
     const attempt = (async (): Promise<GrantSessionMintOutcome> => {

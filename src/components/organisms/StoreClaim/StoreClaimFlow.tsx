@@ -21,7 +21,12 @@ export function StoreClaimFlow() {
   if (flow.insecureContext) return <StoreSecureContextScreen />;
 
   const claimDisabled =
-    !flow.validCode || flow.busy || flow.retryDisabled || flow.notice?.refusal || flow.notice?.retry === 'mint';
+    !flow.hydrated ||
+    !flow.validCode ||
+    flow.busy ||
+    flow.retryDisabled ||
+    flow.notice?.refusal ||
+    flow.notice?.retry === 'mint';
 
   const copyIdentity = async () => {
     if (!flow.pubky) return;
@@ -45,14 +50,7 @@ export function StoreClaimFlow() {
         </Typography>
       </div>
 
-      <form
-        className="flex flex-col gap-6"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (flow.pubky && !claimDisabled) void flow.submit();
-        }}
-        noValidate
-      >
+      <div className="flex flex-col gap-6">
         <Card className="rounded-md p-0">
           <CardContent className="flex flex-col gap-4 p-6">
             <div className="sentry-block">
@@ -61,9 +59,10 @@ export function StoreClaimFlow() {
                 control={flow.form.control}
                 label="Setup code"
                 autoComplete="off"
+                spellCheck={false}
                 variant="default"
                 size="md"
-                disabled={flow.submitting || flow.claimed}
+                disabled={!flow.hydrated || flow.submitting || flow.claimed}
               />
             </div>
             <div className="text-sm text-muted-foreground">
@@ -144,7 +143,7 @@ export function StoreClaimFlow() {
                 only this identity.
               </Typography>
               <div className="flex flex-wrap gap-3">
-                <Button type="submit" disabled={claimDisabled}>
+                <Button type="button" disabled={claimDisabled} onClick={() => void flow.submit()}>
                   {flow.busy ? 'Please wait' : 'Claim this shop'}
                 </Button>
                 <Button
@@ -159,7 +158,7 @@ export function StoreClaimFlow() {
             </CardContent>
           </Card>
         ) : null}
-      </form>
+      </div>
 
       {!flow.claimed && !flow.pubky && (
         <div data-testid="store-claim-sign-in">
