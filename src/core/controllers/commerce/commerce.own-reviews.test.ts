@@ -19,7 +19,7 @@ describe('CommerceController own reviews', () => {
     const remove = vi.spyOn(CommerceApplication, 'commitDeleteOwnReview').mockResolvedValue('removed');
 
     await expect(CommerceController.commitDeleteOwnMarketplaceReview('order-1')).resolves.toBe('removed');
-    expect(remove).toHaveBeenCalledWith(ORDER_FIXTURE_BUYER, 'order-1');
+    expect(remove).toHaveBeenCalledWith(ORDER_FIXTURE_BUYER, 'order-1', captureAuthScope());
   });
 
   it.each([undefined, null, '', 7])('refuses to remove a review without an order id (%s)', async (orderId) => {

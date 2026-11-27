@@ -213,7 +213,7 @@ describe('MarketplaceMyReviews', () => {
     expect(screen.getByText('Keep me.')).toBeInTheDocument();
   });
 
-  it('says the homeserver deletion will retry when it did not go through', async () => {
+  it('points the author to their order when the public deletion did not go through', async () => {
     vi.spyOn(CommerceController, 'getOwnMarketplaceReviews').mockResolvedValue([ownReview('Queued.')]);
     vi.spyOn(CommerceController, 'refreshOwnMarketplaceReviews').mockResolvedValue(0);
     vi.spyOn(CommerceController, 'commitDeleteOwnMarketplaceReview').mockResolvedValue('queued');

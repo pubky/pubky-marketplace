@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/database/franky/franky';
+import { clearDatabase } from '@/database/franky/franky.helpers';
 import { HttpMethod } from '@/libs/http/http.types';
 import { CommerceReviewModel, CommerceSyncJobModel } from '@/models/commerce/commerce.models';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
@@ -411,7 +412,7 @@ describe('own reviews a double-blind window withholds', () => {
       expect(await localRows()).toEqual([]);
     });
 
-    it('stays withdrawn when the service withdrawal fails, and the retry finishes it without ever publishing', async () => {
+    it('keeps a failed held withdrawal visible to its owner without re-withdrawing another version or publishing', async () => {
       await hold();
       service.failNext('review.withdraw');
 
@@ -426,7 +427,24 @@ describe('own reviews a double-blind window withholds', () => {
 
       expect(homeserver.log).toEqual([]);
       expect(attestationReads).not.toHaveBeenCalled();
-      expect(service.withdrawn()).toBe(true);
+      expect(service.withdrawn()).toBe(false);
+      expect(await jobs()).toHaveLength(1);
+    });
+
+    it('keeps an interrupted withdrawal without retaining held text or issuing a new withdrawal for the returning owner', async () => {
+      await hold();
+      service.failNext('review.withdraw');
+      await expect(CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id)).resolves.toBe('queued');
+      await clearDatabase();
+      const [job] = await awaitingJobs();
+      expect(job.payload).toMatchObject({ withdrawn: true, result: {} });
+      expect(JSON.stringify(job.payload)).not.toContain('Review of');
+      await expect(CommerceApplication.getManualReviewRemovals(ORDER_FIXTURE_BUYER, order.id)).resolves.toEqual([null]);
+      await CommerceApplication.resumeAwaitingReleaseReviews(ORDER_FIXTURE_BUYER);
+      expect(service.withdrawn()).toBe(false);
+      expect(homeserver.log).toEqual([]);
+      service.withdraw();
+      await CommerceApplication.resumeAwaitingReleaseReviews(ORDER_FIXTURE_BUYER);
       expect(await jobs()).toEqual([]);
     });
 
@@ -446,7 +464,7 @@ describe('own reviews a double-blind window withholds', () => {
       expect(await jobs()).toEqual([]);
     });
 
-    it('takes a record back that a withdrawal overtook during its PUT', async () => {
+    it('leaves a record for owner inspection when a withdrawal overtakes its PUT', async () => {
       await hold(['boots']);
       release();
       let phase = 0;
@@ -459,7 +477,8 @@ describe('own reviews a double-blind window withholds', () => {
 
       await expect(CommerceApplication.resumeAwaitingReleaseReviews(ORDER_FIXTURE_BUYER)).resolves.toBe(0);
 
-      expect(homeserver.files.size).toBe(0);
+      expect(homeserver.files.size).toBe(1);
+      expect(homeserver.log.some((entry) => entry.startsWith(HttpMethod.DELETE))).toBe(false);
       expect(await localRows()).toEqual([]);
       expect(await jobs()).toEqual([]);
     });

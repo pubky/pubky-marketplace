@@ -1,6 +1,7 @@
 'use client';
 
 import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { Controller, useWatch } from 'react-hook-form';
 import type { AwaitingReleaseReview } from '@/application/commerce/commerce';
 import { Button } from '@/atoms/Button/Button';
@@ -55,6 +56,7 @@ import { MarketplaceBitcoinAmountBreakdown } from '@/organisms/Marketplace/Marke
 import { MarketplacePackingSlipDialog } from '@/organisms/Marketplace/MarketplacePackingSlipDialog';
 import { MarketplacePickupRevealDialog } from '@/organisms/Marketplace/MarketplacePickupRevealDialog';
 import { MarketplaceReviewFields } from '@/organisms/Marketplace/MarketplaceReviewFields';
+import { MarketplaceReviewRemovalCheck } from '@/organisms/Marketplace/MarketplaceReviewRemovalCheck';
 import { MarketplaceShippingLabelDialog } from '@/organisms/Marketplace/MarketplaceShippingLabelDialog';
 import { MarketplaceTrackingDialog } from '@/organisms/Marketplace/MarketplaceTrackingDialog';
 import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
@@ -133,6 +135,11 @@ export function MarketplaceOrderActions({
   const [ownReviewRecords, setOwnReviewRecords] = useState<CommerceReviewModelSchema[] | null>(null);
   const ownReviewerPubkyForRecord = isBuyer ? order.buyerPubky : order.sellerPubky;
   const hasOwnReview = order.reviews?.some(({ reviewerPubky }) => reviewerPubky === ownReviewerPubkyForRecord);
+  const manualRemovals: (string | null)[] = useLiveQuery(
+    () => (hasOwnReview ? CommerceController.getManualReviewRemovals(order.id) : []),
+    [order.id, hasOwnReview, ownReviewerPubkyForRecord],
+    [],
+  );
   const ownReviewCount = reviewsOfReviewer(order, ownReviewerPubkyForRecord).length;
   useEffect(() => {
     if (!hasOwnReview) return;
@@ -547,11 +554,23 @@ export function MarketplaceOrderActions({
                 ownReviewRecords?.find((candidate) =>
                   listing === undefined ? ownReviews.length === 1 : candidate.record.listingId === listing.listingId,
                 ) ?? null;
+              const pendingRemoval =
+                listing !== undefined && (manualRemovals.includes(listing.listingId) || manualRemovals.includes(null));
               return (
-                <p key={aggregateId ?? review.createdAt}>
-                  {ownReviews.length > 1 && listing ? `${listing.title}: ` : ''}
-                  {review.publicRemoved === true ? REVIEW_REMOVAL_COPY.removedStatus : reviewRecordStatus(record)}
-                </p>
+                <div key={aggregateId ?? review.createdAt}>
+                  <p>
+                    {ownReviews.length > 1 && listing ? `${listing.title}: ` : ''}
+                    {review.publicRemoved === true ? REVIEW_REMOVAL_COPY.removedStatus : reviewRecordStatus(record)}
+                  </p>
+                  {listing && (review.publicRemoved === true || pendingRemoval) && (
+                    <MarketplaceReviewRemovalCheck
+                      key={`${order.id}:${order.revision}:${ownReviewerPubkyForRecord}`}
+                      orderId={order.id}
+                      listingId={listing.listingId}
+                      pendingRemoval={pendingRemoval}
+                    />
+                  )}
+                </div>
               );
             })}
         </div>

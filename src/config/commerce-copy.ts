@@ -186,18 +186,16 @@ export const REVIEW_REMOVAL_COPY = {
   action: 'Remove my review',
   dialogTitle: 'Remove your review?',
   dialogDescription:
-    'This deletes your public review from your homeserver, so it disappears from Pubky Market. Your order still shows that you reviewed it.',
+    'This withdraws your review and deletes the current public copy for this order, including edits that arrive before deletion. Older reviews with a shared file address require removal in your homeserver file manager.',
   dialogDescriptionWithheld:
     'This withdraws your review before it is published, so it never becomes public. Your order still shows that you reviewed it.',
   confirm: 'Remove review',
   cancel: 'Cancel',
   removedWithheld: 'Your review was withdrawn and will not be published.',
-  queuedWithheld:
-    'Your review is withdrawn here and will not be published. The marketplace has not confirmed it yet and will retry when your orders next load.',
+  queuedWithheld: 'Your review is withdrawn here. Open your order to confirm the withdrawal with the marketplace.',
   removed: 'Your review was removed from your homeserver.',
-  removedStatus: 'You removed your review. It is no longer public. Your order still shows that you reviewed it.',
-  queued:
-    'Your review is removed here. Deleting it from your homeserver did not go through and will retry when your orders next load.',
+  removedStatus: 'You withdrew your review. Your order still shows that you reviewed it.',
+  queued: 'Your review is removed here. Open your order to check the public copy if removal is still pending.',
   failed: 'Your review could not be removed. Try again.',
 } as const;
 

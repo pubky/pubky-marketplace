@@ -823,10 +823,33 @@ export class CommerceController {
         operation: 'commitDeleteOwnMarketplaceReview',
       });
     }
-    return await CommerceApplication.commitDeleteOwnReview(this.getCurrentUserPubky(), orderId);
+    return await CommerceApplication.commitDeleteOwnReview(this.getCurrentUserPubky(), orderId, captureAuthScope());
   }
 
-  /** Retries own-review removals whose homeserver DEL never landed. */
+  static async getManualReviewRemovals(orderId: string) {
+    return await CommerceApplication.getManualReviewRemovals(this.getCurrentUserPubky(), orderId);
+  }
+
+  static async fetchReviewRemovalCopy(orderId: string, listingId: string) {
+    return await CommerceApplication.fetchReviewRemovalCopy(
+      this.getCurrentUserPubky(),
+      orderId,
+      listingId,
+      captureAuthScope(),
+    );
+  }
+
+  static async confirmReviewWithdrawal(orderId: string, listingId: string, reviewUpdatedAt: string) {
+    return await CommerceApplication.confirmReviewWithdrawal(
+      this.getCurrentUserPubky(),
+      orderId,
+      listingId,
+      reviewUpdatedAt,
+      captureAuthScope(),
+    );
+  }
+
+  /** Reconciles the signed-in owner's pending withdrawals and checks their public files. */
   static async resumeOwnReviewRemovals() {
     return await CommerceApplication.resumeOwnReviewRemovals(this.getCurrentUserPubky(), captureAuthScope());
   }

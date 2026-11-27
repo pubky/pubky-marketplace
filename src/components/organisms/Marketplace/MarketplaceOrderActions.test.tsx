@@ -25,6 +25,9 @@ import { MarketplaceOrderActions } from './MarketplaceOrderActions';
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getMarketplaceBandConsent: vi.fn(async () => null),
+    getManualReviewRemovals: vi.fn(async () => []),
+    fetchReviewRemovalCopy: vi.fn(),
+    confirmReviewWithdrawal: vi.fn(),
     getOwnMarketplaceOrderReviews: vi.fn(async () => []),
     getAwaitingReleaseOwnMarketplaceReviews: vi.fn(async () => []),
     commitMarkReady: vi.fn(async () => ({ ok: true })),
@@ -370,7 +373,7 @@ describe('MarketplaceOrderActions own-review verified status', () => {
   });
 
   describe('after the user withdrew the review', () => {
-    const REMOVED_STATUS = 'You removed your review. It is no longer public.';
+    const REMOVED_STATUS = 'You withdrew your review.';
 
     function renderWithdrawn(actions?: { reviewCreatedAt?: string }) {
       const order = createOrderFixture('completed', {
@@ -394,6 +397,23 @@ describe('MarketplaceOrderActions own-review verified status', () => {
       await waitFor(() => expect(mockedController.getOwnMarketplaceOrderReviews).toHaveBeenCalled());
       expect(status).not.toHaveTextContent(/Your review is saved/);
       expect(status).not.toHaveTextContent(/publication status will appear/);
+    });
+
+    it('shows the owner the matching public file and its attestation without sending a removal', async () => {
+      const uri = 'pubky://reviewer/pub/pubky.app/marketplace/v1/reviews/abc';
+      mockedController.fetchReviewRemovalCopy.mockResolvedValue({
+        kind: 'checked',
+        withdrawn: true,
+        reviewUpdatedAt: '2026-08-22T00:00:00Z',
+        copy: { uri, text: 'Review on my homeserver', attestation: 'purchase-proof' },
+      });
+      renderWithdrawn();
+      await userEvent.click(await screen.findByRole('button', { name: 'Check public copy' }));
+      expect(await screen.findByText(uri)).toBeInTheDocument();
+      expect(screen.getByText('Review on my homeserver')).toBeInTheDocument();
+      expect(screen.getByText('purchase-proof')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Pubky Drive instructions' })).toBeInTheDocument();
+      expect(mockedController.confirmReviewWithdrawal).not.toHaveBeenCalled();
     });
 
     it('does not show a leftover published record as live', async () => {

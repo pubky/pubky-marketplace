@@ -953,11 +953,16 @@ export class LocalCommerceService {
   }
 
   /** The outbox jobs still owed a homeserver DEL of an own review, oldest first. */
-  static async getOwnReviewRemovalJobs(ownerId: string): Promise<CommerceSyncJobModelSchema[]> {
+  static async getOwnReviewRemovalJobs(ownerId: string, orderId?: string): Promise<CommerceSyncJobModelSchema[]> {
     const jobs = await CommerceSyncJobModel.table
       .where('owner_id')
       .equals(ownerId)
-      .filter((job) => job.entity_type === 'review' && job.operation === 'remove')
+      .filter(
+        (job) =>
+          job.entity_type === 'review' &&
+          job.operation === 'remove' &&
+          (orderId === undefined || (job.payload as { orderId?: string } | null)?.orderId === orderId),
+      )
       .toArray();
     return jobs.sort((left, right) => left.created_at - right.created_at);
   }

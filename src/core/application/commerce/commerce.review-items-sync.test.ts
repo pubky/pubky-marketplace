@@ -145,7 +145,7 @@ describe('own item reviews on the reviewer homeserver', () => {
     for (const row of published) expect(homeserver.files.has(urlOf(row))).toBe(false);
   });
 
-  it('queues only the removal whose DEL failed, and one retry sends it once', async () => {
+  it('queues only the removal whose DEL failed and settles it after its owner removes it', async () => {
     const [, belt] = published;
     homeserver.failNext(HttpMethod.DELETE, urlOf(belt), 500);
 
@@ -154,8 +154,9 @@ describe('own item reviews on the reviewer homeserver', () => {
     expect(homeserver.files.size).toBe(1);
     homeserver.log.length = 0;
 
+    homeserver.files.delete(urlOf(belt));
     await expect(CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER)).resolves.toBe(1);
-    expect(homeserver.log).toEqual([`${HttpMethod.DELETE} ${urlOf(belt)}`]);
+    expect(homeserver.log).toEqual([`${HttpMethod.GET} ${urlOf(belt)}`]);
     expect(homeserver.files.size).toBe(0);
   });
 
@@ -297,15 +298,15 @@ describe('own item reviews on the reviewer homeserver', () => {
       expect(owed[0].payload).toMatchObject({ listingId: middle });
       homeserver.log.length = 0;
 
-      await expect(CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER)).resolves.toBe(1);
+      await expect(CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER)).resolves.toBe(0);
 
       expect(service.withdrawals).toEqual([first, middle, last, middle]);
-      expect(deletedListings()).toEqual([middle]);
-      expect(homeserver.files.size).toBe(0);
-      expect(await removeJobs()).toEqual([]);
+      expect(deletedListings()).toEqual([]);
+      expect(homeserver.files.size).toBe(1);
+      expect(await removeJobs()).toHaveLength(1);
     });
 
-    it('retries only the DEL of an item whose withdrawal stands', async () => {
+    it('settles an item whose withdrawn file the owner has removed', async () => {
       const stuck = rowOf(middle);
       homeserver.failNext(HttpMethod.DELETE, urlOf(stuck), 500);
 
@@ -314,10 +315,11 @@ describe('own item reviews on the reviewer homeserver', () => {
       expect(service.withdrawals).toEqual([first, middle, last]);
       homeserver.log.length = 0;
 
+      homeserver.files.delete(urlOf(stuck));
       await expect(CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER)).resolves.toBe(1);
 
       expect(service.withdrawals).toEqual([first, middle, last]);
-      expect(deletedListings()).toEqual([middle]);
+      expect(deletedListings()).toEqual([]);
       expect(homeserver.files.size).toBe(0);
     });
 
@@ -335,7 +337,7 @@ describe('own item reviews on the reviewer homeserver', () => {
       expect(homeserver.files.size).toBe(0);
     });
 
-    it("keeps another item's owed removal when this item is published again, and still sends it", async () => {
+    it("keeps another item's owed removal when this item is published again", async () => {
       const stuck = rowOf(middle);
       service.failNext('review.withdraw', { listingId: middle });
       await CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id);
@@ -352,9 +354,9 @@ describe('own item reviews on the reviewer homeserver', () => {
       expect((await removeJobs()).map((job) => job.entity_id)).toEqual([stuck.review_id]);
       expect(await localRows()).toEqual([again]);
 
-      await expect(CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER)).resolves.toBe(1);
+      await expect(CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER)).resolves.toBe(0);
 
-      expect(homeserver.files.has(urlOf(stuck))).toBe(false);
+      expect(homeserver.files.has(urlOf(stuck))).toBe(true);
       expect(homeserver.files.has(urlOf(again))).toBe(true);
     });
   });
@@ -377,7 +379,7 @@ describe('own item reviews on the reviewer homeserver', () => {
       );
     };
 
-    it('deletes only the withdrawn item record and hydrates the other reviewed item', async () => {
+    it('leaves the withdrawn public record alone and hydrates the other reviewed item', async () => {
       const twoItems: MarketplaceOrder = {
         ...order,
         lines: order.lines.slice(0, 2),
@@ -398,9 +400,9 @@ describe('own item reviews on the reviewer homeserver', () => {
 
       expect(listingsOf(rows)).toEqual(['boots']);
       expect(listingsOf(await localRows())).toEqual(['boots']);
-      expect(deletes()).toEqual([`${HttpMethod.DELETE} ${urlOf(published[1])}`]);
+      expect(deletes()).toEqual([]);
       expect(homeserver.files.has(urlOf(published[0]))).toBe(true);
-      expect(homeserver.files.has(urlOf(published[1]))).toBe(false);
+      expect(homeserver.files.has(urlOf(published[1]))).toBe(true);
       expect(service.log.filter((entry) => entry === 'review.withdraw')).toEqual([]);
       expect(await CommerceSyncJobModel.table.toArray()).toEqual([]);
     });
@@ -411,13 +413,13 @@ describe('own item reviews on the reviewer homeserver', () => {
         await switchDevice();
       });
 
-      it('deletes the belt and does not show it when device 2 opens the order', async () => {
+      it('hides the belt without deleting it when device 2 opens the order', async () => {
         const rows = await CommerceApplication.getOwnMarketplaceOrderReviews(ORDER_FIXTURE_BUYER, service.order());
 
         expect(listingsOf(rows)).toEqual(['boots', 'wallet']);
         expect(listingsOf(await localRows())).toEqual(['boots', 'wallet']);
         expect(puts()).toEqual([]);
-        expect(homeserver.files.has(urlOf(published[1]))).toBe(false);
+        expect(homeserver.files.has(urlOf(published[1]))).toBe(true);
       });
 
       it("does not read the belt's record again in the same session", async () => {
@@ -533,7 +535,7 @@ describe('own item reviews on the reviewer homeserver', () => {
         expect(await CommerceSyncJobModel.table.toArray()).toEqual([]);
       });
 
-      it('takes back its own PUT when the withdrawal landed after the check and before the PUT finished', async () => {
+      it('abandons the local publication without deleting the public file after a withdrawal during the PUT', async () => {
         const parked = homeserver.holdNext(HttpMethod.PUT, urlOf(boots));
         const repair = CommerceApplication.getOwnMarketplaceOrderReviews(ORDER_FIXTURE_BUYER, single);
         await parked.reached;
@@ -543,8 +545,8 @@ describe('own item reviews on the reviewer homeserver', () => {
         await expect(repair).resolves.toEqual([]);
 
         expect(puts()).toHaveLength(1);
-        expect(deletes()).toEqual([`${HttpMethod.DELETE} ${urlOf(boots)}`]);
-        expect(homeserver.files.has(urlOf(boots))).toBe(false);
+        expect(deletes()).toEqual([]);
+        expect(homeserver.files.has(urlOf(boots))).toBe(true);
         expect(await localRows()).toEqual([]);
         expect(await CommerceSyncJobModel.table.toArray()).toEqual([]);
       });
