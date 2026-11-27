@@ -40,9 +40,7 @@ vi.mock('qrcode.react', () => ({
 let mockSignInState = {
   authUrlResolved: false,
   profileChecked: false,
-  bootstrapFetched: false,
-  dataPersisted: false,
-  homeserverSynced: false,
+  marketReady: false,
   error: null,
 };
 
@@ -50,9 +48,7 @@ const resetMockSignInState = () => {
   mockSignInState = {
     authUrlResolved: false,
     profileChecked: false,
-    bootstrapFetched: false,
-    dataPersisted: false,
-    homeserverSynced: false,
+    marketReady: false,
     error: null,
   };
 };
@@ -715,10 +711,8 @@ describe('SignInContent - Progress View', () => {
     expect(screen.getByText('Please wait while your Pubky experience loads.')).toBeInTheDocument();
 
     // Should show all 4 step labels
-    expect(screen.getByText('Setting up')).toBeInTheDocument();
-    expect(screen.getByText('Loading your data')).toBeInTheDocument();
-    expect(screen.getByText('Building your feed')).toBeInTheDocument();
-    expect(screen.getByText('Syncing settings')).toBeInTheDocument();
+    expect(screen.getByText('Checking your profile')).toBeInTheDocument();
+    expect(screen.getByText('Opening Market')).toBeInTheDocument();
   });
 
   it('shows first step as running and remaining as pending when none completed', async () => {
@@ -728,10 +722,8 @@ describe('SignInContent - Progress View', () => {
       render(<SignInContent />);
     });
 
-    const verifyingLabel = screen.getByText('Setting up');
-    const loadingLabel = screen.getByText('Loading your data');
-    const buildingLabel = screen.getByText('Building your feed');
-    const syncingLabel = screen.getByText('Syncing settings');
+    const verifyingLabel = screen.getByText('Checking your profile');
+    const loadingLabel = screen.getByText('Opening Market');
 
     // First step: running (spinner icon + text-foreground)
     expect(verifyingLabel.className).toContain('text-foreground');
@@ -740,40 +732,22 @@ describe('SignInContent - Progress View', () => {
     // Remaining steps: pending (circle icon + text-muted-foreground)
     expect(loadingLabel.className).toContain('text-muted-foreground');
     expect(loadingLabel.closest('div')?.querySelector('.lucide-circle')).toBeInTheDocument();
-
-    expect(buildingLabel.className).toContain('text-muted-foreground');
-    expect(syncingLabel.className).toContain('text-muted-foreground');
   });
 
   it('shows completed steps with check icon and currently running step with spinner', async () => {
     mockSignInState.authUrlResolved = true;
     mockSignInState.profileChecked = true;
-    mockSignInState.bootstrapFetched = true;
 
     await act(async () => {
       render(<SignInContent />);
     });
 
-    const verifyingLabel = screen.getByText('Setting up');
-    const loadingLabel = screen.getByText('Loading your data');
-    const buildingLabel = screen.getByText('Building your feed');
-    const syncingLabel = screen.getByText('Syncing settings');
+    const verifyingLabel = screen.getByText('Checking your profile');
+    const loadingLabel = screen.getByText('Opening Market');
 
-    // First two steps: completed (check icon + font-bold)
     expect(verifyingLabel.className).toContain('font-bold');
     expect(verifyingLabel.closest('div')?.querySelector('.lucide-circle-check-big')).toBeInTheDocument();
-
-    expect(loadingLabel.className).toContain('font-bold');
-    expect(loadingLabel.closest('div')?.querySelector('.lucide-circle-check-big')).toBeInTheDocument();
-
-    // Third step: running (spinner)
-    expect(buildingLabel.className).toContain('text-foreground');
-    expect(buildingLabel.className).not.toContain('font-bold');
-    expect(buildingLabel.closest('div')?.querySelector('.lucide-loader-circle')).toBeInTheDocument();
-
-    // Fourth step: pending
-    expect(syncingLabel.className).toContain('text-muted-foreground');
-    expect(syncingLabel.closest('div')?.querySelector('.lucide-circle')).toBeInTheDocument();
+    expect(loadingLabel.closest('div')?.querySelector('.lucide-loader-circle')).toBeInTheDocument();
   });
 
   it('does not render QR code or mobile button when showing progress', async () => {

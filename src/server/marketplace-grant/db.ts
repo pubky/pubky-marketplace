@@ -1,5 +1,6 @@
 import postgres, { type Sql } from 'postgres';
 import type { MarketplaceGrantConfig } from './config';
+import { grantDatabaseTls } from './db-tls';
 
 export const CLI_RATE_BUCKET_TTL_SECONDS = 120;
 
@@ -34,6 +35,7 @@ export type FlowRow = {
 let sql: Sql | undefined;
 
 export function grantSql(config: MarketplaceGrantConfig): Sql {
+  const tls = grantDatabaseTls(config);
   sql ??= postgres(config.databaseUrl, {
     max: 5,
     connect_timeout: Math.ceil(config.databaseTimeoutMs / 1000),
@@ -41,6 +43,7 @@ export function grantSql(config: MarketplaceGrantConfig): Sql {
     max_lifetime: 60 * 30,
     prepare: true,
     onnotice: () => {},
+    ...tls,
   });
   return sql;
 }

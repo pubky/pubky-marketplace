@@ -4,6 +4,8 @@ import type { TagWithAvatars } from '@/molecules/TaggedItem/TaggedItem.types';
 import type { NexusTag } from '@/services/nexus/nexus.types';
 
 export interface ClickableTagsListProps {
+  /** Label case rules for the viewer's active social version. */
+  normalizeLabel?: (label: string) => string;
   /** The ID of the tagged entity (userId or postId) */
   taggedId: string;
   /** The kind of the tagged entity */

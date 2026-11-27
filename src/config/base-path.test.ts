@@ -1,13 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { setBasePath } from '@/test-utils/base-path';
-import {
-  getBasePath,
-  getShopBaseUrl,
-  getShopPublicPath,
-  withBasePath,
-  withoutBasePath,
-  withPublicPath,
-} from './base-path';
+import { getBasePath, getShopBaseUrl, getShopPublicPath, withBasePath, withPublicPath } from './base-path';
 
 const runtime = vi.hoisted(() => ({ publicPath: undefined as string | undefined }));
 
@@ -25,8 +18,7 @@ describe('base path config', () => {
 
   it('serves from the origin root by default', () => {
     expect(getBasePath()).toBe('');
-    expect(withBasePath('/api/feedback')).toBe('/api/feedback');
-    expect(withoutBasePath('/marketplace')).toBe('/marketplace');
+    expect(withBasePath('/api/report')).toBe('/api/report');
     expect(getShopBaseUrl()).toBe('https://pubky.app');
     expect(getShopPublicPath()).toBe('');
     expect(withPublicPath('/marketplace/listing/a/b')).toBe('/marketplace/listing/a/b');
@@ -35,8 +27,7 @@ describe('base path config', () => {
   it('prefixes paths and builds the public URL under a mount path', () => {
     setBasePath('/shop');
     expect(getBasePath()).toBe('/shop');
-    expect(withBasePath('/api/feedback')).toBe('/shop/api/feedback');
-    expect(withoutBasePath('/shop/marketplace')).toBe('/marketplace');
+    expect(withBasePath('/api/report')).toBe('/shop/api/report');
     expect(getShopBaseUrl()).toBe('https://pubky.app/shop');
   });
 
@@ -67,7 +58,7 @@ describe('base path config', () => {
 
   it('can serve a standalone build at the origin root while a public path is set', () => {
     runtime.publicPath = '/shop';
-    expect(withBasePath('/api/feedback')).toBe('/api/feedback');
+    expect(withBasePath('/api/report')).toBe('/api/report');
     expect(withPublicPath('/profile/abc')).toBe('/shop/profile/abc');
   });
 });

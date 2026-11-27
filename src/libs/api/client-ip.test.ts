@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { trustedClientIp } from './client-ip';
 
 function createRequest(headers: Record<string, string> = {}) {
-  return new NextRequest('http://localhost:3000/api/feedback', { method: 'POST', headers });
+  return new NextRequest('http://localhost:3000/api/report', { method: 'POST', headers });
 }
 
 describe('trustedClientIp', () => {

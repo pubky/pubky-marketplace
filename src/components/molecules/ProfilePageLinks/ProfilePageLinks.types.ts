@@ -1,7 +1,0 @@
-import type { NexusUserDetails } from '@/services/nexus/nexus.types';
-
-export interface ProfilePageLinksProps {
-  links?: NexusUserDetails['links'];
-  /** Whether the user is viewing their own profile */
-  isOwnProfile?: boolean;
-}

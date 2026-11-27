@@ -1,10 +1,21 @@
-import { TagKind, type TCreateTagListInput, type TDeleteTagInput } from '@/application/tag/tag.types';
+import {
+  TagKind,
+  type TCreateTagListInput,
+  type TDeleteTagInput,
+  type TTagEventParams,
+} from '@/application/tag/tag.types';
+import { LEGACY_SOCIAL_PATHS } from '@/config/social-paths';
+import { marketplaceTagCopyUrls } from '@/libs/commerce/tag-uri';
 import { AppError } from '@/libs/error/error';
-import { ClientErrorCode } from '@/libs/error/error.codes';
+import { ClientErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
+import { Err } from '@/libs/error/error.factories';
+import { ErrorService } from '@/libs/error/error.types';
 import { HttpMethod } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
+import { TagNormalizer } from '@/pipes/tag/tag.normalizer';
 import { HomeserverService } from '@/services/homeserver/homeserver';
+import { SocialWriteService } from '@/services/homeserver/social-writes';
 import {
   buildMarketplaceTagRowId,
   LocalMarketplaceTagService,
@@ -24,12 +35,13 @@ function isMarketplaceTagKind(kind: TagKind): kind is MarketplaceTagKind {
  */
 async function applyLocalTagWrite(
   op: 'create' | 'delete',
-  { taggedKind, taggedId, label, taggerId }: { taggedKind: TagKind; taggedId: string; label: string; taggerId: string },
+  { taggedKind, taggedId, label, taggerId }: TTagEventParams,
+  tagUri?: string,
 ): Promise<boolean> {
   if (isMarketplaceTagKind(taggedKind)) {
     const rowId = buildMarketplaceTagRowId(taggedKind, taggedId);
     return op === 'create'
-      ? LocalMarketplaceTagService.create({ taggerId, taggedId: rowId, label })
+      ? LocalMarketplaceTagService.create({ taggerId, taggedId: rowId, label, tagUri })
       : LocalMarketplaceTagService.delete({ taggerId, taggedId: rowId, label });
   }
   if (taggedKind === TagKind.POST) {
@@ -56,19 +68,42 @@ async function applyLocalTagWrite(
  * Nexus.
  */
 export class TagApplication {
+  static fetchWriteEpoch(owner: Pubky) {
+    return SocialWriteService.getEpoch(owner, 'tags');
+  }
+
+  static async prepareTag(params: TTagEventParams) {
+    const epoch = await SocialWriteService.requireEpoch(params.taggerId, 'tags');
+    const tag = epoch === 'v1' ? TagNormalizer.fromV1(params) : TagNormalizer.from(params);
+    if (params.preserveLabel && tag.label !== params.label) {
+      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'This tag spelling requires a migrated Pubky account.', {
+        service: ErrorService.PubkyAppSpecs,
+        operation: 'prepareTag',
+      });
+    }
+    return tag;
+  }
+
   /**
    * Commits the create tag operation to the homeserver and local database.
    * @param tagList - The list of tags to create
    */
-  static async commitCreate({ tagList }: TCreateTagListInput) {
+  static async commitCreate({ tagList, assertCurrent }: TCreateTagListInput) {
     // Process tags one at a time so callers never observe hidden in-flight work
     // from later entries after an earlier tag fails.
-    for (const { taggerId, taggedId, label, tagUrl, tagJson, taggedKind } of tagList) {
-      const didCreateLocally = await applyLocalTagWrite('create', { taggedKind, taggedId, label, taggerId });
+    for (const { taggerId, taggedId, label, tagUrl, tagJson, tagBody, taggedKind } of tagList) {
+      assertCurrent();
+      const didCreateLocally = await applyLocalTagWrite('create', { taggedKind, taggedId, label, taggerId }, tagUrl);
 
       try {
-        await HomeserverService.request({ method: HttpMethod.PUT, url: tagUrl, bodyJson: tagJson });
+        assertCurrent();
+        if (tagBody) {
+          await HomeserverService.putBlob({ url: tagUrl, blob: tagBody, bounded: true });
+        } else {
+          await HomeserverService.request({ method: HttpMethod.PUT, url: tagUrl, bodyJson: tagJson });
+        }
       } catch (error) {
+        assertCurrent();
         if (didCreateLocally) {
           try {
             await applyLocalTagWrite('delete', { taggedKind, taggedId, label, taggerId });
@@ -97,30 +132,52 @@ export class TagApplication {
    * @param params.tagUrl - The URL of the tag
    * @param params.taggedKind - The kind of the tagged entity
    */
-  static async commitDelete({ taggerId, taggedId, label, tagUrl, taggedKind }: TDeleteTagInput) {
+  static async commitDelete(
+    { taggerId, taggedId, label, tagUrl, taggedKind, targetUri }: TDeleteTagInput,
+    assertCurrent: () => void,
+  ) {
+    assertCurrent();
+    const storedUrl = isMarketplaceTagKind(taggedKind)
+      ? await LocalMarketplaceTagService.getViewerTagUrl(
+          buildMarketplaceTagRowId(taggedKind, taggedId),
+          label,
+          taggerId,
+        )
+      : undefined;
+    assertCurrent();
     const wasDeleted = await applyLocalTagWrite('delete', { taggedKind, taggedId, label, taggerId });
 
     // Only send to homeserver if something was actually deleted locally
     if (wasDeleted) {
       try {
-        await HomeserverService.request({ method: HttpMethod.DELETE, url: tagUrl });
-      } catch (error) {
-        // 404 means the tag is already gone on the homeserver. Local just made the
-        // same change, so the two states match — accept the delete and skip rollback.
-        // Without this, the rollback re-creates the tag locally and the user is left
-        // with a "ghost" tag they can't remove (HS keeps returning 404).
-        if (error instanceof AppError && error.code === ClientErrorCode.NOT_FOUND) {
-          Logger.warn('[TagApplication.commitDelete] Homeserver returned 404; treating as already deleted', {
-            taggedId,
-            label,
-            taggerId,
-            taggedKind,
-          });
-          return;
+        assertCurrent();
+        const copies =
+          isMarketplaceTagKind(taggedKind) && targetUri
+            ? marketplaceTagCopyUrls(
+                taggerId,
+                tagUrl,
+                storedUrl,
+                HomeserverService.canCurrentUserSessionWrite(taggerId, LEGACY_SOCIAL_PATHS.tags),
+              )
+            : [];
+        // The migrator keeps the 0.x record. Delete verified copies first so a retry can still remove the active tag.
+        for (const url of [...copies, tagUrl]) {
+          assertCurrent();
+          if (url !== tagUrl) {
+            const copy = await HomeserverService.getJsonIfFound<{ uri: string; label: string }>({ url });
+            if (!copy.found || !copy.json || copy.json.uri !== targetUri || copy.json.label !== label) continue;
+          }
+          assertCurrent();
+          try {
+            await HomeserverService.request({ method: HttpMethod.DELETE, url });
+          } catch (error) {
+            if (!(error instanceof AppError && error.code === ClientErrorCode.NOT_FOUND)) throw error;
+          }
         }
-
+      } catch (error) {
+        assertCurrent();
         try {
-          await applyLocalTagWrite('create', { taggedKind, taggedId, label, taggerId });
+          await applyLocalTagWrite('create', { taggedKind, taggedId, label, taggerId }, storedUrl ?? tagUrl);
         } catch (rollbackError) {
           Logger.error('[TagApplication.commitDelete] Failed to rollback local tag delete', {
             taggedId,

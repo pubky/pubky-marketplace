@@ -205,12 +205,6 @@ export const getSentryReplaysOnErrorSampleRate = (): number => getRuntimeConfig(
 export const getNotificationPollIntervalMs = (): number => getRuntimeConfig().notificationPollIntervalMs;
 export const getNotificationPollOnStart = (): boolean => getRuntimeConfig().notificationPollOnStart;
 export const getNotificationRespectPageVisibility = (): boolean => getRuntimeConfig().notificationRespectPageVisibility;
-export const getStreamPollIntervalMs = (): number => getRuntimeConfig().streamPollIntervalMs;
-export const getStreamPollOnStart = (): boolean => getRuntimeConfig().streamPollOnStart;
-export const getStreamRespectPageVisibility = (): boolean => getRuntimeConfig().streamRespectPageVisibility;
-export const getStreamFetchLimit = (): number => getRuntimeConfig().streamFetchLimit;
-export const getStreamCacheMaxAgeMs = (): number => getRuntimeConfig().streamCacheMaxAgeMs;
-export const getMaxStreamTags = (): number => getRuntimeConfig().maxStreamTags;
 export const getTtlPostMs = (): number => getRuntimeConfig().ttlPostMs;
 export const getTtlUserMs = (): number => getRuntimeConfig().ttlUserMs;
 export const getTtlBatchIntervalMs = (): number => getRuntimeConfig().ttlBatchIntervalMs;
@@ -231,6 +225,7 @@ export const getMarketplaceUrl = (): string => getRuntimeConfig().marketplaceUrl
  */
 export const getMarketplaceNexusUrl = (): string =>
   getRuntimeConfig().marketplaceNexusUrl ?? getRuntimeConfig().nexusUrl;
+export const getMarketplaceTagsBackfilled = (): boolean => getRuntimeConfig().marketplaceTagsBackfilled;
 /** The chat inbox ping service; `null` when the deployment has none. */
 export const getInboxUrl = (): string | null => getRuntimeConfig().inboxUrl ?? null;
 /** Audience the inbox expects in session proofs; defaults to the inbox URL. */
@@ -307,6 +302,10 @@ export const getKeywords = (): string => getRuntimeConfig().keywords;
 export const getType = (): string => getRuntimeConfig().type;
 export const getCreator = (): string => getRuntimeConfig().creator;
 export const getDefaultUrl = (): string => getRuntimeConfig().defaultUrl;
+/** Server-rendered links can distinguish a configured canonical Shop alias from the metadata default. */
+export function getConfiguredShopOriginOnServer(): string | undefined {
+  return process.env[PUBKY_RUNTIME_ENV_NAMES.defaultUrl]?.trim() ? new URL(getDefaultUrl()).origin : undefined;
+}
 export const getPubkyRingUrl = (): string => getRuntimeConfig().pubkyRingUrl;
 export const getPubkyCoreUrl = (): string => getRuntimeConfig().pubkyCoreUrl;
 export const getNexusScoutUrl = (): string => getRuntimeConfig().nexusScoutUrl;

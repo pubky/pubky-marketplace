@@ -2,7 +2,6 @@ import { usePathname } from 'next/navigation';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as commerceConfig from '@/config/commerce';
-import { FORCE_FEED_SCROLL_TOP_KEY } from '@/config/feed';
 import { FileController } from '@/controllers/file/file';
 import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
 import { useCurrentUserProfile } from '@/hooks/useCurrentUserProfile/useCurrentUserProfile';
@@ -13,11 +12,7 @@ import { setEmbedded } from '@/test-utils/embedded';
 import { setSocialHost } from '@/test-utils/social-host';
 import { MobileFooter } from './MobileFooter';
 
-const collectionsDiscoveryMock = vi.hoisted(() => ({
-  markCollectionsNavSeen: vi.fn(),
-  setShowSignInDialog: vi.fn(),
-  showCollectionsNew: false,
-}));
+const { setShowSignInDialog } = vi.hoisted(() => ({ setShowSignInDialog: vi.fn() }));
 
 let mockCurrentUserPubky: string | null = 'pk:test-user-pubky';
 let mockHasSession = true;
@@ -91,6 +86,7 @@ vi.mock('@/app/routes', async () => {
       SETTINGS: '/settings',
       PROFILE: '/profile',
     },
+    MARKETPLACE_ROUTES: { SETTINGS: '/marketplace/settings', NOTIFICATIONS: '/marketplace/notifications' },
     SETTINGS_ROUTES: {
       ACCOUNT: '/settings/account',
     },
@@ -129,13 +125,6 @@ vi.mock('@/hooks/useMarketplaceNavAttention/useMarketplaceNavAttention', () => (
   useMarketplaceNavAttention: vi.fn(() => 0),
 }));
 
-vi.mock('@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery', () => ({
-  useCollectionsNavDiscovery: () => ({
-    showCollectionsNew: Boolean(mockCurrentUserPubky) && collectionsDiscoveryMock.showCollectionsNew,
-    markCollectionsNavSeen: collectionsDiscoveryMock.markCollectionsNavSeen,
-  }),
-}));
-
 // Track notification store mock for per-test overrides
 const mockSelectUnread = vi.fn(() => 0);
 vi.mock('@/controllers/file/file', () => ({
@@ -157,17 +146,13 @@ vi.mock('@/stores/auth/auth.store', () => ({
       selector({
         currentUserPubky: mockCurrentUserPubky,
         session: mockHasSession && mockCurrentUserPubky ? {} : null,
-        setShowSignInDialog: collectionsDiscoveryMock.setShowSignInDialog,
+        setShowSignInDialog,
       }),
   ),
 }));
-vi.mock('@/stores/localFiles/localFiles.store', () => ({
-  useLocalFilesStore: vi.fn((selector: (state: { profile: string | null }) => unknown) => selector({ profile: null })),
-}));
 vi.mock('@/stores/notification/notification.store', () => ({
-  useNotificationStore: vi.fn(
-    (selector: (state: { selectUnread: () => number; selectTotalUnread: () => number }) => unknown) =>
-      selector({ selectUnread: mockSelectUnread, selectTotalUnread: mockSelectUnread }),
+  useNotificationStore: vi.fn((selector: (state: { selectMarketplaceUnread: () => number }) => unknown) =>
+    selector({ selectMarketplaceUnread: mockSelectUnread }),
   ),
 }));
 
@@ -179,7 +164,6 @@ describe('MobileFooter', () => {
     vi.mocked(useMarketplaceCartCount).mockReturnValue(0);
     vi.mocked(useMarketplaceNavAttention).mockReturnValue(0);
     mockCurrentUserPubky = 'pk:test-user-pubky';
-    collectionsDiscoveryMock.showCollectionsNew = false;
     mockIsPublicRoute = false;
     mockIsCoreExploreRoute = false;
     Object.defineProperty(window, 'sessionStorage', {
@@ -226,10 +210,10 @@ describe('MobileFooter', () => {
     render(<MobileFooter />);
 
     const navItems = [
-      { href: '/home', iconClass: '.lucide-house', label: 'Home' },
-      { href: '/search', iconClass: '.lucide-search', label: 'Search' },
-      { href: '/hot', iconClass: '.lucide-flame', label: 'Hot' },
-      { href: '/collections', iconClass: '.lucide-library', label: 'Collections' },
+      { href: 'https://pubky.app/home', iconClass: '.lucide-house', label: 'Home' },
+      { href: 'https://pubky.app/search', iconClass: '.lucide-search', label: 'Search' },
+      { href: 'https://pubky.app/hot', iconClass: '.lucide-flame', label: 'Hot' },
+      { href: 'https://pubky.app/collections', iconClass: '.lucide-library', label: 'Collections' },
     ];
 
     const links = screen.getAllByRole('link');
@@ -324,8 +308,11 @@ describe('MobileFooter', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Account menu' }), { button: 0, ctrlKey: false });
 
     expect(screen.getByRole('menuitem', { name: 'Messages' })).toHaveAttribute('href', '/messages');
-    expect(screen.getByRole('menuitem', { name: 'Settings' })).toHaveAttribute('href', '/settings/account');
-    expect(screen.getByRole('menuitem', { name: 'Notifications' })).toHaveAttribute('href', '/profile');
+    expect(screen.getByRole('menuitem', { name: 'Settings' })).toHaveAttribute('href', '/marketplace/settings');
+    expect(screen.getByRole('menuitem', { name: 'Notifications' })).toHaveAttribute(
+      'href',
+      '/marketplace/notifications',
+    );
     expect(screen.getByRole('menuitem', { name: 'Profile' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'My posts' })).toBeInTheDocument();
   });
@@ -387,15 +374,6 @@ describe('MobileFooter', () => {
     });
   });
 
-  it('handles active state correctly', () => {
-    vi.mocked(usePathname).mockReturnValue('/home');
-    render(<MobileFooter />);
-
-    const homeLink = document.querySelector('.lucide-house')?.closest('a');
-    expect(homeLink).toHaveClass('bg-secondary');
-    expect(homeLink).not.toHaveClass('border');
-  });
-
   it('handles inactive state correctly', () => {
     vi.mocked(usePathname).mockReturnValue('/search');
     render(<MobileFooter />);
@@ -410,71 +388,6 @@ describe('MobileFooter', () => {
     render(<MobileFooter />);
 
     expect(screen.getByRole('button', { name: 'Account menu' })).toBeInTheDocument();
-  });
-
-  it('highlights Collections on the Collections landing page', () => {
-    vi.mocked(usePathname).mockReturnValue('/collections');
-    render(<MobileFooter />);
-
-    const collectionsLink = document.querySelector('.lucide-library')?.closest('a');
-    expect(collectionsLink).toHaveClass('bg-secondary');
-    expect(collectionsLink).not.toHaveClass('border');
-  });
-
-  it('highlights Collections when on a nested collection route', () => {
-    vi.mocked(usePathname).mockReturnValue('/collections/bookmarks');
-    render(<MobileFooter />);
-
-    const collectionsLink = document.querySelector('.lucide-library')?.closest('a');
-    expect(collectionsLink).toHaveClass('bg-secondary');
-    expect(collectionsLink).not.toHaveClass('border');
-  });
-
-  it('keeps the designer Collections treatment when discovery is new', () => {
-    collectionsDiscoveryMock.showCollectionsNew = true;
-
-    render(<MobileFooter />);
-
-    const collectionsLink = document.querySelector('.lucide-library')?.closest('a');
-    expect(collectionsLink).toHaveClass('border', 'border-border', 'bg-glass');
-    expect(screen.queryByText('New')).not.toBeInTheDocument();
-  });
-
-  it('keeps the active designer background when Collections is active and new', () => {
-    vi.mocked(usePathname).mockReturnValue('/collections');
-    collectionsDiscoveryMock.showCollectionsNew = true;
-
-    render(<MobileFooter />);
-
-    const collectionsLink = document.querySelector('.lucide-library')?.closest('a');
-    expect(collectionsLink).toHaveClass('bg-secondary');
-  });
-
-  it('marks Collections discovery seen when clicking the authenticated Collections nav link', () => {
-    collectionsDiscoveryMock.showCollectionsNew = true;
-    render(<MobileFooter />);
-
-    const collectionsLink = document.querySelector('.lucide-library')?.closest('a');
-    expect(collectionsLink).toBeTruthy();
-    fireEvent.click(collectionsLink!);
-
-    expect(collectionsDiscoveryMock.markCollectionsNavSeen).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not show or dismiss Collections discovery for guests', () => {
-    mockCurrentUserPubky = null;
-    mockIsCoreExploreRoute = true;
-    collectionsDiscoveryMock.showCollectionsNew = true;
-
-    render(<MobileFooter />);
-
-    expect(screen.queryByText('New')).not.toBeInTheDocument();
-    const collectionsLink = document.querySelector('.lucide-library')?.closest('a');
-    expect(collectionsLink).toBeTruthy();
-    expect(collectionsLink).toHaveAttribute('href', '/collections');
-    fireEvent.click(collectionsLink!);
-    expect(collectionsDiscoveryMock.markCollectionsNavSeen).not.toHaveBeenCalled();
-    expect(collectionsDiscoveryMock.setShowSignInDialog).not.toHaveBeenCalled();
   });
 
   it('keeps the account menu visible on sibling settings pages', () => {
@@ -536,34 +449,6 @@ describe('MobileFooter', () => {
     expect(document.querySelector('.lucide-house')).toBeInTheDocument();
   });
 
-  it('scrolls to top when clicking Home while already on /home', () => {
-    vi.mocked(usePathname).mockReturnValue('/home');
-    Object.defineProperty(window, 'scrollTo', { value: vi.fn(), writable: true });
-    const setItemSpy = vi.spyOn(window.sessionStorage, 'setItem');
-
-    render(<MobileFooter />);
-    const homeLink = document.querySelector('.lucide-house')?.closest('a');
-    expect(homeLink).toBeTruthy();
-
-    fireEvent.click(homeLink!);
-    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' });
-    expect(setItemSpy).not.toHaveBeenCalled();
-  });
-
-  it('does not scroll to top when clicking Home from another page', () => {
-    vi.mocked(usePathname).mockReturnValue('/search');
-    Object.defineProperty(window, 'scrollTo', { value: vi.fn(), writable: true });
-    const setItemSpy = vi.spyOn(window.sessionStorage, 'setItem');
-
-    render(<MobileFooter />);
-    const homeLink = document.querySelector('.lucide-house')?.closest('a');
-    expect(homeLink).toBeTruthy();
-
-    fireEvent.click(homeLink!);
-    expect(window.scrollTo).not.toHaveBeenCalled();
-    expect(setItemSpy).toHaveBeenCalledWith(FORCE_FEED_SCROLL_TOP_KEY, '1');
-  });
-
   it('hides while the keyboard is open, so it never floats on the keyboard', () => {
     vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: true });
 
@@ -589,7 +474,12 @@ describe('MobileFooter', () => {
     render(<MobileFooter />);
 
     const links = screen.getAllByRole('link');
-    expect(links.map((link) => link.getAttribute('href'))).toEqual(['/home', '/search', '/hot', '/collections']);
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      'https://pubky.app/home',
+      'https://pubky.app/search',
+      'https://pubky.app/hot',
+      'https://pubky.app/collections',
+    ]);
     expect(document.querySelector('.lucide-library')).toBeInTheDocument();
     expect(document.querySelector('.lucide-settings')).not.toBeInTheDocument();
     expect(screen.queryByTestId('avatar-with-fallback')).not.toBeInTheDocument();
@@ -622,11 +512,11 @@ describe('MobileFooter', () => {
       setSocialHost(undefined);
     });
 
-    it('renders no social-host link while off', () => {
+    it('keeps the default account menu and opens Home in the App', () => {
       render(<MobileFooter />);
 
       expect(screen.queryByRole('link', { name: 'Pubky' })).not.toBeInTheDocument();
-      expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/home');
+      expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute('href', 'https://pubky.app/home');
       expect(useChatUnread).toHaveBeenCalledWith({ enabled: true });
     });
 
@@ -646,8 +536,8 @@ describe('MobileFooter', () => {
           'https://pubky.app/profile',
         ]);
         expect(screen.getByRole('link', { name: 'Shop' })).toHaveClass('bg-secondary');
-        expect(screen.getByRole('link', { name: 'Search' })).not.toHaveAttribute('target');
-        expect(screen.getByRole('link', { name: 'Profile' })).not.toHaveAttribute('target');
+        expect(screen.getByRole('link', { name: 'Search' })).toHaveAttribute('target', '_top');
+        expect(screen.getByRole('link', { name: 'Profile' })).toHaveAttribute('target', '_top');
         expect(screen.queryByRole('button', { name: 'Account menu' })).not.toBeInTheDocument();
         expect(useChatUnread).toHaveBeenCalledWith({ enabled: false });
       } finally {
@@ -662,7 +552,7 @@ describe('MobileFooter', () => {
       render(<MobileFooter />);
       expect(screen.getByRole('link', { name: 'Search' })).toHaveAttribute('href', 'https://staging.pubky.app/search');
       fireEvent.click(screen.getByRole('link', { name: 'Settings' }));
-      expect(collectionsDiscoveryMock.setShowSignInDialog).not.toHaveBeenCalled();
+      expect(setShowSignInDialog).not.toHaveBeenCalled();
       expect(screen.getByRole('button', { name: 'Join Pubky' })).toBeInTheDocument();
     });
   });

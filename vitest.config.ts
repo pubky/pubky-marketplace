@@ -85,7 +85,6 @@ function vrtProject(opts: {
       exclude: ['**/node_modules/**', '**/.claude/**', '**/._*', ...(opts.exclude ?? [])],
       setupFiles: ['./src/test-utils/vrt.setup.ts', ...(opts.setupFiles ?? [])],
       ...(opts.fileParallelism === false ? { fileParallelism: false } : {}),
-      server: { deps: { inline: ['react-tweet'] } },
       browser: {
         enabled: true,
         provider: playwright(),
@@ -199,7 +198,6 @@ export default defineConfig({
           // .claude excludes local tooling worktrees checked out inside the repo.
           // ._* excludes macOS AppleDouble resource-fork files on external drives.
           exclude: ['**/node_modules/**', '**/.claude/**', '**/*.vrt.test.{ts,tsx}', '**/._*'],
-          server: { deps: { inline: ['react-tweet'] } },
         },
       },
       // VRT(Visual Regression Tests) run in real browsers via Playwright.

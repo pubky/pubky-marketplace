@@ -12,7 +12,6 @@ import { Link } from '@/atoms/Link/Link';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Switch } from '@/atoms/Switch/Switch';
 import { Typography } from '@/atoms/Typography/Typography';
-import { isSocialLinkOutEnabled } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import {
   consumeListingComposerReturnTo,
@@ -23,11 +22,11 @@ import {
 import type { SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
+import { MarketplaceAccountSettings } from '@/organisms/Marketplace/MarketplaceAccountSettings';
 import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { MarketplaceDeliveryKeyStep } from '@/organisms/Marketplace/MarketplaceDeliveryKeyStep';
 import { MarketplaceGetPaidSettings } from '@/organisms/Marketplace/MarketplaceGetPaidSettings';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
-import { MarketplaceSignOutCard } from '@/organisms/Marketplace/MarketplaceSignOutCard';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useMarketplaceDisplayStore } from '@/stores/marketplace-display/marketplace-display.store';
 
@@ -191,7 +190,7 @@ export function MarketplacePaymentSettings() {
           </CardContent>
         </Card>
 
-        {isSocialLinkOutEnabled() && <MarketplaceSignOutCard />}
+        <MarketplaceAccountSettings />
       </Container>
     </MarketplaceContentLayout>
   );

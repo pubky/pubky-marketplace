@@ -1,4 +1,4 @@
-import { PubkySpecsBuilder } from 'pubky-app-specs';
+import { buildShop } from 'pubky-market-specs';
 import { describe, expect, it } from 'vitest';
 import { COMMERCE_SHOP_BIO_MAX_CHARS, COMMERCE_SHOP_NAME_MAX_CHARS } from '@/config/commerce';
 import { COMMERCE_FIXTURE_SELLER } from '@/test/fixtures/commerce/commerce';
@@ -30,7 +30,7 @@ describe('buildDefaultShopRecord', () => {
       returnPolicy: '',
       vacationMode: false,
     });
-    const result = new PubkySpecsBuilder(COMMERCE_FIXTURE_SELLER).createShop(record);
+    const result = buildShop(COMMERCE_FIXTURE_SELLER, record);
     expect(result.meta.url).toBe(CommerceRecordNormalizer.shopUri(COMMERCE_FIXTURE_SELLER));
     expect(result.meta.url).toContain('/pub/pubky.app/marketplace/v1/shop.json');
   });
@@ -41,7 +41,7 @@ describe('buildDefaultShopRecord', () => {
     expect(record.name).toBe(`Shop ${COMMERCE_FIXTURE_SELLER.slice(0, 8)}`);
     expect(record.bio).toBe('');
     expect(record.location).toEqual({ countryCode: DEFAULT_SHOP_COUNTRY_CODE });
-    expect(() => new PubkySpecsBuilder(COMMERCE_FIXTURE_SELLER).createShop(record)).not.toThrow();
+    expect(() => buildShop(COMMERCE_FIXTURE_SELLER, record)).not.toThrow();
   });
 
   it('uses the fallback name for a blank profile name and truncates long fields', () => {

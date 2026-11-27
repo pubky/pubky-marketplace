@@ -44,24 +44,21 @@ The fundamental issue: **Where does cross-domain orchestration belong?**
 
 1. **Horizontal calls permitted**: Applications with orchestration privilege MAY call other Application classes within the same layer
 2. **Acyclic dependency graph**: Circular dependencies between Application classes are FORBIDDEN
-3. **Maximum call depth of 1 by default**: If Application A calls Application B, then B MUST NOT call another Application within that execution flow. The only permitted depth-2 paths start from `PostApplication`, `NotificationApplication`, or `TtlApplication`, continue through `PostStreamApplication`, and end at `FileApplication` for attachment persistence inside `fetchMissingPostsFromNexus()` or `fetchOriginalPostsByUris()`. All other depth-2 paths and every path of depth 3 or greater are FORBIDDEN.
+3. **Maximum call depth of 1 by default**: If Application A calls Application B, then B MUST NOT call another Application within that execution flow. The only permitted depth-2 paths start from `PostApplication` or `TtlApplication`, continue through `PostStreamApplication`, and end at `FileApplication` for attachment persistence inside `fetchMissingPostsFromNexus()` or `fetchOriginalPostsByUris()`. All other depth-2 paths and every path of depth 3 or greater are FORBIDDEN.
 4. **Orchestration privilege**: Only the Applications listed below may call other Application classes. All other Application classes (`FileApplication`, `TagApplication`, `BookmarkApplication`, `UserApplication`, etc.) MUST NOT call other Application classes. This keeps specialized domains independent and prevents reverse dependencies on core orchestrators.
 
 #### Allowed orchestrators
 
-| Application               | Why privilege exists                                                                                                               |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `PostApplication`         | Single user action spans files, tags, and related posts (create / edit / delete / replies).                                        |
-| `NotificationApplication` | Hydrates referenced posts/users before notification persistence; see [ADR-0010](./0010-notification-application-orchestration.md). |
-| `BootstrapApplication`    | Session startup must hydrate multiple homeserver/Nexus domains in one coordinated fan-out. **Root-node** orchestrator (see below). |
-| `MigrationApplication`    | After DB recreation, critical homeserver-backed state must be re-synced once. **Root-node** orchestrator (see below).              |
-| `HotApplication`          | Hot-tag UI needs tagger profiles cached before tags are written, to avoid liveQuery flashes with missing users.                    |
-| `PostStreamApplication`   | Stream slices include attachment metadata that must land in the file domain when posts are persisted.                              |
-| `TtlApplication`          | Force-refresh of stale posts must also persist attachments and hydrate embedded original posts for reposts.                        |
+| Application             | Why privilege exists                                                                                           |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `PostApplication`       | Single user action spans files, tags, and related posts (create / edit / delete / replies).                    |
+| `BootstrapApplication`  | Session startup initiates the default moderation follow through the user domain. See the root-node rule below. |
+| `PostStreamApplication` | Stream slices include attachment metadata that must land in the file domain when posts are persisted.          |
+| `TtlApplication`        | Force-refresh of stale posts must also persist attachments and hydrate embedded original posts for reposts.    |
 
 #### Root-node orchestrators
 
-`BootstrapApplication` and `MigrationApplication` are **source nodes (in-degree 0)** in the Application dependency DAG: Controllers invoke them, and no Application may call them, preventing cycles through these roots. Their current execution paths stop after one cross-Application hop, so they remain at depth 1.
+Controllers invoke `BootstrapApplication`. It has no incoming Application dependencies and calls the user domain at depth 1.
 
 ### Example
 
@@ -71,13 +68,13 @@ PostApplication → FileApplication
 PostApplication → TagApplication
 
 // ✅ Depth 2 — only permitted attachment-persistence exception
-PostApplication | NotificationApplication | TtlApplication
+PostApplication | TtlApplication
   → PostStreamApplication
     → FileApplication
 
 // ❌ Forbidden
 FileApplication → TagApplication          // helper → other Application
-HotApplication → PostStreamApplication → FileApplication   // depth 2 outside the exception
+BootstrapApplication → PostStreamApplication → FileApplication   // depth 2 outside the exception
 A → B → C → D                              // depth ≥ 3
 A → B → A                                  // cycle
 ```
@@ -93,7 +90,7 @@ A → B → A                                  // cycle
 
 **We rely on:**
 
-1. **Code Reviews**: Reviewers MUST check for circular dependencies, the call-depth rule and its single explicit exception, orchestration privilege (Allowed orchestrators table), and the root-node invariant (no Application may call `BootstrapApplication` or `MigrationApplication`)
+1. **Code Reviews**: Reviewers MUST check for circular dependencies, the call-depth rule and its single explicit exception, orchestration privilege (Allowed orchestrators table), and the root-node invariant (no Application may call `BootstrapApplication`)
 2. **Automated Review**: The `cross-domain-app-restriction` rule in `.greptile/config.json` mirrors the allowlist and call-depth constraints
 3. **Documentation**: This ADR is the source of truth
 
@@ -188,4 +185,4 @@ Inline file/tag/stream logic inside each orchestrating Application instead of ca
 ## Related Decisions
 
 - **ADR-0004: Layering and Dependency Rules** — Establishes base layer flow that this ADR extends.
-- **ADR-0010: Notification Application Cross-Domain Orchestration Privilege** — Adds a constrained exception for `NotificationApplication` orchestration.
+- **ADR-0010: Notification Application Cross-Domain Orchestration Privilege** — Records the former social notification orchestrator.

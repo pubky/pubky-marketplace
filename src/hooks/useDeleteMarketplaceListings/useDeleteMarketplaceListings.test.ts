@@ -13,7 +13,7 @@ import { type ListingDeleteTarget, useDeleteMarketplaceListings } from './useDel
 const mode = vi.hoisted(() => ({ value: 'transaction-service' }));
 const controller = vi.hoisted(() => ({
   commitDeleteListing: vi.fn(async (_owner: string, _listingId: string) => {}),
-  getMarketplaceOrders: vi.fn(async () => [] as unknown[]),
+  fetchMarketplaceOrderList: vi.fn(async () => ({ orders: [] as unknown[], parseErrors: [] as unknown[] })),
   getMarketplaceListingProjection: vi.fn(async () => null as unknown),
 }));
 
@@ -50,8 +50,8 @@ describe('useDeleteMarketplaceListings', () => {
     mode.value = 'transaction-service';
     controller.commitDeleteListing.mockReset();
     controller.commitDeleteListing.mockResolvedValue(undefined);
-    controller.getMarketplaceOrders.mockReset();
-    controller.getMarketplaceOrders.mockResolvedValue([]);
+    controller.fetchMarketplaceOrderList.mockReset();
+    controller.fetchMarketplaceOrderList.mockResolvedValue({ orders: [], parseErrors: [] });
     controller.getMarketplaceListingProjection.mockReset();
     controller.getMarketplaceListingProjection.mockResolvedValue(null);
     vi.mocked(toast).mockClear();
@@ -59,32 +59,35 @@ describe('useDeleteMarketplaceListings', () => {
   });
 
   it('opens on request and plans from the seller’s open orders on each listing', async () => {
-    controller.getMarketplaceOrders.mockResolvedValue([
-      {
-        id: 'o1',
-        sellerPubky: COMMERCE_FIXTURE_SELLER,
-        state: 'paid',
-        lines: [{ listingAggregateId: aggregateId('one') }],
-      },
-      {
-        id: 'o2',
-        sellerPubky: COMMERCE_FIXTURE_SELLER,
-        state: 'pending_payment',
-        lines: [{ listingAggregateId: aggregateId('one') }],
-      },
-      {
-        id: 'o3',
-        sellerPubky: COMMERCE_FIXTURE_SELLER,
-        state: 'completed',
-        lines: [{ listingAggregateId: aggregateId('one') }],
-      },
-      {
-        id: 'o4',
-        sellerPubky: COMMERCE_FIXTURE_SELLER,
-        state: 'paid',
-        lines: [{ listingAggregateId: aggregateId('other') }],
-      },
-    ]);
+    controller.fetchMarketplaceOrderList.mockResolvedValue({
+      orders: [
+        {
+          id: 'o1',
+          sellerPubky: COMMERCE_FIXTURE_SELLER,
+          state: 'paid',
+          lines: [{ listingAggregateId: aggregateId('one') }],
+        },
+        {
+          id: 'o2',
+          sellerPubky: COMMERCE_FIXTURE_SELLER,
+          state: 'pending_payment',
+          lines: [{ listingAggregateId: aggregateId('one') }],
+        },
+        {
+          id: 'o3',
+          sellerPubky: COMMERCE_FIXTURE_SELLER,
+          state: 'completed',
+          lines: [{ listingAggregateId: aggregateId('one') }],
+        },
+        {
+          id: 'o4',
+          sellerPubky: COMMERCE_FIXTURE_SELLER,
+          state: 'paid',
+          lines: [{ listingAggregateId: aggregateId('other') }],
+        },
+      ],
+      parseErrors: [],
+    });
     const { result } = renderHook(() => useDeleteMarketplaceListings());
 
     await act(async () => {
@@ -101,10 +104,13 @@ describe('useDeleteMarketplaceListings', () => {
       createAuctionProjectionFixture({ auction: { ...base.auction!, bidCount: 1 } }),
     );
     const line = (listingId: string) => ({ listingAggregateId: aggregateId(listingId) });
-    controller.getMarketplaceOrders.mockResolvedValue([
-      { id: 'shared', sellerPubky: COMMERCE_FIXTURE_SELLER, state: 'paid', lines: [line('one'), line('two')] },
-      { id: 'auction-only', sellerPubky: COMMERCE_FIXTURE_SELLER, state: 'paid', lines: [line('auction')] },
-    ]);
+    controller.fetchMarketplaceOrderList.mockResolvedValue({
+      orders: [
+        { id: 'shared', sellerPubky: COMMERCE_FIXTURE_SELLER, state: 'paid', lines: [line('one'), line('two')] },
+        { id: 'auction-only', sellerPubky: COMMERCE_FIXTURE_SELLER, state: 'paid', lines: [line('auction')] },
+      ],
+      parseErrors: [],
+    });
     const { result } = renderHook(() => useDeleteMarketplaceListings());
 
     await act(async () => {
@@ -115,7 +121,7 @@ describe('useDeleteMarketplaceListings', () => {
   });
 
   it('flags an unknown open-order count when the orders cannot be read, and still lets the seller delete', async () => {
-    controller.getMarketplaceOrders.mockRejectedValue(new Error('offline'));
+    controller.fetchMarketplaceOrderList.mockRejectedValue(new Error('offline'));
     const { result } = renderHook(() => useDeleteMarketplaceListings());
 
     await act(async () => {
@@ -129,6 +135,52 @@ describe('useDeleteMarketplaceListings', () => {
     expect(controller.commitDeleteListing).toHaveBeenCalledWith(COMMERCE_FIXTURE_SELLER, 'one');
   });
 
+  it('marks ordersChecked false when any order row failed to parse, while keeping the count of readable open orders', async () => {
+    controller.fetchMarketplaceOrderList.mockResolvedValue({
+      orders: [
+        {
+          id: 'o1',
+          sellerPubky: COMMERCE_FIXTURE_SELLER,
+          state: 'paid',
+          lines: [{ listingAggregateId: aggregateId('one') }],
+        },
+      ],
+      parseErrors: [
+        {
+          kind: 'parse_error',
+          index: 1,
+          orderId: 'bad-order',
+          issues: [{ path: 'orders[1].payment.reviewReason', message: 'invalid value' }],
+        },
+      ],
+    });
+    const { result } = renderHook(() => useDeleteMarketplaceListings());
+
+    await act(async () => {
+      await result.current.request([targetFor('one')]);
+    });
+
+    expect(result.current.plan).toMatchObject({ openOrders: 1, ordersChecked: false });
+
+    controller.fetchMarketplaceOrderList.mockResolvedValue({
+      orders: [],
+      parseErrors: [
+        {
+          kind: 'parse_error',
+          index: 0,
+          orderId: 'bad-order',
+          issues: [{ path: 'orders[0].payment.reviewReason', message: 'invalid value' }],
+        },
+      ],
+    });
+
+    await act(async () => {
+      await result.current.request([targetFor('one')]);
+    });
+
+    expect(result.current.plan).toMatchObject({ openOrders: 0, ordersChecked: false });
+  });
+
   it('does not read orders where there is no transaction service', async () => {
     mode.value = 'unavailable';
     const { result } = renderHook(() => useDeleteMarketplaceListings());
@@ -137,7 +189,7 @@ describe('useDeleteMarketplaceListings', () => {
       await result.current.request([targetFor('one')]);
     });
 
-    expect(controller.getMarketplaceOrders).not.toHaveBeenCalled();
+    expect(controller.fetchMarketplaceOrderList).not.toHaveBeenCalled();
     expect(result.current.plan).toMatchObject({ openOrders: 0, ordersChecked: true });
   });
 

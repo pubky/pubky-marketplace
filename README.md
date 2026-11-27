@@ -27,8 +27,8 @@ Project documents (launch plan, team brief, SSO, upstream briefs):
 
 - **User-owned commerce catalog** — shops, listings (variants, shipping,
   auctions, digital goods), reviews, and drops are seller-signed records on
-  the seller's homeserver (specs fork `pubky-app-specs`
-  `0.6.2-marketplace.x`), indexed by a dedicated Nexus; portable by design.
+  the seller's homeserver. The dedicated Market index reads these records.
+  [Market wire formats](https://github.com/pubky/pubky-market-specs#wire-format)
 - **Durable transactions** — carts, checkout, offers/counteroffers, proxy-bid
   auctions, orders, fulfillment, returns, and disputes run against a
   separate Rust transaction service

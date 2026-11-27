@@ -39,6 +39,7 @@ import {
   repoRequire,
   requireProofEnv,
 } from './seats.mjs';
+import { signOutThroughShopSettings } from './shop-sign-out.mjs';
 import { removeRunStorefront, storefrontExists } from './storefront-cleanup.mjs';
 
 const { chromium } = repoRequire('playwright');
@@ -223,17 +224,6 @@ async function buyListing(page, seat) {
       () => false,
     );
   return observed;
-}
-
-async function signOut(page) {
-  await page.goto(at('/settings/account'), { waitUntil: 'domcontentloaded' });
-  await waitForAppReady(page);
-  const button = page.locator('#sign-out-btn');
-  await button.waitFor({ state: 'visible', timeout: 30_000 });
-  await button.click();
-  await page.waitForURL(/\/sign-in/, { timeout: 60_000 }).catch(() => {});
-  const raw = await page.evaluate(() => localStorage.getItem('shop-auth-store') ?? localStorage.getItem('auth-store'));
-  return raw === null || !JSON.parse(raw)?.state?.currentUserPubky;
 }
 
 // The field renders only after the seller's own payment config loaded without error, so its value is the
@@ -498,7 +488,7 @@ async function checkout() {
     check('checkout: no order or payment command was sent', commands.length === 0, `commands=${commands.length}`);
     const left = await emptyCart(page);
     check('checkout: cart is empty after proof', left === 0, `remaining=${left}`);
-    check('checkout: buyer signed out', await signOut(page));
+    check('checkout: buyer signed out', await signOutThroughShopSettings(page, at('/marketplace/settings')));
   } finally {
     await browser.close();
   }
@@ -542,7 +532,10 @@ async function teardown() {
         );
       }
     }
-    await signOut(page).catch(() => false);
+    check(
+      'Shop session cleared after sign-out',
+      await signOutThroughShopSettings(page, at('/marketplace/settings')).catch(() => false),
+    );
     writeState({ ...state, listingIds: ids, phase: 'torn-down' });
   } finally {
     await browser.close();

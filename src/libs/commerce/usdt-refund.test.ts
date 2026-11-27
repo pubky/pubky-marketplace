@@ -125,26 +125,26 @@ describe('refund destination projection field', () => {
 describe('usdtRefundSurface', () => {
   it('stays hidden for every order that is not paid in USDT', () => {
     for (const paymentAsset of [undefined, null, 'BTC']) {
-      expect(usdtRefundSurface(order({ paymentAsset }), true, false)).toEqual({ kind: 'hidden' });
-      expect(usdtRefundSurface(order({ paymentAsset }), false, false)).toEqual({ kind: 'hidden' });
+      expect(usdtRefundSurface(order({ paymentAsset }), true)).toEqual({ kind: 'hidden' });
+      expect(usdtRefundSurface(order({ paymentAsset }), false)).toEqual({ kind: 'hidden' });
     }
     expect(isUsdtRefundOrder({ paymentAsset: 'USDT' })).toBe(true);
     expect(isUsdtRefundOrder({})).toBe(false);
   });
 
   it('stays hidden until the payment settled', () => {
-    expect(usdtRefundSurface(order({ state: 'pending_payment' }), true, false)).toEqual({ kind: 'hidden' });
-    expect(usdtRefundSurface(order({ state: 'cancelled', receiptId: null }), true, false)).toEqual({ kind: 'hidden' });
+    expect(usdtRefundSurface(order({ state: 'pending_payment' }), true)).toEqual({ kind: 'hidden' });
+    expect(usdtRefundSurface(order({ state: 'cancelled', receiptId: null }), true)).toEqual({ kind: 'hidden' });
   });
 
   it('asks the buyer for an address on a paid order and marks refund-due states', () => {
-    expect(usdtRefundSurface(order(), true, false)).toEqual({ kind: 'buyer', phase: 'needed', refundDue: false });
-    expect(usdtRefundSurface(order({ state: 'return_approved' }), true, false)).toEqual({
+    expect(usdtRefundSurface(order(), true)).toEqual({ kind: 'buyer', phase: 'needed', refundDue: false });
+    expect(usdtRefundSurface(order({ state: 'return_approved' }), true)).toEqual({
       kind: 'buyer',
       phase: 'needed',
       refundDue: true,
     });
-    expect(usdtRefundSurface(order({ state: 'cancelled' }), true, false)).toEqual({
+    expect(usdtRefundSurface(order({ state: 'cancelled' }), true)).toEqual({
       kind: 'buyer',
       phase: 'needed',
       refundDue: true,
@@ -152,7 +152,9 @@ describe('usdtRefundSurface', () => {
   });
 
   it('offers the buyer the address while a payment is in manual review', () => {
-    expect(usdtRefundSurface(order({ state: 'pending_payment', receiptId: null }), true, true)).toEqual({
+    expect(
+      usdtRefundSurface(order({ state: 'pending_payment', receiptId: null }), true, { state: 'manual_review' }),
+    ).toEqual({
       kind: 'buyer',
       phase: 'needed',
       refundDue: true,
@@ -161,20 +163,28 @@ describe('usdtRefundSurface', () => {
 
   it('keeps the address open on a cancelled order whose review ended abandoned', () => {
     const abandoned = order({ state: 'cancelled', receiptId: null });
-    expect(usdtRefundSurface(abandoned, true, false, true)).toEqual({
+    expect(usdtRefundSurface(abandoned, true, { state: 'expired', resolutionOutcome: 'abandoned' })).toEqual({
       kind: 'buyer',
       phase: 'needed',
       refundDue: true,
     });
-    expect(usdtRefundSurface(abandoned, false, false, true)).toEqual({ kind: 'seller', phase: 'waiting' });
-    expect(usdtRefundSurface({ ...abandoned, refundDestination: destination }, false, false, true)).toEqual({
+    expect(usdtRefundSurface(abandoned, false, { state: 'expired', resolutionOutcome: 'abandoned' })).toEqual({
+      kind: 'seller',
+      phase: 'waiting',
+    });
+    expect(
+      usdtRefundSurface({ ...abandoned, refundDestination: destination }, false, {
+        state: 'expired',
+        resolutionOutcome: 'abandoned',
+      }),
+    ).toEqual({
       kind: 'seller',
       phase: 'confirmed',
     });
   });
 
   it('moves the buyer from confirmed to recorded', () => {
-    expect(usdtRefundSurface(order({ refundDestination: destination }), true, false)).toMatchObject({
+    expect(usdtRefundSurface(order({ refundDestination: destination }), true)).toMatchObject({
       phase: 'confirmed',
     });
     expect(
@@ -185,18 +195,17 @@ describe('usdtRefundSurface', () => {
           externalRefund: { amountMinor: 2_500, transactionId: REFUND_FIXTURE_TX_HASH },
         }),
         true,
-        false,
       ),
     ).toMatchObject({ phase: 'recorded' });
   });
 
   it('shows the seller nothing on a plain paid order, and the waiting or confirmed state once a refund is due', () => {
-    expect(usdtRefundSurface(order(), false, false)).toEqual({ kind: 'hidden' });
-    expect(usdtRefundSurface(order({ state: 'return_received' }), false, false)).toEqual({
+    expect(usdtRefundSurface(order(), false)).toEqual({ kind: 'hidden' });
+    expect(usdtRefundSurface(order({ state: 'return_received' }), false)).toEqual({
       kind: 'seller',
       phase: 'waiting',
     });
-    expect(usdtRefundSurface(order({ refundDestination: destination }), false, false)).toEqual({
+    expect(usdtRefundSurface(order({ refundDestination: destination }), false)).toEqual({
       kind: 'seller',
       phase: 'confirmed',
     });

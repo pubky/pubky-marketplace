@@ -2,11 +2,11 @@ import { attestorWindowsParam } from '@/libs/commerce/review-counting';
 import type { MarketplaceTrustedAttestor } from '@/libs/runtime-config/runtime-config.schema';
 
 /**
- * The agent guide served at /llms.txt. INDEX is the marketplace Nexus the Shop itself reads, so
- * agents query the same index build as the app.
+ * The agent guide served at /llms.txt uses the same marketplace and social Nexus URLs as the Shop.
  */
 export function renderAgentGuide(
   indexUrl: string,
+  socialUrl: string,
   trustedAttestors: readonly MarketplaceTrustedAttestor[],
   {
     configured = trustedAttestors,
@@ -94,10 +94,11 @@ Agents read only: no key, no sign-in, no install. To buy, hand the person a link
 ## Base URLs
 
 INDEX = ${indexUrl}
+SOCIAL = ${socialUrl}
 SHOP  = https://shop.pubky.app
 
-INDEX is the current host; a stable alias may replace it. Every path below is INDEX + path.
-Full reference (all routes, params, schemas): INDEX/api-docs/v0/openapi.json
+INDEX serves marketplace records and reviews. SOCIAL serves community tags on Social v1.
+The marketplace API reference is at INDEX/api-docs/v0/openapi.json.
 If your tool can set headers, send a User-Agent that names your agent; requests without one are
 fine. Page with \`skip\`; keep requests modest.
 
@@ -202,8 +203,11 @@ GET INDEX/v0/listing/adjnbqbam6b6nkcjp8iarxorjmqycxo6cwfzxspeyxaqjxmnjdcy/5d277f
   …
 }
 
-Related: INDEX/v0/listing/{seller_id}/{listing_id}/tags (community tags),
-INDEX/v0/listing/{seller_id}/{listing_id}/reviews (reviews of this listing).
+Get listing reviews at INDEX/v0/listing/{seller_id}/{listing_id}/reviews.
+For community tags, check GET SOCIAL/v1/info. On success, URL-encode the listing's full
+\`uri\` from the response above and read GET SOCIAL/v1/resource/by-uri?uri={encoded_uri}&skip_tags=0&limit_tags=5.
+Read the \`tags\` array. A 404 from this resource lookup means the listing has no indexed tags.
+If SOCIAL/v1/info returns 404, read the legacy tags at INDEX/v0/listing/{seller_id}/{listing_id}/tags.
 Media URIs are records on the seller's homeserver; the listing page renders them.
 
 ### 4. Is this seller any good?

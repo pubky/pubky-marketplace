@@ -32,7 +32,6 @@ vi.mock('@/hooks/useMarketplaceLocksPayment/useMarketplaceLocksPayment', () => (
     isUnlocking: false,
     delivery: null,
     error: null,
-    pollExhausted: false,
     start: vi.fn(),
     unlock: vi.fn(),
     resumePolling: vi.fn(),

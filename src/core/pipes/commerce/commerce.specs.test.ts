@@ -1,4 +1,4 @@
-import { PubkySpecsBuilder } from 'pubky-app-specs';
+import { buildListing, buildShop } from 'pubky-market-specs';
 import { describe, expect, it } from 'vitest';
 import {
   COMMERCE_FIXTURE_SELLER,
@@ -9,7 +9,7 @@ import { CommerceRecordNormalizer } from './commerce.normalizer';
 
 /**
  * Contract tests between this client's Zod record schemas and the marketplace
- * object definitions in pubky-app-specs, so the client cannot drift into writing
+ * object definitions in pubky-market-specs, so the client cannot drift into writing
  * records that other Pubky clients and Nexus cannot parse.
  *
  * Note the asymmetry these tests pin down: required and malformed fields are
@@ -18,18 +18,16 @@ import { CommerceRecordNormalizer } from './commerce.normalizer';
  * deny_unknown_fields through. So adding a record field on the client alone
  * loses it on write instead of failing loudly — the spec has to be changed first.
  */
-describe('commerce records against pubky-app-specs', () => {
-  const builder = () => new PubkySpecsBuilder(COMMERCE_FIXTURE_SELLER);
-
+describe('commerce records against pubky-market-specs', () => {
   it('accepts a client shop record and returns the canonical singleton path', () => {
-    const result = builder().createShop(createCommerceShopFixture());
+    const result = buildShop(COMMERCE_FIXTURE_SELLER, createCommerceShopFixture());
 
     expect(result.meta.url).toBe(CommerceRecordNormalizer.shopUri(COMMERCE_FIXTURE_SELLER));
     expect(result.meta.url).toContain('/pub/pubky.app/marketplace/v1/shop.json');
   });
 
   it('accepts a client listing record and assigns a spec-generated timestamp id', () => {
-    const result = builder().createListing(createCommerceListingFixture());
+    const result = buildListing(COMMERCE_FIXTURE_SELLER, createCommerceListingFixture());
 
     // The spec owns id generation; ids are 13-char Crockford base32 like posts.
     expect(result.meta.id).toMatch(/^[0-9A-Z]{13}$/);
@@ -41,17 +39,17 @@ describe('commerce records against pubky-app-specs', () => {
   it('strips a listing field the spec does not define instead of rejecting it', () => {
     const record = { ...createCommerceListingFixture(), unexpectedField: 'nope' };
 
-    const result = builder().createListing(record);
+    const result = buildListing(COMMERCE_FIXTURE_SELLER, record);
     const serialized = JSON.parse(JSON.stringify(result.listing)) as Record<string, unknown>;
 
     // Documents the limitation deliberately: client-only fields are dropped on
-    // write, so a new record field must land in pubky-app-specs first.
+    // write, so a new record field must land in pubky-market-specs first.
     expect('unexpectedField' in serialized).toBe(false);
   });
 
   it('round-trips the attributes container and both taxonomy versions through the spec', () => {
     const attributes = { size: 'US 9', color: ['brown', 'black'], 'graded-by': 'PSA 9' };
-    const result = builder().createListing({ ...createCommerceListingFixture(), attributes });
+    const result = buildListing(COMMERCE_FIXTURE_SELLER, { ...createCommerceListingFixture(), attributes });
     const serialized = result.listing.toJson() as Record<string, unknown>;
     // The wasm boundary renders Rust maps as JS Maps (same as variant
     // options); the wire format is still a plain JSON object.
@@ -59,27 +57,40 @@ describe('commerce records against pubky-app-specs', () => {
 
     // v1 records (no attributes) remain spec-valid alongside v2 records.
     expect(() =>
-      builder().createListing({ ...createCommerceListingFixture(), taxonomyVersion: 1, attributes: undefined }),
+      buildListing(COMMERCE_FIXTURE_SELLER, {
+        ...createCommerceListingFixture(),
+        taxonomyVersion: 1,
+        attributes: undefined,
+      }),
     ).not.toThrow();
   });
 
   it('rejects spec-invalid attributes at the wasm boundary', () => {
     expect(() =>
-      builder().createListing({ ...createCommerceListingFixture(), attributes: { 'Not-Kebab': 'value' } }),
+      buildListing(COMMERCE_FIXTURE_SELLER, {
+        ...createCommerceListingFixture(),
+        attributes: { 'Not-Kebab': 'value' },
+      }),
     ).toThrow();
     expect(() =>
-      builder().createListing({ ...createCommerceListingFixture(), attributes: { color: ['brown', 'brown'] } }),
+      buildListing(COMMERCE_FIXTURE_SELLER, {
+        ...createCommerceListingFixture(),
+        attributes: { color: ['brown', 'brown'] },
+      }),
     ).toThrow();
   });
 
   it('rejects a listing record whose field violates a spec rule', () => {
     const record = { ...createCommerceListingFixture(), title: '' };
 
-    expect(() => builder().createListing(record)).toThrow();
+    expect(() => buildListing(COMMERCE_FIXTURE_SELLER, record)).toThrow();
   });
 
   it('round-trips the seller-set delivery and completion periods through the spec', () => {
-    const result = builder().createShop(createCommerceShopFixture({ deliveryAssumeDays: 14, autoCompleteDays: 30 }));
+    const result = buildShop(
+      COMMERCE_FIXTURE_SELLER,
+      createCommerceShopFixture({ deliveryAssumeDays: 14, autoCompleteDays: 30 }),
+    );
     const serialized = result.shop.toJson() as Record<string, unknown>;
 
     expect(serialized.deliveryAssumeDays).toBe(14);
@@ -87,7 +98,7 @@ describe('commerce records against pubky-app-specs', () => {
   });
 
   it('keeps a shop without seller-set periods free of the period fields', () => {
-    const result = builder().createShop(createCommerceShopFixture());
+    const result = buildShop(COMMERCE_FIXTURE_SELLER, createCommerceShopFixture());
     const serialized = result.shop.toJson() as Record<string, unknown>;
 
     expect('deliveryAssumeDays' in serialized).toBe(false);
@@ -95,20 +106,20 @@ describe('commerce records against pubky-app-specs', () => {
   });
 
   it('rejects seller-set periods outside the spec bounds at the wasm boundary', () => {
-    expect(() => builder().createShop(createCommerceShopFixture({ deliveryAssumeDays: 0 }))).toThrow();
-    expect(() => builder().createShop(createCommerceShopFixture({ autoCompleteDays: 61 }))).toThrow();
+    expect(() => buildShop(COMMERCE_FIXTURE_SELLER, createCommerceShopFixture({ deliveryAssumeDays: 0 }))).toThrow();
+    expect(() => buildShop(COMMERCE_FIXTURE_SELLER, createCommerceShopFixture({ autoCompleteDays: 61 }))).toThrow();
   });
 
   it('rejects a shop record missing a spec-required field', () => {
     const { schemaVersion: _schemaVersion, ...incomplete } = createCommerceShopFixture();
 
-    expect(() => builder().createShop(incomplete)).toThrow();
+    expect(() => buildShop(COMMERCE_FIXTURE_SELLER, incomplete)).toThrow();
   });
 });
 
 describe('the vendored specs parser and the seller declaration (legal launch plan C1)', () => {
   it('accepts a shop record that carries sellerStatus and sellerStatusConfirmedAt, so no specs change is needed', () => {
-    const result = new PubkySpecsBuilder(COMMERCE_FIXTURE_SELLER).createShop({
+    const result = buildShop(COMMERCE_FIXTURE_SELLER, {
       ...createCommerceShopFixture(),
       sellerStatus: 'private',
       sellerStatusConfirmedAt: '2026-10-23T10:00:00.000Z',

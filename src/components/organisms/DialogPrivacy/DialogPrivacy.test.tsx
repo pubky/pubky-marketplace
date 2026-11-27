@@ -63,23 +63,6 @@ vi.mock('@/atoms/List/List', () => {
   };
 });
 
-vi.mock('@/atoms/SidebarButton/SidebarButton', () => {
-  return {
-    SidebarButton: ({
-      children,
-      icon: Icon,
-    }: {
-      children: React.ReactNode;
-      icon: React.ComponentType<{ className?: string }>;
-    }) => (
-      <button data-testid="sidebar-button">
-        <Icon data-testid="sidebar-button-icon" />
-        <span data-testid="sidebar-button-text">{children}</span>
-      </button>
-    ),
-  };
-});
-
 vi.mock('@/atoms/Typography/Typography', () => {
   return {
     Typography: ({

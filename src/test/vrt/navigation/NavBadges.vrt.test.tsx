@@ -5,9 +5,6 @@ import { renderForVRT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { HeaderNavigationButtons } from '@/molecules/Header/Header';
 import { MobileFooter } from '@/molecules/MobileFooter/MobileFooter';
-import { ProfilePageHeader } from '@/organisms/ProfilePageHeader/ProfilePageHeader';
-
-const COUNTERPARTY = 'z'.repeat(52);
 
 const unread = vi.hoisted(() => ({ count: 0 }));
 const auth = vi.hoisted(() => ({ currentUserPubky: 'o'.repeat(52) as string | null }));
@@ -16,7 +13,7 @@ const commerce = vi.hoisted(() => ({ mode: 'unavailable' as 'unavailable' | 'san
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
-  usePathname: () => '/home',
+  usePathname: () => '/marketplace',
 }));
 
 vi.mock('@/config/commerce', async () => {
@@ -42,10 +39,6 @@ vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({
   useMarketplaceCartCount: () => cart.count,
 }));
 
-vi.mock('@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery', () => ({
-  useCollectionsNavDiscovery: () => ({ showCollectionsNew: false, markCollectionsNavSeen: vi.fn() }),
-}));
-
 vi.mock('@/hooks/useRequireAuth/useRequireAuth', () => ({
   useRequireAuth: () => ({ requireAuth: <T,>(action: () => T) => action() }),
 }));
@@ -68,39 +61,10 @@ vi.mock('@/hooks/usePublicRoute/usePublicRoute', () => ({
 
 vi.mock('@/stores/notification/notification.store', () => ({
   useNotificationStore: (selector: (state: Record<string, unknown>) => unknown) =>
-    selector({ selectTotalUnread: () => 0 }),
+    selector({ selectMarketplaceUnread: () => 0 }),
 }));
 
-vi.mock('@/stores/localFiles/localFiles.store', () => ({
-  useLocalFilesStore: (selector: (state: Record<string, unknown>) => unknown) => selector({ profile: null }),
-}));
-
-function ProfileHeaderHarness() {
-  return (
-    <main className="mx-auto w-full max-w-4xl px-6 py-10">
-      <ProfilePageHeader
-        profile={{
-          name: 'Satoshi Nakamoto',
-          publicKey: COUNTERPARTY,
-          link: `https://pubky.app/profile/${COUNTERPARTY}`,
-          status: '',
-        }}
-        actions={{
-          onCopyLink: () => {},
-          onCopyPublicKey: () => {},
-          onFollowToggle: () => {},
-          isFollowLoading: false,
-          followLoadingAction: null,
-          isFollowing: false,
-        }}
-        isOwnProfile={false}
-        userId={COUNTERPARTY}
-      />
-    </main>
-  );
-}
-
-describe('Navigation badges and message entry points — visual regression', () => {
+describe('Market navigation badges — visual regression', () => {
   beforeEach(() => {
     unread.count = 0;
     cart.count = 0;
@@ -166,15 +130,5 @@ describe('Navigation badges and message entry points — visual regression', () 
       { viewport: VRT_VIEWPORT_MOBILE },
     );
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('footer-store-cart-badge-mobile');
-  });
-
-  it('renders the profile Message button on another user profile at desktop viewport', async () => {
-    const screen = await renderForVRT(<ProfileHeaderHarness />, { viewport: VRT_VIEWPORT_DESKTOP });
-    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('profile-message-button-desktop');
-  });
-
-  it('renders the profile Message button at mobile viewport', async () => {
-    const screen = await renderForVRT(<ProfileHeaderHarness />, { viewport: VRT_VIEWPORT_MOBILE });
-    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('profile-message-button-mobile');
   });
 });

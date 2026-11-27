@@ -1,6 +1,5 @@
 import { ACCOUNT_ROUTES, AUTH_ROUTES } from '@/app/routes';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { NotificationController } from '@/controllers/notification/notification';
 import { Coordinator } from '@/coordinators/base/coordinator';
 import { routeToRegex } from '@/coordinators/base/coordinators.utils';
 import type {
@@ -19,8 +18,7 @@ import { useAuthStore } from '@/stores/auth/auth.store';
  * This is a singleton coordinator that should be accessed via getInstance().
  * Typically managed by CoordinatorsManager component in the app layout.
  *
- * The coordinator's only responsibility is to poll and update indexdb. UI components
- * query notification store using useNotificationStore to get the latest unread count.
+ * Market navigation reads the resulting transactional unread count from the notification store.
  */
 export class NotificationCoordinator extends Coordinator<NotificationCoordinatorConfig, NotificationCoordinatorState> {
   private static instance: NotificationCoordinator | null = null;
@@ -94,23 +92,7 @@ export class NotificationCoordinator extends Coordinator<NotificationCoordinator
    * Execute a single poll operation
    */
   protected async poll(): Promise<void> {
-    try {
-      // Get current user ID
-      const userId = useAuthStore.getState().selectCurrentUserPubky();
-
-      Logger.debug('Polling notifications', { userId });
-
-      // Coordinator calls controller to fetch notifications
-      await NotificationController.fetchNotifications({ userId });
-    } catch (error) {
-      Logger.error('Error polling notifications', { error });
-      // Don't stop polling on error - just log and continue
-    }
-
-    // Marketplace badge refresh is isolated in its own try/catch so a commerce
-    // backend failure can never break social notification polling (and vice
-    // versa) — the general surface is shared by the whole app. The controller
-    // itself no-ops outside sandbox mode and for signed-out sessions.
+    if (!useAuthStore.getState().currentUserPubky) return;
     try {
       await CommerceController.refreshMarketplaceNotificationBadge();
     } catch (error) {

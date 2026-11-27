@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readJsonBody } from './read-json-body';
 
-const ROUTE_URL = 'http://localhost:3000/api/feedback';
+const ROUTE_URL = 'http://localhost:3000/api/report';
 const MAX_BYTES = 1024;
 
 function chunkedStream(chunks: string[], onCancel = vi.fn()) {

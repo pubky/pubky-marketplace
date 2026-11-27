@@ -14,7 +14,6 @@ import {
   wrapPrivDataKey,
 } from '@/libs/commerce/priv-key-wrap';
 import type { MarketplacePrivKeysResult } from '@/libs/commerce/priv-keys';
-import { buildPrivRecoveryKeyFile, type PrivRecoveryKeyExport } from '@/libs/commerce/priv-recovery-key';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -169,17 +168,6 @@ export class CommercePrivKeyringApplication {
     encryptionKeys?.free();
     const read = await MarketplaceGatewayService.getPrivKeys(ownerPubky);
     return read.kind === 'released' ? { kind: 'unavailable' } : read;
-  }
-
-  /**
-   * The owner's recovery key file ("Export recovery key"), built from the
-   * same released keys the encrypted records use. Nothing is kept once the
-   * caller has the file contents.
-   */
-  static async exportRecoveryKey(ownerPubky: string): Promise<PrivRecoveryKeyExport> {
-    const result = await this.get(ownerPubky);
-    if (result.kind !== 'keys') return result;
-    return { kind: 'file', file: buildPrivRecoveryKeyFile(result.keyring) };
   }
 
   /** Drops and zeroes every held key. Part of sign-out and session teardown. */

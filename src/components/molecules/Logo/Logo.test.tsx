@@ -2,7 +2,6 @@ import { usePathname } from 'next/navigation';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LOGO_LANDING_ROUTES } from '@/app/routes';
-import { FORCE_FEED_SCROLL_TOP_KEY } from '@/config/feed';
 import { setSocialHost } from '@/test-utils/social-host';
 import { Logo } from './Logo';
 
@@ -86,8 +85,8 @@ describe('Logo', () => {
     expect(image).toHaveAttribute('height', '80');
   });
 
-  it('scrolls to top when clicking logo on /home', () => {
-    vi.mocked(usePathname).mockReturnValue('/home');
+  it('scrolls to top when clicking logo on the catalog', () => {
+    vi.mocked(usePathname).mockReturnValue('/marketplace');
 
     Object.defineProperty(window, 'scrollTo', { value: vi.fn(), writable: true });
 
@@ -111,7 +110,7 @@ describe('Logo', () => {
 
     fireEvent.click(link!);
     expect(window.scrollTo).not.toHaveBeenCalled();
-    expect(setItemSpy).toHaveBeenCalledWith(FORCE_FEED_SCROLL_TOP_KEY, '1');
+    expect(setItemSpy).not.toHaveBeenCalled();
   });
 
   it.each(LOGO_LANDING_ROUTES)('links to the root URL on %s', (pathname) => {
@@ -148,10 +147,10 @@ describe('Logo - social link-out', () => {
     setSocialHost(undefined);
   });
 
-  it('links to /home while off', () => {
+  it('links to the catalog by default', () => {
     vi.mocked(usePathname).mockReturnValue('/marketplace/orders');
     render(<Logo />);
-    expect(screen.getAllByTestId('logo-image')[0].closest('a')).toHaveAttribute('href', '/home');
+    expect(screen.getAllByTestId('logo-image')[0].closest('a')).toHaveAttribute('href', '/marketplace');
   });
 
   it('links to the marketplace while on', () => {

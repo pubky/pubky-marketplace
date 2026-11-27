@@ -3822,130 +3822,19 @@ describe('CommerceApplication', () => {
     });
   });
 
-  describe('fetchFollowedSellerCatalogListings', () => {
-    const FOLLOWED_KNOWN_SELLER = COMMERCE_FIXTURE_SELLER;
-    const FOLLOWED_SHOP_ONLY_SELLER = 's'.repeat(52);
-    const FOLLOWED_NON_SELLER = 'z'.repeat(52);
-
-    function mockLocalCache({ withShopOnlySeller = false } = {}) {
-      vi.spyOn(LocalCommerceService, 'bulkUpsertCatalogEntries').mockResolvedValue(undefined);
-      vi.spyOn(LocalCommerceService, 'getAllCatalogEntries').mockResolvedValue([createCommerceCatalogEntryFixture()]);
-      vi.spyOn(LocalCommerceService, 'getAllShops').mockResolvedValue(
-        withShopOnlySeller
-          ? [
-              new CommerceShopModel({
-                id: FOLLOWED_SHOP_ONLY_SELLER,
-                owner_id: FOLLOWED_SHOP_ONLY_SELLER,
-                record: createCommerceShopFixture({ ownerPubky: FOLLOWED_SHOP_ONLY_SELLER }),
-                revision: 1,
-                sync_status: 'synced',
-                updated_at: 1_000,
-              }),
-            ]
-          : [],
-      );
-      // Shop hydration for refreshed sellers stays cache-first.
-      vi.spyOn(LocalCommerceService, 'getShop').mockResolvedValue(
-        new CommerceShopModel({
-          id: FOLLOWED_KNOWN_SELLER,
-          owner_id: FOLLOWED_KNOWN_SELLER,
-          record: createCommerceShopFixture(),
-          revision: 1,
-          sync_status: 'synced',
-          updated_at: 1_000,
-        }),
-      );
-    }
-
-    it('never reads from Nexus in sandbox mode or without follows', async () => {
-      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('sandbox');
-      const stream = vi.spyOn(NexusMarketplaceService, 'fetchListingStream');
-
-      await CommerceApplication.fetchFollowedSellerCatalogListings([FOLLOWED_KNOWN_SELLER]);
-      expect(stream).not.toHaveBeenCalled();
-
-      vi.mocked(commerceConfig.getCommerceAdapterMode).mockReturnValue('transaction-service');
-      await CommerceApplication.fetchFollowedSellerCatalogListings([]);
-      expect(stream).not.toHaveBeenCalled();
-    });
-
-    it('issues one global page plus per-seller refreshes only for follows known to sell', async () => {
-      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
-      mockLocalCache({ withShopOnlySeller: true });
-      const stream = vi
-        .spyOn(NexusMarketplaceService, 'fetchListingStream')
-        .mockResolvedValue([createNexusListingDetailsFixture()]);
-
-      await CommerceApplication.fetchFollowedSellerCatalogListings([
-        FOLLOWED_NON_SELLER,
-        FOLLOWED_KNOWN_SELLER,
-        FOLLOWED_SHOP_ONLY_SELLER,
-      ]);
-
-      const sellerCalls = stream.mock.calls.map(([params]) => params?.seller_id).filter(Boolean);
-      expect(stream).toHaveBeenNthCalledWith(1, { state: 'active', limit: 30 });
-      // The known seller (cached index entry) and the shop-only seller are
-      // refreshed; the followed account that never sold anything costs nothing.
-      expect(sellerCalls).toEqual([FOLLOWED_KNOWN_SELLER, FOLLOWED_SHOP_ONLY_SELLER]);
-    });
-
-    it('caps per-seller refreshes at the configured budget', async () => {
-      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
-      const followedSellers = Array.from({ length: 10 }, (_, index) => String.fromCharCode(97 + index).repeat(52));
-      vi.spyOn(LocalCommerceService, 'bulkUpsertCatalogEntries').mockResolvedValue(undefined);
-      vi.spyOn(LocalCommerceService, 'getAllCatalogEntries').mockResolvedValue(
-        followedSellers.map((sellerId) =>
-          createCommerceCatalogEntryFixture({ id: `${sellerId}:boots_01`, seller_id: sellerId }),
-        ),
-      );
-      vi.spyOn(LocalCommerceService, 'getAllShops').mockResolvedValue([]);
-      vi.spyOn(LocalCommerceService, 'getShop').mockResolvedValue(
-        new CommerceShopModel({
-          id: COMMERCE_FIXTURE_SELLER,
-          owner_id: COMMERCE_FIXTURE_SELLER,
-          record: createCommerceShopFixture(),
-          revision: 1,
-          sync_status: 'synced',
-          updated_at: 1_000,
-        }),
-      );
-      const stream = vi.spyOn(NexusMarketplaceService, 'fetchListingStream').mockResolvedValue([]);
-
-      await CommerceApplication.fetchFollowedSellerCatalogListings(followedSellers);
-
-      const sellerCalls = stream.mock.calls.map(([params]) => params?.seller_id).filter(Boolean);
-      expect(sellerCalls).toEqual(
-        followedSellers.slice(0, commerceConfig.MARKETPLACE_FOLLOWED_SHELF_MAX_SELLER_FETCHES),
-      );
-    });
-
-    it('falls back to cache-known sellers when the global page fails, and survives per-seller failures', async () => {
-      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
-      mockLocalCache({ withShopOnlySeller: true });
-      const stream = vi.spyOn(NexusMarketplaceService, 'fetchListingStream').mockImplementation(async (params = {}) => {
-        if (!params.seller_id) throw new TypeError('nexus unreachable');
-        if (params.seller_id === FOLLOWED_SHOP_ONLY_SELLER) throw new TypeError('seller stream failed');
-        return [createNexusListingDetailsFixture()];
-      });
-
-      await expect(
-        CommerceApplication.fetchFollowedSellerCatalogListings([FOLLOWED_KNOWN_SELLER, FOLLOWED_SHOP_ONLY_SELLER]),
-      ).resolves.toBeUndefined();
-
-      const sellerCalls = stream.mock.calls.map(([params]) => params?.seller_id).filter(Boolean);
-      expect(sellerCalls).toEqual([FOLLOWED_KNOWN_SELLER, FOLLOWED_SHOP_ONLY_SELLER]);
-    });
-  });
-
   describe('fetchMarketplaceTags', () => {
+    const isCurrent = () => true;
     const VIEWER = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo';
     const nexusTag = { label: 'handmade', taggers: [VIEWER], taggers_count: 1, relationship: true };
 
     it('fetches listing tags from Nexus and merges them into the local cache', async () => {
-      const fetchSpy = vi.spyOn(NexusMarketplaceService, 'fetchListingTags').mockResolvedValue([nexusTag]);
+      const fetchSpy = vi
+        .spyOn(NexusMarketplaceService, 'fetchListingTags')
+        .mockResolvedValue({ tags: [nexusTag], completeResource: false });
       const mergeSpy = vi.spyOn(LocalMarketplaceTagService, 'mergeTags').mockResolvedValue(undefined);
 
       const result = await CommerceApplication.fetchMarketplaceTags({
+        isCurrent,
         kind: TagKind.LISTING,
         taggedId: `${COMMERCE_FIXTURE_SELLER}:0034A0X7NJ52A`,
         viewerId: VIEWER,
@@ -3960,17 +3849,25 @@ describe('CommerceApplication', () => {
         viewer_id: VIEWER,
       });
       expect(mergeSpy).toHaveBeenCalledWith({
+        isCurrent,
         taggedId: `listing:${COMMERCE_FIXTURE_SELLER}:0034A0X7NJ52A`,
         tags: [nexusTag],
         viewerId: VIEWER,
+        clearMissing: false,
       });
     });
 
     it('fetches shop tags from Nexus keyed by the owner pubky', async () => {
-      const fetchSpy = vi.spyOn(NexusMarketplaceService, 'fetchShopTags').mockResolvedValue([nexusTag]);
+      const fetchSpy = vi
+        .spyOn(NexusMarketplaceService, 'fetchShopTags')
+        .mockResolvedValue({ tags: [nexusTag], completeResource: true });
       const mergeSpy = vi.spyOn(LocalMarketplaceTagService, 'mergeTags').mockResolvedValue(undefined);
 
-      await CommerceApplication.fetchMarketplaceTags({ kind: TagKind.SHOP, taggedId: COMMERCE_FIXTURE_SELLER });
+      await CommerceApplication.fetchMarketplaceTags({
+        isCurrent,
+        kind: TagKind.SHOP,
+        taggedId: COMMERCE_FIXTURE_SELLER,
+      });
 
       expect(fetchSpy).toHaveBeenCalledWith({
         seller_id: COMMERCE_FIXTURE_SELLER,
@@ -3979,9 +3876,11 @@ describe('CommerceApplication', () => {
         viewer_id: undefined,
       });
       expect(mergeSpy).toHaveBeenCalledWith({
+        isCurrent,
         taggedId: `shop:${COMMERCE_FIXTURE_SELLER}`,
         tags: [nexusTag],
         viewerId: null,
+        clearMissing: true,
       });
     });
 
@@ -3992,6 +3891,7 @@ describe('CommerceApplication', () => {
       const mergeSpy = vi.spyOn(LocalMarketplaceTagService, 'mergeTags');
 
       const result = await CommerceApplication.fetchMarketplaceTags({
+        isCurrent,
         kind: TagKind.LISTING,
         taggedId: `${COMMERCE_FIXTURE_SELLER}:0034A0X7NJ52A`,
       });
@@ -4004,21 +3904,28 @@ describe('CommerceApplication', () => {
       vi.spyOn(NexusMarketplaceService, 'fetchShopTags').mockRejectedValue(new Error('nexus unreachable'));
 
       await expect(
-        CommerceApplication.fetchMarketplaceTags({ kind: TagKind.SHOP, taggedId: COMMERCE_FIXTURE_SELLER }),
+        CommerceApplication.fetchMarketplaceTags({ isCurrent, kind: TagKind.SHOP, taggedId: COMMERCE_FIXTURE_SELLER }),
       ).rejects.toThrow('nexus unreachable');
     });
 
-    it('skips the merge when Nexus returns an empty aggregate', async () => {
-      vi.spyOn(NexusMarketplaceService, 'fetchShopTags').mockResolvedValue([]);
+    it('reconciles stale local tags when Nexus returns an empty aggregate', async () => {
+      vi.spyOn(NexusMarketplaceService, 'fetchShopTags').mockResolvedValue({ tags: [], completeResource: true });
       const mergeSpy = vi.spyOn(LocalMarketplaceTagService, 'mergeTags');
 
       const result = await CommerceApplication.fetchMarketplaceTags({
+        isCurrent,
         kind: TagKind.SHOP,
         taggedId: COMMERCE_FIXTURE_SELLER,
       });
 
       expect(result).toEqual([]);
-      expect(mergeSpy).not.toHaveBeenCalled();
+      expect(mergeSpy).toHaveBeenCalledWith({
+        isCurrent,
+        taggedId: `shop:${COMMERCE_FIXTURE_SELLER}`,
+        tags: [],
+        viewerId: null,
+        clearMissing: true,
+      });
     });
   });
 

@@ -292,10 +292,12 @@ export function MarketplaceDashboard() {
               Shipping presets
             </Link>
           </Button>
-          <SellingNavLink held={sellingHeld} href={MARKETPLACE_ROUTES.SETTINGS}>
-            <Wallet className="size-4" aria-hidden="true" />
-            Payment settings
-          </SellingNavLink>
+          <Button asChild variant="secondary" size="sm" className="rounded-full text-xs font-bold">
+            <Link href={MARKETPLACE_ROUTES.SETTINGS} overrideDefaults>
+              <Wallet className="size-4" aria-hidden="true" />
+              Shop settings
+            </Link>
+          </Button>
           <SellingNavLink held={sellingHeld} href={MARKETPLACE_ROUTES.SETTINGS_STORE_CONNECTIONS}>
             <Plug className="size-4" aria-hidden="true" />
             Store connections

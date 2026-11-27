@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { OgAvatar, OgHeader } from './OgComponents';
+import { OgAvatar } from './OgComponents';
 import { OG_TOKENS } from './ogConstants';
 
 describe('OgAvatar', () => {
@@ -18,15 +18,5 @@ describe('OgAvatar', () => {
     expect(html).toContain('<img');
     expect(html).toContain('border-radius:50%');
     expect(html).toContain('object-fit:cover');
-  });
-});
-
-describe('OgHeader', () => {
-  it('renders the author name with the avatar and brand mark', () => {
-    const html = renderToStaticMarkup(<OgHeader avatarUrl={null} name="Satoshi Nakamoto" />);
-
-    expect(html).toContain('Satoshi Nakamoto');
-    // brand mark (Pubky keyhole) is present via its brand-colored path fill
-    expect(html).toContain(OG_TOKENS.brand);
   });
 });

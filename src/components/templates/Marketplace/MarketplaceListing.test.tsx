@@ -5,6 +5,7 @@ import { CAPABILITIES } from '@/config/app';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { CHECKOUT_HOLD_COPY } from '@/libs/commerce/checkout-hold';
 import { getMarketplaceOfferCheckoutRoute } from '@/libs/commerce/checkout-phase';
+import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
 import type { CommerceReputationSnippet } from '@/models/commerce/commerce.schema';
 import type { MarketplaceOffer } from '@/services/marketplace/marketplace';
 import type { GrantSigner } from '@/stores/auth/auth.types';
@@ -218,10 +219,6 @@ vi.mock('@/organisms/Marketplace/MarketplaceCommunityTags', () => ({
   MarketplaceCommunityTags: () => null,
 }));
 
-vi.mock('@/organisms/Marketplace/MarketplaceListingSavePicker', () => ({
-  MarketplaceListingSavePicker: () => null,
-}));
-
 vi.mock('@/organisms/Marketplace/MarketplaceMessageDialog', () => ({
   MarketplaceMessageDialog: () => <button type="button">Message seller</button>,
 }));
@@ -280,12 +277,40 @@ describe('MarketplaceListing', () => {
     authState.setShowSignInDialog.mockClear();
   });
 
-  const renderListing = () => {
+  const renderListing = (shareOrigin?: string) => {
     const listing = view.listing;
     if (!listing) throw new Error('Expected listing fixture');
-    render(<MarketplaceListing sellerPubky={listing.seller_id} listingId={listing.listing_id} />);
+    render(
+      <MarketplaceListing sellerPubky={listing.seller_id} listingId={listing.listing_id} shareOrigin={shareOrigin} />,
+    );
     return listing;
   };
+
+  it('uses the configured public alias and Shop wrapper path when sharing from another origin', () => {
+    vi.stubEnv('PUBKY_RUNTIME_SHOP_PUBLIC_PATH', '/shop');
+    resetRuntimeConfigForTests();
+    try {
+      const listing = renderListing('https://pubky.app');
+      const share = screen.getByRole('link', { name: 'Share listing on Pubky' });
+      const payload = new URL(share.getAttribute('href')!).searchParams.get('url');
+      expect(payload).toBe(`https://pubky.app/shop/marketplace/listing/${listing.seller_id}/${listing.listing_id}`);
+    } finally {
+      vi.unstubAllEnvs();
+      resetRuntimeConfigForTests();
+    }
+  });
+
+  it('shares the public listing URL in Pubky while keeping the watchlist local', () => {
+    const listing = renderListing();
+    const link = screen.getByRole('link', { name: 'Share listing on Pubky' });
+    const composer = new URL(link.getAttribute('href')!);
+    expect(composer.origin + composer.pathname).toBe('https://pubky.app/share');
+    const listingUrl = new URL(composer.searchParams.get('url')!);
+    expect(listingUrl.origin).toBe(window.location.origin);
+    expect(listingUrl.pathname).toBe(`/marketplace/listing/${listing.seller_id}/${listing.listing_id}`);
+    expect(link).toHaveAttribute('target', '_top');
+    expect(screen.getByRole('button', { name: /watchlist/i })).toBeInTheDocument();
+  });
 
   describe('a listing that is not in the local catalog', () => {
     const notFoundOnHomeserver = new Error('homeserver 404');

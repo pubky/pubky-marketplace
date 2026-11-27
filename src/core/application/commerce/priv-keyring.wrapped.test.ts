@@ -290,7 +290,6 @@ describe('CommercePrivKeyringApplication with scoped encryption keys (Phase 4)',
     );
 
     expect(await get()).toEqual({ kind: 'unavailable' });
-    expect(await CommercePrivKeyringApplication.exportRecoveryKey(OWNER)).toEqual({ kind: 'unavailable' });
     expect(writes).toEqual([]);
   });
 
@@ -363,10 +362,5 @@ describe('CommercePrivKeyringApplication with scoped encryption keys (Phase 4)',
     CommercePrivKeyringApplication.clear();
 
     expect(held.keys.every(({ key }) => key.every((byte) => byte === 0))).toBe(true);
-  });
-
-  it('serves the recovery export from the same keys', async () => {
-    const exported = await CommercePrivKeyringApplication.exportRecoveryKey(OWNER);
-    expect(exported.kind).toBe('file');
   });
 });

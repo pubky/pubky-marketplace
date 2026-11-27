@@ -21,6 +21,7 @@ import {
   PAYMENT_CONFIRMED_ON_CHAIN_COPY,
   PAYMENT_CONFIRMED_ON_CHAIN_LABEL,
   PAYMENT_SEEN_LABEL,
+  PAYMENT_UPSTREAM_INCONSISTENT_BUYER_COPY,
   SELLER_CONFIRMED_ON_CHAIN_COPY,
   SELLER_CONFIRMED_PAYMENT_COPY,
   sellerBitcoinConfirmPrompt,
@@ -212,7 +213,7 @@ describe('bitcoin buyer status', () => {
       },
     );
 
-    it.each([null, 'unpinned_legacy'] as const)(
+    it.each([null, 'unpinned_legacy', 'upstream_inconsistent'] as const)(
       'does not count a resolved review with reason %s as on-chain',
       (reviewReason) => {
         const payment = { state: 'confirmed', confirmations: 0, reviewReason, resolutionOutcome: 'paid' };
@@ -281,6 +282,11 @@ describe('bitcoin buyer status', () => {
       },
     );
 
+    it('does not count an upstream_inconsistent review on a confirmed request as on-chain', () => {
+      const { order, payment } = capturedReaperReview();
+      expect(bitcoinConfirmationExists(order, { ...payment, reviewReason: 'upstream_inconsistent' })).toBe(false);
+    });
+
     it('does not count a confirmed request outside a review as on-chain', () => {
       const order = { ...seenOrder, paykitRequestState: 'confirmed' as const };
       expect(bitcoinConfirmationExists(order, { state: 'awaiting_entitlement', confirmations: 0 })).toBe(false);
@@ -299,6 +305,16 @@ describe('a USDT attempt on Paykit is never read as a Bitcoin order', () => {
     expect(bitcoinPaidConfirmation(usdtOrder, { state: 'confirmed', confirmations: 1 })).toBeNull();
     expect(buyerCheckoutBadgeLabel(usdtOrder, { state: 'awaiting_entitlement' })).not.toBe(PAYMENT_SEEN_LABEL);
   });
+
+  it.each(['paykit', 'usdt'] as const)(
+    'shows the payment review instead of a pay-by countdown on a %s order paid in USDT',
+    (paymentMethod) => {
+      const order = { ...usdtOrder, paymentMethod, paymentAsset: 'USDT', holdExpiresAt: SHORT_HOLD };
+      const payment = { state: 'manual_review', reviewReason: 'upstream_inconsistent', confirmations: 0 };
+
+      expect(buyerCheckoutProgressCopy(order, payment, NOW)).toBe(PAYMENT_UPSTREAM_INCONSISTENT_BUYER_COPY);
+    },
+  );
 
   it('keeps the reserved-while-you-pay line, never the Bitcoin seller-confirm line, for a pending USDT checkout', () => {
     const progress = buyerCheckoutProgressCopy(usdtOrder, { state: 'awaiting_entitlement' }, NOW);

@@ -1,8 +1,5 @@
 import { Table } from 'dexie';
 import { db } from '@/database/franky/franky';
-import { DatabaseErrorCode } from '@/libs/error/error.codes';
-import { Err } from '@/libs/error/error.factories';
-import { ErrorService } from '@/libs/error/error.types';
 import type { Pubky } from '@/models/models.types';
 import type { PostRelationshipsModelSchema } from '@/models/post/relationships/postRelationships.schema';
 import { TupleModelBase } from '@/models/shared/base/tuple/baseTuple';
@@ -29,19 +26,5 @@ export class PostRelationshipsModel
   // Adapter function to convert NexusPostRelationships to PostRelationshipsModelSchema
   static toSchema(data: NexusModelTuple<NexusPostRelationships>): PostRelationshipsModelSchema {
     return { ...data[1], id: data[0] };
-  }
-
-  // Query methods
-  static async getReplies(postId: string): Promise<PostRelationshipsModelSchema[]> {
-    try {
-      return await this.table.where('replied').equals(postId).toArray();
-    } catch (error) {
-      throw Err.database(DatabaseErrorCode.QUERY_FAILED, 'Failed to get replies', {
-        service: ErrorService.Local,
-        operation: 'getReplies',
-        context: { table: this.table.name, postId },
-        cause: error,
-      });
-    }
   }
 }

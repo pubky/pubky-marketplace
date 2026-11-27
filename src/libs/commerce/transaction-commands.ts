@@ -1031,6 +1031,7 @@ export const marketplaceCommandResponseSchema = z.discriminatedUnion('ok', [
         .object({
           code: z.string().min(1),
           message: z.string().min(1),
+          reason: z.string().optional(),
           currentRevision: z.number().int().nonnegative().optional(),
         })
         .passthrough(),

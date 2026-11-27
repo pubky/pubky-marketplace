@@ -45,7 +45,7 @@ export const envSchema = z
     // Build-intrinsic Sentry release: the deployed commit SHA (Docker CI, Vercel), else the package version.
     NEXT_PUBLIC_APP_VERSION: z.string(),
 
-    // Social link-out origin (baked per artifact). Unset = link-out off. The
+    // Optional social App origin override (baked per artifact). The
     // self-origin check runs in next.config.ts (see @/libs/social-host/social-host).
     NEXT_PUBLIC_SOCIAL_HOST: z.preprocess(emptyToUndefined, z.string().optional()),
 

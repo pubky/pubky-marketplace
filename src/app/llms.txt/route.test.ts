@@ -21,7 +21,7 @@ import {
 import { renderAgentGuide } from './agent-guide';
 import { dynamic, GET, runtime } from './route';
 
-const indexLine = (body: string) => body.split('\n').find((line) => line.startsWith('INDEX = '));
+const baseUrl = (body: string, label: 'INDEX' | 'SOCIAL') => body.match(new RegExp(`^${label} = (.+)$`, 'm'))?.[1];
 
 // The guide as it was served from public/llms.txt, with its fixed INDEX host.
 const STATIC_GUIDE = readFileSync(path.join(process.cwd(), 'src/test/fixtures/agent-guide/llms-static.txt'), 'utf8');
@@ -40,6 +40,21 @@ const GUIDE_COPY_CHANGES = [
   ['"under 20,000 sats"', '"under ₿20,000"'],
   ['for BTC is sats.', 'for BTC is in bitcoin base units (₿1 = 0.00000001 BTC).'],
   ['a trimmed real response', 'a trimmed example response'],
+  [
+    'INDEX is the current host; a stable alias may replace it. Every path below is INDEX + path.\n' +
+      'Full reference (all routes, params, schemas): INDEX/api-docs/v0/openapi.json',
+    'INDEX serves marketplace records and reviews. SOCIAL serves community tags on Social v1.\n' +
+      'The marketplace API reference is at INDEX/api-docs/v0/openapi.json.',
+  ],
+  [
+    'Related: INDEX/v0/listing/{seller_id}/{listing_id}/tags (community tags),\n' +
+      'INDEX/v0/listing/{seller_id}/{listing_id}/reviews (reviews of this listing).',
+    'Get listing reviews at INDEX/v0/listing/{seller_id}/{listing_id}/reviews.\n' +
+      "For community tags, check GET SOCIAL/v1/info. On success, URL-encode the listing's full\n" +
+      '`uri` from the response above and read GET SOCIAL/v1/resource/by-uri?uri={encoded_uri}&skip_tags=0&limit_tags=5.\n' +
+      'Read the `tags` array. A 404 from this resource lookup means the listing has no indexed tags.\n' +
+      'If SOCIAL/v1/info returns 404, read the legacy tags at INDEX/v0/listing/{seller_id}/{listing_id}/tags.',
+  ],
 ];
 
 const OLD_ATTESTOR_KEY = 'szhtpayftdz3mpkoyyk3zesuad11ufuudqqrc73s35w1tfju7gxy';
@@ -71,15 +86,20 @@ describe('GET /llms.txt', () => {
     resetRuntimeConfigForTests();
   });
 
-  it('names the marketplace Nexus the Shop reads as INDEX', async () => {
+  it('names the configured hosts for the marketplace index and social v1 resources', async () => {
     vi.stubEnv('PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL', 'https://index.runtime.example.com');
+    vi.stubEnv('PUBKY_RUNTIME_NEXUS_URL', 'https://social.runtime.example.com');
 
     const response = await GET();
     const body = await response.text();
 
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
-    expect(indexLine(body)).toBe('INDEX = https://index.runtime.example.com');
+    expect(baseUrl(body, 'INDEX')).toBe('https://index.runtime.example.com');
+    expect(baseUrl(body, 'SOCIAL')).toBe('https://social.runtime.example.com');
+    expect(body).toContain('GET SOCIAL/v1/resource/by-uri?uri={encoded_uri}&skip_tags=0&limit_tags=5');
+    expect(body).toContain('If SOCIAL/v1/info returns 404, read the legacy tags at INDEX/v0/listing/');
+    expect(body).toContain('Get listing reviews at INDEX/v0/listing/{seller_id}/{listing_id}/reviews.');
     expect(body).not.toMatch(/nexusd-production-[0-9a-f]+/);
   });
 
@@ -97,13 +117,17 @@ describe('GET /llms.txt', () => {
     expect((await GET()).headers.get('Cache-Control')).toBe('public, max-age=0, must-revalidate');
   });
 
-  it('preserves the historical guide outside the INDEX line and intentional wording changes', async () => {
+  it('preserves the historical guide outside the Nexus, reputation and display wording changes', async () => {
     vi.stubEnv('PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL', 'https://index.runtime.example.com');
+    vi.stubEnv('PUBKY_RUNTIME_NEXUS_URL', 'https://social.runtime.example.com');
     expect(STATIC_GUIDE.split(STATIC_INDEX_LINE)).toHaveLength(2);
 
     const body = await (await GET()).text();
 
-    let expected = STATIC_GUIDE.replace(STATIC_INDEX_LINE, 'INDEX = https://index.runtime.example.com');
+    let expected = STATIC_GUIDE.replace(
+      STATIC_INDEX_LINE,
+      'INDEX = https://index.runtime.example.com\nSOCIAL = https://social.runtime.example.com',
+    );
     for (const [before, after] of GUIDE_COPY_CHANGES) {
       expect(expected.split(before)).toHaveLength(2);
       expected = expected.replace(before, after);
@@ -112,12 +136,14 @@ describe('GET /llms.txt', () => {
     expect(body).not.toMatch(/\bsats\b/);
   });
 
-  it('strips a trailing slash so INDEX + path stays a valid URL', async () => {
+  it('strips a trailing slash from each base URL', async () => {
     vi.stubEnv('PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL', 'https://index.runtime.example.com/');
+    vi.stubEnv('PUBKY_RUNTIME_NEXUS_URL', 'https://social.runtime.example.com/');
 
     const body = await (await GET()).text();
 
-    expect(indexLine(body)).toBe('INDEX = https://index.runtime.example.com');
+    expect(baseUrl(body, 'INDEX')).toBe('https://index.runtime.example.com');
+    expect(baseUrl(body, 'SOCIAL')).toBe('https://social.runtime.example.com');
   });
 
   it('falls back to the main Nexus when no marketplace Nexus is configured, like the app', async () => {
@@ -126,7 +152,8 @@ describe('GET /llms.txt', () => {
 
     const body = await (await GET()).text();
 
-    expect(indexLine(body)).toBe('INDEX = https://nexus.runtime.example.com');
+    expect(baseUrl(body, 'INDEX')).toBe('https://nexus.runtime.example.com');
+    expect(baseUrl(body, 'SOCIAL')).toBe('https://nexus.runtime.example.com');
   });
 
   it('renders the compiled trust defaults and their windows without runtime entries', async () => {
@@ -726,7 +753,10 @@ describe('GET /llms.txt', () => {
     const keyLines = (body: string) => body.split('\n').filter((line) => line.startsWith(`- ${key} (`));
 
     it('tells agents to merge touching or overlapping windows of one key, and keep a gap, before testing coverage', () => {
-      const copy = renderAgentGuide('https://index.example.test', []).replace(/\s+/g, ' ');
+      const copy = renderAgentGuide('https://index.example.test', 'https://social.example.test', []).replace(
+        /\s+/g,
+        ' ',
+      );
 
       expect(copy).toContain("Without `scoped`, first merge each trusted key's effective windows from the list above.");
       expect(copy).toContain('Drop a window whose `until` is not after its `from`; it vouches for nothing.');
@@ -744,7 +774,7 @@ describe('GET /llms.txt', () => {
     it('lists back-to-back windows separately, sends them merged, and counts a bucket across their boundary', () => {
       const trusted = [windowOf(JAN, JUN), windowOf(JUN)];
 
-      const body = renderAgentGuide('https://index.example.test', trusted);
+      const body = renderAgentGuide('https://index.example.test', 'https://social.example.test', trusted);
 
       expect(keyLines(body)).toHaveLength(2);
       expect(reputationQuery(body)).toMatch(new RegExp(`\\?attestors=${key}:${seconds(JAN)}:$`));
@@ -754,7 +784,7 @@ describe('GET /llms.txt', () => {
     it('merges overlapping windows to the later end', () => {
       const trusted = [windowOf(JUN, SEP), windowOf(JAN, JUL)];
 
-      const body = renderAgentGuide('https://index.example.test', trusted);
+      const body = renderAgentGuide('https://index.example.test', 'https://social.example.test', trusted);
 
       expect(reputationQuery(body)).toMatch(new RegExp(`\\?attestors=${key}:${seconds(JAN)}:${seconds(SEP)}$`));
       expect(countedFromTrustedBuckets({ [key]: spanningJune }, trusted).buyers).toBe(2);
@@ -763,7 +793,7 @@ describe('GET /llms.txt', () => {
     it('keeps windows separated by a gap distinct, and skips a bucket that spans the gap', () => {
       const trusted = [windowOf(JAN, JUN), windowOf(JUN_PLUS_ONE_SECOND)];
 
-      const body = renderAgentGuide('https://index.example.test', trusted);
+      const body = renderAgentGuide('https://index.example.test', 'https://social.example.test', trusted);
 
       expect(reputationQuery(body)).toMatch(
         new RegExp(`\\?attestors=${key}:${seconds(JAN)}:${seconds(JUN)},${key}:${seconds(JUN_PLUS_ONE_SECOND)}:$`),
@@ -781,10 +811,10 @@ describe('GET /llms.txt', () => {
       '[window not confirmed: a cutoff listed below comes from a profile the index no longer serves]';
     const unverifiedSuffix = '[window not confirmed: a profile listed below is not verified]';
 
-    const retainedOnly = renderAgentGuide('https://index.example.test', trusted, {
+    const retainedOnly = renderAgentGuide('https://index.example.test', 'https://social.example.test', trusted, {
       retainedCutoffAttestorIds: ['a'.repeat(52)],
     });
-    const both = renderAgentGuide('https://index.example.test', trusted, {
+    const both = renderAgentGuide('https://index.example.test', 'https://social.example.test', trusted, {
       unconfirmedAttestorIds: ['b'.repeat(52)],
       retainedCutoffAttestorIds: ['a'.repeat(52)],
     });
@@ -805,10 +835,10 @@ describe('GET /llms.txt', () => {
     ];
     const suffix = '[window not confirmed: a profile listed below is not verified]';
 
-    const unconfirmed = renderAgentGuide('https://index.example.test', trusted, {
+    const unconfirmed = renderAgentGuide('https://index.example.test', 'https://social.example.test', trusted, {
       unconfirmedAttestorIds: ['b'.repeat(52)],
     });
-    const confirmed = renderAgentGuide('https://index.example.test', trusted);
+    const confirmed = renderAgentGuide('https://index.example.test', 'https://social.example.test', trusted);
 
     for (const { pubky } of trusted) {
       expect(unconfirmed.split('\n').find((line) => line.startsWith(`- ${pubky}`))).toContain(suffix);
@@ -836,7 +866,7 @@ describe('GET /llms.txt', () => {
   });
 
   it('describes effective windows as unconfirmed while a profile is listed as not verified', () => {
-    const copy = renderAgentGuide('https://index.example.test', []).replace(/\s+/g, ' ');
+    const copy = renderAgentGuide('https://index.example.test', 'https://social.example.test', []).replace(/\s+/g, ' ');
 
     expect(copy).toContain(
       "These are this Shop's effective windows, except that every window is unconfirmed while a profile is listed as not verified, or a cutoff as kept from a profile the index no longer serves, above:",
@@ -848,7 +878,7 @@ describe('GET /llms.txt', () => {
   });
 
   it('reports item and seller ratings only when their buyer counts are positive', () => {
-    const copy = renderAgentGuide('https://index.example.test', []).replace(/\s+/g, ' ');
+    const copy = renderAgentGuide('https://index.example.test', 'https://social.example.test', []).replace(/\s+/g, ' ');
 
     expect(copy).toContain('Item rating = `sum_buyer_means / buyers` when `buyers` is positive.');
     expect(copy).toContain(
@@ -857,7 +887,7 @@ describe('GET /llms.txt', () => {
   });
 
   it('gives no rating for a snippet without buckets', () => {
-    const copy = renderAgentGuide('https://index.example.test', []).replace(/\s+/g, ' ');
+    const copy = renderAgentGuide('https://index.example.test', 'https://social.example.test', []).replace(/\s+/g, ' ');
 
     expect(copy).toContain(
       'A snippet without `buckets` gives no rating: say "no rating yet" (the Shop shows "No rating yet" there), and never quote its `avg` or `count`.',
@@ -865,7 +895,7 @@ describe('GET /llms.txt', () => {
   });
 
   it('documents the created_at fallback for reviews without iat window by window', () => {
-    const copy = renderAgentGuide('https://index.example.test', []).replace(/\s+/g, ' ');
+    const copy = renderAgentGuide('https://index.example.test', 'https://social.example.test', []).replace(/\s+/g, ' ');
 
     expect(copy).toContain(
       "Without `iat` (an older index, or a review not yet re-read), the Shop uses the review's `created_at` instead and tests it window by window, because one key can have an earlier closed window and a later open window.",
@@ -886,7 +916,7 @@ describe('GET /llms.txt', () => {
   });
 
   it('limits legacy per-signer counts to effective windows open now', () => {
-    const copy = renderAgentGuide('https://index.example.test', []).replace(/\s+/g, ' ');
+    const copy = renderAgentGuide('https://index.example.test', 'https://social.example.test', []).replace(/\s+/g, ' ');
 
     expect(copy).toContain(
       'report the per-signer counts in `attestors` only for trusted keys whose effective window is open now (`validFrom` <= now < effective `validUntil`), because the aggregate carries no attestation times.',
@@ -903,7 +933,7 @@ describe('GET /llms.txt', () => {
   });
 
   it('renders the empty trust-list guidance', () => {
-    const body = renderAgentGuide('https://index.example.test', []);
+    const body = renderAgentGuide('https://index.example.test', 'https://social.example.test', []);
 
     expect(body).toContain('This deployment trusts no attestor, so no review counts.');
   });

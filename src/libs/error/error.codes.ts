@@ -56,6 +56,7 @@ export enum ClientErrorCode {
 export enum AuthErrorCode {
   UNAUTHORIZED = 'UNAUTHORIZED',
   FORBIDDEN = 'FORBIDDEN',
+  SOCIAL_WRITE_UNAVAILABLE = 'SOCIAL_WRITE_UNAVAILABLE',
   SESSION_EXPIRED = 'SESSION_EXPIRED',
   INVALID_TOKEN = 'INVALID_TOKEN',
   /** User's PKARR homeserver does not match this staging deploy's configured homeserver */

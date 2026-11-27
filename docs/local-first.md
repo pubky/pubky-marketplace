@@ -50,10 +50,10 @@ Controller method names encode IO behavior and delivery guarantees:
 // Real method names from the codebase
 PostController.fetchTags({ compositeId, skip, limit }); // Always network
 PostController.getDetails({ compositeId }); // Always local
-PostController.getOrFetchDetails({ compositeId, viewerId }); // Local first, fallback
+CommerceController.getOrFetchListing(sellerPubky, listingId); // Local first, fallback
 UserController.getManyDetails({ userIds }); // Bulk local
 UserController.getManyTagsOrFetch({ userIds }); // Bulk with fallback
-MuteController.subscribeMuteDirectoryEventStream(pubky, cursor); // Live stream subscription
+CommerceController.subscribeShopEvents(ownerPubky, cursor); // Live stream subscription
 
 // Bad naming
 PostController.loadDetails(id); // Unclear source
@@ -63,56 +63,17 @@ PostController.retrieveDetails(id); // Unclear source
 ### Write Methods
 
 ```typescript
-// Real method names from the codebase
-PostController.commitCreate({ authorId, content, isArticle, tags, attachments });
-PostController.commitEdit({ compositePostId, content });
-PostController.commitDelete({ compositePostId });
-BookmarkController.commitCreate({ postId, userId });
-
-// Bad naming
-PostController.createPost(post); // Missing "commit" prefix
-PostController.savePost(post); // Unclear operation type
-PostController.removePost(id); // Should be commitDelete
+// Community tags on a listing
+const tag = { taggedKind: TagKind.LISTING, taggedId: `${sellerPubky}:${listingId}`, taggerId: viewerId, label };
+await TagController.commitCreate(tag);
+await TagController.commitDelete(tag);
 ```
 
 ## Implementation Pattern
 
 ### Write Operation Flow
 
-```typescript
-// Real flow: src/core/controllers/post/post.ts → src/core/application/post/post.ts
-class PostController {
-  static async commitCreate({ authorId, content, isArticle, tags, attachments }: TCreatePostParams) {
-    // 1. Normalize file attachments via pipes
-    const fileAttachments = attachments ? await this.normalizeFileAttachments({ attachments, pubky: authorId }) : [];
-
-    // 2. Validate/normalize post via pipes (pubky-app-specs)
-    const { post, meta } = await PostNormalizer.to({ content, kind: postKind, attachments: fileAttachments }, authorId);
-
-    // 3. Normalize tags via pipes
-    const tagList = tags ? tags.map((tag) => TagNormalizer.from({ taggerId: authorId, ... })) : [];
-
-    // 4. Delegate to application (local write + homeserver sync)
-    await PostApplication.commitCreate({ compositePostId, post, postUrl: meta.url, fileAttachments, tags: tagList });
-  }
-}
-
-class PostApplication {
-  static async commitCreate({ postUrl, compositePostId, post, fileAttachments, tags }: TCreatePostInput) {
-    // 1. Upload files first (dependency)
-    if (fileAttachments?.length > 0) await FileApplication.commitCreate({ fileAttachments });
-
-    // 2. Write to IndexedDB
-    await LocalPostService.create({ compositePostId, post });
-
-    // 3. Sync to homeserver
-    await HomeserverService.request({ method: HttpMethod.PUT, url: postUrl, bodyJson: post.toJson() });
-
-    // 4. Create tags
-    if (tags?.length > 0) await TagApplication.commitCreate({ tagList: tags });
-  }
-}
-```
+When a viewer adds a community tag, `TagController.commitCreate` captures the current session and delegates to `TagApplication`. The application prepares the tag for the account's supported spec version, writes it to the local aggregate, then publishes it to the viewer's homeserver. The Shop observes the local change through Dexie. If publication fails while that session is still current, the application rolls back the local addition and propagates the error. [Tag controller](../src/core/controllers/tag/tag.ts) · [Tag application](../src/core/application/tag/tag.ts)
 
 ## useLiveQuery Rules (ADR-0011)
 
@@ -178,55 +139,11 @@ export function usePostDetails(compositeId: string | null | undefined, options?:
 
 ## Persistence Order
 
-When writing related entities, persist dependencies first:
-
-```typescript
-// Correct order — dependencies before dependents
-// Real pattern from PostStreamApplication.fetchMissingPostsFromNexus
-await LocalUserService.upsertDetails(author); // 1. Author first
-await LocalPostService.create({ compositePostId, post }); // 2. Then post
-await LocalPostTagService.create({ taggerId, taggedId, label }); // 3. Then tags
-
-// Wrong order (foreign key issues)
-await LocalPostService.create({ compositePostId, post }); // Post references author
-await LocalUserService.upsertDetails(author); // Author not yet in DB!
-```
+When hydrating a post from Nexus, `PostStreamApplication.fetchMissingPostsFromNexus` persists the post batch, takes the returned attachment metadata and passes it to `FileApplication.persistFiles`. It then fetches missing authors and original posts referenced by reposts. Keep this order when changing the batch flow. [Post stream application](../src/core/application/stream/posts/post.ts)
 
 ## Optimistic Updates
 
-For immediate UI feedback, controllers manage store state while application handles persistence:
-
-```typescript
-// Controller reads store state before delegating to application
-// Real pattern: src/core/controllers/user/user.ts
-class UserController {
-  static async commitFollow(eventType, { follower, followee }) {
-    const normalizedFollowee = stripPubkyPrefix(followee);
-    const { meta, follow } = FollowNormalizer.to({ follower, followee: normalizedFollowee });
-    const activeStreamId = this.getActiveStreamId(); // Controller reads from store
-
-    await UserApplication.commitFollow({
-      eventType,
-      followUrl: meta.url,
-      followJson: follow.toJson(),
-      follower,
-      followee: normalizedFollowee,
-      activeStreamId,
-    });
-  }
-}
-
-// Application handles local-first persistence
-// Real pattern: src/core/application/user/user.ts
-class UserApplication {
-  static async commitFollow({ eventType, followUrl, followJson, follower, followee, activeStreamId }) {
-    // 1. Write to IndexedDB first
-    await LocalFollowService.create({ follower, followee, activeStreamId });
-    // 2. Sync to homeserver
-    await HomeserverService.request({ method: eventType, url: followUrl, bodyJson: followJson });
-  }
-}
-```
+On a seller follow, `UserController.commitFollow` captures the auth scope and asks `UserApplication.prepareFollow` to resolve the owner's write format. `UserApplication.commitFollow` updates the local relationship before publishing it to the homeserver. Keep the session guard across both steps. [Controller](../src/core/controllers/user/user.ts) · [Application](../src/core/application/user/user.ts)
 
 ## Quick Checklist
 

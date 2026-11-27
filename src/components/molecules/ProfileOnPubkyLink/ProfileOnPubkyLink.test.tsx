@@ -12,9 +12,9 @@ describe('ProfileOnPubkyLink', () => {
     setEmbedded(false);
   });
 
-  it('renders nothing while social link-out is off', () => {
-    const { container } = render(<ProfileOnPubkyLink pubky={PUBKY} />);
-    expect(container).toBeEmptyDOMElement();
+  it('uses the public App by default', () => {
+    render(<ProfileOnPubkyLink pubky={PUBKY} />);
+    expect(screen.getByRole('link')).toHaveAttribute('href', `https://pubky.app/profile/${PUBKY}`);
   });
 
   it('links to the profile on the social host in the same tab while on', () => {

@@ -1,36 +1,7 @@
-import { PubkyAppUser } from 'pubky-app-specs';
-import type { Pubky } from '@/models/models.types';
 import type { NexusUserLink } from '@/services/nexus/nexus.types';
 
-export type TCreateProfileInput = {
-  profile: PubkyAppUser;
-  url: string;
-  pubky: Pubky;
-  /** Whether the identity that submitted is still the signed-in one once the write returns. */
-  isCurrent: () => boolean;
-};
-
-export type TDeleteAccountParams = {
-  pubky: Pubky;
-  setProgress?: (progress: number) => void;
-};
-
-export type TDownloadDataParams = {
-  pubky: Pubky;
-  setProgress?: (progress: number) => void;
-};
-
-/** Text fields an existing profile can prefill into Create profile. */
 export type TProfileSeed = {
   name: string;
   bio: string;
-  links: NexusUserLink[];
-};
-
-export type TApplicationCommitUpdateDetailsParams = {
-  pubky: Pubky;
-  name: string;
-  bio: string | undefined;
-  image: string | null;
   links: NexusUserLink[];
 };
