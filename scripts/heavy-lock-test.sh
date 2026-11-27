@@ -245,4 +245,152 @@ wait "$holder" || fail "recheck: holder failed"
 ls "$HEAVY_LOCK_DIR/vrt.q"/*.ticket >/dev/null 2>&1 && fail "recheck: ticket left behind"
 echo "disk floor recheck ok"
 
+echo "test: fresh lock dirs are 0700 and group/world-writable lock dirs are refused"
+rm -rf "$HEAVY_LOCK_DIR"
+fresh_dir="$HEAVY_LOCK_DIR/fresh"
+HEAVY_LOCK_DIR="$fresh_dir" run_heavy node true
+[ "$(heavy_dir_mode "$fresh_dir")" = "700" ] || fail "perms: fresh lock dir mode=$(heavy_dir_mode "$fresh_dir")"
+[ "$(heavy_dir_mode "$fresh_dir/node.q")" = "700" ] || fail "perms: fresh queue dir mode=$(heavy_dir_mode "$fresh_dir/node.q")"
+
+wide_dir="$HEAVY_LOCK_DIR/wide"
+mkdir -p "$wide_dir"
+chmod 777 "$wide_dir"
+set +e
+HEAVY_LOCK_DIR="$wide_dir" run_heavy node true 2>"$HEAVY_LOCK_DIR/wide.err"
+st=$?
+set -e
+[ "$st" != 0 ] || fail "perms: 0777 lock dir was not refused"
+grep -q "group- or world-writable" "$HEAVY_LOCK_DIR/wide.err" \
+  || fail "perms: 0777 error message: $(cat "$HEAVY_LOCK_DIR/wide.err")"
+echo "directory permissions ok"
+
+echo "test: symlink lock directory, queue directory, lock files, and tickets are refused or safely removed"
+sym_target="$HEAVY_LOCK_DIR/target"
+mkdir -m 700 -p "$sym_target"
+sym_lockdir="$HEAVY_LOCK_DIR/sym-lockdir"
+ln -s "$sym_target" "$sym_lockdir"
+set +e
+HEAVY_LOCK_DIR="$sym_lockdir" run_heavy node true 2>"$HEAVY_LOCK_DIR/sym1.err"
+st=$?
+set -e
+[ "$st" != 0 ] || fail "symlink lockdir: run_heavy succeeded"
+grep -q "refusing symlink" "$HEAVY_LOCK_DIR/sym1.err" || fail "symlink lockdir: wrong error: $(cat "$HEAVY_LOCK_DIR/sym1.err")"
+
+qsym_dir="$HEAVY_LOCK_DIR/qsym"
+mkdir -m 700 -p "$qsym_dir"
+ln -s "$sym_target" "$qsym_dir/node.q"
+set +e
+HEAVY_LOCK_DIR="$qsym_dir" run_heavy node true 2>"$HEAVY_LOCK_DIR/sym2.err"
+st=$?
+set -e
+[ "$st" != 0 ] || fail "symlink qdir: run_heavy succeeded"
+
+fsym_dir="$HEAVY_LOCK_DIR/fsym"
+mkdir -m 700 -p "$fsym_dir"
+victim="$HEAVY_LOCK_DIR/victim"
+printf 'intact\n' > "$victim"
+ln -s "$victim" "$fsym_dir/node.issue.lock"
+set +e
+HEAVY_LOCK_DIR="$fsym_dir" run_heavy node true 2>"$HEAVY_LOCK_DIR/sym3.err"
+st=$?
+set -e
+[ "$st" != 0 ] || fail "symlink issue lockfile: run_heavy succeeded"
+[ "$(cat "$victim")" = "intact" ] || fail "symlink issue lockfile clobbered victim"
+
+rm -f "$fsym_dir/node.issue.lock"
+ln -s "$victim" "$fsym_dir/node.1.lock"
+set +e
+HEAVY_LOCK_DIR="$fsym_dir" run_heavy node true 2>"$HEAVY_LOCK_DIR/sym4.err"
+st=$?
+set -e
+[ "$st" != 0 ] || fail "symlink slot lockfile: run_heavy succeeded"
+[ "$(cat "$victim")" = "intact" ] || fail "symlink slot lockfile clobbered victim"
+
+if command -v python3 >/dev/null 2>&1; then
+  set +e
+  HEAVY_LOCK_BACKEND=python3 HEAVY_LOCK_DIR="$fsym_dir" run_heavy node true 2>"$HEAVY_LOCK_DIR/sym5.err"
+  st=$?
+  set -e
+  [ "$st" != 0 ] || fail "python3 O_NOFOLLOW: run_heavy succeeded on symlink slot lockfile"
+fi
+
+# Symlink ticket inside queue dir must be unlinked without touching target.
+tsym_dir="$HEAVY_LOCK_DIR/tsym"
+mkdir -m 700 -p "$tsym_dir/node.q"
+ticket_victim="$HEAVY_LOCK_DIR/ticket-victim"
+printf 'untouched\n' > "$ticket_victim"
+ln -s "$ticket_victim" "$tsym_dir/node.q/00000000000000000001.ticket"
+HEAVY_LOCK_DIR="$tsym_dir" run_heavy node true
+[ ! -L "$tsym_dir/node.q/00000000000000000001.ticket" ] || fail "symlink ticket was not removed"
+[ "$(cat "$ticket_victim")" = "untouched" ] || fail "symlink ticket target was modified"
+echo "symlink refusal ok"
+
+echo "test: malformed ticket filenames, PIDs, and epochs cannot inject Bash arithmetic"
+inj_dir="$HEAVY_LOCK_DIR/inj"
+mkdir -m 700 -p "$inj_dir/node.q"
+pwn_name="$inj_dir/pwn_name"
+pwn_pid="$HEAVY_LOCK_DIR/pwn_pid"
+pwn_epoch="$HEAVY_LOCK_DIR/pwn_epoch"
+# Crafted filename (no slashes, valid POSIX filename) that would execute touch
+# if expanded unvalidated in $((10#...)).
+: > "$inj_dir/node.q/a[\$(touch pwn_name)].ticket"
+# Crafted PID and epoch contents with a live PID for the epoch case.
+printf 'a[$(touch %s)] 1700000000\n' "$pwn_pid" > "$inj_dir/node.q/00000000000000000001.ticket"
+printf '%s a[$(touch %s)]\n' "$$" "$pwn_epoch" > "$inj_dir/node.q/00000000000000000002.ticket"
+(cd "$inj_dir" && HEAVY_LOCK_DIR="$inj_dir" run_heavy node true)
+[ ! -e "$pwn_name" ] || fail "arithmetic injection via ticket filename"
+[ ! -e "$pwn_pid" ] || fail "arithmetic injection via ticket PID"
+[ ! -e "$pwn_epoch" ] || fail "arithmetic injection via ticket epoch"
+ls "$inj_dir/node.q"/*.ticket >/dev/null 2>&1 && fail "malformed tickets were not reaped"
+echo "arithmetic injection immunity ok"
+
+echo "test: wrapped command exiting 75 is returned once without retrying"
+exit75_dir="$HEAVY_LOCK_DIR/exit75"
+count75="$HEAVY_LOCK_DIR/count75"
+: > "$count75"
+set +e
+HEAVY_LOCK_DIR="$exit75_dir" run_heavy node bash -c 'printf x >> "$1"; exit 75' _ "$count75"
+st=$?
+set -e
+[ "$st" = 75 ] || fail "exit 75: expected 75, got $st"
+[ "$(wc -c < "$count75" | tr -d ' ')" = "1" ] || fail "exit 75: command ran more than once"
+ls "$exit75_dir/node.q"/*.ticket >/dev/null 2>&1 && fail "exit 75: ticket left behind"
+echo "exit 75 ok"
+
+echo "test: pre-start backend errors (EACCES and unknown backend) fail closed without looping"
+eacces_dir="$HEAVY_LOCK_DIR/eacces"
+mkdir -m 700 -p "$eacces_dir"
+if [ "$(id -u)" -ne 0 ]; then
+  : > "$eacces_dir/node.1.lock"
+  chmod 000 "$eacces_dir/node.1.lock"
+  set +e
+  HEAVY_LOCK_DIR="$eacces_dir" run_heavy node true 2>"$HEAVY_LOCK_DIR/eacces.err"
+  st=$?
+  set -e
+  chmod 600 "$eacces_dir/node.1.lock"
+  [ "$st" != 0 ] || fail "EACCES: run_heavy succeeded on mode 000 slot lockfile"
+  ls "$eacces_dir/node.q"/*.ticket >/dev/null 2>&1 && fail "EACCES: ticket left behind"
+fi
+set +e
+HEAVY_LOCK_BACKEND=bogus HEAVY_LOCK_DIR="$eacces_dir" run_heavy node true 2>"$HEAVY_LOCK_DIR/bogus.err"
+st=$?
+set -e
+[ "$st" != 0 ] || fail "unknown backend: run_heavy succeeded"
+echo "backend error propagation ok"
+
+echo "test: non-numeric HEAVY_DISK_FLOOR_GIB fails closed"
+for bad_floor in abc -5 "10 GiB"; do
+  set +e
+  HEAVY_DISK_VOLUMES="$HEAVY_LOCK_DIR" HEAVY_DISK_FLOOR_GIB="$bad_floor" \
+    run_heavy vrt bash -c 'printf ran > "$1"' _ "$HEAVY_LOCK_DIR/bad-floor" \
+    2>"$HEAVY_LOCK_DIR/bad-floor.err"
+  st=$?
+  set -e
+  [ "$st" != 0 ] || fail "bad floor ($bad_floor): run_heavy succeeded"
+  [ ! -e "$HEAVY_LOCK_DIR/bad-floor" ] || fail "bad floor ($bad_floor): command ran"
+  grep -q "non-negative integer" "$HEAVY_LOCK_DIR/bad-floor.err" \
+    || fail "bad floor ($bad_floor): missing error: $(cat "$HEAVY_LOCK_DIR/bad-floor.err")"
+done
+echo "non-numeric disk floor refusal ok"
+
 echo "ALL OK"

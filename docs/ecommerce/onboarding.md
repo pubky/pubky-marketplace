@@ -73,12 +73,12 @@ a local Pubky testnet, drops, and real Locks/Paykit payments.
 | Launch-critical browser journey | `LAUNCH_E2E_MODE=synthetic bash scripts/ci-launch-e2e.sh`               |
 
 The pre-push scheduler uses `flock` (or Python's `fcntl.flock` on macOS) and defaults its
-lock directory to `${XDG_CACHE_HOME:-$HOME/.cache}/pubky-marketplace/locks`
+private (`0700`) lock directory to `${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/pubky-marketplace-locks-$(id -u)`
 (`scripts/heavy-lock.sh`). Set `HEAVY_LOCK_DIR` if you want a custom location shared across
 multiple worktrees:
 
 ```bash
-export HEAVY_LOCK_DIR="$HOME/.cache/pubky-marketplace/locks"
+export HEAVY_LOCK_DIR="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/pubky-marketplace-locks-$(id -u)"
 ```
 
 This changes only where the existing scheduler stores its locks; it does not skip any checks.
