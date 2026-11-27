@@ -81,6 +81,14 @@ describe('sign-out and account switches remove what the leaving account left on 
     expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBeNull();
   });
 
+  it('removes a setup code pasted in a signed-out tab when another tab signs out', async () => {
+    window.sessionStorage.setItem(STORE_CLAIM_CODE_SESSION_KEY, '0123456789ABCDEFGHJKMNPQRSTVWXYZ');
+
+    await AuthController.handleCrossTabSignOut();
+
+    expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBeNull();
+  });
+
   it('removes the signing-out account’s per-pubky keys and leaves every other key alone', async () => {
     signIn(ALICE);
     const alice = seedAccount(ALICE);

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Logger } from '@/libs/logger/logger';
-import { resetStoreStateForTests, resolveStoreState } from './store-state.server';
+import { createStoreStateResolver, resetStoreStateForTests, resolveStoreState } from './store-state.server';
 
 const runtime = vi.hoisted(() => ({
   seller: undefined as string | undefined,
@@ -141,10 +141,104 @@ describe('resolveStoreState', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('lets fresh bypass an unclaimed cache through the same flight', async () => {
+  it('lets fresh bypass a live unclaimed cache only once the last upstream read is two seconds old', async () => {
+    let release: (() => void) | undefined;
+    fetchMock.mockImplementationOnce(
+      async () =>
+        await new Promise<Response>((resolve) => {
+          release = () => resolve(jsonResponse(UNCLAIMED_BODY));
+        }),
+    );
+    const slowRead = resolveStoreState();
+    await vi.advanceTimersByTimeAsync(1_500);
+    release?.();
+    await slowRead;
+    mockService(UNCLAIMED_BODY);
+
+    await resolveStoreState({ fresh: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(500);
+    await resolveStoreState();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await resolveStoreState({ fresh: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps alternating plain and forced reads to one upstream read per two seconds', async () => {
+    const readTimes: number[] = [];
+    fetchMock.mockImplementation(async () => {
+      readTimes.push(Date.now());
+      return jsonResponse(UNCLAIMED_BODY);
+    });
+
+    for (let tick = 0; tick < 60; tick += 1) {
+      await resolveStoreState({ fresh: tick % 2 === 1 });
+      await vi.advanceTimersByTimeAsync(100);
+    }
+
+    expect(readTimes).toHaveLength(3);
+    for (let read = 1; read < readTimes.length; read += 1) {
+      expect(readTimes[read] - readTimes[read - 1]).toBeGreaterThanOrEqual(2_000);
+    }
+  });
+
+  it('backs off for two seconds after a rate-limited read', async () => {
+    mockService({}, 429);
+    await expect(resolveStoreState()).resolves.toEqual({ kind: 'unavailable', claimMode: true });
+
+    for (let tick = 0; tick < 19; tick += 1) {
+      await vi.advanceTimersByTimeAsync(100);
+      await resolveStoreState({ fresh: tick % 2 === 0 });
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(100);
+    await resolveStoreState();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    { retryAfter: '5', backoffMs: 5_000 },
+    { retryAfter: '600', backoffMs: 10_000 },
+    { retryAfter: '0', backoffMs: 2_000 },
+  ])('honours Retry-After $retryAfter within the backoff bounds', async ({ retryAfter, backoffMs }) => {
+    fetchMock.mockImplementation(
+      async () => new Response('{}', { status: 429, headers: { 'Retry-After': retryAfter } }),
+    );
+    await resolveStoreState();
+    await vi.advanceTimersByTimeAsync(backoffMs - 1);
+    await resolveStoreState({ fresh: true });
+    await resolveStoreState();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await resolveStoreState();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('honours a bounded Retry-After on an unavailable service answer', async () => {
+    fetchMock.mockImplementation(async () => new Response('{}', { status: 503, headers: { 'Retry-After': '4' } }));
+    await resolveStoreState();
+    await vi.advanceTimersByTimeAsync(3_999);
+    await resolveStoreState();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await resolveStoreState();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('shares the default resolver across module instances through globalThis', async () => {
     mockService(UNCLAIMED_BODY);
     await resolveStoreState();
-    await resolveStoreState({ fresh: true });
+    vi.resetModules();
+    const second = await import('./store-state.server');
+    await second.resolveStoreState();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a created resolver isolated from the default one', async () => {
+    mockService(UNCLAIMED_BODY);
+    await resolveStoreState();
+    const isolated = createStoreStateResolver();
+    await isolated.resolve();
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -175,10 +269,23 @@ describe('resolveStoreState', () => {
     expect(Logger.warn).not.toHaveBeenCalled();
   });
 
-  it('maps an oversize service body to unavailable', async () => {
-    mockService('x'.repeat(64 * 1_024));
+  it('stops reading a valid store body one byte past the limit', async () => {
+    const limit = 64 * 1_024;
+    const empty = JSON.stringify({ ...UNCLAIMED_BODY, padding: '' });
+    const body = JSON.stringify({ ...UNCLAIMED_BODY, padding: 'x'.repeat(limit + 1 - empty.length) });
+    expect(new TextEncoder().encode(body).byteLength).toBe(limit + 1);
+    mockService(body);
 
     await expect(resolveStoreState()).resolves.toEqual({ kind: 'unavailable', claimMode: true });
+    expect(Logger.warn).toHaveBeenCalledWith('[store-state] Store state read failed', { reason: 'body_too_large' });
+  });
+
+  it('accepts a valid store body exactly at the limit', async () => {
+    const limit = 64 * 1_024;
+    const empty = JSON.stringify({ ...UNCLAIMED_BODY, padding: '' });
+    mockService(JSON.stringify({ ...UNCLAIMED_BODY, padding: 'x'.repeat(limit - empty.length) }));
+
+    await expect(resolveStoreState()).resolves.toEqual({ kind: 'unclaimed', claimMode: true });
   });
 
   it('ignores fresh once claimed', async () => {

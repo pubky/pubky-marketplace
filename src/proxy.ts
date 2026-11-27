@@ -20,15 +20,7 @@ const STORE_UNAVAILABLE_HTML = `<!doctype html><html lang="en-US"><head><meta ch
 
 export async function proxy(request: NextRequest) {
   const state = await resolveStoreState();
-  let response = storeModeResponse(request, state);
-  if (!response) {
-    if (state.kind === 'off' || !state.claimMode) response = NextResponse.next();
-    else {
-      const requestHeaders = new Headers(request.headers);
-      requestHeaders.set('x-pubky-pathname', request.nextUrl.pathname);
-      response = NextResponse.next({ request: { headers: requestHeaders } });
-    }
-  }
+  const response = storeModeResponse(request, state) ?? NextResponse.next();
   const pathname = request.nextUrl.pathname;
   if (state.kind !== 'off' && state.claimMode && (pathname === '/' || pathname === APP_ROUTES.SETUP)) {
     response.headers.set('X-Robots-Tag', 'noindex');

@@ -1555,6 +1555,8 @@ export class AuthController {
   }
 
   static async handleCrossTabSignOut(): Promise<void> {
+    // A setup code pasted in this tab while it was signed out goes with the other tab's sign-out too.
+    clearStoreClaimCode();
     if (this.hostMode) return;
     this.logoutGeneration++;
     this.cancelAllAuthFlows();

@@ -84,6 +84,14 @@ export function serializeStoreState(state: StoreState): string {
   return `window.${STORE_STATE_WINDOW_KEY}=Object.freeze(${escaped});`;
 }
 
+/**
+ * Whether the document may load third-party analytics. A claim-mode store never does: `/setup` must make no
+ * third-party request, and a script loaded on another page would keep running after a client navigation there.
+ */
+export function allowsThirdPartyAnalytics(state: StoreState): boolean {
+  return state.kind === 'off' || !state.claimMode;
+}
+
 export function getStoreSeller(): string | null {
   const state = getStoreState();
   return state.kind === 'claimed' ? state.seller : null;

@@ -1,11 +1,10 @@
 import './globals.css';
-import { headers } from 'next/headers';
 import type { Viewport } from 'next';
 import { APP_ROUTES } from '@/app/routes';
 import { TooltipProvider } from '@/atoms/Tooltip/Tooltip';
 import { withBasePath } from '@/config/base-path';
 import { getSiteName } from '@/config/metadata';
-import { serializeStoreState, setStoreStateForRender } from '@/config/store-mode';
+import { allowsThirdPartyAnalytics, serializeStoreState, setStoreStateForRender } from '@/config/store-mode';
 import { COLORS } from '@/config/theme';
 import { TOOLTIP_DELAY_MS } from '@/config/ui';
 import { buildMarketplacePromoPrepaintScript } from '@/libs/commerce/promo-prepaint';
@@ -52,15 +51,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const storeState = await resolveStoreState();
   setStoreStateForRender(storeState);
   const storeDocument = storeState.kind === 'unclaimed' || storeState.kind === 'unavailable';
-  // Pinned stores never serve `/setup`, so only claim mode reads the request path (a pinned build stays static).
-  const claimSetupPossible = storeState.kind === 'claimed' && storeState.claimMode;
-  const pathname = claimSetupPossible ? (await headers()).get('x-pubky-pathname') : null;
-  const showPlausible = !storeDocument && pathname !== APP_ROUTES.SETUP;
 
   return (
     <RootContainer
       storeStateScript={storeState.kind === 'off' ? null : serializeStoreState(storeState)}
-      showPlausible={showPlausible}
+      showPlausible={allowsThirdPartyAnalytics(storeState)}
     >
       {/* Raw inline script: it must run during parsing, before the promo's first paint. */}
       <script

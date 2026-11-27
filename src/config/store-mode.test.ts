@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
 import { setStoreMode, setStoreSeller } from '@/test-utils/store-mode';
 import {
+  allowsThirdPartyAnalytics,
   getStoreSeller,
   getStoreState,
   isStoreMode,
@@ -112,5 +113,21 @@ describe('store mode', () => {
   it('never flags the full Market, secure context or not', () => {
     setSecureContext(false);
     expect(isStoreModeInsecureContext()).toBe(false);
+  });
+});
+
+describe('allowsThirdPartyAnalytics', () => {
+  it.each([
+    ['off', { kind: 'off' }, true],
+    ['a pinned store', { kind: 'claimed', seller: STORE_SELLER, source: 'pinned', claimMode: false }, true],
+    ['an unclaimed store', { kind: 'unclaimed', claimMode: true }, false],
+    ['an unavailable store', { kind: 'unavailable', claimMode: true }, false],
+    [
+      'a store claimed in the browser',
+      { kind: 'claimed', seller: STORE_SELLER, source: 'claim', claimMode: true },
+      false,
+    ],
+  ] as const)('answers for %s', (_name, state, allowed) => {
+    expect(allowsThirdPartyAnalytics(state)).toBe(allowed);
   });
 });

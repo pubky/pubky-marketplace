@@ -194,19 +194,6 @@ describe('proxy in store mode', () => {
     expect((await proxy(request('/setup'))).headers.get('referrer-policy')).toBe('no-referrer');
   });
 
-  it('forwards the request path to the layout only in claim mode', async () => {
-    const forwarded = async () => (await proxy(request('/setup'))).headers.get('x-middleware-request-x-pubky-pathname');
-
-    runtime.state = { kind: 'claimed', seller: STORE_SELLER, source: 'claim', claimMode: true };
-    expect(await forwarded()).toBe('/setup');
-    runtime.state = PINNED;
-    expect(
-      (await proxy(request('/marketplace/shop/' + STORE_SELLER))).headers.get('x-middleware-request-x-pubky-pathname'),
-    ).toBeNull();
-    runtime.state = { kind: 'off' };
-    expect(await forwarded()).toBeNull();
-  });
-
   it('answers unavailable documents with only the 503 page', async () => {
     runtime.state = { kind: 'unavailable', claimMode: true };
     const response = await proxy(request('/marketplace?tab=all'));

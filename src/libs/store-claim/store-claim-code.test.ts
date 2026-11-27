@@ -91,4 +91,46 @@ describe('store claim code intake script', () => {
     expect(window.location.hash).toBe('#section=identity');
     expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBeNull();
   });
+
+  describe('on a same-document fragment change', () => {
+    const listeners: EventListenerOrEventListenerObject[] = [];
+
+    beforeEach(() => {
+      const add = window.addEventListener.bind(window);
+      const record = (
+        type: string,
+        listener: EventListenerOrEventListenerObject,
+        options?: boolean | AddEventListenerOptions,
+      ) => {
+        if (type === 'hashchange') listeners.push(listener);
+        add(type, listener, options);
+      };
+      vi.spyOn(window, 'addEventListener').mockImplementation(record as typeof window.addEventListener);
+    });
+
+    afterEach(() => {
+      for (const listener of listeners.splice(0)) window.removeEventListener('hashchange', listener);
+    });
+
+    it('stores and scrubs a claim fragment added after a load elsewhere', () => {
+      window.history.replaceState(null, '', '/marketplace');
+      new Function(buildStoreClaimCodeIntakeScript())();
+
+      window.history.replaceState(null, '', '/setup#claim=later');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+
+      expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBe('later');
+      expect(window.location.hash).toBe('');
+    });
+
+    it('ignores a claim fragment outside setup', () => {
+      new Function(buildStoreClaimCodeIntakeScript())();
+
+      window.history.replaceState(null, '', '/marketplace#claim=elsewhere');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+
+      expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBeNull();
+      expect(window.location.hash).toBe('#claim=elsewhere');
+    });
+  });
 });
