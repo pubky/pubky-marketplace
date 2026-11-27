@@ -185,15 +185,18 @@ export class NexusMarketplaceService {
   }
 
   /**
-   * Fetches the full reputation aggregate of a subject. Answers 404 when no
-   * review is indexed for the subject in that role — the explicit
-   * "New seller" state, which callers must render as absence, never 0.0.
+   * Single-attempt read of a subject's reputation aggregate. A 404 means no
+   * review is indexed for the subject in that role — the explicit "New seller"
+   * state, which callers must render as absence, never 0.0 — so a 404 resolves
+   * to `null` without retrying or reporting an error.
    *
    * @param params - Subject path param plus role filter
-   * @returns The reputation summary as currently indexed
+   * @returns The reputation summary as currently indexed, or `null` on 404
    */
-  static async fetchShopReputation(params: TShopReputationParams): Promise<NexusReputationSummary> {
-    return await queryNexus<NexusReputationSummary>({ url: marketplaceApi.shopReputation(params) });
+  static async fetchShopReputation(params: TShopReputationParams): Promise<NexusReputationSummary | null> {
+    return await fetchNexusIfFound<NexusReputationSummary>({
+      url: marketplaceApi.shopReputation(params),
+    });
   }
 
   /**

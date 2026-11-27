@@ -177,6 +177,8 @@ describe('CommerceApplication', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     removeWebLocks();
+    CommerceApplication.resetAuctionReserveSweepMemo();
+    CommerceApplication.resetReceiptCache();
     useAuthStore.getState().setCurrentUserPubky(null);
   });
 
@@ -4430,6 +4432,59 @@ describe('CommerceApplication', () => {
       expect(generateAuthUrlSpy).not.toHaveBeenCalled();
       expect(grantApprovalSpy).not.toHaveBeenCalled();
       expect(bootstrapApprovalSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('sweepOwnAuctionReserves session memoization', () => {
+    it('lists and sweeps auction reserves at most once per signed-in pubky session', async () => {
+      const owner = 's'.repeat(52);
+      const other = 'o'.repeat(52);
+      useAuthStore.getState().setCurrentUserPubky(owner);
+      vi.spyOn(HomeserverService, 'canCurrentSessionWrite').mockReturnValue(true);
+      const listAll = vi.spyOn(HomeserverService, 'listAll').mockResolvedValue([]);
+
+      await expect(CommerceApplication.sweepOwnAuctionReserves(owner, other)).resolves.toBe(0);
+      expect(listAll).not.toHaveBeenCalled();
+
+      await expect(CommerceApplication.sweepOwnAuctionReserves(owner, owner)).resolves.toBe(0);
+      await expect(CommerceApplication.sweepOwnAuctionReserves(owner, owner)).resolves.toBe(0);
+      expect(listAll).toHaveBeenCalledTimes(1);
+
+      vi.spyOn(MarketplaceSessionService, 'clearSession').mockImplementation(() => {});
+      CommerceApplication.clearMarketplaceSession();
+      await expect(CommerceApplication.sweepOwnAuctionReserves(owner, owner)).resolves.toBe(0);
+      expect(listAll).toHaveBeenCalledTimes(2);
+    });
+
+    it('retries after a transient list failure and does not repopulate memo if sweep resolves after sign-out', async () => {
+      const owner = 's'.repeat(52);
+      useAuthStore.getState().setCurrentUserPubky(owner);
+      vi.spyOn(HomeserverService, 'canCurrentSessionWrite').mockReturnValue(true);
+      vi.spyOn(Logger, 'warn').mockImplementation(() => {});
+      const listAll = vi
+        .spyOn(HomeserverService, 'listAll')
+        .mockRejectedValueOnce(new Error('transient homeserver outage'))
+        .mockResolvedValueOnce([]);
+
+      await expect(CommerceApplication.sweepOwnAuctionReserves(owner, owner)).resolves.toBe(0);
+      await expect(CommerceApplication.sweepOwnAuctionReserves(owner, owner)).resolves.toBe(0);
+      await expect(CommerceApplication.sweepOwnAuctionReserves(owner, owner)).resolves.toBe(0);
+      expect(listAll).toHaveBeenCalledTimes(2);
+
+      // Late completion after sign-out must not repopulate auctionReserveSweptOwners.
+      CommerceApplication.resetAuctionReserveSweepMemo();
+      const deferred = Promise.withResolvers<string[]>();
+      listAll.mockReturnValueOnce(deferred.promise).mockResolvedValueOnce([]);
+      const inFlight = CommerceApplication.sweepOwnAuctionReserves(owner, owner);
+      await vi.waitFor(() => expect(listAll).toHaveBeenCalledTimes(3));
+
+      vi.spyOn(MarketplaceSessionService, 'clearForSignOut').mockImplementation(() => {});
+      await CommerceApplication.clearMarketplaceSessionForSignOut();
+      deferred.resolve([]);
+      await inFlight;
+
+      await expect(CommerceApplication.sweepOwnAuctionReserves(owner, owner)).resolves.toBe(0);
+      expect(listAll).toHaveBeenCalledTimes(4);
     });
   });
 });

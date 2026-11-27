@@ -113,7 +113,7 @@ export async function pairSession(
   return { cookie: bound.value, maxAge: Math.max(1, Math.floor((expiresAt.getTime() - Date.now()) / 1000)) };
 }
 
-async function authenticatedBridge(cookie: string | undefined): Promise<{
+async function loadAuthenticatedBridge(cookie: string | undefined): Promise<{
   config: MarketplaceGrantConfig;
   bridge: Awaited<ReturnType<typeof getBridge>> & {};
   bearer: string;
@@ -133,9 +133,26 @@ async function authenticatedBridge(cookie: string | undefined): Promise<{
     bridge.key_epoch,
     bridge.bearer_sealed,
   );
+  return { config, bridge, bearer };
+}
+
+async function verifyAuthenticatedBridge(
+  config: MarketplaceGrantConfig,
+  bridge: Awaited<ReturnType<typeof getBridge>> & {},
+  bearer: string,
+): Promise<void> {
   await verifyMarketplaceSession(config, bearer, bridge.pubky, bridge.marketplace_session_id);
   if (!(await touchBridge(config, bridge.bridge_id))) throw new BffError(401, 'shop_session_missing');
-  return { config, bridge, bearer };
+}
+
+async function authenticatedBridge(cookie: string | undefined): Promise<{
+  config: MarketplaceGrantConfig;
+  bridge: Awaited<ReturnType<typeof getBridge>> & {};
+  bearer: string;
+}> {
+  const loaded = await loadAuthenticatedBridge(cookie);
+  await verifyAuthenticatedBridge(loaded.config, loaded.bridge, loaded.bearer);
+  return loaded;
 }
 
 export async function createFlow(
@@ -196,15 +213,22 @@ export async function createFlow(
   }
 }
 
-async function authenticatedFlow(sessionCookie: string | undefined, flowCookie: string | undefined, stateId: string) {
-  const { config, bridge } = await authenticatedBridge(sessionCookie);
+async function authenticatedFlow(
+  sessionCookie: string | undefined,
+  flowCookie: string | undefined,
+  stateId: string,
+  { verifySession = true }: { verifySession?: boolean } = {},
+) {
+  const { config, bridge, bearer } = verifySession
+    ? await authenticatedBridge(sessionCookie)
+    : await loadAuthenticatedBridge(sessionCookie);
   const parsed = parseBoundCookie(flowCookie);
   if (!parsed || parsed.id !== stateId) throw new BffError(401, 'flow_binding_missing');
   const flow = await getFlow(config, stateId);
   if (!flow || flow.bridge_id !== bridge.bridge_id) throw new BffError(404, 'flow_not_found');
   const expectedHash = hashBoundCookie(config, flow.key_epoch, 'flow', stateId, parsed.secret);
   if (!cookieMatches(flow.result_binding_hash, expectedHash)) throw new BffError(403, 'flow_binding_denied');
-  return { config, bridge, flow };
+  return { config, bridge, bearer, flow };
 }
 
 export async function pollFlow(
@@ -216,7 +240,11 @@ export async function pollFlow(
   const routeConfig = requiredConfig();
   assertSameOrigin(request, routeConfig);
   await parseStrictJson(request, z.object({}).strict());
-  const initial = await authenticatedFlow(sessionCookie, flowCookie, stateId);
+  // Pending QR polls authenticate cookies and DB bindings locally without
+  // re-verifying the marketplace session upstream or touching the bridge row
+  // every second; upstream verification runs when the flow completes and is
+  // about to be claimed.
+  const initial = await authenticatedFlow(sessionCookie, flowCookie, stateId, { verifySession: false });
   if (!initial.flow.flow_id) throw new BffError(503, 'grant_unavailable');
   const status = await getGrantStatus(initial.config, initial.flow.flow_id);
   if (status.status === 'awaiting' || status.status === 'verifying') {
@@ -227,6 +255,7 @@ export async function pollFlow(
     await terminalizeFlow(initial.config, stateId, localStatus);
     return { expires_at: status.expires_at, state_id: stateId, status: localStatus };
   }
+  await verifyAuthenticatedBridge(initial.config, initial.bridge, initial.bearer);
   const owner = randomUUID();
   const claimedFlow = await acquireClaim(initial.config, stateId, owner);
   if (!claimedFlow?.context_sealed || !claimedFlow.flow_id) {

@@ -938,7 +938,8 @@ export class CommerceController {
    */
   static async sweepOwnAuctionReserves(): Promise<number> {
     if (!this.sellsHere()) return 0;
-    return await CommerceApplication.sweepOwnAuctionReserves(this.getCurrentUserPubky());
+    const actorPubky = this.getCurrentUserPubky();
+    return await CommerceApplication.sweepOwnAuctionReserves(actorPubky, actorPubky);
   }
 
   /**
@@ -950,7 +951,15 @@ export class CommerceController {
    */
   static async publishOrderReceipts(orders: MarketplaceOrder[]): Promise<void> {
     const sellerSide = this.sellsHere();
-    const status = await CommerceApplication.publishOrderReceipts(this.getCurrentUserPubky(), orders, { sellerSide });
+    const ownerPubky = this.getCurrentUserPubky();
+    const sessionBefore = useCommerceStore.getState().marketplaceSession;
+    const status = await CommerceApplication.publishOrderReceipts(ownerPubky, orders, { sellerSide });
+    if (
+      useAuthStore.getState().currentUserPubky !== ownerPubky ||
+      useCommerceStore.getState().marketplaceSession !== sessionBefore
+    ) {
+      return;
+    }
     useCommerceStore.getState().setReceiptsPublicationStatus(status === 'skipped' ? 'idle' : status);
   }
 
@@ -1692,6 +1701,7 @@ export class CommerceController {
    */
   static async autoConfirmSellerPayments(): Promise<string[]> {
     if (!this.sellsHere() || !isDurableCommerceMode(getCommerceAdapterMode())) return [];
+    if (!CommerceApplication.hasActiveMarketplaceSession()) return [];
     const pubky = useAuthStore.getState().currentUserPubky;
     const scope = captureAuthScope();
     const isEnabled = () =>
@@ -1700,6 +1710,8 @@ export class CommerceController {
       useAuthStore.getState().currentUserPubky === pubky &&
       useSellerPaymentConfirmStore.getState().autoConfirmByPubky[pubky] !== false;
     if (!pubky || !isEnabled()) return [];
+    if ((await CommerceApplication.fetchPaymentConfirmationMode()) !== 'seller') return [];
+    if (!isEnabled()) return [];
     const pass = new AbortController();
     const deadline = setTimeout(() => pass.abort(), SELLER_AUTO_CONFIRM_PASS_TIMEOUT_MS);
     const endPass = () => pass.abort();

@@ -140,4 +140,28 @@ describe('useMarketplacePublicAvailability', () => {
 
     expect(result.current).toBeNull();
   });
+
+  it('pauses availability polling while document is hidden', async () => {
+    vi.useFakeTimers();
+    const setVisibility = (state: DocumentVisibilityState) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    try {
+      renderHook(() => useMarketplacePublicAvailability(SELLER, 'item', true));
+      await act(async () => vi.advanceTimersByTimeAsync(0));
+      expect(CommerceController.getPublicListingAvailability).toHaveBeenCalledTimes(1);
+
+      setVisibility('hidden');
+      await act(async () => vi.advanceTimersByTimeAsync(240_000));
+      expect(CommerceController.getPublicListingAvailability).toHaveBeenCalledTimes(1);
+
+      setVisibility('visible');
+      await act(async () => vi.advanceTimersByTimeAsync(0));
+      expect(CommerceController.getPublicListingAvailability).toHaveBeenCalledTimes(2);
+    } finally {
+      setVisibility('visible');
+      vi.useRealTimers();
+    }
+  });
 });

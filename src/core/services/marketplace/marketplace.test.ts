@@ -7,6 +7,7 @@ import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-
 import { Logger } from '@/libs/logger/logger';
 import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
 import { MarketplaceGatewayService } from './marketplace';
+import { HEALTH_CACHE_TTL_MS, MarketplaceTransactionService } from './marketplace-transaction';
 
 const SELLER = 'y'.repeat(52);
 const AGGREGATE_ID = buildMarketplaceListingAggregateId(SELLER, 'boots_01');
@@ -319,6 +320,7 @@ describe('MarketplaceGatewayService', () => {
 describe('MarketplaceGatewayService local pickup facade (Wave 7)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    MarketplaceTransactionService.resetHealthCache();
     config.mode = 'sandbox';
   });
 
@@ -354,6 +356,7 @@ describe('MarketplaceGatewayService local pickup facade (Wave 7)', () => {
 describe('MarketplaceGatewayService USDT payments capability', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    MarketplaceTransactionService.resetHealthCache();
     config.mode = 'sandbox';
   });
 
@@ -382,6 +385,7 @@ describe('MarketplaceGatewayService USDT payments capability', () => {
 describe('MarketplaceGatewayService Paykit rail status', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    MarketplaceTransactionService.resetHealthCache();
     config.mode = 'sandbox';
   });
 
@@ -415,6 +419,58 @@ describe('MarketplaceGatewayService Paykit rail status', () => {
 
     await expect(MarketplaceGatewayService.getPaykitRailStatus()).resolves.toBe(expected);
     expect((vi.mocked(fetch).mock.calls[0] as [string])[0]).toBe('http://localhost:3100/health');
+  });
+
+  it('deduplicates concurrent capability reads into one /health request and serves cached reads until TTL', async () => {
+    vi.useFakeTimers();
+    try {
+      config.mode = 'locks-paykit';
+      let resolveFetch: ((response: Response) => void) | undefined;
+      vi.mocked(fetch).mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveFetch = resolve;
+          }),
+      );
+
+      const pending = Promise.all([
+        MarketplaceGatewayService.getPickupAvailability(),
+        MarketplaceGatewayService.getDigitalDeliveryCapability(),
+        MarketplaceGatewayService.getUsdtPaymentsCapability(),
+        MarketplaceGatewayService.getPaymentConfirmationMode(),
+        MarketplaceGatewayService.getPaykitRailStatus(),
+      ]);
+
+      expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+      resolveFetch?.(
+        jsonResponse(200, {
+          status: 'ok',
+          pickup_available: true,
+          digital_delivery_available: true,
+          digital_delivery_max_bytes: 1024,
+          usdt_payments: { available: true },
+          payment_confirmation: 'automatic',
+          paykit_rail: { bitcoin_offer_available: true, age_seconds: 5 },
+        }),
+      );
+
+      await expect(pending).resolves.toEqual([true, { available: true, maxBytes: 1024 }, true, 'automatic', 'ready']);
+
+      // Sequential reads within TTL hit the in-memory cache with zero extra requests.
+      await expect(MarketplaceGatewayService.getPickupAvailability()).resolves.toBe(true);
+      await expect(MarketplaceGatewayService.getPaymentConfirmationMode()).resolves.toBe('automatic');
+      expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+
+      // Once TTL elapses, a fresh /health read runs.
+      vi.advanceTimersByTime(HEALTH_CACHE_TTL_MS + 1);
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse(200, { status: 'ok', pickup_available: false, payment_confirmation: 'seller' }),
+      );
+      await expect(MarketplaceGatewayService.getPaymentConfirmationMode()).resolves.toBe('seller');
+      expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

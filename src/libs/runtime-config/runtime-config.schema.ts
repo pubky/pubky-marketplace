@@ -558,7 +558,7 @@ export const APP_RUNTIME_DEFAULTS = {
   paykitSetupCreatorParam: true,
   paykitServerApi: 'fork' as PaykitServerApi,
   commerceAdapterMode: 'unavailable' as CommerceAdapterMode,
-  commercePollIntervalMs: 2_000,
+  commercePollIntervalMs: 5_000,
   marketplaceGrantFlowEnabled: false,
   marketplaceGrantSessionEnabled: false,
   marketplaceGrantPollMilliseconds: 1_000,

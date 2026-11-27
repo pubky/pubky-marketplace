@@ -1,6 +1,6 @@
 'use client';
 
-import { type Dispatch, type SetStateAction, useEffect, useRef, useState } from 'react';
+import { type Dispatch, type RefObject, type SetStateAction, useEffect, useRef, useState } from 'react';
 import {
   getCommerceAdapterMode,
   getCommercePollIntervalMs,
@@ -9,11 +9,25 @@ import {
 } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
+import {
+  classifyCommercePollError,
+  type CommercePoller,
+  type CommercePollOutcome,
+  startCommercePoller,
+} from '@/libs/commerce/polling';
 import { buildMarketplaceListingAggregateId, isListingDeletedResponse } from '@/libs/commerce/transaction-commands';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
 import type { MarketplaceListingProjection } from '@/services/marketplace/marketplace';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
+
+/** Maximum automatic `listing.sync` attempts per mount/session for an unregistered listing. */
+export const MAX_LISTING_SYNC_ATTEMPTS = 2;
+
+interface ListingSyncBudget {
+  attempts: number;
+  removed: boolean;
+}
 
 /**
  * Polls the listing/inventory projection from whichever transactional backend
@@ -34,12 +48,20 @@ export function useMarketplaceProjection(sellerPubky: string, listingId: string)
   const [needsSession, setNeedsSession] = useState(false);
   const [listingRemoved, setListingRemoved] = useState(false);
   const generationRef = useRef(0);
+  const syncBudgetRef = useRef<ListingSyncBudget>({ attempts: 0, removed: false });
+  const pollerRef = useRef<CommercePoller | null>(null);
 
   const refresh = () => {
+    syncBudgetRef.current = { attempts: 0, removed: false };
+    if (pollerRef.current) {
+      pollerRef.current.restart();
+      return;
+    }
     const generation = generationRef.current;
     void loadProjection(
       sellerPubky,
       listingId,
+      syncBudgetRef,
       setProjection,
       setIsLoading,
       setError,
@@ -52,6 +74,7 @@ export function useMarketplaceProjection(sellerPubky: string, listingId: string)
   useEffect(() => {
     const generation = ++generationRef.current;
     const isCurrent = () => generationRef.current === generation;
+    syncBudgetRef.current = { attempts: 0, removed: false };
     setProjection(null);
     setIsLoading(true);
     setError(null);
@@ -61,48 +84,26 @@ export function useMarketplaceProjection(sellerPubky: string, listingId: string)
       setIsLoading(false);
       return;
     }
-    let active = true;
-    const refetch = () => {
-      if (active)
-        void loadProjection(
+    const poller = startCommercePoller({
+      poll: () =>
+        loadProjection(
           sellerPubky,
           listingId,
+          syncBudgetRef,
           setProjection,
           setIsLoading,
           setError,
           setNeedsSession,
           setListingRemoved,
           isCurrent,
-        );
-    };
-    void loadProjection(
-      sellerPubky,
-      listingId,
-      setProjection,
-      setIsLoading,
-      setError,
-      setNeedsSession,
-      setListingRemoved,
-      isCurrent,
-    );
-    const timer = window.setInterval(() => {
-      if (active)
-        void loadProjection(
-          sellerPubky,
-          listingId,
-          setProjection,
-          setIsLoading,
-          setError,
-          setNeedsSession,
-          setListingRemoved,
-          isCurrent,
-        );
-    }, getCommercePollIntervalMs());
-    window.addEventListener('focus', refetch);
+        ),
+      getIntervalMs: getCommercePollIntervalMs,
+      refetchOnFocus: true,
+    });
+    pollerRef.current = poller;
     return () => {
-      active = false;
-      window.clearInterval(timer);
-      window.removeEventListener('focus', refetch);
+      poller.stop();
+      if (pollerRef.current === poller) pollerRef.current = null;
     };
   }, [isTransactional, listingId, sellerPubky, marketplaceSession]);
 
@@ -112,31 +113,37 @@ export function useMarketplaceProjection(sellerPubky: string, listingId: string)
 async function loadProjection(
   sellerPubky: string,
   listingId: string,
+  syncBudgetRef: RefObject<ListingSyncBudget>,
   setProjection: Dispatch<SetStateAction<MarketplaceListingProjection | null>>,
   setIsLoading: Dispatch<SetStateAction<boolean>>,
   setError: Dispatch<SetStateAction<string | null>>,
   setNeedsSession: Dispatch<SetStateAction<boolean>>,
   setListingRemoved: Dispatch<SetStateAction<boolean>>,
   isCurrent: () => boolean,
-): Promise<void> {
-  if (!isTransactionalCommerceMode(getCommerceAdapterMode())) return;
+): Promise<CommercePollOutcome> {
+  if (!isTransactionalCommerceMode(getCommerceAdapterMode())) return 'stop';
   try {
+    const syncBudget = syncBudgetRef.current;
     let next = await CommerceController.getMarketplaceListingProjection(sellerPubky, listingId);
-    let removed = false;
+    let removed = syncBudget.removed;
     // An unregistered listing is healable by ANY signed-in user: the service
     // fetches the canonical seller-signed record from the homeserver itself
-    // (`listing.sync`). Exactly one attempt per poll cycle, then one re-read.
-    // A signed-out visitor never reaches this point in durable mode — the
-    // projection read itself throws the session requirement first, so the
-    // needsSession affordance takes precedence over any sync attempt.
-    if (!next && isDurableCommerceMode(getCommerceAdapterMode())) {
-      ({ projection: next, removed } = await syncThenReread(sellerPubky, listingId));
+    // (`listing.sync`). Attempts are bounded per mount/session so unregistered
+    // listings do not amplify into repeated sync loops every tick.
+    if (!next && isDurableCommerceMode(getCommerceAdapterMode()) && !syncBudget.removed) {
+      if (syncBudget.attempts < MAX_LISTING_SYNC_ATTEMPTS) {
+        syncBudget.attempts += 1;
+        ({ projection: next, removed } = await syncThenReread(sellerPubky, listingId));
+        if (removed) syncBudget.removed = true;
+      }
     }
-    if (!isCurrent()) return;
+    if (!isCurrent()) return 'stop';
     setProjection(next);
     if (next) {
+      syncBudget.attempts = 0;
+      syncBudget.removed = false;
       await cacheProjection(next);
-      if (!isCurrent()) return;
+      if (!isCurrent()) return 'stop';
     }
     setError(
       next
@@ -147,8 +154,11 @@ async function loadProjection(
     );
     setNeedsSession(false);
     setListingRemoved(removed && !next);
+    if (removed && !next) return 'stop';
+    if (!next && syncBudget.attempts >= MAX_LISTING_SYNC_ATTEMPTS) return 'retryable_error';
+    return 'ok';
   } catch (loadError) {
-    if (!isCurrent()) return;
+    if (!isCurrent()) return 'stop';
     // A missing/expired marketplace session is not a dead end: flag it so the
     // listing surface renders the session-connect affordance.
     setNeedsSession(isMarketplaceSessionRequiredError(loadError));
@@ -157,6 +167,7 @@ async function loadProjection(
         ? loadError.message
         : 'Transaction service is unavailable.',
     );
+    return classifyCommercePollError(loadError);
   } finally {
     if (isCurrent()) setIsLoading(false);
   }

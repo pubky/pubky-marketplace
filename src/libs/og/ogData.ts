@@ -8,7 +8,7 @@ export const OG_IMAGE_MAX_BYTES = IMAGE_MAX_UPLOAD_SIZE;
 
 type ImageBodyResult = { buffer: Buffer } | { overCap: true };
 
-async function readImageBody(res: Response): Promise<ImageBodyResult | null> {
+async function readImageBody(res: Response, signal?: AbortSignal): Promise<ImageBodyResult | null> {
   const contentLength = res.headers.get('content-length');
   if (contentLength !== null && Number.parseInt(contentLength, 10) > OG_IMAGE_MAX_BYTES) {
     return { overCap: true };
@@ -17,11 +17,22 @@ async function readImageBody(res: Response): Promise<ImageBodyResult | null> {
   const reader = res.body?.getReader();
   if (!reader) return null;
 
+  const onAbort = () => {
+    void reader.cancel().catch(() => undefined);
+  };
   const chunks: Uint8Array[] = [];
   let totalBytes = 0;
   try {
+    if (signal?.aborted) {
+      await reader.cancel().catch(() => undefined);
+      throw new DOMException('The operation was aborted.', 'AbortError');
+    }
+    signal?.addEventListener('abort', onAbort, { once: true });
     while (true) {
       const { done, value } = await reader.read();
+      if (signal?.aborted) {
+        throw new DOMException('The operation was aborted.', 'AbortError');
+      }
       if (done) return { buffer: Buffer.concat(chunks) };
       totalBytes += value.byteLength;
       if (totalBytes > OG_IMAGE_MAX_BYTES) {
@@ -37,6 +48,13 @@ async function readImageBody(res: Response): Promise<ImageBodyResult | null> {
       // The original read error is the useful failure.
     }
     throw error;
+  } finally {
+    signal?.removeEventListener('abort', onAbort);
+    try {
+      reader.releaseLock();
+    } catch {
+      // Lock may already be released after cancel.
+    }
   }
 }
 
@@ -57,15 +75,20 @@ async function readImageBody(res: Response): Promise<ImageBodyResult | null> {
 export async function fetchImageAsDataUri(
   url: string | null | undefined,
   fetcher: (input: string, init?: RequestInit) => Promise<Response> = fetch,
+  options?: { signal?: AbortSignal },
 ): Promise<string | null> {
   if (!url) return null;
   try {
-    const res = await fetcher(url, { next: { revalidate: OG_REVALIDATE } });
+    const signal = options?.signal;
+    const res = await fetcher(url, {
+      next: { revalidate: OG_REVALIDATE },
+      ...(signal ? { signal } : {}),
+    });
     if (!res.ok) return null;
     const contentType = res.headers.get('content-type') ?? '';
     if (!contentType.startsWith('image/')) return null;
 
-    const body = await readImageBody(res);
+    const body = await readImageBody(res, signal);
     if (!body) return null;
     if ('overCap' in body) {
       Logger.warn('[ogData] Rejected oversized image body for OG', { url, maxBytes: OG_IMAGE_MAX_BYTES });

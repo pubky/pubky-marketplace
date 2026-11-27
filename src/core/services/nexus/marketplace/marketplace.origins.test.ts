@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as sentry from '@/libs/observability/sentry';
 import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
 import { nexusQueryClient } from '@/services/nexus/nexus.query-client';
 import { NexusMarketplaceService } from './marketplace';
@@ -54,5 +55,15 @@ describe('Market reads with separate social and commerce indexes', () => {
       `${market}/v0/listing/${seller}/boots/tags`,
       `${market}/v0/shop/${seller}/tags`,
     ]);
+  });
+
+  it('resolves shop reputation 404 to null in one attempt with zero retries and zero Sentry captures', async () => {
+    const capture = vi.spyOn(sentry, 'captureAppError').mockImplementation(() => {});
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Not Found', { status: 404 }));
+
+    await expect(NexusMarketplaceService.fetchShopReputation(shop)).resolves.toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(String(fetch.mock.calls[0]?.[0])).toBe(`${market}/v0/shop/${seller}/reputation`);
+    expect(capture).not.toHaveBeenCalled();
   });
 });

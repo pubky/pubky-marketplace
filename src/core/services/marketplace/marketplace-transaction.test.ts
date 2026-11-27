@@ -2359,6 +2359,7 @@ describe('MarketplaceTransactionService.getHealth (the pickup_available capabili
   beforeEach(() => {
     config.mode = 'transaction-service';
     MarketplaceSessionService.clearSession();
+    MarketplaceTransactionService.resetHealthCache();
   });
 
   it.each([true, false])('parses pickup_available %s from the public health read', async (pickupAvailable) => {
@@ -2412,6 +2413,59 @@ describe('MarketplaceTransactionService.getHealth (the pickup_available capabili
     );
     expect(JSON.stringify(loggerError.mock.calls[0])).not.toContain('responseText');
     loggerError.mockRestore();
+  });
+
+  it('does not cache failed /health responses (plain text or valid-JSON 503) and cancels non-2xx bodies', async () => {
+    const loggerError = vi.spyOn(Logger, 'error').mockImplementation(() => undefined);
+    let canceled = false;
+    const errorStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(JSON.stringify({ status: 'error' })));
+      },
+      cancel() {
+        canceled = true;
+      },
+    });
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response('service unavailable', { status: 503 }))
+      .mockResolvedValueOnce(
+        new Response(errorStream, { status: 503, headers: { 'content-type': 'application/json' } }),
+      )
+      .mockResolvedValueOnce(jsonResponse(200, { status: 'ok', pickup_available: true }));
+
+    await expect(MarketplaceTransactionService.getHealth()).rejects.toMatchObject({
+      code: 'SERVICE_UNAVAILABLE',
+      context: { statusCode: 503 },
+    });
+    await expect(MarketplaceTransactionService.getHealth()).rejects.toMatchObject({
+      code: 'SERVICE_UNAVAILABLE',
+      context: { statusCode: 503 },
+    });
+    expect(canceled).toBe(true);
+    await expect(MarketplaceTransactionService.getHealth()).resolves.toMatchObject({ pickupAvailable: true });
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(3);
+    loggerError.mockRestore();
+  });
+
+  it('times out a hung /health request, clears the single-flight slot, and recovers on the next call', async () => {
+    vi.useFakeTimers();
+    const loggerError = vi.spyOn(Logger, 'error').mockImplementation(() => undefined);
+    try {
+      vi.mocked(fetch)
+        .mockImplementationOnce(() => new Promise<Response>(() => {}))
+        .mockResolvedValueOnce(jsonResponse(200, { status: 'ok', pickup_available: true }));
+
+      const hung = MarketplaceTransactionService.getHealth();
+      const caught = hung.catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await expect(caught).resolves.toMatchObject({ code: 'REQUEST_TIMEOUT' });
+
+      await expect(MarketplaceTransactionService.getHealth()).resolves.toMatchObject({ pickupAvailable: true });
+      expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+    } finally {
+      loggerError.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });
 
