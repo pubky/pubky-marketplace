@@ -21,6 +21,7 @@ export type StoreClaimResult =
   | { kind: 'success' }
   | { kind: 'invalid-code' }
   | { kind: 'stale-session' }
+  | { kind: 'session-rejected' }
   | { kind: 'session-source' }
   | { kind: 'session-capability' }
   | { kind: 'already-claimed'; seller: string | null }
@@ -57,6 +58,7 @@ export class MarketplaceStoreClaimService {
         credentials: 'omit',
         referrerPolicy: 'no-referrer',
         cache: 'no-store',
+        redirect: 'error',
       },
       ErrorService.Marketplace,
       OPERATION,
@@ -64,6 +66,7 @@ export class MarketplaceStoreClaimService {
     if (response.ok) return { kind: 'success' };
 
     const body = (await response.json().catch(() => null)) as unknown;
+    if (response.status === 401) return { kind: 'session-rejected' };
     if (response.status === 403) {
       switch (reason(body)) {
         case 'claim_code_invalid':

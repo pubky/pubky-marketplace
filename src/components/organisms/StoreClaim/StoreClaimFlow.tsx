@@ -154,7 +154,7 @@ export function StoreClaimFlow() {
         </Card>
       ) : (
         <div data-testid="store-claim-sign-in">
-          <SignInContent />
+          <SignInContent showPassport={false} />
         </div>
       )}
     </main>

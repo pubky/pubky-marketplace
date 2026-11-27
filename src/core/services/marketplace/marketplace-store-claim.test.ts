@@ -45,6 +45,7 @@ describe('MarketplaceStoreClaimService', () => {
       credentials: 'omit',
       referrerPolicy: 'no-referrer',
       cache: 'no-store',
+      redirect: 'error',
     });
   });
 
@@ -58,6 +59,12 @@ describe('MarketplaceStoreClaimService', () => {
       respond(403, { ok: false, error: { code: 'UNAUTHORIZED', message: 'Not authorized.', reason } }),
     );
     await expect(MarketplaceStoreClaimService.claim(CODE, PUBKY)).resolves.toEqual({ kind });
+  });
+
+  it('maps a rejected bearer separately from a service failure', async () => {
+    fetchMock.mockResolvedValue(respond(401, { ok: false, error: { code: 'UNAUTHORIZED' } }));
+
+    await expect(MarketplaceStoreClaimService.claim(CODE, PUBKY)).resolves.toEqual({ kind: 'session-rejected' });
   });
 
   it('does not read a refusal reason outside the error object', async () => {

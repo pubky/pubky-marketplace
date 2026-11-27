@@ -7,6 +7,7 @@ const REQUEST_TIMEOUT_MS = 2_000;
 const UNCLAIMED_TTL_MS = 2_000;
 const CLAIMED_TTL_MS = 10 * 60 * 1_000;
 const UNAVAILABLE_TTL_MS = 1_000;
+const MAX_SERVICE_BODY_BYTES = 64 * 1_024;
 const PUBKY_PATTERN = /^[ybndrfg8ejkmcpqxot1uwisza345h769]{52}$/;
 
 const serviceStateSchema = z.discriminatedUnion('state', [
@@ -22,6 +23,7 @@ type ServiceRead = { authoritative: true; state: StoreState } | { authoritative:
 
 let cached: { state: StoreState; expiresAt: number } | null = null;
 let inFlight: Promise<StoreState> | null = null;
+let lastForcedReadAt: number | null = null;
 
 async function readServiceState(): Promise<ServiceRead> {
   const controller = new AbortController();
@@ -29,10 +31,15 @@ async function readServiceState(): Promise<ServiceRead> {
   try {
     const response = await fetch(`${getMarketplaceServiceUrl().replace(/\/$/, '')}/v1/store`, {
       cache: 'no-store',
+      redirect: 'error',
       signal: controller.signal,
     });
     if (response.status !== 200) return { authoritative: false, reason: `http_${response.status}` };
-    const parsed = serviceStateSchema.safeParse(await response.json());
+    const body = await response.text();
+    if (new TextEncoder().encode(body).byteLength > MAX_SERVICE_BODY_BYTES) {
+      return { authoritative: false, reason: 'body_too_large' };
+    }
+    const parsed = serviceStateSchema.safeParse(JSON.parse(body));
     if (!parsed.success) return { authoritative: false, reason: 'invalid_body' };
     if (parsed.data.state === 'unclaimed') {
       return { authoritative: true, state: { kind: 'unclaimed', claimMode: true } };
@@ -82,8 +89,12 @@ export async function resolveStoreState(options: { fresh?: boolean } = {}): Prom
 
   const now = Date.now();
   const fresh = options.fresh === true && cached?.state.kind !== 'claimed';
+  if (fresh && cached && lastForcedReadAt !== null && now - lastForcedReadAt < UNCLAIMED_TTL_MS) {
+    return cached.state;
+  }
   if (cached && !fresh && now < cached.expiresAt) return cached.state;
   if (inFlight) return inFlight;
+  if (fresh) lastForcedReadAt = now;
   inFlight = revalidate().finally(() => {
     inFlight = null;
   });
@@ -93,4 +104,5 @@ export async function resolveStoreState(options: { fresh?: boolean } = {}): Prom
 export function resetStoreStateForTests(): void {
   cached = null;
   inFlight = null;
+  lastForcedReadAt = null;
 }

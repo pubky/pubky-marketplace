@@ -104,7 +104,11 @@ export class CommerceController {
   private static defaultShopSession = new Map<string, Promise<void>>();
 
   private static sessionEndedUnbind: (() => void) | null = null;
-  private static grantSessionMint: { session: object; promise: Promise<MarketplaceSessionInfo | null> } | null = null;
+  private static grantSessionMint: {
+    session: object;
+    forceFresh: boolean;
+    promise: Promise<MarketplaceSessionInfo | null>;
+  } | null = null;
   private static grantSessionFailures = new WeakSet<object>();
   /** The grant-minted session this tab installed, to recognise its rejection. */
   private static grantSessionInstalled: { authSession: object; issuedAt: string } | null = null;
@@ -401,7 +405,12 @@ export class CommerceController {
     if (!options.forceFresh && CommerceApplication.hasActiveMarketplaceSession() && current?.pubky === pubky) {
       return current;
     }
-    if (this.grantSessionMint?.session === session) return await this.grantSessionMint.promise;
+    const inFlight = this.grantSessionMint;
+    if (inFlight?.session === session) {
+      if (!options.forceFresh || inFlight.forceFresh) return await inFlight.promise;
+      await inFlight.promise.catch(() => null);
+      return await this.ensureMarketplaceSessionFromGrant(options);
+    }
     if (this.grantSessionFailures.has(session) && !options.retryAfterFailure) return null;
 
     const isCurrent = () => useAuthStore.getState().session === session && !useAuthStore.getState().isLoggingOut;
@@ -437,7 +446,7 @@ export class CommerceController {
         return null;
       }
     })();
-    this.grantSessionMint = { session, promise: attempt };
+    this.grantSessionMint = { session, forceFresh: options.forceFresh === true, promise: attempt };
     try {
       return await attempt;
     } finally {

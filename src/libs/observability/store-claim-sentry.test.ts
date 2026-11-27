@@ -17,6 +17,19 @@ describe('store claim Sentry scrubbing', () => {
     expect(scrubbed?.breadcrumbs?.[0].data?.from).toBe('/setup#foo=1');
   });
 
+  it('removes a claim query value and keeps the remaining query well formed', () => {
+    const event: ErrorEvent = {
+      type: undefined,
+      request: { url: 'https://shop.example/setup?claim=secret-code&from=link' },
+      breadcrumbs: [{ category: 'navigation', data: { from: '/setup?from=link&claim=secret-code&next=1' } }],
+    };
+
+    const scrubbed = scrubSensitiveData(event);
+
+    expect(scrubbed?.request?.url).toBe('https://shop.example/setup?from=link');
+    expect(scrubbed?.breadcrumbs?.[0].data?.from).toBe('/setup?from=link&next=1');
+  });
+
   it('scrubs a breadcrumb at ingress', () => {
     const breadcrumb = scrubBreadcrumb({ data: { url: '/setup#claim=secret-code' } });
     expect(breadcrumb?.data?.url).toBe('/setup');

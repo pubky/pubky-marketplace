@@ -89,7 +89,13 @@ export function stripConversationQueryParam(value: string): string {
 }
 
 export function stripStoreClaimFragment(value: string): string {
-  return value.replace(/#claim=[^#]*/gi, '').replace(/&claim=[^&#]*/gi, '');
+  return value
+    .replace(/#claim=[^#]*/gi, '')
+    .replace(/([?&])claim=[^&#]*/gi, '$1')
+    .replace(/\?&+/g, '?')
+    .replace(/&&+/g, '&')
+    .replace(/[?&](?=#)/g, '')
+    .replace(/[?&]$/g, '');
 }
 
 function scrubSensitiveStringPatterns(value: string): string {

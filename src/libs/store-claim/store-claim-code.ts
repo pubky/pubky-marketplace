@@ -43,5 +43,5 @@ export function clearStoreClaimCode(): void {
 
 /** The literal key is required because this script runs before bundled helpers. */
 export function buildStoreClaimCodeIntakeScript(pathname = '/setup'): string {
-  return `(function(){if(window.location.pathname!==${JSON.stringify(pathname)})return;var m=/(?:^#|&)claim=([^&]*)/.exec(window.location.hash);if(!m)return;try{var c=decodeURIComponent(m[1]);window.sessionStorage.setItem('shop:store-claim-code:v1',c);}catch(e){}try{window.history.replaceState(window.history.state,'',window.location.pathname+window.location.search);}catch(e){}})()`;
+  return `(function(){if(window.location.pathname!==${JSON.stringify(pathname)})return;var m=/(?:^#|&)claim=([^&]*)/.exec(window.location.hash);if(!m)return;if(window.isSecureContext){try{var c=decodeURIComponent(m[1]);window.sessionStorage.setItem('shop:store-claim-code:v1',c);}catch(e){}}try{window.history.replaceState(window.history.state,'',window.location.pathname+window.location.search);}catch(e){}})()`;
 }

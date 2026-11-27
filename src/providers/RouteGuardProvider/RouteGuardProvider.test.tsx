@@ -6,7 +6,7 @@ import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
 import { resetFragmentSessionExportCache } from '@/libs/vibe-session/fragment';
-import { setStoreSeller } from '@/test-utils/store-mode';
+import { setStoreSeller, setStoreState } from '@/test-utils/store-mode';
 import { RouteGuardProvider } from './RouteGuardProvider';
 
 // Hoisted mocks
@@ -63,13 +63,16 @@ vi.mock('@/app/routes', () => ({
   ACCOUNT_ROUTES: { COMPLETE_PROFILE: '/complete-profile' },
   APP_ROUTES: {
     MARKETPLACE: '/marketplace',
+    SETUP: '/setup',
+    STORE_UNAVAILABLE: '/store-unavailable',
   },
+  ROOT_ROUTES: '/',
   MARKETPLACE_ROUTES: {
     CART: '/marketplace/cart',
     SELL: '/marketplace/sell',
     OFFERS: '/marketplace/offers',
   },
-  PUBLIC_ROUTES: ['/landing', '/marketplace'],
+  PUBLIC_ROUTES: ['/', '/landing', '/marketplace', '/setup'],
   getMarketplaceHomeRoute: () => mocks.marketplaceHome,
   isDynamicPublicRoute: (path: string) => {
     const segments = path.split('/').filter(Boolean);
@@ -90,7 +93,10 @@ vi.mock('@/app/routes', () => ({
 // Mock @/providers/RouteGuardProvider/RouteGuardProvider.constants
 vi.mock('@/providers/RouteGuardProvider/RouteGuardProvider.constants', () => ({
   ROUTE_ACCESS_MAP: {
-    AUTHENTICATED: { allowedRoutes: ['/feed', '/settings', '/collections', '/marketplace'], redirectTo: '/feed' },
+    AUTHENTICATED: {
+      allowedRoutes: ['/feed', '/settings', '/collections', '/marketplace', '/setup'],
+      redirectTo: '/feed',
+    },
     UNAUTHENTICATED: {
       allowedRoutes: ['/login', '/landing', '/home', '/hot', '/search', '/collections', '/marketplace'],
       redirectTo: '/login',
@@ -1042,6 +1048,7 @@ describe('RouteGuardProvider — store mode', () => {
 
   afterEach(() => {
     setStoreSeller(undefined);
+    setStoreState(undefined);
     mocks.marketplaceHome = '/marketplace';
   });
 
@@ -1088,6 +1095,55 @@ describe('RouteGuardProvider — store mode', () => {
     renderGuard();
 
     expect(screen.getByText('Selling tools')).toBeInTheDocument();
+  });
+
+  it('returns setup through required profile completion', () => {
+    setStoreState({ kind: 'unclaimed', claimMode: true });
+    mocks.status = 'NEEDS_PROFILE_CREATION';
+    mocks.pathname = '/setup';
+    const { rerender } = renderGuard();
+
+    expect(mocks.mockRouterPush).toHaveBeenCalledExactlyOnceWith('/complete-profile');
+    expect(window.sessionStorage.getItem('pubky.routeGuard.returnTo')).toBe('/setup');
+
+    mocks.pathname = '/complete-profile';
+    rerender(
+      <RouteGuardProvider>
+        <div>Selling tools</div>
+      </RouteGuardProvider>,
+    );
+    expect(screen.getByText('Selling tools')).toBeInTheDocument();
+
+    mocks.status = 'AUTHENTICATED';
+    rerender(
+      <RouteGuardProvider>
+        <div>Selling tools</div>
+      </RouteGuardProvider>,
+    );
+    expect(mocks.mockRouterPush).toHaveBeenLastCalledWith('/setup');
+    expect(window.sessionStorage.getItem('pubky.routeGuard.returnTo')).toBeNull();
+  });
+
+  it('keeps setup open to an unauthenticated visitor', () => {
+    setStoreState({ kind: 'unclaimed', claimMode: true });
+    mocks.status = 'UNAUTHENTICATED';
+    mocks.session = null;
+    mocks.currentUserPubky = null;
+    mocks.pathname = '/setup';
+    renderGuard();
+
+    expect(screen.getByText('Selling tools')).toBeInTheDocument();
+    expect(mocks.mockRouterPush).not.toHaveBeenCalled();
+  });
+
+  it('does not send the unclaimed holding page through profile completion', () => {
+    setStoreState({ kind: 'unclaimed', claimMode: true });
+    mocks.status = 'NEEDS_PROFILE_CREATION';
+    mocks.pathname = '/';
+    renderGuard();
+
+    expect(screen.getByText('Selling tools')).toBeInTheDocument();
+    expect(mocks.mockRouterPush).not.toHaveBeenCalled();
   });
 
   it('opens sign-in on the store seller shop for a guest deep link', () => {

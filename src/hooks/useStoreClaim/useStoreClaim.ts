@@ -147,6 +147,13 @@ export function useStoreClaim() {
     await AuthController.logout();
   };
 
+  const expireSession = async () => {
+    setNotice({ message: 'Your sign-in expired. Sign in again to claim this shop.' });
+    clearStoreClaimCode();
+    setCode('');
+    await AuthController.logout();
+  };
+
   const finish = async () => {
     clearStoreClaimCode();
     setClaimed(true);
@@ -170,6 +177,7 @@ export function useStoreClaim() {
     if (!pubky || !validCode || retryAt !== null) return;
     setSubmitting(true);
     setNotice(null);
+    let freshMintKind: 'session-rejected' | 'session-source' | null = null;
     try {
       let freshMint = false;
       for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -184,6 +192,8 @@ export function useStoreClaim() {
         }
         if (result.kind === 'stale-session') {
           setNotice({ message: 'For safety, sign in again to confirm.' });
+          clearStoreClaimCode();
+          setCode('');
           await AuthController.logout();
           return;
         }
@@ -194,28 +204,39 @@ export function useStoreClaim() {
           });
           return;
         }
-        if (result.kind === 'session-source') {
+        if (result.kind === 'session-rejected' && freshMint) {
+          await expireSession();
+          return;
+        }
+        if (result.kind === 'session-source' || result.kind === 'session-rejected') {
           if (freshMint) {
             Logger.error('Shop claim sign-in was refused', { reason: 'claim_session_source' });
             setNotice({ message: 'This shop is not set up to sign in.', refusal: true });
             return;
           }
           freshMint = true;
+          freshMintKind = result.kind;
           CommerceController.clearMarketplaceSession();
           const session = await CommerceController.ensureMarketplaceSessionFromGrant({
             retryAfterFailure: true,
             throwOnFailure: true,
             forceFresh: true,
           });
+          freshMintKind = null;
           if (!session) {
-            setNotice(grantRefusal('grant_session_unavailable'));
+            if (result.kind === 'session-rejected') await expireSession();
+            else setNotice(grantRefusal('grant_session_unavailable'));
             return;
           }
           continue;
         }
         if (result.kind === 'already-claimed') {
           clearStoreClaimCode();
-          const state = await StoreClaimController.fetchStoreState().catch(() => null);
+          if (result.seller === pubky) {
+            await finish();
+            return;
+          }
+          const state = await StoreClaimController.fetchStoreState(true).catch(() => null);
           if (state?.kind === 'claimed' && state.seller === pubky) {
             await finish();
             return;
@@ -237,7 +258,9 @@ export function useStoreClaim() {
         return;
       }
     } catch (error) {
-      if (freshMintFailure(error)) {
+      if (freshMintKind === 'session-rejected') {
+        await expireSession();
+      } else if (freshMintFailure(error)) {
         const failure = mintFailure(error);
         setNotice(failure);
         if (failure.retryAfterSeconds !== undefined) setRetryAt(Date.now() + failure.retryAfterSeconds * 1_000);

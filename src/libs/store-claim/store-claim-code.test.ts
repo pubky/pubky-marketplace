@@ -37,11 +37,15 @@ describe('store claim code', () => {
 
 describe('store claim code intake script', () => {
   beforeEach(() => {
+    vi.stubGlobal('isSecureContext', true);
     window.sessionStorage.clear();
     window.history.replaceState(null, '', '/setup');
   });
 
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
 
   it('stores the decoded code and removes the fragment synchronously', () => {
     window.history.replaceState(null, '', '/setup?from=link#claim=abc%20def');
@@ -50,6 +54,17 @@ describe('store claim code intake script', () => {
 
     expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBe('abc def');
     expect(window.location.pathname).toBe('/setup');
+    expect(window.location.search).toBe('?from=link');
+    expect(window.location.hash).toBe('');
+  });
+
+  it('does not store the code in an insecure context but still removes the fragment', () => {
+    vi.stubGlobal('isSecureContext', false);
+    window.history.replaceState(null, '', '/setup?from=link#claim=abc');
+
+    new Function(buildStoreClaimCodeIntakeScript())();
+
+    expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBeNull();
     expect(window.location.search).toBe('?from=link');
     expect(window.location.hash).toBe('');
   });

@@ -1,4 +1,5 @@
 import './globals.css';
+import { headers } from 'next/headers';
 import type { Viewport } from 'next';
 import { APP_ROUTES } from '@/app/routes';
 import { TooltipProvider } from '@/atoms/Tooltip/Tooltip';
@@ -51,9 +52,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const storeState = await resolveStoreState();
   setStoreStateForRender(storeState);
   const storeDocument = storeState.kind === 'unclaimed' || storeState.kind === 'unavailable';
+  const pathname = storeState.kind === 'off' || storeDocument ? null : (await headers()).get('x-pubky-pathname');
+  const showPlausible = storeState.kind === 'off' || (!storeDocument && pathname !== APP_ROUTES.SETUP);
 
   return (
-    <RootContainer storeStateScript={storeState.kind === 'off' ? null : serializeStoreState(storeState)}>
+    <RootContainer
+      storeStateScript={storeState.kind === 'off' ? null : serializeStoreState(storeState)}
+      showPlausible={showPlausible}
+    >
       {/* Raw inline script: it must run during parsing, before the promo's first paint. */}
       <script
         id="marketplace-promo-prepaint-check"

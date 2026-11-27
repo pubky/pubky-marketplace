@@ -748,7 +748,11 @@ describe('store claim runtime values', () => {
   });
 
   it('refuses a non-HTTPS or non-origin marketplace URL in the strict schema', () => {
-    for (const marketplaceUrl of ['http://marketplace.example.com', 'https://marketplace.example.com/v1']) {
+    for (const marketplaceUrl of [
+      'http://marketplace.example.com',
+      'https://marketplace.example.com/',
+      'https://marketplace.example.com/v1',
+    ]) {
       expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, ...CLAIM_INPUT, marketplaceUrl })).toThrow(
         'exact https:// origin',
       );

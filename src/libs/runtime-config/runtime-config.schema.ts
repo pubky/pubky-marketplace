@@ -521,7 +521,7 @@ function validateStoreModeEnvInput(
   if (marketplaceUrl !== undefined) {
     try {
       const url = new URL(marketplaceUrl);
-      const exactOrigin = url.origin === marketplaceUrl.replace(/\/$/, '');
+      const exactOrigin = url.origin === marketplaceUrl;
       const loopback =
         allowLoopbackHttp &&
         url.protocol === 'http:' &&

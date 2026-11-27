@@ -320,10 +320,10 @@ export function isLogoLandingRoute(pathname: string | null): boolean {
  * @example
  * ```ts
  * // For logged-in user
- * getProfileRoute(PROFILE_ROUTES.FOLLOWERS) // returns '/profile/followers'
+ * getProfileRoute(PROFILE_ROUTES.FOLLOWERS) // => '/profile/followers'
  *
  * // For specific user
- * getProfileRoute(PROFILE_ROUTES.FOLLOWERS, 'n1zpc53jzy') // returns '/profile/n1zpc53jzy/followers'
+ * getProfileRoute(PROFILE_ROUTES.FOLLOWERS, 'n1zpc53jzy') // => '/profile/n1zpc53jzy/followers'
  * ```
  */
 export function getProfileRoute(route: PROFILE_ROUTES, pubky?: string): string {

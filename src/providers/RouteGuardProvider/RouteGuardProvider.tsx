@@ -200,7 +200,14 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
     router.push(returnTo);
   }, [status, isLoading, pathname, router]);
 
-  const isPublicRoute = PUBLIC_ROUTES.includes(pathname) || isDynamicPublicRoute(pathname);
+  const isPublicRoute =
+    (PUBLIC_ROUTES.includes(pathname) || isDynamicPublicRoute(pathname)) &&
+    !(
+      storeState.kind !== 'off' &&
+      storeState.claimMode &&
+      pathname === APP_ROUTES.SETUP &&
+      status === AuthStatus.NEEDS_PROFILE_CREATION
+    );
   const isRouteAccessible = useMemo(() => {
     if (isMinimalStoreDocument) return true;
     if (isPublicRoute) return true;

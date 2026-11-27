@@ -122,6 +122,20 @@ describe('CommerceController.ensureMarketplaceSessionFromGrant', () => {
     expect(mint).toHaveBeenCalledTimes(1);
   });
 
+  it('does not let a forced fresh caller join a non-fresh restore', async () => {
+    signIn();
+    const restored = { ...INFO, issuedAt: '2026-10-15T00:00:01.000Z' };
+    restore.mockReturnValue(restored);
+
+    const restoring = CommerceController.ensureMarketplaceSessionFromGrant();
+    const forced = CommerceController.ensureMarketplaceSessionFromGrant({ forceFresh: true });
+
+    await expect(restoring).resolves.toEqual(restored);
+    await expect(forced).resolves.toEqual(INFO);
+    expect(mint).toHaveBeenCalledTimes(1);
+    expect(restore).toHaveBeenCalledTimes(1);
+  });
+
   it('revokes and drops a session minted after the account changed', async () => {
     signIn();
     const pending = deferred<MintedGrantSession>();

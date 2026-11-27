@@ -73,6 +73,7 @@ describe('resolveStoreState', () => {
     await resolveStoreState();
     expect(fetchMock).toHaveBeenCalledWith('https://service.example/v1/store', {
       cache: 'no-store',
+      redirect: 'error',
       signal: expect.any(AbortSignal),
     });
   });
@@ -145,6 +146,39 @@ describe('resolveStoreState', () => {
     await resolveStoreState();
     await resolveStoreState({ fresh: true });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('bounds sequential forced reads to one per unclaimed TTL window', async () => {
+    mockService(UNCLAIMED_BODY);
+
+    for (let request = 0; request < 20; request += 1) {
+      await expect(resolveStoreState({ fresh: true })).resolves.toEqual({ kind: 'unclaimed', claimMode: true });
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    for (let request = 0; request < 20; request += 1) {
+      await resolveStoreState({ fresh: true });
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let a forced loop turn rate limiting into unavailable', async () => {
+    mockService(UNCLAIMED_BODY);
+
+    for (let request = 0; request < 40; request += 1) {
+      if (request === 20) await vi.advanceTimersByTimeAsync(2_000);
+      await expect(resolveStoreState({ fresh: true })).resolves.toEqual({ kind: 'unclaimed', claimMode: true });
+    }
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(Logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('maps an oversize service body to unavailable', async () => {
+    mockService('x'.repeat(64 * 1_024));
+
+    await expect(resolveStoreState()).resolves.toEqual({ kind: 'unavailable', claimMode: true });
   });
 
   it('ignores fresh once claimed', async () => {

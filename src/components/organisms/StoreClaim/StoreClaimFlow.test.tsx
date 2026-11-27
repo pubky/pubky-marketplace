@@ -40,7 +40,11 @@ vi.mock('@/stores/auth/auth.store', () => ({
   useAuthStore: (selector: (state: { currentUserPubky: string | null; session: object | null }) => unknown) =>
     selector({ currentUserPubky: runtime.pubky, session: runtime.session && runtime.pubky ? {} : null }),
 }));
-vi.mock('@/organisms/SignIn/SignIn', () => ({ SignInContent: () => <div data-testid="grant-sign-in-qr" /> }));
+vi.mock('@/organisms/SignIn/SignIn', () => ({
+  SignInContent: ({ showPassport = true }: { showPassport?: boolean }) => (
+    <div data-testid="grant-sign-in-qr" data-show-passport={showPassport} />
+  ),
+}));
 vi.mock('@/organisms/AvatarWithFallback/AvatarWithFallback', () => ({
   AvatarWithFallback: () => <div data-testid="claim-avatar" />,
 }));
@@ -107,7 +111,7 @@ describe('StoreClaimFlow', () => {
     render(<StoreClaimFlow />);
 
     expect(screen.getByLabelText('Setup code')).toHaveValue('');
-    expect(screen.getByTestId('grant-sign-in-qr')).toBeInTheDocument();
+    expect(screen.getByTestId('grant-sign-in-qr')).toHaveAttribute('data-show-passport', 'false');
     expect(screen.getByText('Where to find the code')).toBeInTheDocument();
   });
 
@@ -134,14 +138,50 @@ describe('StoreClaimFlow', () => {
     expect(screen.getByLabelText('Setup code')).toHaveValue(CODE);
   });
 
-  it('signs out for a stale session and keeps the code', async () => {
+  it('signs out for a stale session and clears the code for a fresh paste', async () => {
     mocks.claim.mockResolvedValue({ kind: 'stale-session' });
     await renderSignedIn();
     fireEvent.click(screen.getByRole('button', { name: 'Claim this shop' }));
 
     expect(await screen.findByText('For safety, sign in again to confirm.')).toBeInTheDocument();
     expect(mocks.logout).toHaveBeenCalledTimes(1);
-    expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBe(CODE);
+    expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBeNull();
+    expect(screen.getByLabelText('Setup code')).toHaveValue('');
+  });
+
+  it('clears a rejected bearer, mints once and retries the claim', async () => {
+    mocks.claim.mockResolvedValueOnce({ kind: 'session-rejected' }).mockResolvedValueOnce({ kind: 'invalid-code' });
+    await renderSignedIn();
+    fireEvent.click(screen.getByRole('button', { name: 'Claim this shop' }));
+
+    expect(await screen.findByText('That setup code is not right. Check it and try again.')).toBeInTheDocument();
+    expect(mocks.clear).toHaveBeenCalledTimes(1);
+    expect(mocks.ensure).toHaveBeenCalledTimes(2);
+    expect(mocks.claim).toHaveBeenCalledTimes(2);
+    expect(mocks.logout).not.toHaveBeenCalled();
+  });
+
+  it('signs out with an expired sign-in prompt after a repeated bearer rejection', async () => {
+    mocks.claim.mockResolvedValue({ kind: 'session-rejected' });
+    await renderSignedIn();
+    fireEvent.click(screen.getByRole('button', { name: 'Claim this shop' }));
+
+    expect(await screen.findByText('Your sign-in expired. Sign in again to claim this shop.')).toBeInTheDocument();
+    expect(mocks.claim).toHaveBeenCalledTimes(2);
+    expect(mocks.logout).toHaveBeenCalledTimes(1);
+    expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBeNull();
+    expect(screen.getByLabelText('Setup code')).toHaveValue('');
+  });
+
+  it('signs out with an expired sign-in prompt when the replacement mint fails', async () => {
+    mocks.claim.mockResolvedValue({ kind: 'session-rejected' });
+    mocks.ensure.mockResolvedValueOnce({}).mockRejectedValueOnce(mintError(503));
+    await renderSignedIn();
+    fireEvent.click(screen.getByRole('button', { name: 'Claim this shop' }));
+
+    expect(await screen.findByText('Your sign-in expired. Sign in again to claim this shop.')).toBeInTheDocument();
+    expect(mocks.claim).toHaveBeenCalledTimes(1);
+    expect(mocks.logout).toHaveBeenCalledTimes(1);
   });
 
   it('shows the capability message and operator hint', async () => {
@@ -188,6 +228,7 @@ describe('StoreClaimFlow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Claim this shop' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain(groupPubky(OTHER));
+    expect(mocks.state).toHaveBeenCalledWith(true);
     expect(screen.getByRole('alert').textContent).toContain('./solo claim-release');
     expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBeNull();
   });
@@ -264,12 +305,16 @@ describe('StoreClaimFlow', () => {
     expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBeNull();
   });
 
-  it('treats a conflict won by this identity as success', async () => {
+  it('treats a conflict won by this identity as success despite a cached unclaimed answer', async () => {
     mocks.claim.mockResolvedValue({ kind: 'already-claimed', seller: PUBKY });
+    mocks.state.mockResolvedValue({ kind: 'unclaimed', seller: null, source: null });
     await renderSignedIn();
+    vi.useFakeTimers();
     fireEvent.click(screen.getByRole('button', { name: 'Claim this shop' }));
+    await flushPromises();
 
-    await waitFor(() => expect(mocks.state).toHaveBeenCalledWith(true));
+    expect(screen.getByText('The shop is claimed.')).toBeInTheDocument();
+    expect(mocks.state).toHaveBeenCalledWith(true);
     expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBeNull();
   });
 
