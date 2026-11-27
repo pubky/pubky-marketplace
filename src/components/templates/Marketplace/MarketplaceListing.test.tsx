@@ -921,14 +921,14 @@ describe('MarketplaceListing', () => {
     expect(screen.queryByText('Shop opened Aug 2026')).not.toBeInTheDocument();
   });
 
-  it("renders this product's own rating, not the seller's", () => {
+  it("shows no stars for this product's rating from an index without trust buckets", () => {
     listingRating.value = { avg: 4.7, count: 12, verifiedCount: 9 };
 
     renderListing();
 
-    expect(screen.getByRole('img', { name: 'Rated 4.7 out of 5 from 12 reviews' })).toBeInTheDocument();
-    expect(screen.getByTitle('12 reviews')).toBeInTheDocument();
-    expect(screen.queryByText('No rating yet')).not.toBeInTheDocument();
+    expect(screen.getByText('No rating yet')).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /^Rated/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('4.7')).not.toBeInTheDocument();
   });
 
   it("counts this product's rating from the index's exact scoped figure", () => {

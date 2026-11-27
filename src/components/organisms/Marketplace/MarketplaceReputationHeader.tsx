@@ -41,9 +41,10 @@ export interface MarketplaceReputationHeaderProps {
  *   1), a secondary "Weighted by purchase value: 4.6" line follows the
  *   products line; without weights (an older index, or reviews without a
  *   `price_decade` claim) there is no such line.
- * - legacy (an index without buckets): today's trusted-only display: the
- *   index's stars over all reviews with a verified affix counting trusted
- *   attestors only (ADR 0024). No counted figure is claimed.
+ * - legacy (an index without buckets): "No rating yet", never stars. The
+ *   legacy average covers every indexed review and cannot be narrowed to
+ *   counted ones; the full variant states how many reviews an attestor this
+ *   client trusts verified, as a count only.
  * - filtered (a reviewer chip on the review list is active): the index's
  *   figures over the counted matches in place of the above, "4.8 from 3
  *   people you follow", with the seller rating of those people first; "No
@@ -125,7 +126,7 @@ export function MarketplaceReputationHeader({
       {variant === 'full' && (
         <Typography as="p" className="flex items-center gap-1 text-xs text-muted-foreground">
           <BadgeCheck className="size-3.5 text-emerald-400 [.light_&]:text-emerald-700" />
-          {countedBasisLine(counted, summary.count)}
+          {countedBasisLine(counted)}
         </Typography>
       )}
     </div>
@@ -180,11 +181,15 @@ function productsLine(counted: CountedReputation, ratedListings: number): string
   return `Products rated ${(counted.itemRating ?? 0).toFixed(1)}${across} · ${formatCountedBasis(counted)}`;
 }
 
-function countedBasisLine(counted: CountedReputation, total: number): string {
+function countedBasisLine(counted: CountedReputation): string {
   if (counted.reviews === 0) {
-    return `${total} ${total === 1 ? 'review' : 'reviews'}, none a verified purchase from an attestor this app trusts`;
+    return 'No reviews counted';
   }
-  return `${counted.reviews} of ${total} ${total === 1 ? 'review' : 'reviews'} counted: verified purchases from attestors this app trusts`;
+  return `${counted.reviews} ${counted.reviews === 1 ? 'review' : 'reviews'} counted: ${
+    counted.reviews === 1
+      ? 'a verified purchase from an attestor this app trusts'
+      : 'verified purchases from attestors this app trusts'
+  }`;
 }
 
 function LegacyReputationHeader({
@@ -200,22 +205,23 @@ function LegacyReputationHeader({
 
   return (
     <div className={cn('flex flex-col gap-1', className)} data-testid="marketplace-reputation-header">
-      <MarketplaceStarRating
-        rating={summary.avg}
-        count={summary.count}
-        verifiedCount={trustedVerifiedCount}
-        size={variant === 'full' ? 'md' : 'sm'}
-      />
+      <Typography as="p" className="text-sm text-muted-foreground" data-testid="marketplace-reputation-seller-rating">
+        No rating yet
+      </Typography>
       {variant === 'full' && (
         <Typography as="p" className="flex items-center gap-1 text-xs text-muted-foreground">
           <BadgeCheck className="size-3.5 text-emerald-400 [.light_&]:text-emerald-700" />
-          {trustedVerifiedCount > 0
-            ? `${trustedVerifiedCount} of ${summary.count} ${summary.count === 1 ? 'review' : 'reviews'} verified by the marketplace attestor`
-            : summary.verifiedCount > 0
-              ? `${summary.verifiedCount} attested ${summary.verifiedCount === 1 ? 'review' : 'reviews'}, none from an attestor this app recognizes`
-              : 'No verified purchases among these reviews'}
+          {legacyVerifiedLine(trustedVerifiedCount)}
         </Typography>
       )}
     </div>
   );
+}
+
+function legacyVerifiedLine(trustedVerifiedCount: number): string {
+  if (trustedVerifiedCount === 0) return 'No reviews verified by an attestor this app trusts';
+  if (trustedVerifiedCount === 1) {
+    return '1 review verified by an attestor this app trusts, not yet rated on its own';
+  }
+  return `${trustedVerifiedCount} reviews verified by attestors this app trusts, not yet rated on their own`;
 }

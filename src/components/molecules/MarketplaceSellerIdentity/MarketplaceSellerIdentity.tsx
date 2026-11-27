@@ -3,7 +3,6 @@
 import { Store } from 'lucide-react';
 import type { CommerceSellerReputationOverview } from '@/application/commerce/commerce';
 import { Typography } from '@/atoms/Typography/Typography';
-import { trustedAttestedReviewCount } from '@/libs/commerce/attestor-trust';
 import { countedSummaryReputation } from '@/libs/commerce/review-counting';
 import { MarketplaceStarRating } from '@/molecules/MarketplaceStarRating/MarketplaceStarRating';
 
@@ -51,14 +50,6 @@ export function MarketplaceSellerIdentity({
         </Typography>
         {reputation === undefined ? null : counted !== null && counted.itemRating !== null ? (
           <MarketplaceStarRating rating={counted.itemRating} basis={counted} size="sm" className="mt-1" />
-        ) : counted === null && reputation.status === 'rated' && reputation.summary.count > 0 ? (
-          <MarketplaceStarRating
-            rating={reputation.summary.avg}
-            count={reputation.summary.count}
-            verifiedCount={trustedAttestedReviewCount(reputation.summary.attestors)}
-            size="sm"
-            className="mt-1"
-          />
         ) : (
           <Typography
             as="p"

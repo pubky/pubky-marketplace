@@ -135,16 +135,17 @@ describe('MarketplaceListingCard', () => {
     expect(screen.queryByRole('img', { name: /^Rated/ })).not.toBeInTheDocument();
   });
 
-  it("renders the product's own rating aggregate when the catalog projection carries reviews", () => {
+  it("shows no stars for the product's rating from an index without trust buckets", () => {
     const listing = catalogItemFromCatalogEntry(
       createCommerceCatalogEntryFixture({ listing_reputation: { avg: 4.6, count: 17, verifiedCount: 11 } }),
     );
 
     render(<MarketplaceListingCard listing={listing} shopName="Satoshi Vintage" />);
 
-    expect(screen.getByRole('img', { name: 'Rated 4.6 out of 5 from 17 reviews' })).toBeInTheDocument();
-    expect(screen.getByTitle('17 reviews')).toBeInTheDocument();
-    expect(screen.queryByText('No rating yet')).not.toBeInTheDocument();
+    expect(screen.getByText('No rating yet')).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /^Rated/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('4.6')).not.toBeInTheDocument();
+    expect(screen.queryByText('17')).not.toBeInTheDocument();
   });
 
   it('shows the per-buyer mean of trusted buckets with its buyers and orders', () => {
@@ -190,18 +191,6 @@ describe('MarketplaceListingCard', () => {
 
     expect(screen.getByText('No rating yet')).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: /Rated/ })).not.toBeInTheDocument();
-  });
-
-  it('shows no verified-purchase affix, because the card snippet cannot tell trusted attestors apart', () => {
-    const listing = catalogItemFromCatalogEntry(
-      createCommerceCatalogEntryFixture({ listing_reputation: { avg: 4.6, count: 17, verifiedCount: 11 } }),
-    );
-
-    render(<MarketplaceListingCard listing={listing} shopName="Satoshi Vintage" />);
-
-    expect(screen.getByRole('img', { name: 'Rated 4.6 out of 5 from 17 reviews' })).toBeInTheDocument();
-    expect(screen.queryByTitle(/verified purchase/)).not.toBeInTheDocument();
-    expect(screen.queryByRole('img', { name: /verified/ })).not.toBeInTheDocument();
   });
 
   it('labels the auction price as a starting bid instead of claiming a current price', () => {

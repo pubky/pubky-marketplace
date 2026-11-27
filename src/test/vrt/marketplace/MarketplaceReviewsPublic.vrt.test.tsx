@@ -415,7 +415,7 @@ async function waitForText(fragment: string) {
 }
 
 describe('Marketplace public reviews — visual regression', () => {
-  it('renders a rated card with stars next to an unrated card without any at desktop viewport', async () => {
+  it('renders a legacy-rated card and an unrated card, neither with stars, at desktop viewport', async () => {
     const { rated, unrated } = await cardFixtures;
     const screen = await renderForVRT(
       <div className="grid grid-cols-4 gap-5 p-6">
@@ -427,7 +427,7 @@ describe('Marketplace public reviews — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-cards-reputation-desktop');
   });
 
-  it('renders the full rating header with its verified basis line at desktop viewport', async () => {
+  it('renders the legacy rating header with no stars and its trusted verified count at desktop viewport', async () => {
     controllerState.reputation = ratedSummary;
     const screen = await renderForVRT(
       <main className="mx-auto flex w-full max-w-xl flex-col gap-6 px-6 py-10">
@@ -435,7 +435,7 @@ describe('Marketplace public reviews — visual regression', () => {
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
-    await waitForText('verified by the marketplace attestor');
+    await waitForText('verified by an attestor this app trusts, not yet rated on its own');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reputation-header-rated-full-desktop');
   });
 

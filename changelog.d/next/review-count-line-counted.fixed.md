@@ -1,0 +1,1 @@
+The storefront's review count line counts only counted reviews, so unverified reviews no longer raise it: "2 reviews counted: verified purchases from attestors this app trusts", or "No reviews counted" when nothing counts. The agent guide at `/llms.txt` lists the attestors this deployment trusts and shows how to read counted figures from the index.

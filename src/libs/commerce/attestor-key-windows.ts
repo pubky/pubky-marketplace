@@ -75,6 +75,11 @@ export function attestorProfileKeyWindows(): AttestorProfileKeyWindow[] {
   return [...windowsByProfile.values()].flat();
 }
 
+/** The windows recorded from one attestor's last verified profile, kept until another verified profile replaces them. */
+export function attestorProfileKeyWindowsFrom(attestorId: string): readonly AttestorProfileKeyWindow[] {
+  return windowsByProfile.get(attestorId) ?? [];
+}
+
 /**
  * Records the windows of one attestor's verified profile, replacing its
  * earlier copy. The version moves, and subscribers run, only when the

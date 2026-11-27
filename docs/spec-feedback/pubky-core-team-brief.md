@@ -55,7 +55,7 @@ crate in that tree is `pubky-sdk/`.
 
 | Piece | Where we read it | Pin | What it is |
 | --- | --- | --- | --- |
-| paykit-rs (vendored pubky 0.8.0) | `BitcoinErrorLog/paykit-rs-official` | branch `fix/wasm-homeserver-write-abort` HEAD `d4a73a5765e1f0b18ed451d78f98dab97c611a8c` (`paykit-wasm` 0.1.0-rc50) | The browser-proven patch line. All eight vendor-touching commits are on this branch and pushed. |
+| paykit-rs (vendored pubky 0.8.0) | `BitcoinErrorLog/paykit-rs-official` | `master` at `d4a73a5765e1f0b18ed451d78f98dab97c611a8c` (`paykit-wasm` 0.1.0-rc50; the former `fix/wasm-homeserver-write-abort` head) | The browser-proven patch line. All eight vendor-touching commits are ancestors of `d4a73a5` and reachable from `master`. |
 | crates.io `pubky` 0.11.0 | local cargo registry extract | published 2026-08-19, not yanked | SDK source of record for “is this already upstream?” |
 | crates.io `pubky-homeserver` 0.11.0 | same registry | same release | Homeserver source of record for quota / `WritePathForbidden`. |
 | official git main | `pubky/pubky-homeserver` | `21c874028eb75a7e1d86a887df869ee3333cdc6a` | 14 commits past annotated tag `v0.11.0` (tag object `5a0884d4` peels to commit `6a14bdb8fa2e30ef4e4b241fcdd3992c453d2378`). |
@@ -86,8 +86,8 @@ wrote to a homeserver. The failures were:
   cannot speak;
 - no first-class `migrate_homeserver` on the 0.8 signer.
 
-Those patches are in `vendor/pubky` on
-`fix/wasm-homeserver-write-abort`. `vendor/pubky/PATCHES.md` documents
+Those patches are in `vendor/pubky` at `d4a73a5` on `master`.
+`vendor/pubky/PATCHES.md` documents
 four items and **lags the git history**: it does not list the two
 bounded-drain commits (`f978731`, `d4a73a5`). The git history is the
 complete inventory.
@@ -102,9 +102,8 @@ patches wrap, so they will not rebase cleanly (see §4).
 
 ## 3. Vendored pubky patches (the payload)
 
-Checkout: `paykit-rs-official` `fix/wasm-homeserver-write-abort`
-`d4a73a5`. Path-patches crates.io `pubky` 0.8.0 at `vendor/pubky`
-(`[patch.crates-io]`). Eight commits touch `vendor/pubky`. All eight
+Checkout: `paykit-rs-official` `master` at `d4a73a5`. Path-patches
+crates.io `pubky` 0.8.0 at `vendor/pubky` (`[patch.crates-io]`). Eight commits touch `vendor/pubky`. All eight
 are pushed; GitHub returned 200 for each full SHA.
 
 `51f1e6847b65` vendors 0.8.0 (`.cargo_vcs_info.json` records

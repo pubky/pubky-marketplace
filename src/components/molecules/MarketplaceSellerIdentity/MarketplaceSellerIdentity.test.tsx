@@ -19,11 +19,44 @@ describe('MarketplaceSellerIdentity', () => {
     expect(screen.queryByText(/Seller-stated/)).not.toBeInTheDocument();
   });
 
-  it('counts only reviews from trusted attestors as verified purchases', () => {
+  it('shows no stars for a legacy summary, even with a trusted attestor, whatever its unfiltered figures', () => {
+    const identity = (count: number, avg: number) => (
+      <MarketplaceSellerIdentity
+        sellerPubky={'s'.repeat(52)}
+        displayName="Example Shop"
+        reputation={{
+          status: 'rated',
+          summary: {
+            count,
+            verifiedCount: 7,
+            avg,
+            histogram: [0, 1, 1, 2, 4],
+            responseCount: 0,
+            editedLateCount: 0,
+            attestors: { [TEST_TRUSTED_ATTESTOR.pubky]: 3, ['x'.repeat(52)]: 4 },
+            lastReviewedAt: null,
+          },
+        }}
+      />
+    );
+    const { container, rerender } = render(identity(8, 4.2));
+    const before = container.textContent;
+
+    expect(screen.getByText('No rating yet')).toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(before).not.toContain('4.2');
+
+    rerender(identity(80, 4.9));
+
+    expect(container.textContent).toBe(before);
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  });
+
+  it('shows "No rating yet" for a legacy summary with reviews but no trusted attestor', () => {
     render(
       <MarketplaceSellerIdentity
         sellerPubky={'s'.repeat(52)}
-        displayName="Satoshi Vintage"
+        displayName="Example Shop"
         reputation={{
           status: 'rated',
           summary: {
@@ -33,14 +66,15 @@ describe('MarketplaceSellerIdentity', () => {
             histogram: [0, 1, 1, 2, 4],
             responseCount: 0,
             editedLateCount: 0,
-            attestors: { [TEST_TRUSTED_ATTESTOR.pubky]: 3, ['x'.repeat(52)]: 4 },
+            attestors: { ['x'.repeat(52)]: 7 },
             lastReviewedAt: null,
           },
         }}
       />,
     );
 
-    expect(screen.getByRole('img', { name: 'Rated 4.2 out of 5 from 8 reviews, 3 verified purchases' })).toBeVisible();
+    expect(screen.getByText('No rating yet')).toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 
   it('shows counted item stars as a per-buyer mean once the index serves trust buckets', () => {

@@ -5,8 +5,13 @@ import {
   MARKETPLACE_ATTESTOR_PROFILE_RETRY_MS,
   MARKETPLACE_ATTESTOR_PROFILE_TTL_MS,
   MARKETPLACE_ATTESTOR_PROFILE_WAIT_MS,
+  marketplaceTrustedAttestors,
 } from '@/config/commerce';
-import { setAttestorProfileKeyWindows } from '@/libs/commerce/attestor-key-windows';
+import {
+  attestorProfileKeyWindowsFrom,
+  narrowTrustedAttestors,
+  setAttestorProfileKeyWindows,
+} from '@/libs/commerce/attestor-key-windows';
 import {
   type ReviewOutcome,
   reviewOutcomeKey,
@@ -14,6 +19,7 @@ import {
   verifiedAttestorProfileKeyWindows,
 } from '@/libs/commerce/attestor-records';
 import { Logger } from '@/libs/logger/logger';
+import type { MarketplaceTrustedAttestor } from '@/libs/runtime-config/runtime-config.schema';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import { NexusMarketplaceService } from '@/services/nexus/marketplace/marketplace';
 
@@ -23,11 +29,21 @@ export interface CommerceAttestorOrderRef {
   orderRef: string;
 }
 
+type AttestorProfileReadOutcome = 'verified' | 'absent' | 'failed';
+
 interface AttestorProfileRead {
   /** The read in flight, shared by every caller until it settles. */
   pending: Promise<void> | null;
+  /** The latest settled read; unset until the first read settles. */
+  outcome: AttestorProfileReadOutcome | undefined;
   /** The earliest time the next read may start (a success lasts longer than a failure). */
   nextReadAt: number;
+}
+
+/** Exclusive end in whole attestation seconds. All empty windows end at their configured start. */
+function usableWindowEnd(entry: MarketplaceTrustedAttestor): number {
+  if (entry.validUntil === undefined) return Number.POSITIVE_INFINITY;
+  return Math.ceil(Math.max(Date.parse(entry.validFrom), Date.parse(entry.validUntil)) / 1000);
 }
 
 /**
@@ -67,8 +83,7 @@ export class CommerceAttestorApplication {
    */
   static async loadKeyWindows(): Promise<void> {
     if (getCommerceAdapterMode() === 'sandbox') return;
-    const attestorIds = [...new Set(configuredMarketplaceTrustedAttestors().map(({ pubky }) => pubky))];
-    const reads = Promise.all(attestorIds.map((attestorId) => this.readProfile(attestorId)));
+    const reads = Promise.all(this.configuredAttestorIds().map((attestorId) => this.readProfile(attestorId)));
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<void>((resolve) => {
       timer = setTimeout(resolve, MARKETPLACE_ATTESTOR_PROFILE_WAIT_MS);
@@ -80,36 +95,99 @@ export class CommerceAttestorApplication {
     }
   }
 
+  /**
+   * Configured attestors without a current verified profile or confirmed absence behind their
+   * effective windows: never read, being read again (a read only starts once the last settled
+   * outcome has expired, so until it settles that outcome confirms nothing), or last settled as a
+   * failed read. A failed re-read keeps the recorded windows in use but does not make the expired
+   * outcome current, so the attestor stays unconfirmed until a read verifies the profile or finds it
+   * absent. An absent profile whose earlier verified windows still end a key's effective window is
+   * listed by {@link retainedCutoffProfileAttestors} instead.
+   */
+  static unconfirmedProfileAttestors(): string[] {
+    if (getCommerceAdapterMode() === 'sandbox') return [];
+    return this.configuredAttestorIds().filter((attestorId) => {
+      const read = this.profileReads.get(attestorId);
+      return read === undefined || read.pending !== null || (read.outcome !== 'verified' && read.outcome !== 'absent');
+    });
+  }
+
+  /**
+   * Configured attestors whose profile was last found absent while windows recorded from an earlier
+   * verified copy still end a key's effective window. The recorded windows stay in use, because a
+   * profile can only narrow trust and a missing profile does not undo a cutoff it stated, but nothing
+   * current confirms them: a process that never verified the profile applies only the configured
+   * windows and the currently verified profiles.
+   *
+   * The baseline is the configured list narrowed by the currently verified profiles. An absent
+   * profile is listed when, for some key, its windows end the window earlier than the baseline and
+   * at the same end as the actual effective window: a cutoff that a verified profile already
+   * matches or beats changes nothing, and of two absent profiles cutting one key, only the one whose
+   * cutoff applies is listed (both, when they state the same end).
+   */
+  static retainedCutoffProfileAttestors(): string[] {
+    if (getCommerceAdapterMode() === 'sandbox') return [];
+    const configured = configuredMarketplaceTrustedAttestors();
+    const attestorIds = this.configuredAttestorIds();
+    const verifiedWindows = attestorIds
+      .filter((attestorId) => this.settledAs(attestorId, 'verified'))
+      .flatMap((attestorId) => attestorProfileKeyWindowsFrom(attestorId));
+    const absentIds = attestorIds.filter((attestorId) => this.settledAs(attestorId, 'absent'));
+    const baseline = narrowTrustedAttestors(configured, verifiedWindows);
+    // Failed and in-flight refreshes also retain their last verified cutoffs.
+    const retained = marketplaceTrustedAttestors();
+    return absentIds.filter((attestorId) =>
+      narrowTrustedAttestors(configured, [...verifiedWindows, ...attestorProfileKeyWindowsFrom(attestorId)]).some(
+        (entry, index) =>
+          entry.validUntil === retained[index]?.validUntil &&
+          usableWindowEnd(entry) < usableWindowEnd(baseline[index]!),
+      ),
+    );
+  }
+
+  /** Whether the attestor's last profile read settled with this outcome and no read is in flight. */
+  private static settledAs(attestorId: string, outcome: AttestorProfileReadOutcome): boolean {
+    const read = this.profileReads.get(attestorId);
+    return read !== undefined && read.pending === null && read.outcome === outcome;
+  }
+
+  private static configuredAttestorIds(): string[] {
+    return [...new Set(configuredMarketplaceTrustedAttestors().map(({ pubky }) => pubky))];
+  }
+
   private static readProfile(attestorId: string): Promise<void> {
     const known = this.profileReads.get(attestorId);
     if (known?.pending) return known.pending;
     if (known !== undefined && Date.now() < known.nextReadAt) return Promise.resolve();
 
-    const read: AttestorProfileRead = { pending: null, nextReadAt: 0 };
-    read.pending = this.fetchProfile(attestorId).then((ok) => {
+    const read: AttestorProfileRead = { pending: null, outcome: known?.outcome, nextReadAt: 0 };
+    read.pending = this.fetchProfile(attestorId).then((outcome) => {
       read.pending = null;
-      read.nextReadAt = Date.now() + (ok ? MARKETPLACE_ATTESTOR_PROFILE_TTL_MS : MARKETPLACE_ATTESTOR_PROFILE_RETRY_MS);
+      read.outcome = outcome;
+      read.nextReadAt =
+        Date.now() +
+        (outcome === 'verified' ? MARKETPLACE_ATTESTOR_PROFILE_TTL_MS : MARKETPLACE_ATTESTOR_PROFILE_RETRY_MS);
     });
     this.profileReads.set(attestorId, read);
     return read.pending;
   }
 
-  /** One profile read; true when a verified profile's windows were recorded. */
-  private static async fetchProfile(attestorId: string): Promise<boolean> {
+  /** One profile read and the outcome that determines when it may be read again. */
+  private static async fetchProfile(attestorId: string): Promise<AttestorProfileReadOutcome> {
     try {
       const payload = await NexusMarketplaceService.fetchAttestorProfile({ attestor_id: attestorId });
-      if (payload === null) return false;
+      if (payload === null) return 'absent';
       const record = CommerceRecordNormalizer.nexusAttestorProfileRecord(payload);
       const windows = record === null ? null : verifiedAttestorProfileKeyWindows(attestorId, record);
       if (windows === null) {
         Logger.warn('An attestor profile did not verify; the configured trust windows stay', { attestorId });
-        return false;
+        return 'failed';
       }
       setAttestorProfileKeyWindows(attestorId, windows);
-      return true;
+      return 'verified';
     } catch (error) {
       Logger.warn('An attestor profile could not be read; the configured trust windows stay', { attestorId, error });
-      return false;
+      return 'failed';
     }
   }
 
