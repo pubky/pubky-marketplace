@@ -3239,6 +3239,7 @@ export class CommerceApplication {
         try {
           sealed = await CommercePrivStoreService.read(keyring, 'order_receipt', receiptId);
         } catch (error) {
+          if (this.sessionCacheGeneration !== generation) return 'unavailable';
           if (this.isPrivateAccessDenied(error)) return 'needs_reauth';
           throw error;
         }
@@ -3366,6 +3367,7 @@ export class CommerceApplication {
         try {
           await CommercePrivStoreService.write(keyring, 'order_receipt', receiptId, { ...record });
         } catch (error) {
+          if (this.sessionCacheGeneration !== generation) return 'unavailable';
           if (this.isPrivateAccessDenied(error)) return 'needs_reauth';
           throw error;
         }

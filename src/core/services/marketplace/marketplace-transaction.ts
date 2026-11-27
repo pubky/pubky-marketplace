@@ -716,6 +716,7 @@ export class MarketplaceTransactionService {
       async (signal) => {
         const response = await safeFetch(url, { method: 'GET', signal }, ErrorService.Marketplace, 'getHealth');
         if (!response.ok) {
+          await response.body?.cancel().catch(() => undefined);
           throw httpResponseToError(response, ErrorService.Marketplace, 'getHealth', url);
         }
         const raw = await parseResponseOrThrow<unknown>(response, ErrorService.Marketplace, 'getHealth', url);

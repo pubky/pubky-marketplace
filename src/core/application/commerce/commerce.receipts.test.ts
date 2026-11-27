@@ -12,6 +12,9 @@ import {
   revokePrivKeyring,
 } from '@/libs/commerce/priv-envelope';
 import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
+import { AppError } from '@/libs/error/error';
+import { AuthErrorCode } from '@/libs/error/error.codes';
+import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { HttpMethod } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
@@ -1312,5 +1315,47 @@ describe('CommerceApplication.publishOrderReceipts without the seller side', () 
     await expect(CommerceApplication.publishOrderReceipts(BUYER, [paidOrder()])).resolves.toBe('published');
     expect(readAfterWrite).toHaveBeenCalledTimes(1);
     MarketplaceSessionService.clearSession();
+  });
+
+  it('returns unavailable instead of needs_reauth when a read or write rejects 403 after sign-out', async () => {
+    grantCapableSession();
+    vi.spyOn(HomeserverService, 'isCurrentSessionGrant').mockReturnValue(false);
+    CommerceApplication.resetReceiptPublicationMemo();
+    homeserver.files.clear();
+    const forbidden = new AppError({
+      category: ErrorCategory.Auth,
+      code: AuthErrorCode.FORBIDDEN,
+      message: 'Forbidden',
+      service: ErrorService.Homeserver,
+      operation: 'fetch',
+      context: { statusCode: 403 },
+    });
+
+    // Control check: without sign-out mid-flight, the exact same 403 AppError returns needs_reauth.
+    const controlRead = vi.spyOn(CommercePrivStoreService, 'read').mockRejectedValueOnce(forbidden);
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [paidOrder()])).resolves.toBe('needs_reauth');
+    controlRead.mockRestore();
+
+    CommerceApplication.resetReceiptPublicationMemo();
+    const deferredRead = Promise.withResolvers<unknown>();
+    const readSpy = vi.spyOn(CommercePrivStoreService, 'read').mockReturnValueOnce(deferredRead.promise);
+    const pendingRead = CommerceApplication.publishOrderReceipts(BUYER, [paidOrder()]);
+    await vi.waitFor(() => expect(readSpy).toHaveBeenCalledTimes(1));
+    await CommerceApplication.clearMarketplaceSessionForSignOut();
+    deferredRead.reject(forbidden);
+    await expect(pendingRead).resolves.toBe('unavailable');
+    readSpy.mockRestore();
+
+    CommerceApplication.resetReceiptPublicationMemo();
+    homeserver.files.clear();
+    vi.spyOn(MarketplaceGatewayService, 'getReceiptAttestation').mockResolvedValue(attestation());
+    const deferredWrite = Promise.withResolvers<void>();
+    const writeSpy = vi.spyOn(CommercePrivStoreService, 'write').mockReturnValueOnce(deferredWrite.promise);
+    const pendingWrite = CommerceApplication.publishOrderReceipts(BUYER, [paidOrder()]);
+    await vi.waitFor(() => expect(writeSpy).toHaveBeenCalledTimes(1));
+    await CommerceApplication.clearMarketplaceSessionForSignOut();
+    deferredWrite.reject(forbidden);
+    await expect(pendingWrite).resolves.toBe('unavailable');
+    writeSpy.mockRestore();
   });
 });

@@ -951,7 +951,15 @@ export class CommerceController {
    */
   static async publishOrderReceipts(orders: MarketplaceOrder[]): Promise<void> {
     const sellerSide = this.sellsHere();
-    const status = await CommerceApplication.publishOrderReceipts(this.getCurrentUserPubky(), orders, { sellerSide });
+    const ownerPubky = this.getCurrentUserPubky();
+    const sessionBefore = useCommerceStore.getState().marketplaceSession;
+    const status = await CommerceApplication.publishOrderReceipts(ownerPubky, orders, { sellerSide });
+    if (
+      useAuthStore.getState().currentUserPubky !== ownerPubky ||
+      useCommerceStore.getState().marketplaceSession !== sessionBefore
+    ) {
+      return;
+    }
     useCommerceStore.getState().setReceiptsPublicationStatus(status === 'skipped' ? 'idle' : status);
   }
 

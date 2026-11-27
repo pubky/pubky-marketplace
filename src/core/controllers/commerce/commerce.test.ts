@@ -482,6 +482,35 @@ describe('CommerceController', () => {
       await CommerceController.publishOrderReceipts([]);
       expect(useCommerceStore.getState().receiptsPublicationStatus).toBe('unavailable');
     });
+
+    it('does not overwrite receiptsPublicationStatus when account or marketplace session changes mid-flight', async () => {
+      const stale = Promise.withResolvers<'needs_reauth' | 'published' | 'unavailable' | 'skipped'>();
+      vi.spyOn(CommerceApplication, 'publishOrderReceipts').mockReturnValueOnce(stale.promise);
+
+      const firstRun = CommerceController.publishOrderReceipts([]);
+      useAuthStore.getState().setCurrentUserPubky('b'.repeat(52));
+      useCommerceStore.getState().setReceiptsPublicationStatus('published');
+
+      stale.resolve('needs_reauth');
+      await firstRun;
+      expect(useCommerceStore.getState().receiptsPublicationStatus).toBe('published');
+
+      // Same guard when the marketplace session object replaces for the same account.
+      const staleSessionRun = Promise.withResolvers<'needs_reauth' | 'published' | 'unavailable' | 'skipped'>();
+      vi.spyOn(CommerceApplication, 'publishOrderReceipts').mockReturnValueOnce(staleSessionRun.promise);
+      const secondRun = CommerceController.publishOrderReceipts([]);
+      useCommerceStore.getState().setMarketplaceSession({
+        pubky: 'b'.repeat(52),
+        capabilities: '/pub/pubky.app/:rw',
+        issuedAt: '2026-11-27T00:00:00.000Z',
+        expiresAt: '2026-11-28T00:00:00.000Z',
+      });
+      useCommerceStore.getState().setReceiptsPublicationStatus('published');
+
+      staleSessionRun.resolve('unavailable');
+      await secondRun;
+      expect(useCommerceStore.getState().receiptsPublicationStatus).toBe('published');
+    });
   });
 
   describe('writeMarketplaceSessionStore', () => {

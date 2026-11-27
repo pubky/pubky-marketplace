@@ -2415,11 +2415,22 @@ describe('MarketplaceTransactionService.getHealth (the pickup_available capabili
     loggerError.mockRestore();
   });
 
-  it('does not cache failed /health responses (plain text or valid-JSON 503) so the next read can recover', async () => {
+  it('does not cache failed /health responses (plain text or valid-JSON 503) and cancels non-2xx bodies', async () => {
     const loggerError = vi.spyOn(Logger, 'error').mockImplementation(() => undefined);
+    let canceled = false;
+    const errorStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(JSON.stringify({ status: 'error' })));
+      },
+      cancel() {
+        canceled = true;
+      },
+    });
     vi.mocked(fetch)
       .mockResolvedValueOnce(new Response('service unavailable', { status: 503 }))
-      .mockResolvedValueOnce(jsonResponse(503, { status: 'error' }))
+      .mockResolvedValueOnce(
+        new Response(errorStream, { status: 503, headers: { 'content-type': 'application/json' } }),
+      )
       .mockResolvedValueOnce(jsonResponse(200, { status: 'ok', pickup_available: true }));
 
     await expect(MarketplaceTransactionService.getHealth()).rejects.toMatchObject({
@@ -2430,6 +2441,7 @@ describe('MarketplaceTransactionService.getHealth (the pickup_available capabili
       code: 'SERVICE_UNAVAILABLE',
       context: { statusCode: 503 },
     });
+    expect(canceled).toBe(true);
     await expect(MarketplaceTransactionService.getHealth()).resolves.toMatchObject({ pickupAvailable: true });
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(3);
     loggerError.mockRestore();
