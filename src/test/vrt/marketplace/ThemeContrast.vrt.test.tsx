@@ -112,7 +112,8 @@ for (const [name, Field] of [
           await userEvent.tab();
           await expect.element(field).toHaveFocus();
           expect(getComputedStyle(wrapper).borderTopColor).toBe(statusBorder);
-          if (status === 'error') expectColorContrast(statusBorder, backdrop);
+          // Light-theme success borders use the brand color, which falls below 3:1 on both surfaces.
+          if (status === 'error' || theme === 'dark') expectColorContrast(statusBorder, backdrop);
           expectColorContrast(focusRingColor(wrapper), backdrop);
         });
       });
