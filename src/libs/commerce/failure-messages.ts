@@ -240,7 +240,7 @@ export function marketplaceOfferFailureMessage(code: MarketplaceFailureCode, mes
 }
 
 /** Client-authored Zod parse issue lines attached to an `INVALID_RESPONSE` AppError, if any. */
-export function marketplaceInvalidResponseDetails(error: unknown): string[] {
+function marketplaceInvalidResponseDetails(error: unknown): string[] {
   if (!isAppError(error) || error.code !== 'INVALID_RESPONSE') return [];
   const raw = error.context?.parseIssues;
   if (!Array.isArray(raw)) return [];

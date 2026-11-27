@@ -1947,7 +1947,7 @@ export class CommerceApplication {
     return await MarketplaceGatewayService.getNotificationPreferences(actorPubky);
   }
 
-  static async getMarketplaceOrderList(actorPubky: string) {
+  static async fetchMarketplaceOrderList(actorPubky: string) {
     return await MarketplaceGatewayService.getOrderList(actorPubky);
   }
 

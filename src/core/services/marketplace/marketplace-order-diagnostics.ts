@@ -3,7 +3,7 @@ import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import type { MarketplaceOrderParseError } from './marketplace-projections';
 
-export const MARKETPLACE_ORDER_DIAGNOSTIC_MAX_SETS = 32;
+const MARKETPLACE_ORDER_DIAGNOSTIC_MAX_SETS = 32;
 const reportedOrderParseErrorSets = new Set<string>();
 
 export function reportMarketplaceOrderParseErrors(errors: readonly MarketplaceOrderParseError[]): void {

@@ -521,7 +521,7 @@ export function isMarketplaceAwardCheckoutEligible(
   );
 }
 
-export const marketplacePaymentReviewReasonSchema = z.enum([
+const marketplacePaymentReviewReasonSchema = z.enum([
   'late_settlement',
   'refund_required',
   'amount_mismatch',
@@ -1075,14 +1075,13 @@ export type MarketplaceOffer = z.infer<typeof marketplaceOfferSchema>;
 export type MarketplaceOfferAward = z.infer<typeof marketplaceOfferProjectionSchema>['award'];
 export type MarketplaceOrder = z.infer<typeof marketplaceOrderSchema>;
 export type MarketplaceParticipantOrder = z.infer<typeof marketplaceParticipantOrderSchema>;
-export type MarketplacePaymentReviewReason = z.infer<typeof marketplacePaymentReviewReasonSchema>;
 export type MarketplacePublicDrop = z.infer<typeof marketplacePublicDropSchema>;
 export type MarketplaceSellerDrop = z.infer<typeof marketplaceSellerDropSchema>;
 export type MarketplaceDropReadyCheck = z.infer<typeof marketplaceDropReadyCheckSchema>;
 export type MarketplacePayment = z.infer<typeof marketplacePaymentSchema>;
 export type MarketplaceReceipt = z.infer<typeof marketplaceReceiptSchema>;
 
-export interface MarketplaceOrderParseIssue {
+interface MarketplaceOrderParseIssue {
   path: string;
   message: string;
 }
@@ -1099,9 +1098,9 @@ export interface MarketplaceOrderListResult {
   parseErrors: MarketplaceOrderParseError[];
 }
 
-export const MARKETPLACE_ORDER_PARSE_ID_MAX_LENGTH = 64;
-export const MARKETPLACE_ORDER_PARSE_VALUE_MAX_LENGTH = 64;
-export const MARKETPLACE_ORDER_PARSE_MAX_ISSUES = 5;
+const MARKETPLACE_ORDER_PARSE_ID_MAX_LENGTH = 64;
+const MARKETPLACE_ORDER_PARSE_VALUE_MAX_LENGTH = 64;
+const MARKETPLACE_ORDER_PARSE_MAX_ISSUES = 5;
 
 function formatZodIssuePath(root: string, path: readonly PropertyKey[]): string {
   let formatted = root;

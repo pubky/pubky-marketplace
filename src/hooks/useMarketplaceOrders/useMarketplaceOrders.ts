@@ -317,10 +317,7 @@ async function loadOrders(
   // responses published to the responder's homeserver).
   void CommerceController.resumeOwnReviewResponsePublications().catch(() => undefined);
   try {
-    const { orders, parseErrors } =
-      typeof CommerceController.getMarketplaceOrderList === 'function'
-        ? await CommerceController.getMarketplaceOrderList()
-        : { orders: await CommerceController.getMarketplaceOrders(), parseErrors: [] };
+    const { orders, parseErrors } = await CommerceController.fetchMarketplaceOrderList();
     const views = await Promise.all(
       orders.map(async (order) => {
         // The durable service embeds the payment projection in the order

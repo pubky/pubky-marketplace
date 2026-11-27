@@ -32,7 +32,7 @@ vi.mock('@/stores/auth/auth.store', () => ({
 
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
-    getMarketplaceOrders: vi.fn(),
+    fetchMarketplaceOrderList: vi.fn(),
     getMarketplacePayment: vi.fn(),
     getMarketplaceReceipt: vi.fn(async () => null),
     resumeOwnReviewPublications: vi.fn(async () => 0),
@@ -117,7 +117,10 @@ describe('useMarketplaceOrders with pending Locks payments', () => {
     const windowExpiresAt = Date.now() + WINDOW_MS;
     const pendingA = locksOrder(1, 'awaiting_entitlement');
     const pendingB = locksOrder(2, 'awaiting_entitlement');
-    vi.mocked(CommerceController.getMarketplaceOrders).mockResolvedValue([pendingA, pendingB]);
+    vi.mocked(CommerceController.fetchMarketplaceOrderList).mockResolvedValue({
+      orders: [pendingA, pendingB],
+      parseErrors: [],
+    });
     vi.mocked(CommerceController.getMarketplaceLocksCorrelation).mockImplementation(async (paymentId) =>
       correlationFor(String(paymentId), windowExpiresAt),
     );
@@ -131,7 +134,7 @@ describe('useMarketplaceOrders with pending Locks payments', () => {
     await act(async () => vi.advanceTimersByTimeAsync(0));
     expect(result.current.cardA.correlation?.registered).toBe(true);
     expect(result.current.cardB.correlation?.registered).toBe(true);
-    const reads = () => vi.mocked(CommerceController.getMarketplaceOrders).mock.calls.length;
+    const reads = () => vi.mocked(CommerceController.fetchMarketplaceOrderList).mock.calls.length;
     expect(reads()).toBe(1);
 
     // Two pending cards add no reads of their own inside the window.
@@ -144,7 +147,10 @@ describe('useMarketplaceOrders with pending Locks payments', () => {
     expect(reads()).toBe(7);
     expect(result.current.orders.orders[0].payment?.state).toBe('awaiting_entitlement');
 
-    vi.mocked(CommerceController.getMarketplaceOrders).mockResolvedValue([locksOrder(1, 'confirmed'), pendingB]);
+    vi.mocked(CommerceController.fetchMarketplaceOrderList).mockResolvedValue({
+      orders: [locksOrder(1, 'confirmed'), pendingB],
+      parseErrors: [],
+    });
     await act(async () => vi.advanceTimersByTimeAsync(POLL_MS));
     expect(reads()).toBe(8);
     expect(result.current.orders.orders[0].payment?.state).toBe('confirmed');

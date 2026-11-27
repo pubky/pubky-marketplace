@@ -122,11 +122,8 @@ export type {
   MarketplaceOffer,
   MarketplaceOfferAward,
   MarketplaceOrder,
-  MarketplaceOrderListResult,
   MarketplaceOrderParseError,
-  MarketplaceOrderParseIssue,
   MarketplacePayment,
-  MarketplacePaymentReviewReason,
   MarketplacePublicDrop,
   MarketplacePublicListingAvailability,
   MarketplaceReceipt,
@@ -481,6 +478,11 @@ export class MarketplaceGatewayService {
     return parseMarketplaceOrderList(raw, reportMarketplaceOrderParseErrors);
   }
 
+  /**
+   * Returns only rows that parsed cleanly; callers that need to know whether
+   * any rows were dropped (for example, counting open orders before listing
+   * deletion) must call `getOrderList()`.
+   */
   static async getOrders(
     actor: string,
     options: { signal?: AbortSignal } = {},

@@ -40,7 +40,7 @@ export function createMarketplaceVrtCommerceController() {
     getWatchAlerts: async () => [],
     getActivityReadCheckpoint: async () => 0,
     getMarketplaceNotifications: async () => [],
-    getMarketplaceOrderList: async () => ({ orders: [], parseErrors: [] }),
+    fetchMarketplaceOrderList: async () => ({ orders: [], parseErrors: [] }),
     getMarketplaceOrders: async () => [],
     getMarketplaceOffers: async () => [],
     syncAttentionSeen: async () => {},

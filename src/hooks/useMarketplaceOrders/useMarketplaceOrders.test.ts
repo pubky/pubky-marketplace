@@ -34,7 +34,7 @@ vi.mock('@/stores/auth/auth.store', () => ({
 
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
-    getMarketplaceOrderList: vi.fn(),
+    fetchMarketplaceOrderList: vi.fn(),
     getMarketplaceOrders: vi.fn(),
     getMarketplacePayment: vi.fn(),
     getMarketplaceReceipt: vi.fn(),
@@ -75,7 +75,7 @@ describe('useMarketplaceOrders', () => {
     config.mode = 'sandbox';
     useCommerceStore.getState().reset();
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000001111');
-    vi.mocked(CommerceController.getMarketplaceOrderList).mockImplementation(async () => ({
+    vi.mocked(CommerceController.fetchMarketplaceOrderList).mockImplementation(async () => ({
       orders: await CommerceController.getMarketplaceOrders(),
       parseErrors: [],
     }));
@@ -870,10 +870,10 @@ describe('useMarketplaceOrders', () => {
     expect(CommerceController.executeMarketplaceCommand).not.toHaveBeenCalled();
   });
 
-  it('exposes valid orders alongside inline parseErrors from getMarketplaceOrderList (#581)', async () => {
+  it('exposes valid orders alongside inline parseErrors from fetchMarketplaceOrderList (#581)', async () => {
     config.mode = 'transaction-service';
     const [validOrder] = await CommerceController.getMarketplaceOrders();
-    vi.mocked(CommerceController.getMarketplaceOrderList).mockResolvedValueOnce({
+    vi.mocked(CommerceController.fetchMarketplaceOrderList).mockResolvedValueOnce({
       orders: [
         {
           ...validOrder,
@@ -921,7 +921,7 @@ describe('useMarketplaceOrders', () => {
 
   it('surfaces INVALID_RESPONSE with parse details instead of unavailable copy on top-level parse failure (#581)', async () => {
     config.mode = 'transaction-service';
-    vi.mocked(CommerceController.getMarketplaceOrderList).mockRejectedValueOnce(
+    vi.mocked(CommerceController.fetchMarketplaceOrderList).mockRejectedValueOnce(
       new AppError({
         category: ErrorCategory.Server,
         code: ServerErrorCode.INVALID_RESPONSE,
