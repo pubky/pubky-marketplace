@@ -12,6 +12,7 @@ import {
   fetchShopForMetadata,
   OG_COMMERCE_CACHE_TTL_MS,
   OG_COMMERCE_REVALIDATE,
+  readBoundedTextBody,
   resetOgCommerceCacheForTests,
 } from './ogCommerceData';
 
@@ -19,6 +20,9 @@ export interface MarketplaceCatalogSsrPayload {
   listings: MarketplaceCatalogItem[];
   shops: CommerceShopRecord[];
 }
+
+export const CATALOG_LISTINGS_FETCH_TIMEOUT_MS = 4_000;
+export const CATALOG_LISTINGS_MAX_BYTES = 1024 * 1024;
 
 const CATALOG_CACHE_MAX_ENTRIES = 16;
 const catalogListingsCache = new Map<string, { listings: MarketplaceCatalogItem[]; expiresAt: number }>();
@@ -53,6 +57,45 @@ function writeCachedCatalogListings(key: string, listings: MarketplaceCatalogIte
   catalogListingsCache.set(key, { listings, expiresAt: Date.now() + OG_COMMERCE_CACHE_TTL_MS });
 }
 
+async function readCatalogListingsFromNexus(
+  cacheKey: string,
+  url: string,
+  signal: AbortSignal,
+): Promise<MarketplaceCatalogItem[]> {
+  try {
+    const res = await fetch(url, { next: { revalidate: OG_COMMERCE_REVALIDATE }, signal });
+    if (!res.ok) {
+      Logger.warn('[ogCatalogData] Listing stream failed', { url, status: res.status });
+      return [];
+    }
+
+    const body = await readBoundedTextBody(res, CATALOG_LISTINGS_MAX_BYTES, signal);
+    if ('overCap' in body) {
+      Logger.warn('[ogCatalogData] Listing stream exceeded byte cap', {
+        url,
+        maxBytes: CATALOG_LISTINGS_MAX_BYTES,
+      });
+      return [];
+    }
+    if ('unreadable' in body) {
+      Logger.warn('[ogCatalogData] Listing stream body was unreadable', { url });
+      return [];
+    }
+
+    const json: unknown = JSON.parse(body.text);
+    const boundedJson = Array.isArray(json) ? json.slice(0, NEXUS_LISTINGS_PER_PAGE) : json;
+    const listings = CommerceRecordNormalizer.nexusListingStream(boundedJson).map(catalogItemFromCatalogEntry);
+    if (!signal.aborted) {
+      writeCachedCatalogListings(cacheKey, listings);
+    }
+    return listings;
+  } catch (error) {
+    if (signal.aborted) return [];
+    Logger.warn('[ogCatalogData] Failed to fetch marketplace listing stream', { error });
+    return [];
+  }
+}
+
 async function fetchCatalogListings(cacheKey: string, nexusUrl: string): Promise<MarketplaceCatalogItem[]> {
   const cached = readCachedCatalogListings(cacheKey);
   if (cached) return cached;
@@ -67,20 +110,22 @@ async function fetchCatalogListings(cacheKey: string, nexusUrl: string): Promise
   const url = `${nexusUrl}/${NEXUS_STREAM_LISTINGS_ROUTE}?${query.toString()}`;
 
   const load = async (): Promise<MarketplaceCatalogItem[]> => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<MarketplaceCatalogItem[]>((resolve) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        Logger.warn('[ogCatalogData] Listing stream timed out', {
+          url,
+          timeoutMs: CATALOG_LISTINGS_FETCH_TIMEOUT_MS,
+        });
+        resolve([]);
+      }, CATALOG_LISTINGS_FETCH_TIMEOUT_MS);
+    });
     try {
-      const res = await fetch(url, { next: { revalidate: OG_COMMERCE_REVALIDATE } });
-      if (!res.ok) {
-        Logger.warn('[ogCatalogData] Listing stream failed', { url, status: res.status });
-        return [];
-      }
-
-      const json: unknown = await res.json();
-      const listings = CommerceRecordNormalizer.nexusListingStream(json).map(catalogItemFromCatalogEntry);
-      writeCachedCatalogListings(cacheKey, listings);
-      return listings;
-    } catch (error) {
-      Logger.warn('[ogCatalogData] Failed to fetch marketplace listing stream', { error });
-      return [];
+      return await Promise.race([readCatalogListingsFromNexus(cacheKey, url, controller.signal), deadline]);
+    } finally {
+      clearTimeout(timer);
     }
   };
 
@@ -97,10 +142,11 @@ async function fetchCatalogListings(cacheKey: string, nexusUrl: string): Promise
  * on that page so SSR cards render the shop name (not the pubky fallback).
  *
  * The listing stream is cached in-process for `OG_COMMERCE_REVALIDATE` seconds
- * with single-flight deduplication, while seller shop records are resolved via
- * `ogCommerceData`'s bounded TTL cache so warm sellers resolve in O(1) without
- * network IO and transient shop failures/timeouts recover on subsequent hits
- * instead of pinning pubky fallbacks for 5 minutes.
+ * with single-flight deduplication and a bounded request/body deadline, while
+ * seller shop records are resolved via `ogCommerceData`'s bounded TTL cache so
+ * warm sellers resolve in O(1) without network IO and transient shop
+ * failures/timeouts recover on subsequent hits instead of pinning pubky
+ * fallbacks for 5 minutes.
  *
  * Sandbox deployments never query Nexus (seeded local catalogs only).
  */

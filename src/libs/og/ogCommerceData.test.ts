@@ -7,6 +7,7 @@ import {
   OG_COMMERCE_CACHE_MAX_ENTRIES,
   OG_COMMERCE_CACHE_TTL_MS,
   OG_RECORD_MAX_BYTES,
+  readBoundedTextBody,
   RECORD_FETCH_TIMEOUT_MS,
   resetOgCommerceCacheForTests,
 } from './ogCommerceData';
@@ -334,4 +335,38 @@ describe('fetchListingForMetadata', () => {
       }
     },
   );
+
+  it('rejects deeply nested sub-256-KiB JSON as validation unavailable without throwing RangeError', async () => {
+    const deepJson = `{"a":${'['.repeat(2_000)}0${']'.repeat(2_000)}}`;
+    expect(Buffer.byteLength(deepJson, 'utf8')).toBeLessThan(OG_RECORD_MAX_BYTES);
+
+    fetchMock
+      .mockResolvedValueOnce(new Response(deepJson, { status: 200 }))
+      .mockResolvedValueOnce(new Response(deepJson, { status: 200 }));
+
+    await expect(fetchListingForMetadata(seller, 'deep_listing')).resolves.toEqual({
+      kind: 'unavailable',
+      reason: 'validation',
+    });
+    await expect(fetchShopForMetadata(seller)).resolves.toEqual({
+      kind: 'unavailable',
+      reason: 'validation',
+    });
+  });
+
+  it('fails closed in readBoundedTextBody without calling res.text() when response has no body stream', async () => {
+    const bodylessResponse = new Response(null, { status: 200 });
+    expect(bodylessResponse.body).toBeNull();
+    const textSpy = vi.spyOn(bodylessResponse, 'text');
+
+    await expect(readBoundedTextBody(bodylessResponse, OG_RECORD_MAX_BYTES)).resolves.toEqual({ unreadable: true });
+    expect(textSpy).not.toHaveBeenCalled();
+
+    fetchMock.mockResolvedValueOnce(bodylessResponse);
+    await expect(fetchListingForMetadata(seller, 'bodyless_01')).resolves.toEqual({
+      kind: 'unavailable',
+      reason: 'unbounded_body',
+    });
+    expect(textSpy).not.toHaveBeenCalled();
+  });
 });

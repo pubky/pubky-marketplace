@@ -37,6 +37,8 @@ export const OG_COMMERCE_NOT_FOUND_TTL_MS = 60_000;
 export const OG_COMMERCE_CACHE_MAX_ENTRIES = 500;
 export const OG_COMMERCE_CACHE_MAX_TOTAL_BYTES = 4 * 1024 * 1024;
 export const OG_RECORD_MAX_BYTES = 256 * 1024;
+export const OG_RECORD_MAX_JSON_DEPTH = 32;
+export const OG_RECORD_MAX_JSON_NODES = 10_000;
 export const OG_MEDIA_CACHE_MAX_ENTRIES = 50;
 export const OG_MEDIA_CACHE_MAX_ENTRY_BYTES = 1024 * 1024;
 export const OG_MEDIA_CACHE_MAX_TOTAL_BYTES = 16 * 1024 * 1024;
@@ -190,9 +192,17 @@ export interface RecordFetchOptions {
   timeoutMs?: number;
 }
 
-type BoundedTextBody = { text: string } | { overCap: true };
+export type BoundedTextBody = { text: string } | { overCap: true } | { unreadable: true };
 
-async function readBoundedTextBody(res: Response, maxBytes: number): Promise<BoundedTextBody> {
+/**
+ * Streams a UTF-8 response body up to `maxBytes`. Fails closed without calling
+ * `res.text()` when the response does not expose a ReadableStream reader.
+ */
+export async function readBoundedTextBody(
+  res: Response,
+  maxBytes: number,
+  signal?: AbortSignal,
+): Promise<BoundedTextBody> {
   const contentLength = res.headers.get('content-length');
   if (contentLength !== null) {
     const parsedLength = Number.parseInt(contentLength, 10);
@@ -204,16 +214,26 @@ async function readBoundedTextBody(res: Response, maxBytes: number): Promise<Bou
 
   const reader = res.body?.getReader();
   if (!reader) {
-    const text = await res.text();
-    if (Buffer.byteLength(text, 'utf8') > maxBytes) return { overCap: true };
-    return { text };
+    return { unreadable: true };
   }
+
+  const onAbort = () => {
+    void reader.cancel().catch(() => undefined);
+  };
+  if (signal?.aborted) {
+    onAbort();
+    throw new DOMException('The operation was aborted.', 'AbortError');
+  }
+  signal?.addEventListener('abort', onAbort, { once: true });
 
   const chunks: Uint8Array[] = [];
   let totalBytes = 0;
   try {
     while (true) {
       const { done, value } = await reader.read();
+      if (signal?.aborted) {
+        throw new DOMException('The operation was aborted.', 'AbortError');
+      }
       if (done) return { text: Buffer.concat(chunks).toString('utf8') };
       totalBytes += value.byteLength;
       if (totalBytes > maxBytes) {
@@ -229,6 +249,74 @@ async function readBoundedTextBody(res: Response, maxBytes: number): Promise<Bou
       // Preserve the original read failure.
     }
     throw error;
+  } finally {
+    signal?.removeEventListener('abort', onAbort);
+  }
+}
+
+/**
+ * Iterative depth and node-count guard run before recursive Zod preprocessing
+ * (`stripSerializedNulls`, `findForbiddenPublicReserveKey`) so deeply nested
+ * sub-256-KiB JSON cannot throw an uncaught stack-overflow `RangeError`.
+ */
+function isWithinJsonBounds(
+  root: unknown,
+  maxDepth = OG_RECORD_MAX_JSON_DEPTH,
+  maxNodes = OG_RECORD_MAX_JSON_NODES,
+): boolean {
+  const stack: Array<{ value: unknown; depth: number }> = [{ value: root, depth: 0 }];
+  let visited = 0;
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    visited += 1;
+    if (visited > maxNodes) return false;
+    if (current.value === null || typeof current.value !== 'object') continue;
+    if (current.depth >= maxDepth) return false;
+    const nextDepth = current.depth + 1;
+    if (Array.isArray(current.value)) {
+      for (let i = current.value.length - 1; i >= 0; i -= 1) {
+        stack.push({ value: current.value[i], depth: nextDepth });
+      }
+    } else {
+      for (const child of Object.values(current.value as Record<string, unknown>)) {
+        stack.push({ value: child, depth: nextDepth });
+      }
+    }
+  }
+  return true;
+}
+
+function safeParseRecord<T>(
+  schema: {
+    safeParse: (input: unknown) => { success: true; data: T } | { success: false; error: { issues: unknown[] } };
+  },
+  value: unknown,
+  label: string,
+): { ok: true; data: T } | { ok: false } {
+  if (!isWithinJsonBounds(value)) {
+    Logger.warn(`[ogCommerceData] ${label} exceeded JSON nesting or node bounds`, {
+      reason: 'validation',
+      maxDepth: OG_RECORD_MAX_JSON_DEPTH,
+      maxNodes: OG_RECORD_MAX_JSON_NODES,
+    });
+    return { ok: false };
+  }
+  try {
+    const parsed = schema.safeParse(value);
+    if (!parsed.success) {
+      Logger.warn(`[ogCommerceData] ${label} failed validation`, {
+        issueCount: parsed.error.issues.length,
+        reason: 'validation',
+      });
+      return { ok: false };
+    }
+    return { ok: true, data: parsed.data };
+  } catch (error) {
+    Logger.warn(`[ogCommerceData] ${label} threw during validation`, {
+      reason: 'validation',
+      error: reasonForError(error),
+    });
+    return { ok: false };
   }
 }
 
@@ -241,13 +329,17 @@ async function readRecordJson(url: string, operation: string, signal: AbortSigna
       Logger.warn(`[ogCommerceData] ${operation} unavailable`, { status: res.status, reason });
       return { kind: 'unavailable', reason };
     }
-    const body = await readBoundedTextBody(res, OG_RECORD_MAX_BYTES);
+    const body = await readBoundedTextBody(res, OG_RECORD_MAX_BYTES, signal);
     if ('overCap' in body) {
       Logger.warn(`[ogCommerceData] ${operation} unavailable`, {
         reason: 'too_large',
         maxBytes: OG_RECORD_MAX_BYTES,
       });
       return { kind: 'unavailable', reason: 'too_large' };
+    }
+    if ('unreadable' in body) {
+      Logger.warn(`[ogCommerceData] ${operation} unavailable`, { reason: 'unbounded_body' });
+      return { kind: 'unavailable', reason: 'unbounded_body' };
     }
     return { kind: 'found', value: JSON.parse(body.text) as unknown };
   } catch (error) {
@@ -576,17 +668,12 @@ export async function fetchListingForMetadata(
     const fetched = await fetchRecordJson(url, 'fetchListingRecord');
     if (fetched.kind !== 'found') return fetched;
 
-    const record = commerceListingRecordSchema.safeParse(fetched.value);
-    if (!record.success) {
-      const reason = 'validation';
-      Logger.warn('[ogCommerceData] Listing record failed validation', {
-        issueCount: record.error.issues.length,
-        reason,
-      });
-      return { kind: 'unavailable', reason };
+    const parsed = safeParseRecord(commerceListingRecordSchema, fetched.value, 'Listing record');
+    if (!parsed.ok) {
+      return { kind: 'unavailable', reason: 'validation' };
     }
-    if (record.data.state === 'removed') return { kind: 'not_found' };
-    return { kind: 'found', record: sanitizeListingForCache(record.data) };
+    if (parsed.data.state === 'removed') return { kind: 'not_found' };
+    return { kind: 'found', record: sanitizeListingForCache(parsed.data) };
   };
 
   const promise = load()
@@ -656,16 +743,11 @@ export async function fetchShopForMetadata(
       const fetched = await fetchRecordJson(url, 'fetchShopRecord', { timeoutMs: RECORD_FETCH_TIMEOUT_MS });
       if (fetched.kind !== 'found') return fetched;
 
-      const record = commerceShopRecordSchema.safeParse(fetched.value);
-      if (!record.success) {
-        const reason = 'validation';
-        Logger.warn('[ogCommerceData] Shop record failed validation', {
-          issueCount: record.error.issues.length,
-          reason,
-        });
-        return { kind: 'unavailable', reason };
+      const parsed = safeParseRecord(commerceShopRecordSchema, fetched.value, 'Shop record');
+      if (!parsed.ok) {
+        return { kind: 'unavailable', reason: 'validation' };
       }
-      return { kind: 'found', record: sanitizeShopForCache(record.data) };
+      return { kind: 'found', record: sanitizeShopForCache(parsed.data) };
     };
 
     const created = load()

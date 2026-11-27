@@ -4,6 +4,8 @@ import { Logger } from '@/libs/logger/logger';
 import { getCommerceAdapterMode } from '@/libs/runtime-config/runtime-config';
 import { createCommerceShopFixture, createNexusListingDetailsFixture } from '@/test/fixtures/commerce/commerce';
 import {
+  CATALOG_LISTINGS_FETCH_TIMEOUT_MS,
+  CATALOG_LISTINGS_MAX_BYTES,
   CATALOG_SHOP_FETCH_TIMEOUT_MS,
   fetchMarketplaceCatalogForSsr,
   resetOgCatalogCacheForTests,
@@ -53,9 +55,13 @@ describe('fetchMarketplaceCatalogForSsr', () => {
 
     const { listings, shops } = await fetchMarketplaceCatalogForSsr();
 
-    expect(fetchMock).toHaveBeenCalledWith(`${getMarketplaceNexusUrl()}/v0/stream/listings?state=active&limit=30`, {
-      next: { revalidate: OG_COMMERCE_REVALIDATE },
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${getMarketplaceNexusUrl()}/v0/stream/listings?state=active&limit=30`,
+      expect.objectContaining({
+        next: { revalidate: OG_COMMERCE_REVALIDATE },
+        signal: expect.any(AbortSignal),
+      }),
+    );
     expect(listings).toHaveLength(1);
     expect(listings[0]?.title).toBe('Vintage leather boots');
     expect(listings[0]?.listingId).toBe('boots_01');
@@ -294,6 +300,124 @@ describe('fetchMarketplaceCatalogForSsr', () => {
     // 1 Nexus stream read + 2 shop reads (no second Nexus stream call).
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/v0/stream/listings'))).toHaveLength(1);
+  });
+
+  it('times out a hung Nexus fetch, clears the single-flight slot, and recovers without caching empty', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    vi.spyOn(Logger, 'warn').mockImplementation(() => {});
+    try {
+      const fixture = createNexusListingDetailsFixture();
+      const shop = createCommerceShopFixture();
+      const fetchMock = vi
+        .spyOn(globalThis, 'fetch')
+        .mockImplementationOnce(() => new Promise<Response>(() => {}))
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify([fixture]), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify(shop), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+        );
+
+      const hung = fetchMarketplaceCatalogForSsr();
+      await vi.advanceTimersByTimeAsync(CATALOG_LISTINGS_FETCH_TIMEOUT_MS);
+      await expect(hung).resolves.toEqual({ listings: [], shops: [] });
+
+      const recovered = await fetchMarketplaceCatalogForSsr();
+      expect(recovered.listings).toHaveLength(1);
+      expect(recovered.shops).toHaveLength(1);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('times out a hung Nexus response body stream, cancels it, and recovers on the next call', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    vi.spyOn(Logger, 'warn').mockImplementation(() => {});
+    try {
+      let canceled = false;
+      const hungStream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('['));
+        },
+        cancel() {
+          canceled = true;
+        },
+      });
+      const fixture = createNexusListingDetailsFixture();
+      const shop = createCommerceShopFixture();
+      vi.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(new Response(hungStream, { status: 200 }))
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify([fixture]), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify(shop), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+        );
+
+      const hung = fetchMarketplaceCatalogForSsr();
+      await vi.advanceTimersByTimeAsync(CATALOG_LISTINGS_FETCH_TIMEOUT_MS);
+      await expect(hung).resolves.toEqual({ listings: [], shops: [] });
+      expect(canceled).toBe(true);
+
+      const recovered = await fetchMarketplaceCatalogForSsr();
+      expect(recovered.listings).toHaveLength(1);
+      expect(recovered.shops).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rejects oversized Nexus stream bodies without caching empty and recovers on the next call', async () => {
+    vi.spyOn(Logger, 'warn').mockImplementation(() => {});
+    const oversized = `[${JSON.stringify({ padding: 'x'.repeat(CATALOG_LISTINGS_MAX_BYTES + 1024) })}]`;
+    const fixture = createNexusListingDetailsFixture();
+    const shop = createCommerceShopFixture();
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(oversized, {
+          status: 200,
+          headers: { 'content-length': String(Buffer.byteLength(oversized, 'utf8')) },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(oversized, { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([fixture]), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(shop), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      );
+
+    await expect(fetchMarketplaceCatalogForSsr()).resolves.toEqual({ listings: [], shops: [] });
+    await expect(fetchMarketplaceCatalogForSsr()).resolves.toEqual({ listings: [], shops: [] });
+    const recovered = await fetchMarketplaceCatalogForSsr();
+    expect(recovered.listings).toHaveLength(1);
+    expect(recovered.shops).toHaveLength(1);
+  });
+
+  it('caps over-limit Nexus stream responses to NEXUS_LISTINGS_PER_PAGE before normalizing and fetching shops', async () => {
+    const oversizedStream = listingsFromSellers(45);
+    const shopUrls: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/v0/stream/listings')) {
+        return new Response(JSON.stringify(oversizedStream), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      shopUrls.push(url);
+      return new Response(JSON.stringify(createCommerceShopFixture()), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const { listings, shops } = await fetchMarketplaceCatalogForSsr();
+
+    expect(listings).toHaveLength(30);
+    expect(shops.length).toBeLessThanOrEqual(30);
+    expect(shopUrls.length).toBeLessThanOrEqual(30);
   });
 });
 
