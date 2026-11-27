@@ -187,6 +187,8 @@ function reasonForError(error: unknown): string {
 
 /** Default bound on PKARR resolution plus the record fetch for SSR. */
 export const RECORD_FETCH_TIMEOUT_MS = 4_000;
+/** Bound on marketplace OG image fetch and body streaming so single-flight cannot wedge. */
+export const MEDIA_FETCH_TIMEOUT_MS = 4_000;
 
 export interface RecordFetchOptions {
   timeoutMs?: number;
@@ -220,15 +222,14 @@ export async function readBoundedTextBody(
   const onAbort = () => {
     void reader.cancel().catch(() => undefined);
   };
-  if (signal?.aborted) {
-    onAbort();
-    throw new DOMException('The operation was aborted.', 'AbortError');
-  }
-  signal?.addEventListener('abort', onAbort, { once: true });
-
   const chunks: Uint8Array[] = [];
   let totalBytes = 0;
   try {
+    if (signal?.aborted) {
+      await reader.cancel().catch(() => undefined);
+      throw new DOMException('The operation was aborted.', 'AbortError');
+    }
+    signal?.addEventListener('abort', onAbort, { once: true });
     while (true) {
       const { done, value } = await reader.read();
       if (signal?.aborted) {
@@ -251,6 +252,11 @@ export async function readBoundedTextBody(
     throw error;
   } finally {
     signal?.removeEventListener('abort', onAbort);
+    try {
+      reader.releaseLock();
+    } catch {
+      // Lock may already be released after cancel.
+    }
   }
 }
 
@@ -597,20 +603,26 @@ export async function fetchOgMediaAsDataUri(uri: string | null | undefined): Pro
   const existing = mediaInFlight.get(uri);
   if (existing) return await existing;
 
-  const load = async (): Promise<string | null> => {
-    if (uri.startsWith('http://') || uri.startsWith('https://')) return await fetchImageAsDataUri(uri);
+  const controller = new AbortController();
+  const load = async (signal: AbortSignal): Promise<string | null> => {
+    if (uri.startsWith('http://') || uri.startsWith('https://')) {
+      return await fetchImageAsDataUri(uri, fetch, { signal });
+    }
     if (!uri.startsWith(PUBKY_PROTOCOL)) return null;
     const parsedUri = marketplacePublicUriSchema.safeParse(uri);
     if (!parsedUri.success) return null;
 
     try {
       const url = resolvePubky(parsedUri.data);
-      return await fetchImageAsDataUri(url, (_input, init) =>
-        metadataClient.fetch(url, {
-          ...init,
-          credentials: 'include',
-          signal: AbortSignal.timeout(4_000),
-        }),
+      return await fetchImageAsDataUri(
+        url,
+        (_input, init) =>
+          metadataClient.fetch(url, {
+            ...init,
+            credentials: 'include',
+            signal,
+          }),
+        { signal },
       );
     } catch (error) {
       const reason = reasonForError(error);
@@ -619,14 +631,24 @@ export async function fetchOgMediaAsDataUri(uri: string | null | undefined): Pro
     }
   };
 
-  const promise = load()
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      Logger.warn('[ogCommerceData] Marketplace media timed out', { uri, timeoutMs: MEDIA_FETCH_TIMEOUT_MS });
+      resolve(null);
+    }, MEDIA_FETCH_TIMEOUT_MS);
+  });
+
+  const promise = Promise.race([load(controller.signal), deadline])
     .then((dataUri) => {
-      if (dataUri !== null) {
+      if (dataUri !== null && !controller.signal.aborted) {
         mediaCache.set(uri, dataUri, OG_COMMERCE_CACHE_TTL_MS, Buffer.byteLength(dataUri, 'utf8'));
       }
       return dataUri;
     })
     .finally(() => {
+      clearTimeout(timer);
       if (mediaInFlight.get(uri) === promise) mediaInFlight.delete(uri);
     });
   mediaInFlight.set(uri, promise);

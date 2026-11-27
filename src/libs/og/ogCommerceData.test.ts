@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Logger } from '@/libs/logger/logger';
 import { createCommerceListingFixture, createCommerceShopFixture } from '@/test/fixtures/commerce/commerce';
 import {
   BoundedTtlCache,
@@ -7,6 +8,7 @@ import {
   OG_COMMERCE_CACHE_MAX_ENTRIES,
   OG_COMMERCE_CACHE_TTL_MS,
   OG_RECORD_MAX_BYTES,
+  OG_RECORD_MAX_JSON_DEPTH,
   readBoundedTextBody,
   RECORD_FETCH_TIMEOUT_MS,
   resetOgCommerceCacheForTests,
@@ -336,13 +338,23 @@ describe('fetchListingForMetadata', () => {
     },
   );
 
-  it('rejects deeply nested sub-256-KiB JSON as validation unavailable without throwing RangeError', async () => {
-    const deepJson = `{"a":${'['.repeat(2_000)}0${']'.repeat(2_000)}}`;
-    expect(Buffer.byteLength(deepJson, 'utf8')).toBeLessThan(OG_RECORD_MAX_BYTES);
+  it('rejects deeply nested sub-256-KiB JSON via the iterative depth guard without throwing RangeError', async () => {
+    const warn = vi.spyOn(Logger, 'warn').mockImplementation(() => {});
+    const deepNestedValue = JSON.parse(`${'['.repeat(2_000)}0${']'.repeat(2_000)}`) as unknown;
+    const validListing = createCommerceListingFixture({ ownerPubky: seller, listingId: 'deep_listing' });
+    validListing.media = validListing.media.map((media) => ({
+      ...media,
+      url: media.url.replace('y'.repeat(52), seller),
+    }));
+    const validShop = createCommerceShopFixture({ ownerPubky: seller });
+    const deepListingJson = JSON.stringify({ ...validListing, deepPassthrough: deepNestedValue });
+    const deepShopJson = JSON.stringify({ ...validShop, deepPassthrough: deepNestedValue });
+    expect(Buffer.byteLength(deepListingJson, 'utf8')).toBeLessThan(OG_RECORD_MAX_BYTES);
+    expect(Buffer.byteLength(deepShopJson, 'utf8')).toBeLessThan(OG_RECORD_MAX_BYTES);
 
     fetchMock
-      .mockResolvedValueOnce(new Response(deepJson, { status: 200 }))
-      .mockResolvedValueOnce(new Response(deepJson, { status: 200 }));
+      .mockResolvedValueOnce(new Response(deepListingJson, { status: 200 }))
+      .mockResolvedValueOnce(new Response(deepShopJson, { status: 200 }));
 
     await expect(fetchListingForMetadata(seller, 'deep_listing')).resolves.toEqual({
       kind: 'unavailable',
@@ -352,9 +364,18 @@ describe('fetchListingForMetadata', () => {
       kind: 'unavailable',
       reason: 'validation',
     });
+    expect(warn).toHaveBeenCalledWith(
+      '[ogCommerceData] Listing record exceeded JSON nesting or node bounds',
+      expect.objectContaining({ reason: 'validation', maxDepth: OG_RECORD_MAX_JSON_DEPTH }),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      '[ogCommerceData] Shop record exceeded JSON nesting or node bounds',
+      expect.objectContaining({ reason: 'validation', maxDepth: OG_RECORD_MAX_JSON_DEPTH }),
+    );
+    warn.mockRestore();
   });
 
-  it('fails closed in readBoundedTextBody without calling res.text() when response has no body stream', async () => {
+  it('fails closed in readBoundedTextBody without calling res.text() and releases reader lock', async () => {
     const bodylessResponse = new Response(null, { status: 200 });
     expect(bodylessResponse.body).toBeNull();
     const textSpy = vi.spyOn(bodylessResponse, 'text');
@@ -368,5 +389,15 @@ describe('fetchListingForMetadata', () => {
       reason: 'unbounded_body',
     });
     expect(textSpy).not.toHaveBeenCalled();
+
+    const normalRes = new Response('{"ok":true}', { status: 200 });
+    await expect(readBoundedTextBody(normalRes, OG_RECORD_MAX_BYTES)).resolves.toEqual({ text: '{"ok":true}' });
+    expect(normalRes.body?.locked).toBe(false);
+
+    const abortedController = new AbortController();
+    abortedController.abort();
+    const abortedRes = new Response('{"ok":true}', { status: 200 });
+    await expect(readBoundedTextBody(abortedRes, OG_RECORD_MAX_BYTES, abortedController.signal)).rejects.toThrow();
+    expect(abortedRes.body?.locked).toBe(false);
   });
 });
