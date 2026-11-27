@@ -79,8 +79,26 @@ describe('useSellingAvailability', () => {
     expect(result.current.blocked).toBe(false);
   });
 
-  it('blocks a seller whose location is unknown with the unknown-region line', async () => {
+  it('lets a seller whose location is unknown or failed sell by default, and blocks unknown only when UNKNOWN=blocked', async () => {
     setRegionModes(LAUNCH);
+    stubClientRegion(null);
+    ownShopIn('CH');
+    const unknownOpen = renderHook(() => useSellingAvailability());
+    await waitFor(() => expect(unknownOpen.result.current.checking).toBe(false));
+    expect(unknownOpen.result.current.blocked).toBe(false);
+    unknownOpen.unmount();
+
+    resetRegionState();
+    setRegionModes(LAUNCH);
+    stubClientRegion('fail');
+    ownShopIn('CH');
+    const failedOpen = renderHook(() => useSellingAvailability());
+    await waitFor(() => expect(failedOpen.result.current.checking).toBe(false));
+    expect(failedOpen.result.current.blocked).toBe(false);
+    failedOpen.unmount();
+
+    resetRegionState();
+    setRegionModes(`${LAUNCH},UNKNOWN=blocked`);
     stubClientRegion(null);
     ownShopIn('CH');
     const { result } = renderHook(() => useSellingAvailability());

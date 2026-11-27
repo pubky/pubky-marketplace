@@ -11,7 +11,7 @@ import { EU_27 } from './eu-region';
  * Grammar: a comma-separated list of `SELECTOR=MODE`. A selector is an ISO 3166-1 alpha-2 code,
  * `EU` (the 27 member states) or `UNKNOWN` (a visitor whose country can't be determined). Later
  * entries override earlier ones, so `EU=nuanced,DE=blocked` works. `none` alone means everything
- * is open. Countries nobody names are open. `UNKNOWN` defaults to the strictest mode in force.
+ * is open. Countries nobody names are open. `UNKNOWN` defaults to `open`.
  *
  * This module is pure (no IO, no config reads) and imports nothing but the EU-27 list, so the
  * runtime-config schema can validate the setting with the same parser the Shop evaluates it with.
@@ -23,8 +23,6 @@ export type RegionMode = (typeof REGION_MODE_VALUES)[number];
 export const REGION_MODES_NONE = 'none';
 export const REGION_SELECTOR_EU = 'EU';
 export const REGION_SELECTOR_UNKNOWN = 'UNKNOWN';
-
-const STRICTNESS: Readonly<Record<RegionMode, number>> = { open: 0, nuanced: 1, blocked: 2 };
 
 export interface RegionModeEntry {
   /** An uppercase alpha-2 code, `EU` or `UNKNOWN`. */
@@ -124,11 +122,7 @@ export function createRegionPolicy(
   const modes = [...regions.values()];
   const hasNuanced = modes.includes('nuanced');
   const hasBlocked = modes.includes('blocked');
-  const strictest = modes.reduce<RegionMode>(
-    (current, mode) => (STRICTNESS[mode] > STRICTNESS[current] ? mode : current),
-    'open',
-  );
-  const unknownMode = explicitUnknown ?? strictest;
+  const unknownMode = explicitUnknown ?? 'open';
 
   return {
     regions,

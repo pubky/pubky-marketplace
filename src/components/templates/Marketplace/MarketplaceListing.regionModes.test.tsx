@@ -353,8 +353,17 @@ describe('MarketplaceListing under the region modes', () => {
     expect(fetchStub).toHaveBeenCalledTimes(1);
   });
 
-  it('blocks a visitor whose location is unknown with the unknown-region line', async () => {
+  it('allows a visitor whose location is unknown by default and blocks when UNKNOWN=blocked', async () => {
     setRegionModes('EU=blocked,GB=blocked,US=blocked');
+    stubClientRegion(null);
+    renderListing();
+
+    await waitFor(() => expect(buyButton()).toBeEnabled());
+    expect(screen.queryByTestId('marketplace-listing-blocked')).not.toBeInTheDocument();
+    cleanup();
+
+    resetRegionState();
+    setRegionModes('EU=blocked,GB=blocked,US=blocked,UNKNOWN=blocked');
     stubClientRegion(null);
     renderListing();
 

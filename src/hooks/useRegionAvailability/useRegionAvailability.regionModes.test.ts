@@ -65,7 +65,7 @@ describe('useRegionAvailability under the region modes', () => {
     expect(result.current).toMatchObject({ refusal: null, needsCountry: false, enabled: true });
   });
 
-  it('names paid unlocks on a digital-only listing, and the unknown region as it is', async () => {
+  it('names paid unlocks on a digital-only listing, lets unknown through by default, and blocks unknown when UNKNOWN=blocked', async () => {
     setRegionModes(LAUNCH);
     stubClientRegion('DE');
     const digital = run({ digital: true });
@@ -75,6 +75,14 @@ describe('useRegionAvailability under the region modes', () => {
 
     resetRegionState();
     setRegionModes(LAUNCH);
+    stubClientRegion(null);
+    const unknownDefault = run({ digital: true });
+    await waitFor(() => expect(unknownDefault.result.current.commerce.checking).toBe(false));
+    expect(unknownDefault.result.current.blockedNotice).toBeNull();
+    unknownDefault.unmount();
+
+    resetRegionState();
+    setRegionModes(`${LAUNCH},UNKNOWN=blocked`);
     stubClientRegion(null);
     const unknown = run({ digital: true });
     await waitFor(() => expect(unknown.result.current.blockedNotice).not.toBeNull());

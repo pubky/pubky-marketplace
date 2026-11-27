@@ -6,7 +6,6 @@ import {
   SELLING_BLOCKED_COUNTRY_MESSAGE,
   SHOP_COUNTRY_CHECKING_MESSAGE,
   SHOP_COUNTRY_LOCKED_MESSAGE,
-  SHOP_COUNTRY_LOCKED_UNKNOWN_MESSAGE,
 } from '@/libs/commerce/region-modes';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
@@ -258,21 +257,20 @@ describe('the shop country of a shop that already has one', () => {
   });
 
   it.each([
-    ['an unknown visitor region', null],
-    ['a visitor region that could not be read', 'fail' as const],
-  ])('cannot be changed from %s while unknown visitors are blocked', async (_label, answer) => {
-    setRegionModes(LAUNCH);
+    ['an unknown visitor region under launch modes', LAUNCH, null],
+    ['a transient region lookup failure under launch modes', LAUNCH, 'fail' as const],
+    ['an unknown visitor region even when UNKNOWN=blocked', `${LAUNCH},UNKNOWN=blocked`, null],
+    ['a transient region lookup failure even when UNKNOWN=blocked', `${LAUNCH},UNKNOWN=blocked`, 'fail' as const],
+  ])('stays editable for %s', async (_label, modes, answer) => {
+    setRegionModes(modes);
     stubClientRegion(answer);
     const hook = await loadExistingSeller('CH');
-    await waitFor(() => expect(hook.result.current.countryLockedMessage).toBe(SHOP_COUNTRY_LOCKED_UNKNOWN_MESSAGE));
+    await waitFor(() => expect(hook.result.current.countryLocked).toBe(false));
+    expect(hook.result.current.countryLockedMessage).toBeNull();
 
     setCountry(hook, 'NO');
-    expect(await save(hook)).toBe(false);
-
-    expect(hook.result.current.form.getFieldState('countryCode').error?.message).toBe(
-      SHOP_COUNTRY_LOCKED_UNKNOWN_MESSAGE,
-    );
-    expect(CommerceController.commitUpsertShop).not.toHaveBeenCalled();
+    expect(await save(hook)).toBe(true);
+    expect(savedCountry()).toBe('NO');
   });
 
   it('changes from an unknown visitor region where unknown visitors are not blocked', async () => {

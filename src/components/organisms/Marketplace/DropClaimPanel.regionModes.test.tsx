@@ -153,8 +153,17 @@ describe('DropClaimPanel under the region modes', () => {
     expect(screen.queryByTestId('drop-claim-blocked')).not.toBeInTheDocument();
   });
 
-  it('says the location cannot be told for an unknown visitor', async () => {
+  it('allows an unknown visitor by default and blocks when UNKNOWN=blocked', async () => {
     setRegionModes(LAUNCH);
+    stubClientRegion(null);
+    const { unmount } = renderPanel({ sellerStatus: 'private', location: { countryCode: 'CH' } });
+
+    expect(await screen.findByRole('link', { name: 'Claim one' })).toBeEnabled();
+    expect(screen.queryByTestId('drop-claim-blocked')).not.toBeInTheDocument();
+    unmount();
+
+    resetRegionState();
+    setRegionModes(`${LAUNCH},UNKNOWN=blocked`);
     stubClientRegion(null);
     renderPanel();
 
