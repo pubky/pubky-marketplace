@@ -1,0 +1,1137 @@
+{
+  "orders": [
+    {
+      "id": "06cc87e9-60f8-4942-b1f2-1ca6c24b4535",
+      "buyer_pubky": "idgopdnhi9psboqguyzsmsj1hyyy7gks7wxa4ym9eazz6pibsfay",
+      "seller_pubky": "9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo",
+      "revision": 3,
+      "state": "cancelled",
+      "lines": [
+        {
+          "title": "British laugh",
+          "quantity": 1,
+          "subtotal": {
+            "currency": "GBP",
+            "exponent": 2,
+            "amount_minor": 400
+          },
+          "unit_price": {
+            "currency": "GBP",
+            "exponent": 2,
+            "amount_minor": 400
+          },
+          "variant_id": "variant_1",
+          "fulfillment": "shipping",
+          "content_hash": "221a851f54d92e95d94e39ce82d30376783089bdc7fe3f032ccac90117efdefc",
+          "listing_revision": 1,
+          "listing_aggregate_id": "listing:9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo_6181c86cd8dd4b73b0802d418c55a05f"
+        }
+      ],
+      "subtotal": {
+        "amount_minor": 400,
+        "currency": "GBP",
+        "exponent": 2
+      },
+      "shipping": {
+        "amount_minor": 1,
+        "currency": "GBP",
+        "exponent": 2
+      },
+      "total": {
+        "amount_minor": 401,
+        "currency": "GBP",
+        "exponent": 2
+      },
+      "payment_id": "7f3b222b-0473-4987-bc88-bdd6ad9311b1",
+      "receipt_id": null,
+      "edition": null,
+      "drop_aggregate_id": null,
+      "cancellation_reason": "payment window elapsed",
+      "stock_held": false,
+      "hold_expires_at": null,
+      "hold_source": "bind",
+      "shipment": null,
+      "delivery_assumed": false,
+      "next_actor": null,
+      "return_request": null,
+      "external_refund": null,
+      "payment_method": "paykit",
+      "fiat_checkout_url": null,
+      "fiat_verification": null,
+      "payment_reported_at": null,
+      "fiat_transaction_ref": null,
+      "paykit_request_reference": "932c3dda-13d1-42bc-aaf2-f7450888ebed",
+      "paykit_request_state": "pending",
+      "paykit_activation_state": "active",
+      "paykit_total_sats": 8696,
+      "paykit_expires_at": "2026-11-26T16:24:25.940Z",
+      "bitcoin_quote": {
+        "rate": "46149",
+        "source": "blocktank",
+        "fetched_at": "2026-11-26T15:53:45.444Z",
+        "quoted_sats": 8690,
+        "expires_at": "2026-11-26T16:24:25.940Z",
+        "currency": "GBP",
+        "exponent": 2,
+        "spread_bps": 0,
+        "pair": "BTCGBP"
+      },
+      "fulfillment": "shipping",
+      "first_revealed_at": null,
+      "created_at": "2026-11-26T15:54:18.002Z",
+      "updated_at": "2026-11-26T16:25:30.693Z",
+      "priced_from": "listing",
+      "auction_aggregate_id": null,
+      "shipping_address_required": false,
+      "delivery_assume_days": null,
+      "auto_complete_days": null,
+      "return_policy": {
+        "accepts_returns": false,
+        "return_window_days": null
+      },
+      "paykit_delivery_state": "delivered",
+      "payment_confirmation": "automatic",
+      "gateway_payment_seen_at": null,
+      "digital_release": null,
+      "digital_released_at": null,
+      "payment_reversed_at": null,
+      "external_refund_full": null,
+      "payment_reversal_cancelled_at": null,
+      "gateway_refund_review_at": null,
+      "gateway_refund_unmatched": false,
+      "merchandise_total": {
+        "amount_minor": 401,
+        "currency": "GBP",
+        "exponent": 2
+      },
+      "bitcoin_payable": {
+        "amount_minor": 8696,
+        "currency": "SAT",
+        "exponent": 0
+      },
+      "accepted_assets": ["BTC", "USDT"],
+      "payment_amounts": {
+        "BTC": 8696,
+        "USDT": 5260000
+      },
+      "fx_conversion": {
+        "pair": "GBPUSD",
+        "rate": "1.310754295868",
+        "usd_rate": "60490",
+        "currency_rate": "46149",
+        "source": "blocktank",
+        "fetched_at": "2026-11-26T15:53:45.444Z",
+        "from": {
+          "amount_minor": 401,
+          "currency": "GBP",
+          "exponent": 2
+        },
+        "to": {
+          "amount_minor": 526,
+          "currency": "USD",
+          "exponent": 2
+        }
+      },
+      "payment": {
+        "id": "7f3b222b-0473-4987-bc88-bdd6ad9311b1",
+        "order_id": "06cc87e9-60f8-4942-b1f2-1ca6c24b4535",
+        "buyer_pubky": "idgopdnhi9psboqguyzsmsj1hyyy7gks7wxa4ym9eazz6pibsfay",
+        "seller_pubky": "9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo",
+        "revision": 3,
+        "adapter": "paykit",
+        "state": "expired",
+        "confirmations": 0,
+        "amount": {
+          "amount_minor": 8696,
+          "currency": "SAT",
+          "exponent": 0
+        },
+        "merchandise_amount": {
+          "amount_minor": 401,
+          "currency": "GBP",
+          "exponent": 2
+        },
+        "resolution_outcome": null,
+        "resolution_basis": null,
+        "resolved_at": null,
+        "review_reason": null,
+        "created_at": "2026-11-26T15:54:18.002Z",
+        "updated_at": "2026-11-26T16:25:30.693Z"
+      },
+      "reviews": [],
+      "pickup_terms_changed": false
+    },
+    {
+      "id": "391195a2-b14d-42c0-a1ec-6167952c3032",
+      "buyer_pubky": "idgopdnhi9psboqguyzsmsj1hyyy7gks7wxa4ym9eazz6pibsfay",
+      "seller_pubky": "9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo",
+      "revision": 3,
+      "state": "cancelled",
+      "lines": [
+        {
+          "title": "Digital Deduction",
+          "quantity": 1,
+          "subtotal": {
+            "currency": "CHF",
+            "exponent": 2,
+            "amount_minor": 16942
+          },
+          "unit_price": {
+            "currency": "CHF",
+            "exponent": 2,
+            "amount_minor": 16942
+          },
+          "variant_id": "variant_1",
+          "fulfillment": "digital",
+          "content_hash": "5d63d9b9a8d210f5687f37ac11f0f0c250debe1d0e419c0df0a9386813e6c77f",
+          "digital_kind": "link",
+          "listing_revision": 1,
+          "listing_aggregate_id": "listing:9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo_8f5b06b4365140398867751d799d00db"
+        }
+      ],
+      "subtotal": {
+        "amount_minor": 16942,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "shipping": {
+        "amount_minor": 0,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "total": {
+        "amount_minor": 16942,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "payment_id": "e6550458-623a-4e3e-b8f1-412bd7187c7b",
+      "receipt_id": null,
+      "edition": null,
+      "drop_aggregate_id": null,
+      "cancellation_reason": "payment window elapsed",
+      "stock_held": false,
+      "hold_expires_at": null,
+      "hold_source": "bind",
+      "shipment": null,
+      "delivery_assumed": false,
+      "next_actor": null,
+      "return_request": null,
+      "external_refund": null,
+      "payment_method": "paykit",
+      "fiat_checkout_url": null,
+      "fiat_verification": null,
+      "payment_reported_at": null,
+      "fiat_transaction_ref": null,
+      "paykit_request_reference": "917d92e9-7602-4a4c-a29f-369f86f44fcc",
+      "paykit_request_state": "pending",
+      "paykit_activation_state": "active",
+      "paykit_total_sats": 335798,
+      "paykit_expires_at": "2026-11-26T16:22:28.689Z",
+      "bitcoin_quote": {
+        "rate": "50455",
+        "source": "blocktank",
+        "fetched_at": "2026-11-26T15:51:45.458Z",
+        "quoted_sats": 335785,
+        "expires_at": "2026-11-26T16:22:28.689Z",
+        "currency": "CHF",
+        "exponent": 2,
+        "spread_bps": 0,
+        "pair": "BTCCHF"
+      },
+      "fulfillment": "digital",
+      "first_revealed_at": null,
+      "created_at": "2026-11-26T15:52:25.205Z",
+      "updated_at": "2026-11-26T16:23:34.793Z",
+      "priced_from": "listing",
+      "auction_aggregate_id": null,
+      "shipping_address_required": false,
+      "delivery_assume_days": null,
+      "auto_complete_days": null,
+      "return_policy": {
+        "accepts_returns": false,
+        "return_window_days": null
+      },
+      "paykit_delivery_state": "delivered",
+      "payment_confirmation": "automatic",
+      "gateway_payment_seen_at": null,
+      "digital_release": null,
+      "digital_released_at": null,
+      "payment_reversed_at": null,
+      "external_refund_full": null,
+      "payment_reversal_cancelled_at": null,
+      "gateway_refund_review_at": null,
+      "gateway_refund_unmatched": false,
+      "merchandise_total": {
+        "amount_minor": 16942,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "bitcoin_payable": {
+        "amount_minor": 335798,
+        "currency": "SAT",
+        "exponent": 0
+      },
+      "accepted_assets": ["BTC", "USDT"],
+      "payment_amounts": {
+        "BTC": 335798,
+        "USDT": 203080000
+      },
+      "fx_conversion": {
+        "pair": "CHFUSD",
+        "rate": "1.198632444753",
+        "usd_rate": "60477",
+        "currency_rate": "50455",
+        "source": "blocktank",
+        "fetched_at": "2026-11-26T15:51:45.458Z",
+        "from": {
+          "amount_minor": 16942,
+          "currency": "CHF",
+          "exponent": 2
+        },
+        "to": {
+          "amount_minor": 20308,
+          "currency": "USD",
+          "exponent": 2
+        }
+      },
+      "payment": {
+        "id": "e6550458-623a-4e3e-b8f1-412bd7187c7b",
+        "order_id": "391195a2-b14d-42c0-a1ec-6167952c3032",
+        "buyer_pubky": "idgopdnhi9psboqguyzsmsj1hyyy7gks7wxa4ym9eazz6pibsfay",
+        "seller_pubky": "9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo",
+        "revision": 3,
+        "adapter": "paykit",
+        "state": "expired",
+        "confirmations": 0,
+        "amount": {
+          "amount_minor": 335798,
+          "currency": "SAT",
+          "exponent": 0
+        },
+        "merchandise_amount": {
+          "amount_minor": 16942,
+          "currency": "CHF",
+          "exponent": 2
+        },
+        "resolution_outcome": null,
+        "resolution_basis": null,
+        "resolved_at": null,
+        "review_reason": null,
+        "created_at": "2026-11-26T15:52:25.205Z",
+        "updated_at": "2026-11-26T16:23:34.793Z"
+      },
+      "reviews": [],
+      "pickup_terms_changed": false
+    },
+    {
+      "id": "470c02d8-9326-4d89-98f6-199df5a2ffcb",
+      "buyer_pubky": "idgopdnhi9psboqguyzsmsj1hyyy7gks7wxa4ym9eazz6pibsfay",
+      "seller_pubky": "9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo",
+      "revision": 3,
+      "state": "cancelled",
+      "lines": [
+        {
+          "title": "Digital Deduction",
+          "quantity": 1,
+          "subtotal": {
+            "currency": "CHF",
+            "exponent": 2,
+            "amount_minor": 16942
+          },
+          "unit_price": {
+            "currency": "CHF",
+            "exponent": 2,
+            "amount_minor": 16942
+          },
+          "variant_id": "variant_1",
+          "fulfillment": "digital",
+          "content_hash": "5d63d9b9a8d210f5687f37ac11f0f0c250debe1d0e419c0df0a9386813e6c77f",
+          "digital_kind": "link",
+          "listing_revision": 1,
+          "listing_aggregate_id": "listing:9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo_8f5b06b4365140398867751d799d00db"
+        }
+      ],
+      "subtotal": {
+        "amount_minor": 16942,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "shipping": {
+        "amount_minor": 0,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "total": {
+        "amount_minor": 16942,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "payment_id": "4eb9070c-cc49-42b2-944a-567524bf6351",
+      "receipt_id": null,
+      "edition": null,
+      "drop_aggregate_id": null,
+      "cancellation_reason": "payment window elapsed",
+      "stock_held": false,
+      "hold_expires_at": null,
+      "hold_source": "bind",
+      "shipment": null,
+      "delivery_assumed": false,
+      "next_actor": "seller",
+      "return_request": null,
+      "external_refund": null,
+      "payment_method": "paykit",
+      "fiat_checkout_url": null,
+      "fiat_verification": null,
+      "payment_reported_at": null,
+      "fiat_transaction_ref": null,
+      "paykit_request_reference": "751bc7fa-a815-476b-91fd-b5e9f47a06d5",
+      "paykit_request_state": "confirmed",
+      "paykit_activation_state": "active",
+      "paykit_total_sats": 334332,
+      "paykit_expires_at": "2026-11-26T13:09:30.941Z",
+      "bitcoin_quote": {
+        "rate": "50675",
+        "source": "blocktank",
+        "fetched_at": "2026-11-26T12:38:45.366Z",
+        "quoted_sats": 334327,
+        "expires_at": "2026-11-26T13:09:30.941Z",
+        "currency": "CHF",
+        "exponent": 2,
+        "spread_bps": 0,
+        "pair": "BTCCHF"
+      },
+      "fulfillment": "digital",
+      "first_revealed_at": null,
+      "created_at": "2026-11-26T12:39:27.254Z",
+      "updated_at": "2026-11-26T15:03:19.650Z",
+      "priced_from": "listing",
+      "auction_aggregate_id": null,
+      "shipping_address_required": false,
+      "delivery_assume_days": null,
+      "auto_complete_days": null,
+      "return_policy": {
+        "accepts_returns": false,
+        "return_window_days": null
+      },
+      "paykit_delivery_state": "delivered",
+      "payment_confirmation": "automatic",
+      "gateway_payment_seen_at": null,
+      "digital_release": null,
+      "digital_released_at": null,
+      "payment_reversed_at": null,
+      "external_refund_full": null,
+      "payment_reversal_cancelled_at": null,
+      "gateway_refund_review_at": null,
+      "gateway_refund_unmatched": false,
+      "merchandise_total": {
+        "amount_minor": 16942,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "bitcoin_payable": {
+        "amount_minor": 334332,
+        "currency": "SAT",
+        "exponent": 0
+      },
+      "accepted_assets": ["BTC", "USDT"],
+      "payment_amounts": {
+        "BTC": 334332,
+        "USDT": 203120000
+      },
+      "fx_conversion": {
+        "pair": "CHFUSD",
+        "rate": "1.198894918599",
+        "usd_rate": "60754",
+        "currency_rate": "50675",
+        "source": "blocktank",
+        "fetched_at": "2026-11-26T12:38:45.366Z",
+        "from": {
+          "amount_minor": 16942,
+          "currency": "CHF",
+          "exponent": 2
+        },
+        "to": {
+          "amount_minor": 20312,
+          "currency": "USD",
+          "exponent": 2
+        }
+      },
+      "payment": {
+        "id": "4eb9070c-cc49-42b2-944a-567524bf6351",
+        "order_id": "470c02d8-9326-4d89-98f6-199df5a2ffcb",
+        "buyer_pubky": "idgopdnhi9psboqguyzsmsj1hyyy7gks7wxa4ym9eazz6pibsfay",
+        "seller_pubky": "9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo",
+        "revision": 4,
+        "adapter": "paykit",
+        "state": "manual_review",
+        "confirmations": 0,
+        "amount": {
+          "amount_minor": 334332,
+          "currency": "SAT",
+          "exponent": 0
+        },
+        "merchandise_amount": {
+          "amount_minor": 16942,
+          "currency": "CHF",
+          "exponent": 2
+        },
+        "resolution_outcome": null,
+        "resolution_basis": null,
+        "resolved_at": null,
+        "review_reason": "upstream_inconsistent",
+        "created_at": "2026-11-26T12:39:27.254Z",
+        "updated_at": "2026-11-26T15:03:19.650Z"
+      },
+      "reviews": [],
+      "pickup_terms_changed": false
+    },
+    {
+      "id": "9dd181f3-ad09-4be2-8cdd-8787f1e438c7",
+      "buyer_pubky": "idgopdnhi9psboqguyzsmsj1hyyy7gks7wxa4ym9eazz6pibsfay",
+      "seller_pubky": "9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo",
+      "revision": 3,
+      "state": "cancelled",
+      "lines": [
+        {
+          "title": "Digital Deduction",
+          "quantity": 1,
+          "subtotal": {
+            "currency": "CHF",
+            "exponent": 2,
+            "amount_minor": 16942
+          },
+          "unit_price": {
+            "currency": "CHF",
+            "exponent": 2,
+            "amount_minor": 16942
+          },
+          "variant_id": "variant_1",
+          "fulfillment": "digital",
+          "content_hash": "5d63d9b9a8d210f5687f37ac11f0f0c250debe1d0e419c0df0a9386813e6c77f",
+          "digital_kind": "link",
+          "listing_revision": 1,
+          "listing_aggregate_id": "listing:9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo_8f5b06b4365140398867751d799d00db"
+        }
+      ],
+      "subtotal": {
+        "amount_minor": 16942,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "shipping": {
+        "amount_minor": 0,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "total": {
+        "amount_minor": 16942,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "payment_id": "6a79de38-23c0-4969-9de5-db976350a378",
+      "receipt_id": null,
+      "edition": null,
+      "drop_aggregate_id": null,
+      "cancellation_reason": "payment window elapsed",
+      "stock_held": false,
+      "hold_expires_at": null,
+      "hold_source": "bind",
+      "shipment": null,
+      "delivery_assumed": false,
+      "next_actor": null,
+      "return_request": null,
+      "external_refund": null,
+      "payment_method": "paykit",
+      "fiat_checkout_url": null,
+      "fiat_verification": null,
+      "payment_reported_at": null,
+      "fiat_transaction_ref": null,
+      "paykit_request_reference": "16da7168-a4c6-415a-8a11-3bb136437845",
+      "paykit_request_state": "pending",
+      "paykit_activation_state": "active",
+      "paykit_total_sats": 317710,
+      "paykit_expires_at": "2026-11-19T15:52:59.820Z",
+      "bitcoin_quote": {
+        "rate": "53327",
+        "source": "blocktank",
+        "fetched_at": "2026-11-19T15:22:45.674Z",
+        "quoted_sats": 317701,
+        "expires_at": "2026-11-19T15:52:59.820Z",
+        "currency": "CHF",
+        "exponent": 2,
+        "spread_bps": 0,
+        "pair": "BTCCHF"
+      },
+      "fulfillment": "digital",
+      "first_revealed_at": null,
+      "created_at": "2026-11-19T15:22:52.472Z",
+      "updated_at": "2026-11-19T15:54:03.642Z",
+      "priced_from": "listing",
+      "auction_aggregate_id": null,
+      "shipping_address_required": false,
+      "delivery_assume_days": null,
+      "auto_complete_days": null,
+      "return_policy": {
+        "accepts_returns": false,
+        "return_window_days": null
+      },
+      "paykit_delivery_state": "delivered",
+      "payment_confirmation": "automatic",
+      "gateway_payment_seen_at": null,
+      "digital_release": null,
+      "digital_released_at": null,
+      "payment_reversed_at": null,
+      "external_refund_full": null,
+      "payment_reversal_cancelled_at": null,
+      "gateway_refund_review_at": null,
+      "gateway_refund_unmatched": false,
+      "merchandise_total": {
+        "amount_minor": 16942,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "bitcoin_payable": {
+        "amount_minor": 317710,
+        "currency": "SAT",
+        "exponent": 0
+      },
+      "accepted_assets": ["BTC", "USDT"],
+      "payment_amounts": {
+        "BTC": 317710,
+        "USDT": 200770000
+      },
+      "fx_conversion": {
+        "pair": "CHFUSD",
+        "rate": "1.185009469875",
+        "usd_rate": "63193",
+        "currency_rate": "53327",
+        "source": "blocktank",
+        "fetched_at": "2026-11-19T15:22:45.674Z",
+        "from": {
+          "amount_minor": 16942,
+          "currency": "CHF",
+          "exponent": 2
+        },
+        "to": {
+          "amount_minor": 20077,
+          "currency": "USD",
+          "exponent": 2
+        }
+      },
+      "payment": {
+        "id": "6a79de38-23c0-4969-9de5-db976350a378",
+        "order_id": "9dd181f3-ad09-4be2-8cdd-8787f1e438c7",
+        "buyer_pubky": "idgopdnhi9psboqguyzsmsj1hyyy7gks7wxa4ym9eazz6pibsfay",
+        "seller_pubky": "9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo",
+        "revision": 3,
+        "adapter": "paykit",
+        "state": "expired",
+        "confirmations": 0,
+        "amount": {
+          "amount_minor": 317710,
+          "currency": "SAT",
+          "exponent": 0
+        },
+        "merchandise_amount": {
+          "amount_minor": 16942,
+          "currency": "CHF",
+          "exponent": 2
+        },
+        "resolution_outcome": null,
+        "resolution_basis": null,
+        "resolved_at": null,
+        "review_reason": null,
+        "created_at": "2026-11-19T15:22:52.472Z",
+        "updated_at": "2026-11-19T15:54:03.642Z"
+      },
+      "reviews": [],
+      "pickup_terms_changed": false
+    },
+    {
+      "id": "3f22c431-0850-4905-83c1-8624c4e6b68f",
+      "buyer_pubky": "idgopdnhi9psboqguyzsmsj1hyyy7gks7wxa4ym9eazz6pibsfay",
+      "seller_pubky": "9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo",
+      "revision": 3,
+      "state": "cancelled",
+      "lines": [
+        {
+          "title": "Digital Deduction",
+          "quantity": 1,
+          "subtotal": {
+            "currency": "CHF",
+            "exponent": 2,
+            "amount_minor": 16942
+          },
+          "unit_price": {
+            "currency": "CHF",
+            "exponent": 2,
+            "amount_minor": 16942
+          },
+          "variant_id": "variant_1",
+          "fulfillment": "digital",
+          "content_hash": "5d63d9b9a8d210f5687f37ac11f0f0c250debe1d0e419c0df0a9386813e6c77f",
+          "digital_kind": "link",
+          "listing_revision": 1,
+          "listing_aggregate_id": "listing:9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo_8f5b06b4365140398867751d799d00db"
+        }
+      ],
+      "subtotal": {
+        "amount_minor": 16942,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "shipping": {
+        "amount_minor": 0,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "total": {
+        "amount_minor": 16942,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "payment_id": "81ca151e-dbba-41f7-8541-e2ebc778c1ac",
+      "receipt_id": null,
+      "edition": null,
+      "drop_aggregate_id": null,
+      "cancellation_reason": "payment window elapsed",
+      "stock_held": false,
+      "hold_expires_at": null,
+      "hold_source": "bind",
+      "shipment": null,
+      "delivery_assumed": false,
+      "next_actor": null,
+      "return_request": null,
+      "external_refund": null,
+      "payment_method": "paykit",
+      "fiat_checkout_url": null,
+      "fiat_verification": null,
+      "payment_reported_at": null,
+      "fiat_transaction_ref": null,
+      "paykit_request_reference": "92b83bef-13e1-4443-8362-6eed4ac9bac1",
+      "paykit_request_state": "pending",
+      "paykit_activation_state": "active",
+      "paykit_total_sats": 314520,
+      "paykit_expires_at": "2026-11-19T15:18:28.490Z",
+      "bitcoin_quote": {
+        "rate": "53867",
+        "source": "blocktank",
+        "fetched_at": "2026-11-19T14:47:45.666Z",
+        "quoted_sats": 314516,
+        "expires_at": "2026-11-19T15:18:28.490Z",
+        "currency": "CHF",
+        "exponent": 2,
+        "spread_bps": 0,
+        "pair": "BTCCHF"
+      },
+      "fulfillment": "digital",
+      "first_revealed_at": null,
+      "created_at": "2026-11-19T14:48:22.954Z",
+      "updated_at": "2026-11-19T15:19:38.345Z",
+      "priced_from": "listing",
+      "auction_aggregate_id": null,
+      "shipping_address_required": false,
+      "delivery_assume_days": null,
+      "auto_complete_days": null,
+      "return_policy": {
+        "accepts_returns": false,
+        "return_window_days": null
+      },
+      "paykit_delivery_state": "delivered",
+      "payment_confirmation": "automatic",
+      "gateway_payment_seen_at": null,
+      "digital_release": null,
+      "digital_released_at": null,
+      "payment_reversed_at": null,
+      "external_refund_full": null,
+      "payment_reversal_cancelled_at": null,
+      "gateway_refund_review_at": null,
+      "gateway_refund_unmatched": false,
+      "merchandise_total": {
+        "amount_minor": 16942,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "bitcoin_payable": {
+        "amount_minor": 314520,
+        "currency": "SAT",
+        "exponent": 0
+      },
+      "accepted_assets": ["BTC", "USDT"],
+      "payment_amounts": {
+        "BTC": 314520,
+        "USDT": 201000000
+      },
+      "fx_conversion": {
+        "pair": "CHFUSD",
+        "rate": "1.186384985241",
+        "usd_rate": "63907",
+        "currency_rate": "53867",
+        "source": "blocktank",
+        "fetched_at": "2026-11-19T14:47:45.666Z",
+        "from": {
+          "amount_minor": 16942,
+          "currency": "CHF",
+          "exponent": 2
+        },
+        "to": {
+          "amount_minor": 20100,
+          "currency": "USD",
+          "exponent": 2
+        }
+      },
+      "payment": {
+        "id": "81ca151e-dbba-41f7-8541-e2ebc778c1ac",
+        "order_id": "3f22c431-0850-4905-83c1-8624c4e6b68f",
+        "buyer_pubky": "idgopdnhi9psboqguyzsmsj1hyyy7gks7wxa4ym9eazz6pibsfay",
+        "seller_pubky": "9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo",
+        "revision": 3,
+        "adapter": "paykit",
+        "state": "expired",
+        "confirmations": 0,
+        "amount": {
+          "amount_minor": 314520,
+          "currency": "SAT",
+          "exponent": 0
+        },
+        "merchandise_amount": {
+          "amount_minor": 16942,
+          "currency": "CHF",
+          "exponent": 2
+        },
+        "resolution_outcome": null,
+        "resolution_basis": null,
+        "resolved_at": null,
+        "review_reason": null,
+        "created_at": "2026-11-19T14:48:22.954Z",
+        "updated_at": "2026-11-19T15:19:38.345Z"
+      },
+      "reviews": [],
+      "pickup_terms_changed": false
+    },
+    {
+      "id": "ddd73c63-1cc4-482c-ac52-45950354859c",
+      "buyer_pubky": "idgopdnhi9psboqguyzsmsj1hyyy7gks7wxa4ym9eazz6pibsfay",
+      "seller_pubky": "9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo",
+      "revision": 3,
+      "state": "cancelled",
+      "lines": [
+        {
+          "title": "Digital Deduction",
+          "quantity": 1,
+          "subtotal": {
+            "currency": "CHF",
+            "exponent": 2,
+            "amount_minor": 16942
+          },
+          "unit_price": {
+            "currency": "CHF",
+            "exponent": 2,
+            "amount_minor": 16942
+          },
+          "variant_id": "variant_1",
+          "fulfillment": "digital",
+          "content_hash": "5d63d9b9a8d210f5687f37ac11f0f0c250debe1d0e419c0df0a9386813e6c77f",
+          "digital_kind": "link",
+          "listing_revision": 1,
+          "listing_aggregate_id": "listing:9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo_8f5b06b4365140398867751d799d00db"
+        }
+      ],
+      "subtotal": {
+        "amount_minor": 16942,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "shipping": {
+        "amount_minor": 0,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "total": {
+        "amount_minor": 16942,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "payment_id": "9101416e-b9ff-4257-8749-54a8f79df79f",
+      "receipt_id": null,
+      "edition": null,
+      "drop_aggregate_id": null,
+      "cancellation_reason": "payment window elapsed",
+      "stock_held": false,
+      "hold_expires_at": null,
+      "hold_source": "bind",
+      "shipment": null,
+      "delivery_assumed": false,
+      "next_actor": null,
+      "return_request": null,
+      "external_refund": null,
+      "payment_method": "paykit",
+      "fiat_checkout_url": null,
+      "fiat_verification": null,
+      "payment_reported_at": null,
+      "fiat_transaction_ref": null,
+      "paykit_request_reference": "2b265659-7b16-4fc0-bbf7-6d6aa2da60fa",
+      "paykit_request_state": "pending",
+      "paykit_activation_state": "active",
+      "paykit_total_sats": 317219,
+      "paykit_expires_at": "2026-11-17T17:31:02.089Z",
+      "bitcoin_quote": {
+        "rate": "53408",
+        "source": "blocktank",
+        "fetched_at": "2026-11-17T17:00:44.513Z",
+        "quoted_sats": 317219,
+        "expires_at": "2026-11-17T17:31:02.089Z",
+        "currency": "CHF",
+        "exponent": 2,
+        "spread_bps": 0,
+        "pair": "BTCCHF"
+      },
+      "fulfillment": "digital",
+      "first_revealed_at": null,
+      "created_at": "2026-11-17T17:00:55.621Z",
+      "updated_at": "2026-11-17T17:32:07.808Z",
+      "priced_from": "listing",
+      "auction_aggregate_id": null,
+      "shipping_address_required": false,
+      "delivery_assume_days": null,
+      "auto_complete_days": null,
+      "return_policy": {
+        "accepts_returns": false,
+        "return_window_days": null
+      },
+      "paykit_delivery_state": "delivered",
+      "payment_confirmation": "automatic",
+      "gateway_payment_seen_at": null,
+      "digital_release": null,
+      "digital_released_at": null,
+      "payment_reversed_at": null,
+      "external_refund_full": null,
+      "payment_reversal_cancelled_at": null,
+      "gateway_refund_review_at": null,
+      "gateway_refund_unmatched": false,
+      "merchandise_total": {
+        "amount_minor": 16942,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "bitcoin_payable": {
+        "amount_minor": 317219,
+        "currency": "SAT",
+        "exponent": 0
+      },
+      "accepted_assets": ["BTC", "USDT"],
+      "payment_amounts": {
+        "BTC": 317219,
+        "USDT": 202100000
+      },
+      "fx_conversion": {
+        "pair": "CHFUSD",
+        "rate": "1.192892450569",
+        "usd_rate": "63710",
+        "currency_rate": "53408",
+        "source": "blocktank",
+        "fetched_at": "2026-11-17T17:00:44.513Z",
+        "from": {
+          "amount_minor": 16942,
+          "currency": "CHF",
+          "exponent": 2
+        },
+        "to": {
+          "amount_minor": 20210,
+          "currency": "USD",
+          "exponent": 2
+        }
+      },
+      "payment": {
+        "id": "9101416e-b9ff-4257-8749-54a8f79df79f",
+        "order_id": "ddd73c63-1cc4-482c-ac52-45950354859c",
+        "buyer_pubky": "idgopdnhi9psboqguyzsmsj1hyyy7gks7wxa4ym9eazz6pibsfay",
+        "seller_pubky": "9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo",
+        "revision": 3,
+        "adapter": "paykit",
+        "state": "expired",
+        "confirmations": 0,
+        "amount": {
+          "amount_minor": 317219,
+          "currency": "SAT",
+          "exponent": 0
+        },
+        "merchandise_amount": {
+          "amount_minor": 16942,
+          "currency": "CHF",
+          "exponent": 2
+        },
+        "resolution_outcome": null,
+        "resolution_basis": null,
+        "resolved_at": null,
+        "review_reason": null,
+        "created_at": "2026-11-17T17:00:55.621Z",
+        "updated_at": "2026-11-17T17:32:07.808Z"
+      },
+      "reviews": [],
+      "pickup_terms_changed": false
+    },
+    {
+      "id": "0fdd4ee2-109c-4b64-851b-e320b097adc8",
+      "buyer_pubky": "idgopdnhi9psboqguyzsmsj1hyyy7gks7wxa4ym9eazz6pibsfay",
+      "seller_pubky": "9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo",
+      "revision": 3,
+      "state": "cancelled",
+      "lines": [
+        {
+          "title": "Digital Deduction",
+          "quantity": 1,
+          "subtotal": {
+            "currency": "CHF",
+            "exponent": 2,
+            "amount_minor": 16942
+          },
+          "unit_price": {
+            "currency": "CHF",
+            "exponent": 2,
+            "amount_minor": 16942
+          },
+          "variant_id": "variant_1",
+          "fulfillment": "digital",
+          "content_hash": "5d63d9b9a8d210f5687f37ac11f0f0c250debe1d0e419c0df0a9386813e6c77f",
+          "digital_kind": "link",
+          "listing_revision": 1,
+          "listing_aggregate_id": "listing:9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo_8f5b06b4365140398867751d799d00db"
+        }
+      ],
+      "subtotal": {
+        "amount_minor": 16942,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "shipping": {
+        "amount_minor": 0,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "total": {
+        "amount_minor": 16942,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "payment_id": "547614da-638c-458d-8f22-46edc8b3b300",
+      "receipt_id": null,
+      "edition": null,
+      "drop_aggregate_id": null,
+      "cancellation_reason": "payment window elapsed",
+      "stock_held": false,
+      "hold_expires_at": null,
+      "hold_source": "bind",
+      "shipment": null,
+      "delivery_assumed": false,
+      "next_actor": null,
+      "return_request": null,
+      "external_refund": null,
+      "payment_method": "paykit",
+      "fiat_checkout_url": null,
+      "fiat_verification": null,
+      "payment_reported_at": null,
+      "fiat_transaction_ref": null,
+      "paykit_request_reference": "356ff2ff-4083-4471-bd9b-cfc2e92559e2",
+      "paykit_request_state": "pending",
+      "paykit_activation_state": "active",
+      "paykit_total_sats": 315506,
+      "paykit_expires_at": "2026-11-17T16:56:52.805Z",
+      "bitcoin_quote": {
+        "rate": "53738",
+        "source": "blocktank",
+        "fetched_at": "2026-11-17T16:25:44.503Z",
+        "quoted_sats": 315271,
+        "expires_at": "2026-11-17T16:56:52.805Z",
+        "currency": "CHF",
+        "exponent": 2,
+        "spread_bps": 0,
+        "pair": "BTCCHF"
+      },
+      "fulfillment": "digital",
+      "first_revealed_at": null,
+      "created_at": "2026-11-17T16:26:40.196Z",
+      "updated_at": "2026-11-17T16:58:02.538Z",
+      "priced_from": "listing",
+      "auction_aggregate_id": null,
+      "shipping_address_required": false,
+      "delivery_assume_days": null,
+      "auto_complete_days": null,
+      "return_policy": {
+        "accepts_returns": false,
+        "return_window_days": null
+      },
+      "paykit_delivery_state": "failed",
+      "payment_confirmation": "automatic",
+      "gateway_payment_seen_at": null,
+      "digital_release": null,
+      "digital_released_at": null,
+      "payment_reversed_at": null,
+      "external_refund_full": null,
+      "payment_reversal_cancelled_at": null,
+      "gateway_refund_review_at": null,
+      "gateway_refund_unmatched": false,
+      "merchandise_total": {
+        "amount_minor": 16942,
+        "currency": "CHF",
+        "exponent": 2
+      },
+      "bitcoin_payable": {
+        "amount_minor": 315506,
+        "currency": "SAT",
+        "exponent": 0
+      },
+      "accepted_assets": ["BTC", "USDT"],
+      "payment_amounts": {
+        "BTC": 315506,
+        "USDT": 201980000
+      },
+      "fx_conversion": {
+        "pair": "CHFUSD",
+        "rate": "1.192173136328",
+        "usd_rate": "64065",
+        "currency_rate": "53738",
+        "source": "blocktank",
+        "fetched_at": "2026-11-17T16:25:44.503Z",
+        "from": {
+          "amount_minor": 16942,
+          "currency": "CHF",
+          "exponent": 2
+        },
+        "to": {
+          "amount_minor": 20198,
+          "currency": "USD",
+          "exponent": 2
+        }
+      },
+      "payment": {
+        "id": "547614da-638c-458d-8f22-46edc8b3b300",
+        "order_id": "0fdd4ee2-109c-4b64-851b-e320b097adc8",
+        "buyer_pubky": "idgopdnhi9psboqguyzsmsj1hyyy7gks7wxa4ym9eazz6pibsfay",
+        "seller_pubky": "9kshs8g7cd33qr3jkg6hyu1nwayyrdp73qet3bi8yewncgbhcrxo",
+        "revision": 3,
+        "adapter": "paykit",
+        "state": "expired",
+        "confirmations": 0,
+        "amount": {
+          "amount_minor": 315506,
+          "currency": "SAT",
+          "exponent": 0
+        },
+        "merchandise_amount": {
+          "amount_minor": 16942,
+          "currency": "CHF",
+          "exponent": 2
+        },
+        "resolution_outcome": null,
+        "resolution_basis": null,
+        "resolved_at": null,
+        "review_reason": null,
+        "created_at": "2026-11-17T16:26:40.196Z",
+        "updated_at": "2026-11-17T16:58:02.538Z"
+      },
+      "reviews": [],
+      "pickup_terms_changed": false
+    }
+  ]
+}
