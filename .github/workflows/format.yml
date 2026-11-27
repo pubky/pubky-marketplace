@@ -44,3 +44,20 @@ jobs:
 
       - name: TypeScript check
         run: npm run typecheck
+
+      - name: Test pre-push and lock scripts
+        run: |
+          set -euo pipefail
+          (
+            umask 0002
+            bash scripts/heavy-lock-test.sh
+            HEAVY_LOCK_BACKEND=python3 bash scripts/heavy-lock-test.sh
+            bash scripts/prepush-stamp-test.sh
+            bash scripts/prepush-mode-test.sh
+          )
+          (
+            umask 0022
+            bash scripts/heavy-lock-test.sh
+            bash scripts/prepush-stamp-test.sh
+            bash scripts/prepush-mode-test.sh
+          )

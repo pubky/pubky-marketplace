@@ -222,10 +222,41 @@ etime_to_seconds() {
 
 heavy_release() {
   local ticket="${HEAVY_TICKET:-}"
+  local marker="${HEAVY_MARKER:-}"
   HEAVY_TICKET=""
+  HEAVY_MARKER=""
   if [ -n "$ticket" ]; then
     rm -f "$ticket"
   fi
+  if [ -n "$marker" ]; then
+    rm -f "$marker"
+  fi
+}
+
+heavy_pid_gone() {
+  local pid="$1" state
+  if ! [[ "$pid" =~ ^[0-9]+$ ]] || [ "$((10#$pid))" -le 0 ]; then
+    return 0
+  fi
+  if ! kill -0 "$pid" 2>/dev/null; then
+    return 0
+  fi
+  state=$(ps -o stat= -p "$pid" 2>/dev/null | tr -d '[:space:]' || true)
+  case "$state" in
+    Z*) return 0 ;;
+  esac
+  return 1
+}
+
+heavy_signal_tree() {
+  local sig="$1" pid="$2" child
+  if ! [[ "$pid" =~ ^[0-9]+$ ]] || [ "$((10#$pid))" -le 0 ]; then
+    return 0
+  fi
+  for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+    heavy_signal_tree "$sig" "$child"
+  done
+  kill -s "$sig" "$pid" 2>/dev/null || true
 }
 
 # Installed only while this shell owns a ticket. Previous handlers are put
@@ -242,14 +273,43 @@ heavy_finish_exit() {
 }
 
 heavy_finish_signal() {
-  local sig="$1" child self
+  local sig="$1" child_sig child self holder_pid marker i
   self="${HEAVY_SELF:-$$}"
+  holder_pid="${HEAVY_HOLDER_PID:-}"
+  marker="${HEAVY_MARKER:-}"
+  HEAVY_HOLDER_PID=""
+  child_sig="$sig"
+  if [ "$child_sig" = INT ]; then
+    # POSIX async children forked without monitor mode ignore SIGINT; send
+    # SIGTERM to cancel them while still re-raising SIGINT on this shell.
+    child_sig=TERM
+  fi
   heavy_release
+  if [ -n "$holder_pid" ]; then
+    heavy_signal_tree "$child_sig" "$holder_pid"
+    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+      if heavy_pid_gone "$holder_pid"; then
+        break
+      fi
+      sleep 0.05
+      if [ "$i" -eq 4 ] || [ "$i" -eq 10 ]; then
+        heavy_signal_tree "$child_sig" "$holder_pid"
+      fi
+    done
+    if heavy_pid_gone "$holder_pid"; then
+      wait "$holder_pid" 2>/dev/null || true
+    fi
+    if [ -n "$marker" ]; then
+      rm -f "$marker"
+    fi
+  fi
   for child in $(pgrep -P "$self" 2>/dev/null || true); do
-    kill -s "$sig" "$child" 2>/dev/null || true
+    heavy_signal_tree "$child_sig" "$child"
   done
   trap - EXIT INT TERM
-  kill -s "$sig" "$self"
+  if [[ "$self" =~ ^[0-9]+$ ]] && [ "$((10#$self))" -gt 0 ]; then
+    kill -s "$sig" "$self"
+  fi
 }
 
 heavy_arm_traps() {
@@ -424,7 +484,7 @@ heavy_ahead() {
 # ELOOP) so run_heavy fails closed instead of retrying indefinitely.
 heavy_run_in_slot() {
   local slotfile="$1"
-  local marker hold_msg slot_status=0
+  local marker hold_msg slot_status=0 had_m=0 holder_pid
   shift
   hold_msg="$1"
   shift
@@ -432,21 +492,41 @@ heavy_run_in_slot() {
   heavy_check_lockfile "$slotfile" || return 1
   marker=$(umask 077 && mktemp "${HEAVY_LOCK_DIR}/ran.XXXXXX")
   : > "$marker"
-  # `||` keeps a non-zero status under set -e. A bare assignment from $? after
-  # `if` is wrong on bash 3.2: a failed if with no else reports status 0.
+  HEAVY_MARKER="$marker"
+  # Keep the async lock holder in the caller's foreground process group
+  # (temporarily disabling monitor mode across the fork and passing <&0) so
+  # controlling TTYs with `stty tostop` or TTY reads never stop on
+  # SIGTTOU/SIGTTIN, while `wait` remains interruptible on SIGTERM/SIGINT.
+  case "$-" in
+    *m*)
+      had_m=1
+      set +m 2>/dev/null || true
+      ;;
+  esac
   heavy_with_lock try "$slotfile" bash -c '
     printf 1 > "$1"
     shift
     printf "%s\n" "$1" >&2
     shift
     "$@"
-  ' _ "$marker" "$hold_msg" "$@" || slot_status=$?
+  ' _ "$marker" "$hold_msg" "$@" <&0 &
+  holder_pid=$!
+  if [ "$had_m" = 1 ]; then
+    set -m 2>/dev/null || true
+  fi
+  HEAVY_HOLDER_PID="$holder_pid"
+  # `||` keeps a non-zero status under set -e. A bare assignment from $? after
+  # `if` is wrong on bash 3.2: a failed if with no else reports status 0.
+  wait "$holder_pid" || slot_status=$?
+  HEAVY_HOLDER_PID=""
   if [ -s "$marker" ]; then
     HEAVY_SLOT_RAN=1
     rm -f "$marker"
+    HEAVY_MARKER=""
     return "$slot_status"
   fi
   rm -f "$marker"
+  HEAVY_MARKER=""
   if [ "$slot_status" -eq 75 ]; then
     return 75
   fi
