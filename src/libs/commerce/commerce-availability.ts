@@ -11,7 +11,6 @@ import {
   SELLING_BLOCKED_MESSAGE,
   SHOP_COUNTRY_CHECKING_MESSAGE,
   SHOP_COUNTRY_LOCKED_MESSAGE,
-  SHOP_COUNTRY_LOCKED_UNKNOWN_MESSAGE,
 } from './region-modes';
 import { countryDisplayName } from './ships-to';
 
@@ -88,9 +87,11 @@ export function evaluateCommerceAvailability(
   let cause: CommerceBlockSource | 'checking' | null;
   if (policy.modeOf(input.declaredCountry) === 'blocked') cause = 'declared';
   else if (client.status === 'loading') cause = sellerBlocked ? 'seller' : 'checking';
+  else if (client.status === 'failed') cause = sellerBlocked ? 'seller' : null;
   else {
-    const ipCountry = client.status === 'ready' ? client.country : null;
-    cause = regionBlockCause(policy, { declaredCountry: null, ipCountry }) ?? (sellerBlocked ? 'seller' : null);
+    cause =
+      regionBlockCause(policy, { declaredCountry: null, ipCountry: client.country }) ??
+      (sellerBlocked ? 'seller' : null);
   }
   if (cause === 'checking') return { ...INERT_COMMERCE_AVAILABILITY, active: true, checking: true, held: true };
   if (cause === null) return { ...INERT_COMMERCE_AVAILABILITY, active: true };
@@ -121,10 +122,10 @@ export function evaluateCommerceAvailability(
 
 /**
  * Whether the shop country can be changed from where the visitor is. The rule is the visitor's own
- * region, never the country they would change to: only someone who is outside the block can move a
- * shop out of it. A region that is blocked, or unknown where unknown visitors are blocked, keeps the
- * country as it is; while the region is still being read nothing is changed yet. Nothing is locked
- * while no region is blocked.
+ * region, never the country they would change to: a visitor whose IP country is known to be blocked
+ * cannot move a shop out of the block; an unknown IP or a transient region-lookup failure never
+ * locks shop-country edits. While the region is still being read nothing is changed yet. Nothing is
+ * locked while no region is blocked.
  */
 export type ShopCountryChange =
   | { status: 'open' }
@@ -134,13 +135,11 @@ export type ShopCountryChange =
 export function evaluateShopCountryChange(policy: RegionPolicy, client: ClientRegionState): ShopCountryChange {
   if (!policy.usesClientRegion || client.status === 'off') return { status: 'open' };
   if (client.status === 'loading') return { status: 'checking', message: SHOP_COUNTRY_CHECKING_MESSAGE };
-  const cause = regionBlockCause(policy, {
-    declaredCountry: null,
-    ipCountry: client.status === 'ready' ? client.country : null,
-  });
-  if (cause === null) return { status: 'open' };
-  if (cause === 'unknown') return { status: 'locked', cause, message: SHOP_COUNTRY_LOCKED_UNKNOWN_MESSAGE };
-  return { status: 'locked', cause: 'ip', message: SHOP_COUNTRY_LOCKED_MESSAGE };
+  if (client.status === 'failed' || client.country === null) return { status: 'open' };
+  if (policy.modeOf(client.country) === 'blocked') {
+    return { status: 'locked', cause: 'ip', message: SHOP_COUNTRY_LOCKED_MESSAGE };
+  }
+  return { status: 'open' };
 }
 
 /** The line for a digital-only listing: a blocked region holds paid unlocks, an unknown one holds everything. */

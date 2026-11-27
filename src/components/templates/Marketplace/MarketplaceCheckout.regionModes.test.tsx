@@ -513,8 +513,17 @@ describe('MarketplaceCheckout under the region modes', () => {
     expect(screen.queryByTestId('marketplace-checkout-blocked')).not.toBeInTheDocument();
   });
 
-  it('says the location cannot be told for an unknown visitor', async () => {
+  it('allows an unknown visitor by default and blocks when UNKNOWN=blocked', async () => {
     setRegionModes(LAUNCH);
+    stubClientRegion(null);
+    const { unmount } = render(<MarketplaceCheckout />);
+
+    await waitFor(() => expect(useClientRegionStore.getState().status).toBe('ready'));
+    expect(screen.queryByTestId('marketplace-checkout-blocked')).not.toBeInTheDocument();
+    unmount();
+
+    resetRegionState();
+    setRegionModes(`${LAUNCH},UNKNOWN=blocked`);
     stubClientRegion(null);
     render(<MarketplaceCheckout />);
 

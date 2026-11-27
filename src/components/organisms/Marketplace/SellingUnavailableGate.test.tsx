@@ -121,8 +121,18 @@ describe('SellingUnavailableGate', () => {
     expect(screen.queryByRole('link', { name: 'update your shop country' })).not.toBeInTheDocument();
   });
 
-  it('says the location cannot be told for an unknown seller, with no suggestion to use a VPN', async () => {
+  it('allows an unknown seller by default and blocks when UNKNOWN=blocked, with no suggestion to use a VPN', async () => {
     setRegionModes(LAUNCH);
+    stubClientRegion(null);
+    ownShopIn('CH');
+    const { unmount } = renderGate();
+
+    expect(await screen.findByText('the seller studio')).toBeInTheDocument();
+    expect(screen.queryByTestId('selling-unavailable')).not.toBeInTheDocument();
+    unmount();
+
+    resetRegionState();
+    setRegionModes(`${LAUNCH},UNKNOWN=blocked`);
     stubClientRegion(null);
     ownShopIn('CH');
     renderGate();

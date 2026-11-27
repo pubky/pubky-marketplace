@@ -93,8 +93,17 @@ describe('MarketplaceCart under the region modes', () => {
     expect(screen.queryByRole('button', { name: /authorize|enable purchases/i })).not.toBeInTheDocument();
   });
 
-  it('says the location cannot be told for an unknown visitor', async () => {
+  it('keeps Checkout as a link for an unknown visitor by default, and blocks when UNKNOWN=blocked', async () => {
     setRegionModes(LAUNCH);
+    stubClientRegion(null);
+    const { unmount } = render(<MarketplaceCart />);
+
+    await waitFor(() => expect(checkout().closest('a')).not.toBeNull());
+    expect(screen.queryByTestId('marketplace-cart-blocked')).not.toBeInTheDocument();
+    unmount();
+
+    resetRegionState();
+    setRegionModes(`${LAUNCH},UNKNOWN=blocked`);
     stubClientRegion(null);
     render(<MarketplaceCart />);
 

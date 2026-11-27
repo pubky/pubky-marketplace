@@ -341,8 +341,16 @@ describe('Marketplace', () => {
       expect(screen.queryByRole('button', { name: 'Sell an item' })).not.toBeInTheDocument();
     });
 
-    it('offers no Sell an item to a visitor whose region cannot be told', async () => {
+    it('keeps Sell an item for an unknown visitor by default and hides it when UNKNOWN=blocked', async () => {
       setRegionModes(LAUNCH);
+      stubClientRegion(null);
+      const { unmount } = render(<Marketplace />);
+
+      expect(await screen.findByRole('button', { name: 'Sell an item' })).toBeInTheDocument();
+      unmount();
+
+      resetRegionState();
+      setRegionModes(`${LAUNCH},UNKNOWN=blocked`);
       stubClientRegion(null);
       render(<Marketplace />);
 

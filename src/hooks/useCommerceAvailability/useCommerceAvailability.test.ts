@@ -55,20 +55,39 @@ describe('useCommerceAvailability', () => {
     expect(result.current).toMatchObject({ blocked: true, source: 'declared' });
   });
 
-  it('blocks a visitor whose country is unknown, or whose lookup failed, with the unknown-region line', async () => {
+  it('lets an unknown visitor and transient lookup failures through by default, and blocks unknown only when UNKNOWN=blocked', async () => {
     setRegionModes(LAUNCH);
     stubClientRegion(null);
-    const unknown = renderHook(() => useCommerceAvailability());
-    await waitFor(() => expect(unknown.result.current.blocked).toBe(true));
-    expect(unknown.result.current).toMatchObject({ source: 'unknown', message: COMMERCE_UNKNOWN_REGION_MESSAGE });
-    unknown.unmount();
+    const unknownOpen = renderHook(() => useCommerceAvailability());
+    await waitFor(() => expect(unknownOpen.result.current.checking).toBe(false));
+    expect(unknownOpen.result.current).toMatchObject({ active: true, blocked: false, held: false, message: null });
+    unknownOpen.unmount();
 
     resetRegionState();
     setRegionModes(LAUNCH);
     stubClientRegion('fail');
-    const failed = renderHook(() => useCommerceAvailability());
-    await waitFor(() => expect(failed.result.current.blocked).toBe(true));
-    expect(failed.result.current).toMatchObject({ source: 'unknown', message: COMMERCE_UNKNOWN_REGION_MESSAGE });
+    const failedOpen = renderHook(() => useCommerceAvailability());
+    await waitFor(() => expect(failedOpen.result.current.checking).toBe(false));
+    expect(failedOpen.result.current).toMatchObject({ active: true, blocked: false, held: false, message: null });
+    failedOpen.unmount();
+
+    resetRegionState();
+    setRegionModes(`${LAUNCH},UNKNOWN=blocked`);
+    stubClientRegion(null);
+    const unknownBlocked = renderHook(() => useCommerceAvailability());
+    await waitFor(() => expect(unknownBlocked.result.current.blocked).toBe(true));
+    expect(unknownBlocked.result.current).toMatchObject({
+      source: 'unknown',
+      message: COMMERCE_UNKNOWN_REGION_MESSAGE,
+    });
+    unknownBlocked.unmount();
+
+    resetRegionState();
+    setRegionModes(`${LAUNCH},UNKNOWN=blocked`);
+    stubClientRegion('fail');
+    const failedStillOpen = renderHook(() => useCommerceAvailability());
+    await waitFor(() => expect(failedStillOpen.result.current.checking).toBe(false));
+    expect(failedStillOpen.result.current).toMatchObject({ active: true, blocked: false, held: false, message: null });
   });
 
   it('blocks commerce with a seller whose shop is in a blocked country', async () => {

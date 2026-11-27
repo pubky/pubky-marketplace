@@ -149,16 +149,17 @@ describe('createRegionPolicy', () => {
   });
 
   describe('the UNKNOWN default', () => {
-    it('is the strictest mode in force', () => {
-      expect(policyOf(LAUNCH).unknownMode).toBe('blocked');
-      expect(policyOf('EU=nuanced,GB=nuanced').unknownMode).toBe('nuanced');
-      expect(policyOf('EU=nuanced,US=blocked').unknownMode).toBe('blocked');
+    it('defaults to open when omitted', () => {
+      expect(policyOf(LAUNCH).unknownMode).toBe('open');
+      expect(policyOf('EU=nuanced,GB=nuanced').unknownMode).toBe('open');
+      expect(policyOf('EU=nuanced,US=blocked').unknownMode).toBe('open');
       expect(policyOf('EU=open').unknownMode).toBe('open');
       expect(policyOf('none').unknownMode).toBe('open');
     });
 
     it('can be set to any mode', () => {
       expect(policyOf('US=blocked,UNKNOWN=open').unknownMode).toBe('open');
+      expect(policyOf('EU=blocked,GB=blocked,US=blocked,UNKNOWN=blocked').unknownMode).toBe('blocked');
       expect(policyOf('EU=nuanced,UNKNOWN=blocked').unknownMode).toBe('blocked');
       expect(policyOf('US=blocked,UNKNOWN=nuanced').unknownMode).toBe('nuanced');
     });
@@ -213,7 +214,7 @@ describe('resolveRegionPolicy', () => {
     expect(digital).toMatchObject({ fenceActive: false, digitalHoldActive: true, hasNuanced: true });
 
     const both = resolveRegionPolicy({ ...unset, euFenceEnabled: true, digitalRegionBlockEnabled: true });
-    expect(both).toMatchObject({ fenceActive: true, digitalHoldActive: true, unknownMode: 'nuanced' });
+    expect(both).toMatchObject({ fenceActive: true, digitalHoldActive: true, unknownMode: 'open' });
   });
 
   it('lets the setting win and ignores the flags once it is set', () => {
@@ -267,9 +268,13 @@ describe('regionBlockCause', () => {
     expect(regionBlockCause(launch, { declaredCountry: undefined, ipCountry: 'GB' })).toBe('ip');
   });
 
-  it('blocks an unknown IP country while unknown visitors are blocked', () => {
-    expect(regionBlockCause(launch, { declaredCountry: null, ipCountry: null })).toBe('unknown');
-    expect(regionBlockCause(launch, { declaredCountry: 'CH', ipCountry: null })).toBe('unknown');
+  it('lets an unknown IP country through by default and blocks only when UNKNOWN=blocked is configured', () => {
+    expect(regionBlockCause(launch, { declaredCountry: null, ipCountry: null })).toBeNull();
+    expect(regionBlockCause(launch, { declaredCountry: 'CH', ipCountry: null })).toBeNull();
+
+    const unknownBlocked = policyOf(`${LAUNCH},UNKNOWN=blocked`);
+    expect(regionBlockCause(unknownBlocked, { declaredCountry: null, ipCountry: null })).toBe('unknown');
+    expect(regionBlockCause(unknownBlocked, { declaredCountry: 'CH', ipCountry: null })).toBe('unknown');
   });
 
   it('lets a visitor from an open country through', () => {
@@ -297,7 +302,7 @@ describe('regionBlockCause', () => {
     expect(regionBlockCause(mixed, { declaredCountry: 'DE', ipCountry: 'DE' })).toBeNull();
     expect(regionBlockCause(mixed, { declaredCountry: 'DE', ipCountry: 'US' })).toBe('ip');
     expect(regionBlockCause(mixed, { declaredCountry: 'US', ipCountry: 'DE' })).toBe('declared');
-    expect(regionBlockCause(mixed, { declaredCountry: 'DE', ipCountry: null })).toBe('unknown');
+    expect(regionBlockCause(mixed, { declaredCountry: 'DE', ipCountry: null })).toBeNull();
   });
 
   it('is open everywhere for an all-open policy', () => {

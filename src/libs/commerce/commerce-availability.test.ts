@@ -21,7 +21,6 @@ import {
   SELLING_BLOCKED_MESSAGE,
   SHOP_COUNTRY_CHECKING_MESSAGE,
   SHOP_COUNTRY_LOCKED_MESSAGE,
-  SHOP_COUNTRY_LOCKED_UNKNOWN_MESSAGE,
 } from './region-modes';
 
 function policyOf(raw: string) {
@@ -31,6 +30,7 @@ function policyOf(raw: string) {
 }
 
 const LAUNCH = policyOf('EU=blocked,GB=blocked,US=blocked');
+const LAUNCH_UNKNOWN_BLOCKED = policyOf('EU=blocked,GB=blocked,US=blocked,UNKNOWN=blocked');
 const ready = (country: string | null): ClientRegionState => ({ status: 'ready', country });
 
 describe('evaluateCommerceAvailability', () => {
@@ -113,6 +113,19 @@ describe('evaluateCommerceAvailability', () => {
       evaluateCommerceAvailability(LAUNCH, { declaredCountry: 'GB', declaredIs: 'shop', client: ready('CH') }),
     ).toMatchObject({ source: 'declared', shopCountryLocked: false });
     expect(
+      evaluateCommerceAvailability(LAUNCH, { declaredCountry: 'GB', declaredIs: 'shop', client: ready(null) }),
+    ).toMatchObject({ source: 'declared', shopCountryLocked: false });
+    expect(
+      evaluateCommerceAvailability(LAUNCH, { declaredCountry: 'GB', declaredIs: 'shop', client: { status: 'failed' } }),
+    ).toMatchObject({ source: 'declared', shopCountryLocked: false });
+    expect(
+      evaluateCommerceAvailability(LAUNCH_UNKNOWN_BLOCKED, {
+        declaredCountry: 'GB',
+        declaredIs: 'shop',
+        client: ready(null),
+      }),
+    ).toMatchObject({ source: 'declared', shopCountryLocked: false });
+    expect(
       evaluateCommerceAvailability(LAUNCH, { declaredCountry: 'GB', client: ready('US') }).shopCountryLocked,
     ).toBeUndefined();
   });
@@ -134,18 +147,48 @@ describe('evaluateCommerceAvailability', () => {
     });
   });
 
-  it('blocks an unknown visitor with the unknown-region line and no suggestion to use a VPN', () => {
+  it('lets an unknown visitor and transient region lookup failures through under the launch policy', () => {
     for (const client of [ready(null), { status: 'failed' } as const]) {
-      const result = evaluateCommerceAvailability(LAUNCH, { declaredCountry: null, client });
-      expect(result).toMatchObject({
-        blocked: true,
-        source: 'unknown',
-        message: COMMERCE_UNKNOWN_REGION_MESSAGE,
-        sellingMessage: COMMERCE_UNKNOWN_REGION_MESSAGE,
-        info: COMMERCE_UNKNOWN_REGION_INFO,
+      expect(evaluateCommerceAvailability(LAUNCH, { declaredCountry: null, client })).toEqual({
+        ...INERT_COMMERCE_AVAILABILITY,
+        active: true,
       });
-      expect(result.info).not.toMatch(/vpn/i);
     }
+  });
+
+  it('blocks an unknown IP only when UNKNOWN=blocked is configured, and never blocks on transient fetch failures', () => {
+    const unknown = evaluateCommerceAvailability(LAUNCH_UNKNOWN_BLOCKED, {
+      declaredCountry: null,
+      client: ready(null),
+    });
+    expect(unknown).toMatchObject({
+      blocked: true,
+      source: 'unknown',
+      message: COMMERCE_UNKNOWN_REGION_MESSAGE,
+      sellingMessage: COMMERCE_UNKNOWN_REGION_MESSAGE,
+      info: COMMERCE_UNKNOWN_REGION_INFO,
+    });
+    expect(unknown.info).not.toMatch(/vpn/i);
+
+    expect(
+      evaluateCommerceAvailability(LAUNCH_UNKNOWN_BLOCKED, { declaredCountry: null, client: { status: 'failed' } }),
+    ).toEqual({
+      ...INERT_COMMERCE_AVAILABILITY,
+      active: true,
+    });
+    expect(
+      evaluateCommerceAvailability(LAUNCH_UNKNOWN_BLOCKED, {
+        declaredCountry: null,
+        sellerCountry: 'US',
+        client: { status: 'failed' },
+      }),
+    ).toMatchObject({ blocked: true, source: 'seller', message: BUYING_FROM_BLOCKED_SHOP_MESSAGE });
+    expect(
+      evaluateCommerceAvailability(LAUNCH_UNKNOWN_BLOCKED, {
+        declaredCountry: 'DE',
+        client: { status: 'failed' },
+      }),
+    ).toMatchObject({ blocked: true, source: 'declared', message: COMMERCE_BLOCKED_MESSAGE });
   });
 
   it('lets an unknown visitor through when UNKNOWN is open', () => {
@@ -186,11 +229,17 @@ describe('evaluateCommerceAvailability', () => {
 });
 
 describe('digitalBlockedMessage', () => {
-  it('names paid unlocks for a blocked region and keeps the unknown-region line', () => {
+  it('names paid unlocks for a blocked region and keeps the unknown-region line when UNKNOWN=blocked', () => {
     const blocked = evaluateCommerceAvailability(LAUNCH, { declaredCountry: null, client: ready('US') });
     expect(digitalBlockedMessage(blocked)).toBe(PAID_UNLOCKS_BLOCKED_MESSAGE);
-    const unknown = evaluateCommerceAvailability(LAUNCH, { declaredCountry: null, client: ready(null) });
+    const unknown = evaluateCommerceAvailability(LAUNCH_UNKNOWN_BLOCKED, {
+      declaredCountry: null,
+      client: ready(null),
+    });
     expect(digitalBlockedMessage(unknown)).toBe(COMMERCE_UNKNOWN_REGION_MESSAGE);
+    expect(
+      digitalBlockedMessage(evaluateCommerceAvailability(LAUNCH, { declaredCountry: null, client: ready(null) })),
+    ).toBeNull();
   });
 
   it('has nothing to say when commerce is not blocked', () => {
@@ -267,19 +316,10 @@ describe('evaluateShopCountryChange', () => {
     }
   });
 
-  it('locks the country for a visitor region that is unknown or could not be read, where unknown visitors are blocked', () => {
-    for (const client of [ready(null), { status: 'failed' } as const]) {
-      expect(evaluateShopCountryChange(LAUNCH, client)).toEqual({
-        status: 'locked',
-        cause: 'unknown',
-        message: SHOP_COUNTRY_LOCKED_UNKNOWN_MESSAGE,
-      });
+  it('never locks the country for an unknown visitor region or transient lookup failure, even when UNKNOWN=blocked', () => {
+    for (const policy of [LAUNCH, LAUNCH_UNKNOWN_BLOCKED, policyOf('US=blocked,UNKNOWN=open')]) {
+      expect(evaluateShopCountryChange(policy, ready(null))).toEqual({ status: 'open' });
+      expect(evaluateShopCountryChange(policy, { status: 'failed' })).toEqual({ status: 'open' });
     }
-  });
-
-  it('opens the country for an unknown visitor region where unknown visitors are not blocked', () => {
-    const policy = policyOf('US=blocked,UNKNOWN=open');
-    expect(evaluateShopCountryChange(policy, ready(null))).toEqual({ status: 'open' });
-    expect(evaluateShopCountryChange(policy, { status: 'failed' })).toEqual({ status: 'open' });
   });
 });
