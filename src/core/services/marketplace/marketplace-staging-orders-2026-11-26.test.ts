@@ -90,8 +90,8 @@ describe('staging orders captured on 2026-11-26', () => {
     const body = stagingOrdersResponse();
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(body));
 
-    // CommerceApplication.getMarketplaceOrderList, which Orders and Checkout load
-    // through CommerceController.getMarketplaceOrderList, delegates here.
+    // CommerceApplication.fetchMarketplaceOrderList, which Orders and Checkout load
+    // through CommerceController.fetchMarketplaceOrderList, delegates here.
     const result = await MarketplaceGatewayService.getOrderList(STAGING_ORDERS_BUYER_PUBKY);
 
     expect(result.parseErrors).toEqual([]);

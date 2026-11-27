@@ -1,10 +1,10 @@
 # PR 582 visual proof: staging orders from 2026-11-26
 
-Proof that the client on `cursor/fix-581-upstream-inconsistent-orders-bdeb` (PR 582) renders James's real staging `GET /v1/orders` body. The captured JSON is `src/test/fixtures/marketplace/orders-staging-2026-11-26.json` (buyer `idgopdnhi9psboqguyzsmsj1hyyy7gks7wxa4ym9eazz6pibsfay`, 2026-11-26). Order `470c02d8-9326-4d89-98f6-199df5a2ffcb` has `payment.review_reason` `upstream_inconsistent`.
+Proof that the client on `cursor/fix-581-upstream-inconsistent-orders-bdeb` (PR 582) renders James's real staging `GET /v1/orders` body. Re-verified on 2026-11-27 against PR head `dc7099c7a879f8de04e1b6338b79c619a9177503` (`fix(commerce): address Greptile review feedback on order list reads`, on top of `4c8fee282`). The captured JSON is `src/test/fixtures/marketplace/orders-staging-2026-11-26.json` (buyer `idgopdnhi9psboqguyzsmsj1hyyy7gks7wxa4ym9eazz6pibsfay`, 2026-11-26). Order `470c02d8-9326-4d89-98f6-199df5a2ffcb` has `payment.review_reason` `upstream_inconsistent`.
 
 The images in this directory are the Chromium Linux captures. The same scenes are the Vitest browser baselines under `src/test/vrt/marketplace/__screenshots__/MarketplaceStagingOrders582.vrt.test.tsx/` (`*-chromium-linux.png` and `*-firefox-linux.png`).
 
-Orders and Checkout load the fixture through the production path: `useMarketplaceOrders` → `CommerceController.getMarketplaceOrderList` → `MarketplaceGatewayService.getOrderList` → `MarketplaceTransactionService.getOrderList` (`GET /v1/orders`, bearer session, camelCase, `parseMarketplaceOrderList`). The visual test stubs the session, `fetch` for that URL, and page chrome (nav badge counts, the checkout form hook, cart, offers). It does not stub `useMarketplaceOrders` or `getMarketplaceOrderList`.
+Orders and Checkout load the fixture through the production path: `useMarketplaceOrders` → `CommerceController.fetchMarketplaceOrderList` → `CommerceApplication.fetchMarketplaceOrderList` → `MarketplaceGatewayService.getOrderList` → `MarketplaceTransactionService.getOrderList` (`GET /v1/orders`, bearer session, camelCase, `parseMarketplaceOrderList`). The visual test stubs the session, `fetch` for that URL, and page chrome (nav badge counts, the checkout form hook, cart, offers). It does not stub `useMarketplaceOrders` or `fetchMarketplaceOrderList`. The Greptile follow-up renamed `getMarketplaceOrderList` to `fetchMarketplaceOrderList` and removed the hook's fallback to `getMarketplaceOrders`.
 
 The VRT clock is frozen at `2026-01-01T12:00:00.000Z`. The paying scene also pins `Date.now` to that instant so the hold countdown stays at `30:00`.
 
@@ -76,4 +76,10 @@ bash scripts/vrt-linux.sh src/test/vrt/marketplace/MarketplaceStagingOrders582.v
 
 That script runs Chromium and Firefox. Fresh captures are written only with `VRT_LINUX_UPDATE=1`. A compare run leaves the baselines in place and fails if pixels differ.
 
-The before images are not produced by a test on this branch. They were captured from a detached worktree at merge-base `5fe8f29e6d8f85865758e71499073afb80883c45`, using the same fixture and the same session/`fetch` harness, with assertions for the unavailable alert and the lost paying view. That spec was not committed.
+The before images are not produced by a test on this branch. They were captured from a detached worktree at merge-base `5fe8f29e6d8f85865758e71499073afb80883c45`, using the same fixture and the same session/`fetch` harness, with assertions for the unavailable alert and the lost paying view. That spec was not committed. The merge-base with `master` is still that commit, so the before images were not recaptured.
+
+## Re-capture against `dc7099c`
+
+On 2026-11-27 the four `after-*` scenes were rendered again on Chromium and Firefox from `dc7099c7a879f8de04e1b6338b79c619a9177503`, with the previous baselines deleted first so Vitest wrote new PNGs. All eight baselines are byte-identical to the captures from verification commit `2c27554d1b0557b3c7a650d20f6e6511c47d3fc4`. There is no visual difference.
+
+That match is expected. The Greptile follow-up renames the order-list read, drops the unreachable fallback in `useMarketplaceOrders`, and keeps a known open-order warning visible beside the unchecked notice in the listing-delete dialog. It does not change Orders or Checkout copy, layout, or the parse of `upstream_inconsistent`. The listing-delete dialog is not in these scenes.
