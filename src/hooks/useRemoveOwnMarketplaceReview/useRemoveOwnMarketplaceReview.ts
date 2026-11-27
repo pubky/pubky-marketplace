@@ -15,7 +15,7 @@ export interface UseRemoveOwnMarketplaceReviewResult {
 /**
  * Removes the signed-in user's published review of one order. The local row
  * goes at once; a homeserver DEL that does not go through stays in the outbox
- * and retries when the orders next load, which the toast says.
+ * until the owner reconciles the public copy in Orders.
  */
 export function useRemoveOwnMarketplaceReview(): UseRemoveOwnMarketplaceReviewResult {
   const [removingOrderId, setRemovingOrderId] = useState<string | null>(null);

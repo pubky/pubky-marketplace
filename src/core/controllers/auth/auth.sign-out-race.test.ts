@@ -8,22 +8,34 @@ import { UserApplication } from '@/application/user/user';
 import type { CommerceAdapterMode } from '@/config/commerce';
 import { ChatController } from '@/controllers/chat/chat';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { TtlController } from '@/controllers/ttl/ttl';
+import { TtlCoordinator } from '@/coordinators/ttl/ttl';
 import { clearDatabase } from '@/database/franky/franky.helpers';
 import { chatMessageUrl } from '@/libs/chat/paths';
 import type { PrivKeyring } from '@/libs/commerce/priv-envelope';
 import { HttpMethod } from '@/libs/http/http.types';
+import { Identity } from '@/libs/identity/identity';
 import { Logger } from '@/libs/logger/logger';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import { InboxService } from '@/services/inbox/inbox';
 import { LocalChatService } from '@/services/local/chat/chat';
 import { LocalCommerceService } from '@/services/local/commerce/commerce';
+import { LocalStreamUsersService } from '@/services/local/stream/users/users';
 import { MarketplaceGatewayService } from '@/services/marketplace/marketplace';
+import { NexusMarketplaceService } from '@/services/nexus/marketplace/marketplace';
+import { NexusUserStreamService } from '@/services/nexus/stream/users/userStream';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { useNotificationStore } from '@/stores/notification/notification.store';
+import {
+  COMMERCE_FIXTURE_SELLER,
+  createCommerceCatalogEntryFixture,
+  createNexusListingDetailsFixture,
+} from '@/test/fixtures/commerce/commerce';
 import { createNotificationFixture } from '@/test/fixtures/commerce/notifications';
 import { createOrderFixture } from '@/test/fixtures/commerce/orders';
 import { installFakeHomeserver } from '@/test-utils/fake-homeserver';
+import { mockKeypair } from '@/test-utils/pubky';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';
 import { AuthController } from './auth';
@@ -219,15 +231,169 @@ describe('work started for an account writes nothing for it once its sign-out st
       const finishSignOut = startSignOut();
       keys.resolve({ kind: 'keys', keyring: KEYRING });
       await Promise.allSettled(rounds.mock.results.map((result) => result.value));
+      // Read before the sign-out cleanup resets the commerce store.
+      expect(useCommerceStore.getState().watchlistSyncStatus).toBe('idle');
       await finishSignOut();
 
       expect(apply).not.toHaveBeenCalled();
       expect(complete).not.toHaveBeenCalled();
       expect(homeserver.log.filter((entry) => !entry.startsWith('GET ') && !entry.startsWith('LIST '))).toEqual([]);
-      expect(useCommerceStore.getState().watchlistSyncStatus).toBe('idle');
       expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('Watchlist sync'), expect.anything());
     });
+
+    it('a round that ends without keys as sign-out starts leaves the sync status alone', async () => {
+      signIn(ALICE);
+      installFakeHomeserver();
+      const keys = deferred<Awaited<ReturnType<typeof CommercePrivKeyringApplication.get>>>();
+      vi.spyOn(CommercePrivKeyringApplication, 'get').mockReturnValue(keys.promise);
+
+      const sync = CommerceController.syncWatchlist();
+      await vi.waitFor(() => expect(CommercePrivKeyringApplication.get).toHaveBeenCalledWith(ALICE));
+      const finishSignOut = startSignOut();
+      keys.resolve({ kind: 'unavailable' });
+      await sync;
+
+      // Read before the sign-out cleanup resets the commerce store.
+      expect(useCommerceStore.getState().watchlistSyncStatus).toBe('idle');
+      await finishSignOut();
+    });
+
+    it('a round whose scope is live reports its status', async () => {
+      signIn(ALICE);
+      installFakeHomeserver();
+      vi.spyOn(CommercePrivKeyringApplication, 'get').mockResolvedValue({ kind: 'unavailable' });
+
+      await CommerceController.syncWatchlist();
+
+      expect(useCommerceStore.getState().watchlistSyncStatus).toBe('unavailable');
+    });
   });
+
+  it('watchlist detection: a pass that started before sign-out saves nothing after it', async () => {
+    signIn(ALICE);
+    const listingId = `${BOB}:boots_01`;
+    vi.spyOn(LocalCommerceService, 'getFavorites').mockResolvedValue([
+      { id: `${ALICE}|${listingId}`, owner_id: ALICE, listing_id: listingId, created_at: 1 },
+    ]);
+    vi.spyOn(LocalCommerceService, 'getWatchSnapshots').mockResolvedValue([]);
+    const entry = deferred<Awaited<ReturnType<typeof LocalCommerceService.getCatalogEntry>>>();
+    vi.spyOn(LocalCommerceService, 'getCatalogEntry').mockReturnValue(entry.promise);
+    const save = vi.spyOn(LocalCommerceService, 'saveWatchDetection').mockResolvedValue(undefined);
+
+    const pass = CommerceController.runWatchlistDetection();
+    await vi.waitFor(() => expect(LocalCommerceService.getCatalogEntry).toHaveBeenCalledWith(listingId));
+    const finishSignOut = startSignOut();
+    entry.resolve(createCommerceCatalogEntryFixture({ id: listingId, seller_id: BOB }));
+
+    await expect(pass).resolves.toEqual({ alertCount: 0 });
+    expect(save).not.toHaveBeenCalled();
+    await finishSignOut();
+  });
+
+  it('a pass that starts while sign-out cleanup still names the account ends with the cleanup', async () => {
+    signIn(ALICE);
+    const chatCleanup = deferred<void>();
+    vi.spyOn(ChatController, 'clearForSignOut').mockReturnValue(chatCleanup.promise);
+    const signOut = startSignOut()();
+    await vi.waitFor(() => expect(ChatController.clearForSignOut).toHaveBeenCalledWith(ALICE));
+    expect(useAuthStore.getState().currentUserPubky).toBe(ALICE);
+    const passScope = captureAuthScope();
+
+    chatCleanup.resolve();
+    await signOut;
+
+    expect(useAuthStore.getState().currentUserPubky).toBeNull();
+    expect(passScope.aborted).toBe(true);
+  });
+
+  describe('watchlist detection against the index and the service', () => {
+    const listingId = `${COMMERCE_FIXTURE_SELLER}:boots_01`;
+
+    beforeEach(() => {
+      commerceConfig.mode = 'transaction-service';
+      signIn(ALICE);
+      vi.spyOn(LocalCommerceService, 'getFavorites').mockResolvedValue([
+        { id: `${ALICE}|${listingId}`, owner_id: ALICE, listing_id: listingId, created_at: 1 },
+      ]);
+      vi.spyOn(MarketplaceGatewayService, 'getListing').mockResolvedValue(null);
+    });
+
+    it('a pass whose scope ends during its local reads sends no request', async () => {
+      const baselines = deferred<Awaited<ReturnType<typeof LocalCommerceService.getWatchSnapshots>>>();
+      vi.spyOn(LocalCommerceService, 'getWatchSnapshots').mockReturnValue(baselines.promise);
+      const fetchDetails = vi.spyOn(NexusMarketplaceService, 'fetchListingDetails');
+
+      const pass = CommerceController.runWatchlistDetection();
+      await vi.waitFor(() => expect(LocalCommerceService.getWatchSnapshots).toHaveBeenCalledWith(ALICE));
+      const finishSignOut = startSignOut();
+      baselines.resolve([]);
+
+      await expect(pass).resolves.toEqual({ alertCount: 0 });
+      expect(fetchDetails).not.toHaveBeenCalled();
+      expect(MarketplaceGatewayService.getListing).not.toHaveBeenCalled();
+      await finishSignOut();
+    });
+
+    it('a pass whose scope ends while it caches the index entries saves no detection', async () => {
+      vi.spyOn(LocalCommerceService, 'getWatchSnapshots').mockResolvedValue([]);
+      vi.spyOn(NexusMarketplaceService, 'fetchListingDetails').mockResolvedValue(createNexusListingDetailsFixture());
+      const cached = deferred<void>();
+      vi.spyOn(LocalCommerceService, 'bulkUpsertCatalogEntries').mockReturnValue(cached.promise);
+      const save = vi.spyOn(LocalCommerceService, 'saveWatchDetection').mockResolvedValue(undefined);
+
+      const pass = CommerceController.runWatchlistDetection();
+      await vi.waitFor(() => expect(LocalCommerceService.bulkUpsertCatalogEntries).toHaveBeenCalled());
+      const finishSignOut = startSignOut();
+      cached.resolve();
+
+      await expect(pass).resolves.toEqual({ alertCount: 0 });
+      expect(save).not.toHaveBeenCalled();
+      await finishSignOut();
+    });
+  });
+
+  it.each(['after the new account is adopted', 'as the wipe ends'] as const)(
+    'profile refresh: a TTL pass that starts while another account signs in over this one saves nothing when Nexus answers %s',
+    async (answer) => {
+      const CAROL = 'c'.repeat(52);
+      signIn(ALICE);
+      vi.spyOn(Identity, 'keypairFromMnemonic').mockReturnValue(mockKeypair());
+      vi.spyOn(Identity, 'z32FromSession').mockReturnValue(BOB);
+      vi.spyOn(AuthApplication, 'signIn').mockResolvedValue(
+        asOpaque<Awaited<ReturnType<typeof AuthApplication.signIn>>>({ session: grantSession(BOB) }),
+      );
+      const wipe = deferred<void>();
+      vi.mocked(clearDatabase).mockReturnValue(wipe.promise);
+      vi.spyOn(TtlController, 'findStalePostsByIds').mockResolvedValue([]);
+      vi.spyOn(TtlController, 'findStaleUsersByIds').mockResolvedValue([CAROL]);
+      const users = deferred<Awaited<ReturnType<typeof NexusUserStreamService.fetchByIds>>>();
+      vi.spyOn(NexusUserStreamService, 'fetchByIds').mockReturnValue(users.promise);
+      const saveUsers = vi.spyOn(LocalStreamUsersService, 'persistUsers').mockResolvedValue([]);
+      const refresh = vi.spyOn(TtlController, 'forceRefreshUsersByIds');
+      const ttl = TtlCoordinator.getInstance();
+      ttl.configure({ batchIntervalMs: 60_000 });
+      ttl.subscribeUser({ pubky: CAROL });
+
+      try {
+        const signInFlow = AuthController.loginWithMnemonic({ mnemonic: 'test mnemonic phrase' });
+        await vi.waitFor(() => expect(clearDatabase).toHaveBeenCalled());
+        ttl.start();
+        await vi.waitFor(() =>
+          expect(NexusUserStreamService.fetchByIds).toHaveBeenCalledWith({ user_ids: [CAROL], viewer_id: ALICE }),
+        );
+        wipe.resolve();
+        if (answer === 'as the wipe ends') users.resolve([]);
+        await signInFlow;
+        expect(useAuthStore.getState().currentUserPubky).toBe(BOB);
+        users.resolve([]);
+        await Promise.allSettled(refresh.mock.results.map((result) => result.value));
+
+        expect(saveUsers).not.toHaveBeenCalled();
+      } finally {
+        TtlCoordinator.resetInstance();
+      }
+    },
+  );
 
   it('seller confirmation: a pass that started before sign-out confirms nothing after it starts', async () => {
     commerceConfig.mode = 'transaction-service';

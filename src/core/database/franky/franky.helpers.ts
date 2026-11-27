@@ -1,5 +1,6 @@
 import { DB_NAME } from '@/config/database';
 import { db } from '@/database/franky/franky';
+import type { CommerceSyncJobModelSchema } from '@/models/commerce/commerce.schema';
 
 export const PUBLIC_CACHE_TABLES: ReadonlySet<string> = new Set([
   'user_counts',
@@ -35,18 +36,53 @@ function tablesClearedOnIdentitySwitch(includePublicCache: boolean) {
   });
 }
 
+async function clearIdentityData(includePublicCache: boolean): Promise<void> {
+  if (!db.isOpen()) await db.open();
+  await Promise.all(
+    tablesClearedOnIdentitySwitch(includePublicCache).map(async (table) => {
+      if (table.name !== db.commerce_sync_jobs.name) {
+        await table.clear();
+        return;
+      }
+      // A removal is the owner's outstanding instruction, independent of the private cache.
+      // Drop other jobs and retain only identifiers, never held review text or credentials.
+      await db.commerce_sync_jobs.toCollection().modify((job, ref: { value?: CommerceSyncJobModelSchema }) => {
+        const payload = job.payload;
+        if (job.entity_type !== 'review' || !payload || typeof payload !== 'object' || Array.isArray(payload)) {
+          delete ref.value;
+          return;
+        }
+        if (job.operation === 'remove' && typeof payload.orderId === 'string' && typeof payload.url === 'string') {
+          job.payload = {
+            orderId: payload.orderId,
+            url: payload.url,
+            ...(typeof payload.listingId === 'string' && { listingId: payload.listingId }),
+            ...(typeof payload.reviewUpdatedAt === 'string' && { reviewUpdatedAt: payload.reviewUpdatedAt }),
+            ...(typeof payload.recordHash === 'string' && { recordHash: payload.recordHash }),
+          };
+        } else if (job.operation === 'publish' && job.status === 'awaiting_release' && payload.withdrawn === true) {
+          job.payload = {
+            orderId: job.entity_id,
+            sellerPubky: '',
+            firstListingId: null,
+            releaseAt: null,
+            result: {},
+            withdrawn: true,
+          };
+        } else {
+          delete ref.value;
+        }
+      });
+    }),
+  );
+}
+
 export async function clearDatabase(): Promise<void> {
-  if (!db.isOpen()) {
-    await db.open();
-  }
-  await Promise.all(tablesClearedOnIdentitySwitch(true).map((table) => table.clear()));
+  await clearIdentityData(true);
 }
 
 export async function clearPrivateData(): Promise<void> {
-  if (!db.isOpen()) {
-    await db.open();
-  }
-  await Promise.all(tablesClearedOnIdentitySwitch(false).map((table) => table.clear()));
+  await clearIdentityData(false);
 }
 
 /**

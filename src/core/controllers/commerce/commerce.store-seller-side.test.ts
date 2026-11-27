@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceApplication } from '@/application/commerce/commerce';
 import type { CommerceAdapterMode } from '@/config/commerce';
+import { captureAuthScope, endAuthScope } from '@/controllers/auth/auth-scope';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import { MarketplaceGatewayService } from '@/services/marketplace/marketplace';
 import { MarketplaceTransactionService } from '@/services/marketplace/marketplace-transaction';
@@ -267,6 +268,14 @@ describe('CommerceController seller side in a store', () => {
       }
       expect(execute).toHaveBeenCalledTimes(1);
       expect(MarketplaceTransactionService.getOrder).toHaveBeenCalledTimes(mode === 'sandbox' ? 0 : 3);
+      vi.spyOn(CommerceApplication, 'getMarketplaceOrderParties').mockImplementationOnce(async () => {
+        endAuthScope();
+        return purchase;
+      });
+      await expect(CommerceController.executeMarketplaceCommand(orderCommand('order-purchase'))).rejects.toMatchObject({
+        name: 'AbortError',
+      });
+      expect(execute).toHaveBeenCalledTimes(1);
     },
   );
 
@@ -336,6 +345,33 @@ describe('CommerceController seller side in a store', () => {
     expect(await CommerceController.getOwnMarketplaceReviews()).toHaveLength(2);
   });
 
+  it.each(['transaction-service', 'sandbox'])(
+    'recovers purchase reviews and gates sale reviews in %s',
+    async (mode) => {
+      commerceConfig.mode = mode;
+      const pending = vi.spyOn(CommerceApplication, 'getManualReviewRemovals').mockResolvedValue(['boots']);
+      const read = vi.spyOn(CommerceApplication, 'fetchReviewRemovalCopy').mockResolvedValue({ kind: 'unknown' });
+      const confirm = vi.spyOn(CommerceApplication, 'confirmReviewWithdrawal').mockResolvedValue(true);
+      setStoreSeller(STORE_SELLER);
+      const revision = '2026-08-22T10:00:00.000Z';
+      await expect(CommerceController.getManualReviewRemovals(purchase as never)).resolves.toEqual(['boots']);
+      await expect(CommerceController.getManualReviewRemovals(sale as never)).resolves.toEqual([]);
+      await expect(CommerceController.fetchReviewRemovalCopy(purchase.id, 'boots')).resolves.toEqual({
+        kind: 'unknown',
+      });
+      await expect(CommerceController.confirmReviewWithdrawal(purchase.id, 'boots', revision)).resolves.toBe(true);
+      for (const id of [sale.id, 'missing']) {
+        await expect(CommerceController.fetchReviewRemovalCopy(id, 'boots')).rejects.toMatchObject(refused);
+        await expect(CommerceController.confirmReviewWithdrawal(id, 'boots', revision)).rejects.toMatchObject(refused);
+      }
+      expect(pending.mock.calls).toEqual([[VIEWER, purchase.id]]);
+      expect(read.mock.calls).toEqual([[VIEWER, purchase.id, 'boots', captureAuthScope()]]);
+      expect(confirm.mock.calls).toEqual([[VIEWER, purchase.id, 'boots', revision, captureAuthScope()]]);
+      setStoreSeller(VIEWER);
+      await expect(CommerceController.confirmReviewWithdrawal(sale.id, 'boots', revision)).resolves.toBe(true);
+    },
+  );
+
   it('reads, publishes and refreshes only the reviews of purchases for another seller in a store', async () => {
     const readOne = vi.spyOn(CommerceApplication, 'getOwnMarketplaceReview').mockResolvedValue('review' as never);
     const readOrder = vi
@@ -402,7 +438,7 @@ describe('CommerceController seller side in a store', () => {
     setStoreSeller(STORE_SELLER);
     expect(await run()).toEqual([0, 0]);
     expect(publications).toHaveBeenLastCalledWith(VIEWER, { sellerSide: false });
-    expect(removals).toHaveBeenLastCalledWith(VIEWER, { sellerSide: false });
+    expect(removals).toHaveBeenLastCalledWith(VIEWER, { sellerSide: false, signal: captureAuthScope() });
     expect(receipts).toHaveBeenLastCalledWith(VIEWER, [], { sellerSide: false });
     expect(reserves).not.toHaveBeenCalled();
     expect(responses).not.toHaveBeenCalled();
@@ -411,7 +447,7 @@ describe('CommerceController seller side in a store', () => {
       setStoreSeller(storeSeller);
       expect(await run()).toEqual([2, 1]);
       expect(publications).toHaveBeenLastCalledWith(VIEWER, { sellerSide: true });
-      expect(removals).toHaveBeenLastCalledWith(VIEWER, { sellerSide: true });
+      expect(removals).toHaveBeenLastCalledWith(VIEWER, { sellerSide: true, signal: captureAuthScope() });
       expect(receipts).toHaveBeenLastCalledWith(VIEWER, [], { sellerSide: true });
     }
   });

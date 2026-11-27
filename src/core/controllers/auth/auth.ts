@@ -57,7 +57,7 @@ import {
   readPersistedGrantSessionRecordId,
 } from '@/stores/auth/auth.persisted';
 import { useAuthStore } from '@/stores/auth/auth.store';
-import type { GrantSigner } from '@/stores/auth/auth.types';
+import type { AuthInitParams, GrantSigner } from '@/stores/auth/auth.types';
 import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { useMigrationStore } from '@/stores/migration/migration.store';
@@ -486,10 +486,10 @@ export class AuthController {
         // visitor tab's no-identity cleanup re-reads identity INSIDE the
         // lock, so it either observes this persist (and skips its wipe) or
         // wiped before it (nothing of this identity existed yet).
-        const persisted = await this.persistIdentityUnderLock(pubky, captured, async (prepare) => {
+        const persisted = await this.persistIdentityUnderLock(pubky, captured, async (prepare, adopt) => {
           if (!ownsRestore()) return false;
           await prepare();
-          useAuthStore.getState().init({
+          adopt({
             session,
             currentUserPubky: pubky,
             hasProfile,
@@ -748,7 +748,8 @@ export class AuthController {
       // A different account that signed in
       // after this ceremony captured local state aborts persist rather than
       // overwriting that account's Dexie rows.
-      const persisted = await this.persistIdentityUnderLock(pubky, this.pendingLocalStateCapture, async (prepare) => {
+      const capture = this.pendingLocalStateCapture;
+      const persisted = await this.persistIdentityUnderLock(pubky, capture, async (prepare, adopt) => {
         let grantSessionRecordId: string | null = null;
         if (AuthApplication.isGrantSession(session)) {
           // Inside the finalization lock: a sign-out since this QR started
@@ -780,7 +781,7 @@ export class AuthController {
             grantSaveError = createCanceledError();
             return false;
           }
-          authStore.init({
+          adopt({
             session,
             currentUserPubky: pubky,
             hasProfile: null,
@@ -794,7 +795,7 @@ export class AuthController {
           return true;
         }
         await prepare();
-        authStore.init({ session, currentUserPubky: pubky, hasProfile: null });
+        adopt({ session, currentUserPubky: pubky, hasProfile: null });
         return true;
       });
       if (!persisted) {
@@ -942,7 +943,10 @@ export class AuthController {
   private static async persistIdentityUnderLock(
     newPubky: string,
     captured: CapturedAuthIdentity | null,
-    persist: (prepare: () => Promise<void>) => void | boolean | Promise<void | boolean>,
+    persist: (
+      prepare: () => Promise<void>,
+      adopt: (identity: AuthInitParams) => void,
+    ) => void | boolean | Promise<void | boolean>,
   ): Promise<boolean> {
     return await withAuthFinalizationLock(async () => {
       const currentPubky = nonEmptyPubky(useAuthStore.getState().currentUserPubky);
@@ -951,10 +955,15 @@ export class AuthController {
         this.pendingLocalStateCapture = null;
         return false;
       }
+      let replacing = false;
       const prepare = async () => {
         if ([captured?.pubky, currentPubky, persistedPubky].some((pubky) => pubky && pubky !== newPubky)) {
+          replacing = true;
           endAuthScope();
           await clearDatabase();
+          // A pass started during the wipe read the leaving viewer; it must not
+          // write into the wiped database before `adopt` runs.
+          endAuthScope();
           useMigrationStore.getState().reset();
           // Keep browser preferences separate across accounts. Same-account renewal preserves them.
           useSettingsStore.getState().reset();
@@ -969,7 +978,15 @@ export class AuthController {
         // Identity replacement is committed only after the new grant is saved.
         if (persistedPubky && persistedPubky !== newPubky) clearPersistedAuthIdentity();
       };
-      if ((await persist(prepare)) === false) {
+      // Until `init`, the store still names the account that is leaving, so a
+      // pass that starts while `prepare` awaits reads that viewer under the
+      // scope `prepare` opened. Ending that scope together with `init` leaves a
+      // live scope only to work started for the new account.
+      const adopt = (identity: AuthInitParams) => {
+        if (replacing) endAuthScope();
+        useAuthStore.getState().init(identity);
+      };
+      if ((await persist(prepare, adopt)) === false) {
         this.pendingLocalStateCapture = null;
         return false;
       }
@@ -1092,6 +1109,9 @@ export class AuthController {
 
       // Reset all Zustand stores.
       useAuthStore.getState().reset();
+      // Until this reset the store named the departing viewer, so a pass that
+      // started during the awaits above holds the scope opened at the top.
+      endAuthScope();
       useSignInStore.getState().reset();
       useCommerceStore.getState().reset();
       // The buyer country is personal data of the signing-out account: gone from memory and from the device.

@@ -1058,6 +1058,24 @@ describe('UserApplication.ensureSellerFollow', () => {
       bodyJson: { seller, completedAt: expect.any(Number) },
     });
   });
+
+  it('starts no attempt of its own for a caller without a scope that joined an attempt cancelled by a sign-out', async () => {
+    const seller = nextSeller();
+    const { exists, request, localCreate } = spyHomeserver(new Set());
+    const release = holdFirstMarkerCheck(exists);
+    const signedOut = new AbortController();
+
+    const cancelled = UserApplication.ensureSellerFollow({ follower, seller, signal: signedOut.signal });
+    await vi.waitFor(() => expect(exists).toHaveBeenCalledOnce());
+    const joined = UserApplication.ensureSellerFollow({ follower, seller });
+    signedOut.abort();
+    release();
+    await Promise.all([cancelled, joined]);
+
+    expect(exists).toHaveBeenCalledOnce();
+    expect(localCreate).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+  });
 });
 
 describe('Market follows after migration', () => {

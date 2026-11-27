@@ -5,7 +5,11 @@ import {
   type CommerceCheckoutLineInput,
 } from '@/application/commerce/commerce';
 import { UserApplication } from '@/application/user/user';
+import { captureAuthScope, endAuthScope } from '@/controllers/auth/auth-scope';
 import { Logger } from '@/libs/logger/logger';
+import { HomeserverService } from '@/services/homeserver/homeserver';
+import { SocialWriteService } from '@/services/homeserver/social-writes';
+import { LocalFollowService } from '@/services/local/follow/follow';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { COMMERCE_FIXTURE_BUYER, COMMERCE_FIXTURE_SELLER } from '@/test/fixtures/commerce/commerce';
@@ -221,5 +225,67 @@ describe('CommerceController seller auto-follow', () => {
     ).resolves.toBeUndefined();
 
     release();
+  });
+
+  describe('once sign-out starts', () => {
+    // Each test follows its own seller: a follow that completed stays memoized for the session.
+    const FOLLOWED_AFTER_CART_ADD = 'q'.repeat(52);
+    const FOLLOWED_AFTER_CART_WRITE = 'r'.repeat(52);
+
+    function followThroughTheHomeserver() {
+      ensure.mockRestore();
+      vi.spyOn(SocialWriteService, 'getEpoch').mockResolvedValue('v1');
+      const markerCheck = Promise.withResolvers<boolean>();
+      const exists = vi.spyOn(HomeserverService, 'exists').mockReturnValueOnce(markerCheck.promise);
+      exists.mockResolvedValue(false);
+      const request = vi.spyOn(HomeserverService, 'request').mockResolvedValue(undefined);
+      const localCreate = vi.spyOn(LocalFollowService, 'create').mockResolvedValue(undefined);
+      return { exists, markerCheck, request, localCreate };
+    }
+
+    it('a follow a cart add started writes nothing for the account', async () => {
+      const { exists, markerCheck, request, localCreate } = followThroughTheHomeserver();
+      const follow = vi.spyOn(UserApplication, 'ensureSellerFollow');
+      vi.spyOn(CommerceApplication, 'commitUpsertCartItem').mockResolvedValue(undefined);
+
+      await CommerceController.commitUpsertCartItem(`${FOLLOWED_AFTER_CART_ADD}:${LISTING_ID}`, 'default', 1);
+      await vi.waitFor(() => expect(exists).toHaveBeenCalledOnce());
+      endAuthScope();
+      markerCheck.resolve(false);
+      await Promise.all(follow.mock.results.map((result) => result.value));
+
+      expect(localCreate).not.toHaveBeenCalled();
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it('a cart add still in flight when sign-out starts follows no one', async () => {
+      const { exists, markerCheck } = followThroughTheHomeserver();
+      const follow = vi.spyOn(UserApplication, 'ensureSellerFollow');
+      const cartWrite = Promise.withResolvers<void>();
+      vi.spyOn(CommerceApplication, 'commitUpsertCartItem').mockReturnValue(cartWrite.promise);
+
+      const adding = CommerceController.commitUpsertCartItem(
+        `${FOLLOWED_AFTER_CART_WRITE}:${LISTING_ID}`,
+        'default',
+        1,
+      );
+      await vi.waitFor(() => expect(CommerceApplication.commitUpsertCartItem).toHaveBeenCalled());
+      endAuthScope();
+      cartWrite.resolve();
+      await adding;
+      markerCheck.resolve(false);
+      await Promise.all(follow.mock.results.map((result) => result.value));
+
+      expect(exists).not.toHaveBeenCalled();
+    });
+
+    it('follows under the scope the buyer action started in', async () => {
+      const scope = captureAuthScope();
+      vi.spyOn(CommerceApplication, 'commitUpsertCartItem').mockResolvedValue(undefined);
+
+      await CommerceController.commitUpsertCartItem(`${SELLER}:${LISTING_ID}`, 'default', 1);
+
+      expect(ensure).toHaveBeenCalledWith({ follower: BUYER, seller: SELLER, signal: scope });
+    });
   });
 });

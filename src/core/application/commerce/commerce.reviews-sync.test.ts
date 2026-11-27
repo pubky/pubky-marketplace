@@ -1,10 +1,14 @@
+import type { Session } from '@synonymdev/pubky';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/database/franky/franky';
+import { clearDatabase, clearPrivateData } from '@/database/franky/franky.helpers';
 import { HttpMethod } from '@/libs/http/http.types';
 import { CommerceReviewModel, CommerceSyncJobModel } from '@/models/commerce/commerce.models';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
+import { HomeserverService } from '@/services/homeserver/homeserver';
+import { installHomeserverWriteRetryDependenciesForTests } from '@/services/homeserver/write-retry';
 import { LocalCommerceService } from '@/services/local/commerce/commerce';
 import { MarketplaceGatewayService, type MarketplaceOrder } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -12,10 +16,19 @@ import { createOrderFixture, ORDER_FIXTURE_BUYER } from '@/test/fixtures/commerc
 import { type FakeHomeserver, installFakeHomeserver } from '@/test-utils/fake-homeserver';
 import { type FakeMarketplaceService, installFakeMarketplaceService } from '@/test-utils/fake-marketplace-service';
 import { issuedAttestation, reviewResult } from '@/test-utils/review-attestation';
+import { asOpaque } from '@/test-utils/type-assertions';
 import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';
 import { CommerceApplication } from './commerce';
 
 const REVIEW_ID = '018f47d2-6a27-7c23-a49d-0000000000aa';
+
+/** A transient failure as the Pubky SDK rejects a write with it. */
+function sdkRequestError(statusCode: number): Error {
+  return Object.assign(new Error(`Request failed: Server responded with an error: ${statusCode}`), {
+    name: 'RequestError',
+    data: { statusCode },
+  });
+}
 
 function withOwnReview(order: MarketplaceOrder): MarketplaceOrder {
   return {
@@ -193,7 +206,7 @@ describe.each([
       expect(deletes()).toEqual([]);
     });
 
-    it('keeps the outbox job when the DEL fails, and one retry sends it once', async () => {
+    it('settles a failed deletion after its owner removes the file', async () => {
       homeserver.failNext(HttpMethod.DELETE, url, 500);
 
       await expect(CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id)).resolves.toBe('queued');
@@ -204,18 +217,20 @@ describe.each([
       expect(queued).toMatchObject({ entity_type: 'review', operation: 'remove', status: 'failed', attempts: 1 });
       expect(deletes()).toHaveLength(1);
 
+      homeserver.files.delete(url);
       await expect(CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER)).resolves.toBe(1);
-      expect(deletes()).toHaveLength(2);
+      expect(deletes()).toHaveLength(1);
       expect(homeserver.files.has(url)).toBe(false);
       expect(await jobs()).toEqual([]);
 
       await expect(CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER)).resolves.toBe(0);
-      expect(deletes()).toHaveLength(2);
+      expect(deletes()).toHaveLength(1);
     });
 
     it('without the seller side, retries only the removal of a review of an order the user bought', async () => {
       homeserver.failNext(HttpMethod.DELETE, url, 500);
       await CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id);
+      homeserver.files.delete(url);
       const readOrder = vi.spyOn(MarketplaceGatewayService, 'getOrder');
 
       readOrder.mockResolvedValueOnce({ ...order, buyerPubky: 'o'.repeat(52), sellerPubky: ORDER_FIXTURE_BUYER });
@@ -231,19 +246,56 @@ describe.each([
       await expect(
         CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, { sellerSide: false }),
       ).resolves.toBe(1);
-      expect(deletes()).toHaveLength(2);
+      expect(deletes()).toHaveLength(1);
       expect(await jobs()).toEqual([]);
     });
 
-    it('keeps the job and counts the attempt when the retry fails too', async () => {
+    it('a retry whose scope ends during the service withdrawal sends no DEL and leaves the job as it was', async () => {
       homeserver.failNext(HttpMethod.DELETE, url, 500);
+      await CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id);
+      const [before] = await jobs();
+      const scope = new AbortController();
+      const readOrder = MarketplaceGatewayService.getOrder.bind(MarketplaceGatewayService);
+      vi.spyOn(MarketplaceGatewayService, 'getOrder').mockImplementationOnce(async (...args) => {
+        const read = await readOrder(...args);
+        scope.abort(new DOMException('Signed out', 'AbortError'));
+        return read;
+      });
+
+      await expect(
+        CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, { signal: scope.signal }),
+      ).resolves.toBe(0);
+
+      expect(deletes()).toHaveLength(1);
+      expect(homeserver.files.has(url)).toBe(true);
+      expect(await jobs()).toEqual([before]);
+    });
+
+    it('a retry whose scope already ended sends nothing', async () => {
       homeserver.failNext(HttpMethod.DELETE, url, 500);
+      await CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id);
+      const getOrder = vi.spyOn(MarketplaceGatewayService, 'getOrder');
+      getOrder.mockClear();
+      const scope = new AbortController();
+      scope.abort(new DOMException('Signed out', 'AbortError'));
+
+      await expect(
+        CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, { signal: scope.signal }),
+      ).resolves.toBe(0);
+
+      expect(getOrder).not.toHaveBeenCalled();
+      expect(deletes()).toHaveLength(1);
+    });
+
+    it('keeps the job when reconciliation cannot read the public file', async () => {
+      homeserver.failNext(HttpMethod.DELETE, url, 500);
+      homeserver.failNext(HttpMethod.GET, url, 500);
       await CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id);
 
       await expect(CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER)).resolves.toBe(0);
 
       const [queued] = await jobs();
-      expect(queued.attempts).toBe(2);
+      expect(queued.attempts).toBe(1);
       expect(homeserver.files.has(url)).toBe(true);
     });
 
@@ -304,7 +356,7 @@ describe.each([
       expect(await jobs()).toEqual([]);
     });
 
-    it('sends no DEL while the withdrawal fails, and one retry sends both once', async () => {
+    it('retries a failed service withdrawal without issuing a delayed homeserver deletion', async () => {
       service.failNext('review.withdraw');
 
       await expect(CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id)).resolves.toBe('queued');
@@ -316,12 +368,31 @@ describe.each([
       expect(await jobs()).toHaveLength(1);
       expect(queued.attempts).toBe(1);
 
-      await expect(CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER)).resolves.toBe(1);
+      await expect(CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER)).resolves.toBe(0);
 
       expect(service.withdrawn()).toBe(true);
-      expect(deletes()).toHaveLength(1);
-      expect(homeserver.files.has(url)).toBe(false);
-      expect(await jobs()).toEqual([]);
+      expect(deletes()).toEqual([]);
+      expect(homeserver.files.has(url)).toBe(true);
+      expect(await jobs()).toHaveLength(1);
+    });
+
+    it('a retry whose scope ends while it reads the order sends no withdrawal and no DEL', async () => {
+      service.failNext('review.withdraw');
+      await expect(CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id)).resolves.toBe('queued');
+      const [before] = await jobs();
+      const scope = new AbortController();
+      const parked = service.holdNext('getOrder', { afterAnswer: true });
+
+      const retry = CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, { signal: scope.signal });
+      await parked.reached;
+      scope.abort(new DOMException('Signed out', 'AbortError'));
+      parked.release();
+
+      await expect(retry).resolves.toBe(0);
+      expect(withdraws()).toHaveLength(1);
+      expect(service.withdrawn()).toBe(false);
+      expect(deletes()).toEqual([]);
+      expect(await jobs()).toEqual([before]);
     });
 
     it('keeps the job when the order cannot be read, and sends no DEL', async () => {
@@ -333,7 +404,7 @@ describe.each([
       expect(await jobs()).toHaveLength(1);
     });
 
-    it('retries a failed DEL without sending the withdrawal again', async () => {
+    it('keeps the outstanding file without sending the withdrawal again', async () => {
       homeserver.failNext(HttpMethod.DELETE, url, 500);
 
       await expect(CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id)).resolves.toBe('queued');
@@ -341,12 +412,12 @@ describe.each([
       expect(service.withdrawn()).toBe(true);
       expect(await jobs()).toHaveLength(1);
 
-      await expect(CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER)).resolves.toBe(1);
+      await expect(CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER)).resolves.toBe(0);
 
       expect(withdraws()).toHaveLength(1);
-      expect(deletes()).toHaveLength(2);
-      expect(homeserver.files.has(url)).toBe(false);
-      expect(await jobs()).toEqual([]);
+      expect(deletes()).toHaveLength(1);
+      expect(homeserver.files.has(url)).toBe(true);
+      expect(await jobs()).toHaveLength(1);
     });
 
     it('re-reads the order and tries again when its revision moved under the withdrawal', async () => {
@@ -370,6 +441,40 @@ describe.each([
 
       expect(withdraws()).toEqual([]);
       expect(deletes()).toHaveLength(1);
+    });
+
+    describe('through the real homeserver transport', () => {
+      const sdkDelete = vi.fn();
+
+      /** Sends DELs through `HomeserverService.request` and its retry policy to a signed-in SDK session. */
+      const useRealTransport = () => {
+        vi.mocked(HomeserverService.request).mockRestore();
+        sdkDelete.mockReset();
+        useAuthStore.setState({
+          session: asOpaque<Session>({
+            info: { publicKey: { z32: () => ORDER_FIXTURE_BUYER } },
+            storage: { delete: (...args: unknown[]) => sdkDelete(...args) },
+          }),
+          isLoggingOut: false,
+        });
+        installHomeserverWriteRetryDependenciesForTests({ sleep: async () => {}, random: () => 0, now: () => 0 });
+      };
+
+      afterEach(() => {
+        installHomeserverWriteRetryDependenciesForTests(null);
+        useAuthStore.setState({ session: null });
+      });
+
+      it('sends a single DELETE for an explicit removal and never repeats it on the SDK after a transient failure', async () => {
+        useRealTransport();
+        sdkDelete.mockRejectedValueOnce(sdkRequestError(503));
+        await expect(CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id)).resolves.toBe('queued');
+        await expect(
+          CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, { signal: new AbortController().signal }),
+        ).resolves.toBe(0);
+        expect(sdkDelete).toHaveBeenCalledTimes(1);
+        expect(await jobs()).toHaveLength(1);
+      });
     });
   });
 
@@ -524,7 +629,7 @@ describe.each([
         expect(await jobs()).toEqual([]);
       });
 
-      it('takes back its own PUT when the withdrawal landed after the check and the DEL has not run yet', async () => {
+      it('abandons the local publication when the withdrawal landed after the check and the DEL has not run yet', async () => {
         await overwrite();
         const parked = homeserver.holdNext(HttpMethod.PUT, url);
         const repair = CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order);
@@ -536,13 +641,13 @@ describe.each([
         homeserver.files.delete(url);
 
         expect(puts()).toHaveLength(1);
-        expect(deletes()).toHaveLength(1);
+        expect(deletes()).toEqual([]);
         expect(homeserver.files.size).toBe(0);
         expect(await localRow()).toBeUndefined();
         expect(await jobs()).toEqual([]);
       });
 
-      it('takes back its own PUT when the whole removal finished before the PUT landed', async () => {
+      it('retains a raced public file for inspection after the whole removal finished before the PUT landed', async () => {
         await overwrite();
         const parked = homeserver.holdNext(HttpMethod.PUT, url);
         const repair = CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order);
@@ -553,8 +658,8 @@ describe.each([
 
         await expect(repair).resolves.toBeNull();
 
-        expect(deletes()).toHaveLength(1);
-        expect(homeserver.files.size).toBe(0);
+        expect(deletes()).toEqual([]);
+        expect(homeserver.files.size).toBe(1);
         expect(await localRow()).toBeUndefined();
         expect(await jobs()).toEqual([]);
       });
@@ -583,7 +688,7 @@ describe.each([
         expect(puts()).toHaveLength(1);
       });
 
-      it('leaves the row pending when the check after the PUT cannot answer, and the retry takes the record back', async () => {
+      it('clears the local pending row after the withdrawal without deleting the public file', async () => {
         await overwrite();
         homeserver.onRequest = ({ entry, phase }) => {
           if (phase === 'after' && entry === `${HttpMethod.PUT} ${url}`) service.failNext('getOrder');
@@ -597,8 +702,8 @@ describe.each([
 
         await expect(CommerceApplication.resumeOwnReviewPublications(ORDER_FIXTURE_BUYER)).resolves.toBe(0);
 
-        expect(deletes()).toHaveLength(1);
-        expect(homeserver.files.size).toBe(0);
+        expect(deletes()).toEqual([]);
+        expect(homeserver.files.size).toBe(1);
         expect(await localRow()).toBeUndefined();
         expect(await jobs()).toEqual([]);
       });
@@ -618,6 +723,189 @@ describe.each([
         expect(result?.review_id).toBe(published.review_id);
         expect(puts()).toEqual([]);
       });
+    });
+  });
+
+  describe('an interrupted review removal', () => {
+    const scope = () => new AbortController().signal;
+    const inspect = () => CommerceApplication.fetchReviewRemovalCopy(ORDER_FIXTURE_BUYER, order.id, 'boots', scope());
+    const resume = () => CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, { signal: scope() });
+
+    async function moveToLegacyPath() {
+      const { orderRef: _orderRef, ...record } = published.record;
+      const { buildReview } = await import('pubky-market-specs');
+      const legacy = buildReview(ORDER_FIXTURE_BUYER, { ...record, reviewId: '' });
+      const model = {
+        ...published,
+        id: `${ORDER_FIXTURE_BUYER}:${legacy.meta.id}`,
+        review_id: legacy.meta.id,
+        record: CommerceRecordNormalizer.review(legacy.review.toJson()),
+      };
+      await CommerceReviewModel.table.clear();
+      await LocalCommerceService.upsertOwnReview(model);
+      homeserver.files.clear();
+      url = CommerceRecordNormalizer.reviewUri(ORDER_FIXTURE_BUYER, model.review_id);
+      homeserver.files.set(url, model.record);
+      return model;
+    }
+
+    it.each([clearDatabase, clearPrivateData])(
+      'retains the original owner job through %p and settles it after manual removal',
+      async (clear) => {
+        homeserver.failNext(HttpMethod.DELETE, url, 500);
+        await expect(CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id)).resolves.toBe('queued');
+        const [before] = await jobs();
+        await clear();
+        CommerceApplication.resetOwnReviewHydrateMemo();
+        const [after] = await jobs();
+        expect(after).toMatchObject({
+          id: before.id,
+          owner_id: ORDER_FIXTURE_BUYER,
+          payload: { orderId: order.id, url },
+        });
+        useAuthStore.getState().setCurrentUserPubky(order.sellerPubky);
+        await expect(CommerceApplication.getManualReviewRemovals(order.sellerPubky, order.id)).resolves.toEqual([]);
+        await expect(CommerceApplication.resumeOwnReviewRemovals(order.sellerPubky, { signal: scope() })).resolves.toBe(
+          0,
+        );
+        useAuthStore.getState().setCurrentUserPubky(ORDER_FIXTURE_BUYER);
+        await expect(inspect()).resolves.toMatchObject({
+          kind: 'checked',
+          withdrawn: true,
+          copy: { uri: url, text: published.record.text },
+        });
+        await expect(resume()).resolves.toBe(0);
+        expect(deletes()).toHaveLength(1);
+        homeserver.files.delete(url);
+        await expect(resume()).resolves.toBe(1);
+        expect(await jobs()).toEqual([]);
+      },
+    );
+
+    it('never deletes the next order at a shared legacy URL, including after the last homeserver read', async () => {
+      const original = await moveToLegacyPath();
+      homeserver.failNext(HttpMethod.DELETE, url, 500);
+      await CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id);
+      await clearDatabase();
+      const replacement = {
+        ...original.record,
+        eligibilityAttestation: issuedAttestation('boots', 'ef'.repeat(32)).jws,
+        text: 'Another order',
+      };
+      const parked = parkAfterRead();
+      const retry = resume();
+      await parked.reached;
+      homeserver.files.set(url, replacement);
+      parked.release();
+      await expect(retry).resolves.toBe(0);
+      await expect(resume()).resolves.toBe(1);
+      expect(deletes()).toEqual([]);
+      expect(homeserver.files.get(url)).toEqual(replacement);
+      await expect(inspect()).resolves.toMatchObject({ kind: 'checked', copy: null });
+    });
+
+    it('preserves a new public version with the same purchase attestation even when the service still reports the original terms', async () => {
+      homeserver.failNext(HttpMethod.DELETE, url, 500);
+      await CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id);
+      const edit = otherDeviceEdit(2, 'Edited directly on my homeserver');
+      homeserver.files.set(url, edit);
+      await expect(inspect()).resolves.toEqual({ kind: 'changed' });
+      await expect(resume()).resolves.toBe(1);
+      expect(await jobs()).toEqual([]);
+      await expect(inspect()).resolves.toEqual({ kind: 'changed' });
+      expect(deletes()).toHaveLength(1);
+      expect(homeserver.files.get(url)).toEqual(edit);
+    });
+
+    it('does not re-withdraw an edit that superseded an owed removal before the owner returned', async () => {
+      service.failNext('getOrder');
+      await CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id);
+      await clearDatabase();
+      const edited = otherDeviceEdit(2, 'Newer publication.');
+      homeserver.files.set(url, edited);
+      const fresh = { ...order, reviews: [{ ...order.reviews![0], updatedAt: edited.updatedAt }] };
+      vi.spyOn(MarketplaceGatewayService, 'getOrder').mockResolvedValue(fresh);
+      await expect(resume()).resolves.toBe(1);
+      expect(await jobs()).toEqual([]);
+      expect(service.withdrawals).toEqual([]);
+      expect(deletes()).toEqual([]);
+      expect(homeserver.files.get(url)).toEqual(edited);
+    });
+
+    it('keeps the service withdrawal owed before a switch and sends it with the unchanged review version', async () => {
+      service.failNext('getOrder');
+      await CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id);
+      await clearDatabase();
+      await expect(resume()).resolves.toBe(0);
+      expect(service.withdrawn()).toBe(true);
+      expect(deletes()).toEqual([]);
+      await expect(inspect()).resolves.toMatchObject({ kind: 'checked', withdrawn: true, copy: { uri: url } });
+    });
+
+    it('preserves a pre-item job until the author confirms the service version and removes the file', async () => {
+      service.failNext('getOrder');
+      await CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id);
+      const [job] = await jobs();
+      await CommerceSyncJobModel.table.update(job.id, { payload: { orderId: order.id, url } });
+      await clearDatabase();
+      await expect(resume()).resolves.toBe(0);
+      expect(service.withdrawn()).toBe(false);
+      await expect(CommerceApplication.getManualReviewRemovals(ORDER_FIXTURE_BUYER, order.id)).resolves.toEqual([null]);
+      await expect(
+        CommerceApplication.confirmReviewWithdrawal(
+          ORDER_FIXTURE_BUYER,
+          order.id,
+          'boots',
+          published.record.updatedAt,
+          scope(),
+        ),
+      ).resolves.toBe(true);
+      expect(service.withdrawn()).toBe(true);
+      expect(deletes()).toEqual([]);
+      homeserver.files.delete(url);
+      await expect(resume()).resolves.toBe(1);
+    });
+
+    it.each(['order list', 'single order'])(
+      'preserves a concurrently accepted edit when a fast device opens the %s after its job was lost',
+      async (entry) => {
+        service.withdraw();
+        await CommerceReviewModel.table.clear();
+        vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2099-01-01T00:00Z'));
+        vi.spyOn(MarketplaceGatewayService, 'getReviewAttestations').mockResolvedValue([
+          { listingId: 'boots', ...wire },
+        ]);
+        const gate = service.holdNext('getOrder', { afterAnswer: true });
+        const read =
+          entry === 'order list'
+            ? CommerceApplication.getOwnMarketplaceOrderReviews(ORDER_FIXTURE_BUYER, service.order(), scope())
+            : CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, service.order(), scope());
+        await gate.reached;
+        service.reinstate();
+        const edit = otherDeviceEdit(2, 'Another device edited the review.');
+        homeserver.files.set(url, edit);
+        gate.release();
+        await read;
+        expect(deletes()).toEqual([]);
+        expect(homeserver.files.get(url)).toEqual(edit);
+        expect(await jobs()).toEqual([]);
+      },
+    );
+
+    it('lets the owner inspect a still-public legacy withdrawal with no original job, without staging a deletion', async () => {
+      const legacy = await moveToLegacyPath();
+      service.withdraw();
+      await CommerceReviewModel.table.clear();
+      await expect(
+        CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, service.order(), scope()),
+      ).resolves.toBeNull();
+      await expect(inspect()).resolves.toMatchObject({
+        kind: 'checked',
+        withdrawn: true,
+        copy: { uri: url, text: legacy.record.text, attestation: legacy.record.eligibilityAttestation },
+      });
+      expect(await jobs()).toEqual([]);
+      expect(deletes()).toEqual([]);
     });
   });
 
@@ -667,18 +955,19 @@ describe.each([
       expect((await jobs()).filter((job) => job.operation === 'remove')).toEqual([]);
     });
 
-    it('two tabs resuming one failed removal send one DEL', async () => {
+    it('two tabs settle a manually removed file only once', async () => {
       homeserver.failNext(HttpMethod.DELETE, url, 500);
       await CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id);
       expect(deletes()).toHaveLength(1);
 
+      homeserver.files.delete(url);
       const results = await Promise.all([
         CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER),
         CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER),
       ]);
 
       expect(results.reduce((sum, count) => sum + count, 0)).toBe(1);
-      expect(deletes()).toHaveLength(2);
+      expect(deletes()).toHaveLength(1);
       expect(await jobs()).toEqual([]);
     });
 

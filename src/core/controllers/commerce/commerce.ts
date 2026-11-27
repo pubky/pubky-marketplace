@@ -717,20 +717,24 @@ export class CommerceController {
     const sellsHere = this.sellsHere();
     const input = this.withBuyerCountry(rawInput);
     const command = CommerceRecordNormalizer.marketplaceCommand(input);
-    const actorPubky = this.getCurrentUserPubky();
-    if (!sellsHere) await this.assertNotSaleHere(actorPubky, command.aggregateId);
-    const response = await CommerceApplication.executeMarketplaceCommand(actorPubky, command);
+    const buyer = this.captureBuyer();
+    if (!sellsHere) {
+      await this.assertNotSaleHere(buyer.follower, command.aggregateId);
+      buyer.signal.throwIfAborted();
+    }
+    const response = await CommerceApplication.executeMarketplaceCommand(buyer.follower, command);
     if (response.ok && (command.kind === 'offer.create' || command.kind === 'auction.place_bid')) {
-      this.autoFollowSellers([parseListingAggregateId(command.aggregateId)?.sellerPubky]);
+      this.autoFollowSellers(buyer, [parseListingAggregateId(command.aggregateId)?.sellerPubky]);
     }
     return response;
   }
 
   static async commitOfferCheckout(rawInput: unknown) {
     const command = CommerceRecordNormalizer.marketplaceCommand(this.withBuyerCountry(rawInput));
-    const response = await CommerceApplication.commitOfferCheckout(this.getCurrentUserPubky(), command);
+    const buyer = this.captureBuyer();
+    const response = await CommerceApplication.commitOfferCheckout(buyer.follower, command);
     if (response.ok && command.kind === 'offer.checkout') {
-      this.autoFollowSellers([parseListingAggregateId(command.payload.listingAggregateId)?.sellerPubky]);
+      this.autoFollowSellers(buyer, [parseListingAggregateId(command.payload.listingAggregateId)?.sellerPubky]);
     }
     return response;
   }
@@ -740,18 +744,24 @@ export class CommerceController {
    * intent (cart, checkout, watchlist, shop follow, offer, bid), so the two
    * accounts know each other. Runs behind the buyer's action and never
    * blocks or fails it; see `UserApplication.ensureSellerFollow` for the
-   * once-only and unfollow rules.
+   * once-only and unfollow rules. The buyer and the auth scope are the ones
+   * captured when the action started (`captureBuyer`), so a sign-out or an
+   * account switch during the action or the follow cancels the follow.
    */
-  private static autoFollowSellers(sellers: Iterable<string | undefined>): void {
-    const follower = this.getCurrentUserPubky();
+  private static autoFollowSellers(
+    { follower, signal }: { follower: string; signal: AbortSignal },
+    sellers: Iterable<string | undefined>,
+  ): void {
     for (const seller of new Set([...sellers].filter((value): value is string => Boolean(value)))) {
-      void UserApplication.ensureSellerFollow({ follower, seller, signal: captureAuthScope() }).catch(
-        (error: unknown) => {
-          // AppError factories already report at their origin.
-          if (!isAppError(error)) Logger.warn('Could not follow the seller for this action', { error });
-        },
-      );
+      void UserApplication.ensureSellerFollow({ follower, seller, signal }).catch((error: unknown) => {
+        // AppError factories already report at their origin.
+        if (!isAppError(error)) Logger.warn('Could not follow the seller for this action', { error });
+      });
     }
+  }
+
+  private static captureBuyer(): { follower: string; signal: AbortSignal } {
+    return { follower: this.getCurrentUserPubky(), signal: captureAuthScope() };
   }
 
   private static sellerOfListingCompositeId(listingCompositeId: string): string {
@@ -789,7 +799,7 @@ export class CommerceController {
     }
     const viewerPubky = this.getCurrentUserPubky();
     if (!sellsHere && order.sellerPubky === viewerPubky) return null;
-    return await CommerceApplication.getOwnMarketplaceReview(viewerPubky, order);
+    return await CommerceApplication.getOwnMarketplaceReview(viewerPubky, order, captureAuthScope());
   }
 
   /** The current user's own published review rows of one order, one per reviewed listing. */
@@ -803,7 +813,7 @@ export class CommerceController {
     }
     const viewerPubky = this.getCurrentUserPubky();
     if (!sellsHere && order.sellerPubky === viewerPubky) return [];
-    return await CommerceApplication.getOwnMarketplaceOrderReviews(viewerPubky, order);
+    return await CommerceApplication.getOwnMarketplaceOrderReviews(viewerPubky, order, captureAuthScope());
   }
 
   /**
@@ -858,8 +868,7 @@ export class CommerceController {
   }
 
   /**
-   * Removes the current user's published review of one order: local row now,
-   * homeserver DEL through the retryable outbox. See
+   * Removes the current user's review of one order and keeps any outstanding work in the owner's outbox. See
    * `CommerceApplication.commitDeleteOwnReview` for the outcomes.
    */
   static async commitDeleteOwnMarketplaceReview(orderId: unknown) {
@@ -871,6 +880,7 @@ export class CommerceController {
       });
     }
     const viewerPubky = this.getCurrentUserPubky();
+    const scope = captureAuthScope();
     if (!sellsHere) {
       const [reviews, withheld] = await Promise.all([
         CommerceApplication.getOwnReviews(viewerPubky),
@@ -880,14 +890,46 @@ export class CommerceController {
         reviews.some((review) => review.order_id === orderId && review.record.role === 'seller_reviewing_buyer') ||
         withheld.some((review) => review.orderId === orderId && review.reviewerRole === 'seller');
       if (asSeller) StoreSellerGate.assertCanSellHere(viewerPubky);
+      scope.throwIfAborted();
     }
-    return await CommerceApplication.commitDeleteOwnReview(viewerPubky, orderId);
+    return await CommerceApplication.commitDeleteOwnReview(viewerPubky, orderId, scope);
   }
 
-  /** Retries own-review removals whose homeserver DEL never landed. */
+  /** After a sign-out, removal jobs have no private terms or cached seller to determine the order side. */
+  private static async reviewRecoveryScope(orderId: string) {
+    const sellsHere = this.sellsHere();
+    const actor = this.getCurrentUserPubky();
+    const signal = captureAuthScope();
+    if (!sellsHere) await this.assertNotSaleHere(actor, buildMarketplaceOrderAggregateId(orderId));
+    return { actor, signal };
+  }
+
+  static async getManualReviewRemovals(order: MarketplaceOrder) {
+    const sellsHere = this.sellsHere();
+    const actor = this.getCurrentUserPubky();
+    if (!sellsHere && order.buyerPubky !== actor) return [];
+    const signal = captureAuthScope();
+    const pending = await CommerceApplication.getManualReviewRemovals(actor, order.id);
+    return signal.aborted ? [] : pending;
+  }
+
+  static async fetchReviewRemovalCopy(orderId: string, listingId: string) {
+    const { actor, signal } = await this.reviewRecoveryScope(orderId);
+    return await CommerceApplication.fetchReviewRemovalCopy(actor, orderId, listingId, signal);
+  }
+
+  static async confirmReviewWithdrawal(orderId: string, listingId: string, reviewUpdatedAt: string) {
+    const { actor, signal } = await this.reviewRecoveryScope(orderId);
+    return await CommerceApplication.confirmReviewWithdrawal(actor, orderId, listingId, reviewUpdatedAt, signal);
+  }
+
+  /** Reconciles the signed-in owner's pending withdrawals and checks their public files. */
   static async resumeOwnReviewRemovals() {
     const sellerSide = this.sellsHere();
-    return await CommerceApplication.resumeOwnReviewRemovals(this.getCurrentUserPubky(), { sellerSide });
+    return await CommerceApplication.resumeOwnReviewRemovals(this.getCurrentUserPubky(), {
+      sellerSide,
+      signal: captureAuthScope(),
+    });
   }
 
   /**
@@ -1921,9 +1963,13 @@ export class CommerceController {
       getRegionPolicy().hasNuanced && country && rawInput.buyerCountry === undefined
         ? { ...rawInput, buyerCountry: country }
         : rawInput;
-    const response = await CommerceApplication.commitCreateMarketplaceCheckout(this.getCurrentUserPubky(), input);
+    const buyer = this.captureBuyer();
+    const response = await CommerceApplication.commitCreateMarketplaceCheckout(buyer.follower, input);
     if (response.ok) {
-      this.autoFollowSellers(input.lines.map((line) => parseListingAggregateId(line.listingAggregateId)?.sellerPubky));
+      this.autoFollowSellers(
+        buyer,
+        input.lines.map((line) => parseListingAggregateId(line.listingAggregateId)?.sellerPubky),
+      );
     }
     return response;
   }
@@ -2135,13 +2181,14 @@ export class CommerceController {
     const parsedQuantity =
       typeof quantity === 'number' && Number.isSafeInteger(quantity) && quantity > 0 ? quantity : Number.NaN;
     const listing = CommerceRecordNormalizer.listingCompositeId(listingCompositeId);
+    const buyer = this.captureBuyer();
     await CommerceApplication.commitUpsertCartItem(
-      this.getCurrentUserPubky(),
+      buyer.follower,
       listing,
       CommerceRecordNormalizer.entityId(variantId),
       parsedQuantity,
     );
-    this.autoFollowSellers([this.sellerOfListingCompositeId(listing)]);
+    this.autoFollowSellers(buyer, [this.sellerOfListingCompositeId(listing)]);
   }
 
   static async commitUpsertAwardCartItem(
@@ -2158,15 +2205,16 @@ export class CommerceController {
         ? offerRevision
         : Number.NaN;
     const listing = CommerceRecordNormalizer.listingCompositeId(listingCompositeId);
+    const buyer = this.captureBuyer();
     await CommerceApplication.commitUpsertAwardCartItem(
-      this.getCurrentUserPubky(),
+      buyer.follower,
       listing,
       CommerceRecordNormalizer.entityId(variantId),
       parsedQuantity,
       CommerceRecordNormalizer.entityId(awardId),
       parsedRevision,
     );
-    this.autoFollowSellers([this.sellerOfListingCompositeId(listing)]);
+    this.autoFollowSellers(buyer, [this.sellerOfListingCompositeId(listing)]);
   }
 
   static async commitDeleteCartItem(listingCompositeId: unknown, variantId: unknown, awardId?: unknown): Promise<void> {
@@ -2240,8 +2288,9 @@ export class CommerceController {
 
   static async commitCreateFavorite(listingCompositeId: unknown): Promise<void> {
     const listing = CommerceRecordNormalizer.listingCompositeId(listingCompositeId);
-    await CommerceApplication.commitCreateFavorite(this.getCurrentUserPubky(), listing);
-    this.autoFollowSellers([this.sellerOfListingCompositeId(listing)]);
+    const buyer = this.captureBuyer();
+    await CommerceApplication.commitCreateFavorite(buyer.follower, listing);
+    this.autoFollowSellers(buyer, [this.sellerOfListingCompositeId(listing)]);
     // Local write already landed (local-first); the private-document push
     // runs behind it and reports its outcome through the sync status store.
     void this.syncWatchlist();
@@ -2295,11 +2344,12 @@ export class CommerceController {
   /**
    * Runs one bounded watchlist detection pass for the signed-in user (see
    * `CommerceApplication.runWatchlistDetection`). Returns without doing
-   * anything when signed out or when no marketplace surface exists.
+   * anything when signed out or when no marketplace surface exists, and
+   * saves nothing once a sign-out or an account switch ends the pass's scope.
    */
   static async runWatchlistDetection(): Promise<{ alertCount: number }> {
     if (!useAuthStore.getState().currentUserPubky) return { alertCount: 0 };
-    return await CommerceApplication.runWatchlistDetection(this.getCurrentUserPubky());
+    return await CommerceApplication.runWatchlistDetection(this.getCurrentUserPubky(), captureAuthScope());
   }
 
   static async getWatchAlerts() {
@@ -2428,7 +2478,8 @@ export class CommerceController {
   }
 
   static async commitCreateShopFollow(sellerPubky: unknown): Promise<void> {
-    const ownerPubky = this.getCurrentUserPubky();
+    const buyer = this.captureBuyer();
+    const ownerPubky = buyer.follower;
     const seller = CommerceRecordNormalizer.pubky(sellerPubky);
     if (ownerPubky === seller) {
       throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'A seller cannot follow their own shop.', {
@@ -2437,7 +2488,7 @@ export class CommerceController {
       });
     }
     await CommerceApplication.commitCreateShopFollow(ownerPubky, seller);
-    this.autoFollowSellers([seller]);
+    this.autoFollowSellers(buyer, [seller]);
   }
 
   static async commitDeleteShopFollow(sellerPubky: unknown): Promise<void> {

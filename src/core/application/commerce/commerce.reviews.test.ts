@@ -13,6 +13,7 @@ const FOREIGN_PUBKY = 'z'.repeat(52);
 
 describe('CommerceApplication own-review publication', () => {
   afterEach(() => {
+    useAuthStore.getState().setCurrentUserPubky(null);
     vi.restoreAllMocks();
   });
 
@@ -173,6 +174,7 @@ describe('CommerceApplication own-review publication', () => {
   });
 
   it('leaves the staged row pending when the homeserver PUT fails, and the resume retries it', async () => {
+    useAuthStore.getState().setCurrentUserPubky(ORDER_FIXTURE_BUYER);
     const { wire } = issuedAttestation('boots');
     const order = createOrderFixture('completed');
     vi.spyOn(LocalCommerceService, 'getOwnReviewById').mockResolvedValue(undefined);
