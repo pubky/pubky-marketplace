@@ -62,8 +62,7 @@ import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { useMigrationStore } from '@/stores/migration/migration.store';
 import { useNotificationStore } from '@/stores/notification/notification.store';
-import { clearRetiredSocialStores } from '@/stores/persistedKeys';
-import { AUTH_PERSIST_KEY } from '@/stores/persistedKeys';
+import { AUTH_PERSIST_KEY, clearRetiredSocialStores } from '@/stores/persistedKeys';
 import { useSettingsStore } from '@/stores/settings/settings.store';
 import { useSignInStore } from '@/stores/signIn/signIn.store';
 

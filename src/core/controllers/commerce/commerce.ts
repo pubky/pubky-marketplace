@@ -100,9 +100,9 @@ export class CommerceController {
   private static inventorySessionEndedUnbind: (() => void) | null = null;
   /** What the detail page's projection poll last cached per listing, to spot a sale it did not cause. */
   private static cachedListingAvailability = new Map<string, string>();
-  /** The order states already seen this session; a new or moved order can change a listing's availability. */
+  /** The viewer check for the latest community tag request on each listing or shop. */
   private static tagReads = new Map<string, () => boolean>();
-
+  /** The order states already seen this session; a new or moved order can change a listing's availability. */
   private static observedOrderStates = new Map<string, string>();
 
   /**

@@ -1,13 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { setBasePath } from '@/test-utils/base-path';
-import {
-  getBasePath,
-  getShopBaseUrl,
-  getShopPublicPath,
-  withBasePath,
-  withoutBasePath,
-  withPublicPath,
-} from './base-path';
+import { getBasePath, getShopBaseUrl, getShopPublicPath, withBasePath, withPublicPath } from './base-path';
 
 const runtime = vi.hoisted(() => ({ publicPath: undefined as string | undefined }));
 
@@ -26,7 +19,6 @@ describe('base path config', () => {
   it('serves from the origin root by default', () => {
     expect(getBasePath()).toBe('');
     expect(withBasePath('/api/report')).toBe('/api/report');
-    expect(withoutBasePath('/marketplace')).toBe('/marketplace');
     expect(getShopBaseUrl()).toBe('https://pubky.app');
     expect(getShopPublicPath()).toBe('');
     expect(withPublicPath('/marketplace/listing/a/b')).toBe('/marketplace/listing/a/b');
@@ -36,7 +28,6 @@ describe('base path config', () => {
     setBasePath('/shop');
     expect(getBasePath()).toBe('/shop');
     expect(withBasePath('/api/report')).toBe('/shop/api/report');
-    expect(withoutBasePath('/shop/marketplace')).toBe('/marketplace');
     expect(getShopBaseUrl()).toBe('https://pubky.app/shop');
   });
 

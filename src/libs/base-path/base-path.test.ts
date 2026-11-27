@@ -5,7 +5,6 @@ import {
   normalizeAssetPrefix,
   normalizeBasePath,
   prefixWithBasePath,
-  stripBasePath,
 } from './base-path';
 
 describe('isValidBasePath', () => {
@@ -91,15 +90,5 @@ describe('prefixWithBasePath', () => {
   it('is idempotent', () => {
     const once = prefixWithBasePath('/shop', '/api/x');
     expect(prefixWithBasePath('/shop', once)).toBe(once);
-  });
-});
-
-describe('stripBasePath', () => {
-  it('inverts the prefix', () => {
-    expect(stripBasePath('', '/marketplace')).toBe('/marketplace');
-    expect(stripBasePath('/shop', '/shop/marketplace')).toBe('/marketplace');
-    expect(stripBasePath('/shop', '/shop')).toBe('/');
-    expect(stripBasePath('/shop', '/other')).toBe('/other');
-    expect(stripBasePath('/shop', '/shopping')).toBe('/shopping');
   });
 });

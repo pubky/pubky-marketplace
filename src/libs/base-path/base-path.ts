@@ -71,10 +71,3 @@ export function prefixWithBasePath(basePath: string, path: string): string {
   if (path === basePath || path.startsWith(`${basePath}/`) || path.startsWith(`${basePath}?`)) return path;
   return `${basePath}${path}`;
 }
-
-/** Inverse of {@link prefixWithBasePath} for a pathname the browser reports. */
-export function stripBasePath(basePath: string, pathname: string): string {
-  if (basePath === '') return pathname;
-  if (pathname === basePath) return '/';
-  return pathname.startsWith(`${basePath}/`) ? pathname.slice(basePath.length) : pathname;
-}

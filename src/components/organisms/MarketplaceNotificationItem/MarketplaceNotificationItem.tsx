@@ -17,7 +17,6 @@ import type { MarketplaceFeedNotification } from '@/pipes/marketplaceNotificatio
 import { isIntegrityGapActivityType, marketplaceActivityLabel } from '@/services/marketplace/marketplace-activity-copy';
 import { getMarketplaceNotificationActionText } from './MarketplaceNotificationItem.utils';
 
-/** Same dimensions as the social NotificationIcon so mixed rows align. */
 const ICON_SIZE = 24;
 const BADGE_SIZE = 11;
 

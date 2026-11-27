@@ -105,10 +105,7 @@ export class UserController {
     return await UserApplication.fetch(params);
   }
 
-  /**
-   * Fetch user details from Nexus and persist locally (network-only, no local read).
-   * Use instead of `getOrFetchDetails` when the caller already knows the user is not cached.
-   */
+  /** Refresh cached user details from Nexus, using the own-profile lookup for the signed-in user. */
   static async fetchDetails(param: TReadProfileParams): Promise<NexusUserDetails | null> {
     const { session, currentUserPubky } = useAuthStore.getState();
     return await UserApplication.fetchDetails({

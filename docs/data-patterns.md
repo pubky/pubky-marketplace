@@ -189,7 +189,7 @@ post_ttl           — Cache staleness (id, lastUpdatedAt)
 
 ```
 post_streams       — Post composite IDs in streams
-unread_post_streams — Unread post stream tracking
+unread_post_streams — Legacy unread post streams retained for database compatibility
 user_streams       — User pubkys in streams
 tag_streams        — Hot tags in streams
 ```

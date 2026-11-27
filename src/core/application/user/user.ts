@@ -72,13 +72,7 @@ export class UserApplication {
     return await LocalUserService.readBulkDetails(param);
   }
 
-  /**
-   * Fetches user details from Nexus and persists to local database (network-only, no local read).
-   * Use instead of `getOrFetchDetails` when the caller already knows the user is not cached
-   * (e.g. `useLocalFirstQuery` hook where `useLiveQuery` handles the local read).
-   * @param params - Parameters containing user ID
-   * @returns Promise resolving to user details or null if not found
-   */
+  /** Fetch details from Nexus, persist them locally, and return the stored record. */
   static async fetchDetails({ userId, ownProfile }: TReadProfileParams & { ownProfile?: boolean }) {
     const nexusUserDetails = ownProfile
       ? await NexusUserService.ownDetails({ user_id: userId })
