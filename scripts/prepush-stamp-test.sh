@@ -274,7 +274,7 @@ for case in none shared-seed pnpm missing-plugin; do
   esac
   st="$(app_gate)"
   [ "$st" = 1 ] || fail "preflight ($case): status $st: $(cat "$WORK/app.out")"
-  grep -q "rebuild this lane's node_modules" "$WORK/app.out" \
+  grep -q "rebuild node_modules" "$WORK/app.out" \
     || fail "preflight ($case): no preflight message: $(cat "$WORK/app.out")"
   if grep -q 'PREPUSH OK' "$WORK/app.out"; then
     fail "preflight ($case): reused a stamp: $(cat "$WORK/app.out")"

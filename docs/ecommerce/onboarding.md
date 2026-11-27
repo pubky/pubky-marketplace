@@ -72,15 +72,15 @@ a local Pubky testnet, drops, and real Locks/Paykit payments.
 | Linux visual regression         | `bash scripts/vrt-linux.sh [spec...]` (Docker; the CI merge gate)       |
 | Launch-critical browser journey | `LAUNCH_E2E_MODE=synthetic bash scripts/ci-launch-e2e.sh`               |
 
-The pre-push scheduler uses `lockf` and defaults its shared lock directory to
-`/Volumes/t7/vibes-dev/.locks` (`scripts/heavy-lock.sh`). On a machine without that writable volume,
-set a shared local directory before running the gate or pushing:
+The pre-push scheduler uses `flock` (or Python's `fcntl.flock` on macOS) and defaults its
+private (`0700`) lock directory to `${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/pubky-marketplace-locks-$(id -u)`
+(`scripts/heavy-lock.sh`). Set `HEAVY_LOCK_DIR` if you want a custom location shared across
+multiple worktrees:
 
 ```bash
-export HEAVY_LOCK_DIR="$HOME/.cache/pubky-marketplace/locks"
+export HEAVY_LOCK_DIR="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/pubky-marketplace-locks-$(id -u)"
 ```
 
-Use the same directory for all Market worktrees on the machine so concurrent heavy checks still share their slots.
 This changes only where the existing scheduler stores its locks; it does not skip any checks.
 
 Additional integration/live suites and their service, local-testnet or staging-token requirements are listed in
