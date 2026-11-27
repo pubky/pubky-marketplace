@@ -174,6 +174,12 @@ export class HomeserverService {
     return useAuthStore.getState().selectSession() !== null;
   }
 
+  /** Current authenticated identity pubky, or null when signed out or logging out. */
+  static getCurrentUserPubky(): string | null {
+    const state = useAuthStore.getState();
+    return state.isLoggingOut ? null : state.currentUserPubky;
+  }
+
   /**
    * Whether the CURRENT session's granted capabilities allow writing `path`.
    *

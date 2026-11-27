@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getCommerceAdapterMode, getCommercePollIntervalMs, isTransactionalCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { classifyCommercePollError, type CommercePollOutcome, startCommercePoller } from '@/libs/commerce/polling';
 import { Logger } from '@/libs/logger/logger';
 import type { MarketplaceFeedNotification } from '@/pipes/marketplaceNotification/marketplaceNotification.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
 /**
  * Marketplace notifications for the app's GENERAL notification surface
@@ -27,15 +29,17 @@ import { useAuthStore } from '@/stores/auth/auth.store';
  */
 export function useMarketplaceNotificationFeed() {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
+  const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
   const enabled = Boolean(currentUserPubky) && isTransactionalCommerceMode(getCommerceAdapterMode());
   const [items, setItems] = useState<MarketplaceFeedNotification[]>([]);
   // Rows that were unread when this mount first saw them keep their highlight
   // until the surface is next opened, even after mark-all-read succeeds.
   const seenUnreadIdsRef = useRef<ReadonlySet<string>>(new Set());
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (isActive: () => boolean = () => true): Promise<CommercePollOutcome> => {
     try {
       const fetched = await CommerceController.getMarketplaceFeedNotifications();
+      if (!isActive()) return 'stop';
       const seenUnread = new Set(seenUnreadIdsRef.current);
       for (const item of fetched) {
         if (item.isUnread) seenUnread.add(item.id);
@@ -50,8 +54,11 @@ export function useMarketplaceNotificationFeed() {
               item.kind === 'unrecognized' || !seenUnread.has(item.id) ? item : { ...item, isUnread: true },
             ),
       );
+      return 'ok';
     } catch (error) {
+      if (!isActive()) return 'stop';
       Logger.warn('Failed to load marketplace notifications for the general surface', { error });
+      return classifyCommercePollError(error);
     }
   }, []);
 
@@ -61,16 +68,15 @@ export function useMarketplaceNotificationFeed() {
       return;
     }
     let active = true;
-    const load = async () => {
-      if (active) await refresh();
-    };
-    void load();
-    const timer = window.setInterval(() => void load(), getCommercePollIntervalMs());
+    const poller = startCommercePoller({
+      poll: () => refresh(() => active),
+      getIntervalMs: getCommercePollIntervalMs,
+    });
     return () => {
       active = false;
-      window.clearInterval(timer);
+      poller.stop();
     };
-  }, [enabled, refresh]);
+  }, [enabled, marketplaceSession, refresh]);
 
   /**
    * Sandbox only, enforced by the controller: the durable service has no

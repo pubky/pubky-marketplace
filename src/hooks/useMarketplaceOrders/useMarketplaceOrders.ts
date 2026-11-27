@@ -9,12 +9,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import {
-  type CommerceAdapterMode,
-  getCommerceAdapterMode,
-  getCommercePollIntervalMs,
-  isTransactionalCommerceMode,
-} from '@/config/commerce';
+import { type CommerceAdapterMode, getCommerceAdapterMode, isTransactionalCommerceMode } from '@/config/commerce';
 import { REVIEW_PENDING_COPY } from '@/config/commerce-copy';
 import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import { CommerceController } from '@/controllers/commerce/commerce';
@@ -33,6 +28,12 @@ import { formatReviewDate, isReviewWindowClosedRefusal } from '@/libs/commerce/o
 import { plainRefundRefusal } from '@/libs/commerce/partial-refund';
 import { CHECKOUT_CANCEL_PAYMENT_SEEN_COPY } from '@/libs/commerce/paykit-rail';
 import { pickupRefusalFailureMessage } from '@/libs/commerce/pickup';
+import {
+  classifyCommercePollError,
+  type CommercePollOutcome,
+  getAdaptiveOrderPollIntervalMs,
+  startCommercePoller,
+} from '@/libs/commerce/polling';
 import { orderChangedMessage } from '@/libs/commerce/refund-copy';
 import {
   buildMarketplaceOrderAggregateId,
@@ -67,6 +68,32 @@ interface OrderReadScope {
   marketplaceSession: CommerceMarketplaceSession | null;
   adapterMode: CommerceAdapterMode;
   auth: AbortSignal;
+  receiptCache: Map<string, { receiptId: string; receipt: MarketplaceReceipt }>;
+  housekeepingStarted: boolean;
+  hasActiveCheckout: boolean;
+}
+
+function createOrderReadScope(
+  currentUserPubky: string | null,
+  marketplaceSession: CommerceMarketplaceSession | null,
+  adapterMode: CommerceAdapterMode,
+): OrderReadScope {
+  return {
+    currentUserPubky,
+    marketplaceSession,
+    adapterMode,
+    auth: captureAuthScope(),
+    receiptCache: new Map(),
+    housekeepingStarted: false,
+    hasActiveCheckout: false,
+  };
+}
+
+function hasActiveCheckoutOrder(views: MarketplaceOrderView[]): boolean {
+  return views.some(
+    ({ order, payment }) =>
+      order.state === 'pending_payment' || payment?.state === 'awaiting_entitlement' || payment?.state === 'detected',
+  );
 }
 
 function isCurrentOrderScope(scope: OrderReadScope, active: OrderReadScope | null): boolean {
@@ -108,19 +135,16 @@ export function useMarketplaceOrders() {
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
   const adapterMode = getCommerceAdapterMode();
   const isTransactional = isTransactionalCommerceMode(adapterMode);
-  const [scope, setScope] = useState<OrderReadScope>(() => ({
-    currentUserPubky,
-    marketplaceSession,
-    adapterMode,
-    auth: captureAuthScope(),
-  }));
+  const [scope, setScope] = useState<OrderReadScope>(() =>
+    createOrderReadScope(currentUserPubky, marketplaceSession, adapterMode),
+  );
   const [list, setList] = useState<OrderListState | null>(null);
   if (
     scope.currentUserPubky !== currentUserPubky ||
     scope.marketplaceSession !== marketplaceSession ||
     scope.adapterMode !== adapterMode
   ) {
-    setScope({ currentUserPubky, marketplaceSession, adapterMode, auth: captureAuthScope() });
+    setScope(createOrderReadScope(currentUserPubky, marketplaceSession, adapterMode));
     setList(null);
   }
   const { orders, parseErrors, error, needsSession } = list ?? EMPTY_ORDER_LIST;
@@ -136,17 +160,18 @@ export function useMarketplaceOrders() {
     };
   }, [scope]);
 
-  const readOrders = () => loadOrders(scope, activeScope, setList);
+  const readOrders = async () => (await loadOrders(scope, activeScope, setList)).views;
   const refresh = async () => {
     await readOrders();
   };
 
   useEffect(() => {
     if (!scope.currentUserPubky || !isTransactionalCommerceMode(scope.adapterMode)) return;
-    const read = () => void loadOrders(scope, activeScope, setList);
-    read();
-    const timer = window.setInterval(read, getCommercePollIntervalMs());
-    return () => window.clearInterval(timer);
+    const poller = startCommercePoller({
+      poll: async () => (await loadOrders(scope, activeScope, setList)).outcome,
+      getIntervalMs: () => getAdaptiveOrderPollIntervalMs(scope.hasActiveCheckout),
+    });
+    return () => poller.stop();
   }, [scope]);
 
   const markSessionRequired = () => {
@@ -363,40 +388,56 @@ async function loadOrders(
   scope: OrderReadScope,
   activeScope: RefObject<OrderReadScope | null>,
   setList: Dispatch<SetStateAction<OrderListState | null>>,
-): Promise<MarketplaceOrderView[] | null> {
+): Promise<{ views: MarketplaceOrderView[] | null; outcome: CommercePollOutcome }> {
   const isCurrent = () => isCurrentOrderScope(scope, activeScope.current);
-  if (!scope.currentUserPubky || !isTransactionalCommerceMode(scope.adapterMode) || !isCurrent()) return null;
+  if (!scope.currentUserPubky || !isTransactionalCommerceMode(scope.adapterMode) || !isCurrent()) {
+    return { views: null, outcome: 'stop' };
+  }
   // Retryable outbox for own-review records: any publication that failed
   // mid-flight is retried whenever this surface loads. Best-effort — a
   // failure keeps the row pending and is logged inside the application.
   void CommerceController.resumeOwnReviewPublications().catch(() => undefined);
   void CommerceController.resumeOwnReviewRemovals().catch(() => undefined);
-  void CommerceController.sweepOwnAuctionReserves().catch(() => undefined);
+  if (!scope.housekeepingStarted) {
+    scope.housekeepingStarted = true;
+    void CommerceController.sweepOwnAuctionReserves().catch(() => undefined);
+  }
   // Same outbox semantics for own review-RESPONSE records (subject-only
   // responses published to the responder's homeserver).
   void CommerceController.resumeOwnReviewResponsePublications().catch(() => undefined);
   try {
     const { orders, parseErrors } = await CommerceController.fetchMarketplaceOrderList();
-    if (!isCurrent()) return null;
+    if (!isCurrent()) return { views: null, outcome: 'stop' };
     const views = await Promise.all(
       orders.map(async (order) => {
         // The durable service embeds the payment projection in the order
         // read; the sandbox serves it from its own endpoint.
         const payment = order.payment ?? (await CommerceController.getMarketplacePayment(order.paymentId));
-        const receipt =
-          order.receiptId && isCurrent() ? await CommerceController.getMarketplaceReceipt(order.receiptId) : null;
+        let receipt: MarketplaceReceipt | null = null;
+        if (order.receiptId && isCurrent()) {
+          const cached = scope.receiptCache.get(order.id);
+          if (cached && cached.receiptId === order.receiptId) {
+            receipt = cached.receipt;
+          } else {
+            receipt = await CommerceController.getMarketplaceReceipt(order.receiptId);
+            if (receipt !== null) {
+              scope.receiptCache.set(order.id, { receiptId: order.receiptId, receipt });
+            }
+          }
+        }
         return { order, payment, receipt };
       }),
     );
-    if (!isCurrent()) return null;
+    if (!isCurrent()) return { views: null, outcome: 'stop' };
+    scope.hasActiveCheckout = hasActiveCheckoutOrder(views);
     setList({ orders: views, parseErrors, error: null, needsSession: false });
     // Portable order receipts (credible exit): best-effort publication of
     // any missing signed receipt document to the user's own homeserver.
     // Failures are logged in the application layer and retry on next load.
     void CommerceController.publishOrderReceipts(orders).catch(() => undefined);
-    return views;
+    return { views, outcome: 'ok' };
   } catch (loadError) {
-    if (!isCurrent()) return null;
+    if (!isCurrent()) return { views: null, outcome: 'stop' };
     // Expired sessions offer a reconnect; transport failures retain the last views.
     setList((previous) => ({
       orders: previous?.orders ?? [],
@@ -408,6 +449,6 @@ async function loadOrders(
         loadError,
       ),
     }));
-    return null;
+    return { views: null, outcome: classifyCommercePollError(loadError) };
   }
 }

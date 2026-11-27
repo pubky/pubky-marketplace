@@ -18,6 +18,7 @@ import {
   marketplaceListingNotActiveMessage,
   marketplaceRegionRefusalMessage,
 } from '@/libs/commerce/failure-messages';
+import { classifyCommercePollError, type CommercePollOutcome, startCommercePoller } from '@/libs/commerce/polling';
 import { amountInputSchemaForAsset, amountInputToMoney } from '@/libs/commerce/pricing';
 import { isMarketplaceRevisionConflict } from '@/libs/commerce/transaction-commands';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
@@ -41,7 +42,8 @@ export function useMarketplaceOffers() {
     mode: 'onChange',
   });
 
-  const refresh = () => loadOffers(currentUserPubky, setOffers, setIsLoading, setError, setNeedsSession);
+  const refresh = async () =>
+    (await loadOffers(currentUserPubky, setOffers, setIsLoading, setError, setNeedsSession, () => true)).offers;
 
   useEffect(() => {
     if (!currentUserPubky) {
@@ -49,13 +51,14 @@ export function useMarketplaceOffers() {
       return;
     }
     let active = true;
-    void loadOffers(currentUserPubky, setOffers, setIsLoading, setError, setNeedsSession);
-    const timer = window.setInterval(() => {
-      if (active) void loadOffers(currentUserPubky, setOffers, setIsLoading, setError, setNeedsSession);
-    }, getCommercePollIntervalMs());
+    const poller = startCommercePoller({
+      poll: async () =>
+        (await loadOffers(currentUserPubky, setOffers, setIsLoading, setError, setNeedsSession, () => active)).outcome,
+      getIntervalMs: getCommercePollIntervalMs,
+    });
     return () => {
       active = false;
-      window.clearInterval(timer);
+      poller.stop();
     };
   }, [currentUserPubky, marketplaceSession]);
 
@@ -179,15 +182,18 @@ async function loadOffers(
   setIsLoading: Dispatch<SetStateAction<boolean>>,
   setError: Dispatch<SetStateAction<string | null>>,
   setNeedsSession: Dispatch<SetStateAction<boolean>>,
-): Promise<MarketplaceOffer[] | null> {
-  if (!currentUserPubky) return null;
+  isActive: () => boolean,
+): Promise<{ offers: MarketplaceOffer[] | null; outcome: CommercePollOutcome }> {
+  if (!currentUserPubky) return { offers: null, outcome: 'stop' };
   try {
     const loaded = await CommerceController.getMarketplaceOffers();
+    if (!isActive()) return { offers: null, outcome: 'stop' };
     setOffers(loaded);
     setError(null);
     setNeedsSession(false);
-    return loaded;
+    return { offers: loaded, outcome: 'ok' };
   } catch (loadError) {
+    if (!isActive()) return { offers: null, outcome: 'stop' };
     // A missing/expired marketplace session is not a dead end: flag it so the
     // surface renders the session-connect affordance with static guidance.
     setNeedsSession(isMarketplaceSessionRequiredError(loadError));
@@ -198,9 +204,9 @@ async function loadOffers(
         loadError,
       ),
     );
-    return null;
+    return { offers: null, outcome: classifyCommercePollError(loadError) };
   } finally {
-    setIsLoading(false);
+    if (isActive()) setIsLoading(false);
   }
 }
 

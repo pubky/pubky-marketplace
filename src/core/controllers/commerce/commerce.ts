@@ -938,7 +938,8 @@ export class CommerceController {
    */
   static async sweepOwnAuctionReserves(): Promise<number> {
     if (!this.sellsHere()) return 0;
-    return await CommerceApplication.sweepOwnAuctionReserves(this.getCurrentUserPubky());
+    const actorPubky = this.getCurrentUserPubky();
+    return await CommerceApplication.sweepOwnAuctionReserves(actorPubky, actorPubky);
   }
 
   /**

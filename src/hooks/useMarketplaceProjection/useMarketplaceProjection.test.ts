@@ -1,8 +1,8 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { Logger } from '@/libs/logger/logger';
-import { useMarketplaceProjection } from './useMarketplaceProjection';
+import { MAX_LISTING_SYNC_ATTEMPTS, useMarketplaceProjection } from './useMarketplaceProjection';
 
 const config = vi.hoisted(() => ({
   mode: 'sandbox' as string,
@@ -246,5 +246,60 @@ describe('useMarketplaceProjection', () => {
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(CommerceController.getMarketplaceListingProjection).not.toHaveBeenCalled();
+  });
+
+  it('bounds listing.sync attempts on unregistered listings across repeated poll ticks', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Logger, 'warn').mockImplementation(() => {});
+    try {
+      config.mode = 'locks-paykit';
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(null);
+      vi.mocked(CommerceController.syncListingRegistration).mockResolvedValue({
+        ok: false,
+        error: { code: 'NOT_FOUND', message: 'missing' },
+      } as never);
+
+      renderHook(() => useMarketplaceProjection('y'.repeat(52), 'unregistered'));
+      await act(async () => vi.advanceTimersByTimeAsync(0));
+      expect(CommerceController.syncListingRegistration).toHaveBeenCalledTimes(1);
+
+      // Advance through many poll cycles: sync attempts stay bounded at MAX_LISTING_SYNC_ATTEMPTS.
+      await act(async () => vi.advanceTimersByTimeAsync(600_000));
+      expect(CommerceController.syncListingRegistration).toHaveBeenCalledTimes(MAX_LISTING_SYNC_ATTEMPTS);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops polling once listing.sync reports the listing was deleted', async () => {
+    vi.useFakeTimers();
+    try {
+      config.mode = 'locks-paykit';
+      const aggregateId = `listing:${'y'.repeat(52)}_deleted`;
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(null);
+      vi.mocked(CommerceController.syncListingRegistration).mockResolvedValue({
+        ok: true,
+        version: 1,
+        commandId: '018f47d2-6a27-7c23-a62f-000000000751',
+        aggregateId,
+        revision: 2,
+        eventIds: [],
+        result: { kind: 'listing_deleted', listing: { aggregateId, serverRevision: 2 } },
+      } as never);
+
+      renderHook(() => useMarketplaceProjection('y'.repeat(52), 'deleted'));
+      await act(async () => vi.advanceTimersByTimeAsync(0));
+      expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(1);
+      expect(CommerceController.syncListingRegistration).toHaveBeenCalledTimes(1);
+
+      await act(async () => vi.advanceTimersByTimeAsync(300_000));
+      window.dispatchEvent(new Event('focus'));
+      await act(async () => vi.advanceTimersByTimeAsync(0));
+
+      expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(1);
+      expect(CommerceController.syncListingRegistration).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

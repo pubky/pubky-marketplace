@@ -8,6 +8,7 @@ import {
   marketplaceErrorCode,
   marketplaceFailureMessage,
 } from '@/libs/commerce/failure-messages';
+import { classifyCommercePollError, type CommercePollOutcome, startCommercePoller } from '@/libs/commerce/polling';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import { toast } from '@/molecules/Toaster/toast';
 import type {
@@ -46,39 +47,41 @@ export function useMarketplaceNotifications() {
       return;
     }
     let active = true;
-    const refresh = async () => {
+    const refresh = async (): Promise<CommercePollOutcome> => {
       try {
         const [next, nextPreferences] = await Promise.all([
           CommerceController.getMarketplaceNotifications(),
           canMarkRead ? CommerceController.getMarketplaceNotificationPreferences() : Promise.resolve(null),
         ]);
-        if (active) {
-          setNotifications(next);
-          setPreferences(nextPreferences);
-          setError(null);
-          setNeedsSession(false);
-        }
+        if (!active) return 'stop';
+        setNotifications(next);
+        setPreferences(nextPreferences);
+        setError(null);
+        setNeedsSession(false);
+        return 'ok';
       } catch (loadError) {
-        if (active) {
-          // A missing/expired marketplace session is not a dead end: flag it
-          // so the surface renders the session-connect affordance.
-          setNeedsSession(isMarketplaceSessionRequiredError(loadError));
-          setError(
-            marketplaceFailureMessage(
-              marketplaceErrorCode(loadError),
-              MARKETPLACE_FAILURE_MESSAGES.notificationsUnavailable,
-            ),
-          );
-        }
+        if (!active) return 'stop';
+        // A missing/expired marketplace session is not a dead end: flag it
+        // so the surface renders the session-connect affordance.
+        setNeedsSession(isMarketplaceSessionRequiredError(loadError));
+        setError(
+          marketplaceFailureMessage(
+            marketplaceErrorCode(loadError),
+            MARKETPLACE_FAILURE_MESSAGES.notificationsUnavailable,
+          ),
+        );
+        return classifyCommercePollError(loadError);
       } finally {
         if (active) setIsLoading(false);
       }
     };
-    void refresh();
-    const timer = window.setInterval(refresh, getCommercePollIntervalMs());
+    const poller = startCommercePoller({
+      poll: refresh,
+      getIntervalMs: getCommercePollIntervalMs,
+    });
     return () => {
       active = false;
-      window.clearInterval(timer);
+      poller.stop();
     };
   }, [canMarkRead, currentUserPubky, marketplaceSession]);
 

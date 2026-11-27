@@ -1001,4 +1001,94 @@ describe('useMarketplaceOrders', () => {
     expect(result.current.error).toContain('orders: invalid_type');
     expect(result.current.error).not.toBe(MARKETPLACE_FAILURE_MESSAGES.unavailable);
   });
+
+  it('caches immutable receipts per order ID and runs auction reserve sweep once per session scope', async () => {
+    config.mode = 'locks-paykit';
+    const [baseOrder] = await CommerceController.getMarketplaceOrders();
+    const paidOrder: MarketplaceOrder = {
+      ...baseOrder,
+      state: 'paid',
+      receiptId: '00000000-0000-4000-8000-000000009999',
+      payment: {
+        id: PAYMENT_ID,
+        orderId: baseOrder.id,
+        buyerPubky: BUYER,
+        sellerPubky: SELLER,
+        revision: 2,
+        adapter: 'locks',
+        state: 'confirmed',
+        confirmations: 1,
+        amount: { amountMinor: 11_200, currency: 'USD', exponent: 2 },
+        createdAt: '2026-08-19T23:00:00.000Z',
+        updatedAt: '2026-08-19T23:00:00.000Z',
+      },
+    };
+    const receipt = {
+      id: paidOrder.receiptId!,
+      orderId: paidOrder.id,
+      paymentId: PAYMENT_ID,
+      issuerPubky: SELLER,
+      recipientPubky: BUYER,
+      total: paidOrder.total,
+      contentHash: 'f'.repeat(64),
+      issuedAt: '2026-08-19T23:05:00.000Z',
+    };
+    vi.mocked(CommerceController.getMarketplaceOrders).mockResolvedValue([paidOrder]);
+    vi.mocked(CommerceController.getMarketplaceReceipt).mockResolvedValue(receipt);
+
+    const { result } = renderHook(() => useMarketplaceOrders());
+    await waitFor(() => expect(result.current.orders[0]?.receipt).toEqual(receipt));
+    expect(CommerceController.getMarketplaceReceipt).toHaveBeenCalledTimes(1);
+    expect(CommerceController.sweepOwnAuctionReserves).toHaveBeenCalledTimes(1);
+
+    await act(() => result.current.refresh());
+    await act(() => result.current.refresh());
+
+    expect(CommerceController.fetchMarketplaceOrderList).toHaveBeenCalledTimes(3);
+    expect(CommerceController.getMarketplaceReceipt).toHaveBeenCalledTimes(1);
+    expect(CommerceController.sweepOwnAuctionReserves).toHaveBeenCalledTimes(1);
+    expect(result.current.orders[0]?.receipt).toEqual(receipt);
+  });
+
+  it('pauses order polling while hidden and avoids overlapping in-flight ticks', async () => {
+    vi.useFakeTimers();
+    const setVisibility = (state: DocumentVisibilityState) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    try {
+      let resolveFirst: ((value: { orders: MarketplaceOrder[]; parseErrors: [] }) => void) | undefined;
+      vi.mocked(CommerceController.fetchMarketplaceOrderList)
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveFirst = resolve;
+            }),
+        )
+        .mockResolvedValue({ orders: [], parseErrors: [] });
+
+      renderHook(() => useMarketplaceOrders());
+      expect(CommerceController.fetchMarketplaceOrderList).toHaveBeenCalledTimes(1);
+
+      // Slow initial request: advancing far past the poll interval must not overlap.
+      await act(async () => vi.advanceTimersByTimeAsync(180_000));
+      expect(CommerceController.fetchMarketplaceOrderList).toHaveBeenCalledTimes(1);
+
+      resolveFirst?.({ orders: [], parseErrors: [] });
+      await act(async () => vi.advanceTimersByTimeAsync(0));
+
+      // Tab hidden: advancing past multiple intervals fires zero ticks.
+      setVisibility('hidden');
+      await act(async () => vi.advanceTimersByTimeAsync(240_000));
+      expect(CommerceController.fetchMarketplaceOrderList).toHaveBeenCalledTimes(1);
+
+      // Returning to visible triggers an immediate refresh.
+      setVisibility('visible');
+      await act(async () => vi.advanceTimersByTimeAsync(0));
+      expect(CommerceController.fetchMarketplaceOrderList).toHaveBeenCalledTimes(2);
+    } finally {
+      setVisibility('visible');
+      vi.useRealTimers();
+    }
+  });
 });

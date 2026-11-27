@@ -1098,4 +1098,48 @@ describe('CommerceApplication.publishOrderReceipts without the seller side', () 
     await CommerceApplication.publishOrderReceipts(BUYER, [sale()]);
     expect(fetchAttestation.mock.calls.map(([, receiptId]) => receiptId)).toEqual([SOLD_RECEIPT]);
   });
+
+  it('lists plaintext receipts at most once per signed-in session once migration completes', async () => {
+    grantCapableSession();
+    CommerceApplication.resetReceiptPublicationMemo();
+    homeserver.files.clear();
+    const list = vi.spyOn(CommerceHomeserverService, 'list');
+
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [])).resolves.toBe('published');
+    expect(list).toHaveBeenCalledTimes(1);
+
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [])).resolves.toBe('published');
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [], { sellerSide: false })).resolves.toBe('published');
+    expect(list).toHaveBeenCalledTimes(1);
+
+    vi.spyOn(MarketplaceSessionService, 'clearSession').mockImplementation(() => {});
+    CommerceApplication.clearMarketplaceSession();
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [])).resolves.toBe('published');
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it('caches immutable receipts in memory per session and clears them on clearMarketplaceSession', async () => {
+    vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('locks-paykit');
+    CommerceApplication.resetReceiptCache();
+    const receipt = {
+      id: RECEIPT_ID,
+      orderId: ORDER_ID,
+      paymentId: '018f47d2-6a27-7c23-a49d-6b21bb770202',
+      issuerPubky: SELLER,
+      recipientPubky: BUYER,
+      total: { amountMinor: 14_796, currency: 'USD', exponent: 2 },
+      contentHash: 'a'.repeat(64),
+      issuedAt: '2026-08-19T22:00:00.000Z',
+    };
+    const fetchReceipt = vi.spyOn(MarketplaceGatewayService, 'getReceipt').mockResolvedValue(receipt);
+
+    await expect(CommerceApplication.getMarketplaceReceipt(BUYER, RECEIPT_ID)).resolves.toEqual(receipt);
+    await expect(CommerceApplication.getMarketplaceReceipt(BUYER, RECEIPT_ID)).resolves.toEqual(receipt);
+    expect(fetchReceipt).toHaveBeenCalledTimes(1);
+
+    vi.spyOn(MarketplaceSessionService, 'clearSession').mockImplementation(() => {});
+    CommerceApplication.clearMarketplaceSession();
+    await expect(CommerceApplication.getMarketplaceReceipt(BUYER, RECEIPT_ID)).resolves.toEqual(receipt);
+    expect(fetchReceipt).toHaveBeenCalledTimes(2);
+  });
 });

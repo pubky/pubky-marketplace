@@ -119,4 +119,27 @@ describe('useMarketplaceNotificationFeed', () => {
 
     expect(CommerceController.markAllMarketplaceNotificationsRead).toHaveBeenCalledTimes(1);
   });
+
+  it('pauses feed polling while document is hidden', async () => {
+    vi.useFakeTimers();
+    const setVisibility = (state: DocumentVisibilityState) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    try {
+      renderHook(() => useMarketplaceNotificationFeed());
+      await act(async () => vi.advanceTimersByTimeAsync(0));
+      expect(CommerceController.getMarketplaceFeedNotifications).toHaveBeenCalledTimes(1);
+
+      setVisibility('hidden');
+      await act(async () => vi.advanceTimersByTimeAsync(240_000));
+      expect(CommerceController.getMarketplaceFeedNotifications).toHaveBeenCalledTimes(1);
+
+      setVisibility('visible');
+      await act(async () => vi.advanceTimersByTimeAsync(0));
+      expect(CommerceController.getMarketplaceFeedNotifications).toHaveBeenCalledTimes(2);
+    } finally {
+      setVisibility('visible');
+    }
+  });
 });

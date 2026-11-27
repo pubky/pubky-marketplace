@@ -243,6 +243,7 @@ import {
   type MarketplaceNotificationEntry,
   type MarketplaceOrder,
   type MarketplacePayment,
+  type MarketplaceReceipt,
 } from '@/services/marketplace/marketplace';
 import { MarketplaceConnectorStatusService } from '@/services/marketplace/marketplace-connector-status';
 import {
@@ -264,7 +265,6 @@ import type {
 } from '@/services/nexus/marketplace/marketplace.types';
 import type { NexusTag } from '@/services/nexus/nexus.types';
 import { PaykitReceiverService } from '@/services/paykit/paykit-receiver';
-import { useAuthStore } from '@/stores/auth/auth.store';
 
 /**
  * The `review` view inside a successful review command result (camelCased
@@ -1849,7 +1849,12 @@ export class CommerceApplication {
     this.plaintextSellerReceiptUrls.clear();
     this.receiptMigrationCursors.clear();
     this.receiptMigrationFailedCycles.clear();
+    this.receiptMigrationCompleted.clear();
     this.receiptMigrationRuns.clear();
+    this.auctionReserveSweptOwners.clear();
+    this.auctionReserveSweepRuns.clear();
+    this.receiptCache.clear();
+    this.receiptInFlight.clear();
     this.ownReviewHomeserverMisses.clear();
     this.deletedOwnReviews.clear();
     CommercePrivKeyringApplication.clear();
@@ -2159,8 +2164,45 @@ export class CommerceApplication {
     return await MarketplaceGatewayService.confirmFiatReceived(actorPubky, orderId, releaseDigital);
   }
 
-  static async getMarketplaceReceipt(actorPubky: string, receiptId: string) {
-    return await MarketplaceGatewayService.getReceipt(actorPubky, receiptId);
+  private static readonly RECEIPT_CACHE_MAX_ENTRIES = 256;
+  private static receiptCache = new Map<string, MarketplaceReceipt>();
+  private static receiptInFlight = new Map<string, Promise<MarketplaceReceipt | null>>();
+
+  /** Test support: clears the in-memory immutable receipt cache. */
+  static resetReceiptCache(): void {
+    this.receiptCache.clear();
+    this.receiptInFlight.clear();
+  }
+
+  static async getMarketplaceReceipt(actorPubky: string, receiptId: string): Promise<MarketplaceReceipt | null> {
+    const key = `${getCommerceAdapterMode()}:${actorPubky}:${receiptId}`;
+    const cached = this.receiptCache.get(key);
+    if (cached) {
+      this.receiptCache.delete(key);
+      this.receiptCache.set(key, cached);
+      return cached;
+    }
+    const existing = this.receiptInFlight.get(key);
+    if (existing) return await existing;
+
+    const promise = MarketplaceGatewayService.getReceipt(actorPubky, receiptId)
+      .then((receipt) => {
+        if (receipt !== null) {
+          if (this.receiptCache.has(key)) {
+            this.receiptCache.delete(key);
+          } else if (this.receiptCache.size >= this.RECEIPT_CACHE_MAX_ENTRIES) {
+            const oldestKey = this.receiptCache.keys().next().value;
+            if (oldestKey !== undefined) this.receiptCache.delete(oldestKey);
+          }
+          this.receiptCache.set(key, receipt);
+        }
+        return receipt;
+      })
+      .finally(() => {
+        if (this.receiptInFlight.get(key) === promise) this.receiptInFlight.delete(key);
+      });
+    this.receiptInFlight.set(key, promise);
+    return await promise;
   }
 
   static async getMarketplaceOrder(actorPubky: string, orderId: string) {
@@ -2852,12 +2894,16 @@ export class CommerceApplication {
   /** Owners whose current migration cycle included a receipt or listing failure. */
   private static receiptMigrationFailedCycles = new Set<string>();
 
+  /** Owner+side keys whose plaintext receipt migration already completed cleanly this session. */
+  private static receiptMigrationCompleted = new Set<string>();
+
   /** Test support: clears the session-scoped published-receipt and migration memos. */
   static resetReceiptPublicationMemo(): void {
     this.publishedReceiptUrls.clear();
     this.plaintextSellerReceiptUrls.clear();
     this.receiptMigrationCursors.clear();
     this.receiptMigrationFailedCycles.clear();
+    this.receiptMigrationCompleted.clear();
     this.receiptMigrationRuns.clear();
   }
 
@@ -2877,6 +2923,8 @@ export class CommerceApplication {
    * stopped, so buyer receipts behind any number of seller receipts move. A
    * cycle that reaches the end is done only when none of its passes failed;
    * after a failed cycle, the next pass starts again from the beginning.
+   * Once a cycle finishes cleanly (`done`), it is memoized for the signed-in
+   * session so subsequent order polls do not re-list the homeserver directory.
    */
   private static migratePlaintextReceipts(
     ownerPubky: string,
@@ -2884,11 +2932,20 @@ export class CommerceApplication {
     sellerSide: boolean,
   ): Promise<'done' | 'incomplete' | 'needs_reauth'> {
     const key = `${ownerPubky}\0${sellerSide}`;
+    const fullKey = `${ownerPubky}\0true`;
+    if (this.receiptMigrationCompleted.has(key) || this.receiptMigrationCompleted.has(fullKey)) {
+      return Promise.resolve('done');
+    }
     const active = this.receiptMigrationRuns.get(key);
     if (active) return active;
-    const run = this.runPlaintextReceiptMigration(ownerPubky, keyring, sellerSide).finally(() => {
-      if (this.receiptMigrationRuns.get(key) === run) this.receiptMigrationRuns.delete(key);
-    });
+    const run = this.runPlaintextReceiptMigration(ownerPubky, keyring, sellerSide)
+      .then((outcome) => {
+        if (outcome === 'done') this.receiptMigrationCompleted.add(key);
+        return outcome;
+      })
+      .finally(() => {
+        if (this.receiptMigrationRuns.get(key) === run) this.receiptMigrationRuns.delete(key);
+      });
     this.receiptMigrationRuns.set(key, run);
     return run;
   }
@@ -3887,7 +3944,7 @@ export class CommerceApplication {
    * Null (signed out) or a different account must not write `commerce_reviews`.
    */
   private static liveIdentityMatches(hydrateIdentity: string): boolean {
-    return useAuthStore.getState().currentUserPubky === hydrateIdentity;
+    return HomeserverService.getCurrentUserPubky() === hydrateIdentity;
   }
 
   /**
@@ -5836,7 +5893,7 @@ export class CommerceApplication {
   private static listingSessionBinding(): Pick<ListingRegistrationAttempt, 'authEpoch' | 'pubky' | 'sessionToken'> {
     return {
       authEpoch: readAuthEpoch(),
-      pubky: useAuthStore.getState().currentUserPubky,
+      pubky: HomeserverService.getCurrentUserPubky(),
       sessionToken: MarketplaceSessionService.getActiveSession()?.token ?? null,
     };
   }
@@ -6583,23 +6640,54 @@ export class CommerceApplication {
     }
   }
 
+  /** Owners whose leftover auction reserve sweep already completed this session. */
+  private static auctionReserveSweptOwners = new Set<string>();
+
+  /** Single-flight deduplication for concurrent auction reserve sweeps per owner. */
+  private static auctionReserveSweepRuns = new Map<string, Promise<number>>();
+
+  /** Test support: clears the session-scoped auction reserve sweep memo. */
+  static resetAuctionReserveSweepMemo(): void {
+    this.auctionReserveSweptOwners.clear();
+    this.auctionReserveSweepRuns.clear();
+  }
+
   /**
    * Deletes the signed-in seller's own leftover `auction_reserves/` files.
    * Listing is enough to find them; the file body is not read. A list or
-   * delete failure does not throw.
+   * delete failure does not throw. Runs at most once per signed-in pubky
+   * session once a sweep finishes cleanly.
    */
-  static async sweepOwnAuctionReserves(ownerPubky: string): Promise<number> {
-    if (useAuthStore.getState().currentUserPubky !== ownerPubky) return 0;
+  static async sweepOwnAuctionReserves(ownerPubky: string, actorPubky: string = ownerPubky): Promise<number> {
+    if (actorPubky !== ownerPubky) return 0;
+    if (HomeserverService.getCurrentUserPubky() !== ownerPubky) return 0;
     if (!HomeserverService.canCurrentSessionWrite(PRIVATE_APP_DATA_PATH)) return 0;
+    if (this.auctionReserveSweptOwners.has(ownerPubky)) return 0;
+    const active = this.auctionReserveSweepRuns.get(ownerPubky);
+    if (active) return await active;
+
+    const run = this.runAuctionReserveSweep(ownerPubky).finally(() => {
+      if (this.auctionReserveSweepRuns.get(ownerPubky) === run) this.auctionReserveSweepRuns.delete(ownerPubky);
+    });
+    this.auctionReserveSweepRuns.set(ownerPubky, run);
+    return await run;
+  }
+
+  private static async runAuctionReserveSweep(ownerPubky: string): Promise<number> {
     const directory = CommerceRecordNormalizer.auctionReserveDirectoryUri(ownerPubky);
     let entries: string[] = [];
     try {
       entries = await HomeserverService.listAll({ baseDirectory: directory });
     } catch (error) {
+      if (isAppError(error) && isNotFound(error)) {
+        this.auctionReserveSweptOwners.add(ownerPubky);
+        return 0;
+      }
       Logger.warn('Auction reserve sweep could not list the owner directory', { error });
       return 0;
     }
     let deleted = 0;
+    let failed = false;
     for (const entry of entries) {
       const url = ownAuctionReserveFileUrl(directory, entry);
       if (!url) continue;
@@ -6608,8 +6696,12 @@ export class CommerceApplication {
         deleted += 1;
       } catch (error) {
         if (isAppError(error) && isNotFound(error)) continue;
+        failed = true;
         Logger.warn('Auction reserve sweep could not delete an owner file', { error });
       }
+    }
+    if (!failed) {
+      this.auctionReserveSweptOwners.add(ownerPubky);
     }
     return deleted;
   }

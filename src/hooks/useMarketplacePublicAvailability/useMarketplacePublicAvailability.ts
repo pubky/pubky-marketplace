@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { getCommerceAdapterMode, getCommercePollIntervalMs, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { classifyCommercePollError, type CommercePollOutcome, startCommercePoller } from '@/libs/commerce/polling';
 import { Logger } from '@/libs/logger/logger';
 import type { MarketplacePublicListingAvailability } from '@/services/marketplace/marketplace';
 
@@ -36,33 +37,36 @@ export function useMarketplacePublicAvailability(
   useEffect(() => {
     if (!active) return;
     let current = true;
-    const load = async () => {
+    const load = async (): Promise<CommercePollOutcome> => {
       try {
         const availability = await CommerceController.getPublicListingAvailability(sellerPubky, listingId);
-        if (current)
-          setRead({
-            key,
-            stock: availability
-              ? {
-                  state: availability.state,
-                  madeToOrder: availability.madeToOrder === true,
-                  variants: availability.variants ?? [],
-                }
-              : null,
-          });
+        if (!current) return 'stop';
+        setRead({
+          key,
+          stock: availability
+            ? {
+                state: availability.state,
+                madeToOrder: availability.madeToOrder === true,
+                variants: availability.variants ?? [],
+              }
+            : null,
+        });
+        return 'ok';
       } catch (error) {
         Logger.debug('Public listing availability read failed', { error });
-        if (current) setRead({ key, stock: null });
+        if (!current) return 'stop';
+        setRead({ key, stock: null });
+        return classifyCommercePollError(error);
       }
     };
-    void load();
-    const timer = window.setInterval(() => void load(), getCommercePollIntervalMs());
-    const onFocus = () => void load();
-    window.addEventListener('focus', onFocus);
+    const poller = startCommercePoller({
+      poll: load,
+      getIntervalMs: getCommercePollIntervalMs,
+      refetchOnFocus: true,
+    });
     return () => {
       current = false;
-      window.clearInterval(timer);
-      window.removeEventListener('focus', onFocus);
+      poller.stop();
     };
   }, [active, key, sellerPubky, listingId]);
 
