@@ -21,6 +21,7 @@ import {
   PAYMENT_CONFIRMED_ON_CHAIN_COPY,
   PAYMENT_CONFIRMED_ON_CHAIN_LABEL,
   PAYMENT_SEEN_LABEL,
+  PAYMENT_UPSTREAM_INCONSISTENT_BUYER_COPY,
   SELLER_CONFIRMED_ON_CHAIN_COPY,
   SELLER_CONFIRMED_PAYMENT_COPY,
   sellerBitcoinConfirmPrompt,
@@ -304,6 +305,16 @@ describe('a USDT attempt on Paykit is never read as a Bitcoin order', () => {
     expect(bitcoinPaidConfirmation(usdtOrder, { state: 'confirmed', confirmations: 1 })).toBeNull();
     expect(buyerCheckoutBadgeLabel(usdtOrder, { state: 'awaiting_entitlement' })).not.toBe(PAYMENT_SEEN_LABEL);
   });
+
+  it.each(['paykit', 'usdt'] as const)(
+    'shows the payment review instead of a pay-by countdown on a %s order paid in USDT',
+    (paymentMethod) => {
+      const order = { ...usdtOrder, paymentMethod, paymentAsset: 'USDT', holdExpiresAt: SHORT_HOLD };
+      const payment = { state: 'manual_review', reviewReason: 'upstream_inconsistent', confirmations: 0 };
+
+      expect(buyerCheckoutProgressCopy(order, payment, NOW)).toBe(PAYMENT_UPSTREAM_INCONSISTENT_BUYER_COPY);
+    },
+  );
 
   it('keeps the reserved-while-you-pay line, never the Bitcoin seller-confirm line, for a pending USDT checkout', () => {
     const progress = buyerCheckoutProgressCopy(usdtOrder, { state: 'awaiting_entitlement' }, NOW);

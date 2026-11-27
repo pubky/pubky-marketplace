@@ -1,23 +1,24 @@
 import { ServerErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
-import type { MarketplaceOrderParseError } from './marketplace-projections';
+
+export interface MarketplaceOrderDiagnostic {
+  orderId: string | null;
+  issues: string[];
+}
 
 const MARKETPLACE_ORDER_DIAGNOSTIC_MAX_SETS = 32;
 const reportedOrderParseErrorSets = new Set<string>();
 
-export function reportMarketplaceOrderParseErrors(errors: readonly MarketplaceOrderParseError[]): void {
+export function reportMarketplaceOrderParseErrors(errors: readonly MarketplaceOrderDiagnostic[]): void {
   if (errors.length === 0) return;
 
-  const invalidOrders = errors.map((entry) => ({
-    index: entry.index,
-    orderId: entry.orderId,
-    issues: entry.issues.map((issue) => `${issue.path}: ${issue.message}`),
-  }));
-  const key = invalidOrders
-    .map((entry) => `${entry.orderId ?? `<index:${entry.index}>`}:${entry.issues.join('|')}`)
+  // IDs distinguish local occurrences of the same schema error. Only the
+  // row-relative field paths and Zod codes may leave the participant's browser.
+  const key = errors
+    .map(({ orderId, issues }) => JSON.stringify([orderId, issues]))
     .sort()
-    .join('\u0000');
+    .join('\n');
 
   if (
     reportedOrderParseErrorSets.has(key) ||
@@ -32,7 +33,7 @@ export function reportMarketplaceOrderParseErrors(errors: readonly MarketplaceOr
     operation: 'getOrders',
     context: {
       invalidOrderCount: errors.length,
-      invalidOrders,
+      parseIssues: [...new Set(errors.flatMap((entry) => entry.issues))],
     },
   });
 }

@@ -13,7 +13,7 @@ const ORDER_ID = '018f47d2-6a27-7c23-a62f-0000000000c1';
 
 /**
  * `GET /v1/notifications` rows in the `NotificationRow::view` shape from
- * pubky-marketplace-service `f79d52011dc50bfc6afa0f2c3c990ff8c2a6e85f`.
+ * pubky-marketplace-service `4381ec854624232b9481dcc4bd92e40902a6102b`.
  * The contract samples do not carry this read; the view is the wire.
  */
 function notificationView(idTail: string, type: string, reviewReason: string | null) {
@@ -34,10 +34,9 @@ function notificationView(idTail: string, type: string, reviewReason: string | n
 const REVIEW_SENTENCES = {
   late_settlement: 'A Bitcoin payment settled late and needs your decision',
   amount_mismatch: 'A Bitcoin payment amount does not match the invoice',
-  confirmation_failed: 'A confirmed Bitcoin payment could not be applied to this order',
+  confirmation_failed: 'Review the payment status for this order',
   seller_confirmation_window_elapsed: 'The confirmation window ended before you confirmed this payment',
   seller_response_overdue: 'This Bitcoin payment has waited two business days for your decision',
-  upstream_inconsistent: 'The payment provider reported an inconsistent state and needs review',
 } as const;
 
 describe('seller Bitcoin notification contract', () => {
@@ -62,7 +61,6 @@ describe('seller Bitcoin notification contract', () => {
       'bitcoin_manual_review',
       'bitcoin_manual_review',
       'bitcoin_manual_review',
-      'bitcoin_manual_review',
     ]);
 
     const seen = recognized[0];
@@ -77,6 +75,22 @@ describe('seller Bitcoin notification contract', () => {
       expect(bitcoinNotificationCopy(entry)?.label).toBe(REVIEW_SENTENCES[reason!]);
       expect(activityRowHref(entry.type, entry.aggregateId)).toBe(`/marketplace/orders?order=${ORDER_ID}`);
     }
+  });
+
+  it('asks the seller for a decision on an inconsistent Paykit status', () => {
+    // The worker stores upstream_inconsistent on the payment and sends ConfirmationFailed in the notification.
+    const [notice] = parseMarketplaceNotificationEntries(
+      toCamelCaseWire({
+        notifications: [notificationView('0000000000bc', 'bitcoin_manual_review', 'confirmation_failed')],
+      }),
+    );
+
+    expect(notice).toMatchObject({ type: 'bitcoin_manual_review', reviewReason: 'confirmation_failed' });
+    if (!notice || !isRecognizedMarketplaceNotification(notice)) return;
+    expect(bitcoinNotificationCopy(notice)).toEqual({
+      label: 'Review the payment status for this order',
+      action: 'requested a review of the payment status for this order',
+    });
   });
 
   it('keeps a known Bitcoin row when the review reason is not in the vocabulary', () => {

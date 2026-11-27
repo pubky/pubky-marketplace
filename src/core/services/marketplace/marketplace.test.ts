@@ -4,6 +4,7 @@ import sharp from 'sharp';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IMAGE_MAX_UPLOAD_SIZE } from '@/config/images';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
+import { Logger } from '@/libs/logger/logger';
 import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
 import { MarketplaceGatewayService } from './marketplace';
 
@@ -457,6 +458,18 @@ describe('MarketplaceGatewayService sandbox order-list resilience (#581)', () =>
           }),
         ],
       }),
+    ]);
+  });
+
+  it('reports the invalid sandbox payment field without participant identifiers or wire values', async () => {
+    const payment = createPaymentFixture('manual_review');
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, { ...payment, reviewReason: 'private rejected text' }));
+    using loggerError = vi.spyOn(Logger, 'error');
+    await expect(MarketplaceGatewayService.getPayment(SELLER, payment.id)).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+    expect(loggerError.mock.calls.map(([, , context]) => context)).toStrictEqual([
+      { statusCode: 200, parseIssues: ['payment.reviewReason: invalid_value'] },
     ]);
   });
 

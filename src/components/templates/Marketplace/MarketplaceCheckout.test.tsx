@@ -291,6 +291,7 @@ vi.mock('@/hooks/useMarketplaceOrders/useMarketplaceOrders', () => ({
 
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
+    fetchBuyerPaykitUsdtAddress: vi.fn(async () => null),
     getSellerPaymentConfig: vi.fn(async () => ({
       bitcoinAvailable: true,
       bitcoinOfferAvailable: true,
@@ -3134,6 +3135,71 @@ describe('MarketplaceCheckout paying view parse resilience (#581)', () => {
     view.adapterMode = 'transaction-service';
   });
 
+  const partialStatus = 'Some orders could not be read. The payment status for this checkout may be incomplete.';
+  const unknownRow = (index: number) => ({
+    kind: 'parse_error' as const,
+    index,
+    orderId: null,
+    issues: [{ path: `orders[${index}].id`, message: 'Invalid UUID' }],
+  });
+
+  it('shows one partial-status notice when anonymous rows cannot be matched to the requested order', () => {
+    view.orders = [];
+    view.orderParseErrors = [unknownRow(0), unknownRow(1)];
+    searchParams.current = new URLSearchParams({ order: '018f47d2-6a27-7c23-a49d-000000000001' });
+
+    render(<MarketplaceCheckout />);
+
+    const paying = within(screen.getByTestId('marketplace-checkout-paying'));
+    expect(paying.getByRole('alert')).toHaveTextContent(partialStatus);
+    expect(paying.queryByTestId('marketplace-order-parse-error')).not.toBeInTheDocument();
+    expect(paying.getByRole('link', { name: 'View orders' })).toHaveAttribute('href', '/marketplace/orders');
+    expect(paying.queryByText('This checkout is no longer waiting for payment.')).not.toBeInTheDocument();
+  });
+
+  it('keeps readable and matched orders alongside a single notice for an unresolved checkout target', async () => {
+    const user = userEvent.setup();
+    seededCart();
+    view.hasMarketplaceSession = true;
+    const readable = createPaykitOrderFixture('unpaid');
+    const unreadableId = '470c02d8-9326-4d89-98f6-199df5a2ffcb';
+    view.orders = [readable];
+    view.orderParseErrors = [{ ...unknownRow(1), orderId: unreadableId }, unknownRow(2), unknownRow(3)];
+    view.payResult = {
+      ok: true,
+      orderIds: [readable.order.id, unreadableId, '018f47d2-6a27-7c23-a49d-000000000003'],
+      boundOrders: [],
+    };
+
+    render(<MarketplaceCheckout />);
+    await user.click(await screen.findByTestId('marketplace-checkout-method-paypal'));
+    await fillValidDelivery(user);
+    const pay = screen.getByTestId('marketplace-checkout-pay');
+    await waitFor(() => expect(pay).toBeEnabled());
+    await user.click(pay);
+
+    const paying = within(await screen.findByTestId('marketplace-checkout-paying'));
+    expect(paying.getByText(new RegExp(readable.order.id.slice(0, 8), 'i'))).toBeInTheDocument();
+    expect(paying.getByTestId('marketplace-order-parse-error')).toHaveTextContent(unreadableId);
+    expect(paying.getByText(partialStatus)).toBeInTheDocument();
+    expect(paying.getByRole('link', { name: 'View orders' })).toBeInTheDocument();
+  });
+
+  it('lets a buyer supply a refund address during an unresolved USDT payment check', () => {
+    const order = createOrderFixture('pending_payment', {
+      paymentMethod: 'usdt',
+      receiptId: null,
+      paykitRequestState: 'confirmed',
+    });
+    const payment = createPaymentFixture('manual_review', { adapter: 'paykit', reviewReason: 'upstream_inconsistent' });
+    view.orders = [{ order, payment, receipt: null }];
+    searchParams.current = new URLSearchParams({ order: order.id });
+    render(<MarketplaceCheckout />);
+    const panel = within(screen.getByTestId('marketplace-checkout-paying')).getByTestId('usdt-refund-buyer');
+    expect(panel).toHaveTextContent(/if you are ever refunded/i);
+    expect(within(panel).getByRole('button', { name: 'Confirm refund address' })).toBeInTheDocument();
+  });
+
   it('finds and displays a valid paying order when another unrelated order in the list is malformed', () => {
     const paying = createPaykitOrderFixture('unpaid', {
       holdExpiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
@@ -3146,6 +3212,7 @@ describe('MarketplaceCheckout paying view parse resilience (#581)', () => {
         orderId: '470c02d8-9326-4d89-98f6-199df5a2ffcb',
         issues: [{ path: 'orders[1].payment.reviewReason', message: 'invalid value "future_reason"' }],
       },
+      unknownRow(2),
     ];
     searchParams.current = new URLSearchParams({ order: paying.order.id });
 
@@ -3155,6 +3222,7 @@ describe('MarketplaceCheckout paying view parse resilience (#581)', () => {
     expect(within(payingView).getByText(/Awaiting payment · Item reserved/)).toBeInTheDocument();
     expect(within(payingView).getByText(new RegExp(paying.order.id.slice(0, 8), 'i'))).toBeInTheDocument();
     expect(within(payingView).queryByTestId('marketplace-order-parse-error')).not.toBeInTheDocument();
+    expect(within(payingView).queryByText(partialStatus)).not.toBeInTheDocument();
     expect(within(payingView).queryByText('This checkout is no longer waiting for payment.')).not.toBeInTheDocument();
   });
 

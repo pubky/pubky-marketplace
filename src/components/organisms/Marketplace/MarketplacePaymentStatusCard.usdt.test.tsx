@@ -379,13 +379,13 @@ describe('MarketplacePaymentStatusCard — USDT orders', () => {
 
     const buyer = renderCard(order, payment, true);
     expect(screen.getByTestId('payment-manual-review-copy')).toHaveTextContent(
-      'The payment provider reported an inconsistent payment state, so this payment is under review. No settlement is assumed until an operator reviews it.',
+      'The payment provider reported an inconsistent payment status. The seller will check their wallet to see whether your payment arrived.',
     );
     buyer.unmount();
 
     renderCard(order, payment, false);
     const sellerCopy = screen.getByTestId('payment-manual-review-copy');
-    expect(sellerCopy).toHaveTextContent(/inconsistent state/i);
+    expect(sellerCopy).toHaveTextContent(/check your wallet/i);
     expect(sellerCopy).toHaveTextContent(/USDT/);
     expect(sellerCopy).toHaveTextContent(/No funds are held by this marketplace\./);
     expect(sellerCopy).not.toHaveTextContent(/A verified event arrived/);

@@ -21,6 +21,7 @@ const PAYMENT_ID = '00000000-0000-4000-8000-000000001110';
 
 const config = vi.hoisted(() => ({
   mode: 'sandbox' as string,
+  owner: 'b'.repeat(52) as string | null,
 }));
 
 vi.mock('@/config/commerce', async () => {
@@ -29,7 +30,8 @@ vi.mock('@/config/commerce', async () => {
 });
 
 vi.mock('@/stores/auth/auth.store', () => ({
-  useAuthStore: (selector: (state: { currentUserPubky: string }) => unknown) => selector({ currentUserPubky: BUYER }),
+  useAuthStore: (selector: (state: { currentUserPubky: string | null }) => unknown) =>
+    selector({ currentUserPubky: config.owner }),
 }));
 
 vi.mock('@/controllers/commerce/commerce', () => ({
@@ -73,6 +75,7 @@ describe('useMarketplaceOrders', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     config.mode = 'sandbox';
+    config.owner = BUYER;
     useCommerceStore.getState().reset();
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000001111');
     vi.mocked(CommerceController.fetchMarketplaceOrderList).mockImplementation(async () => ({
@@ -804,6 +807,63 @@ describe('useMarketplaceOrders', () => {
     },
   );
 
+  it('waits for the first read after signing in from guest', async () => {
+    config.owner = null;
+    const next = Promise.withResolvers<Awaited<ReturnType<typeof CommerceController.fetchMarketplaceOrderList>>>();
+    vi.mocked(CommerceController.fetchMarketplaceOrderList).mockReturnValueOnce(next.promise);
+    const { result, rerender } = renderHook(() => useMarketplaceOrders());
+    expect(result.current.isLoading).toBe(false);
+    config.owner = BUYER;
+    rerender();
+    expect(result.current.isLoading).toBe(true);
+    await act(async () => next.resolve({ orders: [], parseErrors: [] }));
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  it.each(['change account', 'replace session'])(
+    'discards old private diagnostics and late reads on %s',
+    async (transition) => {
+      const orderList = vi.mocked(CommerceController.fetchMarketplaceOrderList);
+      type OrderList = Awaited<ReturnType<typeof CommerceController.fetchMarketplaceOrderList>>;
+      const prior: OrderList = {
+        orders: await CommerceController.getMarketplaceOrders(),
+        parseErrors: [{ kind: 'parse_error', index: 0, orderId: 'old-private-order', issues: [] }],
+      };
+      const oldRefresh = Promise.withResolvers<OrderList>();
+      const fresh = Promise.withResolvers<OrderList>();
+      orderList.mockResolvedValueOnce(prior).mockReturnValueOnce(oldRefresh.promise).mockReturnValueOnce(fresh.promise);
+      const { result, rerender } = renderHook(() => useMarketplaceOrders());
+      await waitFor(() => expect(result.current.parseErrors).toHaveLength(1));
+      const oldRead = result.current.refresh();
+      if (transition === 'change account') {
+        config.owner = SELLER;
+        rerender();
+      } else {
+        act(() =>
+          useCommerceStore.getState().setMarketplaceSession({
+            pubky: BUYER,
+            capabilities: '',
+            issuedAt: '2026-11-01T00:00:00Z',
+            expiresAt: '2026-12-01T00:00:00Z',
+          }),
+        );
+      }
+      expect(result.current.isLoading).toBe(true);
+      expect(result.current.orders).toEqual([]);
+      expect(result.current.parseErrors).toEqual([]);
+      vi.mocked(CommerceController.publishOrderReceipts).mockClear();
+      await act(async () => {
+        oldRefresh.resolve(prior);
+        await oldRead;
+      });
+      expect(result.current.isLoading).toBe(true);
+      expect(result.current.parseErrors).toEqual([]);
+      expect(CommerceController.publishOrderReceipts).not.toHaveBeenCalled();
+      await act(async () => fresh.resolve({ orders: [], parseErrors: [] }));
+      expect(result.current.isLoading).toBe(false);
+    },
+  );
+
   it('flags needsSession on a session-required load failure and refetches once a session connects', async () => {
     config.mode = 'transaction-service';
     vi.mocked(CommerceController.getMarketplaceOrders).mockRejectedValue(sessionRequiredError());
@@ -929,7 +989,7 @@ describe('useMarketplaceOrders', () => {
         service: ErrorService.Marketplace,
         operation: 'parseMarketplaceOrderList',
         context: {
-          parseIssues: ['orders: Invalid input: expected array, received undefined'],
+          parseIssues: ['orders: invalid_type'],
         },
       }),
     );
@@ -938,7 +998,7 @@ describe('useMarketplaceOrders', () => {
     await waitFor(() => expect(result.current.error).not.toBeNull());
 
     expect(result.current.error).toContain(MARKETPLACE_FAILURE_MESSAGES.invalidResponse);
-    expect(result.current.error).toContain('orders: Invalid input');
+    expect(result.current.error).toContain('orders: invalid_type');
     expect(result.current.error).not.toBe(MARKETPLACE_FAILURE_MESSAGES.unavailable);
   });
 });

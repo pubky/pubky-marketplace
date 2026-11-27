@@ -37,8 +37,6 @@ import { marketplaceSessionRequired } from './marketplace-approval-failure';
 import { reportMarketplaceNotificationInvalidTypes } from './marketplace-notification-diagnostics';
 import { reportMarketplaceOrderParseErrors } from './marketplace-order-diagnostics';
 import {
-  formatMarketplaceOrderIssueLines,
-  formatMarketplaceOrderZodIssues,
   type MarketplaceBidHistory,
   type MarketplaceListingProjection,
   marketplaceListingProjectionSchema,
@@ -46,6 +44,7 @@ import {
   type MarketplaceOffer,
   marketplaceOfferSchema,
   type MarketplaceOrder,
+  marketplaceOrderDiagnosticIssues,
   type MarketplaceOrderListResult,
   type MarketplaceParticipantOrder,
   type MarketplacePayment,
@@ -511,10 +510,7 @@ export class MarketplaceGatewayService {
         operation: 'getPayment',
         context: {
           statusCode: response.status,
-          paymentId,
-          parseIssues: formatMarketplaceOrderIssueLines(
-            formatMarketplaceOrderZodIssues(parsed.error.issues, raw, 'payment'),
-          ),
+          parseIssues: marketplaceOrderDiagnosticIssues(parsed.error.issues, 'payment'),
         },
       });
     }

@@ -2392,6 +2392,37 @@ describe('MarketplacePaymentStatusCard', () => {
   });
 
   describe('upstream_inconsistent manual review (#581)', () => {
+    it.each([true, false])('does not promise a refund when an unverified review closes (buyer %s)', (isBuyer) => {
+      const payment = createPaymentFixture('expired', {
+        adapter: 'paykit',
+        reviewReason: 'upstream_inconsistent',
+        resolutionOutcome: 'abandoned',
+        resolutionBasis: 'seller_unresponsive',
+        confirmations: 0,
+      });
+      const order = createOrderFixture('cancelled', {
+        paymentMethod: 'paykit',
+        paykitRequestState: 'confirmed',
+        receiptId: null,
+        cancellationReason: 'payment window elapsed',
+        paykitObservation: null,
+      });
+      render(
+        <MarketplacePaymentStatusCard
+          order={order}
+          payment={payment}
+          isBuyer={isBuyer}
+          adapterMode="transaction-service"
+          advancePayment={async () => false}
+          onPaymentChanged={() => {}}
+        />,
+      );
+      const copy = screen.getByTestId('payment-review-abandoned');
+      expect(copy).toHaveTextContent(/seven days/i);
+      expect(copy).toHaveTextContent(/could not confirm|couldn't confirm/i);
+      expect(copy).not.toHaveTextContent(/payment arrived|owes|return it|record the refund/i);
+    });
+
     it.each([
       ['bitcoin' as const, true],
       ['bitcoin' as const, false],
@@ -2403,6 +2434,7 @@ describe('MarketplacePaymentStatusCard', () => {
         reviewReason: 'upstream_inconsistent',
         confirmations: 0,
       });
+      auth.currentUserPubky = isBuyer ? payment.buyerPubky : payment.sellerPubky;
       render(
         <MarketplacePaymentStatusCard
           order={createOrderFixture('cancelled', {
@@ -2421,9 +2453,13 @@ describe('MarketplacePaymentStatusCard', () => {
 
       const copy = screen.getByTestId('payment-manual-review-copy');
       expect(copy).toHaveTextContent(/inconsistent/i);
-      expect(copy).toHaveTextContent(/No settlement is assumed/i);
+      expect(copy).toHaveTextContent(isBuyer ? /seller will check/i : /check your wallet/i);
+      expect(copy).not.toHaveTextContent(/operator/i);
       expect(copy).not.toHaveTextContent(/A verified event arrived/);
-      if (!isBuyer) {
+      const resolution = screen.queryByRole('combobox', { name: /outcome/i });
+      if (isBuyer) expect(resolution).not.toBeInTheDocument();
+      else {
+        expect(resolution).toBeInTheDocument();
         expect(copy).toHaveTextContent(/No funds are held by this marketplace\./);
       }
     });

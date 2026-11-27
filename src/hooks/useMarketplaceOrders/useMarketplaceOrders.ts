@@ -1,8 +1,22 @@
 'use client';
 
-import { type Dispatch, type SetStateAction, useEffect, useState } from 'react';
-import { getCommerceAdapterMode, getCommercePollIntervalMs, isTransactionalCommerceMode } from '@/config/commerce';
+import {
+  type Dispatch,
+  type RefObject,
+  type SetStateAction,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
+import {
+  type CommerceAdapterMode,
+  getCommerceAdapterMode,
+  getCommercePollIntervalMs,
+  isTransactionalCommerceMode,
+} from '@/config/commerce';
 import { REVIEW_PENDING_COPY } from '@/config/commerce-copy';
+import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { readReviewResultPending } from '@/libs/commerce/attestation';
 import {
@@ -39,6 +53,7 @@ import type {
 } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
+import type { CommerceMarketplaceSession } from '@/stores/commerce/commerce.types';
 import { ORDER_COMMAND_UNSENDABLE_COPY } from '../useMarketplaceOrderAction/useMarketplaceOrderAction.types';
 
 export interface MarketplaceOrderView {
@@ -46,6 +61,31 @@ export interface MarketplaceOrderView {
   payment: MarketplacePayment | null;
   receipt: MarketplaceReceipt | null;
 }
+
+interface OrderReadScope {
+  currentUserPubky: string | null;
+  marketplaceSession: CommerceMarketplaceSession | null;
+  adapterMode: CommerceAdapterMode;
+  auth: AbortSignal;
+}
+
+function isCurrentOrderScope(scope: OrderReadScope, active: OrderReadScope | null): boolean {
+  return (
+    scope === active &&
+    !scope.auth.aborted &&
+    useCommerceStore.getState().marketplaceSession === scope.marketplaceSession &&
+    getCommerceAdapterMode() === scope.adapterMode
+  );
+}
+
+interface OrderListState {
+  orders: MarketplaceOrderView[];
+  parseErrors: MarketplaceOrderParseError[];
+  needsSession: boolean;
+  error: string | null;
+}
+
+const EMPTY_ORDER_LIST: OrderListState = { orders: [], parseErrors: [], error: null, needsSession: false };
 
 /**
  * Order timelines against whichever transactional backend the mode selects:
@@ -68,33 +108,56 @@ export function useMarketplaceOrders() {
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
   const adapterMode = getCommerceAdapterMode();
   const isTransactional = isTransactionalCommerceMode(adapterMode);
-  const [orders, setOrders] = useState<MarketplaceOrderView[]>([]);
-  const [parseErrors, setParseErrors] = useState<MarketplaceOrderParseError[]>([]);
-  const [isLoading, setIsLoading] = useState(isTransactional && Boolean(currentUserPubky));
-  const [error, setError] = useState<string | null>(null);
-  const [needsSession, setNeedsSession] = useState(false);
+  const [scope, setScope] = useState<OrderReadScope>(() => ({
+    currentUserPubky,
+    marketplaceSession,
+    adapterMode,
+    auth: captureAuthScope(),
+  }));
+  const [list, setList] = useState<OrderListState | null>(null);
+  if (
+    scope.currentUserPubky !== currentUserPubky ||
+    scope.marketplaceSession !== marketplaceSession ||
+    scope.adapterMode !== adapterMode
+  ) {
+    setScope({ currentUserPubky, marketplaceSession, adapterMode, auth: captureAuthScope() });
+    setList(null);
+  }
+  const { orders, parseErrors, error, needsSession } = list ?? EMPTY_ORDER_LIST;
+  const isLoading = isTransactional && Boolean(currentUserPubky) && list === null;
 
-  const readOrders = () =>
-    loadOrders(currentUserPubky, setOrders, setParseErrors, setIsLoading, setError, setNeedsSession);
+  // Discard previous participants' data before rendering the new account.
+  // A committed scope also fences manual refreshes and reads resolving after unmount.
+  const activeScope = useRef<OrderReadScope | null>(null);
+  useLayoutEffect(() => {
+    activeScope.current = scope;
+    return () => {
+      activeScope.current = null;
+    };
+  }, [scope]);
+
+  const readOrders = () => loadOrders(scope, activeScope, setList);
   const refresh = async () => {
     await readOrders();
   };
 
   useEffect(() => {
-    if (!currentUserPubky || !isTransactional) {
-      setIsLoading(false);
-      return;
+    if (!scope.currentUserPubky || !isTransactionalCommerceMode(scope.adapterMode)) return;
+    const read = () => void loadOrders(scope, activeScope, setList);
+    read();
+    const timer = window.setInterval(read, getCommercePollIntervalMs());
+    return () => window.clearInterval(timer);
+  }, [scope]);
+
+  const markSessionRequired = () => {
+    if (isCurrentOrderScope(scope, activeScope.current)) {
+      setList((previous) => ({
+        ...(previous ?? EMPTY_ORDER_LIST),
+        needsSession: true,
+        error: MARKETPLACE_FAILURE_MESSAGES.session,
+      }));
     }
-    let active = true;
-    void loadOrders(currentUserPubky, setOrders, setParseErrors, setIsLoading, setError, setNeedsSession);
-    const timer = window.setInterval(() => {
-      if (active) void loadOrders(currentUserPubky, setOrders, setParseErrors, setIsLoading, setError, setNeedsSession);
-    }, getCommercePollIntervalMs());
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, [currentUserPubky, isTransactional, marketplaceSession]);
+  };
 
   const advancePayment = async (
     payment: MarketplacePayment,
@@ -137,8 +200,7 @@ export function useMarketplaceOrders() {
       if (isMarketplaceSessionRequiredError(actionError)) {
         // Expiry mid-action must surface the reconnect affordance, not a
         // generic failure: the surface swaps to the session-required card.
-        setNeedsSession(true);
-        setError(MARKETPLACE_FAILURE_MESSAGES.session);
+        markSessionRequired();
         toast({ variant: 'error', description: MARKETPLACE_FAILURE_MESSAGES.session });
         return false;
       }
@@ -240,8 +302,7 @@ export function useMarketplaceOrders() {
       return true;
     } catch (actionError) {
       if (isMarketplaceSessionRequiredError(actionError)) {
-        setNeedsSession(true);
-        setError(MARKETPLACE_FAILURE_MESSAGES.session);
+        markSessionRequired();
         toast({ variant: 'error', description: MARKETPLACE_FAILURE_MESSAGES.session });
         return false;
       }
@@ -299,14 +360,12 @@ async function publishReviewRecord(
 }
 
 async function loadOrders(
-  currentUserPubky: string | null,
-  setOrders: Dispatch<SetStateAction<MarketplaceOrderView[]>>,
-  setParseErrors: Dispatch<SetStateAction<MarketplaceOrderParseError[]>>,
-  setIsLoading: Dispatch<SetStateAction<boolean>>,
-  setError: Dispatch<SetStateAction<string | null>>,
-  setNeedsSession: Dispatch<SetStateAction<boolean>>,
+  scope: OrderReadScope,
+  activeScope: RefObject<OrderReadScope | null>,
+  setList: Dispatch<SetStateAction<OrderListState | null>>,
 ): Promise<MarketplaceOrderView[] | null> {
-  if (!currentUserPubky || !isTransactionalCommerceMode(getCommerceAdapterMode())) return null;
+  const isCurrent = () => isCurrentOrderScope(scope, activeScope.current);
+  if (!scope.currentUserPubky || !isTransactionalCommerceMode(scope.adapterMode) || !isCurrent()) return null;
   // Retryable outbox for own-review records: any publication that failed
   // mid-flight is retried whenever this surface loads. Best-effort — a
   // failure keeps the row pending and is logged inside the application.
@@ -318,38 +377,37 @@ async function loadOrders(
   void CommerceController.resumeOwnReviewResponsePublications().catch(() => undefined);
   try {
     const { orders, parseErrors } = await CommerceController.fetchMarketplaceOrderList();
+    if (!isCurrent()) return null;
     const views = await Promise.all(
       orders.map(async (order) => {
         // The durable service embeds the payment projection in the order
         // read; the sandbox serves it from its own endpoint.
         const payment = order.payment ?? (await CommerceController.getMarketplacePayment(order.paymentId));
-        const receipt = order.receiptId ? await CommerceController.getMarketplaceReceipt(order.receiptId) : null;
+        const receipt =
+          order.receiptId && isCurrent() ? await CommerceController.getMarketplaceReceipt(order.receiptId) : null;
         return { order, payment, receipt };
       }),
     );
-    setOrders(views);
-    setParseErrors(parseErrors);
-    setError(null);
-    setNeedsSession(false);
+    if (!isCurrent()) return null;
+    setList({ orders: views, parseErrors, error: null, needsSession: false });
     // Portable order receipts (credible exit): best-effort publication of
     // any missing signed receipt document to the user's own homeserver.
     // Failures are logged in the application layer and retry on next load.
     void CommerceController.publishOrderReceipts(orders).catch(() => undefined);
     return views;
   } catch (loadError) {
-    setParseErrors([]);
-    // A missing/expired marketplace session is not a dead end: flag it so the
-    // surface renders the session-connect affordance with static guidance.
-    setNeedsSession(isMarketplaceSessionRequiredError(loadError));
-    setError(
-      marketplaceFailureMessage(
+    if (!isCurrent()) return null;
+    // Expired sessions offer a reconnect; transport failures retain the last views.
+    setList((previous) => ({
+      orders: previous?.orders ?? [],
+      parseErrors: [],
+      needsSession: isMarketplaceSessionRequiredError(loadError),
+      error: marketplaceFailureMessage(
         marketplaceErrorCode(loadError),
         MARKETPLACE_FAILURE_MESSAGES.ordersUnavailable,
         loadError,
       ),
-    );
+    }));
     return null;
-  } finally {
-    setIsLoading(false);
   }
 }

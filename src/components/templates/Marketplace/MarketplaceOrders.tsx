@@ -20,6 +20,7 @@ import { CHAT_COPY } from '@/libs/chat/copy';
 import {
   getMarketplaceOrderRoute,
   orderAnchorId,
+  orderParseErrorAnchorId,
   readLegacyOrderFragment,
   readLinkedOrderId,
   readStaysOnOrder,
@@ -36,7 +37,6 @@ import { CHECKOUT_HOLD_COPY, isHoldExpiredNoLateMoney } from '@/libs/commerce/ch
 import {
   getMarketplaceCheckoutRoute,
   isAbandonedCheckout,
-  isAbandonedReviewOrder,
   isBuyerCheckoutInProgress,
   isBuyerOrderHistory,
   isPendingPaymentState,
@@ -162,7 +162,9 @@ export function MarketplaceOrders() {
   const linkedUnlistedOrder =
     anchoredOrder && isOrderParticipant(anchoredOrder, currentUserPubky) ? anchoredOrder : null;
 
-  useMarkMarketplaceOrdersSeen(!isLoading && !error && !needsSession);
+  useMarkMarketplaceOrdersSeen(
+    hasTransactionBackend && !isLoading && !error && !needsSession && parseErrors.length === 0,
+  );
 
   useEffect(() => {
     const fragment = takeDocumentFragment(window.location);
@@ -184,8 +186,9 @@ export function MarketplaceOrders() {
     if (!anchorId) return;
     const view = orders.find((candidate) => candidate.order.id === anchorId);
     if (!view) {
-      if (parseErrors.some((entry) => entry.orderId === anchorId) && scrolledAnchorRef.current !== anchorId) {
-        const anchor = document.getElementById(orderAnchorId(anchorId));
+      const parseError = parseErrors.find((entry) => entry.orderId === anchorId);
+      if (parseError && scrolledAnchorRef.current !== anchorId) {
+        const anchor = document.getElementById(orderParseErrorAnchorId(parseError.index));
         if (anchor) {
           scrolledAnchorRef.current = anchorId;
           anchor.scrollIntoView({ block: 'center' });
@@ -537,6 +540,7 @@ export function MarketplaceOrders() {
                             <div className="flex flex-col items-end">
                               <MarketplaceOrderActions
                                 order={order}
+                                payment={payment}
                                 isBuyer={isBuyer}
                                 canEditReview={adapterMode === 'transaction-service'}
                                 actOnOrder={actOnOrder}
@@ -693,9 +697,8 @@ export function MarketplaceOrders() {
                             ))}
                             <MarketplaceUsdtRefundAddress
                               order={order}
+                              payment={payment}
                               isBuyer={isBuyer}
-                              paymentInReview={payment?.state === 'manual_review'}
-                              reviewAbandoned={isAbandonedReviewOrder(order, payment)}
                               actOnOrder={actOnOrder}
                             />
                             {isBuyer && order.fulfillment === 'digital' && (

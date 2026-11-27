@@ -47,6 +47,11 @@ export function orderAnchorId(orderId: string): string {
   return `order-${orderId}`;
 }
 
+/** Diagnostic cards are Replay-blocked, but click targets still expose their DOM id. */
+export function orderParseErrorAnchorId(index: number): string {
+  return `unreadable-order-${index}`;
+}
+
 const ORDER_LINK_PARAM = 'order';
 const OFFER_LINK_PARAM = 'offer';
 

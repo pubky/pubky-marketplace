@@ -111,11 +111,11 @@ describe('marketplaceFailureMessage', () => {
       service: ErrorService.Marketplace,
       operation: 'getOrder',
       context: {
-        parseIssues: ['order.payment.reviewReason: invalid value "future_reason"'],
+        parseIssues: ['order.payment.reviewReason: invalid_value'],
       },
     });
     expect(marketplaceFailureMessage('INVALID_RESPONSE', 'Order could not be loaded.', parseError)).toBe(
-      `${MARKETPLACE_FAILURE_MESSAGES.invalidResponse} (order.payment.reviewReason: invalid value "future_reason")`,
+      `${MARKETPLACE_FAILURE_MESSAGES.invalidResponse} (order.payment.reviewReason: invalid_value)`,
     );
   });
 });

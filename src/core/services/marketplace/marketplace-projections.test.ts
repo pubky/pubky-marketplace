@@ -1052,7 +1052,9 @@ describe('parseMarketplaceOrderList and upstream_inconsistent review_reason (#58
     });
     expect(result.parseErrors[0]?.issues[0]?.path).toBe('orders[1].payment.reviewReason');
     expect(result.parseErrors[0]?.issues[0]?.message).toContain('invalid value "brand_new_future_reason"');
-    expect(reported).toEqual(result.parseErrors);
+    expect(reported).toEqual([
+      { orderId: '999c02d8-9326-4d89-98f6-199df5a2ffcb', issues: ['payment.reviewReason: invalid_value'] },
+    ]);
   });
 
   it('handles non-object malformed order rows with null orderId', () => {

@@ -1186,35 +1186,52 @@ describe('MarketplaceTransactionService read projections', () => {
     loggerError.mockRestore();
   });
 
-  it('attaches Zod parse issues when a single-order fetch fails to parse', async () => {
+  it('keeps private row details out of telemetry and deduplicates the same rejected row after an insertion', async () => {
     await establishSession();
-    vi.mocked(fetch).mockResolvedValueOnce(
-      jsonResponse(
-        200,
-        orderWire({
-          payment: {
-            ...paymentWire(),
-            adapter: 'paykit',
-            state: 'manual_review',
-            review_reason: 'unrecognized_future_reason',
-          },
-        }),
-      ),
-    );
+    const invalid = orderWire({ payment: { ...paymentWire(), review_reason: 'private rejected text' } });
+    const inserted = orderWire({ id: 'abcdefab-abcd-4bcd-8abc-abcdefabcdef' });
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse(200, { orders: [invalid] }))
+      .mockResolvedValueOnce(jsonResponse(200, { orders: [inserted, invalid] }))
+      .mockResolvedValueOnce(jsonResponse(200, { orders: [{ ...invalid, id: inserted.id }] }));
+    using loggerError = vi.spyOn(Logger, 'error');
 
-    const error = (await MarketplaceTransactionService.getOrder(ACTOR, ORDER_ID).catch(
-      (caught: unknown) => caught,
-    )) as AppError;
+    const first = await MarketplaceTransactionService.getOrderList(ACTOR);
+    expect(first.parseErrors[0]?.orderId).toBe(ORDER_ID);
+    expect(first.parseErrors[0]?.issues[0]?.message).toContain('private rejected text');
+    await MarketplaceTransactionService.getOrderList(ACTOR);
+    expect(loggerError).toHaveBeenCalledTimes(1);
+    await MarketplaceTransactionService.getOrderList(ACTOR);
+    expect(loggerError).toHaveBeenCalledTimes(2);
+    for (const [, , context] of loggerError.mock.calls) {
+      expect(context).toStrictEqual({ invalidOrderCount: 1, parseIssues: ['payment.reviewReason: invalid_value'] });
+    }
+  });
 
-    expect(error).toMatchObject({
+  it('reports only schema paths and codes for invalid order, payment and order-command responses', async () => {
+    await establishSession();
+    const badPayment = { ...paymentWire(), review_reason: 'private rejected text' };
+    const badOrder = orderWire({ payment: badPayment });
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse(200, badOrder))
+      .mockResolvedValueOnce(jsonResponse(200, badPayment))
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true, order: badOrder }));
+    using loggerError = vi.spyOn(Logger, 'error');
+
+    await expect(MarketplaceTransactionService.getOrder(ACTOR, ORDER_ID)).rejects.toMatchObject({
       code: 'INVALID_RESPONSE',
-      context: {
-        orderId: ORDER_ID,
-        parseIssues: [
-          expect.stringContaining('order.payment.reviewReason: invalid value "unrecognized_future_reason"'),
-        ],
-      },
     });
+    await expect(MarketplaceTransactionService.getPayment(ACTOR, PAYMENT_ID)).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+    await expect(MarketplaceTransactionService.markFiatPaid(ACTOR, ORDER_ID)).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+    expect(loggerError.mock.calls.map(([, , context]) => context)).toStrictEqual([
+      { parseIssues: ['order.payment.reviewReason: invalid_value'] },
+      { parseIssues: ['payment.reviewReason: invalid_value'] },
+      { parseIssues: ['order.payment.reviewReason: invalid_value'] },
+    ]);
   });
 
   it('reads a single payment and returns null for foreign/absent payments', async () => {

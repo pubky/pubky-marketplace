@@ -52,10 +52,10 @@ export const PAYMENT_AMOUNT_MISMATCH_REVIEW_COPY =
 export const PAYMENT_AMOUNT_MISMATCH_UNCONFIRMED_COPY = 'The amount does not match. The seller is reviewing it.';
 
 export const PAYMENT_UPSTREAM_INCONSISTENT_BUYER_COPY =
-  'The payment provider reported an inconsistent payment state, so this payment is under review. No settlement is assumed until an operator reviews it.';
+  'The payment provider reported an inconsistent payment status. The seller will check their wallet to see whether your payment arrived.';
 
 export const PAYMENT_UPSTREAM_INCONSISTENT_SELLER_COPY =
-  'The payment provider reported an inconsistent payment state, so an operator needs to review this order. No settlement is assumed. No funds are held by this marketplace.';
+  'The payment provider reported an inconsistent payment status. Check your wallet and use the review form to record the outcome. No funds are held by this marketplace.';
 
 export const PAYMENT_CONFIRMED_WAITING_SELLER_COPY =
   'Payment confirmed on-chain. Waiting for the seller to confirm they received it.';
@@ -517,6 +517,9 @@ export function buyerCheckoutProgressCopy(
   payment: BitcoinStatusPayment = null,
   nowMs = Date.now(),
 ): string {
+  if (payment?.state === 'manual_review' && payment.reviewReason === 'upstream_inconsistent') {
+    return PAYMENT_UPSTREAM_INCONSISTENT_BUYER_COPY;
+  }
   if (isBitcoinOrder(order)) {
     const review = buyerBitcoinReviewCopy(order, payment);
     if (review) return review;

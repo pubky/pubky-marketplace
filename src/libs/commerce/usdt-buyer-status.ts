@@ -1,7 +1,7 @@
 import { PAYMENT_RECEIVED_REVIEW_COPY, PAYMENT_UPSTREAM_INCONSISTENT_BUYER_COPY } from './bitcoin-buyer-status';
 import { CHECKOUT_HOLD_COPY } from './checkout-hold';
 import { formatCommerceMoney } from './format';
-import { observedPaymentRail } from './paykit-rail';
+import { isUnverifiedUpstreamPayment, observedPaymentRail } from './paykit-rail';
 import { formatUsdt, USDT_EXPONENT } from './payment-options';
 import type { CommerceMoney } from './transaction-contracts';
 import type { PaymentFinality } from './usdt-settlement-contract';
@@ -42,6 +42,7 @@ export const USDT_AMOUNT_MISMATCH_COPY = 'The USDT amount does not match. The se
 
 type UsdtStatusOrder = {
   state?: string;
+  receiptId?: string | null;
   paymentMethod?: string | null;
   paymentAsset?: string | null;
   paymentAmountMinor?: number | null;
@@ -57,6 +58,7 @@ type UsdtStatusPayment = {
   state?: string | null;
   reviewReason?: string | null;
   resolutionOutcome?: string | null;
+  confirmations?: number | null;
 } | null;
 
 export type UsdtSettlementPhase =
@@ -89,12 +91,14 @@ export function isUsdtOrder(order: { paymentMethod?: string | null; paymentAsset
  * `pending`); `rechecking` is a reorged payment that stays paid but not final;
  * `abandoned` is a payment that arrived but whose review ended `abandoned`, so
  * it was never applied and is owed back, and `refunded` is that payment once
- * the seller recorded its refund. Null for any order that is not a USDT order.
+ * the seller recorded its refund. No USDT phase is shown for another rail or
+ * when an abandoned provider review has no evidence of a transfer.
  */
 export function usdtSettlementPhase(order: UsdtStatusOrder, payment: UsdtStatusPayment): UsdtSettlementPhase | null {
   if (!isUsdtOrder(order)) return null;
   if (payment?.state === 'manual_review') return 'review';
   if (payment?.state === 'expired' && payment.resolutionOutcome === 'abandoned') {
+    if (isUnverifiedUpstreamPayment(order, payment)) return null;
     return order.externalRefund || order.state === 'refunded_external' ? 'refunded' : 'abandoned';
   }
   if (payment?.state !== 'confirmed') {
@@ -161,7 +165,7 @@ export const USDT_SELLER_REVIEW_COPY = {
   amount_mismatch:
     "This USDT payment doesn't match the order total, so you decide the outcome below. No funds are held by this marketplace.",
   upstream_inconsistent:
-    'The payment provider reported an inconsistent state for this USDT payment, so an operator needs to review it. No settlement is assumed. No funds are held by this marketplace.',
+    'The payment provider reported an inconsistent state for this USDT payment. Check your wallet and use the review form to record the outcome. No funds are held by this marketplace.',
 } as const;
 
 export const USDT_PHASE_BADGE_LABEL: Record<UsdtSettlementPhase, string> = {

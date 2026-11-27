@@ -22,6 +22,7 @@ import { usdtSettlementFieldsShape } from '@/libs/commerce/usdt-settlement-contr
 import { ServerErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
+import type { MarketplaceOrderDiagnostic } from './marketplace-order-diagnostics';
 
 /**
  * Read-projection schemas shared by BOTH marketplace transports.
@@ -314,7 +315,6 @@ export const marketplaceNotificationReviewReasonSchema = z.enum([
   'confirmation_failed',
   'seller_confirmation_window_elapsed',
   'seller_response_overdue',
-  'upstream_inconsistent',
 ]);
 
 /**
@@ -1179,28 +1179,31 @@ export function formatMarketplaceOrderZodIssues(
   return formatted;
 }
 
-export function formatMarketplaceOrderIssueLines(issues: readonly MarketplaceOrderParseIssue[]): string[] {
-  return issues.map((issue) => `${issue.path}: ${issue.message}`);
+/** Order schemas use fixed object fields and array indices. Messages or received values may contain private wire data. */
+export function marketplaceOrderDiagnosticIssues(issues: readonly z.core.$ZodIssue[], root: string): string[] {
+  return issues
+    .slice(0, MARKETPLACE_ORDER_PARSE_MAX_ISSUES)
+    .map((issue) => `${formatZodIssuePath(root, issue.path)}: ${issue.code}`);
 }
 
 export function parseMarketplaceOrderList(
   raw: unknown,
-  reportInvalidOrders?: (errors: readonly MarketplaceOrderParseError[]) => void,
+  reportInvalidOrders?: (errors: readonly MarketplaceOrderDiagnostic[]) => void,
 ): MarketplaceOrderListResult {
   const envelope = z.object({ orders: z.array(z.unknown()) }).safeParse(raw);
   if (!envelope.success) {
-    const issues = formatMarketplaceOrderZodIssues(envelope.error.issues, raw, '');
     throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Marketplace returned invalid orders.', {
       service: ErrorService.Marketplace,
       operation: 'getOrders',
       context: {
-        parseIssues: formatMarketplaceOrderIssueLines(issues),
+        parseIssues: marketplaceOrderDiagnosticIssues(envelope.error.issues, ''),
       },
     });
   }
 
   const orders: MarketplaceParticipantOrder[] = [];
   const parseErrors: MarketplaceOrderParseError[] = [];
+  const diagnostics: MarketplaceOrderDiagnostic[] = [];
 
   for (let index = 0; index < envelope.data.orders.length; index += 1) {
     const row = envelope.data.orders[index];
@@ -1214,6 +1217,9 @@ export function parseMarketplaceOrderList(
     const rawId = candidate && typeof candidate.id === 'string' ? candidate.id.trim() : '';
     const orderId = rawId.length > 0 ? rawId.slice(0, MARKETPLACE_ORDER_PARSE_ID_MAX_LENGTH) : null;
     const issues = formatMarketplaceOrderZodIssues(parsed.error.issues, row, `orders[${index}]`);
+    if (reportInvalidOrders) {
+      diagnostics.push({ orderId, issues: marketplaceOrderDiagnosticIssues(parsed.error.issues, '') });
+    }
     parseErrors.push({
       kind: 'parse_error',
       index,
@@ -1222,7 +1228,7 @@ export function parseMarketplaceOrderList(
     });
   }
 
-  if (parseErrors.length > 0) reportInvalidOrders?.(parseErrors);
+  if (diagnostics.length > 0) reportInvalidOrders?.(diagnostics);
 
   return { orders, parseErrors };
 }

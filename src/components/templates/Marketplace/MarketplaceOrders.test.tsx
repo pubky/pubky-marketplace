@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { CHAT_COPY } from '@/libs/chat/copy';
 import { REFUND_ORDER_NOTICES } from '@/libs/commerce/refund-copy';
+import { MarketplacePaymentStatusCard } from '@/organisms/Marketplace/MarketplacePaymentStatusCard';
 import { useMarketplaceDisplayStore } from '@/stores/marketplace-display/marketplace-display.store';
 import {
   createOrderFixture,
@@ -102,7 +103,7 @@ vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
 }));
 
 vi.mock('@/organisms/Marketplace/MarketplacePaymentStatusCard', () => ({
-  MarketplacePaymentStatusCard: () => <div data-testid="payment-status" />,
+  MarketplacePaymentStatusCard: vi.fn(() => <div data-testid="payment-status" />),
 }));
 
 vi.mock('@/organisms/Marketplace/MarketplaceSessionConnectDialog', () => ({
@@ -1459,6 +1460,22 @@ describe('MarketplaceOrders seen checkpoint', () => {
     ordersState.orders = [orderView('paid', 'Sold paid boots', 'seller')];
   });
 
+  it.each([false, true])(
+    'waits for a complete list before marking orders seen (has readable rows: %s)',
+    async (hasReadableRows) => {
+      if (!hasReadableRows) ordersState.orders = [];
+      ordersState.parseErrors = [{ kind: 'parse_error', index: 0, orderId: null, issues: [] }];
+      const markSeen = vi.spyOn(CommerceController, 'markOrdersAttentionSeen').mockResolvedValue();
+      const { rerender } = render(<MarketplaceOrders />);
+      await Promise.resolve();
+      expect(markSeen).not.toHaveBeenCalled();
+
+      ordersState.parseErrors = [];
+      rerender(<MarketplaceOrders />);
+      await waitFor(() => expect(markSeen).toHaveBeenCalledOnce());
+    },
+  );
+
   it('saves the Orders checkpoint once per opening, not on every polled order list', async () => {
     const markSeen = vi.spyOn(CommerceController, 'markOrdersAttentionSeen').mockResolvedValue();
     const { rerender } = render(<MarketplaceOrders />);
@@ -1471,6 +1488,14 @@ describe('MarketplaceOrders seen checkpoint', () => {
     await Promise.resolve();
 
     expect(markSeen).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the checkpoint when order timelines are unavailable', async () => {
+    ordersState.adapterMode = 'unavailable';
+    const markSeen = vi.spyOn(CommerceController, 'markOrdersAttentionSeen').mockResolvedValue();
+    render(<MarketplaceOrders />);
+    await Promise.resolve();
+    expect(markSeen).not.toHaveBeenCalled();
   });
 });
 
@@ -1492,6 +1517,41 @@ describe('MarketplaceOrders Activity link to an order no section lists', () => {
   afterEach(() => {
     window.history.replaceState(null, '', '/');
   });
+
+  it.each(['buyer', 'seller'] as const)(
+    'shows a cancelled order with an unresolved provider payment to its %s',
+    async (role) => {
+      const payment = createPaymentFixture('manual_review', {
+        adapter: 'paykit',
+        reviewReason: 'upstream_inconsistent',
+        confirmations: 0,
+      });
+      const row = orderView(
+        'cancelled',
+        'Unresolved payment',
+        role,
+        {
+          receiptId: null,
+          paymentMethod: 'paykit',
+          paykitRequestState: 'confirmed',
+          nextActor: 'seller',
+          cancellationReason: 'payment window elapsed',
+        },
+        'manual_review',
+        payment,
+      );
+      ordersState.orders = [row];
+      window.history.replaceState(null, '', '/marketplace/orders?order=' + row.order.id);
+      render(<MarketplaceOrders />);
+      expect(await screen.findByTestId('payment-status')).toBeInTheDocument();
+      expect(MarketplacePaymentStatusCard).toHaveBeenLastCalledWith(
+        expect.objectContaining({ order: row.order, payment, isBuyer: role === 'buyer' }),
+        undefined,
+      );
+      expect(screen.queryByText(/ended before payment|cancelled before payment/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Record refund' })).not.toBeInTheDocument();
+    },
+  );
 
   it('shows the linked order with its state and short ID, and scrolls to it', async () => {
     window.history.replaceState(null, '', '/marketplace/orders?order=test-unpaid-sold-lamp');
@@ -1817,6 +1877,58 @@ describe('MarketplaceOrders USDT refund address', () => {
     window.history.replaceState(null, '', '/marketplace/orders');
   });
 
+  it.each([
+    { role: 'buyer', hasDestination: false },
+    { role: 'seller', hasDestination: false },
+    { role: 'seller', hasDestination: true },
+  ] as const)(
+    'keeps an optional USDT refund destination available to the $role after an unverified review (confirmed address: $hasDestination)',
+    ({ role, hasDestination }) => {
+      const payment = createPaymentFixture('expired', {
+        adapter: 'paykit',
+        reviewReason: 'upstream_inconsistent',
+        resolutionOutcome: 'abandoned',
+        confirmations: 0,
+      });
+      const row = orderView(
+        'cancelled',
+        'Unverified USDT',
+        role,
+        {
+          receiptId: null,
+          paymentMethod: 'paykit',
+          paymentAsset: 'USDT',
+          paymentAmountMinor: 25000000,
+          paymentFinality: 'reverted',
+          refundDestination: hasDestination
+            ? {
+                address: REFUND_FIXTURE_ADDRESS,
+                asset: 'USDT',
+                network: 'arbitrum-one',
+                source: 'buyer_entered',
+                confirmedAt: '2026-10-09T16:00:00Z',
+              }
+            : null,
+        },
+        'expired',
+        payment,
+      );
+      ordersState.orders = [row];
+      render(<MarketplaceOrders />);
+      const panel = screen.getByTestId('usdt-refund-' + role);
+      expect(panel).toHaveTextContent(role === 'seller' ? /if you verify a transfer/i : /if you are ever refunded/i);
+      expect(within(panel).queryByTestId('usdt-refund-amount')).not.toBeInTheDocument();
+      if (role === 'buyer')
+        expect(within(panel).getByRole('button', { name: 'Confirm refund address' })).toBeInTheDocument();
+      else {
+        expect(screen.queryByTestId('usdt-refund-address-hint')).not.toBeInTheDocument();
+        const recordRefund = screen.getByRole('button', { name: 'Record refund' });
+        if (hasDestination) expect(recordRefund).toBeEnabled();
+        else expect(recordRefund).toBeDisabled();
+      }
+    },
+  );
+
   it('shows the refund address only on a USDT order, to the buyer and the seller', async () => {
     ordersState.orders = [
       orderView('return_approved', 'Bought USDT boots', 'buyer', { paymentMethod: 'usdt', paymentAsset: 'USDT' }),
@@ -1976,10 +2088,16 @@ describe('MarketplaceOrders inline parse errors (#581)', () => {
       },
     ];
 
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    window.history.replaceState(null, '', '/marketplace/orders?order=470c02d8-9326-4d89-98f6-199df5a2ffcb');
     render(<MarketplaceOrders />);
 
     expect(await screen.findByText('Valid boots')).toBeInTheDocument();
     const errorCard = screen.getByTestId('marketplace-order-parse-error');
+    expect(scrollIntoView.mock.contexts).toContain(errorCard);
+    expect(errorCard.closest('.sentry-block')).not.toBeNull();
+    expect(errorCard.id).not.toContain('470c02d8-9326-4d89-98f6-199df5a2ffcb');
     expect(errorCard).toHaveAttribute('role', 'alert');
     expect(errorCard).toHaveTextContent('Order could not be displayed');
     expect(errorCard).toHaveTextContent('470c02d8-9326-4d89-98f6-199df5a2ffcb');

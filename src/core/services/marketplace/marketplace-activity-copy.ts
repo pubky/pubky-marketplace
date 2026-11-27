@@ -120,8 +120,8 @@ export const BITCOIN_REVIEW_REASON_COPY = {
     action: 'flagged a Bitcoin payment whose amount does not match',
   },
   confirmation_failed: {
-    label: 'A confirmed Bitcoin payment could not be applied to this order',
-    action: 'flagged a Bitcoin payment whose confirmation failed',
+    label: 'Review the payment status for this order',
+    action: 'requested a review of the payment status for this order',
   },
   seller_confirmation_window_elapsed: {
     label: 'The confirmation window ended before you confirmed this payment',
@@ -130,10 +130,6 @@ export const BITCOIN_REVIEW_REASON_COPY = {
   seller_response_overdue: {
     label: 'This Bitcoin payment has waited two business days for your decision',
     action: 'flagged a Bitcoin payment that has waited two business days',
-  },
-  upstream_inconsistent: {
-    label: 'The payment provider reported an inconsistent state and needs review',
-    action: 'flagged a payment whose provider reported an inconsistent state',
   },
 } as const satisfies Record<NonNullable<MarketplaceNotification['reviewReason']>, { label: string; action: string }>;
 

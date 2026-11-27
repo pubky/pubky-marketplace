@@ -73,8 +73,6 @@ import { marketplaceSessionRequired } from './marketplace-approval-failure';
 import { reportMarketplaceNotificationInvalidTypes } from './marketplace-notification-diagnostics';
 import { reportMarketplaceOrderParseErrors } from './marketplace-order-diagnostics';
 import {
-  formatMarketplaceOrderIssueLines,
-  formatMarketplaceOrderZodIssues,
   listingHasSellerReserveAuthority,
   type MarketplaceBidHistory,
   marketplaceBidHistorySchema,
@@ -86,6 +84,7 @@ import {
   type MarketplaceOffer,
   marketplaceOfferSchema,
   type MarketplaceOrder,
+  marketplaceOrderDiagnosticIssues,
   type MarketplaceOrderListResult,
   marketplaceOrderSchema,
   type MarketplaceParticipantOrder,
@@ -401,10 +400,7 @@ export class MarketplaceTransactionService {
         service: ErrorService.Marketplace,
         operation: 'getPayment',
         context: {
-          paymentId,
-          parseIssues: formatMarketplaceOrderIssueLines(
-            formatMarketplaceOrderZodIssues(parsed.error.issues, raw, 'payment'),
-          ),
+          parseIssues: marketplaceOrderDiagnosticIssues(parsed.error.issues, 'payment'),
         },
       });
     }
@@ -443,10 +439,7 @@ export class MarketplaceTransactionService {
         service: ErrorService.Marketplace,
         operation: 'getOrder',
         context: {
-          orderId,
-          parseIssues: formatMarketplaceOrderIssueLines(
-            formatMarketplaceOrderZodIssues(parsed.error.issues, raw, 'order'),
-          ),
+          parseIssues: marketplaceOrderDiagnosticIssues(parsed.error.issues, 'order'),
         },
       });
     }
@@ -1489,7 +1482,7 @@ export class MarketplaceTransactionService {
         service: ErrorService.Marketplace,
         operation,
         context: {
-          parseIssues: formatMarketplaceOrderIssueLines(formatMarketplaceOrderZodIssues(parsed.error.issues, raw, '')),
+          parseIssues: marketplaceOrderDiagnosticIssues(parsed.error.issues, ''),
         },
       });
     }

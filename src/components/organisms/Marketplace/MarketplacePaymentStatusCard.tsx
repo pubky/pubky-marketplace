@@ -87,6 +87,7 @@ import {
   followsBitcoinFlow,
   isPaykitOrder,
   isUnobservedPaykitOrder,
+  isUnverifiedUpstreamPayment,
   mayPayInBitcoin,
   observedPaymentRail,
   orderMayPayInUsdt,
@@ -303,8 +304,7 @@ export function MarketplacePaymentStatusCard({
   const lateCompletion = isLateCompletionOrder(order);
   const refundRequired = isRefundRequiredPayment(payment);
   const expiredNoLateMoney = isHoldExpiredNoLateMoney(order, payment);
-  // Money a closed review never applied: never "no verified payment arrived",
-  // and owed back until the seller records the refund.
+  // A closed review has its own outcome, even when payment was never verified.
   const reviewAbandoned = payment?.state === 'expired' && payment.resolutionOutcome === 'abandoned';
   const abandonedReview = isAbandonedReviewOrder(order, payment) && !order.externalRefund;
   const locksTerminalReason =
@@ -429,7 +429,7 @@ export function MarketplacePaymentStatusCard({
           {locksTerminalReasonCopy(locksTerminalReason)}
         </Typography>
       )}
-      {visibleStatus === 'expired' && !locksTerminalReason && isBuyerCancelledUnpaid(order) && (
+      {visibleStatus === 'expired' && !locksTerminalReason && !reviewAbandoned && isBuyerCancelledUnpaid(order) && (
         <Typography as="p" className="text-sm text-muted-foreground" data-testid="buyer-cancelled-note">
           {isBuyer ? CHECKOUT_HOLD_COPY.cancelledByBuyer : CHECKOUT_HOLD_COPY.cancelledByBuyerSeller}
         </Typography>
@@ -439,7 +439,7 @@ export function MarketplacePaymentStatusCard({
       )}
       {abandonedReview && (
         <Typography as="p" className="text-sm text-muted-foreground" data-testid="payment-review-abandoned">
-          {abandonedReviewCopy(isBuyer, payment.resolutionBasis)}
+          {abandonedReviewCopy(order, payment, isBuyer)}
         </Typography>
       )}
       {visibleStatus === 'expired' &&
@@ -1232,18 +1232,18 @@ function BuyerUsdtSellerWindow({ order }: { order: MarketplaceOrder }) {
   );
 }
 
-/**
- * A payment that arrived but whose manual review ended `abandoned`: the order
- * was cancelled without it, so the money is owed back. Says who closed the
- * review: the seller, or the seven days without the seller's decision.
- */
-function abandonedReviewCopy(isBuyer: boolean, basis: string | null | undefined): string {
+/** The closure reason does not establish whether the buyer paid. */
+function abandonedReviewCopy(order: MarketplaceOrder, payment: MarketplacePayment, isBuyer: boolean): string {
+  const basis = payment.resolutionBasis;
   const closed =
     basis === 'seller_unresponsive'
       ? 'its review closed after seven days without the seller\u2019s decision'
       : basis === 'seller_attestation'
         ? 'the seller closed its review without completing the order'
         : 'its review was closed without completing the order';
+  if (isUnverifiedUpstreamPayment(order, payment)) {
+    return `The provider could not confirm a payment before ${closed}. Check your wallet for a transfer for this order.`;
+  }
   return isBuyer
     ? `Your payment arrived, but ${closed}, so the order was cancelled. The seller owes it back to you.`
     : `The buyer\u2019s payment arrived, but ${closed}, so the order was cancelled. Return it to the buyer and record the refund.`;

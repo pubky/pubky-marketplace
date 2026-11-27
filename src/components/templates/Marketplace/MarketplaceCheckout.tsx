@@ -133,6 +133,7 @@ import { MarketplacePaymentStatusCard } from '@/organisms/Marketplace/Marketplac
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSessionRequiredCard } from '@/organisms/Marketplace/MarketplaceSessionRequiredCard';
 import { MarketplaceUsdtMissingNote } from '@/organisms/Marketplace/MarketplaceUsdtMissingNote';
+import { MarketplaceUsdtRefundAddress } from '@/organisms/Marketplace/MarketplaceUsdtRefundAddress';
 import type { MarketplaceOfferAward } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { MarketplaceCartSkeleton } from './MarketplaceCart.skeleton';
@@ -497,10 +498,14 @@ function MarketplaceCartCheckout() {
   const focusedParseErrors = orderParseErrors.filter(
     (entry) => entry.orderId !== null && targetPayingIds.includes(entry.orderId),
   );
-  const missingTargetCount = targetPayingIds.length - focusedPaying.length - focusedParseErrors.length;
-  const unidentifiedParseErrors =
-    missingTargetCount > 0 ? orderParseErrors.filter((entry) => entry.orderId === null) : [];
-  const payingParseErrors = [...focusedParseErrors, ...unidentifiedParseErrors];
+  const hasUnidentifiedTarget =
+    orderParseErrors.some((error) => error.orderId === null) &&
+    targetPayingIds.some(
+      (id) =>
+        !focusedPaying.some(({ order }) => order.id === id) &&
+        !focusedParseErrors.some((error) => error.orderId === id),
+    );
+  const emptyPayingView = focusedPaying.length === 0 && focusedParseErrors.length === 0 && !hasUnidentifiedTarget;
   const showPaying = targetPayingIds.length > 0;
   const allPaymentsConfirmed =
     targetPayingIds.length > 0 &&
@@ -813,9 +818,9 @@ function MarketplaceCartCheckout() {
                   {holdCopy}
                 </Typography>
               )}
-            {orders.isLoading && focusedPaying.length === 0 && payingParseErrors.length === 0 ? (
+            {orders.isLoading && emptyPayingView ? (
               <Skeleton className="h-40 w-full" aria-label="Loading checkout" />
-            ) : focusedPaying.length === 0 && payingParseErrors.length === 0 ? (
+            ) : emptyPayingView ? (
               orders.error ? (
                 <div role="alert" className="rounded-md border border-destructive/40 p-4">
                   {orders.error}
@@ -872,16 +877,29 @@ function MarketplaceCartCheckout() {
                           }
                         />
                       )}
+                      {payment?.reviewReason === 'upstream_inconsistent' && payment.state === 'manual_review' && (
+                        <MarketplaceUsdtRefundAddress
+                          order={order}
+                          payment={payment}
+                          isBuyer
+                          actOnOrder={orders.actOnOrder}
+                        />
+                      )}
                     </CardContent>
                   </Card>
                 ))}
-                {payingParseErrors.map((parseError) => (
+                {focusedParseErrors.map((parseError) => (
                   <MarketplaceOrderParseErrorCard
-                    key={`parse-error:${parseError.index}:${parseError.orderId ?? 'unknown'}`}
+                    key={`parse-error:${parseError.index}:${parseError.orderId}`}
                     error={parseError}
                   />
                 ))}
-                {focusedPaying.length === 0 && payingParseErrors.length > 0 && (
+                {hasUnidentifiedTarget && (
+                  <div role="alert" className="rounded-md border border-destructive/40 p-4">
+                    Some orders could not be read. The payment status for this checkout may be incomplete.
+                  </div>
+                )}
+                {(focusedPaying.length === 0 || hasUnidentifiedTarget) && (
                   <Button asChild className="w-fit rounded-full">
                     <Link href={MARKETPLACE_ROUTES.ORDERS} overrideDefaults>
                       View orders

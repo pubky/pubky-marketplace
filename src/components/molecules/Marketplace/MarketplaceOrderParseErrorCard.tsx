@@ -4,7 +4,7 @@ import { AlertTriangle } from 'lucide-react';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Card, CardContent } from '@/atoms/Card/Card';
 import { Typography } from '@/atoms/Typography/Typography';
-import { orderAnchorId } from '@/libs/commerce/activity-links';
+import { orderParseErrorAnchorId } from '@/libs/commerce/activity-links';
 import type { MarketplaceOrderParseError } from '@/services/marketplace/marketplace';
 
 /**
@@ -15,9 +15,9 @@ import type { MarketplaceOrderParseError } from '@/services/marketplace/marketpl
 export function MarketplaceOrderParseErrorCard({ error }: { error: MarketplaceOrderParseError }) {
   return (
     <Card
-      id={error.orderId ? orderAnchorId(error.orderId) : undefined}
+      id={orderParseErrorAnchorId(error.index)}
       role="alert"
-      className="scroll-mt-24 rounded-md border border-destructive/40 bg-destructive/5 p-0"
+      className="sentry-block scroll-mt-24 rounded-md border border-destructive/40 bg-destructive/5 p-0"
       data-testid="marketplace-order-parse-error"
     >
       <CardContent className="grid min-w-0 gap-3 p-6">

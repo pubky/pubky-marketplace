@@ -50,6 +50,21 @@ describe('usdtSettlementPhase', () => {
     expect(usdtSettlementPhase(order, createPaymentFixture('expired'))).toBe('awaiting');
   });
 
+  it('does not display a USDT settlement or refund for a closed review without a recorded transfer', () => {
+    const order = { paymentMethod: 'usdt', state: 'cancelled', paykitRequestState: 'confirmed' };
+    const payment = createPaymentFixture('expired', {
+      reviewReason: 'upstream_inconsistent',
+      resolutionOutcome: 'abandoned',
+    });
+    expect(usdtSettlementPhase(order, payment)).toBeNull();
+    expect(usdtPhaseCopy(order, payment, true)).toBeNull();
+    const observed = { ...order, paymentAsset: 'USDT', paymentAmountMinor: 1000000 };
+    for (const paymentFinality of [null, 'pending', 'reverted'] as const) {
+      expect(usdtSettlementPhase({ ...observed, paymentFinality }, payment)).toBeNull();
+    }
+    expect(usdtSettlementPhase({ ...observed, paymentFinality: 'final' }, payment)).toBe('abandoned');
+  });
+
   it('follows an abandoned payment to its refund: the address, then the recorded refund', () => {
     const { order } = createUsdtOrderFixture('final', { state: 'cancelled', receiptId: null, paymentFinality: null });
     const abandoned = createPaymentFixture('expired', { resolutionOutcome: 'abandoned' });
@@ -164,7 +179,7 @@ describe('USDT status copy', () => {
     expect(review('late_settlement')).toBe('Payment received — the seller is reviewing it.');
     expect(review('refund_required')).toMatch(/another buyer took this item/);
     expect(review('upstream_inconsistent')).toBe(
-      'The payment provider reported an inconsistent payment state, so this payment is under review. No settlement is assumed until an operator reviews it.',
+      'The payment provider reported an inconsistent payment status. The seller will check their wallet to see whether your payment arrived.',
     );
     expect(usdtPhaseCopy(order, createPaymentFixture('manual_review', { adapter: 'paykit' }), false)).toBeNull();
   });
