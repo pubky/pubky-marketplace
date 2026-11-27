@@ -15,6 +15,10 @@ export const CHAT_COPY = {
   inboxEmptyTitle: 'No messages yet.',
   inboxEmptyBody: 'Open a listing or an order and message the other party to begin.',
   inboxRetry: 'Try again',
+  storeRestrictedTitle: "Messages about selling aren't available here",
+  storeRestrictedBody:
+    "This store sells through its own seller. Conversations about selling on this store stay with the seller, so you can't read or write this thread.",
+  storeRestrictedReason: "Messages about selling aren't available here.",
   /** Honest about the v0 key custody: encrypted, but the private key sits unsealed on the homeserver. */
   /** Shown while this deployment has no inbox and the peer has not written yet: first contact is not noticed without pings. */
   noInboxFirstContact:

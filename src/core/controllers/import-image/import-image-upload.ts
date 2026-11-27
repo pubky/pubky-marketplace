@@ -3,6 +3,7 @@ import {
   type TImportImagePrepareParams,
   type TImportImagePrepareResult,
 } from '@/application/import-image/import-image-upload';
+import { StoreSellerGate } from '@/controllers/store-seller-gate/store-seller-gate';
 
 /**
  * Browser entry point for fetching and preparing one imported product photo.
@@ -13,6 +14,7 @@ export class ImportImageUploadController {
   private constructor() {}
 
   static async fetchAndPrepare(params: TImportImagePrepareParams): Promise<TImportImagePrepareResult> {
+    StoreSellerGate.assertCurrentUserCanSellHere();
     return ImportImageUploadApplication.fetchAndPrepare(params);
   }
 }

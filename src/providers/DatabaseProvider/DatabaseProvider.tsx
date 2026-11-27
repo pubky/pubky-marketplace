@@ -1,6 +1,7 @@
 'use client';
 
-import { createContext, type ReactNode, useEffect, useRef, useState } from 'react';
+import { createContext, type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { isStoreModeInsecureContext } from '@/config/store-mode';
 import { db } from '@/database/franky/franky';
 import { deleteLegacyMessagingKeyring } from '@/database/franky/franky.helpers';
 import { migrateLegacyDatabases } from '@/database/franky/franky.namespace-migration';
@@ -9,6 +10,7 @@ import { DatabaseErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { DatabaseErrorScreen } from '@/molecules/DatabaseErrorScreen/DatabaseErrorScreen';
+import { StoreSecureContextScreen } from '@/molecules/StoreSecureContextScreen/StoreSecureContextScreen';
 import { type DatabaseContextType } from '@/providers/DatabaseProvider/DatabaseProvider.types';
 import { useMigrationStore } from '@/stores/migration/migration.store';
 
@@ -18,11 +20,15 @@ export const DatabaseContext = createContext<DatabaseContextType>({
   retry: async () => {},
 });
 
+const subscribeNever = () => () => {};
+const isInsecureStoreOnServer = () => false;
+
 /**
  * DatabaseProvider initializes the Dexie database. Page children stay mounted
  * during init so public routes can SSR (marketplace catalog HTML). Callers that
  * read Dexie treat an unresolved cache as loading. The recovery screen still
- * replaces children when initialization fails.
+ * replaces children when initialization fails. A store opened outside a secure context
+ * shows how to open it over HTTPS instead, and never opens the database.
  */
 export function DatabaseProvider({ children }: { children: ReactNode }) {
   const [isReady, setIsReady] = useState(false);
@@ -30,6 +36,7 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   // Guards against the 'close' event (manually deleteding indexedDB fires this event) that fires during recreateDatabase() → this.close().
   // Without this, the close handler would re-trigger initDatabase and cause an infinite loop.
   const isInitializingRef = useRef(false);
+  const isInsecureStore = useSyncExternalStore(subscribeNever, isStoreModeInsecureContext, isInsecureStoreOnServer);
 
   const initDatabase = async () => {
     isInitializingRef.current = true;
@@ -65,6 +72,7 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    if (isStoreModeInsecureContext()) return;
     initDatabase();
 
     // Re-initialize when the DB is unexpectedly closed (e.g. user deletes IndexedDB via devtools).
@@ -88,7 +96,9 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   //   is not replaced by the IndexedDB spinner. Hooks that read Dexie treat an
   //   unresolved cache as loading and keep server-provided listings mounted.
   let content: ReactNode;
-  if (error) {
+  if (isInsecureStore) {
+    content = <StoreSecureContextScreen />;
+  } else if (error) {
     content = <DatabaseErrorScreen onRetry={initDatabase} />;
   } else {
     content = children;

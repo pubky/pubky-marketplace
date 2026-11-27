@@ -1,5 +1,6 @@
 import Dexie from 'dexie';
 import { db } from '@/database/franky/franky';
+import { sameChatContext } from '@/libs/chat/context';
 import { DatabaseErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -75,6 +76,45 @@ export class LocalChatService {
     await ChatConversationModel.upsert(row);
   }
 
+  /** Adds the row unless one for the pair already exists; returns the row stored afterwards. */
+  static async addConversation(row: ChatConversationModelSchema): Promise<ChatConversationModelSchema> {
+    try {
+      return await db.transaction('rw', ChatConversationModel.table, async () => {
+        const stored = await ChatConversationModel.table.get(row.id);
+        if (stored) return stored;
+        await ChatConversationModel.table.add(row);
+        return row;
+      });
+    } catch (error) {
+      throw dbError('addConversation', error);
+    }
+  }
+
+  /**
+   * Sets the conversation's context only while it still is `expected`, so a newer context a message stored
+   * in the meantime stays. Returns the row stored afterwards, or null when there is none.
+   */
+  static async replaceConversationContext(
+    owner: string,
+    peer: string,
+    expected: ChatContext | null,
+    context: ChatContext,
+  ): Promise<ChatConversationModelSchema | null> {
+    try {
+      return await db.transaction('rw', ChatConversationModel.table, async () => {
+        const id = ChatConversationModel.conversationId(owner, peer);
+        const row = await ChatConversationModel.table.get(id);
+        if (!row) return null;
+        if (!sameChatContext(row.last_context, expected) || sameChatContext(row.last_context, context)) return row;
+        const changes = { last_context: context, priv_state_dirty: true, updated_at: Date.now() };
+        await ChatConversationModel.table.update(id, changes);
+        return { ...row, ...changes };
+      });
+    } catch (error) {
+      throw dbError('replaceConversationContext', error);
+    }
+  }
+
   static async updateConversation(
     owner: string,
     peer: string,
@@ -95,6 +135,7 @@ export class LocalChatService {
     owner: string,
     peer: string,
     latest: { sentAt: number; body: string; direction: ChatMessageDirection; context: ChatContext | null },
+    judgedContext?: ChatContext | null,
   ): Promise<void> {
     try {
       await db.transaction('rw', ChatConversationModel.table, async () => {
@@ -102,10 +143,9 @@ export class LocalChatService {
         const row = await ChatConversationModel.table.get(id);
         if (!row) return;
         if (row.last_message_at !== null && row.last_message_at > latest.sentAt) return;
-        const context = latest.context ?? row.last_context;
-        const contextChanged =
-          (context?.listingId ?? null) !== (row.last_context?.listingId ?? null) ||
-          (context?.orderId ?? null) !== (row.last_context?.orderId ?? null);
+        const mayChangeContext = judgedContext === undefined || sameChatContext(row.last_context, judgedContext);
+        const context = mayChangeContext && latest.context ? latest.context : row.last_context;
+        const contextChanged = !sameChatContext(context, row.last_context);
         await ChatConversationModel.table.update(id, {
           last_message_at: latest.sentAt,
           last_message_preview: chatPreview(latest.body),

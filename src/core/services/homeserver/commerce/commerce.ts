@@ -59,8 +59,9 @@ export class CommerceHomeserverService {
     return await HomeserverService.getBlob({ url, maxBytes });
   }
 
-  static async list(directoryUrl: string, limit: number, logUrl?: string): Promise<string[]> {
-    return await HomeserverService.list({ baseDirectory: directoryUrl, limit, logUrl });
+  /** Up to `limit` files under a directory, after `cursor` (a file URL of an earlier page) when given. */
+  static async list(directoryUrl: string, limit: number, logUrl?: string, cursor?: string): Promise<string[]> {
+    return await HomeserverService.list({ baseDirectory: directoryUrl, limit, logUrl, cursor });
   }
 
   /** Every file under a directory, paged until exhausted; a failed page rejects, so a caller never counts a partial listing. */

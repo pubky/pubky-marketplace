@@ -16,9 +16,11 @@ import {
   LOCKS_TERMINAL_REASON_COPY,
   LOCKS_TERMINAL_REASONS,
 } from '@/libs/commerce/locks-lifecycle';
+import { installTranslatorDomGuard, uninstallTranslatorDomGuard } from '@/libs/dom/translator-dom-guard';
 import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
 import { createPaykitOrderFixture } from '@/test/fixtures/commerce/paykit-orders';
 import { setupFixedDateLocale } from '@/test-utils/date-locale';
+import { translateTextNodes } from '@/test-utils/page-translator';
 import { MarketplacePaymentStatusCard } from './MarketplacePaymentStatusCard';
 
 setupFixedDateLocale();
@@ -979,6 +981,40 @@ describe('MarketplacePaymentStatusCard', () => {
       expect(resumePolling).toHaveBeenCalledTimes(1);
     });
 
+    it('drops the translated sent-request line when the request stalls', () => {
+      installTranslatorDomGuard();
+      try {
+        const payment = createPaymentFixture('awaiting_entitlement', { adapter: 'locks' });
+        const card = () => (
+          <MarketplacePaymentStatusCard
+            order={createOrderFixture('pending_payment', { paymentId: payment.id })}
+            payment={payment}
+            isBuyer
+            adapterMode="locks-paykit"
+            advancePayment={async () => false}
+            onPaymentChanged={() => {}}
+          />
+        );
+        locksView.overrides = {
+          correlation: registered,
+          admission: { kind: 'in_flight', readerWalletSetupNeeded: false, stalled: false },
+        };
+        const { container, rerender } = render(card());
+        translateTextNodes(container);
+
+        locksView.overrides = {
+          correlation: registered,
+          admission: { kind: 'in_flight', readerWalletSetupNeeded: false, stalled: true },
+        };
+        rerender(card());
+
+        expect(screen.getByTestId('locks-admission-stalled')).toHaveTextContent(LOCKS_ADMISSION_COPY.stalledTitle);
+        expect(container).not.toHaveTextContent(/Payment request sent/);
+      } finally {
+        uninstallTranslatorDomGuard();
+      }
+    });
+
     it('keeps the wallet-setup notice above the stalled notice', () => {
       locksView.overrides = {
         correlation: registered,
@@ -1517,6 +1553,40 @@ describe('MarketplacePaymentStatusCard', () => {
     expect(screen.queryByTestId('bitcoin-wallet-contact-hint')).not.toBeInTheDocument();
     expect(screen.queryByText(/Delivered/)).not.toBeInTheDocument();
     unmount();
+  });
+
+  it('replaces translated Bitcoin instructions when a request arrives or delivery fails', () => {
+    const card = (delivery: 'pending' | 'delivered' | 'failed') => (
+      <MarketplacePaymentStatusCard
+        order={createOrderFixture('pending_payment', {
+          holdExpiresAt: '2026-08-20T21:15:00.000Z',
+          holdSource: 'bind',
+          paymentMethod: 'bitcoin',
+          paykitRequestState: 'pending',
+          paykitDeliveryState: delivery,
+        })}
+        payment={createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' })}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />
+    );
+    installTranslatorDomGuard();
+    try {
+      const { container, rerender } = render(card('pending'));
+      translateTextNodes(screen.getByTestId('paykit-delivery-status'));
+      rerender(card('delivered'));
+      expect(screen.getByTestId('paykit-delivery-status')).toHaveTextContent(/Payment request sent/);
+      expect(container).not.toHaveTextContent(/Waiting for your wallet/);
+
+      translateTextNodes(screen.getByTestId('paykit-delivery-status'));
+      rerender(card('failed'));
+      expect(screen.getByTestId('paykit-delivery-failed')).toHaveTextContent(/couldn.t confirm/i);
+      expect(container).not.toHaveTextContent(/Payment request sent|Waiting for your wallet/);
+    } finally {
+      uninstallTranslatorDomGuard();
+    }
   });
 
   describe('auction winner pay-by deadline', () => {

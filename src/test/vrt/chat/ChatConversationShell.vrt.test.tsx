@@ -74,7 +74,12 @@ vi.mock('@/controllers/commerce/commerce', () => ({
 }));
 
 vi.mock('@/controllers/chat/chat', () => ({
-  ChatController: { commitSendMessage: async () => 'id', getUnreadConversationCount: () => 0 },
+  isStoreThreadRefusal: () => false,
+  ChatController: {
+    commitSendMessage: async () => 'id',
+    getUnreadConversationCount: () => 0,
+    fetchStoreThreadRoles: async () => null,
+  },
 }));
 
 function message(id: string, body: string, minutesAgo: number, direction: 'sent' | 'received'): ChatMessageView {

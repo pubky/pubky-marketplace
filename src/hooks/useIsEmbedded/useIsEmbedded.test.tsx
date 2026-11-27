@@ -2,6 +2,7 @@ import { renderToString } from 'react-dom/server';
 import { render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { setEmbedded } from '@/test-utils/embedded';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { useIsEmbedded } from './useIsEmbedded';
 
 const runtime = vi.hoisted(() => ({ embedded: false }));
@@ -19,6 +20,7 @@ describe('useIsEmbedded', () => {
   afterEach(() => {
     runtime.embedded = false;
     setEmbedded(false);
+    setStoreSeller(undefined);
   });
 
   it('is false for a top-level page', () => {
@@ -30,6 +32,13 @@ describe('useIsEmbedded', () => {
     setEmbedded(true);
     render(<Probe />);
     expect(screen.getByTestId('probe')).toHaveTextContent('true');
+  });
+
+  it('stays false in store mode when the URL carries embedded=1', () => {
+    setStoreSeller('o'.repeat(52));
+    setEmbedded(true);
+    render(<Probe />);
+    expect(screen.getByTestId('probe')).toHaveTextContent('false');
   });
 
   it('is true when the deployer forces embedded mode', () => {

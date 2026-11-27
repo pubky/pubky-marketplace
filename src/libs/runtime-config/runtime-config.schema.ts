@@ -338,6 +338,9 @@ const shopGrantClientIdValue = z.string().regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(
 });
 const optionalShopGrantClientIdFromString = optionalTrimmedString.pipe(shopGrantClientIdValue.optional());
 
+/** The store seller's pubky in z-base-32; set, it turns store mode on. */
+const optionalStoreSellerFromString = optionalTrimmedString.pipe(pubkyValue.optional());
+
 /**
  * The per-region commerce modes (`SELECTOR=MODE` list, see `@/libs/commerce/region-modes`). The
  * resolved value is the canonical spelling, so the injected browser config and the env agree.
@@ -463,6 +466,32 @@ function validatePaykitServerApiEnvInput(
     path: ['paykitServerApi'],
     message: `${PUBKY_RUNTIME_ENV_NAMES.paykitSetupCreatorParam}=false requires ${PUBKY_RUNTIME_ENV_NAMES.paykitServerApi}=upstream; the fork Paykit needs the creator parameter.`,
   });
+}
+
+/**
+ * Store mode serves one seller's shop, top level, on the seller's own origin. The embedded build
+ * runs inside pubky.app's chrome as the whole Market, and allowing framers turns a framed page
+ * into an embedded one, so store mode takes neither.
+ */
+function validateStoreModeEnvInput(
+  input: { storeSeller?: string; embedded?: boolean; frameAncestors?: string[] },
+  ctx: z.RefinementCtx,
+): void {
+  if (input.storeSeller === undefined) return;
+  if (input.embedded === true) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['storeSeller'],
+      message: `${PUBKY_RUNTIME_ENV_NAMES.storeSeller} (store mode) cannot be combined with ${PUBKY_RUNTIME_ENV_NAMES.embedded}=true.`,
+    });
+  }
+  if (input.frameAncestors !== undefined && input.frameAncestors.length > 0) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['storeSeller'],
+      message: `${PUBKY_RUNTIME_ENV_NAMES.storeSeller} (store mode) cannot be combined with ${PUBKY_RUNTIME_ENV_NAMES.frameAncestors}; a store is not framed.`,
+    });
+  }
 }
 
 /** Production Pubky HTTP relay host. A staging deploy never hands it to a signer. */
@@ -744,6 +773,12 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
    */
   shopPublicPath: shopPublicPathValue.optional(),
   /**
+   * Store mode: the one seller this deployment serves (a z-base-32 Pubky). Set, the Shop is that
+   * seller's store: `/` opens their shop and routes outside it return 404 (see
+   * `src/app/store-route-policy.ts`). Absent means the full Market, as before.
+   */
+  storeSeller: pubkyValue.optional(),
+  /**
    * Whether the Shop's grant sign-in asks the signer for the `e` action on
    * `/priv/pubky.app/marketplace/` (priv-encryption Phase 4), so the user's
    * data key is wrapped under a key only the signer can derive. Off by
@@ -871,6 +906,7 @@ export const runtimeEnvInputSchema = z
     embedded: optionalBooleanFromString,
     storageAdoptLegacy: optionalBooleanFromString,
     shopPublicPath: optionalShopPublicPathFromString,
+    storeSeller: optionalStoreSellerFromString,
     privEncryptionKeys: optionalBooleanFromString,
     passportPrivEncryptionKeys: optionalBooleanFromString,
     privEncryptionKeysHomeservers: optionalHomeserverArrayFromString('PRIV_ENCRYPTION_KEYS_HOMESERVERS'),
@@ -901,6 +937,7 @@ export const runtimeEnvInputSchema = z
   .superRefine(validatePaykitServerApiEnvInput)
   .superRefine(validateAuctionDurationsEnvInput)
   .superRefine(validateStagingEndpointsEnvInput)
+  .superRefine(validateStoreModeEnvInput)
   .pipe(runtimeConfigValueSchema);
 
 /**
@@ -978,6 +1015,7 @@ export const runtimeEnvInputSchemaWithDefaults = z
     embedded: optionalBooleanFromString,
     storageAdoptLegacy: optionalBooleanFromString,
     shopPublicPath: optionalShopPublicPathFromString,
+    storeSeller: optionalStoreSellerFromString,
     privEncryptionKeys: optionalBooleanFromString,
     passportPrivEncryptionKeys: optionalBooleanFromString,
     privEncryptionKeysHomeservers: optionalHomeserverArrayFromString('PRIV_ENCRYPTION_KEYS_HOMESERVERS'),
@@ -1007,6 +1045,7 @@ export const runtimeEnvInputSchemaWithDefaults = z
   .superRefine(validateLocksPaykitEnvInput)
   .superRefine(validatePaykitServerApiEnvInput)
   .superRefine(validateAuctionDurationsEnvInput)
+  .superRefine(validateStoreModeEnvInput)
   .pipe(lenientRuntimeConfigValueSchema);
 
 // ---------------------------------------------------------------------------
@@ -1076,6 +1115,7 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   embedded: 'PUBKY_RUNTIME_EMBEDDED',
   storageAdoptLegacy: 'PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY',
   shopPublicPath: 'PUBKY_RUNTIME_SHOP_PUBLIC_PATH',
+  storeSeller: 'PUBKY_RUNTIME_STORE_SELLER',
   privEncryptionKeys: 'PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS',
   passportPrivEncryptionKeys: 'PUBKY_RUNTIME_PASSPORT_PRIV_ENCRYPTION_KEYS',
   privEncryptionKeysHomeservers: 'PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS_HOMESERVERS',

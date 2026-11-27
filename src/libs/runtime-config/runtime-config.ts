@@ -89,14 +89,23 @@ function readRuntimeEnvInput(): Record<string, string | undefined> {
  * and test overrides are honored (partial values layer over staging defaults).
  */
 function parseLenientConfig(): RuntimeConfig {
-  return validateEmbeddedMount(runtimeEnvInputSchemaWithDefaults.parse(readRuntimeEnvInput()));
+  return validateBuildBoundConfig(runtimeEnvInputSchemaWithDefaults.parse(readRuntimeEnvInput()));
 }
 
-/** Keep this leaf module independent of Env/logger; Next inlines this build-time value. */
-function validateEmbeddedMount(config: RuntimeConfig): RuntimeConfig {
+/**
+ * Runtime values that only fit some builds. Keep this leaf module independent of Env/logger;
+ * Next inlines these build-time values.
+ */
+function validateBuildBoundConfig(config: RuntimeConfig): RuntimeConfig {
   if (config.embedded && normalizeBasePath(process.env.NEXT_PUBLIC_BASE_PATH) !== '/shop-embed') {
     throw new Error(
       'PUBKY_RUNTIME_EMBEDDED=true requires NEXT_PUBLIC_BASE_PATH=/shop-embed. Rebuild with the supported Shop mount.',
+    );
+  }
+  // Social link-out sends the social routes and the buyer's sign-out to the social app; a store has neither.
+  if (config.storeSeller && process.env.NEXT_PUBLIC_SOCIAL_HOST?.trim()) {
+    throw new Error(
+      'PUBKY_RUNTIME_STORE_SELLER (store mode) requires a build without NEXT_PUBLIC_SOCIAL_HOST. Rebuild with it unset.',
     );
   }
   return config;
@@ -113,7 +122,7 @@ export function readServerConfig(): RuntimeConfig {
         cause: result.error,
       });
     }
-    return validateEmbeddedMount(result.data);
+    return validateBuildBoundConfig(result.data);
   }
 
   return parseLenientConfig();
@@ -123,7 +132,7 @@ export function readServerConfig(): RuntimeConfig {
 export function readClientConfig(): RuntimeConfig {
   const injected = window[RUNTIME_CONFIG_WINDOW_KEY];
   if (injected !== undefined) {
-    return validateEmbeddedMount(runtimeConfigValueSchema.parse(injected));
+    return validateBuildBoundConfig(runtimeConfigValueSchema.parse(injected));
   }
 
   if (isRuntimeConfigRequired()) {
@@ -287,6 +296,8 @@ export const getEmbeddedFlag = (): boolean => getRuntimeConfig().embedded;
 export const getStorageAdoptLegacyOverride = (): boolean | undefined => getRuntimeConfig().storageAdoptLegacy;
 /** The host app's path for the Shop, when it differs from the build's mount path; `undefined` otherwise. */
 export const getShopPublicPathOverride = (): string | undefined => getRuntimeConfig().shopPublicPath;
+/** The one seller a store-mode deployment serves; `undefined` runs the full Market. */
+export const getStoreSeller = (): string | undefined => getRuntimeConfig().storeSeller;
 /** Deployer override for the grant sign-in client id; `undefined` keeps the built-in default. */
 export const getShopGrantClientIdOverride = (): string | undefined => getRuntimeConfig().shopGrantClientId;
 /** Runtime additions to the review attestor trust list (see `marketplaceTrustedAttestors` in `@/config/commerce`). */

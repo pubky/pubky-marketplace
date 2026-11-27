@@ -57,15 +57,18 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
   }, [router, thread.isSelf]);
 
   const peerNotEnabled = thread.openState === 'peer_not_enabled';
+  const storeRestricted = thread.openState === 'store_restricted';
   const awaitingFirstReply = !thread.messages.some((message) => message.direction === 'received');
-  const composerDisabled = !currentUserPubky || identityState === 'needs_reauth' || thread.isSelf;
+  const composerDisabled = !currentUserPubky || identityState === 'needs_reauth' || thread.isSelf || storeRestricted;
   const disabledReason = thread.isSelf
     ? 'This is you.'
-    : identityState === 'needs_reauth'
-      ? 'Sign in again to send messages.'
-      : undefined;
+    : storeRestricted
+      ? CHAT_COPY.storeRestrictedReason
+      : identityState === 'needs_reauth'
+        ? 'Sign in again to send messages.'
+        : undefined;
   const emptyHint =
-    identityState === 'needs_reauth'
+    identityState === 'needs_reauth' || storeRestricted
       ? undefined
       : peerNotEnabled
         ? `${name} hasn't set up messages yet. You can write now; it's delivered once they sign in.`
@@ -143,14 +146,28 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
         ) : (
           <>
             <ChatIdentityNotice identityState={identityState} onRetry={thread.reopen} />
-            <ChatThread
-              messages={thread.messages}
-              peerPubky={peerPubky}
-              hasMore={thread.hasMore}
-              onLoadOlder={thread.loadOlder}
-              onRetry={(id) => void thread.retryMessage(id)}
-              emptyHint={emptyHint}
-            />
+            {storeRestricted ? (
+              <div
+                className="flex flex-1 flex-col items-start justify-center gap-2 rounded-xl border border-dashed border-border p-6"
+                data-testid="chat-store-restricted"
+              >
+                <Typography as="h2" size="sm" className="font-medium">
+                  {CHAT_COPY.storeRestrictedTitle}
+                </Typography>
+                <Typography as="p" size="sm" className="text-muted-foreground">
+                  {CHAT_COPY.storeRestrictedBody}
+                </Typography>
+              </div>
+            ) : (
+              <ChatThread
+                messages={thread.messages}
+                peerPubky={peerPubky}
+                hasMore={thread.hasMore}
+                onLoadOlder={thread.loadOlder}
+                onRetry={(id) => void thread.retryMessage(id)}
+                emptyHint={emptyHint}
+              />
+            )}
             {peerNotEnabled && thread.messages.length > 0 ? (
               <Typography as="p" size="xs" className="px-1 text-muted-foreground" data-testid="chat-peer-not-enabled">
                 {name} hasn&apos;t set up messages yet. New messages wait until they sign in.
@@ -163,7 +180,7 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
               disabledReason={disabledReason}
               placeholder={`Message ${name}`}
             />
-            {!pinned && inboxStatus === 'disabled' && awaitingFirstReply && !peerNotEnabled ? (
+            {!pinned && inboxStatus === 'disabled' && awaitingFirstReply && !peerNotEnabled && !storeRestricted ? (
               <Typography as="p" size="xs" className="px-1 text-muted-foreground" data-testid="chat-no-inbox-note">
                 {CHAT_COPY.noInboxFirstContact}
               </Typography>

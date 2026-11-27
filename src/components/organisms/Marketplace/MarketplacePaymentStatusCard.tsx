@@ -968,8 +968,11 @@ export function MarketplacePaymentStatusCard({
                 </Typography>
               </div>
             )}
+            {/* The two branches are keyed so React replaces the element rather than its text nodes, which a
+                page translator may already have detached (the old translated line would stay on screen). */}
             {locks.admission?.kind === 'in_flight' && locks.admission.stalled ? (
               <div
+                key="locks-stalled"
                 role="status"
                 className="grid gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3"
                 data-testid="locks-admission-stalled"
@@ -985,7 +988,7 @@ export function MarketplacePaymentStatusCard({
                 </Button>
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <div key="locks-sent" className="flex items-center gap-2 text-sm text-muted-foreground">
                 <LoaderCircle className="size-4 animate-spin" />
                 Payment request sent. Check your wallet for the private Paykit request; this page updates once the
                 marketplace independently verifies the payment.
@@ -1110,10 +1113,14 @@ function BuyerBitcoinPaymentProgress({
       </div>
     );
   }
+  const deliveryMessage =
+    requestSent && paymentDeadline
+      ? `Payment request sent. Open Bitkit to approve and pay by ${paymentDeadline}.`
+      : `${progress.text}${paymentDeadline ? ` Pay by ${paymentDeadline}.` : ''}`;
   return (
     <div className="grid gap-2">
       {order.paykitDeliveryState === 'failed' ? (
-        <div className="grid justify-items-start gap-2">
+        <div key="delivery-failed" className="grid justify-items-start gap-2">
           <Typography
             as="p"
             role="alert"
@@ -1125,11 +1132,13 @@ function BuyerBitcoinPaymentProgress({
           {checkoutActions}
         </div>
       ) : (
-        <div className="flex items-center gap-2 text-sm text-foreground" data-testid="paykit-delivery-status">
+        <div
+          key={deliveryMessage}
+          className="flex items-center gap-2 text-sm text-foreground"
+          data-testid="paykit-delivery-status"
+        >
           <LoaderCircle className="size-4 animate-spin" />
-          {requestSent && paymentDeadline
-            ? `Payment request sent. Open Bitkit to approve and pay by ${paymentDeadline}.`
-            : `${progress.text}${paymentDeadline ? ` Pay by ${paymentDeadline}.` : ''}`}
+          {deliveryMessage}
         </div>
       )}
       {order.paykitDeliveryState !== 'failed' && checkoutActions}
@@ -1167,7 +1176,7 @@ function BuyerPaykitPaymentProgress({
         {holderBoundCopy(buyerPayByDeadline(order))}
       </Typography>
       {order.paykitDeliveryState === 'failed' ? (
-        <div className="grid justify-items-start gap-2">
+        <div key="delivery-failed" className="grid justify-items-start gap-2">
           <Typography
             as="p"
             role="alert"
@@ -1267,7 +1276,7 @@ function BuyerUsdtPaymentProgress({
         </Typography>
       )}
       {order.paykitDeliveryState === 'failed' ? (
-        <div className="grid justify-items-start gap-2">
+        <div key="delivery-failed" className="grid justify-items-start gap-2">
           <Typography
             as="p"
             role="alert"

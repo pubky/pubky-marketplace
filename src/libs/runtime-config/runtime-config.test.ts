@@ -141,6 +141,38 @@ describe('runtime-config resolver', () => {
       expect(readServerConfig().embedded).toBe(true);
     });
 
+    describe('store mode', () => {
+      const STORE_SELLER = 'ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u';
+
+      it('reads the store seller', () => {
+        vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', '');
+        vi.stubEnv('PUBKY_RUNTIME_STORE_SELLER', STORE_SELLER);
+        expect(readServerConfig().storeSeller).toBe(STORE_SELLER);
+      });
+      it('refuses a build that links out to the social app', () => {
+        vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', 'https://pubky.app');
+        vi.stubEnv('PUBKY_RUNTIME_STORE_SELLER', STORE_SELLER);
+        expect(() => readServerConfig()).toThrow('requires a build without NEXT_PUBLIC_SOCIAL_HOST');
+      });
+      it('refuses an injected store seller in a build that links out to the social app', () => {
+        vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', '');
+        const injected = { ...readServerConfig(), storeSeller: STORE_SELLER };
+        vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', 'https://pubky.app');
+        window[RUNTIME_CONFIG_WINDOW_KEY] = injected;
+        expect(() => readClientConfig()).toThrow('requires a build without NEXT_PUBLIC_SOCIAL_HOST');
+      });
+      it('refuses store mode in the embedded build', () => {
+        vi.stubEnv('NEXT_PUBLIC_BASE_PATH', '/shop-embed');
+        vi.stubEnv('PUBKY_RUNTIME_EMBEDDED', 'true');
+        vi.stubEnv('PUBKY_RUNTIME_STORE_SELLER', STORE_SELLER);
+        expect(() => readServerConfig()).toThrow('PUBKY_RUNTIME_STORE_SELLER');
+      });
+      it('keeps the social host allowed outside store mode', () => {
+        vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', 'https://pubky.app');
+        expect(readServerConfig().storeSeller).toBeUndefined();
+      });
+    });
+
     it('parses PUBKY_RUNTIME_* when present', () => {
       setAllRuntimeEnv();
       const config = readServerConfig();

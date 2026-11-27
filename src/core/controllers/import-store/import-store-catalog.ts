@@ -3,6 +3,7 @@ import {
   type TImportStoreCatalogParams,
   type TImportStoreCatalogResult,
 } from '@/application/import-store/import-store-catalog';
+import { StoreSellerGate } from '@/controllers/store-seller-gate/store-seller-gate';
 
 /**
  * Browser entry point for reading a seller's public WooCommerce catalogue. The
@@ -12,6 +13,7 @@ export class ImportStoreCatalogController {
   private constructor() {}
 
   static async fetchCatalog(params: TImportStoreCatalogParams): Promise<TImportStoreCatalogResult> {
+    StoreSellerGate.assertCurrentUserCanSellHere();
     return ImportStoreCatalogApplication.fetchCatalog(params);
   }
 }
