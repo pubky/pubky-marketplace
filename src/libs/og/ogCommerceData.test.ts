@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
-import { fetchListingForMetadata } from './ogCommerceData';
+import { createCommerceListingFixture, createCommerceShopFixture } from '@/test/fixtures/commerce/commerce';
+import {
+  fetchListingForMetadata,
+  fetchShopForMetadata,
+  OG_COMMERCE_CACHE_MAX_ENTRIES,
+  OG_COMMERCE_CACHE_TTL_MS,
+  resetOgCommerceCacheForTests,
+} from './ogCommerceData';
 
 const { fetchMock, resolvePubkyMock } = vi.hoisted(() => ({
   fetchMock: vi.fn(),
@@ -18,6 +24,7 @@ const seller = '8mmmaouyode95qf7scbt4moytceiga4we5i3fwra71xapmwguwdy';
 
 describe('fetchListingForMetadata', () => {
   beforeEach(() => {
+    resetOgCommerceCacheForTests();
     fetchMock.mockReset();
     resolvePubkyMock.mockClear();
   });
@@ -95,5 +102,110 @@ describe('fetchListingForMetadata', () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify(fixture), { status: 200 }));
 
     await expect(fetchListingForMetadata(seller, fixture.listingId)).resolves.toEqual({ kind: 'not_found' });
+  });
+
+  it('caches found listings for 5 minutes and deduplicates concurrent in-flight requests', async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = createCommerceListingFixture({ ownerPubky: seller, listingId: 'cached_01' });
+      fixture.media = fixture.media.map((media) => ({
+        ...media,
+        url: media.url.replace('y'.repeat(52), seller),
+      }));
+      let resolveFetch: ((response: Response) => void) | undefined;
+      fetchMock.mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveFetch = resolve;
+          }),
+      );
+
+      const first = fetchListingForMetadata(seller, 'cached_01');
+      const second = fetchListingForMetadata(seller, 'cached_01');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      resolveFetch?.(new Response(JSON.stringify(fixture), { status: 200 }));
+      await expect(Promise.all([first, second])).resolves.toMatchObject([
+        { kind: 'found', record: { listingId: 'cached_01' } },
+        { kind: 'found', record: { listingId: 'cached_01' } },
+      ]);
+
+      // Warm cache hit within 5-minute TTL makes no new homeserver fetch.
+      await expect(fetchListingForMetadata(seller, 'cached_01')).resolves.toMatchObject({ kind: 'found' });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      // Expired entry re-fetches once TTL elapses.
+      vi.advanceTimersByTime(OG_COMMERCE_CACHE_TTL_MS + 1);
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(fixture), { status: 200 }));
+      await expect(fetchListingForMetadata(seller, 'cached_01')).resolves.toMatchObject({ kind: 'found' });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never caches unavailable failures so subsequent requests recover', async () => {
+    const fixture = createCommerceListingFixture({ ownerPubky: seller, listingId: 'flaky_01' });
+    fixture.media = fixture.media.map((media) => ({
+      ...media,
+      url: media.url.replace('y'.repeat(52), seller),
+    }));
+    fetchMock
+      .mockResolvedValueOnce(new Response('upstream failure', { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(fixture), { status: 200 }));
+
+    await expect(fetchListingForMetadata(seller, 'flaky_01')).resolves.toEqual({
+      kind: 'unavailable',
+      reason: 'http_503',
+    });
+    await expect(fetchListingForMetadata(seller, 'flaky_01')).resolves.toMatchObject({ kind: 'found' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('caps listing cache entries with LRU eviction', async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      const listingId = url.slice(url.lastIndexOf('/') + 1);
+      const fixture = createCommerceListingFixture({ ownerPubky: seller, listingId });
+      fixture.media = fixture.media.map((media) => ({
+        ...media,
+        url: media.url.replace('y'.repeat(52), seller),
+      }));
+      return new Response(JSON.stringify(fixture), { status: 200 });
+    });
+
+    for (let i = 0; i <= OG_COMMERCE_CACHE_MAX_ENTRIES; i += 1) {
+      await fetchListingForMetadata(seller, `item_${i}`);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(OG_COMMERCE_CACHE_MAX_ENTRIES + 1);
+
+    // Most recent entry is still cached; the oldest entry was evicted.
+    await fetchListingForMetadata(seller, `item_${OG_COMMERCE_CACHE_MAX_ENTRIES}`);
+    expect(fetchMock).toHaveBeenCalledTimes(OG_COMMERCE_CACHE_MAX_ENTRIES + 1);
+
+    await fetchListingForMetadata(seller, 'item_0');
+    expect(fetchMock).toHaveBeenCalledTimes(OG_COMMERCE_CACHE_MAX_ENTRIES + 2);
+  });
+
+  it('caches and deduplicates fetchShopForMetadata reads', async () => {
+    const shop = createCommerceShopFixture({ ownerPubky: seller });
+    let resolveFetch: ((response: Response) => void) | undefined;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    const pending = Promise.all([fetchShopForMetadata(seller), fetchShopForMetadata(seller)]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    resolveFetch?.(new Response(JSON.stringify(shop), { status: 200 }));
+    await expect(pending).resolves.toMatchObject([
+      { kind: 'found', record: { name: shop.name } },
+      { kind: 'found', record: { name: shop.name } },
+    ]);
+
+    await expect(fetchShopForMetadata(seller)).resolves.toMatchObject({ kind: 'found', record: { name: shop.name } });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

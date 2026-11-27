@@ -1,6 +1,6 @@
 import sharp from 'sharp';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchOgMediaAsDataUri } from './ogCommerceData';
+import { fetchOgMediaAsDataUri, resetOgCommerceCacheForTests } from './ogCommerceData';
 
 const { fetchMock, resolvePubkyMock } = vi.hoisted(() => ({
   fetchMock: vi.fn(),
@@ -20,6 +20,7 @@ const resolvedUrl = `https://_pubky.${seller}/pub/pubky.app/marketplace/v1/media
 
 describe('fetchOgMediaAsDataUri', () => {
   beforeEach(() => {
+    resetOgCommerceCacheForTests();
     fetchMock.mockReset();
     resolvePubkyMock.mockClear();
   });

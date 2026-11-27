@@ -3,8 +3,12 @@ import { getMarketplaceNexusUrl } from '@/config/nexus';
 import { Logger } from '@/libs/logger/logger';
 import { getCommerceAdapterMode } from '@/libs/runtime-config/runtime-config';
 import { createCommerceShopFixture, createNexusListingDetailsFixture } from '@/test/fixtures/commerce/commerce';
-import { CATALOG_SHOP_FETCH_TIMEOUT_MS, fetchMarketplaceCatalogForSsr } from './ogCatalogData';
-import { OG_COMMERCE_REVALIDATE } from './ogCommerceData';
+import {
+  CATALOG_SHOP_FETCH_TIMEOUT_MS,
+  fetchMarketplaceCatalogForSsr,
+  resetOgCatalogCacheForTests,
+} from './ogCatalogData';
+import { OG_COMMERCE_CACHE_TTL_MS, OG_COMMERCE_REVALIDATE } from './ogCommerceData';
 
 vi.mock('@synonymdev/pubky', () => ({
   Client: class {
@@ -25,6 +29,7 @@ vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
 
 describe('fetchMarketplaceCatalogForSsr', () => {
   beforeEach(() => {
+    resetOgCatalogCacheForTests();
     vi.mocked(getCommerceAdapterMode).mockReturnValue('transaction-service');
   });
 
@@ -176,8 +181,92 @@ describe('fetchMarketplaceCatalogForSsr', () => {
 
       expect(catalog).toHaveLength(7);
       expect(shops).toHaveLength(6);
-      expect(CATALOG_SHOP_FETCH_TIMEOUT_MS).toBe(3_000);
+      expect(CATALOG_SHOP_FETCH_TIMEOUT_MS).toBe(1_200);
     });
+  });
+
+  it('serves cached catalog SSR payloads for 5 minutes and deduplicates concurrent cold reads', async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = createNexusListingDetailsFixture();
+      let resolveStream: ((response: Response) => void) | undefined;
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+        const url = String(input);
+        if (url.includes('/v0/stream/listings')) {
+          return new Promise<Response>((resolve) => {
+            resolveStream = resolve;
+          });
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(createCommerceShopFixture()), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      });
+
+      const first = fetchMarketplaceCatalogForSsr();
+      const second = fetchMarketplaceCatalogForSsr();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      resolveStream?.(
+        new Response(JSON.stringify([fixture]), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      );
+      const [resultA, resultB] = await Promise.all([first, second]);
+      expect(resultA.listings).toHaveLength(1);
+      expect(resultB.listings).toHaveLength(1);
+      // 1 listing stream + 1 shop read shared across both concurrent callers.
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      // Repeat SSR hit within 5-minute TTL makes zero upstream requests.
+      const cached = await fetchMarketplaceCatalogForSsr();
+      expect(cached.listings).toHaveLength(1);
+      expect(cached.shops).toHaveLength(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      // After 5 minutes, cache expires and re-fetches cleanly.
+      vi.advanceTimersByTime(OG_COMMERCE_CACHE_TTL_MS + 1);
+      fetchMock.mockImplementation((input) => {
+        const url = String(input);
+        if (url.includes('/v0/stream/listings')) {
+          return Promise.resolve(
+            new Response(JSON.stringify([fixture]), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(createCommerceShopFixture()), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      });
+      await fetchMarketplaceCatalogForSsr();
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not cache failed Nexus responses', async () => {
+    vi.spyOn(Logger, 'warn').mockImplementation(() => {});
+    const fixture = createNexusListingDetailsFixture();
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('down', { status: 503 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([fixture]), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(createCommerceShopFixture()), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+
+    await expect(fetchMarketplaceCatalogForSsr()).resolves.toEqual({ listings: [], shops: [] });
+    const recovered = await fetchMarketplaceCatalogForSsr();
+    expect(recovered.listings).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });
 
