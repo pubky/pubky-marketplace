@@ -23,6 +23,8 @@ describe('CommerceController seller auto-confirm', () => {
     commerceConfig.mode = 'transaction-service';
     useAuthStore.getState().setCurrentUserPubky(SELLER);
     useSellerPaymentConfirmStore.setState({ autoConfirmByPubky: {} });
+    vi.spyOn(CommerceApplication, 'hasActiveMarketplaceSession').mockReturnValue(true);
+    vi.spyOn(CommerceApplication, 'fetchPaymentConfirmationMode').mockResolvedValue('seller');
   });
 
   afterEach(() => {
@@ -86,6 +88,24 @@ describe('CommerceController seller auto-confirm', () => {
     commerceConfig.mode = 'sandbox';
 
     await expect(CommerceController.autoConfirmSellerPayments()).resolves.toEqual([]);
+    expect(pass).not.toHaveBeenCalled();
+  });
+
+  it.each(['automatic', null] as const)('does nothing when deployment paymentConfirmation is %s', async (mode) => {
+    const pass = vi.spyOn(CommerceApplication, 'autoConfirmSellerPayments').mockResolvedValue(['order-1']);
+    vi.spyOn(CommerceApplication, 'fetchPaymentConfirmationMode').mockResolvedValue(mode);
+
+    await expect(CommerceController.autoConfirmSellerPayments()).resolves.toEqual([]);
+    expect(pass).not.toHaveBeenCalled();
+  });
+
+  it('does nothing without an active marketplace session', async () => {
+    const pass = vi.spyOn(CommerceApplication, 'autoConfirmSellerPayments').mockResolvedValue(['order-1']);
+    const fetchMode = vi.spyOn(CommerceApplication, 'fetchPaymentConfirmationMode').mockResolvedValue('seller');
+    vi.spyOn(CommerceApplication, 'hasActiveMarketplaceSession').mockReturnValue(false);
+
+    await expect(CommerceController.autoConfirmSellerPayments()).resolves.toEqual([]);
+    expect(fetchMode).not.toHaveBeenCalled();
     expect(pass).not.toHaveBeenCalled();
   });
 

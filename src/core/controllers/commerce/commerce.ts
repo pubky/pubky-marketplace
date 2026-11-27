@@ -1692,6 +1692,7 @@ export class CommerceController {
    */
   static async autoConfirmSellerPayments(): Promise<string[]> {
     if (!this.sellsHere() || !isDurableCommerceMode(getCommerceAdapterMode())) return [];
+    if (!CommerceApplication.hasActiveMarketplaceSession()) return [];
     const pubky = useAuthStore.getState().currentUserPubky;
     const scope = captureAuthScope();
     const isEnabled = () =>
@@ -1700,6 +1701,8 @@ export class CommerceController {
       useAuthStore.getState().currentUserPubky === pubky &&
       useSellerPaymentConfirmStore.getState().autoConfirmByPubky[pubky] !== false;
     if (!pubky || !isEnabled()) return [];
+    if ((await CommerceApplication.fetchPaymentConfirmationMode()) !== 'seller') return [];
+    if (!isEnabled()) return [];
     const pass = new AbortController();
     const deadline = setTimeout(() => pass.abort(), SELLER_AUTO_CONFIRM_PASS_TIMEOUT_MS);
     const endPass = () => pass.abort();

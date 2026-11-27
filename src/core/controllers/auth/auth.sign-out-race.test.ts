@@ -398,6 +398,8 @@ describe('work started for an account writes nothing for it once its sign-out st
   it('seller confirmation: a pass that started before sign-out confirms nothing after it starts', async () => {
     commerceConfig.mode = 'transaction-service';
     signIn(ALICE);
+    vi.spyOn(CommerceApplication, 'hasActiveMarketplaceSession').mockReturnValue(true);
+    vi.spyOn(CommerceApplication, 'fetchPaymentConfirmationMode').mockResolvedValue('seller');
     const order = createOrderFixture('pending_payment', {
       id: '00000000-0000-4000-8000-000000000001',
       sellerPubky: ALICE,
