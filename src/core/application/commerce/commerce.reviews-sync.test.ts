@@ -227,6 +227,29 @@ describe.each([
       expect(deletes()).toHaveLength(1);
     });
 
+    it('without the seller side, retries only the removal of a review of an order the user bought', async () => {
+      homeserver.failNext(HttpMethod.DELETE, url, 500);
+      await CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id);
+      homeserver.files.delete(url);
+      const readOrder = vi.spyOn(MarketplaceGatewayService, 'getOrder');
+
+      readOrder.mockResolvedValueOnce({ ...order, buyerPubky: 'o'.repeat(52), sellerPubky: ORDER_FIXTURE_BUYER });
+      await expect(
+        CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, { sellerSide: false }),
+      ).resolves.toBe(0);
+      readOrder.mockRejectedValueOnce(new Error('offline'));
+      await expect(
+        CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, { sellerSide: false }),
+      ).resolves.toBe(0);
+      expect(deletes()).toHaveLength(1);
+
+      await expect(
+        CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, { sellerSide: false }),
+      ).resolves.toBe(1);
+      expect(deletes()).toHaveLength(1);
+      expect(await jobs()).toEqual([]);
+    });
+
     it('a retry whose scope ends during the service withdrawal sends no DEL and leaves the job as it was', async () => {
       homeserver.failNext(HttpMethod.DELETE, url, 500);
       await CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id);
@@ -239,7 +262,9 @@ describe.each([
         return read;
       });
 
-      await expect(CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, scope.signal)).resolves.toBe(0);
+      await expect(
+        CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, { signal: scope.signal }),
+      ).resolves.toBe(0);
 
       expect(deletes()).toHaveLength(1);
       expect(homeserver.files.has(url)).toBe(true);
@@ -254,7 +279,9 @@ describe.each([
       const scope = new AbortController();
       scope.abort(new DOMException('Signed out', 'AbortError'));
 
-      await expect(CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, scope.signal)).resolves.toBe(0);
+      await expect(
+        CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, { signal: scope.signal }),
+      ).resolves.toBe(0);
 
       expect(getOrder).not.toHaveBeenCalled();
       expect(deletes()).toHaveLength(1);
@@ -356,7 +383,7 @@ describe.each([
       const scope = new AbortController();
       const parked = service.holdNext('getOrder', { afterAnswer: true });
 
-      const retry = CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, scope.signal);
+      const retry = CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, { signal: scope.signal });
       await parked.reached;
       scope.abort(new DOMException('Signed out', 'AbortError'));
       parked.release();
@@ -443,7 +470,7 @@ describe.each([
         sdkDelete.mockRejectedValueOnce(sdkRequestError(503));
         await expect(CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id)).resolves.toBe('queued');
         await expect(
-          CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, new AbortController().signal),
+          CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, { signal: new AbortController().signal }),
         ).resolves.toBe(0);
         expect(sdkDelete).toHaveBeenCalledTimes(1);
         expect(await jobs()).toHaveLength(1);
@@ -702,7 +729,7 @@ describe.each([
   describe('an interrupted review removal', () => {
     const scope = () => new AbortController().signal;
     const inspect = () => CommerceApplication.fetchReviewRemovalCopy(ORDER_FIXTURE_BUYER, order.id, 'boots', scope());
-    const resume = () => CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, scope());
+    const resume = () => CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER, { signal: scope() });
 
     async function moveToLegacyPath() {
       const { orderRef: _orderRef, ...record } = published.record;
@@ -738,7 +765,9 @@ describe.each([
         });
         useAuthStore.getState().setCurrentUserPubky(order.sellerPubky);
         await expect(CommerceApplication.getManualReviewRemovals(order.sellerPubky, order.id)).resolves.toEqual([]);
-        await expect(CommerceApplication.resumeOwnReviewRemovals(order.sellerPubky, scope())).resolves.toBe(0);
+        await expect(CommerceApplication.resumeOwnReviewRemovals(order.sellerPubky, { signal: scope() })).resolves.toBe(
+          0,
+        );
         useAuthStore.getState().setCurrentUserPubky(ORDER_FIXTURE_BUYER);
         await expect(inspect()).resolves.toMatchObject({
           kind: 'checked',

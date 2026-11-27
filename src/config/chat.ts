@@ -54,6 +54,9 @@ export const CHAT_CLOCK_SKEW_TOLERANCE_MS = 5 * 60_000;
 export const CHAT_SEND_MAX_ATTEMPTS = 8;
 export const CHAT_SEND_RETRY_BASE_MS = 2_000;
 export const CHAT_SEND_RETRY_MAX_MS = 5 * 60_000;
+/** Backoff for a failed read of the store thread roles, retried while a chat surface is mounted. */
+export const CHAT_STORE_ROLES_RETRY_BASE_MS = 2_000;
+export const CHAT_STORE_ROLES_RETRY_MAX_MS = 60_000;
 
 /** Leader-tab reconciliation cadence. */
 export const CHAT_RECONCILE_VISIBLE_MS = 60_000;

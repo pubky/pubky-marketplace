@@ -136,7 +136,7 @@ export function MarketplaceOrderActions({
   const ownReviewerPubkyForRecord = isBuyer ? order.buyerPubky : order.sellerPubky;
   const hasOwnReview = order.reviews?.some(({ reviewerPubky }) => reviewerPubky === ownReviewerPubkyForRecord);
   const manualRemovals: (string | null)[] = useLiveQuery(
-    () => (hasOwnReview ? CommerceController.getManualReviewRemovals(order.id) : []),
+    () => (hasOwnReview ? CommerceController.getManualReviewRemovals(order) : []),
     [order.id, hasOwnReview, ownReviewerPubkyForRecord],
     [],
   );

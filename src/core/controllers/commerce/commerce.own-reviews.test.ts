@@ -49,6 +49,6 @@ describe('CommerceController own reviews', () => {
     await expect(CommerceController.refreshOwnMarketplaceReviews(orders)).resolves.toBe(2);
     await expect(CommerceController.resumeOwnReviewRemovals()).resolves.toBe(1);
     expect(refresh).toHaveBeenCalledWith(ORDER_FIXTURE_BUYER, orders);
-    expect(resume).toHaveBeenCalledWith(ORDER_FIXTURE_BUYER, captureAuthScope());
+    expect(resume).toHaveBeenCalledWith(ORDER_FIXTURE_BUYER, { sellerSide: true, signal: captureAuthScope() });
   });
 });

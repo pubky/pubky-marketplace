@@ -5,6 +5,7 @@ import { SELLER_AUTO_CONFIRM_PASS_TIMEOUT_MS } from '@/libs/commerce/seller-auto
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { SELLER_PAYMENT_CONFIRM_PERSIST_KEY } from '@/stores/persistedKeys';
 import { useSellerPaymentConfirmStore } from '@/stores/seller-payment-confirm/seller-payment-confirm.store';
+import { setStoreSeller } from '@/test-utils/store-mode';
 import { CommerceController } from './commerce';
 
 const commerceConfig = vi.hoisted(() => ({ mode: 'transaction-service' as string }));
@@ -50,6 +51,33 @@ describe('CommerceController seller auto-confirm', () => {
     await CommerceController.autoConfirmSellerPayments();
     expect(pass).toHaveBeenCalledWith(OTHER, expect.any(Function), expect.any(AbortSignal));
     expect(useSellerPaymentConfirmStore.getState().autoConfirmByPubky).toEqual({ [SELLER]: false });
+  });
+
+  describe('in a store', () => {
+    afterEach(() => setStoreSeller(undefined));
+
+    it('confirms nothing for a seller other than the store seller', async () => {
+      const pass = vi.spyOn(CommerceApplication, 'autoConfirmSellerPayments').mockResolvedValue(['order-1']);
+      setStoreSeller(OTHER);
+
+      await expect(CommerceController.autoConfirmSellerPayments()).resolves.toEqual([]);
+      expect(pass).not.toHaveBeenCalled();
+    });
+
+    it('confirms for the store seller', async () => {
+      const pass = vi.spyOn(CommerceApplication, 'autoConfirmSellerPayments').mockResolvedValue(['order-1']);
+      setStoreSeller(SELLER);
+
+      await expect(CommerceController.autoConfirmSellerPayments()).resolves.toEqual(['order-1']);
+      expect(pass).toHaveBeenCalledWith(SELLER, expect.any(Function), expect.any(AbortSignal));
+    });
+
+    it('confirms for any seller outside store mode', async () => {
+      const pass = vi.spyOn(CommerceApplication, 'autoConfirmSellerPayments').mockResolvedValue(['order-1']);
+
+      await expect(CommerceController.autoConfirmSellerPayments()).resolves.toEqual(['order-1']);
+      expect(pass).toHaveBeenCalledWith(SELLER, expect.any(Function), expect.any(AbortSignal));
+    });
   });
 
   it('does nothing outside the durable service', async () => {

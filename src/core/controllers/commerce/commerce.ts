@@ -30,8 +30,10 @@ import {
   isTransactionalCommerceMode,
 } from '@/config/commerce';
 import { IMAGE_MAX_UPLOAD_SIZE } from '@/config/images';
+import { getStoreSeller } from '@/config/store-mode';
 import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import { captureTagViewer } from '@/controllers/commerce/tag-viewer';
+import { StoreSellerGate } from '@/controllers/store-seller-gate/store-seller-gate';
 import type { SellerDeliveryKey } from '@/libs/commerce/delivery-envelope';
 import {
   type MarketplaceDigitalDeliveryCapability,
@@ -49,6 +51,7 @@ import { SELLER_AUTO_CONFIRM_PASS_TIMEOUT_MS } from '@/libs/commerce/seller-auto
 import type { ShipFromAddress, ShippingParcel, ShippoRate } from '@/libs/commerce/shipping';
 import {
   buildMarketplaceListingAggregateId,
+  buildMarketplaceOrderAggregateId,
   compositeListingIdFromAggregateId,
 } from '@/libs/commerce/transaction-commands';
 import { commercePositiveMoneySchema } from '@/libs/commerce/transaction-contracts';
@@ -61,6 +64,14 @@ import { getMarketplaceGrantSessionEnabled, getRegionPolicy } from '@/libs/runti
 import type { CommerceIndexedReview, CommerceListingProjectionModelSchema } from '@/models/commerce/commerce.schema';
 import type { Pubky } from '@/models/models.types';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
+import {
+  isSaleSubject,
+  type StoreNotificationRoles,
+  storeNotificationSubjects,
+  subjectOfAggregate,
+  withoutSalesNotificationsOutsideStoreSeller,
+  withoutSalesOutsideStoreSeller,
+} from '@/pipes/commerce/store-seller-side';
 import { MarketplaceNotificationNormalizer } from '@/pipes/marketplaceNotification/marketplaceNotification.normalizer';
 import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
 import { isRecognizedMarketplaceNotification } from '@/services/marketplace/marketplace-projections';
@@ -154,10 +165,12 @@ export class CommerceController {
   }
 
   static async putShippingProfile(record: unknown) {
+    this.assertSellsHere();
     return await CommerceShippingProfilesApplication.put(CommerceRecordNormalizer.shippingProfile(record));
   }
 
   static async deleteShippingProfile(ownerPubky: unknown, profileId: unknown) {
+    this.assertSellsHere();
     await CommerceShippingProfilesApplication.delete(
       CommerceRecordNormalizer.pubky(ownerPubky),
       CommerceRecordNormalizer.entityId(profileId),
@@ -494,6 +507,7 @@ export class CommerceController {
   }
 
   static async loadInventoryBoard(sellerPubky: string) {
+    this.assertSellsHere();
     return await CommerceInventoryApplication.loadBoard(sellerPubky);
   }
 
@@ -504,10 +518,12 @@ export class CommerceController {
     idempotencyKey: string;
     variantId?: string;
   }) {
+    this.assertSellsHere();
     return await CommerceInventoryApplication.setAvailable(input);
   }
 
   static async retryInventorySync(sellerPubky: string, listingId: string) {
+    this.assertSellsHere();
     return await CommerceInventoryApplication.retrySync(sellerPubky, listingId);
   }
 
@@ -516,6 +532,7 @@ export class CommerceController {
     file: Parameters<CommerceInventoryImportApplication['planFile']>[0],
     settings?: Parameters<CommerceInventoryImportApplication['planFile']>[1],
   ) {
+    this.assertSellsHere();
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).planFile(file, settings);
   }
 
@@ -525,6 +542,7 @@ export class CommerceController {
     settings: Parameters<CommerceInventoryImportApplication['planStoreCatalog']>[1],
     offeredCurrencies: Parameters<CommerceInventoryImportApplication['planStoreCatalog']>[2],
   ) {
+    this.assertSellsHere();
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).planStoreCatalog(
       catalog,
       settings,
@@ -533,22 +551,27 @@ export class CommerceController {
   }
 
   static async inventoryImportImageTargets(sellerPubky: string, manifestId: string) {
+    this.assertSellsHere();
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).imageTargets(manifestId);
   }
 
   static async markInventoryImportStarted(sellerPubky: string, manifestId: string) {
+    this.assertSellsHere();
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).markStarted(manifestId);
   }
 
   static async findUnfinishedInventoryImport(sellerPubky: string) {
+    this.assertSellsHere();
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).findUnfinished();
   }
 
   static async discardInventoryImport(sellerPubky: string, manifestId: string) {
+    this.assertSellsHere();
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).discard(manifestId);
   }
 
   static async inventoryImportKnownMedia(sellerPubky: string, manifestId: string, urls: readonly string[]) {
+    this.assertSellsHere();
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).knownMedia(manifestId, urls);
   }
 
@@ -559,6 +582,7 @@ export class CommerceController {
     url: string,
     media: Parameters<CommerceInventoryImportApplication['journalPhoto']>[3],
   ) {
+    this.assertSellsHere();
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).journalPhoto(
       manifestId,
       rowIdentity,
@@ -572,10 +596,12 @@ export class CommerceController {
     manifestId: string,
     outcomes: Parameters<CommerceInventoryImportApplication['attachImages']>[1],
   ) {
+    this.assertSellsHere();
     await CommerceInventoryImportApplication.forSeller(sellerPubky).attachImages(manifestId, outcomes);
   }
 
   static async inventoryImportDefaults(sellerPubky: string) {
+    this.assertSellsHere();
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).importDefaults();
   }
 
@@ -584,6 +610,7 @@ export class CommerceController {
     manifestId: string,
     onProgress?: InventoryImportListingProgress,
   ) {
+    this.assertSellsHere();
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).publish(manifestId, onProgress);
   }
 
@@ -592,30 +619,37 @@ export class CommerceController {
     manifestId: string,
     onProgress?: InventoryImportListingProgress,
   ) {
+    this.assertSellsHere();
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).resume(manifestId, onProgress);
   }
 
   static async confirmInventoryImportConflict(sellerPubky: string, manifestId: string, listingId: string) {
+    this.assertSellsHere();
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).confirmConflict(manifestId, listingId);
   }
 
   static async discardInventoryImportConflict(sellerPubky: string, manifestId: string, listingId: string) {
+    this.assertSellsHere();
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).discardConflict(manifestId, listingId);
   }
 
   static async exportInventoryListingsCsv(sellerPubky: string) {
+    this.assertSellsHere();
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).exportListingsCsv();
   }
 
   static async exportInventoryOrdersJson(sellerPubky: string) {
+    this.assertSellsHere();
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).exportOrdersJson();
   }
 
   static async inventoryImportResultCsv(sellerPubky: string, manifestId: string) {
+    this.assertSellsHere();
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).resultCsv(manifestId);
   }
 
   static async loadInventoryAutomations(sellerPubky: string) {
+    this.assertSellsHere();
     return await CommerceInventoryAutomationsApplication.load(sellerPubky);
   }
 
@@ -624,18 +658,22 @@ export class CommerceController {
     id: string,
     kind: Parameters<typeof CommerceInventoryAutomationsApplication.revoke>[2],
   ) {
+    this.assertSellsHere();
     return await CommerceInventoryAutomationsApplication.revoke(sellerPubky, id, kind);
   }
 
   static async addInventoryWebhook(sellerPubky: string, url: string) {
+    this.assertSellsHere();
     return await CommerceInventoryAutomationsApplication.addWebhook(sellerPubky, url);
   }
 
   static async rotateInventoryWebhook(sellerPubky: string, id: string) {
+    this.assertSellsHere();
     return await CommerceInventoryAutomationsApplication.rotateWebhook(sellerPubky, id);
   }
 
   static async deleteInventoryWebhook(sellerPubky: string, id: string) {
+    this.assertSellsHere();
     return await CommerceInventoryAutomationsApplication.deleteWebhook(sellerPubky, id);
   }
 
@@ -676,9 +714,14 @@ export class CommerceController {
   }
 
   static async executeMarketplaceCommand(rawInput: unknown) {
+    const sellsHere = this.sellsHere();
     const input = this.withBuyerCountry(rawInput);
     const command = CommerceRecordNormalizer.marketplaceCommand(input);
     const buyer = this.captureBuyer();
+    if (!sellsHere) {
+      await this.assertNotSaleHere(buyer.follower, command.aggregateId);
+      buyer.signal.throwIfAborted();
+    }
     const response = await CommerceApplication.executeMarketplaceCommand(buyer.follower, command);
     if (response.ok && (command.kind === 'offer.create' || command.kind === 'auction.place_bid')) {
       this.autoFollowSellers(buyer, [parseListingAggregateId(command.aggregateId)?.sellerPubky]);
@@ -747,28 +790,30 @@ export class CommerceController {
 
   /** The current user's own published review row for one order, or null. */
   static async getOwnMarketplaceReview(order: MarketplaceOrder) {
+    const sellsHere = this.sellsHere();
     if (typeof order?.id !== 'string' || order.id.length === 0) {
       throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'An order id is required.', {
         service: ErrorService.Marketplace,
         operation: 'getOwnMarketplaceReview',
       });
     }
-    return await CommerceApplication.getOwnMarketplaceReview(this.getCurrentUserPubky(), order, captureAuthScope());
+    const viewerPubky = this.getCurrentUserPubky();
+    if (!sellsHere && order.sellerPubky === viewerPubky) return null;
+    return await CommerceApplication.getOwnMarketplaceReview(viewerPubky, order, captureAuthScope());
   }
 
   /** The current user's own published review rows of one order, one per reviewed listing. */
   static async getOwnMarketplaceOrderReviews(order: MarketplaceOrder) {
+    const sellsHere = this.sellsHere();
     if (typeof order?.id !== 'string' || order.id.length === 0) {
       throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'An order id is required.', {
         service: ErrorService.Marketplace,
         operation: 'getOwnMarketplaceOrderReviews',
       });
     }
-    return await CommerceApplication.getOwnMarketplaceOrderReviews(
-      this.getCurrentUserPubky(),
-      order,
-      captureAuthScope(),
-    );
+    const viewerPubky = this.getCurrentUserPubky();
+    if (!sellsHere && order.sellerPubky === viewerPubky) return [];
+    return await CommerceApplication.getOwnMarketplaceOrderReviews(viewerPubky, order, captureAuthScope());
   }
 
   /**
@@ -778,8 +823,11 @@ export class CommerceController {
    * carried no attestation.
    */
   static async publishOwnMarketplaceReviews(order: MarketplaceOrder, result: Record<string, unknown>) {
+    const sellsHere = this.sellsHere();
+    const actorPubky = this.getCurrentUserPubky();
+    if (!sellsHere && order?.sellerPubky === actorPubky) StoreSellerGate.assertCanSellHere(actorPubky);
     return await CommerceApplication.commitPublishOwnReviews({
-      actorPubky: this.getCurrentUserPubky(),
+      actorPubky,
       order,
       result,
     });
@@ -791,7 +839,9 @@ export class CommerceController {
    * the other side reviews, or on {date}".
    */
   static async getAwaitingReleaseOwnMarketplaceReviews() {
-    return await CommerceApplication.getAwaitingReleaseReviews(this.getCurrentUserPubky());
+    const sellsHere = this.sellsHere();
+    const reviews = await CommerceApplication.getAwaitingReleaseReviews(this.getCurrentUserPubky());
+    return sellsHere ? reviews : reviews.filter(({ reviewerRole }) => reviewerRole === 'buyer');
   }
 
   /**
@@ -799,7 +849,8 @@ export class CommerceController {
    * re-reads the attestations of reviews a double-blind window withheld.
    */
   static async resumeOwnReviewPublications() {
-    return await CommerceApplication.resumeOwnReviewPublications(this.getCurrentUserPubky());
+    const sellerSide = this.sellsHere();
+    return await CommerceApplication.resumeOwnReviewPublications(this.getCurrentUserPubky(), { sellerSide });
   }
 
   /**
@@ -808,50 +859,77 @@ export class CommerceController {
    * Returns the number of rows changed.
    */
   static async refreshOwnMarketplaceReviews(orders: MarketplaceOrder[]) {
-    return await CommerceApplication.refreshOwnReviews(this.getCurrentUserPubky(), orders);
+    const sellsHere = this.sellsHere();
+    const viewerPubky = this.getCurrentUserPubky();
+    return await CommerceApplication.refreshOwnReviews(
+      viewerPubky,
+      sellsHere ? orders : orders.filter((order) => order.sellerPubky !== viewerPubky),
+    );
   }
 
   /**
-   * Removes the current user's published review of one order: local row now,
-   * homeserver DEL through the retryable outbox. See
+   * Removes the current user's review of one order and keeps any outstanding work in the owner's outbox. See
    * `CommerceApplication.commitDeleteOwnReview` for the outcomes.
    */
   static async commitDeleteOwnMarketplaceReview(orderId: unknown) {
+    const sellsHere = this.sellsHere();
     if (typeof orderId !== 'string' || orderId.length === 0) {
       throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'An order id is required.', {
         service: ErrorService.Marketplace,
         operation: 'commitDeleteOwnMarketplaceReview',
       });
     }
-    return await CommerceApplication.commitDeleteOwnReview(this.getCurrentUserPubky(), orderId, captureAuthScope());
+    const viewerPubky = this.getCurrentUserPubky();
+    const scope = captureAuthScope();
+    if (!sellsHere) {
+      const [reviews, withheld] = await Promise.all([
+        CommerceApplication.getOwnReviews(viewerPubky),
+        CommerceApplication.getAwaitingReleaseReviews(viewerPubky),
+      ]);
+      const asSeller =
+        reviews.some((review) => review.order_id === orderId && review.record.role === 'seller_reviewing_buyer') ||
+        withheld.some((review) => review.orderId === orderId && review.reviewerRole === 'seller');
+      if (asSeller) StoreSellerGate.assertCanSellHere(viewerPubky);
+      scope.throwIfAborted();
+    }
+    return await CommerceApplication.commitDeleteOwnReview(viewerPubky, orderId, scope);
   }
 
-  static async getManualReviewRemovals(orderId: string) {
-    return await CommerceApplication.getManualReviewRemovals(this.getCurrentUserPubky(), orderId);
+  /** After a sign-out, removal jobs have no private terms or cached seller to determine the order side. */
+  private static async reviewRecoveryScope(orderId: string) {
+    const sellsHere = this.sellsHere();
+    const actor = this.getCurrentUserPubky();
+    const signal = captureAuthScope();
+    if (!sellsHere) await this.assertNotSaleHere(actor, buildMarketplaceOrderAggregateId(orderId));
+    return { actor, signal };
+  }
+
+  static async getManualReviewRemovals(order: MarketplaceOrder) {
+    const sellsHere = this.sellsHere();
+    const actor = this.getCurrentUserPubky();
+    if (!sellsHere && order.buyerPubky !== actor) return [];
+    const signal = captureAuthScope();
+    const pending = await CommerceApplication.getManualReviewRemovals(actor, order.id);
+    return signal.aborted ? [] : pending;
   }
 
   static async fetchReviewRemovalCopy(orderId: string, listingId: string) {
-    return await CommerceApplication.fetchReviewRemovalCopy(
-      this.getCurrentUserPubky(),
-      orderId,
-      listingId,
-      captureAuthScope(),
-    );
+    const { actor, signal } = await this.reviewRecoveryScope(orderId);
+    return await CommerceApplication.fetchReviewRemovalCopy(actor, orderId, listingId, signal);
   }
 
   static async confirmReviewWithdrawal(orderId: string, listingId: string, reviewUpdatedAt: string) {
-    return await CommerceApplication.confirmReviewWithdrawal(
-      this.getCurrentUserPubky(),
-      orderId,
-      listingId,
-      reviewUpdatedAt,
-      captureAuthScope(),
-    );
+    const { actor, signal } = await this.reviewRecoveryScope(orderId);
+    return await CommerceApplication.confirmReviewWithdrawal(actor, orderId, listingId, reviewUpdatedAt, signal);
   }
 
   /** Reconciles the signed-in owner's pending withdrawals and checks their public files. */
   static async resumeOwnReviewRemovals() {
-    return await CommerceApplication.resumeOwnReviewRemovals(this.getCurrentUserPubky(), captureAuthScope());
+    const sellerSide = this.sellsHere();
+    return await CommerceApplication.resumeOwnReviewRemovals(this.getCurrentUserPubky(), {
+      sellerSide,
+      signal: captureAuthScope(),
+    });
   }
 
   /**
@@ -859,6 +937,7 @@ export class CommerceController {
    * holds the reserve; the homeserver copy is not read.
    */
   static async sweepOwnAuctionReserves(): Promise<number> {
+    if (!this.sellsHere()) return 0;
     return await CommerceApplication.sweepOwnAuctionReserves(this.getCurrentUserPubky());
   }
 
@@ -870,7 +949,8 @@ export class CommerceController {
    * of a silent skip. Missing publications self-heal on the next orders load.
    */
   static async publishOrderReceipts(orders: MarketplaceOrder[]): Promise<void> {
-    const status = await CommerceApplication.publishOrderReceipts(this.getCurrentUserPubky(), orders);
+    const sellerSide = this.sellsHere();
+    const status = await CommerceApplication.publishOrderReceipts(this.getCurrentUserPubky(), orders, { sellerSide });
     useCommerceStore.getState().setReceiptsPublicationStatus(status === 'skipped' ? 'idle' : status);
   }
 
@@ -883,7 +963,7 @@ export class CommerceController {
 
   /** The current user's published drop ids, listed from their homeserver. */
   static async listOwnDropIds() {
-    return await CommerceApplication.listOwnDropIds(this.getCurrentUserPubky());
+    return await CommerceApplication.listOwnDropIds(this.sellerPubky());
   }
 
   /** Authoritative public drop state from the transaction service. */
@@ -901,7 +981,7 @@ export class CommerceController {
 
   /** The current seller's full-detail drop read (mission control). */
   static async getOwnDrop(dropId: string) {
-    const pubky = this.getCurrentUserPubky();
+    const pubky = this.sellerPubky();
     return await CommerceApplication.getSellerDrop(pubky, pubky, dropId);
   }
 
@@ -917,11 +997,13 @@ export class CommerceController {
 
   /** Publishes the seller-signed drop record (specs-validated) to the homeserver. */
   static async publishDrop(record: unknown) {
+    this.assertSellsHere();
     return await CommerceApplication.commitPublishDrop(CommerceRecordNormalizer.drop(record));
   }
 
   /** Deletes the current seller's drop record when the service never registered the drop. */
   static async withdrawUnregisteredDrop(record: unknown) {
+    this.assertSellsHere();
     return await CommerceApplication.withdrawUnregisteredDrop(
       this.getCurrentUserPubky(),
       CommerceRecordNormalizer.drop(record),
@@ -930,12 +1012,12 @@ export class CommerceController {
 
   /** Seller kill switch: announced/live → ended_cancelled (CAS). */
   static async cancelDrop(dropId: string, expectedRevision: number) {
-    return await CommerceApplication.cancelDrop(this.getCurrentUserPubky(), dropId, expectedRevision);
+    return await CommerceApplication.cancelDrop(this.sellerPubky(), dropId, expectedRevision);
   }
 
   /** Returns an ENDED drop's listings to ordinary open sale (CAS). */
   static async releaseDropListings(dropId: string, expectedRevision: number) {
-    return await CommerceApplication.releaseDropListings(this.getCurrentUserPubky(), dropId, expectedRevision);
+    return await CommerceApplication.releaseDropListings(this.sellerPubky(), dropId, expectedRevision);
   }
 
   /**
@@ -944,6 +1026,7 @@ export class CommerceController {
    * existed, or while registration failed). Idempotent.
    */
   static async ensureListingRegistered(record: unknown) {
+    this.assertSellsHere();
     return await CommerceApplication.ensureListingRegistered(CommerceRecordNormalizer.listing(record));
   }
 
@@ -1025,7 +1108,7 @@ export class CommerceController {
 
   /** The current user's own stored payment configuration, or null. */
   static async getMyPaymentConfig() {
-    const ownerPubky = this.getCurrentUserPubky();
+    const ownerPubky = this.sellerPubky();
     const config = await CommerceApplication.getMyPaymentConfig(ownerPubky);
     // Sellers who turned bitcoin or USDT on before the Shop published storefronts get one here.
     if (config?.bitcoinEnabled || config?.usdtEnabled === true) this.ensureStorefront(ownerPubky);
@@ -1038,7 +1121,7 @@ export class CommerceController {
     paypalMerchantEmail: string | null;
     usdtEnabled?: boolean;
   }) {
-    const ownerPubky = this.getCurrentUserPubky();
+    const ownerPubky = this.sellerPubky();
     const saved = await CommerceApplication.putMyPaymentConfig(ownerPubky, input);
     if (saved.bitcoinEnabled || saved.usdtEnabled === true) this.ensureStorefront(ownerPubky);
     return saved;
@@ -1093,16 +1176,16 @@ export class CommerceController {
 
   /** This device's delivery key and whether the seller's homeserver publishes it. */
   static async getMyDeliveryKeyStatus() {
-    return await CommerceDeliveryKeysApplication.getSellerKeyStatus(this.getCurrentUserPubky());
+    return await CommerceDeliveryKeysApplication.getSellerKeyStatus(this.sellerPubky());
   }
 
   /** First setup and rotation: a fresh device key, published as the current one. */
   static async commitCreateMyDeliveryKey() {
-    return await CommerceDeliveryKeysApplication.commitCreateKey(this.getCurrentUserPubky());
+    return await CommerceDeliveryKeysApplication.commitCreateKey(this.sellerPubky());
   }
 
   static async commitPublishMyDeliveryKey() {
-    return await CommerceDeliveryKeysApplication.commitPublishCurrentKey(this.getCurrentUserPubky());
+    return await CommerceDeliveryKeysApplication.commitPublishCurrentKey(this.sellerPubky());
   }
 
   /**
@@ -1156,11 +1239,11 @@ export class CommerceController {
 
   /** The seller's own shipping configuration on this device (the token never comes back). */
   static async getMyShippingConfig() {
-    return await CommerceShippingApplication.getMyConfig(this.getCurrentUserPubky());
+    return await CommerceShippingApplication.getMyConfig(this.sellerPubky());
   }
 
   static async putMyShippingConfig(input: { shippoApiKey?: string; shipFrom: ShipFromAddress | null }) {
-    return await CommerceShippingApplication.putMyConfig(this.getCurrentUserPubky(), input);
+    return await CommerceShippingApplication.putMyConfig(this.sellerPubky(), input);
   }
 
   /**
@@ -1169,7 +1252,7 @@ export class CommerceController {
    * made and the reason is returned instead.
    */
   static async quoteShippingRates(order: MarketplaceOrder, parcel: ShippingParcel): Promise<ShippingRatesResult> {
-    const owner = this.getCurrentUserPubky();
+    const owner = this.sellerPubky();
     const opened = await this.getOrderDeliveryAddress(order);
     if (opened.kind !== 'address') return opened;
     const rates = await CommerceShippingApplication.quoteRates({ owner, destination: opened.address, parcel });
@@ -1178,17 +1261,17 @@ export class CommerceController {
 
   /** Purchases the selected rate on the seller's own Shippo account (real money). */
   static async purchaseShippingLabel(orderId: string, rateId: string) {
-    return await CommerceShippingApplication.purchaseLabel({ owner: this.getCurrentUserPubky(), orderId, rateId });
+    return await CommerceShippingApplication.purchaseLabel({ owner: this.sellerPubky(), orderId, rateId });
   }
 
   static async getShippingLabel(orderId: string) {
-    return await CommerceShippingApplication.getLabel(this.getCurrentUserPubky(), orderId);
+    return await CommerceShippingApplication.getLabel(this.sellerPubky(), orderId);
   }
 
   /** Seller's PayPal receipt confirmation — this is what pays the order. */
   /** `releaseDigital` also releases the order's instant digital lines when they wait for the seller. */
   static async confirmFiatReceived(orderId: string, releaseDigital = false) {
-    return await CommerceApplication.confirmFiatReceived(this.getCurrentUserPubky(), orderId, releaseDigital);
+    return await CommerceApplication.confirmFiatReceived(this.sellerPubky(), orderId, releaseDigital);
   }
 
   /**
@@ -1248,11 +1331,14 @@ export class CommerceController {
 
   /** The current user's own published review rows, newest update first (local-first). */
   static async getOwnMarketplaceReviews() {
-    return await CommerceApplication.getOwnReviews(this.getCurrentUserPubky());
+    const sellsHere = this.sellsHere();
+    const reviews = await CommerceApplication.getOwnReviews(this.getCurrentUserPubky());
+    return sellsHere ? reviews : reviews.filter(({ record }) => record.role === 'buyer_reviewing_seller');
   }
 
   /** The current user's own response row for one review, or null. */
   static async getOwnMarketplaceReviewResponse(reviewId: unknown) {
+    if (!this.sellsHere()) return null;
     return await CommerceApplication.getOwnReviewResponse(
       this.getCurrentUserPubky(),
       CommerceRecordNormalizer.entityId(reviewId),
@@ -1272,13 +1358,14 @@ export class CommerceController {
     priorCreatedAt?: string | null;
   }) {
     return await CommerceApplication.commitPublishReviewResponse({
-      actorPubky: this.getCurrentUserPubky(),
+      actorPubky: this.sellerPubky(),
       ...input,
     });
   }
 
   /** Retries own review-response records whose homeserver publication never landed. */
   static async resumeOwnReviewResponsePublications() {
+    if (!this.sellsHere()) return 0;
     return await CommerceApplication.resumeOwnReviewResponsePublications(this.getCurrentUserPubky());
   }
 
@@ -1295,6 +1382,7 @@ export class CommerceController {
   }
 
   static async getMarketplaceSellerListingProjection(ownerPubky: unknown, listingId: unknown) {
+    this.assertSellsHere();
     const owner = CommerceRecordNormalizer.pubky(ownerPubky);
     const id = CommerceRecordNormalizer.entityId(listingId);
     this.assertCurrentUserOwns(owner);
@@ -1315,15 +1403,77 @@ export class CommerceController {
   }
 
   static async getMarketplaceConversations() {
-    return await CommerceApplication.getMarketplaceConversations(this.getCurrentUserPubky());
+    const sellsHere = this.sellsHere();
+    const viewerPubky = this.getCurrentUserPubky();
+    const conversations = await CommerceApplication.getMarketplaceConversations(viewerPubky);
+    return sellsHere ? conversations : conversations.filter(({ sellerPubky }) => sellerPubky !== viewerPubky);
   }
 
   static async getMarketplaceOffers() {
-    return await CommerceApplication.getMarketplaceOffers(this.getCurrentUserPubky());
+    const sellsHere = this.sellsHere();
+    const viewerPubky = this.getCurrentUserPubky();
+    const offers = await CommerceApplication.getMarketplaceOffers(viewerPubky);
+    return sellsHere ? offers : withoutSalesOutsideStoreSeller(offers, viewerPubky, getStoreSeller());
   }
 
   static async getMarketplaceNotifications() {
-    return await CommerceApplication.getMarketplaceNotifications(this.getCurrentUserPubky());
+    return await this.getScopedMarketplaceNotifications(this.getCurrentUserPubky());
+  }
+
+  /**
+   * The viewer's marketplace notifications; in a store, a viewer other than the store seller keeps
+   * only its buyer side (`withoutSalesNotificationsOutsideStoreSeller`), and the read retries only
+   * the released reviews it wrote as a buyer.
+   */
+  private static async getScopedMarketplaceNotifications(viewerPubky: string) {
+    const sellsHere = StoreSellerGate.canSellHere(viewerPubky);
+    const notifications = await CommerceApplication.getMarketplaceNotifications(viewerPubky, { sellerSide: sellsHere });
+    if (sellsHere) return notifications;
+    const roles = await this.resolveStoreNotificationRoles(viewerPubky, storeNotificationSubjects(notifications));
+    return withoutSalesNotificationsOutsideStoreSeller(notifications, viewerPubky, getStoreSeller(), roles);
+  }
+
+  /**
+   * Who sells the orders and offers, and which role wrote the moderated own reviews, that a
+   * notification list names. Each list is read only when the notifications need it. In durable modes
+   * an order the list does not name is read by id; sandbox has no single-order read. A read that
+   * fails leaves its entries unknown, so their notifications are hidden instead of failing the whole
+   * read.
+   */
+  private static async resolveStoreNotificationRoles(
+    viewerPubky: string,
+    { orderIds, offerIds, reviewUris }: ReturnType<typeof storeNotificationSubjects>,
+  ): Promise<StoreNotificationRoles> {
+    const [orders, offers, reviews] = await Promise.allSettled([
+      orderIds.length > 0 ? CommerceApplication.getMarketplaceOrders(viewerPubky) : [],
+      offerIds.length > 0 ? CommerceApplication.getMarketplaceOffers(viewerPubky) : [],
+      reviewUris.length > 0 ? CommerceApplication.getOwnReviews(viewerPubky) : [],
+    ]);
+    const orderSellers = new Map<string, string | null>(
+      orders.status === 'fulfilled' ? orders.value.map(({ id, sellerPubky }) => [id, sellerPubky]) : [],
+    );
+    const unlisted =
+      orders.status === 'fulfilled' && isDurableCommerceMode(getCommerceAdapterMode())
+        ? orderIds.filter((id) => !orderSellers.has(id))
+        : [];
+    const reads = await Promise.allSettled(
+      unlisted.map((id) => CommerceApplication.getMarketplaceOrder(viewerPubky, id)),
+    );
+    reads.forEach((read, index) => {
+      orderSellers.set(unlisted[index], read.status === 'fulfilled' ? (read.value?.sellerPubky ?? null) : null);
+    });
+    const offerSellers = new Map<string, string | null>(
+      offers.status === 'fulfilled' ? offers.value.map(({ id, sellerPubky }) => [id, sellerPubky]) : [],
+    );
+    const reviewRoles = new Map<string, 'buyer' | 'seller' | null>(
+      reviews.status === 'fulfilled'
+        ? reviews.value.map(({ owner_id, review_id, record }) => [
+            CommerceRecordNormalizer.reviewUri(owner_id, review_id),
+            record.role === 'buyer_reviewing_seller' ? 'buyer' : 'seller',
+          ])
+        : [],
+    );
+    return { orderSellers, offerSellers, reviewRoles };
   }
 
   static async getMarketplaceNotificationPreferences() {
@@ -1343,7 +1493,7 @@ export class CommerceController {
     if (!isTransactionalCommerceMode(adapterMode) || !useAuthStore.getState().currentUserPubky) {
       return [];
     }
-    const notifications = await CommerceApplication.getMarketplaceNotifications(this.getCurrentUserPubky());
+    const notifications = await this.getScopedMarketplaceNotifications(this.getCurrentUserPubky());
     return notifications.map((notification) =>
       MarketplaceNotificationNormalizer.toFeedNotification(notification, adapterMode),
     );
@@ -1367,7 +1517,7 @@ export class CommerceController {
       return;
     }
     const signal = captureAuthScope();
-    const notifications = await CommerceApplication.getMarketplaceNotifications(this.getCurrentUserPubky());
+    const notifications = await this.getScopedMarketplaceNotifications(this.getCurrentUserPubky());
     signal.throwIfAborted();
     notificationStore.setMarketplaceUnread(
       notifications.filter((notification) => isRecognizedMarketplaceNotification(notification) && !notification.readAt)
@@ -1389,7 +1539,7 @@ export class CommerceController {
    */
   static async markAllMarketplaceNotificationsRead(): Promise<void> {
     if (getCommerceAdapterMode() !== 'sandbox' || !useAuthStore.getState().currentUserPubky) return;
-    const notifications = await CommerceApplication.getMarketplaceNotifications(this.getCurrentUserPubky());
+    const notifications = await this.getScopedMarketplaceNotifications(this.getCurrentUserPubky());
     const unread = notifications.filter(isRecognizedMarketplaceNotification).filter(({ readAt }) => !readAt);
     if (unread.length === 0) {
       useNotificationStore.getState().setMarketplaceUnread(0);
@@ -1414,27 +1564,39 @@ export class CommerceController {
   }
 
   static async fetchMarketplaceOrderList() {
-    const result = await CommerceApplication.fetchMarketplaceOrderList(this.getCurrentUserPubky());
-    this.noteOrderListings(result.orders);
-    return result;
+    const sellsHere = this.sellsHere();
+    const viewerPubky = this.getCurrentUserPubky();
+    const result = await CommerceApplication.fetchMarketplaceOrderList(viewerPubky);
+    const orders = sellsHere
+      ? result.orders
+      : withoutSalesOutsideStoreSeller(result.orders, viewerPubky, getStoreSeller());
+    this.noteOrderListings(orders);
+    // A malformed row has no verified seller, so a buyer-only view cannot identify its side.
+    return { orders, parseErrors: sellsHere ? result.parseErrors : [] };
   }
 
   static async getMarketplaceOrders() {
-    const orders = await CommerceApplication.getMarketplaceOrders(this.getCurrentUserPubky());
+    const sellsHere = this.sellsHere();
+    const viewerPubky = this.getCurrentUserPubky();
+    const read = await CommerceApplication.getMarketplaceOrders(viewerPubky);
+    const orders = sellsHere ? read : withoutSalesOutsideStoreSeller(read, viewerPubky, getStoreSeller());
     this.noteOrderListings(orders);
     return orders;
   }
 
   static async getMarketplacePayment(paymentId: unknown) {
-    return await CommerceApplication.getMarketplacePayment(
-      this.getCurrentUserPubky(),
+    const sellsHere = this.sellsHere();
+    const viewerPubky = this.getCurrentUserPubky();
+    const payment = await CommerceApplication.getMarketplacePayment(
+      viewerPubky,
       CommerceRecordNormalizer.entityId(paymentId),
     );
+    return !sellsHere && payment?.sellerPubky === viewerPubky ? null : payment;
   }
 
   static async confirmBitcoinPayment(orderId: unknown, reason?: string, releaseDigital = false) {
     return await CommerceApplication.confirmBitcoinPayment(
-      this.getCurrentUserPubky(),
+      this.sellerPubky(),
       CommerceRecordNormalizer.entityId(orderId),
       reason,
       releaseDigital,
@@ -1451,7 +1613,7 @@ export class CommerceController {
     idempotencyKey: string,
   ) {
     return await CommerceApplication.resolveBitcoinPayment(
-      this.getCurrentUserPubky(),
+      this.sellerPubky(),
       CommerceRecordNormalizer.entityId(orderId),
       input,
       idempotencyKey,
@@ -1459,17 +1621,20 @@ export class CommerceController {
   }
 
   static async getMarketplaceReceipt(receiptId: unknown) {
-    return await CommerceApplication.getMarketplaceReceipt(
-      this.getCurrentUserPubky(),
+    const sellsHere = this.sellsHere();
+    const viewerPubky = this.getCurrentUserPubky();
+    const receipt = await CommerceApplication.getMarketplaceReceipt(
+      viewerPubky,
       CommerceRecordNormalizer.entityId(receiptId),
     );
+    return !sellsHere && receipt?.issuerPubky === viewerPubky ? null : receipt;
   }
 
   static async getMarketplaceOrder(orderId: unknown) {
-    const order = await CommerceApplication.getMarketplaceOrder(
-      this.getCurrentUserPubky(),
-      CommerceRecordNormalizer.entityId(orderId),
-    );
+    const sellsHere = this.sellsHere();
+    const viewerPubky = this.getCurrentUserPubky();
+    const read = await CommerceApplication.getMarketplaceOrder(viewerPubky, CommerceRecordNormalizer.entityId(orderId));
+    const order = !sellsHere && read?.sellerPubky === viewerPubky ? null : read;
     if (order) this.noteOrderListings([order]);
     return order;
   }
@@ -1480,6 +1645,7 @@ export class CommerceController {
    * this device. Never reads or stores anything beyond the passed order.
    */
   static async getOrderDeliveryAddress(order: MarketplaceOrder): Promise<OrderDeliveryAddressResult> {
+    if (!this.sellsHere()) return { kind: 'none' };
     const sellerPubky = this.getCurrentUserPubky();
     const projection = order.deliveryAddress;
     if (order.sellerPubky !== sellerPubky || !projection) return { kind: 'none' };
@@ -1515,16 +1681,17 @@ export class CommerceController {
 
   /** Turns this browser's automatic confirmation of the signed-in seller's matching payments on or off. */
   static setSellerPaymentAutoConfirm(enabled: boolean): void {
-    useSellerPaymentConfirmStore.getState().setAutoConfirm(this.getCurrentUserPubky(), enabled);
+    useSellerPaymentConfirmStore.getState().setAutoConfirm(this.sellerPubky(), enabled);
   }
 
   /**
    * One pass of the seller's automatic confirmation, when the signed-in seller
    * turned it on in this browser and the durable service is in use. Returns the
-   * order ids it confirmed; a signed-out or opted-out session confirms nothing.
+   * order ids it confirmed; a signed-out or opted-out session confirms nothing,
+   * and so does any seller other than the store seller signed in to a store.
    */
   static async autoConfirmSellerPayments(): Promise<string[]> {
-    if (!isDurableCommerceMode(getCommerceAdapterMode())) return [];
+    if (!this.sellsHere() || !isDurableCommerceMode(getCommerceAdapterMode())) return [];
     const pubky = useAuthStore.getState().currentUserPubky;
     const scope = captureAuthScope();
     const isEnabled = () =>
@@ -1583,7 +1750,7 @@ export class CommerceController {
 
   /** The current seller's own pickup details for one of their listings, plus the surviving version counter (§A4). */
   static async fetchSellerPickupDetails(listingId: unknown) {
-    const pubky = this.getCurrentUserPubky();
+    const pubky = this.sellerPubky();
     const aggregateId = buildMarketplaceListingAggregateId(pubky, CommerceRecordNormalizer.entityId(listingId));
     return await CommerceApplication.fetchSellerPickupDetails(pubky, aggregateId);
   }
@@ -1594,7 +1761,7 @@ export class CommerceController {
    * per-listing version counter (0 when no details exist yet).
    */
   static async commitSetPickupDetails(listingId: unknown, input: { expectedVersion: unknown; details: unknown }) {
-    const pubky = this.getCurrentUserPubky();
+    const pubky = this.sellerPubky();
     return await CommerceApplication.commitSetPickupDetails(pubky, {
       sellerPubky: pubky,
       listingId: CommerceRecordNormalizer.entityId(listingId),
@@ -1605,7 +1772,7 @@ export class CommerceController {
 
   /** `pickup_details.clear` on one of the current seller's listings (§A3/§A7). */
   static async commitClearPickupDetails(listingId: unknown, expectedVersion: unknown) {
-    const pubky = this.getCurrentUserPubky();
+    const pubky = this.sellerPubky();
     return await CommerceApplication.commitClearPickupDetails(pubky, {
       sellerPubky: pubky,
       listingId: CommerceRecordNormalizer.entityId(listingId),
@@ -1617,14 +1784,14 @@ export class CommerceController {
 
   /** The current seller's owner read of one listing's digital delivery. Held in memory only. */
   static async fetchSellerDigitalDelivery(listingId: unknown) {
-    const pubky = this.getCurrentUserPubky();
+    const pubky = this.sellerPubky();
     const aggregateId = buildMarketplaceListingAggregateId(pubky, CommerceRecordNormalizer.entityId(listingId));
     return await CommerceApplication.fetchSellerDigitalDelivery(pubky, aggregateId);
   }
 
   /** `digital_delivery.set` on one of the current seller's listings, as version `expectedVersion + 1`. */
   static async commitSetDigitalDelivery(listingId: unknown, input: { expectedVersion: unknown; delivery: unknown }) {
-    const pubky = this.getCurrentUserPubky();
+    const pubky = this.sellerPubky();
     return await CommerceApplication.commitSetDigitalDelivery(pubky, {
       sellerPubky: pubky,
       listingId: CommerceRecordNormalizer.entityId(listingId),
@@ -1635,7 +1802,7 @@ export class CommerceController {
 
   /** `digital_delivery.clear` on one of the current seller's listings. */
   static async commitClearDigitalDelivery(listingId: unknown, expectedVersion: unknown) {
-    const pubky = this.getCurrentUserPubky();
+    const pubky = this.sellerPubky();
     return await CommerceApplication.commitClearDigitalDelivery(pubky, {
       sellerPubky: pubky,
       listingId: CommerceRecordNormalizer.entityId(listingId),
@@ -1666,17 +1833,18 @@ export class CommerceController {
   /** The current seller's delivery evidence on one of their digital orders (§3). */
   static async fetchOrderDigitalEvidence(orderId: unknown) {
     return await CommerceApplication.fetchOrderDigitalEvidence(
-      this.getCurrentUserPubky(),
+      this.sellerPubky(),
       CommerceRecordNormalizer.entityId(orderId),
     );
   }
 
   /** The delivery email on one of the current user's email-kind orders (§4.3). */
   static async fetchOrderDeliveryEmail(orderId: unknown) {
-    return await CommerceApplication.fetchOrderDeliveryEmail(
-      this.getCurrentUserPubky(),
-      CommerceRecordNormalizer.entityId(orderId),
-    );
+    const sellsHere = this.sellsHere();
+    const viewerPubky = this.getCurrentUserPubky();
+    const id = CommerceRecordNormalizer.entityId(orderId);
+    if (!sellsHere) await this.assertNotSaleHere(viewerPubky, buildMarketplaceOrderAggregateId(id));
+    return await CommerceApplication.fetchOrderDeliveryEmail(viewerPubky, id);
   }
 
   /** `order.set_delivery_email` (§6 F11): the buyer replaces the address on their order. */
@@ -1696,7 +1864,7 @@ export class CommerceController {
 
   /** `fulfillment.release_digital`: the seller releases a paid order's instant lines to the buyer. */
   static async commitReleaseDigital(orderId: unknown, expectedRevision: unknown) {
-    return await CommerceApplication.commitReleaseDigital(this.getCurrentUserPubky(), {
+    return await CommerceApplication.commitReleaseDigital(this.sellerPubky(), {
       orderId: CommerceRecordNormalizer.entityId(orderId),
       expectedRevision: this.pickupOrderRevision(expectedRevision),
     });
@@ -1704,6 +1872,7 @@ export class CommerceController {
 
   /** `fulfillment.deliver_digital` (§6 F13): the seller marks a digital order's email or message lines delivered. */
   static async commitDeliverDigital(orderId: unknown, expectedRevision: unknown, channel: unknown) {
+    this.assertSellsHere();
     const parsed = marketplaceDigitalDeliveryChannelSchema.safeParse(channel);
     if (!parsed.success) {
       throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'A delivery channel is required.', {
@@ -1711,7 +1880,7 @@ export class CommerceController {
         operation: 'commitDeliverDigital',
       });
     }
-    return await CommerceApplication.commitDeliverDigital(this.getCurrentUserPubky(), {
+    return await CommerceApplication.commitDeliverDigital(this.sellerPubky(), {
       orderId: CommerceRecordNormalizer.entityId(orderId),
       expectedRevision: this.pickupOrderRevision(expectedRevision),
       channel: parsed.data,
@@ -1764,7 +1933,7 @@ export class CommerceController {
 
   /** `fulfillment.mark_ready` (§A6): the current seller arms a paid pickup order for handover. */
   static async commitMarkReady(orderId: unknown, expectedRevision: unknown) {
-    return await CommerceApplication.commitMarkReady(this.getCurrentUserPubky(), {
+    return await CommerceApplication.commitMarkReady(this.sellerPubky(), {
       orderId: CommerceRecordNormalizer.entityId(orderId),
       expectedRevision: this.pickupOrderRevision(expectedRevision),
     });
@@ -1772,8 +1941,12 @@ export class CommerceController {
 
   /** `fulfillment.confirm_pickup` (§A6): either party confirms the handover on a paid/ready pickup order. */
   static async commitConfirmPickup(orderId: unknown, expectedRevision: unknown) {
-    return await CommerceApplication.commitConfirmPickup(this.getCurrentUserPubky(), {
-      orderId: CommerceRecordNormalizer.entityId(orderId),
+    const sellsHere = this.sellsHere();
+    const viewerPubky = this.getCurrentUserPubky();
+    const id = CommerceRecordNormalizer.entityId(orderId);
+    if (!sellsHere) await this.assertNotSaleHere(viewerPubky, buildMarketplaceOrderAggregateId(id));
+    return await CommerceApplication.commitConfirmPickup(viewerPubky, {
+      orderId: id,
       expectedRevision: this.pickupOrderRevision(expectedRevision),
     });
   }
@@ -1930,6 +2103,7 @@ export class CommerceController {
   }
 
   static getPaykitSetupUrl(returnTo: unknown, state: unknown, creator: unknown): string {
+    this.assertSellsHere();
     return CommerceApplication.getPaykitSetupUrl(
       ...this.paykitSetupArguments('getPaykitSetupUrl', 'setup', returnTo, state, creator),
     );
@@ -1940,6 +2114,7 @@ export class CommerceController {
    * USDT address alone; without it the reconnect also shares a Bitcoin account.
    */
   static getPaykitReconnectUrl(returnTo: unknown, state: unknown, creator: unknown, asset?: unknown): string {
+    this.assertSellsHere();
     return CommerceApplication.getPaykitReconnectUrl(
       ...this.paykitSetupArguments('getPaykitReconnectUrl', 'reconnect', returnTo, state, creator),
       asset === 'USDT' ? asset : undefined,
@@ -1972,12 +2147,12 @@ export class CommerceController {
   }
 
   static async getListingDrafts() {
-    return await CommerceApplication.getListingDrafts(this.getCurrentUserPubky());
+    return await CommerceApplication.getListingDrafts(this.sellerPubky());
   }
 
   static async commitUpdateListingDraft(listingId: unknown, form: unknown, mediaBlobs: unknown = {}): Promise<void> {
     await CommerceApplication.commitUpdateListingDraft(
-      this.getCurrentUserPubky(),
+      this.sellerPubky(),
       CommerceRecordNormalizer.entityId(listingId),
       CommerceRecordNormalizer.jsonValue(form),
       CommerceRecordNormalizer.mediaBlobs(mediaBlobs),
@@ -1986,7 +2161,7 @@ export class CommerceController {
 
   static async commitDeleteListingDraft(listingId: unknown): Promise<void> {
     await CommerceApplication.commitDeleteListingDraft(
-      this.getCurrentUserPubky(),
+      this.sellerPubky(),
       CommerceRecordNormalizer.entityId(listingId),
     );
   }
@@ -2089,12 +2264,12 @@ export class CommerceController {
   }
 
   static async getShippingPresets() {
-    return await CommerceApplication.getShippingPresets(this.getCurrentUserPubky());
+    return await CommerceApplication.getShippingPresets(this.sellerPubky());
   }
 
   static async commitUpsertShippingPreset(presetId: unknown, input: unknown): Promise<void> {
     await CommerceApplication.commitUpsertShippingPreset(
-      this.getCurrentUserPubky(),
+      this.sellerPubky(),
       CommerceRecordNormalizer.entityId(presetId),
       CommerceRecordNormalizer.shippingPresetInput(input),
     );
@@ -2102,7 +2277,7 @@ export class CommerceController {
 
   static async commitDeleteShippingPreset(presetId: unknown): Promise<void> {
     await CommerceApplication.commitDeleteShippingPreset(
-      this.getCurrentUserPubky(),
+      this.sellerPubky(),
       CommerceRecordNormalizer.entityId(presetId),
     );
   }
@@ -2324,6 +2499,7 @@ export class CommerceController {
   }
 
   static async commitUpsertShop(input: unknown): Promise<void> {
+    this.assertSellsHere();
     const record = CommerceRecordNormalizer.shop(input);
     this.assertCurrentUserOwns(record.ownerPubky);
     await this.withPending(`shop:${record.ownerPubky}`, () => CommerceApplication.commitUpsertShop(record));
@@ -2333,6 +2509,7 @@ export class CommerceController {
     input: unknown,
     reservePrice?: unknown,
   ): Promise<{ registered: boolean; verified: boolean }> {
+    this.assertSellsHere();
     const record = CommerceRecordNormalizer.listing(input);
     const reserve = reservePrice === undefined ? undefined : commercePositiveMoneySchema.nullable().parse(reservePrice);
     this.assertCurrentUserOwns(record.ownerPubky);
@@ -2344,6 +2521,7 @@ export class CommerceController {
   }
 
   static async commitDeleteListing(ownerPubky: unknown, listingId: unknown): Promise<void> {
+    this.assertSellsHere();
     const owner = CommerceRecordNormalizer.pubky(ownerPubky);
     const id = CommerceRecordNormalizer.entityId(listingId);
     this.assertCurrentUserOwns(owner);
@@ -2351,6 +2529,7 @@ export class CommerceController {
   }
 
   static async commitCreateMedia(mediaId: unknown, bytes: Uint8Array): Promise<string> {
+    this.assertSellsHere();
     const id = CommerceRecordNormalizer.entityId(mediaId);
     if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0 || bytes.byteLength > IMAGE_MAX_UPLOAD_SIZE) {
       throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Marketplace media bytes are missing or too large.', {
@@ -2437,6 +2616,40 @@ export class CommerceController {
 
   private static getCurrentUserPubky(): string {
     return useAuthStore.getState().selectCurrentUserPubky();
+  }
+
+  /** Whether the signed-in user may act as a seller here; see `StoreSellerGate`. */
+  private static sellsHere(): boolean {
+    return StoreSellerGate.canSellHere(useAuthStore.getState().currentUserPubky);
+  }
+
+  /** Refuses seller-side work for a signed-in user who cannot sell here. */
+  private static assertSellsHere(): void {
+    StoreSellerGate.assertCurrentUserCanSellHere();
+  }
+
+  /** The signed-in pubky for seller-side work, refused for a user who cannot sell here. */
+  private static sellerPubky(): string {
+    this.assertSellsHere();
+    return this.getCurrentUserPubky();
+  }
+
+  /**
+   * Refuses work on what the viewer sells (its order, offer, listing, drop or sale conversation) for a
+   * viewer who cannot sell here. An order or offer is resolved through the viewer's own rows; one they
+   * do not name is refused too.
+   */
+  private static async assertNotSaleHere(viewerPubky: string, aggregateId: string): Promise<void> {
+    const subject = subjectOfAggregate(aggregateId);
+    let sellerPubky: string | null = null;
+    if (subject.kind === 'order') {
+      sellerPubky =
+        (await CommerceApplication.getMarketplaceOrderParties(viewerPubky, subject.id))?.sellerPubky ?? null;
+    } else if (subject.kind === 'offer') {
+      const offers = await CommerceApplication.getMarketplaceOffers(viewerPubky);
+      sellerPubky = offers.find(({ id }) => id === subject.id)?.sellerPubky ?? null;
+    }
+    if (isSaleSubject(subject, viewerPubky, () => sellerPubky)) StoreSellerGate.assertCanSellHere(viewerPubky);
   }
 
   private static async withPending<T>(entityId: string, operation: () => Promise<T>): Promise<T> {

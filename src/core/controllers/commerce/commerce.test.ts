@@ -467,7 +467,7 @@ describe('CommerceController', () => {
       const publish = vi.spyOn(CommerceApplication, 'publishOrderReceipts').mockResolvedValue('needs_reauth');
 
       await CommerceController.publishOrderReceipts([]);
-      expect(publish).toHaveBeenCalledWith(COMMERCE_FIXTURE_SELLER, []);
+      expect(publish).toHaveBeenCalledWith(COMMERCE_FIXTURE_SELLER, [], { sellerSide: true });
       expect(useCommerceStore.getState().receiptsPublicationStatus).toBe('needs_reauth');
 
       publish.mockResolvedValue('published');
