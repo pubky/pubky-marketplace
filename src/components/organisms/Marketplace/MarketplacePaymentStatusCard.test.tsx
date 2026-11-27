@@ -16,9 +16,11 @@ import {
   LOCKS_TERMINAL_REASON_COPY,
   LOCKS_TERMINAL_REASONS,
 } from '@/libs/commerce/locks-lifecycle';
+import { installTranslatorDomGuard, uninstallTranslatorDomGuard } from '@/libs/dom/translator-dom-guard';
 import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
 import { createPaykitOrderFixture } from '@/test/fixtures/commerce/paykit-orders';
 import { setupFixedDateLocale } from '@/test-utils/date-locale';
+import { translateTextNodes } from '@/test-utils/page-translator';
 import { MarketplacePaymentStatusCard } from './MarketplacePaymentStatusCard';
 
 setupFixedDateLocale();
@@ -990,6 +992,40 @@ describe('MarketplacePaymentStatusCard', () => {
 
       expect(screen.getAllByRole('button', { name: /Check again|Keep checking/ })).toHaveLength(1);
       expect(screen.getByRole('button', { name: LOCKS_ADMISSION_COPY.stalledAction })).toBeInTheDocument();
+    });
+
+    it('drops the translated sent-request line when the request stalls', () => {
+      installTranslatorDomGuard();
+      try {
+        const payment = createPaymentFixture('awaiting_entitlement', { adapter: 'locks' });
+        const card = () => (
+          <MarketplacePaymentStatusCard
+            order={createOrderFixture('pending_payment', { paymentId: payment.id })}
+            payment={payment}
+            isBuyer
+            adapterMode="locks-paykit"
+            advancePayment={async () => false}
+            onPaymentChanged={() => {}}
+          />
+        );
+        locksView.overrides = {
+          correlation: registered,
+          admission: { kind: 'in_flight', readerWalletSetupNeeded: false, stalled: false },
+        };
+        const { container, rerender } = render(card());
+        translateTextNodes(container);
+
+        locksView.overrides = {
+          correlation: registered,
+          admission: { kind: 'in_flight', readerWalletSetupNeeded: false, stalled: true },
+        };
+        rerender(card());
+
+        expect(screen.getByTestId('locks-admission-stalled')).toHaveTextContent(LOCKS_ADMISSION_COPY.stalledTitle);
+        expect(container).not.toHaveTextContent(/Payment request sent/);
+      } finally {
+        uninstallTranslatorDomGuard();
+      }
     });
 
     it('keeps the wallet-setup notice above the stalled notice', () => {

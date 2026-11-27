@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ShippingGroupView } from '@/hooks/useMarketplaceShippingGroups/useMarketplaceShippingGroups';
+import { installTranslatorDomGuard, uninstallTranslatorDomGuard } from '@/libs/dom/translator-dom-guard';
+import { translateTextNodes } from '@/test-utils/page-translator';
 import { MarketplaceCheckoutShippingRates } from './MarketplaceCheckoutShippingRates';
 
 const base = { key: 'profile:s:worldwide', sellerPubky: 's'.repeat(52), label: 'Worldwide', units: 2 };
@@ -95,5 +97,22 @@ describe('MarketplaceCheckoutShippingRates', () => {
       />,
     );
     expect(screen.getByRole('status')).toHaveTextContent('does not ship to your country');
+  });
+
+  describe('under a page translator', () => {
+    afterEach(() => uninstallTranslatorDomGuard());
+
+    it('replaces the translated destination prompt once prices start loading', () => {
+      installTranslatorDomGuard();
+      const { rerender } = render(
+        <MarketplaceCheckoutShippingRates groups={[view({ status: 'needs-destination' })]} onChange={vi.fn()} />,
+      );
+      translateTextNodes(screen.getByRole('status'));
+
+      rerender(<MarketplaceCheckoutShippingRates groups={[view({ status: 'loading' })]} onChange={vi.fn()} />);
+
+      expect(screen.getByRole('status')).toHaveTextContent('Loading shipping prices.');
+      expect(screen.getByRole('status')).not.toHaveTextContent('Enter your delivery country');
+    });
   });
 });
