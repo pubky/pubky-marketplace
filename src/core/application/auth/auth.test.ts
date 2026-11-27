@@ -8,13 +8,10 @@ import { Err } from '@/libs/error/error.factories';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import type { Pubky } from '@/models/models.types';
 import { HomeserverService } from '@/services/homeserver/homeserver';
-import { mockSession } from '@/test-utils/pubky';
+import { SocialProfileService } from '@/services/homeserver/social-profile';
+import { useAuthStore } from '@/stores/auth/auth.store';
+import { mockGrantSession, mockSession } from '@/test-utils/pubky';
 import { asOpaque } from '@/test-utils/type-assertions';
-
-vi.mock('pubky-app-specs', () => ({
-  default: vi.fn(() => Promise.resolve()),
-  userUriBuilder: (pubky: string) => `pubky://${pubky}/pub/pubky.app/profile.json`,
-}));
 
 // Default to the real implementations; individual tests override the staging
 // gate so the homeserver environment guard can be exercised for real.
@@ -168,18 +165,48 @@ describe('AuthApplication', () => {
     });
   });
 
+  describe('v1 social write permissions', () => {
+    const pk = '8kkppkmiubfq4pxn6f73nqrhhhgkb5xyfprntc9si3np9ydbotto' as Pubky;
+    it('requires the hosted session for this owner and an approved write scope', () => {
+      const session = mockGrantSession(pk);
+      try {
+        useAuthStore.setState({ session, sessionOwner: 'shop', currentUserPubky: pk });
+        expect(SocialProfileService.canWriteV1(pk)).toBe(false);
+        useAuthStore.setState({ sessionOwner: 'host' });
+        expect(SocialProfileService.canWriteV1(pk)).toBe(true);
+        expect(SocialProfileService.canWriteV1('another-account')).toBe(false);
+        useAuthStore.setState({
+          session: mockSession({
+            info: asOpaque({ publicKey: { z32: () => pk }, capabilities: ['/pub/pubky.app/:rw'] }),
+          }),
+        });
+        expect(SocialProfileService.canWriteV1(pk)).toBe(false);
+      } finally {
+        useAuthStore.getState().reset();
+      }
+    });
+  });
+
   describe('userIsSignedUp', () => {
-    const testPubky = 'test-pubky' as Pubky;
+    const testPubky = '8kkppkmiubfq4pxn6f73nqrhhhgkb5xyfprntc9si3np9ydbotto' as Pubky;
+    const v1 = { url: `pubky://${testPubky}/pub/social/v1/profile.json`, publicRead: true };
+    const legacy = { url: `pubky://${testPubky}/pub/pubky.app/profile.json`, publicRead: true };
 
-    it('should return true when profile.json exists', async () => {
-      const readSpy = vi
+    it('admits a v1-only account without looking for a legacy profile', async () => {
+      const read = vi
         .spyOn(HomeserverService, 'getJsonIfFound')
-        .mockResolvedValue({ found: true, json: { name: 'Test' } });
+        .mockResolvedValue({ found: true, json: { name: 'Alice' } });
+      await expect(AuthApplication.userIsSignedUp({ pubky: testPubky })).resolves.toBe(true);
+      expect(read.mock.calls).toEqual([[v1]]);
+    });
 
-      const result = await AuthApplication.userIsSignedUp({ pubky: testPubky });
-
-      expect(result).toBe(true);
-      expect(readSpy).toHaveBeenCalledWith({ url: `pubky://${testPubky}/pub/pubky.app/profile.json` });
+    it('admits an existing legacy account when the v1 profile returns 404', async () => {
+      const read = vi
+        .spyOn(HomeserverService, 'getJsonIfFound')
+        .mockResolvedValueOnce({ found: false })
+        .mockResolvedValueOnce({ found: true, json: { name: 'Alice' } });
+      await expect(AuthApplication.userIsSignedUp({ pubky: testPubky })).resolves.toBe(true);
+      expect(read.mock.calls).toEqual([[v1], [legacy]]);
     });
 
     it('should return true when profile.json exists but is empty or not JSON', async () => {
@@ -203,11 +230,12 @@ describe('AuthApplication', () => {
         service: ErrorService.Homeserver,
         operation: 'userIsSignedUp',
       });
-      vi.spyOn(HomeserverService, 'getJsonIfFound').mockRejectedValue(serverError);
+      const read = vi.spyOn(HomeserverService, 'getJsonIfFound').mockRejectedValue(serverError);
 
       await expect(AuthApplication.userIsSignedUp({ pubky: testPubky })).rejects.toMatchObject({
         code: ServerErrorCode.INTERNAL_ERROR,
       });
+      expect(read.mock.calls).toEqual([[v1]]);
     });
   });
 });

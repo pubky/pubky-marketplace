@@ -2,6 +2,7 @@ import { keccak_256 } from '@noble/hashes/sha3.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import { z } from 'zod';
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import { isUnverifiedUpstreamPayment, observedPaymentRail } from '@/libs/commerce/paykit-rail';
 import { formatUsdt, USDT_EXPONENT } from '@/libs/commerce/payment-options';
 
 /**
@@ -103,6 +104,8 @@ export function sameArbitrumAddress(left: string | null | undefined, right: stri
 export type UsdtRefundOrder = {
   state: string;
   total: { amountMinor: number; currency: string; exponent: number };
+  paymentMethod?: string | null;
+  paymentFinality?: string | null;
   paymentAsset?: string | null;
   paymentAmountMinor?: number | null;
   receiptId?: string | null;
@@ -152,43 +155,42 @@ const REFUND_DUE_STATES = new Set([
   'return_received',
 ]);
 
-/**
- * `cancelled` and `closed` can also mean "never paid"; only a paid order has a
- * receipt, or a review that ended `abandoned`: that money was received and is
- * still owed back.
- */
-function hasSettledPayment(order: UsdtRefundOrder, paymentInReview: boolean, reviewAbandoned: boolean): boolean {
-  if (SETTLED_STATES.has(order.state)) return true;
-  if (order.state === 'cancelled' || order.state === 'closed') return !!order.receiptId || reviewAbandoned;
-  return order.state === 'pending_payment' && paymentInReview;
-}
-
 export type UsdtRefundSurface =
   | { kind: 'hidden' }
   | {
       kind: 'buyer';
       /** `recorded` once the seller recorded the refund; the address can no longer change. */
       phase: 'needed' | 'confirmed' | 'recorded';
+      unverified?: true;
       refundDue: boolean;
     }
-  | { kind: 'seller'; phase: 'waiting' | 'confirmed' | 'recorded' };
+  | { kind: 'seller'; phase: 'waiting' | 'confirmed' | 'recorded' | 'unverified' };
 
-/**
- * What the refund-address panel shows for a viewer. `paymentInReview` is the
- * payment projection's `manual_review` state: late or mismatched money the
- * seller may have to return (plan §2.6, flow step 1). `reviewAbandoned` is a
- * review that ended `abandoned` (by the seller, or after seven days without
- * them): the order is cancelled, and the money is still the buyer's.
- */
+/** Preserve the buyer's ability to register a destination while the seller verifies the transfer. */
 export function usdtRefundSurface(
   order: UsdtRefundOrder,
   isBuyer: boolean,
-  paymentInReview: boolean,
-  reviewAbandoned = false,
+  payment?: {
+    state: string;
+    resolutionOutcome?: string | null;
+    reviewReason?: string | null;
+    confirmations?: number | null;
+  } | null,
 ): UsdtRefundSurface {
-  if (!isUsdtRefundOrder(order) || !hasSettledPayment(order, paymentInReview, reviewAbandoned)) {
-    return { kind: 'hidden' };
+  if (isUnverifiedUpstreamPayment(order, payment)) {
+    if (observedPaymentRail(order) !== 'usdt') return { kind: 'hidden' };
+    return isBuyer
+      ? { kind: 'buyer', phase: order.refundDestination ? 'confirmed' : 'needed', refundDue: false, unverified: true }
+      : { kind: 'seller', phase: 'unverified' };
   }
+  const paymentInReview = payment?.state === 'manual_review';
+  const reviewAbandoned = payment?.state === 'expired' && payment.resolutionOutcome === 'abandoned';
+  const eligible =
+    SETTLED_STATES.has(order.state) ||
+    ((order.state === 'cancelled' || order.state === 'closed') &&
+      (!!order.receiptId || reviewAbandoned || paymentInReview)) ||
+    (order.state === 'pending_payment' && paymentInReview);
+  if (!isUsdtRefundOrder(order) || !eligible) return { kind: 'hidden' };
   const recorded = !!order.externalRefund;
   const refundDue = REFUND_DUE_STATES.has(order.state) || paymentInReview || reviewAbandoned;
   if (isBuyer) {

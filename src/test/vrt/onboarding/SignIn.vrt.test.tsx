@@ -49,9 +49,7 @@ vi.mock('@/stores/signIn/signIn.store', () => ({
   useSignInStore: createZustandLikeHook({
     authUrlResolved: false,
     profileChecked: false,
-    bootstrapFetched: false,
-    dataPersisted: false,
-    homeserverSynced: false,
+    marketReady: false,
     error: null,
   }),
 }));

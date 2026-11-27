@@ -1,9 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
-import { createOrderFixture, createUsdtOrderFixture } from '@/test/fixtures/commerce/orders';
+import { createOrderFixture, createPaymentFixture, createUsdtOrderFixture } from '@/test/fixtures/commerce/orders';
 import {
   REFUND_FIXTURE_ADDRESS,
   REFUND_FIXTURE_OTHER_ADDRESS,
@@ -34,8 +34,13 @@ function renderPanel(
     <MarketplaceUsdtRefundAddress
       order={order}
       isBuyer={isBuyer}
-      paymentInReview={paymentInReview}
-      reviewAbandoned={reviewAbandoned}
+      payment={
+        paymentInReview
+          ? createPaymentFixture('manual_review')
+          : reviewAbandoned
+            ? createPaymentFixture('expired', { resolutionOutcome: 'abandoned' })
+            : null
+      }
       actOnOrder={actOnOrder}
     />,
   );
@@ -103,13 +108,22 @@ describe('MarketplaceUsdtRefundAddress — buyer', () => {
     );
     const user = userEvent.setup();
 
-    expect(screen.getByRole('radio', { name: /Send it back to the address I paid from/ })).toBeChecked();
-    expect(screen.getByText(REFUND_FIXTURE_OTHER_ADDRESS)).toBeInTheDocument();
+    const payingAddress = screen.getByRole('radio', { name: 'Send it back to the address I paid from' });
+    expect(payingAddress).toBeChecked();
+    expect(payingAddress).toHaveAccessibleDescription(REFUND_FIXTURE_OTHER_ADDRESS);
     expect(screen.queryByLabelText('Arbitrum One USDT address')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('radio', { name: 'Send it to another Arbitrum One USDT address' }));
     expect(screen.getByLabelText('Arbitrum One USDT address')).toBeInTheDocument();
-    await user.click(screen.getByRole('radio', { name: /Send it back to the address I paid from/ }));
+    const addressText = screen.getByText(REFUND_FIXTURE_OTHER_ADDRESS);
+    const selection = window.getSelection()!;
+    selection.selectAllChildren(addressText);
+    fireEvent.click(addressText);
+    expect(payingAddress).not.toBeChecked();
+    expect(selection.toString()).toBe(REFUND_FIXTURE_OTHER_ADDRESS);
+    selection.removeAllRanges();
+    await user.click(addressText);
+    expect(payingAddress).toBeChecked();
     await user.click(screen.getByRole('checkbox', { name: 'This address accepts USDT on Arbitrum One' }));
     await user.click(screen.getByRole('button', { name: 'Confirm refund address' }));
     await waitFor(() =>
@@ -183,7 +197,6 @@ describe('MarketplaceUsdtRefundAddress — seller', () => {
       <MarketplaceUsdtRefundAddress
         order={createUsdtOrderFixture('return_received')}
         isBuyer={false}
-        paymentInReview={false}
         actOnOrder={vi.fn(async () => true)}
       />,
     );

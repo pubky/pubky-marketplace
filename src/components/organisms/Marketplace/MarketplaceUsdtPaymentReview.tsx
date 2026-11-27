@@ -3,8 +3,9 @@
 import { LoaderCircle } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Controller, type UseFormReturn } from 'react-hook-form';
-import { Button, buttonVariants } from '@/atoms/Button/Button';
+import { Button } from '@/atoms/Button/Button';
 import { Input } from '@/atoms/Input/Input';
+import { secondarySelectClasses } from '@/atoms/Select/Select.variants';
 import { Typography } from '@/atoms/Typography/Typography';
 import type {
   SellerPaymentResolutionForm,
@@ -76,11 +77,7 @@ export function SellerUsdtResolutionReview({
           control={form.control}
           name="outcome"
           render={({ field }) => (
-            <select
-              {...field}
-              id="usdt-resolution-outcome"
-              className={`${buttonVariants({ variant: 'secondary' })} w-full`}
-            >
+            <select {...field} id="usdt-resolution-outcome" className={`${secondarySelectClasses()} w-full`}>
               {allowPaid && <option value="paid">{USDT_PAYMENT_REVIEW_COPY.paidOutcome}</option>}
               <option value="refunded">{USDT_PAYMENT_REVIEW_COPY.refundedOutcome}</option>
               <option value="abandoned">{USDT_PAYMENT_REVIEW_COPY.abandonedOutcome}</option>

@@ -1,7 +1,6 @@
 import { slowCypressDown } from 'cypress-slow-down';
 import { BackupType, HasBackedUp } from '../support/types/enums';
 import { backupDownloadFilePath } from '../support/common';
-import { waitForFeedToLoad } from '../support/posts';
 
 describe('Onboarding', () => {
   before(() => {
@@ -69,18 +68,6 @@ describe('Onboarding', () => {
 
     // sign up as second user
     cy.onboardAsNewUser(secondProfileName);
-  });
-
-  it('can use Explore mode without signing in and shows Join Pubky dialog when clicking new post button', () => {
-    cy.get('[data-cy="explore-btn"]').should('be.visible').click();
-
-    waitForFeedToLoad();
-
-    cy.location('pathname').should('eq', '/home');
-    cy.get('[data-cy="timeline-container"]').should('be.visible');
-
-    cy.get('[data-cy="new-post-btn"]').should('be.visible').click();
-    cy.get('[data-cy="dialog-content"]').should('be.visible').and('contain.text', 'Join Pubky');
   });
 
   it('cannot proceed with unverified invite code', () => {

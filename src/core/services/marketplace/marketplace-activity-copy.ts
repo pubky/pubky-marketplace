@@ -120,8 +120,8 @@ export const BITCOIN_REVIEW_REASON_COPY = {
     action: 'flagged a Bitcoin payment whose amount does not match',
   },
   confirmation_failed: {
-    label: 'A confirmed Bitcoin payment could not be applied to this order',
-    action: 'flagged a Bitcoin payment whose confirmation failed',
+    label: 'Review the payment status for this order',
+    action: 'requested a review of the payment status for this order',
   },
   seller_confirmation_window_elapsed: {
     label: 'The confirmation window ended before you confirmed this payment',

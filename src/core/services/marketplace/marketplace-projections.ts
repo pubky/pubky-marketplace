@@ -22,6 +22,7 @@ import { usdtSettlementFieldsShape } from '@/libs/commerce/usdt-settlement-contr
 import { ServerErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
+import type { MarketplaceOrderDiagnostic } from './marketplace-order-diagnostics';
 
 /**
  * Read-projection schemas shared by BOTH marketplace transports.
@@ -520,6 +521,14 @@ export function isMarketplaceAwardCheckoutEligible(
   );
 }
 
+const marketplacePaymentReviewReasonSchema = z.enum([
+  'late_settlement',
+  'refund_required',
+  'amount_mismatch',
+  'unpinned_legacy',
+  'upstream_inconsistent',
+]);
+
 export const marketplacePaymentSchema = z
   .object({
     id: z.uuid(),
@@ -545,10 +554,7 @@ export const marketplacePaymentSchema = z
     // ADR-0019 section 8 keeps it out of read projections. The sandbox still
     // sends it, hence optional rather than removed.
     locksBundleId: z.uuid().optional(),
-    reviewReason: z
-      .enum(['late_settlement', 'refund_required', 'amount_mismatch', 'unpinned_legacy'])
-      .nullable()
-      .optional(),
+    reviewReason: marketplacePaymentReviewReasonSchema.nullable().optional(),
     amount: marketplaceMoneySchema,
     createdAt: z.string(),
     updatedAt: z.string(),
@@ -1074,6 +1080,158 @@ export type MarketplaceSellerDrop = z.infer<typeof marketplaceSellerDropSchema>;
 export type MarketplaceDropReadyCheck = z.infer<typeof marketplaceDropReadyCheckSchema>;
 export type MarketplacePayment = z.infer<typeof marketplacePaymentSchema>;
 export type MarketplaceReceipt = z.infer<typeof marketplaceReceiptSchema>;
+
+interface MarketplaceOrderParseIssue {
+  path: string;
+  message: string;
+}
+
+export interface MarketplaceOrderParseError {
+  kind: 'parse_error';
+  index: number;
+  orderId: string | null;
+  issues: MarketplaceOrderParseIssue[];
+}
+
+export interface MarketplaceOrderListResult {
+  orders: MarketplaceParticipantOrder[];
+  parseErrors: MarketplaceOrderParseError[];
+}
+
+const MARKETPLACE_ORDER_PARSE_ID_MAX_LENGTH = 64;
+const MARKETPLACE_ORDER_PARSE_VALUE_MAX_LENGTH = 64;
+const MARKETPLACE_ORDER_PARSE_MAX_ISSUES = 5;
+
+function formatZodIssuePath(root: string, path: readonly PropertyKey[]): string {
+  let formatted = root;
+  for (const segment of path) {
+    if (typeof segment === 'number') {
+      formatted = formatted ? `${formatted}[${segment}]` : `[${segment}]`;
+    } else {
+      const key = String(segment);
+      formatted = formatted ? `${formatted}.${key}` : key;
+    }
+  }
+  return formatted || '(root)';
+}
+
+function readSafeValueAtPath(
+  raw: unknown,
+  path: readonly PropertyKey[],
+): { found: true; value: unknown } | { found: false } {
+  // Never echo values under deliveryAddress (restricted personal data).
+  if (path.some((segment) => String(segment) === 'deliveryAddress')) return { found: false };
+  let current: unknown = raw;
+  for (const segment of path) {
+    if (current === null || current === undefined || typeof current !== 'object') return { found: false };
+    if (typeof segment === 'number') {
+      if (!Array.isArray(current) || segment < 0 || segment >= current.length) return { found: false };
+      current = current[segment];
+    } else {
+      const key = String(segment);
+      if (!Object.prototype.hasOwnProperty.call(current, key)) return { found: false };
+      current = (current as Record<string, unknown>)[key];
+    }
+  }
+  return { found: true, value: current };
+}
+
+function formatBoundedScalar(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const bounded =
+      value.length > MARKETPLACE_ORDER_PARSE_VALUE_MAX_LENGTH
+        ? `${value.slice(0, MARKETPLACE_ORDER_PARSE_VALUE_MAX_LENGTH)}…`
+        : value;
+    return JSON.stringify(bounded);
+  }
+  if (typeof value === 'number' || typeof value === 'boolean' || value === null) {
+    return String(value);
+  }
+  return null;
+}
+
+export function formatMarketplaceOrderZodIssues(
+  issues: readonly z.core.$ZodIssue[],
+  raw: unknown,
+  root: string,
+): MarketplaceOrderParseIssue[] {
+  const formatted: MarketplaceOrderParseIssue[] = [];
+  const visible = issues.slice(0, MARKETPLACE_ORDER_PARSE_MAX_ISSUES);
+  for (const issue of visible) {
+    const path = formatZodIssuePath(root, issue.path);
+    let message = issue.message;
+    if (issue.code === 'invalid_value') {
+      const received = readSafeValueAtPath(raw, issue.path);
+      const scalar = received.found ? formatBoundedScalar(received.value) : null;
+      if (scalar !== null) {
+        message = `invalid value ${scalar} (${issue.message})`;
+      }
+    }
+    formatted.push({ path, message });
+  }
+  const remaining = issues.length - visible.length;
+  if (remaining > 0) {
+    formatted.push({
+      path: root || '(root)',
+      message: `…and ${remaining} more issue${remaining === 1 ? '' : 's'}`,
+    });
+  }
+  return formatted;
+}
+
+/** Order schemas use fixed object fields and array indices. Messages or received values may contain private wire data. */
+export function marketplaceOrderDiagnosticIssues(issues: readonly z.core.$ZodIssue[], root: string): string[] {
+  return issues
+    .slice(0, MARKETPLACE_ORDER_PARSE_MAX_ISSUES)
+    .map((issue) => `${formatZodIssuePath(root, issue.path)}: ${issue.code}`);
+}
+
+export function parseMarketplaceOrderList(
+  raw: unknown,
+  reportInvalidOrders?: (errors: readonly MarketplaceOrderDiagnostic[]) => void,
+): MarketplaceOrderListResult {
+  const envelope = z.object({ orders: z.array(z.unknown()) }).safeParse(raw);
+  if (!envelope.success) {
+    throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Marketplace returned invalid orders.', {
+      service: ErrorService.Marketplace,
+      operation: 'getOrders',
+      context: {
+        parseIssues: marketplaceOrderDiagnosticIssues(envelope.error.issues, ''),
+      },
+    });
+  }
+
+  const orders: MarketplaceParticipantOrder[] = [];
+  const parseErrors: MarketplaceOrderParseError[] = [];
+  const diagnostics: MarketplaceOrderDiagnostic[] = [];
+
+  for (let index = 0; index < envelope.data.orders.length; index += 1) {
+    const row = envelope.data.orders[index];
+    const parsed = marketplaceParticipantOrderSchema.safeParse(row);
+    if (parsed.success) {
+      orders.push(parsed.data);
+      continue;
+    }
+
+    const candidate = typeof row === 'object' && row !== null ? (row as Record<string, unknown>) : null;
+    const rawId = candidate && typeof candidate.id === 'string' ? candidate.id.trim() : '';
+    const orderId = rawId.length > 0 ? rawId.slice(0, MARKETPLACE_ORDER_PARSE_ID_MAX_LENGTH) : null;
+    const issues = formatMarketplaceOrderZodIssues(parsed.error.issues, row, `orders[${index}]`);
+    if (reportInvalidOrders) {
+      diagnostics.push({ orderId, issues: marketplaceOrderDiagnosticIssues(parsed.error.issues, '') });
+    }
+    parseErrors.push({
+      kind: 'parse_error',
+      index,
+      orderId,
+      issues,
+    });
+  }
+
+  if (diagnostics.length > 0) reportInvalidOrders?.(diagnostics);
+
+  return { orders, parseErrors };
+}
 
 export const MARKETPLACE_NOTIFICATION_TYPE_MAX_LENGTH = 64;
 const SAFE_QUARANTINE_TIMESTAMP = new Date(0).toISOString();

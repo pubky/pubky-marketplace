@@ -27,6 +27,9 @@ function paint(element: Element, ink: Rgba = [0, 0, 0, 0]): Rgba {
   let pixel = ink;
   for (let node: Element | null = element; node; node = node.parentElement) {
     const style = getComputedStyle(node);
+    // The default button paints a uniform translucent gradient over its hover fill.
+    const wash = style.backgroundImage.match(/^linear-gradient\((.+), \1\)$/)?.[1];
+    if (wash) pixel = over(pixel, rgba(wash));
     pixel = over(pixel, rgba(style.backgroundColor));
     pixel[3] *= Number(style.opacity);
   }
@@ -49,6 +52,12 @@ function expectContrast(ink: Rgba, fill: Rgba, minimum: number) {
 /** Browser-only check for text on solid/translucent CSS backgrounds, including inherited fills. */
 export function expectTextContrast(element: Element, minimum = 4.5) {
   expectContrast(paint(element, rgba(getComputedStyle(element).color)), paint(element), minimum);
+}
+
+/** Measure a CSS stroke over its backdrop against the surface beside it. */
+export function expectColorContrast(color: string, backdrop: Element, adjacentSurface = backdrop) {
+  expect(CSS.supports('color', color)).toBe(true);
+  expectContrast(paint(backdrop, rgba(color)), paint(adjacentSurface), 3);
 }
 
 /** Icons use their current color; solid control markers use their background color. */

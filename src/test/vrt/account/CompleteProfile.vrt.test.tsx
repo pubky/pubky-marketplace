@@ -19,17 +19,6 @@ function ProfileWithHeader() {
   );
 }
 
-// `CreateProfileForm` runs `useProfileForm({ mode: 'create' })`. Its prefill
-// read finds no existing profile here, so the render is the empty form with a
-// pubky-derived FacehashAvatar (deterministic under the seeded Math.random in
-// `renderForVRT`).
-vi.mock('@/controllers/profile/profile', () => ({
-  ProfileController: {
-    readProfileSeed: vi.fn(async () => null),
-    commitCreate: vi.fn(),
-    commitUpdate: vi.fn(),
-  },
-}));
 vi.mock('next/navigation', () => {
   const router = {
     push: vi.fn(),
@@ -73,7 +62,7 @@ vi.mock('@/hooks/usePublicRoute/usePublicRoute', () => ({
 }));
 
 describe('Complete profile — visual regression', () => {
-  it('renders the create-profile page at desktop viewport', async () => {
+  it('renders the Pubky App profile handoff at desktop viewport', async () => {
     const screen = await renderForVRT(<ProfileWithHeader />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       'complete-profile-desktop',
@@ -81,7 +70,7 @@ describe('Complete profile — visual regression', () => {
     );
   });
 
-  it('renders the create-profile page at mobile viewport', async () => {
+  it('renders the Pubky App profile handoff at mobile viewport', async () => {
     const screen = await renderForVRT(<ProfileWithHeader />, { viewport: VRT_VIEWPORT_MOBILE, disableHover: true });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('complete-profile-mobile');
   });

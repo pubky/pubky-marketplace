@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { debounce } from 'lodash-es';
 import { SearchController } from '@/controllers/search/search';
 import { Logger } from '@/libs/logger/logger';
+import { normalizeLegacyTagLabel, normalizeSocialTagLabel } from '@/libs/tag-label';
 import {
   TAG_SUGGESTIONS_DEBOUNCE_MS,
   TAG_SUGGESTIONS_DEFAULT_LIMIT,
@@ -23,6 +24,7 @@ import type { UseTagSuggestionsParams, UseTagSuggestionsResult } from './useTagS
 export function useTagSuggestions({
   query,
   excludeTags = [],
+  normalizeLabel = normalizeLegacyTagLabel,
   enabled = true,
   limit = TAG_SUGGESTIONS_DEFAULT_LIMIT,
 }: UseTagSuggestionsParams): UseTagSuggestionsResult {
@@ -32,17 +34,17 @@ export function useTagSuggestions({
   const requestIdRef = useRef(0);
 
   // Memoize excludeTags set for efficient filtering
-  const excludeTagsSet = useMemo(() => new Set(excludeTags.map((t) => t.toLowerCase())), [excludeTags]);
+  const excludeTagsSet = useMemo(() => new Set(excludeTags.map(normalizeLabel)), [excludeTags, normalizeLabel]);
 
   // Filter suggestions to remove excluded tags
   const suggestions = useMemo(
-    () => rawSuggestions.filter((tag) => !excludeTagsSet.has(tag.toLowerCase())),
-    [rawSuggestions, excludeTagsSet],
+    () => rawSuggestions.filter((tag) => !excludeTagsSet.has(normalizeLabel(tag))),
+    [rawSuggestions, excludeTagsSet, normalizeLabel],
   );
 
   // Debounced search function
   const debouncedSearchRef = useRef(
-    debounce(async (searchQuery: string, searchLimit: number) => {
+    debounce(async (searchQuery: string, searchLimit: number, v1: boolean) => {
       const requestId = ++requestIdRef.current;
       setIsLoading(true);
 
@@ -50,6 +52,7 @@ export function useTagSuggestions({
         const results = await SearchController.getTagsByPrefix({
           prefix: searchQuery,
           limit: searchLimit,
+          ...(v1 ? { version: 'v1' as const } : {}),
         });
 
         // If a newer request started while we awaited, ignore stale results
@@ -93,13 +96,13 @@ export function useTagSuggestions({
 
     // Trigger debounced search
     const debouncedFn = debouncedSearchRef.current;
-    debouncedFn(trimmedQuery, limit);
+    debouncedFn(trimmedQuery, limit, normalizeLabel === normalizeSocialTagLabel);
 
     // Cleanup: cancel pending debounced calls when deps change
     return () => {
       debouncedFn.cancel();
     };
-  }, [query, enabled, limit]);
+  }, [query, enabled, limit, normalizeLabel]);
 
   return {
     suggestions,

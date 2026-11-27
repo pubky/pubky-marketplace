@@ -11,11 +11,10 @@ export interface ProfileOnPubkyLinkProps {
   className?: string;
 }
 
-/** Small off-site link to a user's profile on the social host. Renders nothing while link-out is off. */
+/** Small off-site link to a user's profile on the social host. */
 export function ProfileOnPubkyLink({ pubky, className }: ProfileOnPubkyLinkProps) {
   const isEmbedded = useIsEmbedded();
   const href = getSocialHostUrl(getProfileRoute(PROFILE_ROUTES.PROFILE, pubky));
-  if (!href) return null;
   return (
     <a
       href={href}

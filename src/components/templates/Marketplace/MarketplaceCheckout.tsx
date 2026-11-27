@@ -113,6 +113,7 @@ import { CommerceBlockedNotice } from '@/molecules/Marketplace/CommerceBlockedNo
 import { DeliveryKeyBlockedNotice } from '@/molecules/Marketplace/DeliveryKeyBlockedNotice';
 import { MarketplaceCheckoutStatusLabels } from '@/molecules/Marketplace/MarketplaceCheckoutStatusLabels';
 import { MarketplaceCheckoutSteps } from '@/molecules/Marketplace/MarketplaceCheckoutSteps';
+import { MarketplaceOrderParseErrorCard } from '@/molecules/Marketplace/MarketplaceOrderParseErrorCard';
 import { MarketplaceSellerLink } from '@/molecules/Marketplace/MarketplaceSellerLink';
 import { PaykitOutageNotice } from '@/molecules/Marketplace/PaykitOutageNotice';
 import { RegionRefusal } from '@/molecules/Marketplace/RegionRefusal';
@@ -132,6 +133,7 @@ import { MarketplacePaymentStatusCard } from '@/organisms/Marketplace/Marketplac
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSessionRequiredCard } from '@/organisms/Marketplace/MarketplaceSessionRequiredCard';
 import { MarketplaceUsdtMissingNote } from '@/organisms/Marketplace/MarketplaceUsdtMissingNote';
+import { MarketplaceUsdtRefundAddress } from '@/organisms/Marketplace/MarketplaceUsdtRefundAddress';
 import type { MarketplaceOfferAward } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { MarketplaceCartSkeleton } from './MarketplaceCart.skeleton';
@@ -491,7 +493,19 @@ function MarketplaceCartCheckout() {
   const targetPayingIds = [
     ...new Set([...payingOrderIds, ...(resumeOrderId && !sellerOwnResumeOrderId ? [resumeOrderId] : [])]),
   ];
+  const orderParseErrors = orders.parseErrors ?? [];
   const focusedPaying = orders.orders.filter((view) => targetPayingIds.includes(view.order.id));
+  const focusedParseErrors = orderParseErrors.filter(
+    (entry) => entry.orderId !== null && targetPayingIds.includes(entry.orderId),
+  );
+  const hasUnidentifiedTarget =
+    orderParseErrors.some((error) => error.orderId === null) &&
+    targetPayingIds.some(
+      (id) =>
+        !focusedPaying.some(({ order }) => order.id === id) &&
+        !focusedParseErrors.some((error) => error.orderId === id),
+    );
+  const emptyPayingView = focusedPaying.length === 0 && focusedParseErrors.length === 0 && !hasUnidentifiedTarget;
   const showPaying = targetPayingIds.length > 0;
   const allPaymentsConfirmed =
     targetPayingIds.length > 0 &&
@@ -804,61 +818,95 @@ function MarketplaceCartCheckout() {
                   {holdCopy}
                 </Typography>
               )}
-            {orders.isLoading && focusedPaying.length === 0 ? (
+            {orders.isLoading && emptyPayingView ? (
               <Skeleton className="h-40 w-full" aria-label="Loading checkout" />
-            ) : focusedPaying.length === 0 ? (
-              <Card className="rounded-md p-0">
-                <CardContent className="grid gap-3 p-6">
-                  <Typography as="p">This checkout is no longer waiting for payment.</Typography>
+            ) : emptyPayingView ? (
+              orders.error ? (
+                <div role="alert" className="rounded-md border border-destructive/40 p-4">
+                  {orders.error}
+                </div>
+              ) : (
+                <Card className="rounded-md p-0">
+                  <CardContent className="grid gap-3 p-6">
+                    <Typography as="p">This checkout is no longer waiting for payment.</Typography>
+                    <Button asChild className="w-fit rounded-full">
+                      <Link href={MARKETPLACE_ROUTES.ORDERS} overrideDefaults>
+                        View orders
+                      </Link>
+                    </Button>
+                  </CardContent>
+                </Card>
+              )
+            ) : (
+              <>
+                {focusedPaying.map(({ order, payment }) => (
+                  <Card className="rounded-md p-0" key={order.id}>
+                    <CardContent className="grid min-w-0 gap-4 p-6">
+                      <MarketplaceOrderReference order={order} isBuyer />
+                      <MarketplaceCheckoutStatusLabels order={order} payment={payment} isSandbox={isSandbox} />
+                      {order.lines.map((line, index) => (
+                        <MarketplaceCheckoutItem
+                          key={`${line.listingAggregateId}:${line.variantId ?? index}`}
+                          line={line}
+                          orderHref={getMarketplaceOrderViewRoute(order.id)}
+                        />
+                      ))}
+                      {(payment?.state !== 'confirmed' || observedPaymentRail(order) === 'usdt') && (
+                        <MarketplacePaymentStatusCard
+                          order={order}
+                          payment={payment}
+                          isBuyer
+                          adapterMode={adapterMode}
+                          advancePayment={orders.advancePayment}
+                          onPaymentChanged={orders.refresh}
+                          showStagingNotice={false}
+                          showStatusLabels={false}
+                          checkoutActions={
+                            order.state === 'pending_payment' &&
+                            (order.paymentMethod === 'paypal' || paykitCheckoutCancellable(order)) ? (
+                              <MarketplaceOrderActions
+                                order={order}
+                                isBuyer
+                                canEditReview={false}
+                                cancelButtonSize="default"
+                                cancelFullWidth
+                                actOnOrder={orders.actOnOrder}
+                                onChanged={orders.refresh}
+                              />
+                            ) : undefined
+                          }
+                        />
+                      )}
+                      {payment?.reviewReason === 'upstream_inconsistent' && payment.state === 'manual_review' && (
+                        <MarketplaceUsdtRefundAddress
+                          order={order}
+                          payment={payment}
+                          isBuyer
+                          actOnOrder={orders.actOnOrder}
+                        />
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+                {focusedParseErrors.map((parseError) => (
+                  <MarketplaceOrderParseErrorCard
+                    key={`parse-error:${parseError.index}:${parseError.orderId}`}
+                    error={parseError}
+                  />
+                ))}
+                {hasUnidentifiedTarget && (
+                  <div role="alert" className="rounded-md border border-destructive/40 p-4">
+                    Some orders could not be read. The payment status for this checkout may be incomplete.
+                  </div>
+                )}
+                {(focusedPaying.length === 0 || hasUnidentifiedTarget) && (
                   <Button asChild className="w-fit rounded-full">
                     <Link href={MARKETPLACE_ROUTES.ORDERS} overrideDefaults>
                       View orders
                     </Link>
                   </Button>
-                </CardContent>
-              </Card>
-            ) : (
-              focusedPaying.map(({ order, payment }) => (
-                <Card className="rounded-md p-0" key={order.id}>
-                  <CardContent className="grid min-w-0 gap-4 p-6">
-                    <MarketplaceOrderReference order={order} isBuyer />
-                    <MarketplaceCheckoutStatusLabels order={order} payment={payment} isSandbox={isSandbox} />
-                    {order.lines.map((line, index) => (
-                      <MarketplaceCheckoutItem
-                        key={`${line.listingAggregateId}:${line.variantId ?? index}`}
-                        line={line}
-                        orderHref={getMarketplaceOrderViewRoute(order.id)}
-                      />
-                    ))}
-                    {(payment?.state !== 'confirmed' || observedPaymentRail(order) === 'usdt') && (
-                      <MarketplacePaymentStatusCard
-                        order={order}
-                        payment={payment}
-                        isBuyer
-                        adapterMode={adapterMode}
-                        advancePayment={orders.advancePayment}
-                        onPaymentChanged={orders.refresh}
-                        showStagingNotice={false}
-                        showStatusLabels={false}
-                        checkoutActions={
-                          order.state === 'pending_payment' &&
-                          (order.paymentMethod === 'paypal' || paykitCheckoutCancellable(order)) ? (
-                            <MarketplaceOrderActions
-                              order={order}
-                              isBuyer
-                              canEditReview={false}
-                              cancelButtonSize="default"
-                              cancelFullWidth
-                              actOnOrder={orders.actOnOrder}
-                              onChanged={orders.refresh}
-                            />
-                          ) : undefined
-                        }
-                      />
-                    )}
-                  </CardContent>
-                </Card>
-              ))
+                )}
+              </>
             )}
             {isStaging && !isSandbox && (
               <Typography

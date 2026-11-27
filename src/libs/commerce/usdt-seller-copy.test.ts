@@ -8,8 +8,10 @@ describe('USDT seller review and re-check copy', () => {
   it('keys the seller review line to why the payment needs a decision', () => {
     expect(review('late_settlement')).toBe(USDT_SELLER_REVIEW_COPY.late_settlement);
     expect(review('amount_mismatch')).toBe(USDT_SELLER_REVIEW_COPY.amount_mismatch);
+    expect(review('upstream_inconsistent')).toBe(USDT_SELLER_REVIEW_COPY.upstream_inconsistent);
     expect(USDT_SELLER_REVIEW_COPY.late_settlement).toMatch(/arrived after the payment window ended/);
     expect(USDT_SELLER_REVIEW_COPY.amount_mismatch).toMatch(/doesn't match the order total/);
+    expect(USDT_SELLER_REVIEW_COPY.upstream_inconsistent).toMatch(/inconsistent state/i);
   });
 
   it('leaves the generic review line for every other reason, and for no payment', () => {

@@ -36,10 +36,13 @@ export const LOCKS_REGION_REFUSAL_STATUS = 451;
 /**
  * The seller changed the listing's lock after checkout, so this order was
  * prepared against a lock the listing no longer shows. No new payment request
- * is created for it.
+ * is created, but an earlier request from another device may still be in
+ * progress, so the copy never says that nothing was charged or that the order cannot be paid.
+ * That earlier payment can also succeed and deliver the item, after which the
+ * order can no longer be cancelled, so the copy never promises a cancel.
  */
 export const LOCKS_PREPARED_TERMS_DIFFER_COPY =
-  'The seller changed what this listing unlocks after you checked out, so this order can’t be paid. Cancel it and check out again.';
+  'The seller changed what this listing unlocks after you checked out. We didn’t send a new payment request, but an earlier one may still be in progress, so check this order’s status before you check out again. Cancel the order only if it still offers that option.';
 
 export const LOCKS_SUBMIT_RATE_LIMITED_COPY = 'Too many payment requests. Wait a minute, then try again.';
 

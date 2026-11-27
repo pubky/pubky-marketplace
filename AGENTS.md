@@ -40,9 +40,9 @@ Hard constraints (`docs/architecture.md`):
 - Coordinators never call Application; go through Controllers.
 - Application never accesses Stores; controllers own UI state orchestration.
 - Pipes are pure: no IO or side effects. Services never call up into Application or Controllers.
-- Only PostApplication, NotificationApplication, BootstrapApplication, MigrationApplication, HotApplication,
+- Only PostApplication, BootstrapApplication,
   PostStreamApplication and TtlApplication may call other Applications. Maximum depth is 1, except
-  PostApplication/NotificationApplication/TtlApplication → PostStreamApplication → FileApplication may reach depth 2;
+  PostApplication/TtlApplication → PostStreamApplication → FileApplication may reach depth 2;
   no cycles.
 - HomeserverService may read the current auth store for session, capability/ownership and logout checks. This narrow
   read-only exception does not permit service writes to stores or general access to business/UI state.
@@ -71,8 +71,7 @@ Controller names describe IO: `fetch*` network only, `get*` local only, `getMany
   scale `-z-10, z-10, z-30, z-40, z-50, z-60`. See `docs/components.md` and `docs/z-index.md`.
 - When matching Figma navigation/icons, confirm active versus inactive states from the Shadcn button variants
   (Selected/Default background, border and shadow), not just another surface or the parent frame.
-- Stock Lucide icons come from `lucide-react`; custom/brand SVGs from `@/icons`; URL-to-icon helpers from
-  `@/libs/utils/urlToIcon`. Do not copy SVGs into individual features.
+- Stock Lucide icons come from `lucide-react`; custom/brand SVGs from `@/icons`. Do not copy SVGs into individual features.
 - No `useCallback` / `useMemo` without profiler evidence; the React Compiler handles memoization.
 - **Toasts**: use `toast()` from `@/molecules/Toaster/toast` with `variant` (`default` | `error` | `warning` | `info`). Pass string content and structured actions (`label`, `altText`, `onClick`); use `durationMs` only when the default 3 seconds is too short. `persistent: true` cannot be combined with `durationMs`. Toast state and renderer atoms are private. No `showErrorToast` wrappers or `className` destructive hacks. See `docs/components.md` — _Toasts_.
 - Forms use react-hook-form + zod in a form hook; schema/types/defaults go in a sibling `*.types.ts`. Components call the
@@ -143,3 +142,13 @@ personal matters to people. See `docs/development-workflow.md` for the full poli
 - Greptile configuration lives in `.greptile/config.json` and `.greptile/files.json`; keep referenced review guidance in
   sync. Configuration is not evidence that the external review service is enabled.
 - Update canonical docs first, then their summary here and the relevant Greptile instructions. Keep adapters as pointers.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

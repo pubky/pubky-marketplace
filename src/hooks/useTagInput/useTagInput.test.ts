@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import type { RefObject } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TAG_MAX_LENGTH } from '@/config/posts';
+import { normalizeSocialTagLabel } from '@/libs/tag-label';
 import { mockClipboardEvent } from '@/test-utils/react-events';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { useTagInput } from './useTagInput';
@@ -75,6 +76,22 @@ describe('useTagInput', () => {
     });
 
     expect(result.current.inputValue).toBe('new-tag');
+  });
+
+  it('preserves non-ASCII v1 case through paste and submit, including alongside a lowercase label', async () => {
+    const { result } = renderHook(() =>
+      useTagInput({
+        onTagAdd: mockOnTagAdd,
+        existingTags: ['abc-цена'],
+        normalizeLabel: normalizeSocialTagLabel,
+      }),
+    );
+    act(() => {
+      result.current.handlePaste(createPasteEvent('ABC-ЦЕНА'));
+    });
+    expect(result.current.inputValue).toBe('abc-ЦЕНА');
+    await act(() => result.current.handleTagSubmit());
+    expect(mockOnTagAdd).toHaveBeenCalledWith('abc-ЦЕНА');
   });
 
   it('calls onTagAdd and clears input on submit', async () => {

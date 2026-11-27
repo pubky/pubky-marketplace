@@ -29,15 +29,6 @@ const PKARR_PACKETS = {
     'FSgcCvQf4IDHyAtpTkQvSSCN3RsLYv7QC1vNT3qOf9nhNFbL89xLKYGT7LAfAeBLX723CTWU1v5jzB2PCWZnDwAGZRcomIAAAACAAAAAAAEAAAAANHRrcnE4em13YjhhM205azE1Y3N1M3ExN3FtZmdxbnA5ZHNrYnJnOXVxMXJ5ZHB5eHA3cXkAAEEAAQAADhAAFgABDWxlZ2FjeS1jb29raWUEdGVzdAA=',
 };
 
-const EMPTY_BOOTSTRAP = {
-  users: [],
-  posts: [],
-  files: [],
-  notifications: [],
-  indexed: true,
-  ids: { stream: [], influencers: [], recommended: [], hot_tags: [] },
-};
-
 // The listing seller's public rails exactly as `GET /v0/sellers/{pubky}/payment-config`
 // answers with `USDT_PAYMENTS_ENABLED` off: booleans only, never the PayPal email.
 // Bitcoin is enabled and Paykit-ready, PayPal has a stored merchant email.
@@ -101,6 +92,7 @@ export async function installSyntheticLaunchFixture({
   const publicConnectorStatusPath = `/v0/sellers/${encodeURIComponent(publicListing.ownerPubky)}/connector-status`;
   const counters = {
     shopApprovals: 0,
+    socialProfileReads: 0,
     serviceApprovals: 0,
     shopGrantExchanges: 0,
     serviceGrantExchanges: 0,
@@ -314,22 +306,15 @@ export async function installSyntheticLaunchFixture({
           return await reply({ status: 204 });
         }
         if (method === 'GET') {
-          if (url.pathname.endsWith('/profile.json'))
-            return await reply({ json: { name: 'Synthetic launch seller', bio: 'Local fixture' } });
-          if (url.pathname.endsWith('/last_read')) return await reply({ json: { timestamp: Date.now() } });
-          if (url.pathname.endsWith('/feeds/') || url.pathname.endsWith('/mutes/')) return await reply({ body: '' });
+          if (url.pathname === '/pub/social/v1/profile.json') {
+            counters.socialProfileReads += 1;
+            return await reply({
+              json: { name: 'Synthetic launch seller', bio: 'Local fixture', links: null, image: null, status: null },
+            });
+          }
           if (url.pathname === '/events-stream')
             return await reply({ contentType: 'text/event-stream', body: ': synthetic fixture\n\n' });
           return await reply({ status: 404, body: 'Synthetic record not found' });
-        }
-        // Normal first-login preferences and the automatic moderation follow.
-        if (
-          method === 'PUT' &&
-          ownedSession?.client_id === SHOP_CLIENT_ID &&
-          (/^\/pub\/pubky\.app\/(settings\.json|last_read)$/.test(url.pathname) ||
-            /^\/pub\/pubky\.app\/follows\/[a-z0-9]{52}$/.test(url.pathname))
-        ) {
-          return await reply({ status: 204 });
         }
         return await reject('unexpected_homeserver_operation');
       }
@@ -513,7 +498,7 @@ export async function installSyntheticLaunchFixture({
       }
       if (url.origin === nexusOrigin) {
         if (method !== 'GET') return await reject('unexpected_nexus_mutation');
-        if (url.pathname === `/v0/bootstrap/${SELLER}`) return await reply({ json: EMPTY_BOOTSTRAP });
+        if (url.pathname === '/v1/info') return await reply({ json: { version: 'synthetic-v1' } });
         if (url.pathname.startsWith(`/v0/user/${SELLER}/`) || url.pathname === '/v0/tags/hot')
           return await reply({ json: [] });
         return await route.continue();
@@ -561,6 +546,7 @@ export async function installSyntheticLaunchFixture({
     },
     summary() {
       const checks = {
+        'v1-only-seller-profile-read': counters.socialProfileReads > 0,
         'shop-sdk-grant-approved': counters.shopApprovals > 0 && counters.shopGrantExchanges > 0,
         'service-sdk-grant-approved': counters.serviceApprovals > 0 && counters.serviceGrantExchanges > 0,
         'bootstrap-proof-uploaded-verified-deleted':

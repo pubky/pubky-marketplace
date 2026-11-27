@@ -38,6 +38,41 @@ export function observedPaymentRail(order: RailOrder): PaymentRail | null {
   return null;
 }
 
+/**
+ * A provider lifecycle error can enter review and time out without a transfer.
+ * Its request state can already be "confirmed". Only use independent payment
+ * evidence when deciding whether to show refund instructions for that review.
+ */
+export function isUnverifiedUpstreamPayment(
+  order: {
+    paymentMethod?: string | null;
+    paymentAsset?: string | null;
+    paymentAmountMinor?: number | null;
+    receiptId?: string | null;
+    externalRefund?: unknown;
+    paymentFinality?: string | null;
+  },
+  payment:
+    | {
+        state?: string | null;
+        reviewReason?: string | null;
+        resolutionOutcome?: string | null;
+        confirmations?: number | null;
+      }
+    | null
+    | undefined,
+): boolean {
+  if (payment?.reviewReason !== 'upstream_inconsistent') return false;
+  const closedWithoutPayment = payment.state === 'expired' && payment.resolutionOutcome === 'abandoned';
+  if (payment.state !== 'manual_review' && !closedWithoutPayment) return false;
+  if (order.receiptId || order.externalRefund) return false;
+
+  if (observedPaymentRail(order) === 'usdt') {
+    return order.paymentFinality !== 'final' || (order.paymentAmountMinor ?? 0) <= 0;
+  }
+  return (payment.confirmations ?? 0) === 0;
+}
+
 /** Any Paykit order, single-bind or legacy. */
 export function isPaykitOrder(order: RailOrder): boolean {
   return order.paymentMethod === PAYKIT_PAYMENT_METHOD || observedPaymentRail(order) !== null;

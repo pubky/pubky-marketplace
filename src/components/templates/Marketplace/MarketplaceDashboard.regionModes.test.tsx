@@ -120,7 +120,7 @@ vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
   MarketplaceContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 
-const STUDIO_LINKS = ['Inventory', 'Payment settings', 'Store connections'] as const;
+const STUDIO_LINKS = ['Inventory', 'Store connections'] as const;
 
 beforeEach(() => {
   resetRegionState();
@@ -162,6 +162,7 @@ describe('the seller studio in a blocked region', () => {
       expect(shopActions.queryByRole('link', { name: new RegExp(name) })).not.toBeInTheDocument();
       expect(shopActions.getByRole('button', { name: new RegExp(name) })).toBeDisabled();
     }
+    expect(screen.getByRole('link', { name: 'Shop settings' })).toHaveAttribute('href', MARKETPLACE_ROUTES.SETTINGS);
     const row = screen.getByRole('row', { name: /Vintage boots/ });
     expect(within(row).getByRole('button', { name: /Edit/ })).toBeDisabled();
     expect(within(row).getByRole('button', { name: /Duplicate/ })).toBeDisabled();

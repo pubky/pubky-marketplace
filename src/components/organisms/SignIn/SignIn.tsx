@@ -33,22 +33,8 @@ import type { SignInState } from '@/stores/signIn/signIn.types';
 
 // Step configuration for the progress display
 const SIGN_IN_STEPS = [
-  {
-    key: 'profileChecked',
-    label: 'Setting up',
-  },
-  {
-    key: 'bootstrapFetched',
-    label: 'Loading your data',
-  },
-  {
-    key: 'dataPersisted',
-    label: 'Building your feed',
-  },
-  {
-    key: 'homeserverSynced',
-    label: 'Syncing settings',
-  },
+  { key: 'profileChecked', label: 'Checking your profile' },
+  { key: 'marketReady', label: 'Opening Market' },
 ] as const;
 type StepKey = (typeof SIGN_IN_STEPS)[number]['key'];
 type StepStatus = 'completed' | 'running' | 'pending';

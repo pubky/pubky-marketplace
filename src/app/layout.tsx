@@ -2,6 +2,7 @@ import './globals.css';
 import type { Viewport } from 'next';
 import { TooltipProvider } from '@/atoms/Tooltip/Tooltip';
 import { getSiteName } from '@/config/metadata';
+import { COLORS } from '@/config/theme';
 import { TOOLTIP_DELAY_MS } from '@/config/ui';
 import { buildMarketplacePromoPrepaintScript } from '@/libs/commerce/promo-prepaint';
 import { MARKETPLACE_STATIC_SEO } from '@/libs/commerce/seo';
@@ -10,7 +11,6 @@ import { RootContainer } from '@/molecules/ContainerRoot/ContainerRoot';
 import { EmbeddedDocumentFlag } from '@/molecules/EmbeddedDocumentFlag/EmbeddedDocumentFlag';
 import { EmbeddedExternalLinks } from '@/molecules/EmbeddedExternalLinks/EmbeddedExternalLinks';
 import { EmbeddedLegalFooter } from '@/molecules/EmbeddedLegalFooter/EmbeddedLegalFooter';
-import { Fab } from '@/molecules/Fab/Fab';
 import { Metadata } from '@/molecules/Metadata/Metadata';
 import { ServiceWorkerRegistration } from '@/molecules/ServiceWorkerRegistration/ServiceWorkerRegistration';
 import { StructuredData } from '@/molecules/StructuredData/StructuredData';
@@ -30,7 +30,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: '#000000',
+  themeColor: COLORS.background,
 };
 
 export function generateMetadata() {
@@ -70,7 +70,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   <Header />
                   {children}
                   <EmbeddedLegalFooter />
-                  <Fab />
                   <Toaster />
                   <DialogSignIn />
                 </RouteGuardProvider>

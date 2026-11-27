@@ -84,22 +84,7 @@ export type TUserStreamReachParams = {
 // Response Types - Common
 // =============================================================================
 
-/**
- * Bookmark metadata from Nexus API.
- *
- * Shape mirrors the upstream OpenAPI `Bookmark` schema
- * (`/v0/post/{author_id}/{post_id}/bookmark`):
- *   - `id`: the bookmark record's id on Nexus.
- *   - `indexed_at`: epoch-ms timestamp Nexus assigned when it indexed the
- *     bookmark. We use this as the local `created_at` ordering key.
- *
- * Historical note: an earlier `{ created_at, updated_at }` shape was kept
- * here that did not match what the API actually returned. That mismatch
- * caused the bookmarks table to be written with `created_at: undefined`,
- * which is silently excluded from IndexedDB index cursors and broke the
- * `FollowedCollections` live query. See `LocalStreamPostsService.persistPosts`
- * for the write-site coercion.
- */
+/** Viewer bookmark reference and the epoch-millisecond timestamp assigned by the Nexus index. */
 export type NexusBookmark = {
   id: string;
   indexed_at: number;
@@ -155,6 +140,8 @@ export type NexusUserRelationship = {
 
 /** Tag with associated taggers information */
 export type NexusTag = {
+  /** Viewer-owned file reported by a v1 resource tag view. */
+  tag_uri?: string | null;
   label: string;
   taggers: Pubky[];
   taggers_count: number;

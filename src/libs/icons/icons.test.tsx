@@ -5,15 +5,11 @@ import {
   Blocktank,
   BTCIcon,
   Github2,
-  LineHorizontal,
-  MarkdownMark,
   PaypalIcon,
   PubkyIcon,
-  RoundedCorner,
   Synonym,
   Telegram,
   Tether,
-  UsersRound2,
   XTwitter,
 } from './icons';
 
@@ -162,143 +158,6 @@ describe('Custom Icons', () => {
       expect(path).toHaveAttribute('stroke-width', '1.5');
       expect(path).toHaveAttribute('stroke-linecap', 'round');
       expect(path).toHaveAttribute('stroke-linejoin', 'round');
-    });
-  });
-
-  describe('UsersRound2', () => {
-    it('should render correctly with default props', () => {
-      const { container } = render(<UsersRound2 />);
-      const svg = container.querySelector('svg');
-
-      expect(svg).toBeInTheDocument();
-      expect(svg).toHaveAttribute('width', '24');
-      expect(svg).toHaveAttribute('height', '24');
-      expect(svg).toHaveAttribute('viewBox', '0 0 20 20');
-      expect(svg).toHaveAttribute('fill', 'none');
-    });
-
-    it('should apply custom size', () => {
-      const { container } = render(<UsersRound2 size={32} />);
-      const svg = container.querySelector('svg');
-
-      expect(svg).toHaveAttribute('width', '32');
-      expect(svg).toHaveAttribute('height', '32');
-    });
-
-    it('should apply custom className', () => {
-      const { container } = render(<UsersRound2 className="custom-class" />);
-      const svg = container.querySelector('svg');
-
-      expect(svg).toHaveClass('custom-class');
-    });
-
-    it('should apply additional props', () => {
-      const { container } = render(<UsersRound2 data-testid="users-icon" />);
-      const svg = container.querySelector('svg');
-
-      expect(svg).toHaveAttribute('data-testid', 'users-icon');
-    });
-
-    it('should render the correct SVG content', () => {
-      const { container } = render(<UsersRound2 />);
-      const path = container.querySelector('path');
-
-      expect(path).toBeInTheDocument();
-      expect(path).toHaveAttribute('stroke', 'currentColor');
-      expect(path).toHaveAttribute('stroke-width', '1.5');
-      expect(path).toHaveAttribute('stroke-linecap', 'round');
-      expect(path).toHaveAttribute('stroke-linejoin', 'round');
-    });
-  });
-
-  describe('LineHorizontal', () => {
-    it('should render correctly with default props', () => {
-      const { container } = render(<LineHorizontal />);
-      const svg = container.querySelector('svg');
-
-      expect(svg).toBeInTheDocument();
-      expect(svg).toHaveAttribute('width', '12');
-      expect(svg).toHaveAttribute('height', '12');
-      expect(svg).toHaveAttribute('viewBox', '0 0 12 12');
-      expect(svg).toHaveAttribute('fill', 'none');
-    });
-
-    it('should apply custom size', () => {
-      const { container } = render(<LineHorizontal size={16} />);
-      const svg = container.querySelector('svg');
-
-      expect(svg).toHaveAttribute('width', '16');
-      expect(svg).toHaveAttribute('height', '16');
-    });
-
-    it('should have fill-secondary class hardcoded', () => {
-      const { container } = render(<LineHorizontal />);
-      const svg = container.querySelector('svg');
-
-      expect(svg).toHaveClass('fill-secondary');
-    });
-
-    it('should apply additional props', () => {
-      const { container } = render(<LineHorizontal data-testid="line-icon" />);
-      const svg = container.querySelector('svg');
-
-      expect(svg).toHaveAttribute('data-testid', 'line-icon');
-    });
-
-    it('should render the correct SVG content', () => {
-      const { container } = render(<LineHorizontal />);
-      const path = container.querySelector('path');
-
-      expect(path).toBeInTheDocument();
-      expect(path).toHaveAttribute('fill-rule', 'evenodd');
-      expect(path).toHaveAttribute('clip-rule', 'evenodd');
-      // Note: fill is handled via CSS classes, not as an attribute
-    });
-  });
-
-  describe('RoundedCorner', () => {
-    it('should render correctly with default props', () => {
-      const { container } = render(<RoundedCorner />);
-      const svg = container.querySelector('svg');
-
-      expect(svg).toBeInTheDocument();
-      expect(svg).toHaveAttribute('width', '12');
-      expect(svg).toHaveAttribute('height', '12');
-      expect(svg).toHaveAttribute('viewBox', '0 0 12 12');
-      expect(svg).toHaveAttribute('fill', 'none');
-      expect(svg).toHaveAttribute('preserveAspectRatio', 'none');
-    });
-
-    it('should apply custom size', () => {
-      const { container } = render(<RoundedCorner size={16} />);
-      const svg = container.querySelector('svg');
-
-      expect(svg).toHaveAttribute('width', '16');
-      expect(svg).toHaveAttribute('height', '16');
-    });
-
-    it('should have hardcoded classes', () => {
-      const { container } = render(<RoundedCorner />);
-      const svg = container.querySelector('svg');
-
-      expect(svg).toHaveClass('block');
-      expect(svg).toHaveClass('size-full');
-      expect(svg).toHaveClass('fill-secondary');
-    });
-
-    it('should apply additional props', () => {
-      const { container } = render(<RoundedCorner data-testid="rounded-corner-icon" />);
-      const svg = container.querySelector('svg');
-
-      expect(svg).toHaveAttribute('data-testid', 'rounded-corner-icon');
-    });
-
-    it('should render the correct SVG content', () => {
-      const { container } = render(<RoundedCorner />);
-      const path = container.querySelector('path');
-
-      expect(path).toBeInTheDocument();
-      expect(path).toHaveAttribute('d', 'M1 0C1 6.07513 5.92487 11 12 11V12C5.37258 12 0 6.62742 0 0H1Z');
     });
   });
 
@@ -546,49 +405,6 @@ describe('Custom Icons', () => {
       expect(svg).toHaveClass('custom-class');
       expect(svg).toHaveAttribute('data-testid', 'paypal-icon');
       expect(container.querySelectorAll('path')).toHaveLength(1);
-    });
-  });
-
-  describe('MarkdownMark', () => {
-    it('should render correctly with default props', () => {
-      const { container } = render(<MarkdownMark />);
-      const svg = container.querySelector('svg');
-
-      expect(svg).toBeInTheDocument();
-      expect(svg).toHaveAttribute('width', '24');
-      expect(svg).toHaveAttribute('height', '24');
-      expect(svg).toHaveAttribute('viewBox', '0 0 208 128');
-    });
-
-    it('should apply custom size', () => {
-      const { container } = render(<MarkdownMark size={32} />);
-      const svg = container.querySelector('svg');
-
-      expect(svg).toHaveAttribute('width', '32');
-      expect(svg).toHaveAttribute('height', '32');
-    });
-
-    it('should apply custom className', () => {
-      const { container } = render(<MarkdownMark className="custom-class" />);
-      const svg = container.querySelector('svg');
-
-      expect(svg).toHaveClass('custom-class');
-    });
-
-    it('should apply additional props', () => {
-      const { container } = render(<MarkdownMark data-testid="markdown-icon" />);
-      const svg = container.querySelector('svg');
-
-      expect(svg).toHaveAttribute('data-testid', 'markdown-icon');
-    });
-
-    it('should render the correct SVG content', () => {
-      const { container } = render(<MarkdownMark />);
-      const paths = container.querySelectorAll('path');
-
-      expect(paths.length).toBe(2);
-      expect(paths[0]).toHaveAttribute('fill', 'currentColor');
-      expect(paths[1]).toHaveAttribute('fill', 'currentColor');
     });
   });
 

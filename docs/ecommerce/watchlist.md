@@ -86,9 +86,9 @@ Two findings matter and one is a trap:
 
 ### The record
 
-`pubky-app-specs` fork `0.6.2-marketplace.6` (branch `marketplace-4-build`) reserves the first private-record convention:
+The Shop uses `pubky-market-specs` to build the private watchlist document.
 
-- **`PubkyAppWatchlist`** — a SINGLE revisioned document at `/priv/pubky.app/marketplace/v1/watchlist.json` (`PRIVATE_PATH` constant, `watchlistUriBuilder`, wasm `createWatchlist` + `fromJson`/`toJson`). One document instead of per-item records because watch toggles are high-churn (one `PUT` per sync instead of a create/delete stream), merge needs items and tombstones resolved atomically, and private storage has no index to benefit from per-item paths.
+- **`PubkyMarketWatchlist`** — a SINGLE revisioned document at `/priv/pubky.app/marketplace/v1/watchlist.json` (`buildMarketUri(owner, 'watchlist')` and `buildWatchlist`). One document instead of per-item records because watch toggles are high-churn (one `PUT` per sync instead of a create/delete stream), merge needs items and tombstones resolved atomically, and private storage has no index to benefit from per-item paths.
 - Shape: base marketplace envelope (`schemaVersion`, `recordType: "watchlist"`, `ownerPubky`, `revision`, ISO `createdAt`/`updatedAt`) plus `items[]` and `tombstones[]`, each entry `(listingOwnerPubky, listingId)` with an **integer epoch-milliseconds timestamp** (`watchedAtMs` / `removedAtMs`) — integers because they are merge keys compared numerically, immune to offset-formatting skew. Caps of 500 each; every listing key appears in at most ONE of the two lists (the document is the post-merge resolved state). Deliberately NOT wired into `PubkyAppObject`/URI resource resolution: nothing under `/priv/` is watcher- or Nexus-visible.
 
 ### The merge rule
@@ -106,7 +106,7 @@ Local-first throughout: Dexie stays the source of immediate truth, every toggle 
 
 ### Encrypted storage (2026-09-28)
 
-The synced document is now sealed in the browser before it reaches the homeserver. It lives at one opaque entry under `/priv/pubky.app/marketplace/v2/s/`, encrypted with XChaCha20-Poly1305 under a per-user data key the marketplace service releases only to a session whose grant covers `/priv/pubky.app/` with read and write (`GET /v1/me/priv-keys`). The plaintext is the same `PubkyAppWatchlist` document. A round reads the sealed entry and any plaintext v1 `watchlist.json`, merges both with local state, writes and reads back the sealed entry, and only then deletes v1. The homeserver has no conditional write, so rounds for one account hold a Web Lock shared by every tab of the Shop, and a round completes the outbox job only if no change was staged after it read the local state. Without a released key nothing is written: `needs_reauth` shows the re-approval notice, and `unavailable` says private sync is off while the list keeps working on this device. The envelope, paths and offline recipe are in [`priv-encryption-recovery.md`](priv-encryption-recovery.md).
+The synced document is now sealed in the browser before it reaches the homeserver. It lives at one opaque entry under `/priv/pubky.app/marketplace/v2/s/`, encrypted with XChaCha20-Poly1305 under a per-user data key the marketplace service releases only to a session whose grant covers `/priv/pubky.app/` with read and write (`GET /v1/me/priv-keys`). The plaintext is the same `PubkyMarketWatchlist` document. A round reads the sealed entry and any plaintext v1 `watchlist.json`, merges both with local state, writes and reads back the sealed entry, and only then deletes v1. The homeserver has no conditional write, so rounds for one account hold a Web Lock shared by every tab of the Shop, and a round completes the outbox job only if no change was staged after it read the local state. Without a released key nothing is written: `needs_reauth` shows the re-approval notice, and `unavailable` says private sync is off while the list keeps working on this device. The envelope, paths and offline recipe are in [`priv-encryption-recovery.md`](priv-encryption-recovery.md).
 
 ### Capability gating (the honesty contract)
 

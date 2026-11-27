@@ -20,6 +20,19 @@ describe('persisted store keys', () => {
     expect(new Set(keys.PERSISTED_STORE_KEYS).size).toBe(keys.PERSISTED_STORE_KEYS.length);
   });
 
+  it('clears retired preferences only in the Shop namespace after leaving an identity', async () => {
+    const keys = await import('./persistedKeys');
+    for (const name of ['home-store', 'hot-store', 'search-store']) {
+      window.localStorage.setItem(name, 'App');
+      window.localStorage.setItem('shop-' + name, 'Shop');
+    }
+    keys.clearRetiredSocialStores();
+    for (const name of ['home-store', 'hot-store', 'search-store']) {
+      expect(window.localStorage.getItem(name)).toBe('App');
+      expect(window.localStorage.getItem('shop-' + name)).toBeNull();
+    }
+  });
+
   it("moves an existing Shop user's keys into the namespace before any store can hydrate", async () => {
     window.localStorage.setItem('auth-store', AUTH);
     window.localStorage.setItem('settings-storage', '{"state":{}}');

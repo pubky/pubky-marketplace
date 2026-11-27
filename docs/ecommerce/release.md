@@ -57,6 +57,40 @@ Then verify the paired production builds in a browser: restore/reload, two tabs,
 
 Follow [Shop embedding](../launch/shop-embedding.md) for the fixed `/shop-embed` build path, runtime environment, BFF schema/keys and coordinated deployment. The [grant session guide](../launch/grant-auth-session.md) records migration and compatibility limits, including the parallel Inbox/chat work.
 
+## Verify the Shop with the Social v1 App release
+
+The team rollout needs separate origins for social and Market reads. Check the running Shop's `window.__PUBKY_CONFIG__` against the deployment configuration. Use the corresponding staging origins when testing on staging.
+
+| Shop runtime variable                 | Production base URL              | Request to verify                                                                                                                                    |
+| ------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PUBKY_RUNTIME_NEXUS_URL`             | `https://nexus.pubky.app`        | `GET /v1/info` on the upgraded social Nexus                                                                                                          |
+| `PUBKY_RUNTIME_CDN_URL`               | `https://nexus.pubky.app/static` | `GET /static/avatar/<v1-only-user-id>` on the social Nexus. Use a v1-only account with a known avatar and verify that its image renders in the Shop. |
+| `PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL` | `https://shop-nexus.pubky.app`   | `GET /v0/stream/listings?limit=1` on the Market index                                                                                                |
+
+These values appear as `nexusUrl`, `cdnUrl` and `marketplaceNexusUrl` in the framed Shop's runtime config. If `marketplaceNexusUrl` is unset, commerce reads fall back to `nexusUrl`. Set all three values in the deployment environment for the split rollout. [shop-migration environment](https://github.com/pubky/shop-migration/blob/main/config/pubky-marketplace/pubky-marketplace.env)
+
+In the install verifier's stack file, set `NEXUS_URL` to the Market index and `SOCIAL_NEXUS_URL` to the social Nexus. The verifier checks `cdnUrl` against the social Nexus's `/static` base by default. Set `SOCIAL_CDN_URL` explicitly for a separate media CDN. Run the read-only Shop checks against the deployed build. [Install verifier](../launch/install-verification.md)
+
+```bash
+node .cursor/skills/marketplace-install-verify/scripts/verify.mjs --config /path/to/stack.env --only shop
+```
+
+**Gate the production switch on the historical tag backfill.** Older social Nexus versions skipped tags on marketplace resources and advanced the watcher cursor. An upgrade can therefore serve `/v1/info` and index new tags while omitting tags written before the upgrade. A fresh browser has no saved tags to fill that gap. [Nexus indexing change](https://github.com/pubky/pubky-nexus/pull/1165)
+
+1. Record a listing and a storefront that each had a community tag before the target Nexus upgrade. Keep both canonical resource URIs, the labels and their pre-upgrade evidence from the Market index. For the staging removal check, choose a label applied only by the fixture account.
+2. Have the Nexus operator confirm the target deployment completed a backfill or replay covering historical tags on **both** listing and shop resources. Record the deployment, coverage and completion evidence. Query that environment's social Nexus at `GET /v1/resource/by-uri?uri=<encoded-canonical-uri>` for each fixture, paging through tags if needed. Verify the original label on both.
+3. Open the candidate Shop's listing and storefront in a fresh browser profile using the target indexes. Both historical tags must appear before anyone re-tags the resources. Keep the production switch on hold if backfill completion is unconfirmed or either check fails.
+4. Keep `PUBKY_RUNTIME_MARKETPLACE_TAGS_BACKFILLED=false` (the default) until those checks pass for that environment. Then set it to `true`, restart the Shop and verify `marketplaceTagsBackfilled` in the framed build. On staging, remove the fixture account's tag. Once its label disappears from the social index, verify it disappears both in a browser that cached the label before removal and in a fresh browser. The other historical tag must remain visible. If reconciliation fails, reset the flag to `false`, restart the candidate and hold promotion while the operator investigates.
+
+During backfill, a failed social Nexus version probe lets Shop merge tags from the Market index while it retries the probe. After backfill, Shop retains its cached tags during a probe outage. A successful canonical refresh reads each page before removing missing labels. If a label repeats across pages or the resource exceeds the Nexus pagination limit, Shop merges the partial result and keeps previously cached labels. An optimistic add or removal is recorded in the same IndexedDB transaction as the tag, so other tabs respect it during the index-lag window.
+
+Run these checks on the paired staging builds before promoting the Shop and the App with user migration. Publishing the Social Specs packages can proceed independently.
+
+- Open a protected Shop page with a v0 account, a migrated account that still has its old profile, and an account with only a v1 profile. Check standalone sign-in, the App's embedded grant, reload and logout. The seller inventory page should open without asking any of these users to create a second profile.
+- With a new seller whose only profile is `/pub/social/v1/profile.json`, publish an active listing. Confirm its ID appears in the Market index's `GET /v0/stream/listings?seller_id=<seller>` and that a second browser can find it in the public catalog. Sign-in and the seller's own inventory can both succeed while the index is still waiting for the seller profile.
+- From the embedded Shop, add and remove a tag on a listing with a migrated account. Verify the canonical listing URI, the result seen by another viewer, and seller follow/unfollow behavior. Check that a standalone Shop grant still opens inventory and orders.
+- With the configured staging moderator, apply a takedown from a v1 profile and verify that the Market index reports the restriction and the transaction service refuses checkout for that listing. Keep the production moderation bot on its current profile version until its consumers handle v1 tags. [Moderator rollout decision](https://github.com/pubky/pubky-marketplace/issues/487#issuecomment-7158784282)
+
 ## Day-to-day merges
 
 1. Branch from the current train branch (or from `master` if no train is open). Target the agreed train or `master`; use the actual PR base for review, never an assumed `dev` branch.

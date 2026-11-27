@@ -8,11 +8,7 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { useSignOut } from '@/hooks/useSignOut/useSignOut';
 import { useSignOutCopy } from '@/hooks/useSignOutCopy/useSignOutCopy';
 
-/**
- * Shop sign-out for social link-out builds, where `/settings/account` (the
- * social settings page that otherwise holds sign-out) belongs to the social host.
- * Copy matches the account settings sign-out section.
- */
+/** Local sign-out stays available in Market settings in every deployment. */
 export function MarketplaceSignOutCard() {
   const { handleSignOut, isLoading } = useSignOut();
   const { title, description } = useSignOutCopy();

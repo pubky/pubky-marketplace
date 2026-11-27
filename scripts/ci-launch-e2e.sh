@@ -150,4 +150,11 @@ else
   echo "Production server is ready at ${BASE_URL}"
 fi
 
+# The OS share target is retired. Exercise the actual Next rewrite and method handling.
+share_status="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "${BASE_URL}/share")"
+if [[ "$share_status" != "405" ]]; then
+  echo "Expected POST /share to return 405, got $share_status"
+  exit 1
+fi
+
 node src/test/e2e/launch-critical.mjs

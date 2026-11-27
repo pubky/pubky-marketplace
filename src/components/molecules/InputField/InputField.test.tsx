@@ -42,13 +42,13 @@ describe('InputField', () => {
   });
 
   it('associates the validation message with the input for assistive technology', () => {
-    render(<InputField id="amount" value="" status="error" message="Enter a valid amount." messageType="error" />);
+    render(<InputField id="amount" value="" status="error" message="Enter a valid amount." />);
 
     const input = screen.getByTestId('input');
     expect(input).toHaveAttribute('aria-invalid', 'true');
     expect(input).toHaveAttribute('aria-describedby', 'amount-message');
     expect(input).toHaveAccessibleDescription('Enter a valid amount.');
-    expect(screen.getByText('Enter a valid amount.')).toHaveClass('text-error-foreground');
+    expect(screen.getByText('Enter a valid amount.')).toHaveClass('text-field-error');
   });
 
   it('sets no describedby without a message or without an id', () => {
@@ -152,7 +152,7 @@ describe('InputField - Variants', () => {
     expect(screen.getByText('Looks good')).toHaveClass('text-brand');
 
     rerender(<InputField value="" status="error" message="Nope" messageType="alert" />);
-    expect(screen.getByTestId('input').parentElement).toHaveClass('border-red-500', 'text-error-foreground');
+    expect(screen.getByTestId('input').parentElement).toHaveClass('border-destructive', 'text-field-error');
     expect(screen.getByTestId('input').parentElement).not.toHaveClass('border-dashed');
     expect(screen.getByText('Nope')).toHaveClass('text-yellow-500');
   });

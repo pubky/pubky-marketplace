@@ -1,9 +1,10 @@
 // Intentional import order — browser-mode mock factories rely on stable aliases.
 /* eslint-disable simple-import-sort/imports */
 import { createMarketplaceVrtAuthStore, createMarketplaceVrtCommerceController } from '@/test/mocks/marketplace-vrt';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderForVRT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
+import { SocialProfileService } from '@/services/homeserver/social-profile';
 import { MarketplaceShop } from '@/templates/Marketplace/MarketplaceShop';
 import { setSocialHost } from '@/test-utils/social-host';
 
@@ -191,6 +192,11 @@ vi.mock('@/organisms/Marketplace/MarketplaceContentLayout', () => ({
   ),
 }));
 
+beforeEach(() => {
+  // This standalone fixture has a legacy profile and a writable Shop session.
+  vi.spyOn(SocialProfileService, 'getEpoch').mockResolvedValue('legacy');
+});
+
 describe('Marketplace shop — visual regression', () => {
   it('renders a populated shop at desktop viewport', async () => {
     const { seller, shop, listings } = await fixtures;
@@ -307,6 +313,7 @@ describe('Marketplace shop — visual regression', () => {
       viewport: VRT_VIEWPORT_DESKTOP,
       disableHover: true,
     });
+    await expect.element(screen.getByRole('button', { name: 'Add new tag' })).toBeVisible();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('shop-community-tags-desktop');
     view.shopTags = [];
   });

@@ -1,9 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, test, vi } from 'vitest';
 import { buildUserCompositeId } from '@/models/stream/user/userStream.helper';
 import { UserStreamTypes } from '@/models/stream/user/userStream.types';
-import { UserStreamReach, UserStreamTimeframe } from '@/services/nexus/nexus.types';
+import { type NexusUser, UserStreamReach, UserStreamTimeframe } from '@/services/nexus/nexus.types';
+import { queryNexus } from '@/services/nexus/nexus.utils';
 import { asInvalid } from '@/test-utils/type-assertions';
+import { NexusUserStreamService } from './userStream';
 import { buildUserStreamBodyUrl, userStreamApi } from './userStream.api';
+
+vi.mock('@/services/nexus/nexus.utils', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/nexus/nexus.utils')>();
+  return {
+    ...actual,
+    queryNexus: vi.fn(),
+  };
+});
+
+const mockQueryNexus = vi.mocked(queryNexus);
 
 describe('Users Stream API - Error Control', () => {
   const mockUserId = 'erztyis9oiaho93ckucetcf5xnxacecqwhbst5hnd7mmkf69dhby';
@@ -467,5 +479,82 @@ describe('NexusUserStreamService.fetch', () => {
       expect(url).toMatch(/skip=0/);
       expect(url).toMatch(/limit=10/);
     });
+  });
+});
+
+describe('NexusUserStreamService.fetchByIds', () => {
+  const createUser = (id: string): NexusUser => ({
+    details: { id, name: id, bio: '', links: null, status: null, image: null, indexed_at: 0 },
+    counts: {
+      tagged: 0,
+      tags: 0,
+      unique_tags: 0,
+      posts: 0,
+      replies: 0,
+      collections: 0,
+      following: 0,
+      followers: 0,
+      friends: 0,
+      bookmarks: 0,
+    },
+    tags: [],
+    relationship: { following: false, followed_by: false },
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // clearAllMocks keeps queued mockResolvedValueOnce values.
+    mockQueryNexus.mockReset();
+  });
+
+  test.each([
+    { count: 0, chunkSizes: [] },
+    { count: 101, chunkSizes: [100, 1] },
+    { count: 250, chunkSizes: [100, 100, 50] },
+  ])('fetches $count user IDs in $chunkSizes.length requests', async ({ count, chunkSizes }) => {
+    const userIds = Array.from({ length: count }, (_, index) => `user-id-${index}`);
+    let offset = 0;
+    const responses = chunkSizes.map((chunkSize) => {
+      const response = userIds.slice(offset, offset + chunkSize).map(createUser);
+      offset += chunkSize;
+      return response;
+    });
+    mockQueryNexus.mockResolvedValue([]);
+    responses.forEach((response) => mockQueryNexus.mockResolvedValueOnce(response));
+
+    const result = await NexusUserStreamService.fetchByIds({
+      user_ids: userIds,
+      viewer_id: 'viewer-id',
+      depth: 2,
+    });
+
+    expect(mockQueryNexus).toHaveBeenCalledTimes(chunkSizes.length);
+    expect(result).toEqual(responses.flat());
+    const requests = mockQueryNexus.mock.calls.map(([params]) => params);
+    requests.forEach((request) => {
+      expect(request.url).toMatch(/v0\/stream\/users\/by_ids$/);
+      expect(request.method).toBe('POST');
+    });
+    const bodies = requests.map(
+      (request) => JSON.parse(String(request.body)) as { user_ids: string[]; viewer_id?: string; depth?: number },
+    );
+    expect(bodies.map((body) => body.user_ids.length)).toEqual(chunkSizes);
+    expect(bodies.flatMap((body) => body.user_ids)).toEqual(userIds);
+    bodies.forEach((body) => {
+      expect(body.viewer_id).toBe('viewer-id');
+      expect(body.depth).toBe(2);
+    });
+  });
+
+  it('propagates a rejection from the second request without requesting later chunks', async () => {
+    const userIds = Array.from({ length: 250 }, (_, index) => `user-id-${index}`);
+    const error = new Error('User request failed');
+    mockQueryNexus
+      .mockResolvedValueOnce(userIds.slice(0, 100).map(createUser))
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce(userIds.slice(200).map(createUser));
+
+    await expect(NexusUserStreamService.fetchByIds({ user_ids: userIds })).rejects.toBe(error);
+    expect(mockQueryNexus).toHaveBeenCalledTimes(2);
   });
 });

@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { listingUriBuilder, PubkySpecsBuilder } from 'pubky-app-specs';
+import { buildMarketUri, buildReview } from 'pubky-market-specs';
 import { describe, expect, it } from 'vitest';
 import {
   extractReviewAttestation,
@@ -47,7 +47,7 @@ function issueAttestation(overrides: Record<string, unknown> = {}) {
     sub: REVIEWER,
     cpk: SELLER,
     role: 'buyer_reviewing_seller',
-    listing: listingUriBuilder(SELLER, LISTING_ID),
+    listing: buildMarketUri(SELLER, 'listing', LISTING_ID),
     order_ref: 'ab'.repeat(32),
     completed_on: '2026-08-21',
     amount_band: 'USD:4',
@@ -61,7 +61,7 @@ function issueAttestation(overrides: Record<string, unknown> = {}) {
 }
 
 function publishedRecord(jws: string) {
-  const built = new PubkySpecsBuilder(REVIEWER).createMarketplaceReview({
+  const built = buildReview(REVIEWER, {
     schemaVersion: 1,
     recordType: 'review',
     ownerPubky: REVIEWER,
@@ -77,7 +77,7 @@ function publishedRecord(jws: string) {
     text: 'Accurate and fast.',
     eligibilityAttestation: jws,
   });
-  return commerceReviewRecordSchema.parse(built.marketplace_review.toJson());
+  return commerceReviewRecordSchema.parse(built.review.toJson());
 }
 
 describe('marketplace purchase attestation', () => {
@@ -91,7 +91,7 @@ describe('marketplace purchase attestation', () => {
         sub: REVIEWER,
         cpk: SELLER,
         role: 'buyer_reviewing_seller',
-        listing: listingUriBuilder(SELLER, LISTING_ID),
+        listing: buildMarketUri(SELLER, 'listing', LISTING_ID),
         orderRef: 'ab'.repeat(32),
         completedOn: '2026-08-21',
         amountBand: 'USD:4',
@@ -112,7 +112,7 @@ describe('marketplace purchase attestation', () => {
       sub: REVIEWER,
       cpk: SELLER,
       role: 'buyer_reviewing_seller',
-      listing: listingUriBuilder(SELLER, LISTING_ID),
+      listing: buildMarketUri(SELLER, 'listing', LISTING_ID),
       orderRef: 'ab'.repeat(32),
       completedOn: '2026-08-21',
       iat: 1,
@@ -132,7 +132,7 @@ describe('marketplace purchase attestation', () => {
       sub: REVIEWER,
       cpk: SELLER,
       role: 'buyer_reviewing_seller',
-      listing: listingUriBuilder(SELLER, LISTING_ID),
+      listing: buildMarketUri(SELLER, 'listing', LISTING_ID),
       orderRef: 'ab'.repeat(32),
       completedOn: '2026-08-21',
       iat: 1,
@@ -146,7 +146,7 @@ describe('marketplace purchase attestation', () => {
 
   it('extracts every per-listing attestation of an item result in order and skips malformed entries', () => {
     const boots = issueAttestation();
-    const belt = issueAttestation({ listing: listingUriBuilder(SELLER, 'belt') });
+    const belt = issueAttestation({ listing: buildMarketUri(SELLER, 'listing', 'belt') });
     const claims = (iss: string, listing: string) => ({
       v: 1,
       iss,
@@ -162,8 +162,12 @@ describe('marketplace purchase attestation', () => {
 
     const extracted = extractReviewAttestations({
       attestations: [
-        { listingId: LISTING_ID, jws: boots.jws, claims: claims(boots.iss, listingUriBuilder(SELLER, LISTING_ID)) },
-        { listingId: 'belt', jws: belt.jws, claims: claims(belt.iss, listingUriBuilder(SELLER, 'belt')) },
+        {
+          listingId: LISTING_ID,
+          jws: boots.jws,
+          claims: claims(boots.iss, buildMarketUri(SELLER, 'listing', LISTING_ID)),
+        },
+        { listingId: 'belt', jws: belt.jws, claims: claims(belt.iss, buildMarketUri(SELLER, 'listing', 'belt')) },
         { jws: 'x' },
       ],
     });
@@ -192,7 +196,7 @@ describe('marketplace purchase attestation', () => {
     expect(verifyOwnReviewAttestation(publishedRecord(forged.jws))).toBeNull();
 
     // Binding mismatch: the attestation covers a different listing.
-    const otherListing = issueAttestation({ listing: listingUriBuilder(SELLER, 'other_listing') });
+    const otherListing = issueAttestation({ listing: buildMarketUri(SELLER, 'listing', 'other_listing') });
     expect(verifyOwnReviewAttestation(publishedRecord(otherListing.jws))).toBeNull();
   });
 });

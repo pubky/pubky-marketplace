@@ -183,29 +183,15 @@ Expected user-flow states are not failures and must not reach the factory:
   older than the connector routes) is built with `new AppError(...)` in `MarketplaceConnectorsService`: the
   Shop hides store connections there. A connector 404 that names another refusal stays on `Err.*`.
 - Marketplace media its owner has removed (404/410 from the owner's homeserver) is built the same way in
-  `MarketplaceMediaService.fetchMedia`: the UI shows no image. Other media failures stay on `Err.*`.
+  `MarketplaceMediaService.fetchMedia`: the UI shows no image. So is media whose bytes are not a JPEG, PNG, GIF, WebP
+  or AVIF image, or that is larger than `IMAGE_MAX_UPLOAD_SIZE`: the blob is typed from its bytes by
+  `src/libs/media/image-bytes.ts`, never from the declared Content-Type. Other media failures stay on `Err.*`.
 - A Shop-owned sign-in started while the Shop is embedded in Pubky App ("Continue sign-in in Pubky App.",
   `AuthController.assertStandaloneMode`) is also built with `new AppError(...)`: App owns sign-in there.
 
 The two route-segment error boundaries (`app/error.tsx`, `app/global-error.tsx`) guard their `Sentry.captureException` call with `if (!(error instanceof AppError))` so an `AppError` thrown during render isn't captured twice (once by the factory, once by the boundary).
 
 For future Server Actions, wrap with `Sentry.withServerActionInstrumentation('actionName', { headers: await headers() }, async () => { ... })` so server-action errors are captured and traces stitch with the client.
-
-### OG metadata enrichment
-
-`/api/og-metadata` is best-effort link-preview enrichment. Expected external outcomes should normally be handled before
-`Err.*` creation so they do not create Sentry issues:
-
-- Expected remote failures such as forbidden/not-found/gone pages, non-HTML content, DNS failure, network failure,
-  timeout, rate limiting, or remote 5xx return fallback metadata.
-- Invalid user URLs return a normal `400` response from the controller/route without `Err.validation`.
-- `og:image` normalization uses non-throwing DNS safety checks, so invalid image URLs, DNS failures, and private image
-  IPs simply remove the image from otherwise valid page metadata.
-- Security/anomaly cases on the main page fetch path, such as private IPs, non-HTTP redirects, redirect loops, oversized
-  bodies, and parser/runtime surprises remain reportable through `Err.*`.
-
-Fallback paths use `Logger.warn`, which is currently platform/server logging. Sentry Logs are disabled in this app, so
-these warnings are not Sentry aggregate events unless logging infrastructure is enabled separately.
 
 ### Known quirk: render-time errors emit 2 events in React 19
 

@@ -58,34 +58,6 @@ export class UserStreamApplication {
   }
 
   /**
-   * Refresh a user stream slice from Nexus and persist it locally.
-   *
-   * Unlike `getOrFetchStreamSlice`, this always hits the network. It still reads the cached
-   * stream first so that non-initial pages can be merged/deduped against existing entries
-   * (and so that `skip === 0` can replace the cache atomically).
-   *
-   * Use this when the caller intentionally needs fresh candidates instead of the
-   * cache-first `getOrFetchStreamSlice` behavior.
-   */
-  static async refreshStreamSlice({
-    streamId,
-    skip,
-    limit,
-    viewerId,
-  }: TFetchUserStreamChunkParams): Promise<TUserStreamChunkResponse> {
-    const cachedStream = await LocalStreamUsersService.findById(streamId);
-
-    return await this.fetchStreamFromNexus({
-      streamId,
-      skip,
-      limit,
-      viewerId,
-      cachedStream,
-      replaceCache: skip === 0,
-    });
-  }
-
-  /**
    * Fetch missing user details from Nexus
    * Called in background to populate cache with full user data
    *
@@ -122,7 +94,6 @@ export class UserStreamApplication {
     limit = NEXUS_USERS_PER_PAGE,
     viewerId,
     cachedStream,
-    replaceCache = false,
   }: TFetchStreamFromNexusParams): Promise<TUserStreamChunkResponse> {
     // Fetch user IDs from Nexus
     const userIds = await NexusUserStreamService.fetch({
@@ -134,15 +105,12 @@ export class UserStreamApplication {
 
     // Handle empty response
     if (userIds.length === 0) {
-      if (replaceCache) {
-        await LocalStreamUsersService.upsert({ streamId, stream: [] });
-      }
       return { nextPageIds: [], cacheMissUserIds: [], skip: undefined, isExhausted };
     }
 
     // Upsert stream (append to existing or create new)
     let stream = userIds;
-    if (cachedStream && !replaceCache) {
+    if (cachedStream) {
       // Filter out duplicates before appending
       const newUserIds = userIds.filter((id) => !cachedStream.stream.includes(id));
       stream = [...cachedStream.stream, ...newUserIds];

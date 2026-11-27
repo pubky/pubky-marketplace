@@ -52,7 +52,6 @@ vi.mock('@/hooks/useMarketplaceLocksPayment/useMarketplaceLocksPayment', () => (
     isUnlocking: false,
     delivery: null,
     error: null,
-    pollExhausted: false,
     start: vi.fn(),
     unlock: vi.fn(),
     resumePolling: vi.fn(),
@@ -977,21 +976,9 @@ describe('MarketplacePaymentStatusCard', () => {
       expect(screen.getByTestId('locks-admission-stalled')).toHaveTextContent(LOCKS_ADMISSION_COPY.stalledTitle);
       expect(screen.getByTestId('locks-admission-stalled')).toHaveTextContent(LOCKS_ADMISSION_COPY.stalledBody);
       expect(screen.queryByText(/Payment request sent/)).toBeNull();
-      expect(screen.queryByRole('button', { name: /Request payment|Retry registration|Keep checking/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Request payment|Retry registration/ })).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: LOCKS_ADMISSION_COPY.stalledAction }));
       expect(resumePolling).toHaveBeenCalledTimes(1);
-    });
-
-    it('shows one check action when the task is stalled and polling has run out', () => {
-      locksView.overrides = {
-        correlation: registered,
-        pollExhausted: true,
-        admission: { kind: 'in_flight', readerWalletSetupNeeded: false, stalled: true },
-      };
-      renderAwaiting();
-
-      expect(screen.getAllByRole('button', { name: /Check again|Keep checking/ })).toHaveLength(1);
-      expect(screen.getByRole('button', { name: LOCKS_ADMISSION_COPY.stalledAction })).toBeInTheDocument();
     });
 
     it('drops the translated sent-request line when the request stalls', () => {
@@ -1039,16 +1026,15 @@ describe('MarketplacePaymentStatusCard', () => {
       expect(screen.getByTestId('locks-admission-stalled')).toBeInTheDocument();
     });
 
-    it('keeps the sent-request line and Keep checking for a pending task that is not stalled', () => {
+    it('keeps the sent-request line, with no action, for a pending task that is not stalled', () => {
       locksView.overrides = {
         correlation: registered,
-        pollExhausted: true,
         admission: { kind: 'in_flight', readerWalletSetupNeeded: false, stalled: false },
       };
       renderAwaiting();
 
       expect(screen.getByText(/Payment request sent/)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Keep checking' })).toBeInTheDocument();
+      expect(screen.queryByRole('button')).toBeNull();
       expect(screen.queryByTestId('locks-admission-stalled')).toBeNull();
     });
 
@@ -1065,7 +1051,7 @@ describe('MarketplacePaymentStatusCard', () => {
       expect(screen.getByTestId('locks-admission-failed')).toHaveTextContent(copy);
       expect(screen.queryByText(/Payment request sent/)).toBeNull();
       expect(screen.queryByTestId('locks-reader-wallet-setup')).toBeNull();
-      expect(screen.queryByRole('button', { name: /Request payment|Retry|Keep checking|Check again/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Request payment|Retry|Check again/ })).toBeNull();
     });
 
     describe('expired by the payment request (terminal reason)', () => {
@@ -2438,6 +2424,80 @@ describe('MarketplacePaymentStatusCard', () => {
       const deadline = screen.getByTestId('seller-bitcoin-confirm-deadline');
       expect(deadline).toHaveTextContent(`2 Oct 2026, 09:28`);
       expect(deadline).not.toHaveTextContent('left');
+    });
+  });
+
+  describe('upstream_inconsistent manual review (#581)', () => {
+    it.each([true, false])('does not promise a refund when an unverified review closes (buyer %s)', (isBuyer) => {
+      const payment = createPaymentFixture('expired', {
+        adapter: 'paykit',
+        reviewReason: 'upstream_inconsistent',
+        resolutionOutcome: 'abandoned',
+        resolutionBasis: 'seller_unresponsive',
+        confirmations: 0,
+      });
+      const order = createOrderFixture('cancelled', {
+        paymentMethod: 'paykit',
+        paykitRequestState: 'confirmed',
+        receiptId: null,
+        cancellationReason: 'payment window elapsed',
+        paykitObservation: null,
+      });
+      render(
+        <MarketplacePaymentStatusCard
+          order={order}
+          payment={payment}
+          isBuyer={isBuyer}
+          adapterMode="transaction-service"
+          advancePayment={async () => false}
+          onPaymentChanged={() => {}}
+        />,
+      );
+      const copy = screen.getByTestId('payment-review-abandoned');
+      expect(copy).toHaveTextContent(/seven days/i);
+      expect(copy).toHaveTextContent(/could not confirm|couldn't confirm/i);
+      expect(copy).not.toHaveTextContent(/payment arrived|owes|return it|record the refund/i);
+    });
+
+    it.each([
+      ['bitcoin' as const, true],
+      ['bitcoin' as const, false],
+      ['paykit' as const, true],
+      ['paykit' as const, false],
+    ])('shows accurate under-review copy with no settlement assumed for %s (%s buyer)', (paymentMethod, isBuyer) => {
+      const payment = createPaymentFixture('manual_review', {
+        adapter: 'paykit',
+        reviewReason: 'upstream_inconsistent',
+        confirmations: 0,
+      });
+      auth.currentUserPubky = isBuyer ? payment.buyerPubky : payment.sellerPubky;
+      render(
+        <MarketplacePaymentStatusCard
+          order={createOrderFixture('cancelled', {
+            paymentId: payment.id,
+            paymentMethod,
+            paykitRequestState: null,
+            receiptId: null,
+          })}
+          payment={payment}
+          isBuyer={isBuyer}
+          adapterMode="transaction-service"
+          advancePayment={async () => false}
+          onPaymentChanged={() => {}}
+        />,
+      );
+
+      const copy = screen.getByTestId('payment-manual-review-copy');
+      expect(copy).toHaveTextContent(/inconsistent/i);
+      expect(copy).toHaveTextContent(isBuyer ? /seller will check/i : /check your wallet/i);
+      expect(copy).not.toHaveTextContent(/operator/i);
+      expect(copy).not.toHaveTextContent(/A verified event arrived/);
+      const resolution = screen.queryByRole('combobox', { name: /outcome/i });
+      if (isBuyer) expect(resolution).not.toBeInTheDocument();
+      else {
+        expect(resolution).toBeInTheDocument();
+        expect(copy).toHaveTextContent(/No funds are held by this marketplace\./);
+      }
     });
   });
 });

@@ -1,13 +1,10 @@
-import type {
-  NexusNotification,
-  NexusTag,
-  NexusUserCounts,
-  NexusUserDetails,
-  TUserId,
-} from '@/services/nexus/nexus.types';
-import { queryNexus } from '@/services/nexus/nexus.utils';
+import { hasHttpStatus } from '@/libs/error/error.utils';
+import { HttpMethod } from '@/libs/http/http.types';
+import { nexusQueryClient } from '@/services/nexus/nexus.query-client';
+import type { NexusTag, NexusUserCounts, NexusUserDetails, TUserId } from '@/services/nexus/nexus.types';
+import { fetchNexus, fetchNexusNoContent, queryNexus } from '@/services/nexus/nexus.utils';
 import { userApi } from '@/services/nexus/user/user.api';
-import type { TUserPaginationParams, TUserTagsParams } from '@/services/nexus/user/user.types';
+import type { TUserTagsParams } from '@/services/nexus/user/user.types';
 
 /**
  * Nexus User Service
@@ -15,17 +12,6 @@ import type { TUserPaginationParams, TUserTagsParams } from '@/services/nexus/us
  * Handles fetching user data from Nexus API.
  */
 export class NexusUserService {
-  /**
-   * Retrieves user data from Nexus API
-   *
-   * @param pubky - User's public key
-   * @returns user data (users, posts, streams)
-   */
-  static async notifications(params: TUserPaginationParams): Promise<NexusNotification[]> {
-    const url = userApi.notifications(params);
-    return await queryNexus<NexusNotification[]>({ url });
-  }
-
   /**
    * Retrieves tags for a user from Nexus API
    *
@@ -46,6 +32,27 @@ export class NexusUserService {
   static async details(params: TUserId): Promise<NexusUserDetails> {
     const url = userApi.details(params);
     return await queryNexus<NexusUserDetails>({ url });
+  }
+
+  /** A standalone account may live on a homeserver the social index has not seen yet. */
+  static async ownDetails(params: TUserId): Promise<NexusUserDetails> {
+    const url = userApi.details(params);
+    let requestedIngest = false;
+    return nexusQueryClient.fetchQuery({
+      queryKey: ['nexus-own-user-details', url],
+      queryFn: async () => {
+        try {
+          return await fetchNexus<NexusUserDetails>({ url });
+        } catch (error) {
+          if (!requestedIngest && hasHttpStatus(error, 404)) {
+            requestedIngest = true;
+            // Discovery is best effort. The same query's normal 404 retries pick up the indexed profile.
+            void fetchNexusNoContent({ url: userApi.ingest(params), method: HttpMethod.PUT }).catch(() => {});
+          }
+          throw error;
+        }
+      },
+    });
   }
 
   /**

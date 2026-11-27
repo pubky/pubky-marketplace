@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { listingUriBuilder } from 'pubky-app-specs';
+import { buildMarketUri } from 'pubky-market-specs';
 import { ORDER_FIXTURE_BUYER, ORDER_FIXTURE_SELLER } from '@/test/fixtures/commerce/orders';
 
 const Z_ALPHABET = 'ybndrfg8ejkmcpqxot1uwisza345h769';
@@ -30,7 +30,7 @@ export function issuedAttestation(listingId: string, orderRef = 'cd'.repeat(32))
     sub: ORDER_FIXTURE_BUYER,
     cpk: ORDER_FIXTURE_SELLER,
     role: 'buyer_reviewing_seller',
-    listing: listingUriBuilder(ORDER_FIXTURE_SELLER, listingId),
+    listing: buildMarketUri(ORDER_FIXTURE_SELLER, 'listing', listingId),
     order_ref: orderRef,
     completed_on: '2026-08-21',
     iat: 1_787_654_321,

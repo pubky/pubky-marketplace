@@ -1,6 +1,7 @@
 export interface UseTagSuggestionsParams {
   /** The search query for tag suggestions */
   query: string;
+  normalizeLabel?: (label: string) => string;
   /** Tags to exclude from suggestions (e.g., already added tags) */
   excludeTags?: string[];
   /** Whether the hook is enabled (default: true) */

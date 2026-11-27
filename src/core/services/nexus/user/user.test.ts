@@ -6,13 +6,7 @@ import { queryNexus } from '@/services/nexus/nexus.utils';
 import { NexusUserService } from '@/services/nexus/user/user';
 import { buildUrlWithQuery } from '../nexus.utils';
 import { userApi } from './user.api';
-import {
-  TUserPaginationParams,
-  TUserRelationshipParams,
-  TUserTagsParams,
-  TUserViewParams,
-  USER_PATH_PARAMS,
-} from './user.types';
+import { TUserRelationshipParams, TUserTagsParams, TUserViewParams, USER_PATH_PARAMS } from './user.types';
 
 vi.mock('@/services/nexus/nexus.utils', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/nexus/nexus.utils')>();
@@ -99,20 +93,6 @@ describe('User API', () => {
       );
     });
 
-    it('should generate correct URL for notifications endpoint', () => {
-      const params: TUserPaginationParams = {
-        user_id: testUserId,
-        skip: 0,
-        limit: 10,
-        start: 1000,
-        end: 2000,
-      };
-
-      expect(userApi.notifications(params)).toBe(
-        `${getNexusUrl()}/v0/user/${testUserId}/notifications?skip=0&limit=10&start=1000&end=2000`,
-      );
-    });
-
     it('should generate correct URL for tags endpoint', () => {
       const params: TUserTagsParams = {
         user_id: testUserId,
@@ -125,16 +105,16 @@ describe('User API', () => {
   });
 
   describe('userApi endpoint contract', () => {
-    it('should have exactly 9 endpoints', () => {
+    it('should expose the supported user endpoints', () => {
       const endpointKeys = Object.keys(userApi);
       expect(endpointKeys).toHaveLength(9);
+      expect(endpointKeys).toContain('ingest');
       expect(endpointKeys).toContain('view');
       expect(endpointKeys).toContain('counts');
       expect(endpointKeys).toContain('details');
       expect(endpointKeys).toContain('followers');
       expect(endpointKeys).toContain('following');
       expect(endpointKeys).toContain('friends');
-      expect(endpointKeys).toContain('notifications');
       expect(endpointKeys).toContain('relationship');
       expect(endpointKeys).toContain('tags');
     });
@@ -146,6 +126,27 @@ describe('NexusUserService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('asks Nexus to discover a missing signed-in user once, then reads the indexed profile', async () => {
+    const record = { id: testUserId, name: 'Alice' };
+    const fetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(Response.json(record));
+    try {
+      const first = NexusUserService.ownDetails({ user_id: testUserId });
+      const second = NexusUserService.ownDetails({ user_id: testUserId });
+      await expect(Promise.all([first, second])).resolves.toEqual([record, record]);
+      expect(fetch.mock.calls.filter(([, options]) => options?.method === 'PUT')).toEqual([
+        [userApi.ingest({ user_id: testUserId }), expect.anything()],
+      ]);
+      expect(fetch).toHaveBeenCalledTimes(4);
+    } finally {
+      fetch.mockRestore();
+    }
   });
 
   describe('tags', () => {
