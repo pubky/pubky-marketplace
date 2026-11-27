@@ -108,6 +108,9 @@ import {
 } from './marketplace-projections';
 import { MarketplaceSessionService } from './marketplace-session';
 
+/** In-memory TTL for public `GET /health` capability responses. */
+export const HEALTH_CACHE_TTL_MS = 20_000;
+
 /**
  * Command kinds the durable Rust service implements (its envelope contract
  * rejects everything else until it is ported with its tests). Kinds the
@@ -678,23 +681,50 @@ export class MarketplaceTransactionService {
     });
   }
 
+  private static healthCache: { url: string; value: MarketplaceHealth; expiresAt: number } | null = null;
+  private static healthInFlight: { url: string; promise: Promise<MarketplaceHealth> } | null = null;
+
+  /** Clears the in-memory `/health` TTL and in-flight cache (for tests and explicit resets). */
+  static resetHealthCache(): void {
+    this.healthCache = null;
+    this.healthInFlight = null;
+  }
+
   /**
    * `GET /health` — deliberately public (no bearer): the service's
    * health/capability surface. `pickupAvailable` is on iff the deployment
    * has the pickup sealing key configured AND sandbox payments are disabled
    * (§A7); the client hides the pickup option everywhere when it is off.
+   *
+   * Cached in memory for 20 seconds with single-flight deduplication so
+   * concurrent capability checks (e.g. Checkout mount) share one request.
    */
   static async getHealth(): Promise<MarketplaceHealth> {
     this.assertTransactionServiceMode('getHealth');
     const url = `${getMarketplaceUrl()}/health`;
-    const response = await safeFetch(url, { method: 'GET' }, ErrorService.Marketplace, 'getHealth');
-    const raw = await parseResponseOrThrow<unknown>(response, ErrorService.Marketplace, 'getHealth', url);
-    return this.parseProjection(
-      'getHealth',
-      marketplaceHealthSchema,
-      toCamelCaseWire(raw),
-      'Marketplace returned an invalid health read.',
-    );
+    const now = Date.now();
+    if (this.healthCache && this.healthCache.url === url && this.healthCache.expiresAt > now) {
+      return this.healthCache.value;
+    }
+    if (this.healthInFlight && this.healthInFlight.url === url) {
+      return await this.healthInFlight.promise;
+    }
+    const promise = (async () => {
+      const response = await safeFetch(url, { method: 'GET' }, ErrorService.Marketplace, 'getHealth');
+      const raw = await parseResponseOrThrow<unknown>(response, ErrorService.Marketplace, 'getHealth', url);
+      const parsed = this.parseProjection(
+        'getHealth',
+        marketplaceHealthSchema,
+        toCamelCaseWire(raw),
+        'Marketplace returned an invalid health read.',
+      );
+      this.healthCache = { url, value: parsed, expiresAt: Date.now() + HEALTH_CACHE_TTL_MS };
+      return parsed;
+    })().finally(() => {
+      if (this.healthInFlight?.promise === promise) this.healthInFlight = null;
+    });
+    this.healthInFlight = { url, promise };
+    return await promise;
   }
 
   /**

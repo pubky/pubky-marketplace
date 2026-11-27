@@ -2359,6 +2359,7 @@ describe('MarketplaceTransactionService.getHealth (the pickup_available capabili
   beforeEach(() => {
     config.mode = 'transaction-service';
     MarketplaceSessionService.clearSession();
+    MarketplaceTransactionService.resetHealthCache();
   });
 
   it.each([true, false])('parses pickup_available %s from the public health read', async (pickupAvailable) => {
@@ -2411,6 +2412,21 @@ describe('MarketplaceTransactionService.getHealth (the pickup_available capabili
       expect.objectContaining({ endpoint: 'http://127.0.0.1:8080/health' }),
     );
     expect(JSON.stringify(loggerError.mock.calls[0])).not.toContain('responseText');
+    loggerError.mockRestore();
+  });
+
+  it('does not cache failed /health responses so the next read can recover', async () => {
+    const loggerError = vi.spyOn(Logger, 'error').mockImplementation(() => undefined);
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response('service unavailable', { status: 503 }))
+      .mockResolvedValueOnce(jsonResponse(200, { status: 'ok', pickup_available: true }));
+
+    await expect(MarketplaceTransactionService.getHealth()).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+      context: { statusCode: 503 },
+    });
+    await expect(MarketplaceTransactionService.getHealth()).resolves.toMatchObject({ pickupAvailable: true });
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
     loggerError.mockRestore();
   });
 });
