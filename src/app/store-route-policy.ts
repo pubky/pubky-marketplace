@@ -158,7 +158,6 @@ export const STORE_ROUTE_HANDLER_POLICY: Readonly<Record<string, StoreRouteHandl
  * `scripts/store-mode-served-check.mjs` checks this against a production build.
  */
 export const STORE_NOT_FOUND_PATHNAME = '/_not-found';
-export const STORE_UNAVAILABLE_PATHNAME = '/store-unavailable';
 
 /** The route segment Next.js generates for a page's `opengraph-image` / `twitter-image` file. */
 const METADATA_IMAGE_SEGMENT = /^(?:opengraph|twitter)-image(?:-[\w-]+)?$/;

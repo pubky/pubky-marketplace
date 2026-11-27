@@ -52,11 +52,7 @@ export const redirects = async () => {
     { source: '/onboarding/scan', destination: '/sign-in', permanent: false },
     { source: '/invite/:inviteCode', destination: '/sign-in', permanent: false },
     { source: '/marketplace/shop', destination: '/marketplace/storefront', permanent: false },
-    {
-      source: '/',
-      destination: '/marketplace',
-      permanent: false,
-    },
+    // `/` opens the Market from `src/proxy.ts`, after the request-time store route policy.
     { source: '/profile/notifications', destination: '/marketplace/notifications', permanent: false },
   ];
 };

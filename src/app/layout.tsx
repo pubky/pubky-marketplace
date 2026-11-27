@@ -1,6 +1,8 @@
 import './globals.css';
 import type { Viewport } from 'next';
+import { APP_ROUTES } from '@/app/routes';
 import { TooltipProvider } from '@/atoms/Tooltip/Tooltip';
+import { withBasePath } from '@/config/base-path';
 import { getSiteName } from '@/config/metadata';
 import { serializeStoreState, setStoreStateForRender } from '@/config/store-mode';
 import { COLORS } from '@/config/theme';
@@ -8,6 +10,7 @@ import { TOOLTIP_DELAY_MS } from '@/config/ui';
 import { buildMarketplacePromoPrepaintScript } from '@/libs/commerce/promo-prepaint';
 import { MARKETPLACE_STATIC_SEO } from '@/libs/commerce/seo';
 import { renderPerRequestOutsideVercel } from '@/libs/runtime-config/render-mode';
+import { buildStoreClaimCodeIntakeScript } from '@/libs/store-claim/store-claim-code';
 import { resolveStoreState } from '@/libs/store-state/store-state.server';
 import { RootContainer } from '@/molecules/ContainerRoot/ContainerRoot';
 import { EmbeddedDocumentFlag } from '@/molecules/EmbeddedDocumentFlag/EmbeddedDocumentFlag';
@@ -56,6 +59,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         id="marketplace-promo-prepaint-check"
         dangerouslySetInnerHTML={{ __html: buildMarketplacePromoPrepaintScript() }}
       />
+      {storeState.kind !== 'off' && storeState.claimMode && (
+        <script
+          id="store-claim-code-intake"
+          dangerouslySetInnerHTML={{ __html: buildStoreClaimCodeIntakeScript(withBasePath(APP_ROUTES.SETUP)) }}
+        />
+      )}
       {/*
         Rendered as a sibling of the DatabaseProvider/RouteGuardProvider tree below (not a
         descendant): those are client components that gate {children} behind IndexedDB/auth

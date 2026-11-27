@@ -186,12 +186,14 @@ describe('proxy in store mode', () => {
     expect((await proxy(request('/setup'))).headers.get('referrer-policy')).toBe('no-referrer');
   });
 
-  it('rewrites unavailable documents to the 503 page', async () => {
+  it('answers unavailable documents with only the 503 page', async () => {
     runtime.state = { kind: 'unavailable', claimMode: true };
     const response = await proxy(request('/marketplace?tab=all'));
 
     expect(response.status).toBe(503);
-    expect(response.headers.get('x-middleware-rewrite')).toBe('https://store.example/store-unavailable');
+    expect(response.headers.get('x-middleware-rewrite')).toBeNull();
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.text()).toContain('This shop is temporarily unavailable');
   });
 
   it('answers unavailable API requests with JSON and no-store', async () => {
@@ -203,9 +205,9 @@ describe('proxy in store mode', () => {
     await expect(response.json()).resolves.toEqual({ error: 'STORE_UNAVAILABLE' });
   });
 
-  it('passes the unavailable destination and static files through', async () => {
+  it('passes static files through while unavailable', async () => {
     runtime.state = { kind: 'unavailable', claimMode: true };
-    expect((await proxy(request('/store-unavailable'))).headers.get('x-middleware-next')).toBe('1');
+    expect((await proxy(request('/store-unavailable'))).status).toBe(503);
     expect((await proxy(request('/favicon.ico'))).headers.get('x-middleware-next')).toBe('1');
   });
 });

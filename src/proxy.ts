@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { APP_ROUTES, getMarketplaceShopRoute } from '@/app/routes';
-import { decideStoreRoute, STORE_NOT_FOUND_PATHNAME, STORE_UNAVAILABLE_PATHNAME } from '@/app/store-route-policy';
+import { decideStoreRoute, STORE_NOT_FOUND_PATHNAME } from '@/app/store-route-policy';
 import type { StoreState } from '@/config/store-mode';
 import { getEmbeddedFlag, getFrameAncestors } from '@/libs/runtime-config/runtime-config';
 import { buildFramingHeaders } from '@/libs/security/headers';
@@ -16,6 +16,8 @@ import { resolveStoreState } from '@/libs/store-state/store-state.server';
  *
  * In store mode it also applies the store route policy (`src/app/store-route-policy.ts`).
  */
+const STORE_UNAVAILABLE_HTML = `<!doctype html><html lang="en-US"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>This shop is temporarily unavailable</title></head><body><main><h1>This shop is temporarily unavailable</h1><p>Please check back soon.</p></main></body></html>`;
+
 export async function proxy(request: NextRequest) {
   const state = await resolveStoreState();
   const response = storeModeResponse(request, state) ?? NextResponse.next();
@@ -33,7 +35,6 @@ export async function proxy(request: NextRequest) {
 function storeModeResponse(request: NextRequest, state: StoreState): NextResponse | null {
   if (state.kind === 'off') return null;
   const pathname = request.nextUrl.pathname;
-  if (pathname === STORE_UNAVAILABLE_PATHNAME) return null;
   if (state.kind !== 'unavailable' && pathname === STORE_NOT_FOUND_PATHNAME) return null;
   const decision = decideStoreRoute(pathname, state);
   if (decision.kind === 'allow') return null;
@@ -44,10 +45,11 @@ function storeModeResponse(request: NextRequest, state: StoreState): NextRespons
         { status: 503, headers: { 'Cache-Control': 'no-store' } },
       );
     }
-    const url = request.nextUrl.clone();
-    url.pathname = STORE_UNAVAILABLE_PATHNAME;
-    url.search = '';
-    return NextResponse.rewrite(url, { status: 503 });
+    // Rewriting to an app-owned page can also render the feeds catch-all in a production build.
+    return new NextResponse(STORE_UNAVAILABLE_HTML, {
+      status: 503,
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+    });
   }
   const url = request.nextUrl.clone();
   if (decision.kind === 'store-home' && state.kind === 'claimed') {

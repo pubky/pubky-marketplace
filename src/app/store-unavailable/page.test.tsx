@@ -4,7 +4,8 @@ import type { StoreState } from '@/config/store-mode';
 import StoreUnavailablePage, { metadata } from './page';
 
 const runtime = vi.hoisted(() => ({ state: { kind: 'off' } as StoreState }));
-vi.mock('@/config/store-mode', () => ({ getStoreState: () => runtime.state }));
+vi.mock('@/libs/store-state/store-state.server', () => ({ resolveStoreState: async () => runtime.state }));
+vi.mock('@/libs/runtime-config/render-mode', () => ({ renderPerRequestOutsideVercel: vi.fn() }));
 vi.mock('next/navigation', () => ({
   notFound: () => {
     throw new Error('NEXT_NOT_FOUND');
@@ -12,14 +13,14 @@ vi.mock('next/navigation', () => ({
 }));
 
 describe('StoreUnavailablePage', () => {
-  it('answers not found outside an unavailable store', () => {
+  it('answers not found outside an unavailable store', async () => {
     runtime.state = { kind: 'off' };
-    expect(() => StoreUnavailablePage()).toThrow('NEXT_NOT_FOUND');
+    await expect(StoreUnavailablePage()).rejects.toThrow('NEXT_NOT_FOUND');
   });
 
-  it('renders for an unavailable store', () => {
+  it('renders for an unavailable store', async () => {
     runtime.state = { kind: 'unavailable', claimMode: true };
-    render(<StoreUnavailablePage />);
+    render(await StoreUnavailablePage());
     expect(screen.getByRole('heading', { name: 'This shop is temporarily unavailable' })).toBeInTheDocument();
     expect(screen.getByText('Please check back soon.')).toBeInTheDocument();
     expect(metadata.robots).toEqual({ index: false, follow: false });

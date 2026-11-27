@@ -151,6 +151,9 @@ export const EXPLORE_ROUTES: string[] = [
 // Core explore routes are intentionally not listed here so auth hydration can
 // still finish before app shell routes render for logged-in users.
 export const PUBLIC_ROUTES: string[] = [
+  // Store state gates these pages on the server, so their content renders before auth hydration.
+  ROOT_ROUTES,
+  APP_ROUTES.SETUP,
   AUTH_ROUTES.LOGOUT,
   // Profile is public to prevent RouteGuard redirect during logout.
   // The profile page components handle unauthenticated state gracefully.

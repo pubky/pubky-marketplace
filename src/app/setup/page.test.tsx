@@ -4,7 +4,8 @@ import type { StoreState } from '@/config/store-mode';
 import SetupPage, { metadata } from './page';
 
 const runtime = vi.hoisted(() => ({ state: { kind: 'off' } as StoreState }));
-vi.mock('@/config/store-mode', () => ({ getStoreState: () => runtime.state }));
+vi.mock('@/libs/store-state/store-state.server', () => ({ resolveStoreState: async () => runtime.state }));
+vi.mock('@/libs/runtime-config/render-mode', () => ({ renderPerRequestOutsideVercel: vi.fn() }));
 vi.mock('next/navigation', () => ({
   notFound: () => {
     throw new Error('NEXT_NOT_FOUND');
@@ -27,17 +28,17 @@ describe('SetupPage gating', () => {
     ['neither key', { kind: 'off' } as StoreState],
     ['seller alone', { kind: 'claimed', seller: SELLER, source: 'pinned', claimMode: false } as StoreState],
     ['seller plus mode', { kind: 'claimed', seller: SELLER, source: 'pinned', claimMode: false } as StoreState],
-  ])('answers not found for %s', (_name, state) => {
+  ])('answers not found for %s', async (_name, state) => {
     runtime.state = state;
-    expect(() => SetupPage()).toThrow('NEXT_NOT_FOUND');
+    await expect(SetupPage()).rejects.toThrow('NEXT_NOT_FOUND');
   });
 
   it.each([
     { kind: 'unclaimed', claimMode: true } as StoreState,
     { kind: 'claimed', seller: SELLER, source: 'claim', claimMode: true } as StoreState,
-  ])('renders setup for $kind', (state) => {
+  ])('renders setup for $kind', async (state) => {
     runtime.state = state;
-    render(<SetupPage />);
+    render(await SetupPage());
     expect(screen.getByTestId('store-setup')).toBeInTheDocument();
     expect(metadata.robots).toEqual({ index: false, follow: false });
     expect(metadata.referrer).toBe('no-referrer');
