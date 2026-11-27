@@ -715,6 +715,9 @@ export class MarketplaceTransactionService {
     const promise = withIoDeadline(
       async (signal) => {
         const response = await safeFetch(url, { method: 'GET', signal }, ErrorService.Marketplace, 'getHealth');
+        if (!response.ok) {
+          throw httpResponseToError(response, ErrorService.Marketplace, 'getHealth', url);
+        }
         const raw = await parseResponseOrThrow<unknown>(response, ErrorService.Marketplace, 'getHealth', url);
         const parsed = this.parseProjection(
           'getHealth',

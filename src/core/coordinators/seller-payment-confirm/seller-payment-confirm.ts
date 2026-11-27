@@ -35,6 +35,7 @@ export class SellerPaymentConfirmCoordinator extends Coordinator<
   private unsubscribeSettingSync: (() => void) | null = null;
   private unsubscribeCommerceSession: (() => void) | null = null;
   private paymentConfirmationMode: 'unchecked' | 'seller' | 'inactive' = 'unchecked';
+  private modeEpoch = 0;
   private passInFlight = false;
 
   private constructor() {
@@ -67,6 +68,7 @@ export class SellerPaymentConfirmCoordinator extends Coordinator<
     this.unsubscribeSettingSync ??= CommerceController.subscribeSellerPaymentAutoConfirmSync();
     this.unsubscribeCommerceSession ??= useCommerceStore.subscribe((state, prevState) => {
       if (state.marketplaceSession !== prevState.marketplaceSession) {
+        this.modeEpoch += 1;
         this.paymentConfirmationMode = 'unchecked';
         this.evaluateAndStartPolling();
       }
@@ -99,9 +101,11 @@ export class SellerPaymentConfirmCoordinator extends Coordinator<
     if (!CommerceController.hasActiveMarketplaceSession()) return;
     if (this.paymentConfirmationMode === 'inactive') return;
     this.passInFlight = true;
+    const epoch = this.modeEpoch;
     try {
       if (this.paymentConfirmationMode === 'unchecked') {
         const mode = await CommerceController.fetchPaymentConfirmationMode();
+        if (epoch !== this.modeEpoch) return;
         if (mode !== 'seller') {
           this.paymentConfirmationMode = 'inactive';
           this.evaluateAndStartPolling();
@@ -109,13 +113,16 @@ export class SellerPaymentConfirmCoordinator extends Coordinator<
         }
         this.paymentConfirmationMode = 'seller';
       }
-      if (!CommerceController.hasActiveMarketplaceSession()) return;
+      if (epoch !== this.modeEpoch || !CommerceController.hasActiveMarketplaceSession()) return;
       const confirmed = await CommerceController.autoConfirmSellerPayments();
       if (confirmed.length > 0) Logger.info('Confirmed seller payments automatically', { count: confirmed.length });
     } catch (error) {
       Logger.warn('Automatic seller payment confirmation pass failed', { error });
     } finally {
       this.passInFlight = false;
+      if (epoch !== this.modeEpoch && this.shouldPoll()) {
+        void this.poll();
+      }
     }
   }
 

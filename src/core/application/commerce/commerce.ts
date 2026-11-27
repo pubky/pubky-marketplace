@@ -3024,6 +3024,7 @@ export class CommerceApplication {
         sellerSide,
         urls,
         RECEIPT_MIGRATION_BATCH - moved,
+        generation,
       );
       if (this.sessionCacheGeneration !== generation) return 'incomplete';
       if (result === 'needs_reauth') return 'needs_reauth';
@@ -3064,11 +3065,13 @@ export class CommerceApplication {
     sellerSide: boolean,
     urls: string[],
     remaining: number,
+    generation: number,
   ): Promise<{ moved: number; processed: number; incomplete: boolean } | 'needs_reauth' | 'revoked'> {
     let moved = 0;
     let incomplete = false;
     let processed = 0;
     for (const url of urls) {
+      if (this.sessionCacheGeneration !== generation) return { moved, processed, incomplete: true };
       if (moved === remaining) break;
       processed += 1;
       if (!sellerSide && this.plaintextSellerReceiptUrls.has(url)) continue;
@@ -3078,18 +3081,22 @@ export class CommerceApplication {
         const legacy = CommerceRecordNormalizer.orderReceiptRecord(
           await CommerceHomeserverService.fetchJson(url, PRIV_V1_LOG_PATH),
         );
+        if (this.sessionCacheGeneration !== generation) return { moved, processed, incomplete: true };
         if (legacy.receiptId !== receiptId || legacy.ownerPubky !== ownerPubky) {
           incomplete = true;
           continue;
         }
         if (!sellerSide && legacy.role === 'seller') {
+          if (this.sessionCacheGeneration !== generation) return { moved, processed, incomplete: true };
           this.plaintextSellerReceiptUrls.add(url);
           continue;
         }
         moved += 1;
         const sealed = await CommercePrivStoreService.read(keyring, 'order_receipt', receiptId);
+        if (this.sessionCacheGeneration !== generation) return { moved, processed, incomplete: true };
         if (sealed === null) {
           await CommercePrivStoreService.write(keyring, 'order_receipt', receiptId, { ...legacy });
+          if (this.sessionCacheGeneration !== generation) return { moved, processed, incomplete: true };
         } else if (!this.isSameReceipt(sealed, legacy)) {
           Logger.warn('A sealed order receipt differs from its plaintext copy; both are kept');
           incomplete = true;
@@ -3097,6 +3104,7 @@ export class CommerceApplication {
         }
         assertPrivKeyringLive(keyring);
         await CommerceHomeserverService.delete(url, PRIV_V1_LOG_PATH);
+        if (this.sessionCacheGeneration !== generation) return { moved, processed, incomplete: true };
         if (this.verifiedSealedReceipt(sealed ?? legacy, ownerPubky, receiptId) !== null) {
           this.publishedReceiptUrls.add(sealedUrl);
         }
@@ -3181,6 +3189,9 @@ export class CommerceApplication {
     if (!HomeserverService.hasActiveSession()) return 'skipped';
     if (!HomeserverService.canCurrentSessionWrite(PRIVATE_APP_DATA_PATH)) return 'needs_reauth';
 
+    this.ensureSessionLifecycleSubscribed();
+    const generation = this.sessionCacheGeneration;
+
     let keys: MarketplacePrivKeysResult;
     try {
       keys = await CommercePrivKeyringApplication.get(ownerPubky);
@@ -3191,9 +3202,11 @@ export class CommerceApplication {
       );
       return 'unavailable';
     }
+    if (this.sessionCacheGeneration !== generation) return 'unavailable';
     if (keys.kind !== 'keys') return keys.kind === 'needs_reauth' ? 'needs_marketplace_approval' : keys.kind;
     const { keyring } = keys;
     const migration = await this.migratePlaintextReceipts(ownerPubky, keyring, sellerSide);
+    if (this.sessionCacheGeneration !== generation) return 'unavailable';
     if (migration === 'needs_reauth') return 'needs_reauth';
 
     const eligible = orders.filter(
@@ -3217,6 +3230,7 @@ export class CommerceApplication {
     }
 
     for (const order of eligible) {
+      if (this.sessionCacheGeneration !== generation) return 'unavailable';
       const receiptId = order.receiptId as string;
       const url = entryUrls.get(receiptId) as string;
       if (this.publishedReceiptUrls.has(url)) continue;
@@ -3228,6 +3242,7 @@ export class CommerceApplication {
           if (this.isPrivateAccessDenied(error)) return 'needs_reauth';
           throw error;
         }
+        if (this.sessionCacheGeneration !== generation) return 'unavailable';
         if (sealed !== null) {
           if (this.verifiedSealedReceipt(sealed, ownerPubky, receiptId) !== null) {
             this.publishedReceiptUrls.add(url);
@@ -3238,6 +3253,7 @@ export class CommerceApplication {
         }
 
         const attestation = await MarketplaceGatewayService.getReceiptAttestation(ownerPubky, receiptId);
+        if (this.sessionCacheGeneration !== generation) return 'unavailable';
         if (attestation === null) return 'unavailable';
 
         // Drop orders additionally carry a `pubky-drop-edition+v1` proof
@@ -3247,6 +3263,7 @@ export class CommerceApplication {
           typeof order.dropAggregateId === 'string'
             ? await MarketplaceGatewayService.getEditionAttestation(ownerPubky, receiptId)
             : null;
+        if (this.sessionCacheGeneration !== generation) return 'unavailable';
 
         const { claims } = attestation;
         const wireBody = {
@@ -3284,6 +3301,7 @@ export class CommerceApplication {
             : {}),
         };
         const { buildOrderReceipt } = await import('pubky-market-specs');
+        if (this.sessionCacheGeneration !== generation) return 'unavailable';
         const provisional = buildOrderReceipt(ownerPubky, wireBody);
         const provisionalRecord = CommerceRecordNormalizer.orderReceiptRecord(provisional.order_receipt.toJson());
         const verifiedClaims = verifyOrderReceiptClaims({ ...provisionalRecord });
@@ -3351,6 +3369,7 @@ export class CommerceApplication {
           if (this.isPrivateAccessDenied(error)) return 'needs_reauth';
           throw error;
         }
+        if (this.sessionCacheGeneration !== generation) return 'unavailable';
         this.publishedReceiptUrls.add(url);
       } catch (error) {
         if (isPrivKeyringRevoked(error)) return 'unavailable';
@@ -3358,6 +3377,7 @@ export class CommerceApplication {
       }
     }
 
+    if (this.sessionCacheGeneration !== generation) return 'unavailable';
     // A receipt that failed mid-flight (logged above), or a plaintext receipt
     // still waiting to move, retries on the next orders-surface load; report
     // that honestly instead of claiming done.

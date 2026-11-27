@@ -3,6 +3,8 @@ import type { CommerceAdapterMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { SellerPaymentConfirmCoordinator } from '@/coordinators/seller-payment-confirm/seller-payment-confirm';
 import { SELLER_AUTO_CONFIRM_INTERVAL_MS } from '@/libs/commerce/seller-auto-confirm';
+import { Logger } from '@/libs/logger/logger';
+import { MarketplaceTransactionService } from '@/services/marketplace/marketplace-transaction';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { mockSession } from '@/test-utils/pubky';
@@ -241,6 +243,74 @@ describe('SellerPaymentConfirmCoordinator', () => {
       issuedAt: '2026-11-27T01:00:00.000Z',
       expiresAt: '2026-11-28T01:00:00.000Z',
     });
+    await flushPromises();
+
+    expect(fetchMode).toHaveBeenCalledTimes(2);
+    expect(pass).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays unchecked and retries after a valid-JSON 503 /health response', async () => {
+    vi.spyOn(Logger, 'error').mockImplementation(() => {});
+    vi.spyOn(Logger, 'warn').mockImplementation(() => {});
+    vi.mocked(CommerceController.fetchPaymentConfirmationMode).mockRestore();
+    MarketplaceTransactionService.resetHealthCache();
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: 'error' }), {
+          status: 503,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: 'ok', payment_confirmation: 'seller' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    const pass = vi.spyOn(CommerceController, 'autoConfirmSellerPayments').mockResolvedValue([]);
+    useAuthStore.getState().init({ session: mockSession(), currentUserPubky: 's'.repeat(52), hasProfile: true });
+    const coordinator = SellerPaymentConfirmCoordinator.getInstance();
+    await coordinator.setRoute('/marketplace/orders');
+    await coordinator.start();
+    await flushPromises();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(pass).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(SELLER_AUTO_CONFIRM_INTERVAL_MS);
+    await flushPromises();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(pass).toHaveBeenCalledTimes(1);
+    MarketplaceTransactionService.resetHealthCache();
+  });
+
+  it('ignores a stale in-flight mode result if marketplaceSession changes mid-check', async () => {
+    const firstMode = Promise.withResolvers<'seller' | 'automatic' | null>();
+    const fetchMode = vi
+      .spyOn(CommerceController, 'fetchPaymentConfirmationMode')
+      .mockReturnValueOnce(firstMode.promise)
+      .mockResolvedValueOnce('seller');
+    const pass = vi.spyOn(CommerceController, 'autoConfirmSellerPayments').mockResolvedValue([]);
+    useAuthStore.getState().init({ session: mockSession(), currentUserPubky: 's'.repeat(52), hasProfile: true });
+    const coordinator = SellerPaymentConfirmCoordinator.getInstance();
+    await coordinator.setRoute('/marketplace/orders');
+    await coordinator.start();
+    await flushPromises();
+    expect(fetchMode).toHaveBeenCalledTimes(1);
+
+    // Session replaces while the initial /health check is still suspended.
+    useCommerceStore.getState().setMarketplaceSession({
+      pubky: 's'.repeat(52),
+      capabilities: '/pub/pubky.app/:rw',
+      issuedAt: '2026-11-27T02:00:00.000Z',
+      expiresAt: '2026-11-28T02:00:00.000Z',
+    });
+
+    // Old mode check settles as automatic; it must NOT latch inactive for the replacement session.
+    firstMode.resolve('automatic');
+    await flushPromises();
     await flushPromises();
 
     expect(fetchMode).toHaveBeenCalledTimes(2);

@@ -1224,4 +1224,93 @@ describe('CommerceApplication.publishOrderReceipts without the seller side', () 
     expect(list).toHaveBeenCalledTimes(2);
     MarketplaceSessionService.clearSession();
   });
+
+  it('does not repopulate plaintextSellerReceiptUrls or publishedReceiptUrls when per-receipt awaits resolve after sign-out', async () => {
+    const record = await publishedRecord();
+    grantCapableSession();
+    CommerceApplication.resetReceiptPublicationMemo();
+    homeserver.files.clear();
+
+    // 1) Late fetchJson during seller-receipt classification inside migratePlaintextReceiptPage.
+    const sellerOnlyUrl = legacyUrl(BUYER, SOLD_RECEIPT);
+    const sellerRecord = { ...record, receiptId: SOLD_RECEIPT, role: 'seller', buyerPubky: SELLER, sellerPubky: BUYER };
+    homeserver.files.set(sellerOnlyUrl, sellerRecord);
+    const deferredFetch = Promise.withResolvers<unknown>();
+    const fetchJson = vi
+      .spyOn(CommerceHomeserverService, 'fetchJson')
+      .mockReturnValueOnce(deferredFetch.promise)
+      .mockResolvedValue(sellerRecord);
+
+    const pendingClassify = CommerceApplication.publishOrderReceipts(BUYER, [], { sellerSide: false });
+    await vi.waitFor(() => expect(fetchJson).toHaveBeenCalledTimes(1));
+    await CommerceApplication.clearMarketplaceSessionForSignOut();
+    deferredFetch.resolve(sellerRecord);
+    await pendingClassify;
+
+    // Next session must inspect sellerOnlyUrl again instead of skipping from stale plaintextSellerReceiptUrls.
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [], { sellerSide: false })).resolves.toBe('published');
+    expect(fetchJson).toHaveBeenCalledTimes(2);
+
+    // 2) Late delete during migratePlaintextReceiptPage must not populate publishedReceiptUrls.
+    CommerceApplication.resetReceiptPublicationMemo();
+    homeserver.files.clear();
+    fetchJson.mockRestore();
+    homeserver.files.set(legacyUrl(BUYER, RECEIPT_ID), record);
+    sealReceipt(BUYER, RECEIPT_ID, record);
+    const deferredDelete = Promise.withResolvers<void>();
+    const deleteSpy = vi
+      .spyOn(CommerceHomeserverService, 'delete')
+      .mockReturnValueOnce(deferredDelete.promise)
+      .mockResolvedValue(undefined);
+
+    const pendingMigrateDelete = CommerceApplication.publishOrderReceipts(BUYER, []);
+    await vi.waitFor(() => expect(deleteSpy).toHaveBeenCalledTimes(1));
+    await CommerceApplication.clearMarketplaceSessionForSignOut();
+    deferredDelete.resolve(undefined);
+    await pendingMigrateDelete;
+    deleteSpy.mockRestore();
+
+    // Next session must re-read sealed receipt from homeserver (not skip via publishedReceiptUrls).
+    const readSpy = vi.spyOn(CommercePrivStoreService, 'read');
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [paidOrder()])).resolves.toBe('published');
+    expect(readSpy).toHaveBeenCalledTimes(1);
+
+    // 3) Late CommercePrivStoreService.read in publishOrderReceipts must not populate publishedReceiptUrls.
+    CommerceApplication.resetReceiptPublicationMemo();
+    readSpy.mockClear();
+    const deferredRead = Promise.withResolvers<unknown>();
+    readSpy.mockReturnValueOnce(deferredRead.promise).mockResolvedValue(record);
+
+    const pendingRead = CommerceApplication.publishOrderReceipts(BUYER, [paidOrder()]);
+    await vi.waitFor(() => expect(readSpy).toHaveBeenCalledTimes(1));
+    await CommerceApplication.clearMarketplaceSessionForSignOut();
+    deferredRead.resolve(record);
+    await expect(pendingRead).resolves.toBe('unavailable');
+
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [paidOrder()])).resolves.toBe('published');
+    expect(readSpy).toHaveBeenCalledTimes(2);
+
+    // 4) Late CommercePrivStoreService.write in publishOrderReceipts must not populate publishedReceiptUrls.
+    CommerceApplication.resetReceiptPublicationMemo();
+    readSpy.mockRestore();
+    homeserver.files.clear();
+    vi.spyOn(MarketplaceGatewayService, 'getReceiptAttestation').mockResolvedValue(attestation());
+    const deferredWrite = Promise.withResolvers<void>();
+    const writeSpy = vi
+      .spyOn(CommercePrivStoreService, 'write')
+      .mockReturnValueOnce(deferredWrite.promise)
+      .mockResolvedValue(undefined);
+
+    const pendingWrite = CommerceApplication.publishOrderReceipts(BUYER, [paidOrder()]);
+    await vi.waitFor(() => expect(writeSpy).toHaveBeenCalledTimes(1));
+    await CommerceApplication.clearMarketplaceSessionForSignOut();
+    deferredWrite.resolve(undefined);
+    await expect(pendingWrite).resolves.toBe('unavailable');
+
+    writeSpy.mockRestore();
+    const readAfterWrite = vi.spyOn(CommercePrivStoreService, 'read');
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [paidOrder()])).resolves.toBe('published');
+    expect(readAfterWrite).toHaveBeenCalledTimes(1);
+    MarketplaceSessionService.clearSession();
+  });
 });
