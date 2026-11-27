@@ -21,47 +21,86 @@ export interface MarketplaceCatalogSsrPayload {
 }
 
 const CATALOG_CACHE_MAX_ENTRIES = 16;
-const catalogCache = new Map<string, { payload: MarketplaceCatalogSsrPayload; expiresAt: number }>();
-const catalogInFlight = new Map<string, Promise<MarketplaceCatalogSsrPayload>>();
+const catalogListingsCache = new Map<string, { listings: MarketplaceCatalogItem[]; expiresAt: number }>();
+const catalogListingsInFlight = new Map<string, Promise<MarketplaceCatalogItem[]>>();
 
 /** Clears in-process SSR catalog and shop caches (for tests). */
 export function resetOgCatalogCacheForTests(): void {
-  catalogCache.clear();
-  catalogInFlight.clear();
+  catalogListingsCache.clear();
+  catalogListingsInFlight.clear();
   resetOgCommerceCacheForTests();
 }
 
-function readCachedCatalog(key: string): MarketplaceCatalogSsrPayload | undefined {
-  const entry = catalogCache.get(key);
+function readCachedCatalogListings(key: string): MarketplaceCatalogItem[] | undefined {
+  const entry = catalogListingsCache.get(key);
   if (!entry) return undefined;
   if (entry.expiresAt <= Date.now()) {
-    catalogCache.delete(key);
+    catalogListingsCache.delete(key);
     return undefined;
   }
-  catalogCache.delete(key);
-  catalogCache.set(key, entry);
-  return entry.payload;
+  catalogListingsCache.delete(key);
+  catalogListingsCache.set(key, entry);
+  return entry.listings;
 }
 
-function writeCachedCatalog(key: string, payload: MarketplaceCatalogSsrPayload): void {
-  if (catalogCache.has(key)) {
-    catalogCache.delete(key);
-  } else if (catalogCache.size >= CATALOG_CACHE_MAX_ENTRIES) {
-    const oldestKey = catalogCache.keys().next().value;
-    if (oldestKey !== undefined) catalogCache.delete(oldestKey);
+function writeCachedCatalogListings(key: string, listings: MarketplaceCatalogItem[]): void {
+  if (catalogListingsCache.has(key)) {
+    catalogListingsCache.delete(key);
+  } else if (catalogListingsCache.size >= CATALOG_CACHE_MAX_ENTRIES) {
+    const oldestKey = catalogListingsCache.keys().next().value;
+    if (oldestKey !== undefined) catalogListingsCache.delete(oldestKey);
   }
-  catalogCache.set(key, { payload, expiresAt: Date.now() + OG_COMMERCE_CACHE_TTL_MS });
+  catalogListingsCache.set(key, { listings, expiresAt: Date.now() + OG_COMMERCE_CACHE_TTL_MS });
+}
+
+async function fetchCatalogListings(cacheKey: string, nexusUrl: string): Promise<MarketplaceCatalogItem[]> {
+  const cached = readCachedCatalogListings(cacheKey);
+  if (cached) return cached;
+
+  const existing = catalogListingsInFlight.get(cacheKey);
+  if (existing) return await existing;
+
+  const query = new URLSearchParams({
+    state: 'active',
+    limit: String(NEXUS_LISTINGS_PER_PAGE),
+  });
+  const url = `${nexusUrl}/${NEXUS_STREAM_LISTINGS_ROUTE}?${query.toString()}`;
+
+  const load = async (): Promise<MarketplaceCatalogItem[]> => {
+    try {
+      const res = await fetch(url, { next: { revalidate: OG_COMMERCE_REVALIDATE } });
+      if (!res.ok) {
+        Logger.warn('[ogCatalogData] Listing stream failed', { url, status: res.status });
+        return [];
+      }
+
+      const json: unknown = await res.json();
+      const listings = CommerceRecordNormalizer.nexusListingStream(json).map(catalogItemFromCatalogEntry);
+      writeCachedCatalogListings(cacheKey, listings);
+      return listings;
+    } catch (error) {
+      Logger.warn('[ogCatalogData] Failed to fetch marketplace listing stream', { error });
+      return [];
+    }
+  };
+
+  const promise = load().finally(() => {
+    if (catalogListingsInFlight.get(cacheKey) === promise) catalogListingsInFlight.delete(cacheKey);
+  });
+  catalogListingsInFlight.set(cacheKey, promise);
+  return await promise;
 }
 
 /**
  * Server-only first page of the public Nexus marketplace listing stream for
  * the `/marketplace` catalog HTML, plus shop records for the distinct sellers
  * on that page so SSR cards render the shop name (not the pubky fallback).
- * Same constraints as `ogCommerceData`: no Dexie/controller writes — a read of
- * public index projections and public `shop.json` records, cached in-process
- * for `OG_COMMERCE_REVALIDATE` seconds with single-flight deduplication so
- * containerized non-Vercel deployments serve cached SSR fast without stalling
- * on live homeserver reads every hit.
+ *
+ * The listing stream is cached in-process for `OG_COMMERCE_REVALIDATE` seconds
+ * with single-flight deduplication, while seller shop records are resolved via
+ * `ogCommerceData`'s bounded TTL cache so warm sellers resolve in O(1) without
+ * network IO and transient shop failures/timeouts recover on subsequent hits
+ * instead of pinning pubky fallbacks for 5 minutes.
  *
  * Sandbox deployments never query Nexus (seeded local catalogs only).
  */
@@ -71,43 +110,10 @@ export async function fetchMarketplaceCatalogForSsr(): Promise<MarketplaceCatalo
 
   const nexusUrl = getMarketplaceNexusUrl();
   const cacheKey = `${adapterMode}:${nexusUrl}`;
-  const cached = readCachedCatalog(cacheKey);
-  if (cached) return cached;
-
-  const existing = catalogInFlight.get(cacheKey);
-  if (existing) return await existing;
-
-  const query = new URLSearchParams({
-    state: 'active',
-    limit: String(NEXUS_LISTINGS_PER_PAGE),
-  });
-  const url = `${nexusUrl}/${NEXUS_STREAM_LISTINGS_ROUTE}?${query.toString()}`;
-
-  const load = async (): Promise<MarketplaceCatalogSsrPayload> => {
-    try {
-      const res = await fetch(url, { next: { revalidate: OG_COMMERCE_REVALIDATE } });
-      if (!res.ok) {
-        Logger.warn('[ogCatalogData] Listing stream failed', { url, status: res.status });
-        return { listings: [], shops: [] };
-      }
-
-      const json: unknown = await res.json();
-      const listings = CommerceRecordNormalizer.nexusListingStream(json).map(catalogItemFromCatalogEntry);
-      const shops = await fetchShopsForCatalogSellers(listings);
-      const payload = { listings, shops };
-      writeCachedCatalog(cacheKey, payload);
-      return payload;
-    } catch (error) {
-      Logger.warn('[ogCatalogData] Failed to fetch marketplace listing stream', { error });
-      return { listings: [], shops: [] };
-    }
-  };
-
-  const promise = load().finally(() => {
-    if (catalogInFlight.get(cacheKey) === promise) catalogInFlight.delete(cacheKey);
-  });
-  catalogInFlight.set(cacheKey, promise);
-  return await promise;
+  const listings = await fetchCatalogListings(cacheKey, nexusUrl);
+  if (listings.length === 0) return { listings: [], shops: [] };
+  const shops = await fetchShopsForCatalogSellers(listings);
+  return { listings, shops };
 }
 
 /**

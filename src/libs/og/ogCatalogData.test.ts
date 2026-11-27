@@ -268,6 +268,33 @@ describe('fetchMarketplaceCatalogForSsr', () => {
     expect(recovered.listings).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
+
+  it('recovers a failed seller shop on the next SSR hit within 5 minutes while keeping Nexus listings cached', async () => {
+    vi.spyOn(Logger, 'warn').mockImplementation(() => {});
+    const fixture = createNexusListingDetailsFixture();
+    const shop = createCommerceShopFixture();
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([fixture]), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      )
+      .mockResolvedValueOnce(new Response('homeserver down', { status: 503 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(shop), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      );
+
+    const degraded = await fetchMarketplaceCatalogForSsr();
+    expect(degraded.listings).toHaveLength(1);
+    expect(degraded.shops).toEqual([]);
+
+    const recovered = await fetchMarketplaceCatalogForSsr();
+    expect(recovered.listings).toHaveLength(1);
+    expect(recovered.shops).toHaveLength(1);
+    expect(recovered.shops[0]?.name).toBe(shop.name);
+    // 1 Nexus stream read + 2 shop reads (no second Nexus stream call).
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/v0/stream/listings'))).toHaveLength(1);
+  });
 });
 
 function listingsFromSellers(count: number) {

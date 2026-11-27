@@ -1,6 +1,7 @@
+import { randomBytes } from 'node:crypto';
 import sharp from 'sharp';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchOgMediaAsDataUri, resetOgCommerceCacheForTests } from './ogCommerceData';
+import { fetchOgMediaAsDataUri, OG_MEDIA_CACHE_MAX_ENTRY_BYTES, resetOgCommerceCacheForTests } from './ogCommerceData';
 
 const { fetchMock, resolvePubkyMock } = vi.hoisted(() => ({
   fetchMock: vi.fn(),
@@ -60,5 +61,27 @@ describe('fetchOgMediaAsDataUri', () => {
     await expect(fetchOgMediaAsDataUri(uri)).resolves.toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(resolvePubkyMock).not.toHaveBeenCalled();
+  });
+
+  it('skips caching encoded media data URIs exceeding OG_MEDIA_CACHE_MAX_ENTRY_BYTES', async () => {
+    const noisyRaw = randomBytes(700 * 700 * 3);
+    const largePng = await sharp(noisyRaw, { raw: { width: 700, height: 700, channels: 3 } })
+      .png({ compressionLevel: 0 })
+      .toBuffer();
+    const expectedBase64Bytes = Buffer.byteLength(`data:image/png;base64,${largePng.toString('base64')}`, 'utf8');
+    expect(expectedBase64Bytes).toBeGreaterThan(OG_MEDIA_CACHE_MAX_ENTRY_BYTES);
+
+    resolvePubkyMock.mockReturnValue(resolvedUrl);
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array(largePng), { status: 200, headers: { 'Content-Type': 'image/png' } }),
+      )
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array(largePng), { status: 200, headers: { 'Content-Type': 'image/png' } }),
+      );
+
+    await expect(fetchOgMediaAsDataUri(sellerMediaUri)).resolves.toMatch(/^data:image\/png;base64,/);
+    await expect(fetchOgMediaAsDataUri(sellerMediaUri)).resolves.toMatch(/^data:image\/png;base64,/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

@@ -35,18 +35,37 @@ export const OG_COMMERCE_REVALIDATE = 300;
 export const OG_COMMERCE_CACHE_TTL_MS = OG_COMMERCE_REVALIDATE * 1_000;
 export const OG_COMMERCE_NOT_FOUND_TTL_MS = 60_000;
 export const OG_COMMERCE_CACHE_MAX_ENTRIES = 500;
+export const OG_COMMERCE_CACHE_MAX_TOTAL_BYTES = 4 * 1024 * 1024;
+export const OG_RECORD_MAX_BYTES = 256 * 1024;
 export const OG_MEDIA_CACHE_MAX_ENTRIES = 50;
+export const OG_MEDIA_CACHE_MAX_ENTRY_BYTES = 1024 * 1024;
+export const OG_MEDIA_CACHE_MAX_TOTAL_BYTES = 16 * 1024 * 1024;
 
-class BoundedTtlCache<V> {
-  private readonly entries = new Map<string, { value: V; expiresAt: number }>();
+export interface BoundedTtlCacheOptions {
+  maxEntries: number;
+  maxTotalBytes: number;
+  maxEntryBytes?: number;
+}
 
-  constructor(private readonly maxEntries: number) {}
+export class BoundedTtlCache<V> {
+  private readonly entries = new Map<string, { value: V; bytes: number; expiresAt: number }>();
+  private totalBytes = 0;
+  private readonly maxEntries: number;
+  private readonly maxTotalBytes: number;
+  private readonly maxEntryBytes: number;
+
+  constructor({ maxEntries, maxTotalBytes, maxEntryBytes = maxTotalBytes }: BoundedTtlCacheOptions) {
+    this.maxEntries = maxEntries;
+    this.maxTotalBytes = maxTotalBytes;
+    this.maxEntryBytes = Math.min(maxEntryBytes, maxTotalBytes);
+  }
 
   get(key: string, now = Date.now()): V | undefined {
     const entry = this.entries.get(key);
     if (!entry) return undefined;
     if (entry.expiresAt <= now) {
       this.entries.delete(key);
+      this.totalBytes = Math.max(0, this.totalBytes - entry.bytes);
       return undefined;
     }
     this.entries.delete(key);
@@ -54,29 +73,63 @@ class BoundedTtlCache<V> {
     return entry.value;
   }
 
-  set(key: string, value: V, ttlMs: number, now = Date.now()): void {
-    if (this.entries.has(key)) {
+  set(key: string, value: V, ttlMs: number, bytes: number, now = Date.now()): boolean {
+    const entryBytes = Math.max(1, bytes);
+    if (entryBytes > this.maxEntryBytes) return false;
+    const previous = this.entries.get(key);
+    if (previous) {
       this.entries.delete(key);
-    } else if (this.entries.size >= this.maxEntries) {
-      const oldestKey = this.entries.keys().next().value;
-      if (oldestKey !== undefined) this.entries.delete(oldestKey);
+      this.totalBytes = Math.max(0, this.totalBytes - previous.bytes);
     }
-    this.entries.set(key, { value, expiresAt: now + ttlMs });
+    while (
+      this.entries.size > 0 &&
+      (this.entries.size >= this.maxEntries || this.totalBytes + entryBytes > this.maxTotalBytes)
+    ) {
+      const oldestKey = this.entries.keys().next().value;
+      if (oldestKey === undefined) break;
+      const oldest = this.entries.get(oldestKey);
+      this.entries.delete(oldestKey);
+      if (oldest) this.totalBytes = Math.max(0, this.totalBytes - oldest.bytes);
+    }
+    if (this.entries.size >= this.maxEntries || this.totalBytes + entryBytes > this.maxTotalBytes) {
+      return false;
+    }
+    this.entries.set(key, { value, bytes: entryBytes, expiresAt: now + ttlMs });
+    this.totalBytes += entryBytes;
+    return true;
+  }
+
+  get byteSize(): number {
+    return this.totalBytes;
+  }
+
+  get size(): number {
+    return this.entries.size;
   }
 
   clear(): void {
     this.entries.clear();
+    this.totalBytes = 0;
   }
 }
 
-const listingCache = new BoundedTtlCache<MetadataFetchResult<CommerceListingRecord>>(OG_COMMERCE_CACHE_MAX_ENTRIES);
+const listingCache = new BoundedTtlCache<MetadataFetchResult<CommerceListingRecord>>({
+  maxEntries: OG_COMMERCE_CACHE_MAX_ENTRIES,
+  maxTotalBytes: OG_COMMERCE_CACHE_MAX_TOTAL_BYTES,
+  maxEntryBytes: OG_RECORD_MAX_BYTES,
+});
 const listingInFlight = new Map<string, Promise<MetadataFetchResult<CommerceListingRecord>>>();
-const shopCache = new BoundedTtlCache<MetadataFetchResult<CommerceShopRecord>>(OG_COMMERCE_CACHE_MAX_ENTRIES);
-const shopInFlight = new Map<
-  string,
-  { timeoutMs: number; promise: Promise<MetadataFetchResult<CommerceShopRecord>> }
->();
-const mediaCache = new BoundedTtlCache<string>(OG_MEDIA_CACHE_MAX_ENTRIES);
+const shopCache = new BoundedTtlCache<MetadataFetchResult<CommerceShopRecord>>({
+  maxEntries: OG_COMMERCE_CACHE_MAX_ENTRIES,
+  maxTotalBytes: OG_COMMERCE_CACHE_MAX_TOTAL_BYTES,
+  maxEntryBytes: OG_RECORD_MAX_BYTES,
+});
+const shopInFlight = new Map<string, Promise<MetadataFetchResult<CommerceShopRecord>>>();
+const mediaCache = new BoundedTtlCache<string>({
+  maxEntries: OG_MEDIA_CACHE_MAX_ENTRIES,
+  maxTotalBytes: OG_MEDIA_CACHE_MAX_TOTAL_BYTES,
+  maxEntryBytes: OG_MEDIA_CACHE_MAX_ENTRY_BYTES,
+});
 const mediaInFlight = new Map<string, Promise<string | null>>();
 
 /** Clears all in-process OG/SSR record and media caches (for tests). */
@@ -131,10 +184,52 @@ function reasonForError(error: unknown): string {
 }
 
 /** Default bound on PKARR resolution plus the record fetch for SSR. */
-const RECORD_FETCH_TIMEOUT_MS = 4_000;
+export const RECORD_FETCH_TIMEOUT_MS = 4_000;
 
 export interface RecordFetchOptions {
   timeoutMs?: number;
+}
+
+type BoundedTextBody = { text: string } | { overCap: true };
+
+async function readBoundedTextBody(res: Response, maxBytes: number): Promise<BoundedTextBody> {
+  const contentLength = res.headers.get('content-length');
+  if (contentLength !== null) {
+    const parsedLength = Number.parseInt(contentLength, 10);
+    if (Number.isFinite(parsedLength) && parsedLength > maxBytes) {
+      await res.body?.cancel().catch(() => undefined);
+      return { overCap: true };
+    }
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) {
+    const text = await res.text();
+    if (Buffer.byteLength(text, 'utf8') > maxBytes) return { overCap: true };
+    return { text };
+  }
+
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) return { text: Buffer.concat(chunks).toString('utf8') };
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return { overCap: true };
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    try {
+      await reader.cancel();
+    } catch {
+      // Preserve the original read failure.
+    }
+    throw error;
+  }
 }
 
 async function readRecordJson(url: string, operation: string, signal: AbortSignal): Promise<RecordFetchResult> {
@@ -146,7 +241,15 @@ async function readRecordJson(url: string, operation: string, signal: AbortSigna
       Logger.warn(`[ogCommerceData] ${operation} unavailable`, { status: res.status, reason });
       return { kind: 'unavailable', reason };
     }
-    return { kind: 'found', value: await res.json() };
+    const body = await readBoundedTextBody(res, OG_RECORD_MAX_BYTES);
+    if ('overCap' in body) {
+      Logger.warn(`[ogCommerceData] ${operation} unavailable`, {
+        reason: 'too_large',
+        maxBytes: OG_RECORD_MAX_BYTES,
+      });
+      return { kind: 'unavailable', reason: 'too_large' };
+    }
+    return { kind: 'found', value: JSON.parse(body.text) as unknown };
   } catch (error) {
     if (signal.aborted) return { kind: 'unavailable', reason: 'timeout' };
     const reason = reasonForError(error);
@@ -175,6 +278,220 @@ async function fetchRecordJson(
   } finally {
     clearTimeout(timer);
   }
+}
+
+function sanitizeMoney<T extends { amountMinor: number; currency: string; exponent: number }>(money: T): T {
+  return {
+    amountMinor: money.amountMinor,
+    currency: money.currency,
+    exponent: money.exponent,
+  } as T;
+}
+
+function sanitizeLocation(location: CommerceShopRecord['location']): CommerceShopRecord['location'] {
+  return {
+    countryCode: location.countryCode,
+    ...(location.region !== undefined ? { region: location.region } : {}),
+  };
+}
+
+/** Strips open-world `.passthrough()` keys before storing a validated shop in process memory. */
+function sanitizeShopForCache(record: CommerceShopRecord): CommerceShopRecord {
+  return {
+    schemaVersion: record.schemaVersion,
+    recordType: record.recordType,
+    ownerPubky: record.ownerPubky,
+    revision: record.revision,
+    name: record.name,
+    bio: record.bio,
+    location: sanitizeLocation(record.location),
+    ...(record.avatarUrl !== undefined ? { avatarUrl: record.avatarUrl } : {}),
+    ...(record.bannerUrl !== undefined ? { bannerUrl: record.bannerUrl } : {}),
+    shippingPolicy: record.shippingPolicy,
+    returnPolicy: record.returnPolicy,
+    vacationMode: record.vacationMode,
+    ...(record.transactionService !== undefined ? { transactionService: record.transactionService } : {}),
+    ...(record.deliveryAssumeDays !== undefined ? { deliveryAssumeDays: record.deliveryAssumeDays } : {}),
+    ...(record.autoCompleteDays !== undefined ? { autoCompleteDays: record.autoCompleteDays } : {}),
+    ...(record.shipsToCountries !== undefined ? { shipsToCountries: [...record.shipsToCountries] } : {}),
+    ...(record.sellerStatus !== undefined ? { sellerStatus: record.sellerStatus } : {}),
+    ...(record.sellerStatusConfirmedAt !== undefined
+      ? { sellerStatusConfirmedAt: record.sellerStatusConfirmedAt }
+      : {}),
+    ...(record.bitcoinConfirmation !== undefined ? { bitcoinConfirmation: record.bitcoinConfirmation } : {}),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+}
+
+/** Strips open-world `.passthrough()` keys before storing a validated listing in process memory. */
+function sanitizeListingForCache(record: CommerceListingRecord): CommerceListingRecord {
+  const sale: CommerceListingRecord['sale'] =
+    record.sale.format === 'fixed_price'
+      ? {
+          format: 'fixed_price',
+          unitPrice: sanitizeMoney(record.sale.unitPrice),
+          acceptsOffers: record.sale.acceptsOffers,
+        }
+      : {
+          format: 'auction',
+          startingPrice: sanitizeMoney(record.sale.startingPrice),
+          ...(record.sale.buyNowPrice !== undefined ? { buyNowPrice: sanitizeMoney(record.sale.buyNowPrice) } : {}),
+          minimumIncrement: sanitizeMoney(record.sale.minimumIncrement),
+          startsAt: record.sale.startsAt,
+          endsAt: record.sale.endsAt,
+          antiSnipingWindowSeconds: record.sale.antiSnipingWindowSeconds,
+          antiSnipingExtensionSeconds: record.sale.antiSnipingExtensionSeconds,
+        };
+
+  return {
+    schemaVersion: record.schemaVersion,
+    recordType: record.recordType,
+    ownerPubky: record.ownerPubky,
+    revision: record.revision,
+    listingId: record.listingId,
+    state: record.state,
+    title: record.title,
+    description: record.description,
+    taxonomyVersion: record.taxonomyVersion,
+    categoryId: record.categoryId,
+    ...(record.attributes !== undefined ? { attributes: { ...record.attributes } } : {}),
+    condition: record.condition,
+    ...(record.conditionDetails !== undefined ? { conditionDetails: record.conditionDetails } : {}),
+    tags: [...record.tags],
+    location: sanitizeLocation(record.location),
+    media: record.media.map((item) => ({
+      id: item.id,
+      type: item.type,
+      url: item.url,
+      contentHash: item.contentHash,
+      mimeType: item.mimeType,
+      byteSize: item.byteSize,
+      width: item.width,
+      height: item.height,
+      ...(item.durationMs !== undefined ? { durationMs: item.durationMs } : {}),
+      altText: item.altText,
+    })),
+    variants: record.variants.map((variant) => ({
+      id: variant.id,
+      ...(variant.sku !== undefined ? { sku: variant.sku } : {}),
+      options: { ...variant.options },
+      ...(variant.priceOverride !== undefined ? { priceOverride: sanitizeMoney(variant.priceOverride) } : {}),
+      quantity: variant.quantity,
+      mediaIds: [...variant.mediaIds],
+      enabled: variant.enabled,
+    })),
+    sale,
+    fulfillmentMethods: [...record.fulfillmentMethods],
+    ...(record.package !== undefined
+      ? {
+          package: {
+            weightGrams: record.package.weightGrams,
+            lengthMillimeters: record.package.lengthMillimeters,
+            widthMillimeters: record.package.widthMillimeters,
+            heightMillimeters: record.package.heightMillimeters,
+          },
+        }
+      : {}),
+    shippingOptions: record.shippingOptions.map((option) => {
+      if (option.pricing === 'free') {
+        return {
+          id: option.id,
+          pricing: 'free' as const,
+          label: option.label,
+          estimatedMinDays: option.estimatedMinDays,
+          estimatedMaxDays: option.estimatedMaxDays,
+        };
+      }
+      if (option.pricing === 'flat') {
+        return {
+          id: option.id,
+          pricing: 'flat' as const,
+          label: option.label,
+          price: sanitizeMoney(option.price),
+          estimatedMinDays: option.estimatedMinDays,
+          estimatedMaxDays: option.estimatedMaxDays,
+        };
+      }
+      return {
+        id: option.id,
+        pricing: 'calculated' as const,
+        label: option.label,
+        provider: option.provider,
+        serviceCode: option.serviceCode,
+        estimatedMinDays: option.estimatedMinDays,
+        estimatedMaxDays: option.estimatedMaxDays,
+      };
+    }),
+    ...(record.shippingProfileId !== undefined ? { shippingProfileId: record.shippingProfileId } : {}),
+    ...(record.shippingZones !== undefined
+      ? {
+          shippingZones: record.shippingZones.map((zone) => ({
+            zoneId: zone.zoneId,
+            name: zone.name,
+            countries: [...zone.countries],
+            ...(zone.restOfWorld !== undefined ? { restOfWorld: zone.restOfWorld } : {}),
+            rates: zone.rates.map((rate) => {
+              if (rate.pricing === 'free') {
+                return {
+                  rateId: rate.rateId,
+                  label: rate.label,
+                  estimatedMinDays: rate.estimatedMinDays,
+                  estimatedMaxDays: rate.estimatedMaxDays,
+                  pricing: 'free' as const,
+                };
+              }
+              if (rate.pricing === 'flat') {
+                return {
+                  rateId: rate.rateId,
+                  label: rate.label,
+                  estimatedMinDays: rate.estimatedMinDays,
+                  estimatedMaxDays: rate.estimatedMaxDays,
+                  pricing: 'flat' as const,
+                  amountMinor: rate.amountMinor,
+                };
+              }
+              return {
+                rateId: rate.rateId,
+                label: rate.label,
+                estimatedMinDays: rate.estimatedMinDays,
+                estimatedMaxDays: rate.estimatedMaxDays,
+                pricing: 'per_item' as const,
+                firstMinor: rate.firstMinor,
+                additionalMinor: rate.additionalMinor,
+              };
+            }),
+          })),
+        }
+      : {}),
+    returnPolicy: {
+      acceptsReturns: record.returnPolicy.acceptsReturns,
+      ...(record.returnPolicy.returnWindowDays !== undefined
+        ? { returnWindowDays: record.returnPolicy.returnWindowDays }
+        : {}),
+      buyerPaysReturnShipping: record.returnPolicy.buyerPaysReturnShipping,
+      ...(record.returnPolicy.details !== undefined ? { details: record.returnPolicy.details } : {}),
+    },
+    ...(record.digitalLock !== undefined
+      ? {
+          digitalLock: {
+            policyUri: record.digitalLock.policyUri,
+            criterionId: record.digitalLock.criterionId,
+            contentPath: record.digitalLock.contentPath,
+            resourceHash: record.digitalLock.resourceHash,
+            minimumConfirmations: record.digitalLock.minimumConfirmations,
+          },
+        }
+      : {}),
+    adultOnly: record.adultOnly,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+}
+
+function estimateMetadataResultBytes<T>(result: MetadataFetchResult<T>): number {
+  if (result.kind !== 'found') return 64;
+  return Buffer.byteLength(JSON.stringify(result.record), 'utf8');
 }
 
 /**
@@ -212,7 +529,9 @@ export async function fetchOgMediaAsDataUri(uri: string | null | undefined): Pro
 
   const promise = load()
     .then((dataUri) => {
-      if (dataUri !== null) mediaCache.set(uri, dataUri, OG_COMMERCE_CACHE_TTL_MS);
+      if (dataUri !== null) {
+        mediaCache.set(uri, dataUri, OG_COMMERCE_CACHE_TTL_MS, Buffer.byteLength(dataUri, 'utf8'));
+      }
       return dataUri;
     })
     .finally(() => {
@@ -267,13 +586,16 @@ export async function fetchListingForMetadata(
       return { kind: 'unavailable', reason };
     }
     if (record.data.state === 'removed') return { kind: 'not_found' };
-    return { kind: 'found', record: record.data };
+    return { kind: 'found', record: sanitizeListingForCache(record.data) };
   };
 
   const promise = load()
     .then((result) => {
-      if (result.kind === 'found') listingCache.set(cacheKey, result, OG_COMMERCE_CACHE_TTL_MS);
-      else if (result.kind === 'not_found') listingCache.set(cacheKey, result, OG_COMMERCE_NOT_FOUND_TTL_MS);
+      if (result.kind === 'found') {
+        listingCache.set(cacheKey, result, OG_COMMERCE_CACHE_TTL_MS, estimateMetadataResultBytes(result));
+      } else if (result.kind === 'not_found') {
+        listingCache.set(cacheKey, result, OG_COMMERCE_NOT_FOUND_TTL_MS, estimateMetadataResultBytes(result));
+      }
       return result;
     })
     .finally(() => {
@@ -302,6 +624,11 @@ async function waitWithTimeout<T>(
  * Fetches and validates the canonical shop record (`shop.json`) for metadata /
  * OG image generation. Returns `not_found` on malformed params or a missing
  * record, and `unavailable` for fetch or validation failures.
+ *
+ * Shared single-flight reads always run with `RECORD_FETCH_TIMEOUT_MS` (4s) so
+ * a shorter-timeout catalog SSR caller cannot starve a concurrent `/shop`
+ * metadata caller; callers passing a shorter `timeoutMs` settle at their own
+ * budget while allowing the shared read to warm `shopCache`.
  */
 export async function fetchShopForMetadata(
   sellerPubky: string,
@@ -314,45 +641,48 @@ export async function fetchShopForMetadata(
   const cached = shopCache.get(cacheKey);
   if (cached) return cached;
 
-  const timeoutMs = options.timeoutMs ?? RECORD_FETCH_TIMEOUT_MS;
-  const existing = shopInFlight.get(cacheKey);
-  if (existing) {
-    return timeoutMs < existing.timeoutMs ? await waitWithTimeout(existing.promise, timeoutMs) : await existing.promise;
+  const callerTimeoutMs = options.timeoutMs ?? RECORD_FETCH_TIMEOUT_MS;
+  let promise = shopInFlight.get(cacheKey);
+  if (!promise) {
+    const load = async (): Promise<MetadataFetchResult<CommerceShopRecord>> => {
+      let url: string;
+      try {
+        url = buildRecordUrl(seller.data, 'shop.json');
+      } catch (error) {
+        const reason = reasonForError(error);
+        Logger.warn('[ogCommerceData] fetchShopRecord unavailable', { reason });
+        return { kind: 'unavailable', reason };
+      }
+      const fetched = await fetchRecordJson(url, 'fetchShopRecord', { timeoutMs: RECORD_FETCH_TIMEOUT_MS });
+      if (fetched.kind !== 'found') return fetched;
+
+      const record = commerceShopRecordSchema.safeParse(fetched.value);
+      if (!record.success) {
+        const reason = 'validation';
+        Logger.warn('[ogCommerceData] Shop record failed validation', {
+          issueCount: record.error.issues.length,
+          reason,
+        });
+        return { kind: 'unavailable', reason };
+      }
+      return { kind: 'found', record: sanitizeShopForCache(record.data) };
+    };
+
+    const created = load()
+      .then((result) => {
+        if (result.kind === 'found') {
+          shopCache.set(cacheKey, result, OG_COMMERCE_CACHE_TTL_MS, estimateMetadataResultBytes(result));
+        } else if (result.kind === 'not_found') {
+          shopCache.set(cacheKey, result, OG_COMMERCE_NOT_FOUND_TTL_MS, estimateMetadataResultBytes(result));
+        }
+        return result;
+      })
+      .finally(() => {
+        if (shopInFlight.get(cacheKey) === created) shopInFlight.delete(cacheKey);
+      });
+    shopInFlight.set(cacheKey, created);
+    promise = created;
   }
 
-  const load = async (): Promise<MetadataFetchResult<CommerceShopRecord>> => {
-    let url: string;
-    try {
-      url = buildRecordUrl(seller.data, 'shop.json');
-    } catch (error) {
-      const reason = reasonForError(error);
-      Logger.warn('[ogCommerceData] fetchShopRecord unavailable', { reason });
-      return { kind: 'unavailable', reason };
-    }
-    const fetched = await fetchRecordJson(url, 'fetchShopRecord', { timeoutMs });
-    if (fetched.kind !== 'found') return fetched;
-
-    const record = commerceShopRecordSchema.safeParse(fetched.value);
-    if (!record.success) {
-      const reason = 'validation';
-      Logger.warn('[ogCommerceData] Shop record failed validation', {
-        issueCount: record.error.issues.length,
-        reason,
-      });
-      return { kind: 'unavailable', reason };
-    }
-    return { kind: 'found', record: record.data };
-  };
-
-  const promise = load()
-    .then((result) => {
-      if (result.kind === 'found') shopCache.set(cacheKey, result, OG_COMMERCE_CACHE_TTL_MS);
-      else if (result.kind === 'not_found') shopCache.set(cacheKey, result, OG_COMMERCE_NOT_FOUND_TTL_MS);
-      return result;
-    })
-    .finally(() => {
-      if (shopInFlight.get(cacheKey)?.promise === promise) shopInFlight.delete(cacheKey);
-    });
-  shopInFlight.set(cacheKey, { timeoutMs, promise });
-  return await promise;
+  return callerTimeoutMs < RECORD_FETCH_TIMEOUT_MS ? await waitWithTimeout(promise, callerTimeoutMs) : await promise;
 }
