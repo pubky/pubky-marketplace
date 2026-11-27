@@ -4,7 +4,11 @@ import { AppError } from '@/libs/error/error';
 import { ServerErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { groupPubky } from '@/libs/store-claim/format-pubky';
-import { STORE_CLAIM_CODE_SESSION_KEY } from '@/libs/store-claim/store-claim-code';
+import {
+  buildStoreClaimCodeIntakeScript,
+  clearStoreClaimCode,
+  STORE_CLAIM_CODE_SESSION_KEY,
+} from '@/libs/store-claim/store-claim-code';
 import { navigateToClaimedStudio } from '@/libs/store-claim/store-claim-navigation';
 import { StoreClaimFlow } from './StoreClaimFlow';
 
@@ -291,9 +295,9 @@ describe('StoreClaimFlow', () => {
   it('polls fresh once and then until claimed twice before Studio navigation', async () => {
     vi.useFakeTimers();
     render(<StoreClaimFlow />);
-    await act(async () => Promise.resolve());
+    await flushPromises();
     fireEvent.click(screen.getByRole('button', { name: 'Claim this shop' }));
-    await act(async () => Promise.resolve());
+    await flushPromises();
     expect(mocks.state).toHaveBeenCalledWith(true);
 
     await act(async () => vi.advanceTimersByTimeAsync(1_000));
@@ -322,9 +326,9 @@ describe('StoreClaimFlow', () => {
     vi.useFakeTimers();
     mocks.state.mockResolvedValue({ kind: 'unclaimed', seller: null, source: null });
     render(<StoreClaimFlow />);
-    await act(async () => Promise.resolve());
+    await flushPromises();
     fireEvent.click(screen.getByRole('button', { name: 'Claim this shop' }));
-    await act(async () => Promise.resolve());
+    await flushPromises();
 
     for (let attempt = 0; attempt < 8; attempt += 1) {
       await act(async () => vi.advanceTimersByTimeAsync(1_000));
@@ -334,5 +338,106 @@ describe('StoreClaimFlow', () => {
     expect(screen.getByText('The shop is claimed. It may take a moment to appear.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(navigateToClaimedStudio).toHaveBeenCalledTimes(1);
+  });
+
+  it('validates the setup code through the shared form field', async () => {
+    window.sessionStorage.clear();
+    render(<StoreClaimFlow />);
+    const input = screen.getByLabelText('Setup code');
+    expect(input.closest('.sentry-block')).not.toBeNull();
+
+    fireEvent.change(input, { target: { value: 'too-short' } });
+    expect(
+      await screen.findByText('Enter 32 Crockford base32 characters or 64 hexadecimal characters.'),
+    ).toBeInTheDocument();
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+
+    fireEvent.change(input, { target: { value: CODE } });
+    await waitFor(() =>
+      expect(
+        screen.queryByText('Enter 32 Crockford base32 characters or 64 hexadecimal characters.'),
+      ).not.toBeInTheDocument(),
+    );
+    expect(input).toHaveAttribute('aria-invalid', 'false');
+  });
+
+  it('updates an already-mounted setup field on same-tab hashchange intake', async () => {
+    vi.stubGlobal('isSecureContext', true);
+    window.sessionStorage.clear();
+    window.history.replaceState(null, '', '/setup');
+    const listeners: EventListenerOrEventListenerObject[] = [];
+    const add = window.addEventListener.bind(window);
+    const spy = vi.spyOn(window, 'addEventListener').mockImplementation(((
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | AddEventListenerOptions,
+    ) => {
+      if (type === 'hashchange') listeners.push(listener);
+      add(type, listener, options);
+    }) as typeof window.addEventListener);
+
+    try {
+      new Function(buildStoreClaimCodeIntakeScript('/setup'))();
+      render(<StoreClaimFlow />);
+      await screen.findByRole('button', { name: 'Claim this shop' });
+      expect(screen.getByLabelText('Setup code')).toHaveValue('');
+      expect(screen.getByRole('button', { name: 'Claim this shop' })).toBeDisabled();
+
+      act(() => {
+        window.history.replaceState(null, '', `/setup#claim=${CODE.toLowerCase()}`);
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
+      });
+
+      expect(window.location.hash).toBe('');
+      expect(screen.getByLabelText('Setup code')).toHaveValue(CODE);
+      expect(screen.getByRole('button', { name: 'Claim this shop' })).toBeEnabled();
+
+      const replacement = 'A'.repeat(64);
+      act(() => {
+        window.history.replaceState(null, '', `/setup#claim=${replacement.toLowerCase()}`);
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
+      });
+
+      expect(window.location.hash).toBe('');
+      expect(screen.getByLabelText('Setup code')).toHaveValue(replacement);
+    } finally {
+      for (const listener of listeners) window.removeEventListener('hashchange', listener);
+      spy.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('clears an already-mounted setup field when another tab signs out', async () => {
+    await renderSignedIn();
+    expect(screen.getByLabelText('Setup code')).toHaveValue(CODE);
+
+    act(() => {
+      clearStoreClaimCode();
+    });
+
+    expect(screen.getByLabelText('Setup code')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Claim this shop' })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Setup code'), { target: { value: 'partial-unsaved' } });
+    expect(screen.getByLabelText('Setup code')).toHaveValue('partial-unsaved');
+
+    act(() => {
+      clearStoreClaimCode();
+    });
+
+    expect(screen.getByLabelText('Setup code')).toHaveValue('');
+
+    fireEvent.change(screen.getByLabelText('Setup code'), { target: { value: CODE } });
+    expect(screen.getByRole('button', { name: 'Claim this shop' })).toBeEnabled();
+
+    act(() => {
+      window.sessionStorage.removeItem(STORE_CLAIM_CODE_SESSION_KEY);
+      window.dispatchEvent(
+        new StorageEvent('storage', { key: STORE_CLAIM_CODE_SESSION_KEY, storageArea: window.sessionStorage }),
+      );
+    });
+
+    expect(screen.getByLabelText('Setup code')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Claim this shop' })).toBeDisabled();
   });
 });

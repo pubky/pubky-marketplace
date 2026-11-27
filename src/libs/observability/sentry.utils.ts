@@ -88,7 +88,7 @@ export function stripConversationQueryParam(value: string): string {
   return stripped.replace(/\?&+/g, '?').replace(/&&+/g, '&').replace(/\?#/g, '#').replace(/[?&]$/g, '');
 }
 
-export function stripStoreClaimFragment(value: string): string {
+function stripStoreClaimFragment(value: string): string {
   return value
     .replace(/#claim=[^#]*/gi, '')
     .replace(/([?&])claim=[^&#]*/gi, '$1')

@@ -122,6 +122,42 @@ describe('CommerceController.ensureMarketplaceSessionFromGrant', () => {
     expect(mint).toHaveBeenCalledTimes(1);
   });
 
+  it('surfaces a shared 429 or network failure to a throwing caller joining a non-throwing mint', async () => {
+    signIn();
+    const pending = deferred<MintedGrantSession>();
+    mint.mockReturnValue(pending.promise);
+    const rateLimited = new Error('rate_limited_429');
+
+    const coordinatorCall = CommerceController.ensureMarketplaceSessionFromGrant();
+    const setupCall = CommerceController.ensureMarketplaceSessionFromGrant({
+      retryAfterFailure: true,
+      throwOnFailure: true,
+    });
+    pending.reject(rateLimited);
+
+    await expect(coordinatorCall).resolves.toBeNull();
+    await expect(setupCall).rejects.toBe(rateLimited);
+    expect(mint).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a non-throwing caller returning null when joining a failing throwing mint', async () => {
+    signIn();
+    const pending = deferred<MintedGrantSession>();
+    mint.mockReturnValue(pending.promise);
+    const networkFailure = new TypeError('Failed to fetch');
+
+    const setupCall = CommerceController.ensureMarketplaceSessionFromGrant({
+      retryAfterFailure: true,
+      throwOnFailure: true,
+    });
+    const coordinatorCall = CommerceController.ensureMarketplaceSessionFromGrant();
+    pending.reject(networkFailure);
+
+    await expect(setupCall).rejects.toBe(networkFailure);
+    await expect(coordinatorCall).resolves.toBeNull();
+    expect(mint).toHaveBeenCalledTimes(1);
+  });
+
   it('does not let a forced fresh caller join a non-fresh restore', async () => {
     signIn();
     const restored = { ...INFO, issuedAt: '2026-10-15T00:00:01.000Z' };

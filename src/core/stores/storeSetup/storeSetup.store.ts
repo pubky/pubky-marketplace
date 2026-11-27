@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 import { STORE_SETUP_PERSIST_KEY } from '../persistedKeys';
 
-export type StoreSetupStore = {
+type StoreSetupStore = {
   finishPanelDismissed: boolean;
   dismissFinishPanel: () => void;
   reset: () => void;

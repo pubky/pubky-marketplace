@@ -11,6 +11,7 @@ export type StoreState =
   | { kind: 'unavailable'; claimMode: true }
   | { kind: 'claimed'; seller: string; source: 'pinned' | 'claim'; claimMode: boolean };
 
+// exported for tests
 export const STORE_STATE_WINDOW_KEY = '__PUBKY_STORE__';
 
 declare global {
@@ -28,6 +29,7 @@ export function setStoreStateForRender(state: StoreState): void {
   getRenderState().value = state;
 }
 
+// exported for tests
 export function setStoreStateForTests(state: StoreState | undefined): void {
   testState = state;
 }

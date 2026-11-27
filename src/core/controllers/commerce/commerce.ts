@@ -97,6 +97,8 @@ export interface CommerceCatalogUiFilters {
   countryCode?: string | null;
 }
 
+type GrantSessionMintOutcome = { ok: true; session: MarketplaceSessionInfo | null } | { ok: false; error: unknown };
+
 export class CommerceController {
   private constructor() {}
 
@@ -107,7 +109,7 @@ export class CommerceController {
   private static grantSessionMint: {
     session: object;
     forceFresh: boolean;
-    promise: Promise<MarketplaceSessionInfo | null>;
+    promise: Promise<GrantSessionMintOutcome>;
   } | null = null;
   private static grantSessionFailures = new WeakSet<object>();
   /** The grant-minted session this tab installed, to recognise its rejection. */
@@ -405,23 +407,28 @@ export class CommerceController {
     if (!options.forceFresh && CommerceApplication.hasActiveMarketplaceSession() && current?.pubky === pubky) {
       return current;
     }
+    const applyOutcome = (outcome: GrantSessionMintOutcome): MarketplaceSessionInfo | null => {
+      if (outcome.ok) return outcome.session;
+      if (options.throwOnFailure) throw outcome.error;
+      return null;
+    };
     const inFlight = this.grantSessionMint;
     if (inFlight?.session === session) {
-      if (!options.forceFresh || inFlight.forceFresh) return await inFlight.promise;
-      await inFlight.promise.catch(() => null);
+      if (!options.forceFresh || inFlight.forceFresh) return applyOutcome(await inFlight.promise);
+      await inFlight.promise;
       return await this.ensureMarketplaceSessionFromGrant(options);
     }
     if (this.grantSessionFailures.has(session) && !options.retryAfterFailure) return null;
 
     const isCurrent = () => useAuthStore.getState().session === session && !useAuthStore.getState().isLoggingOut;
-    const attempt = (async (): Promise<MarketplaceSessionInfo | null> => {
+    const attempt = (async (): Promise<GrantSessionMintOutcome> => {
       try {
         const restored = options.forceFresh ? null : this.restorePersistedMarketplaceSession(pubky);
-        if (restored) return restored;
+        if (restored) return { ok: true, session: restored };
         const minted = await CommerceApplication.mintMarketplaceSessionFromGrant({ grant, pubky });
         if (!isCurrent()) {
           await CommerceApplication.revokeGrantMarketplaceSession(minted);
-          return null;
+          return { ok: true, session: null };
         }
         let installed: MarketplaceSessionInfo;
         try {
@@ -433,7 +440,7 @@ export class CommerceController {
         this.grantSessionInstalled = { authSession: session, issuedAt: installed.issuedAt };
         this.writeMarketplaceSessionStore(installed);
         this.grantSessionFailures.delete(session);
-        return installed;
+        return { ok: true, session: installed };
       } catch (error) {
         if (isCurrent()) this.grantSessionFailures.add(session);
         // SDK errors may carry proof material in their message; log the kind only.
@@ -442,13 +449,12 @@ export class CommerceController {
             errorName: error instanceof Error ? error.name : typeof error,
           });
         }
-        if (options.throwOnFailure) throw error;
-        return null;
+        return { ok: false, error };
       }
     })();
     this.grantSessionMint = { session, forceFresh: options.forceFresh === true, promise: attempt };
     try {
-      return await attempt;
+      return applyOutcome(await attempt);
     } finally {
       if (this.grantSessionMint?.promise === attempt) this.grantSessionMint = null;
     }

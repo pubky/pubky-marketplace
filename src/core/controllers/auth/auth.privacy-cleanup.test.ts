@@ -9,7 +9,7 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import { ordersSeenStorageKey } from '@/libs/commerce/marketplace-attention';
 import { ownDropsStorageKey } from '@/libs/commerce/own-drops-storage';
 import { Identity } from '@/libs/identity/identity';
-import { STORE_CLAIM_CODE_SESSION_KEY } from '@/libs/store-claim/store-claim-code';
+import { STORE_CLAIM_CODE_SESSION_KEY, subscribeStoreClaimCodeChange } from '@/libs/store-claim/store-claim-code';
 import { readPersistedAuthPubky } from '@/stores/auth/auth.persisted';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { buyerCountryFor, useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
@@ -82,11 +82,18 @@ describe('sign-out and account switches remove what the leaving account left on 
   });
 
   it('removes a setup code pasted in a signed-out tab when another tab signs out', async () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeStoreClaimCodeChange(listener);
     window.sessionStorage.setItem(STORE_CLAIM_CODE_SESSION_KEY, '0123456789ABCDEFGHJKMNPQRSTVWXYZ');
 
-    await AuthController.handleCrossTabSignOut();
+    try {
+      await AuthController.handleCrossTabSignOut();
 
-    expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBeNull();
+      expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBeNull();
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+    }
   });
 
   it('removes the signing-out account’s per-pubky keys and leaves every other key alone', async () => {

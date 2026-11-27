@@ -15,9 +15,9 @@ const stateSchema = z.object({
   source: z.enum(['pinned', 'claim']).nullable(),
 });
 
-export type ResolvedStoreState = z.infer<typeof stateSchema>;
+type ResolvedStoreState = z.infer<typeof stateSchema>;
 
-export type StoreClaimResult =
+type StoreClaimResult =
   | { kind: 'success' }
   | { kind: 'invalid-code' }
   | { kind: 'stale-session' }

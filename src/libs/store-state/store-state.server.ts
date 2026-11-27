@@ -96,6 +96,7 @@ async function readServiceState(): Promise<ServiceRead> {
   }
 }
 
+// exported for tests
 /** One cache, flight and read budget. Production code shares the default instance (`resolveStoreState`). */
 export function createStoreStateResolver(): StoreStateResolver {
   let cached: { state: StoreState; expiresAt: number } | null = null;
@@ -177,6 +178,7 @@ export async function resolveStoreState(options: { fresh?: boolean } = {}): Prom
   return await defaultResolver().resolve(options);
 }
 
+// exported for tests
 export function resetStoreStateForTests(): void {
   defaultResolver().reset();
 }

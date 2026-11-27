@@ -307,7 +307,7 @@ export function matchStoreRoute(
   return best ? { key: best.pattern.key, policy: best.pattern.policy, params: best.params } : null;
 }
 
-export type StoreRouteDecision =
+type StoreRouteDecision =
   | { kind: 'allow' }
   | { kind: 'not-found' }
   | { kind: 'unavailable' }

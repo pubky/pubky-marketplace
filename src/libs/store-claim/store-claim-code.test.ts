@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildStoreClaimCodeIntakeScript,
+  clearStoreClaimCode,
   isValidStoreClaimCode,
   normalizeStoreClaimCode,
   normalizeValidStoreClaimCode,
+  saveStoreClaimCode,
   STORE_CLAIM_CODE_SESSION_KEY,
+  subscribeStoreClaimCodeChange,
 } from './store-claim-code';
 
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
@@ -113,24 +116,56 @@ describe('store claim code intake script', () => {
     });
 
     it('stores and scrubs a claim fragment added after a load elsewhere', () => {
-      window.history.replaceState(null, '', '/marketplace');
-      new Function(buildStoreClaimCodeIntakeScript())();
+      const listener = vi.fn();
+      const unsubscribe = subscribeStoreClaimCodeChange(listener);
+      try {
+        window.history.replaceState(null, '', '/marketplace');
+        new Function(buildStoreClaimCodeIntakeScript())();
 
-      window.history.replaceState(null, '', '/setup#claim=later');
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
+        window.history.replaceState(null, '', '/setup#claim=later');
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
 
-      expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBe('later');
-      expect(window.location.hash).toBe('');
+        expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBe('later');
+        expect(window.location.hash).toBe('');
+        expect(listener).toHaveBeenCalledTimes(1);
+      } finally {
+        unsubscribe();
+      }
     });
 
     it('ignores a claim fragment outside setup', () => {
-      new Function(buildStoreClaimCodeIntakeScript())();
+      const listener = vi.fn();
+      const unsubscribe = subscribeStoreClaimCodeChange(listener);
+      try {
+        new Function(buildStoreClaimCodeIntakeScript())();
 
-      window.history.replaceState(null, '', '/marketplace#claim=elsewhere');
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
+        window.history.replaceState(null, '', '/marketplace#claim=elsewhere');
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
 
-      expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBeNull();
-      expect(window.location.hash).toBe('#claim=elsewhere');
+        expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBeNull();
+        expect(window.location.hash).toBe('#claim=elsewhere');
+        expect(listener).not.toHaveBeenCalled();
+      } finally {
+        unsubscribe();
+      }
     });
+  });
+
+  it('notifies subscribers on save, clear, and matching storage events', () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeStoreClaimCodeChange(listener);
+    try {
+      saveStoreClaimCode(CROCKFORD);
+      clearStoreClaimCode();
+      window.dispatchEvent(new StorageEvent('storage', { key: 'unrelated', storageArea: window.sessionStorage }));
+      window.dispatchEvent(
+        new StorageEvent('storage', { key: STORE_CLAIM_CODE_SESSION_KEY, storageArea: window.sessionStorage }),
+      );
+      window.dispatchEvent(new StorageEvent('storage', { key: null, storageArea: window.sessionStorage }));
+
+      expect(listener).toHaveBeenCalledTimes(4);
+    } finally {
+      unsubscribe();
+    }
   });
 });
