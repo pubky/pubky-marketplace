@@ -5,6 +5,7 @@ import {
   MARKETPLACE_ATTESTOR_PROFILE_RETRY_MS,
   MARKETPLACE_ATTESTOR_PROFILE_TTL_MS,
   MARKETPLACE_ATTESTOR_PROFILE_WAIT_MS,
+  marketplaceTrustedAttestors,
 } from '@/config/commerce';
 import {
   attestorProfileKeyWindowsFrom,
@@ -120,7 +121,7 @@ export class CommerceAttestorApplication {
    *
    * The baseline is the configured list narrowed by the currently verified profiles. An absent
    * profile is listed when, for some key, its windows end the window earlier than the baseline and
-   * at the same end as all absent profiles together: a cutoff that a verified profile already
+   * at the same end as the actual effective window: a cutoff that a verified profile already
    * matches or beats changes nothing, and of two absent profiles cutting one key, only the one whose
    * cutoff applies is listed (both, when they state the same end).
    */
@@ -133,10 +134,8 @@ export class CommerceAttestorApplication {
       .flatMap((attestorId) => attestorProfileKeyWindowsFrom(attestorId));
     const absentIds = attestorIds.filter((attestorId) => this.settledAs(attestorId, 'absent'));
     const baseline = narrowTrustedAttestors(configured, verifiedWindows);
-    const retained = narrowTrustedAttestors(configured, [
-      ...verifiedWindows,
-      ...absentIds.flatMap((attestorId) => attestorProfileKeyWindowsFrom(attestorId)),
-    ]);
+    // Failed and in-flight refreshes also retain their last verified cutoffs.
+    const retained = marketplaceTrustedAttestors();
     return absentIds.filter((attestorId) =>
       narrowTrustedAttestors(configured, [...verifiedWindows, ...attestorProfileKeyWindowsFrom(attestorId)]).some(
         (entry, index) =>

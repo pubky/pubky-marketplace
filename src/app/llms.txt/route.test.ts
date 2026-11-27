@@ -603,7 +603,7 @@ describe('GET /llms.txt', () => {
     const second = createAttestorTestKey();
     const third = createAttestorTestKey();
     type TestKey = typeof first;
-    type Served = ReturnType<typeof servedAttestorProfile> | null;
+    type Served = ReturnType<typeof servedAttestorProfile> | Error | null;
 
     function profileOf(signer: TestKey, cutoffs: [TestKey, string][], profileFrom = validFrom) {
       const entries = [
@@ -628,7 +628,9 @@ describe('GET /llms.txt', () => {
         if (queue === undefined) return null;
         const count = reads.get(attestor_id) ?? 0;
         reads.set(attestor_id, count + 1);
-        return queue[Math.min(count, queue.length - 1)] ?? null;
+        const answer = queue[Math.min(count, queue.length - 1)];
+        if (answer instanceof Error) throw answer;
+        return answer ?? null;
       });
       await GET();
       vi.advanceTimersByTime(MARKETPLACE_ATTESTOR_PROFILE_TTL_MS);
@@ -733,6 +735,19 @@ describe('GET /llms.txt', () => {
       expect(body).toContain(window(first, FEB));
       expect(body).toContain(window(second, MAY));
       expect(listed(body)).toEqual([second.pubky]);
+    });
+
+    it('attributes no cutoff to a missing profile when a failed refresh retains an earlier effective cutoff', async () => {
+      const body = await guideAfterRefresh(
+        new Map([
+          [first, [profileOf(first, [[third, MAY]]), null]],
+          [second, [profileOf(second, [[third, FEB]]), new Error('temporarily unreachable')]],
+        ]),
+      );
+
+      expect(body).toContain(window(third, FEB));
+      expect(body).toContain(`Configured bounds, profile not verified:\n- ${second.pubky}:`);
+      expect(body).not.toContain(RETAINED_HEADING);
     });
 
     it('names only the absent profile whose cutoff applies when two absent profiles cut one key', async () => {
