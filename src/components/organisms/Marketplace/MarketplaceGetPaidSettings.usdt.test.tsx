@@ -33,6 +33,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getPaykitSetupUrl: vi.fn(),
     getPaykitReconnectUrl: vi.fn(),
+    isPaykitCreatorHeld: vi.fn(async () => false),
     fetchUsdtPaymentsAvailable: vi.fn(),
     getMyPaymentConfig: vi.fn(),
     putMyPaymentConfig: vi.fn(),

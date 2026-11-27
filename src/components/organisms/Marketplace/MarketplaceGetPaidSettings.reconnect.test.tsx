@@ -19,6 +19,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getPaykitSetupUrl: vi.fn(),
     getPaykitReconnectUrl: vi.fn(),
+    isPaykitCreatorHeld: vi.fn(async () => false),
     fetchUsdtPaymentsAvailable: vi.fn(),
     getMyPaymentConfig: vi.fn(),
     putMyPaymentConfig: vi.fn(),
@@ -90,6 +91,7 @@ beforeEach(() => {
   mockedToast.mockReset();
   mocked.getPaykitSetupUrl.mockReset().mockImplementation(paykitUrl('/setup'));
   mocked.getPaykitReconnectUrl.mockReset().mockImplementation(paykitUrl('/setup/reconnect'));
+  mocked.isPaykitCreatorHeld.mockReset().mockResolvedValue(false);
   mocked.fetchUsdtPaymentsAvailable.mockReset().mockResolvedValue(false);
   mocked.getMyPaymentConfig.mockReset().mockResolvedValue(ownConfig('setup_required'));
   mocked.putMyPaymentConfig.mockReset();
@@ -106,6 +108,8 @@ beforeEach(() => {
 
 const EXPIRED_SETUP_COPY =
   'The Bitkit setup request ran out of time, so nothing was set up yet. Connect Bitkit to start again, and approve it in Bitkit within 5 minutes.';
+const CREATOR_GONE_COPY =
+  'Paykit no longer has a Bitkit setup for this pubky, so there is nothing to reconnect. Connect Bitkit to set it up again.';
 
 describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => {
   it('reconnects, never re-runs initial setup, when Paykit already holds the wallet', async () => {
@@ -416,7 +420,7 @@ describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => 
       const setupFrame = await openSetup();
       mocked.getMyPaymentConfig.mockClear().mockResolvedValue(ownConfig('setup_required', 'setup'));
       sendCallback(setupFrame, { error: 'setup-failed' });
-      await screen.findByText(EXPIRED_SETUP_COPY);
+      await screen.findByText('Bitkit setup failed. Try again.');
       expect(screen.queryByText(/different pubky/)).not.toBeInTheDocument();
     });
 
@@ -468,22 +472,219 @@ describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => 
     });
   });
 
-  describe('an expired first setup (410) restarts Connect Bitkit', () => {
-    async function failFirstSetup(config: ReturnType<typeof ownConfig>) {
+  describe('an expired first setup (reason: expired, or no reason after five minutes) restarts Connect Bitkit', () => {
+    async function failFirstSetup(config: ReturnType<typeof ownConfig>, data: Record<string, unknown> = {}) {
       mocked.getMyPaymentConfig.mockResolvedValue(config);
       await renderSettings();
       await userEvent.click(await screen.findByRole('button', { name: /Connect Bitkit/ }));
       const setupFrame = paykitFrame('Connect Bitkit');
-      sendCallback(setupFrame, { error: 'setup-failed' });
+      sendCallback(setupFrame, { error: 'setup-failed', ...data });
       return { setupFrame, dialog: screen.getByRole('dialog', { name: 'Connect Bitkit' }) };
     }
+
+    it('calls a failure with no reason a generic failure, not an expiry, while the flow can still be live', async () => {
+      // A Paykit restart loses an unexpired flow (404), and the iframe reports it exactly like an expiry (410).
+      const { dialog } = await failFirstSetup(ownConfig('setup_required'));
+
+      expect(await within(dialog).findByText('Bitkit setup failed. Try again.')).toBeInTheDocument();
+      expect(mocked.isPaykitCreatorHeld).toHaveBeenCalledWith(PUBKY);
+      expect(within(dialog).queryByText(EXPIRED_SETUP_COPY)).not.toBeInTheDocument();
+      expect(within(dialog).getByTestId('paykit-setup-qr-expired')).not.toHaveTextContent('This code expired.');
+      expect(within(dialog).getByRole('button', { name: /Retry/ })).toBeInTheDocument();
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+      expect(screen.getByTestId('paykit-setup-problem')).toHaveTextContent('Bitkit setup failed. Try again.');
+    });
+
+    it('calls a failure with no reason an expiry once the five-minute flow has run out by the Shop clock', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        await renderSettings();
+        await userEvent.click(await screen.findByRole('button', { name: /Connect Bitkit/ }));
+        act(() => {
+          vi.advanceTimersByTime(5 * 60 * 1_000 + 1_000);
+        });
+        sendCallback(paykitFrame('Connect Bitkit'), { error: 'setup-failed' });
+
+        const dialog = screen.getByRole('dialog', { name: 'Connect Bitkit' });
+        expect(await within(dialog).findByText(EXPIRED_SETUP_COPY)).toBeInTheDocument();
+        expect(mocked.isPaykitCreatorHeld).toHaveBeenCalledWith(PUBKY);
+        expect(within(dialog).getByTestId('paykit-setup-qr-expired')).toHaveTextContent('This code expired.');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('measures the five minutes when the failure arrives, not when the service answers', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        await renderSettings();
+        await userEvent.click(await screen.findByRole('button', { name: /Connect Bitkit/ }));
+        act(() => {
+          vi.advanceTimersByTime(5 * 60 * 1_000 - 1_000);
+        });
+        let answer: (config: ReturnType<typeof ownConfig>) => void = () => {};
+        mocked.getMyPaymentConfig.mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              answer = resolve;
+            }),
+        );
+        sendCallback(paykitFrame('Connect Bitkit'), { error: 'setup-failed' });
+        act(() => {
+          vi.advanceTimersByTime(2_000);
+        });
+        await act(async () => answer(ownConfig('setup_required')));
+
+        const dialog = screen.getByRole('dialog', { name: 'Connect Bitkit' });
+        expect(await within(dialog).findByText('Bitkit setup failed. Try again.')).toBeInTheDocument();
+        expect(within(dialog).queryByText(EXPIRED_SETUP_COPY)).not.toBeInTheDocument();
+        expect(within(dialog).getByTestId('paykit-setup-qr-expired')).not.toHaveTextContent('This code expired.');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('takes reason: expired from the callback without asking Paykit', async () => {
+      const { dialog } = await failFirstSetup(ownConfig('setup_required'), { reason: 'expired' });
+
+      expect(await within(dialog).findByText(EXPIRED_SETUP_COPY)).toBeInTheDocument();
+      expect(mocked.isPaykitCreatorHeld).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a 422 with no reason for a creator Paykit holds', {}],
+      ['reason: creator_held', { reason: 'creator_held' }],
+    ])('offers Reconnect Bitkit, never the expiry copy, after %s', async (_name, data) => {
+      mocked.isPaykitCreatorHeld.mockResolvedValue(true);
+      const { dialog } = await failFirstSetup(ownConfig('setup_required'), data);
+
+      expect(await within(dialog).findByText(/reconnect it instead/)).toBeInTheDocument();
+      expect(within(dialog).queryByText(EXPIRED_SETUP_COPY)).not.toBeInTheDocument();
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+      expect(screen.getByTestId('paykit-setup-problem')).toHaveTextContent(/reconnect it instead/);
+      await userEvent.click(screen.getByTestId('get-paid-connect-bitkit'));
+      expect(framePath(paykitFrame('Reconnect Bitkit'))).toBe('https://paykit.example/setup/reconnect');
+    });
+
+    it('keeps a seller Paykit holds on reconnect across Retry, a canceled reconnect and the card', async () => {
+      const { dialog } = await failFirstSetup(ownConfig('setup_required'), { reason: 'creator_held' });
+      await within(dialog).findByText(/reconnect it instead/);
+
+      await userEvent.click(within(dialog).getByRole('button', { name: /Retry/ }));
+      expect(framePath(paykitFrame('Reconnect Bitkit'))).toBe('https://paykit.example/setup/reconnect');
+      await userEvent.click(
+        within(screen.getByRole('dialog', { name: 'Reconnect Bitkit' })).getByRole('button', { name: 'Cancel' }),
+      );
+
+      const step = screen.getByTestId('get-paid-connect-bitkit');
+      expect(step).toHaveTextContent('Reconnect Bitkit');
+      await userEvent.click(step);
+      expect(framePath(paykitFrame('Reconnect Bitkit'))).toBe('https://paykit.example/setup/reconnect');
+      expect(mocked.getPaykitSetupUrl).toHaveBeenCalledTimes(1);
+    });
+
+    describe('a reconnect of a seller Paykit said it holds times out with no callback', () => {
+      async function timeOutHeldReconnect(heldNow: () => void) {
+        const { dialog } = await failFirstSetup(ownConfig('setup_required'), { reason: 'creator_held' });
+        await within(dialog).findByText(/reconnect it instead/);
+        await userEvent.click(within(dialog).getByRole('button', { name: /Retry/ }));
+        expect(framePath(paykitFrame('Reconnect Bitkit'))).toBe('https://paykit.example/setup/reconnect');
+        heldNow();
+        act(() => {
+          vi.advanceTimersByTime(6 * 60 * 1_000);
+        });
+        return screen.getByRole('dialog', { name: 'Reconnect Bitkit' });
+      }
+
+      it('offers a fresh setup, in the dialog and on the card, when Paykit no longer holds the creator', async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        try {
+          const dialog = await timeOutHeldReconnect(() => mocked.isPaykitCreatorHeld.mockResolvedValue(false));
+
+          expect(await within(dialog).findByText(CREATOR_GONE_COPY)).toBeInTheDocument();
+          expect(mocked.isPaykitCreatorHeld).toHaveBeenCalledWith(PUBKY);
+          expect(within(dialog).queryByRole('button', { name: /Retry/ })).not.toBeInTheDocument();
+          expect(within(dialog).getByRole('button', { name: /Connect Bitkit/ })).toHaveAttribute(
+            'data-variant',
+            'default',
+          );
+          await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+          const step = screen.getByTestId('get-paid-connect-bitkit');
+          expect(step).toHaveTextContent('Connect Bitkit');
+          await userEvent.click(step);
+          expect(framePath(paykitFrame('Connect Bitkit'))).toBe('https://paykit.example/setup');
+          await userEvent.click(
+            within(screen.getByRole('dialog', { name: 'Connect Bitkit' })).getByRole('button', { name: 'Cancel' }),
+          );
+          await userEvent.click(screen.getByTestId('get-paid-connect-bitkit'));
+          expect(framePath(paykitFrame('Connect Bitkit'))).toBe('https://paykit.example/setup');
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it.each([
+        ['still holds the creator', (): void => void mocked.isPaykitCreatorHeld.mockResolvedValue(true)],
+        ['cannot answer (429)', (): void => void mocked.isPaykitCreatorHeld.mockRejectedValue(new Error('429'))],
+      ])('keeps the reconnect when Paykit %s', async (_name, heldNow) => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        try {
+          const dialog = await timeOutHeldReconnect(heldNow);
+
+          expect(await within(dialog).findByText(/No approval received/)).toBeInTheDocument();
+          expect(within(dialog).queryByText(CREATOR_GONE_COPY)).not.toBeInTheDocument();
+          await userEvent.click(within(dialog).getByRole('button', { name: /Retry/ }));
+          expect(framePath(paykitFrame('Reconnect Bitkit'))).toBe('https://paykit.example/setup/reconnect');
+          expect(mocked.getPaykitSetupUrl).toHaveBeenCalledTimes(1);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+    });
+
+    it.each([
+      ['an unknown reason', { reason: 'publish_busy' }, (): void => {}],
+      [
+        'a creator-held check that is rate limited (429)',
+        {},
+        (): void => {
+          mocked.isPaykitCreatorHeld.mockRejectedValue(new Error('429'));
+        },
+      ],
+      [
+        'a creator-held check that is unavailable (503)',
+        {},
+        (): void => {
+          mocked.isPaykitCreatorHeld.mockRejectedValue(new Error('503'));
+        },
+      ],
+    ])('says the setup failed and offers Retry after %s', async (_name, data, arrange) => {
+      arrange();
+      const { setupFrame, dialog } = await failFirstSetup(ownConfig('setup_required'), data);
+
+      expect(await within(dialog).findByText('Bitkit setup failed. Try again.')).toBeInTheDocument();
+      expect(within(dialog).queryByText(EXPIRED_SETUP_COPY)).not.toBeInTheDocument();
+      expect(within(dialog).queryByRole('button', { name: /Reconnect Bitkit/ })).not.toBeInTheDocument();
+      expect(within(dialog).getByRole('button', { name: /Retry/ })).toBeInTheDocument();
+      expect(within(dialog).getByTestId('paykit-setup-qr-expired')).not.toHaveTextContent('This code expired.');
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+      expect(screen.getByTestId('paykit-setup-problem')).toHaveTextContent('Bitkit setup failed. Try again.');
+      await userEvent.click(screen.getByRole('button', { name: /Try again/ }));
+      const retried = paykitFrame('Connect Bitkit');
+      expect(framePath(retried)).toBe('https://paykit.example/setup');
+      expect(retried.src).not.toBe(setupFrame.src);
+    });
 
     it.each([
       ['no action', ownConfig('setup_required')],
       ['bitcoin_setup_action: setup', ownConfig('setup_required', 'setup')],
       ['bitcoin_setup_action: null', ownConfig('setup_required', null)],
     ])('makes Connect Bitkit the one main action and offers no Reconnect Bitkit (%s)', async (_name, config) => {
-      const { setupFrame, dialog } = await failFirstSetup(config);
+      const { setupFrame, dialog } = await failFirstSetup(config, { reason: 'expired' });
 
       expect(await within(dialog).findByText(EXPIRED_SETUP_COPY)).toBeInTheDocument();
       expect(within(dialog).queryByText(/reconnect it instead/)).not.toBeInTheDocument();
@@ -503,7 +704,7 @@ describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => 
     });
 
     it('keeps Connect Bitkit as the main action on the card after the dialog is closed', async () => {
-      const { dialog } = await failFirstSetup(ownConfig('setup_required', 'setup'));
+      const { dialog } = await failFirstSetup(ownConfig('setup_required', 'setup'), { reason: 'expired' });
       await within(dialog).findByText(EXPIRED_SETUP_COPY);
       await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
 
@@ -520,7 +721,7 @@ describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => 
     });
 
     it('keeps Reconnect Bitkit when the service says Paykit holds the seller (bitcoin_setup_action: reconnect)', async () => {
-      const { dialog } = await failFirstSetup(ownConfig('setup_required'));
+      const { dialog } = await failFirstSetup(ownConfig('setup_required'), { reason: 'expired' });
       await within(dialog).findByText(EXPIRED_SETUP_COPY);
       mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('setup_required', 'reconnect'));
       await userEvent.click(within(dialog).getByRole('button', { name: /Connect Bitkit/ }));
