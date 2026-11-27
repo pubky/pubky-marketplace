@@ -52,8 +52,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const storeState = await resolveStoreState();
   setStoreStateForRender(storeState);
   const storeDocument = storeState.kind === 'unclaimed' || storeState.kind === 'unavailable';
-  const pathname = storeState.kind === 'off' || storeDocument ? null : (await headers()).get('x-pubky-pathname');
-  const showPlausible = storeState.kind === 'off' || (!storeDocument && pathname !== APP_ROUTES.SETUP);
+  // Pinned stores never serve `/setup`, so only claim mode reads the request path (a pinned build stays static).
+  const claimSetupPossible = storeState.kind === 'claimed' && storeState.claimMode;
+  const pathname = claimSetupPossible ? (await headers()).get('x-pubky-pathname') : null;
+  const showPlausible = !storeDocument && pathname !== APP_ROUTES.SETUP;
 
   return (
     <RootContainer

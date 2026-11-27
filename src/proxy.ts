@@ -22,7 +22,7 @@ export async function proxy(request: NextRequest) {
   const state = await resolveStoreState();
   let response = storeModeResponse(request, state);
   if (!response) {
-    if (state.kind === 'off') response = NextResponse.next();
+    if (state.kind === 'off' || !state.claimMode) response = NextResponse.next();
     else {
       const requestHeaders = new Headers(request.headers);
       requestHeaders.set('x-pubky-pathname', request.nextUrl.pathname);
