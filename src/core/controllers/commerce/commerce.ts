@@ -1572,7 +1572,7 @@ export class CommerceController {
     const result = await CommerceApplication.fetchMarketplaceOrderList(viewerPubky);
     const orders = sellsHere
       ? result.orders
-      : withoutSalesOutsideStoreSeller(result.orders, viewerPubky, getStoreSeller());
+      : withoutSalesOutsideStoreSeller(result.orders, viewerPubky, getStoreState());
     this.noteOrderListings(orders);
     // A malformed row has no verified seller, so a buyer-only view cannot identify its side.
     return { orders, parseErrors: sellsHere ? result.parseErrors : [] };
