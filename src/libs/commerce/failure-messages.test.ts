@@ -97,6 +97,27 @@ describe('marketplaceFailureMessage', () => {
       validationError.message,
     );
   });
+
+  it('gives INVALID_RESPONSE a distinct message instead of unavailable and appends parseIssues when present (#581)', () => {
+    expect(marketplaceFailureMessage('INVALID_RESPONSE', 'Orders could not be loaded.')).toBe(
+      MARKETPLACE_FAILURE_MESSAGES.invalidResponse,
+    );
+    expect(MARKETPLACE_FAILURE_MESSAGES.invalidResponse).not.toBe(MARKETPLACE_FAILURE_MESSAGES.unavailable);
+
+    const parseError = new AppError({
+      category: ErrorCategory.Server,
+      code: ServerErrorCode.INVALID_RESPONSE,
+      message: 'Marketplace order response was invalid.',
+      service: ErrorService.Marketplace,
+      operation: 'getOrder',
+      context: {
+        parseIssues: ['order.payment.reviewReason: invalid_value'],
+      },
+    });
+    expect(marketplaceFailureMessage('INVALID_RESPONSE', 'Order could not be loaded.', parseError)).toBe(
+      `${MARKETPLACE_FAILURE_MESSAGES.invalidResponse} (order.payment.reviewReason: invalid_value)`,
+    );
+  });
 });
 
 describe('marketplaceCheckoutRefusalMessage', () => {

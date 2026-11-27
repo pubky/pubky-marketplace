@@ -91,7 +91,7 @@ export function MarketplaceListingDeleteDialog({ controller }: MarketplaceListin
               </>
             )}
 
-            {deletable.length > 0 && plan.ordersChecked && plan.openOrders > 0 && (
+            {deletable.length > 0 && plan.openOrders > 0 && (
               <div
                 role="alert"
                 className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-warning-foreground"

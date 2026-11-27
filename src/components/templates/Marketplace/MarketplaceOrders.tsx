@@ -20,6 +20,7 @@ import { CHAT_COPY } from '@/libs/chat/copy';
 import {
   getMarketplaceOrderRoute,
   orderAnchorId,
+  orderParseErrorAnchorId,
   readLegacyOrderFragment,
   readLinkedOrderId,
   readStaysOnOrder,
@@ -36,7 +37,6 @@ import { CHECKOUT_HOLD_COPY, isHoldExpiredNoLateMoney } from '@/libs/commerce/ch
 import {
   getMarketplaceCheckoutRoute,
   isAbandonedCheckout,
-  isAbandonedReviewOrder,
   isBuyerCheckoutInProgress,
   isBuyerOrderHistory,
   isPendingPaymentState,
@@ -73,6 +73,7 @@ import { takeDocumentFragment } from '@/libs/navigation/document-fragment';
 import { ArbiscanLookupLink } from '@/molecules/Marketplace/ArbiscanLookupLink';
 import { MarketplaceCheckoutStatusLabels } from '@/molecules/Marketplace/MarketplaceCheckoutStatusLabels';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
+import { MarketplaceOrderParseErrorCard } from '@/molecules/Marketplace/MarketplaceOrderParseErrorCard';
 import { MarketplacePaymentStatusLabels } from '@/molecules/Marketplace/MarketplacePaymentStatusBadge';
 import { ChatEntryButton } from '@/organisms/Chat/ChatEntryButton';
 import { DropEditionBadge, DropEditionReceiptLine } from '@/organisms/Marketplace/DropEditionBadge';
@@ -115,8 +116,17 @@ export function MarketplaceOrders() {
   const staysOnOrder = readStaysOnOrder(searchParams);
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const receiptsPublicationStatus = useCommerceStore((state) => state.receiptsPublicationStatus);
-  const { orders, isLoading, error, needsSession, refresh, advancePayment, actOnOrder, adapterMode } =
-    useMarketplaceOrders();
+  const {
+    orders,
+    parseErrors = [],
+    isLoading,
+    error,
+    needsSession,
+    refresh,
+    advancePayment,
+    actOnOrder,
+    adapterMode,
+  } = useMarketplaceOrders();
   const isSandbox = adapterMode === 'sandbox';
   const hasTransactionBackend = isTransactionalCommerceMode(adapterMode);
   const [activeTab, setActiveTab] = useState<OrdersTab>('all');
@@ -152,7 +162,9 @@ export function MarketplaceOrders() {
   const linkedUnlistedOrder =
     anchoredOrder && isOrderParticipant(anchoredOrder, currentUserPubky) ? anchoredOrder : null;
 
-  useMarkMarketplaceOrdersSeen(!isLoading && !error && !needsSession);
+  useMarkMarketplaceOrdersSeen(
+    hasTransactionBackend && !isLoading && !error && !needsSession && parseErrors.length === 0,
+  );
 
   useEffect(() => {
     const fragment = takeDocumentFragment(window.location);
@@ -173,7 +185,17 @@ export function MarketplaceOrders() {
     const anchorId = anchorOrderId;
     if (!anchorId) return;
     const view = orders.find((candidate) => candidate.order.id === anchorId);
-    if (!view) return;
+    if (!view) {
+      const parseError = parseErrors.find((entry) => entry.orderId === anchorId);
+      if (parseError && scrolledAnchorRef.current !== anchorId) {
+        const anchor = document.getElementById(orderParseErrorAnchorId(parseError.index));
+        if (anchor) {
+          scrolledAnchorRef.current = anchorId;
+          anchor.scrollIntoView({ block: 'center' });
+        }
+      }
+      return;
+    }
     // A checkout in progress sits above the tabs, in its own list (#363).
     const inCheckoutList = isBuyerCheckoutInProgress(view.order, currentUserPubky);
     if (!inCheckoutList && !isOrderInTab(view, activeTab, currentUserPubky)) {
@@ -190,7 +212,7 @@ export function MarketplaceOrders() {
     if (!anchor) return;
     scrolledAnchorRef.current = anchorId;
     anchor.scrollIntoView({ block: 'center' });
-  }, [activeTab, anchorOrderId, currentUserPubky, isLoading, orders]);
+  }, [activeTab, anchorOrderId, currentUserPubky, isLoading, orders, parseErrors]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -274,8 +296,18 @@ export function MarketplaceOrders() {
           <div role="alert" className="rounded-md border border-destructive/40 p-4">
             {error}
           </div>
-        ) : orders.length ? (
+        ) : orders.length > 0 || parseErrors.length > 0 ? (
           <>
+            {parseErrors.length > 0 && (
+              <div className="grid gap-3" data-testid="marketplace-order-parse-errors">
+                {parseErrors.map((parseError) => (
+                  <MarketplaceOrderParseErrorCard
+                    key={`parse-error:${parseError.index}:${parseError.orderId ?? 'unknown'}`}
+                    error={parseError}
+                  />
+                ))}
+              </div>
+            )}
             {linkedUnlistedOrder && (
               <div className="grid gap-3" data-testid="marketplace-linked-order">
                 <Heading level={2} size="sm" className="text-xl font-semibold">
@@ -508,6 +540,7 @@ export function MarketplaceOrders() {
                             <div className="flex flex-col items-end">
                               <MarketplaceOrderActions
                                 order={order}
+                                payment={payment}
                                 isBuyer={isBuyer}
                                 canEditReview={adapterMode === 'transaction-service'}
                                 actOnOrder={actOnOrder}
@@ -664,9 +697,8 @@ export function MarketplaceOrders() {
                             ))}
                             <MarketplaceUsdtRefundAddress
                               order={order}
+                              payment={payment}
                               isBuyer={isBuyer}
-                              paymentInReview={payment?.state === 'manual_review'}
-                              reviewAbandoned={isAbandonedReviewOrder(order, payment)}
                               actOnOrder={actOnOrder}
                             />
                             {isBuyer && order.fulfillment === 'digital' && (

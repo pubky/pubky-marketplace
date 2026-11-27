@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
-import { createOrderFixture, createUsdtOrderFixture } from '@/test/fixtures/commerce/orders';
+import { createOrderFixture, createPaymentFixture, createUsdtOrderFixture } from '@/test/fixtures/commerce/orders';
 import {
   REFUND_FIXTURE_ADDRESS,
   REFUND_FIXTURE_OTHER_ADDRESS,
@@ -34,8 +34,13 @@ function renderPanel(
     <MarketplaceUsdtRefundAddress
       order={order}
       isBuyer={isBuyer}
-      paymentInReview={paymentInReview}
-      reviewAbandoned={reviewAbandoned}
+      payment={
+        paymentInReview
+          ? createPaymentFixture('manual_review')
+          : reviewAbandoned
+            ? createPaymentFixture('expired', { resolutionOutcome: 'abandoned' })
+            : null
+      }
       actOnOrder={actOnOrder}
     />,
   );
@@ -192,7 +197,6 @@ describe('MarketplaceUsdtRefundAddress — seller', () => {
       <MarketplaceUsdtRefundAddress
         order={createUsdtOrderFixture('return_received')}
         isBuyer={false}
-        paymentInReview={false}
         actOnOrder={vi.fn(async () => true)}
       />,
     );

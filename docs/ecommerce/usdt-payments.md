@@ -157,6 +157,8 @@ While a payment is re-checking, the seller also reads "If the payment doesn't co
 
 A paid order shows "$137.00, paid as 137.000000 USDT" and the network on the status card and in the receipt. A manual-review USDT payment reuses the existing review copy for the buyer; an amount mismatch reads "The USDT amount does not match. The seller is reviewing it." The seller's line is keyed to the review reason (UX audit P11): `late_settlement` reads "This USDT payment arrived after the payment window ended, so you decide the outcome below. No funds are held by this marketplace.", `amount_mismatch` reads "This USDT payment doesn't match the order total, so you decide the outcome below. No funds are held by this marketplace." `refund_required` keeps its own copy, and an unpinned or missing reason keeps the generic review line.
 
+When a payment has `review_reason: upstream_inconsistent`, the seller checks their wallet and records the outcome in Orders. An unpaid checkout can reach this state after its payment window expires. If the review closes as abandoned, its closure alone does not establish that the seller owes a refund.
+
 A Locks-verified (`locked`) receipt carries no payment method, so it is never labelled Bitcoin; after locks#75 the rail that paid it may be USDT and the Shop does not know which.
 
 ### The pinned service contract

@@ -5,7 +5,7 @@ import { CommerceRecordNormalizer } from '@/core/pipes/commerce/commerce.normali
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
 import { PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
 import { AppError } from '@/libs/error/error';
-import { AuthErrorCode, ClientErrorCode } from '@/libs/error/error.codes';
+import { AuthErrorCode, ClientErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
 import { toast } from '@/molecules/Toaster/toast';
@@ -21,6 +21,7 @@ const PAYMENT_ID = '00000000-0000-4000-8000-000000001110';
 
 const config = vi.hoisted(() => ({
   mode: 'sandbox' as string,
+  owner: 'b'.repeat(52) as string | null,
 }));
 
 vi.mock('@/config/commerce', async () => {
@@ -29,11 +30,13 @@ vi.mock('@/config/commerce', async () => {
 });
 
 vi.mock('@/stores/auth/auth.store', () => ({
-  useAuthStore: (selector: (state: { currentUserPubky: string }) => unknown) => selector({ currentUserPubky: BUYER }),
+  useAuthStore: (selector: (state: { currentUserPubky: string | null }) => unknown) =>
+    selector({ currentUserPubky: config.owner }),
 }));
 
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
+    fetchMarketplaceOrderList: vi.fn(),
     getMarketplaceOrders: vi.fn(),
     getMarketplacePayment: vi.fn(),
     getMarketplaceReceipt: vi.fn(),
@@ -72,8 +75,13 @@ describe('useMarketplaceOrders', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     config.mode = 'sandbox';
+    config.owner = BUYER;
     useCommerceStore.getState().reset();
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000001111');
+    vi.mocked(CommerceController.fetchMarketplaceOrderList).mockImplementation(async () => ({
+      orders: await CommerceController.getMarketplaceOrders(),
+      parseErrors: [],
+    }));
     vi.mocked(CommerceController.getMarketplaceOrders).mockResolvedValue([
       {
         id: '00000000-0000-4000-8000-000000001112',
@@ -799,6 +807,63 @@ describe('useMarketplaceOrders', () => {
     },
   );
 
+  it('waits for the first read after signing in from guest', async () => {
+    config.owner = null;
+    const next = Promise.withResolvers<Awaited<ReturnType<typeof CommerceController.fetchMarketplaceOrderList>>>();
+    vi.mocked(CommerceController.fetchMarketplaceOrderList).mockReturnValueOnce(next.promise);
+    const { result, rerender } = renderHook(() => useMarketplaceOrders());
+    expect(result.current.isLoading).toBe(false);
+    config.owner = BUYER;
+    rerender();
+    expect(result.current.isLoading).toBe(true);
+    await act(async () => next.resolve({ orders: [], parseErrors: [] }));
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  it.each(['change account', 'replace session'])(
+    'discards old private diagnostics and late reads on %s',
+    async (transition) => {
+      const orderList = vi.mocked(CommerceController.fetchMarketplaceOrderList);
+      type OrderList = Awaited<ReturnType<typeof CommerceController.fetchMarketplaceOrderList>>;
+      const prior: OrderList = {
+        orders: await CommerceController.getMarketplaceOrders(),
+        parseErrors: [{ kind: 'parse_error', index: 0, orderId: 'old-private-order', issues: [] }],
+      };
+      const oldRefresh = Promise.withResolvers<OrderList>();
+      const fresh = Promise.withResolvers<OrderList>();
+      orderList.mockResolvedValueOnce(prior).mockReturnValueOnce(oldRefresh.promise).mockReturnValueOnce(fresh.promise);
+      const { result, rerender } = renderHook(() => useMarketplaceOrders());
+      await waitFor(() => expect(result.current.parseErrors).toHaveLength(1));
+      const oldRead = result.current.refresh();
+      if (transition === 'change account') {
+        config.owner = SELLER;
+        rerender();
+      } else {
+        act(() =>
+          useCommerceStore.getState().setMarketplaceSession({
+            pubky: BUYER,
+            capabilities: '',
+            issuedAt: '2026-11-01T00:00:00Z',
+            expiresAt: '2026-12-01T00:00:00Z',
+          }),
+        );
+      }
+      expect(result.current.isLoading).toBe(true);
+      expect(result.current.orders).toEqual([]);
+      expect(result.current.parseErrors).toEqual([]);
+      vi.mocked(CommerceController.publishOrderReceipts).mockClear();
+      await act(async () => {
+        oldRefresh.resolve(prior);
+        await oldRead;
+      });
+      expect(result.current.isLoading).toBe(true);
+      expect(result.current.parseErrors).toEqual([]);
+      expect(CommerceController.publishOrderReceipts).not.toHaveBeenCalled();
+      await act(async () => fresh.resolve({ orders: [], parseErrors: [] }));
+      expect(result.current.isLoading).toBe(false);
+    },
+  );
+
   it('flags needsSession on a session-required load failure and refetches once a session connects', async () => {
     config.mode = 'transaction-service';
     vi.mocked(CommerceController.getMarketplaceOrders).mockRejectedValue(sessionRequiredError());
@@ -863,5 +928,77 @@ describe('useMarketplaceOrders', () => {
 
     expect(advanced).toBe(false);
     expect(CommerceController.executeMarketplaceCommand).not.toHaveBeenCalled();
+  });
+
+  it('exposes valid orders alongside inline parseErrors from fetchMarketplaceOrderList (#581)', async () => {
+    config.mode = 'transaction-service';
+    const [validOrder] = await CommerceController.getMarketplaceOrders();
+    vi.mocked(CommerceController.fetchMarketplaceOrderList).mockResolvedValueOnce({
+      orders: [
+        {
+          ...validOrder,
+          payment: {
+            id: PAYMENT_ID,
+            orderId: validOrder.id,
+            buyerPubky: BUYER,
+            sellerPubky: SELLER,
+            revision: 2,
+            adapter: 'paykit',
+            state: 'manual_review',
+            confirmations: 0,
+            reviewReason: 'upstream_inconsistent',
+            amount: { amountMinor: 11_200, currency: 'USD', exponent: 2 },
+            createdAt: '2026-08-19T23:00:00.000Z',
+            updatedAt: '2026-08-19T23:00:00.000Z',
+          },
+        },
+      ],
+      parseErrors: [
+        {
+          kind: 'parse_error',
+          index: 1,
+          orderId: '470c02d8-9326-4d89-98f6-199df5a2ffcb',
+          issues: [{ path: 'orders[1].payment.reviewReason', message: 'invalid value "future_reason"' }],
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useMarketplaceOrders());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.orders).toHaveLength(1);
+    expect(result.current.orders[0]?.payment?.reviewReason).toBe('upstream_inconsistent');
+    expect(result.current.parseErrors).toEqual([
+      {
+        kind: 'parse_error',
+        index: 1,
+        orderId: '470c02d8-9326-4d89-98f6-199df5a2ffcb',
+        issues: [{ path: 'orders[1].payment.reviewReason', message: 'invalid value "future_reason"' }],
+      },
+    ]);
+  });
+
+  it('surfaces INVALID_RESPONSE with parse details instead of unavailable copy on top-level parse failure (#581)', async () => {
+    config.mode = 'transaction-service';
+    vi.mocked(CommerceController.fetchMarketplaceOrderList).mockRejectedValueOnce(
+      new AppError({
+        category: ErrorCategory.Server,
+        code: ServerErrorCode.INVALID_RESPONSE,
+        message: 'Marketplace order list response was invalid.',
+        service: ErrorService.Marketplace,
+        operation: 'parseMarketplaceOrderList',
+        context: {
+          parseIssues: ['orders: invalid_type'],
+        },
+      }),
+    );
+
+    const { result } = renderHook(() => useMarketplaceOrders());
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+
+    expect(result.current.error).toContain(MARKETPLACE_FAILURE_MESSAGES.invalidResponse);
+    expect(result.current.error).toContain('orders: invalid_type');
+    expect(result.current.error).not.toBe(MARKETPLACE_FAILURE_MESSAGES.unavailable);
   });
 });
