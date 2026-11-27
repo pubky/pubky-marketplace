@@ -1,5 +1,4 @@
 import type { Session, XCallbackParams } from '@synonymdev/pubky';
-import { userUriBuilder } from 'pubky-app-specs';
 import type { TKeypairParams, TRestoreSessionParams, TRestoreSessionResult } from '@/application/auth/auth.types';
 import { getShopGrantClientId } from '@/config/app';
 import { capabilitiesMatchFullGrant } from '@/libs/auth/capabilities';
@@ -20,6 +19,7 @@ import type {
   THomeserverPublicKeyParams,
   THomeserverSessionResult,
 } from '@/services/homeserver/homeserver.types';
+import { SocialProfileService } from '@/services/homeserver/social-profile';
 
 export function isDefinitiveSessionAuthFailure(error: unknown): boolean {
   if (isWrongEnvironmentHomeserverError(error)) {
@@ -225,8 +225,7 @@ export class AuthApplication {
   /** Check whether an existing account has the profile document required for Shop access and indexing. */
   static async userIsSignedUp({ pubky }: { pubky: Pubky }): Promise<boolean> {
     try {
-      const profile = await HomeserverService.getJsonIfFound({ url: userUriBuilder(pubky) });
-      return profile.found;
+      return (await SocialProfileService.getEpoch(pubky)) !== 'missing';
     } catch (error) {
       throw isAppError(error) ? error : toAppError(error, ErrorService.Homeserver, 'userIsSignedUp');
     }

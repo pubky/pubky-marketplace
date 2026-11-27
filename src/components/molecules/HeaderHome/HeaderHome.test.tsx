@@ -42,7 +42,7 @@ describe('HeaderHome', () => {
   });
 
   it.each([
-    [undefined, APP_ROUTES.HOME],
+    [undefined, APP_ROUTES.MARKETPLACE],
     ['https://pubky.app', APP_ROUTES.MARKETPLACE],
   ])('preserves logout Explore destination with social host %s', (socialHost, destination) => {
     setSocialHost(socialHost);

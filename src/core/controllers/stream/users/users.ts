@@ -61,46 +61,6 @@ export class StreamUserController {
   }
 
   /**
-   * Refresh a slice of a user stream from Nexus and update the local cache.
-   *
-   * Always hits the network; the application layer still reads the cached stream so
-   * non-initial pages are merged/deduped with existing entries. Missing user details
-   * are hydrated as a follow-up, mirroring `getOrFetchStreamSlice`.
-   *
-   * Named `refresh*` rather than `fetch*` because the implementation consults local
-   * cache as a merge source — `fetch*` is reserved for network-only paths per
-   * `AGENTS.md`.
-   */
-  static async refreshStreamSlice({
-    streamId,
-    limit = NEXUS_USERS_PER_PAGE,
-    skip,
-  }: TReadUserStreamChunkParams): Promise<TReadUserStreamChunkResponse> {
-    const viewerId = useAuthStore.getState().currentUserPubky;
-
-    const {
-      nextPageIds,
-      cacheMissUserIds,
-      skip: nextSkip,
-      isExhausted,
-    } = await UserStreamApplication.refreshStreamSlice({
-      streamId,
-      skip,
-      limit,
-      viewerId: viewerId ?? undefined,
-    });
-
-    if (cacheMissUserIds.length > 0) {
-      await UserStreamApplication.fetchMissingUsersFromNexus({
-        cacheMissUserIds,
-        viewerId: viewerId ?? undefined,
-      });
-    }
-
-    return { nextPageIds, skip: nextSkip, isExhausted };
-  }
-
-  /**
    * Ensures user details are cached for the given IDs.
    * Checks local cache and fetches any missing users from Nexus.
    *

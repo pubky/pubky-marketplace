@@ -9,9 +9,6 @@ import {
 import { getSafeExternalUrl } from '@/libs/utils/safeExternalUrl';
 import type { TProfileSeed } from './profile.types';
 
-/** The Pubky App profile. Present means the account already finished onboarding elsewhere. */
-export const PUBKY_APP_PROFILE_PATH = '/pub/pubky.app/profile.json';
-
 /**
  * Bitkit's public profile, newest layout first: Paykit rc55 writes under the
  * `bitkit/wallet` receiver, earlier Paykit releases (Bitkit 2.4.x store

@@ -1,7 +1,6 @@
 import type { TFollowParams } from '@/controllers/user/user.type';
 import { HttpMethod } from '@/libs/http/http.types';
 import type { Pubky } from '@/models/models.types';
-import type { PostStreamId } from '@/models/stream/post/postStream.types';
 import type { UserCountsModel } from '@/models/user/counts/userCounts';
 import type { NexusUserCounts } from '@/services/nexus/nexus.types';
 
@@ -11,9 +10,11 @@ export type TUserCountsOrFetchResult = UserCountsModel | NexusUserCounts;
 export type TUserApplicationFollowParams = TFollowParams & {
   eventType: HttpMethod;
   followUrl: string;
+  followBody?: Uint8Array;
+  deleteUrls?: string[];
   followJson: Record<string, unknown>;
-  activeStreamId?: PostStreamId | null;
   signal?: AbortSignal;
+  assertCurrent?: () => void;
 };
 
 export type TEnsureModerationFollowParams = {

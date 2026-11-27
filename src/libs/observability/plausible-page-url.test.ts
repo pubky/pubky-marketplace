@@ -108,8 +108,6 @@ const BASE_PATH_CASES: (PageCase & { basePath: string })[] = [
 ];
 
 const APP_DIR = join(__dirname, '../../app');
-/** The catch-all intercept renders whatever post URL it intercepts, which the post template already covers. */
-const EXEMPT_ROUTES = ['(feeds)/@post/[...catchAll]'];
 
 function pageDirectories(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -129,7 +127,7 @@ function urlSegments(route: string): string[] {
 }
 
 /** Each app route as a sample path (dynamic segments filled in) and its expected template, with `:` for any param. */
-const ROUTE_CASES = APP_ROUTES.filter((route) => !EXEMPT_ROUTES.includes(route)).map((route) => {
+const ROUTE_CASES = APP_ROUTES.map((route) => {
   const segments = urlSegments(route);
   return {
     route,
@@ -481,9 +479,5 @@ describe('Plausible route templates', () => {
   it('maps every app route to its route template', () => {
     expect(ROUTE_CASES.some(({ route }) => route.includes('['))).toBe(true);
     expect(routeMismatches((href) => plausiblePageUrlFromHref(href))).toEqual([]);
-  });
-
-  it('lists only exemptions that exist', () => {
-    for (const route of EXEMPT_ROUTES) expect(APP_ROUTES).toContain(route);
   });
 });

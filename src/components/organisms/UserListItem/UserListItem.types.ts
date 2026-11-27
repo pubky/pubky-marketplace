@@ -44,8 +44,6 @@ export interface UserListItemProps {
   isCurrentUser?: boolean;
   /** Show stats with icons in compact variant (for ActiveUsers) */
   showStats?: boolean;
-  /** Callback when user area is clicked */
-  onUserClick?: (id: Pubky) => void;
   /** Callback when follow button is clicked */
   onFollowClick?: (id: Pubky, isCurrentlyFollowing: boolean, displayName: string) => void;
   /** Custom className */
@@ -89,7 +87,7 @@ export interface VariantProps {
   showStats: boolean;
   className?: string;
   dataTestId?: string;
-  onUserClick: () => void;
+  profileUrl: string;
   onFollowClick: (e: React.MouseEvent) => void;
   /** TTL viewport subscription ref for freshness tracking */
   ttlRef: (node: HTMLElement | null) => void;

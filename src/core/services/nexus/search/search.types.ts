@@ -13,6 +13,8 @@ export type TPrefixSearchParams = TPaginationParams & {
   prefix: string;
 };
 
+export type TTagPrefixSearchParams = TPrefixSearchParams & { version?: 'v0' | 'v1' };
+
 // Common return type for search results (array of IDs/labels)
 export type TSearchResult = string[];
 

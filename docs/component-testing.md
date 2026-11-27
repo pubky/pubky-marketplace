@@ -141,14 +141,14 @@ ESLint bans both `as any` and `as unknown as T` in every `*.test.{ts,tsx}` file 
 
 Route every cast in a test through a named helper from `src/test-utils` instead. See `src/test-utils/README.md` for the full list, but in short:
 
-| Situation                                                            | Helper                                                   |
-| -------------------------------------------------------------------- | -------------------------------------------------------- |
-| Partial Zustand store double                                         | `mockAuthStore({...})`, `mockHomeStore({...})`, etc.     |
-| Partial React synthetic event                                        | `mockKeyboardEvent({...})`, `mockDragEvent({...})`, etc. |
-| Partial `@synonymdev/pubky` `Session` / `Keypair`                    | `mockSession({...})` / `mockKeypair({...})`              |
-| Partial `fetch` `Response`                                           | `mockResponse({...})`                                    |
-| Deliberately invalid input to exercise a runtime guard               | `asInvalid<T>(value)`                                    |
-| Opaque external SDK type with no constructor and no dedicated helper | `asOpaque<T>(value)`                                     |
+| Situation                                                            | Helper                                                       |
+| -------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Partial Zustand store double                                         | `mockAuthStore({...})`, `mockNotificationStore({...})`, etc. |
+| Partial React synthetic event                                        | `mockKeyboardEvent({...})`, `mockDragEvent({...})`, etc.     |
+| Partial `@synonymdev/pubky` `Session` / `Keypair`                    | `mockSession({...})` / `mockKeypair({...})`                  |
+| Partial `fetch` `Response`                                           | `mockResponse({...})`                                        |
+| Deliberately invalid input to exercise a runtime guard               | `asInvalid<T>(value)`                                        |
+| Opaque external SDK type with no constructor and no dedicated helper | `asOpaque<T>(value)`                                         |
 
 Each helper takes a `Partial<T>` (or a named `T` type parameter) and buries the cast in one place, so the shape of the argument you pass is still type-checked and every remaining escape hatch is greppable.
 

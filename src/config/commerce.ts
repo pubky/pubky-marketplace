@@ -247,23 +247,6 @@ export const MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS = 5_000;
 export const COMMERCE_MEDIA_ALT_TEXT_MAX_CHARS = 300;
 export const COMMERCE_CATALOG_SKELETON_COUNT = 8;
 
-/** Most cards the home-feed "From sellers you follow" shelf renders. */
-export const MARKETPLACE_FOLLOWED_SHELF_MAX_CARDS = 12;
-/**
- * Most recent follows the shelf considers when intersecting the viewer's
- * social graph with the marketplace index. One user-stream slice — never a
- * request per follow (see `fetchFollowedSellerCatalogListings`).
- */
-export const MARKETPLACE_FOLLOWED_SHELF_FOLLOWS_LIMIT = 30;
-/**
- * Most per-seller listing-stream refreshes one shelf refresh may issue. The
- * Nexus listing stream accepts a single `seller_id` per request, so this cap
- * bounds the shelf's network cost the same way the auction card's
- * viewport-lazy projection read bounds the catalog's (`useMarketplaceLiveBid`).
- */
-export const MARKETPLACE_FOLLOWED_SHELF_MAX_SELLER_FETCHES = 6;
-/** Most cards each Hot-page marketplace module ("Ending soon" / "Fresh listings") renders. */
-export const MARKETPLACE_HOT_MODULE_MAX_CARDS = 4;
 /**
  * How close an observed auction deadline must be before a watched item raises
  * an "ending soon" alert.

@@ -78,6 +78,7 @@ import {
   targetRefusal,
 } from './digital-proof.mjs';
 import { evidenceDir, loadBuyerSeat, loadSellerSeat, prefix, repoRequire } from './seats.mjs';
+import { signOutThroughShopSettings } from './shop-sign-out.mjs';
 
 const { chromium } = repoRequire('playwright');
 const { Pubky } = repoRequire('@synonymdev/pubky');
@@ -295,17 +296,6 @@ async function approveMarketplaceSession(page, seat) {
     await new Pubky().signer(seat).approveAuthRequest(await copyAuthUrl(page, label));
     await page.waitForTimeout(5000);
   }
-}
-
-async function signOut(page) {
-  await page.goto(`${ORIGIN}/settings/account`, { waitUntil: 'domcontentloaded' });
-  await waitForAppReady(page);
-  const button = page.locator('#sign-out-btn');
-  await button.waitFor({ state: 'visible', timeout: 30_000 });
-  await button.click();
-  await page.waitForURL(/\/sign-in/, { timeout: 60_000 }).catch(() => {});
-  const raw = await page.evaluate(() => localStorage.getItem('shop-auth-store') ?? localStorage.getItem('auth-store'));
-  return raw === null || !JSON.parse(raw)?.state?.currentUserPubky;
 }
 
 async function pickCategoryLeaf(page) {
@@ -631,7 +621,10 @@ async function publish() {
         `new=${state.deliverablePaths.length}`,
       );
     }
-    await signOut(page).catch(() => false);
+    check(
+      'Shop session cleared after sign-out',
+      await signOutThroughShopSettings(page, `${ORIGIN}/marketplace/settings`).catch(() => false),
+    );
   } finally {
     await browser.close();
   }
@@ -842,7 +835,10 @@ async function buy(kind) {
     }
     await shot(page, `digital-paid-${kind}.png`, { kind });
     await emptyCart(page);
-    await signOut(page).catch(() => false);
+    check(
+      'Shop session cleared after sign-out',
+      await signOutThroughShopSettings(page, `${ORIGIN}/marketplace/settings`).catch(() => false),
+    );
   } finally {
     await browser.close();
   }
@@ -918,7 +914,10 @@ async function settle(kind) {
         line.includes('The seller will send this in your messages.'),
       );
     }
-    await signOut(page).catch(() => false);
+    check(
+      'Shop session cleared after sign-out',
+      await signOutThroughShopSettings(page, `${ORIGIN}/marketplace/settings`).catch(() => false),
+    );
   } finally {
     await buyerSession.browser.close();
   }
@@ -968,7 +967,10 @@ async function settle(kind) {
       check('settle message: Mark delivered is accepted', marked);
     }
     await shot(page, `digital-seller-${kind}.png`, { kind });
-    await signOut(page).catch(() => false);
+    check(
+      'Shop session cleared after sign-out',
+      await signOutThroughShopSettings(page, `${ORIGIN}/marketplace/settings`).catch(() => false),
+    );
   } finally {
     await sellerSession.browser.close();
   }
@@ -1047,7 +1049,10 @@ async function awaitBuyer() {
     check('await-buyer: an order for the listing arrived', outcome !== 'no-order');
     check('await-buyer: the order was paid and delivered', outcome === 'paid', `order=${(orderId ?? '').slice(0, 8)}`);
     check('await-buyer: the seller sees the buyer opened the file', opened);
-    await signOut(page).catch(() => false);
+    check(
+      'Shop session cleared after sign-out',
+      await signOutThroughShopSettings(page, `${ORIGIN}/marketplace/settings`).catch(() => false),
+    );
   } finally {
     await browser.close();
   }
@@ -1091,7 +1096,10 @@ async function teardown() {
       }
       listing.ids = ids;
     }
-    await signOut(page).catch(() => false);
+    check(
+      'Shop session cleared after sign-out',
+      await signOutThroughShopSettings(page, `${ORIGIN}/marketplace/settings`).catch(() => false),
+    );
   } finally {
     await browser.close();
   }

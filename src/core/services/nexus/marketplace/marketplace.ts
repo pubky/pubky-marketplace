@@ -1,4 +1,10 @@
+import { buildMarketUri } from 'pubky-market-specs';
+import { z } from 'zod';
 import { MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS } from '@/config/commerce';
+import { ServerErrorCode } from '@/libs/error/error.codes';
+import { Err } from '@/libs/error/error.factories';
+import { ErrorService } from '@/libs/error/error.types';
+import { getMarketplaceTagsBackfilled } from '@/libs/runtime-config/runtime-config';
 import { marketplaceApi } from '@/services/nexus/marketplace/marketplace.api';
 import type {
   NexusAttestorAnnotation,
@@ -17,7 +23,18 @@ import type {
   TShopTagsParams,
 } from '@/services/nexus/marketplace/marketplace.types';
 import type { NexusTag } from '@/services/nexus/nexus.types';
-import { fetchNexus, fetchNexusIfFound, queryNexus } from '@/services/nexus/nexus.utils';
+import { buildUrlWithQuery, fetchNexus, fetchNexusIfFound, queryNexus } from '@/services/nexus/nexus.utils';
+import { socialNexusServesV1 } from '@/services/nexus/social-v1';
+
+/** A complete first page is authoritative only after historical Market tags were backfilled. */
+export type MarketplaceTagPage = { tags: NexusTag[]; completeResource: boolean; probeFailure?: unknown };
+
+const resourceTagSchema = z.object({
+  label: z.string(),
+  taggers: z.array(z.string()),
+  taggers_count: z.number().int().nonnegative(),
+  tag_uri: z.string().nullish(),
+});
 
 /**
  * Nexus Marketplace Service
@@ -68,15 +85,18 @@ export class NexusMarketplaceService {
   /**
    * Fetches the community tag aggregate for a listing.
    *
-   * Served by the marketplace Nexus (tag aggregation deployed 2026-08-28,
-   * `308b985e`); a 404 means this deployment lacks the endpoint and callers
-   * degrade to local-only tags.
+   * A v1 social Nexus indexes the canonical resource URI across epochs.
+   * Before cutover the Marketplace index supplies its legacy projection.
    *
    * @param params - Seller/listing path params plus pagination and viewer id
-   * @returns Array of tag aggregates (empty when the listing has no tags)
+   * @returns A tag page and whether it contains the complete canonical aggregate
    */
-  static async fetchListingTags(params: TListingTagsParams): Promise<NexusTag[]> {
-    return await queryNexus<NexusTag[]>({ url: marketplaceApi.listingTags(params) });
+  static async fetchListingTags(params: TListingTagsParams): Promise<MarketplaceTagPage> {
+    return this.fetchTags(
+      buildMarketUri(params.seller_id, 'listing', params.listing_id),
+      params,
+      marketplaceApi.listingTags(params),
+    );
   }
 
   /**
@@ -85,10 +105,68 @@ export class NexusMarketplaceService {
    * Same deployment caveat as `fetchListingTags`.
    *
    * @param params - Seller path param plus pagination and viewer id
-   * @returns Array of tag aggregates (empty when the shop has no tags)
+   * @returns A tag page and whether it contains the complete canonical aggregate
    */
-  static async fetchShopTags(params: TShopTagsParams): Promise<NexusTag[]> {
-    return await queryNexus<NexusTag[]>({ url: marketplaceApi.shopTags(params) });
+  static async fetchShopTags(params: TShopTagsParams): Promise<MarketplaceTagPage> {
+    return this.fetchTags(buildMarketUri(params.seller_id, 'shop'), params, marketplaceApi.shopTags(params));
+  }
+
+  private static async fetchTags(uri: string, params: TShopTagsParams, legacyUrl: string): Promise<MarketplaceTagPage> {
+    let canonical: boolean;
+    try {
+      canonical = await socialNexusServesV1();
+    } catch (probeFailure) {
+      // During backfill a separate Market index still holds valid historical tags.
+      // After cutover it may contain deleted tags and cannot substitute for the social index.
+      if (getMarketplaceTagsBackfilled()) throw probeFailure;
+      const tags = await queryNexus<NexusTag[]>({ url: legacyUrl }).catch(() => {
+        throw probeFailure;
+      });
+      return { tags, completeResource: false, probeFailure };
+    }
+    if (canonical) return this.fetchResourceTags(uri, params);
+    const tags = await queryNexus<NexusTag[]>({ url: legacyUrl });
+    return { tags, completeResource: false };
+  }
+
+  /** On a v1 Nexus a missing resource has no tags. Only a fully backfilled aggregate can remove old local labels. */
+  private static async fetchResourceTags(
+    uri: string,
+    { skip_tags, limit_tags, viewer_id }: TShopTagsParams,
+  ): Promise<MarketplaceTagPage> {
+    const backfilled = getMarketplaceTagsBackfilled();
+    const fetchAll = backfilled && skip_tags === undefined && limit_tags === undefined;
+    const limit = limit_tags ?? (fetchAll ? 100 : 5);
+    let skip = skip_tags ?? 0;
+    const tags = new Map<string, NexusTag>();
+    // Nexus accepts skip_tags up to 10,000. A larger aggregate remains partial.
+    do {
+      const url = buildUrlWithQuery({
+        baseRoute: 'v1/resource/by-uri',
+        params: { uri, skip_tags: skip, limit_tags: limit, viewer_id },
+      });
+      const view = await fetchNexusIfFound<unknown>({ url });
+      if (view === null) return { tags: [], completeResource: backfilled && !skip_tags };
+      const page = z.object({ tags: z.array(resourceTagSchema).max(limit) }).safeParse(view);
+      if (!page.success) {
+        throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Invalid resource tag page', {
+          service: ErrorService.Nexus,
+          operation: 'fetchResourceTags',
+        });
+      }
+      let shifted = false;
+      for (const tag of page.data.tags) {
+        if (tags.has(tag.label)) shifted = true;
+        tags.set(tag.label, { ...tag, relationship: tag.tag_uri != null });
+      }
+      // A repeated label means the popularity order changed between offset reads.
+      // Keep previous labels until a stable traversal can confirm which ones disappeared.
+      if (shifted || page.data.tags.length < limit) {
+        return { tags: [...tags.values()], completeResource: !shifted && backfilled && !skip_tags };
+      }
+      skip += limit;
+    } while (fetchAll && skip <= 10_000);
+    return { tags: [...tags.values()], completeResource: false };
   }
 
   /**

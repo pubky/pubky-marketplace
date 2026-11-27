@@ -59,7 +59,7 @@ export function normalizeAssetPrefix(raw: string | undefined): string | undefine
 }
 
 /**
- * Prefix an app-absolute path (`/api/feedback`, `/images/x.webp`) with the mount
+ * Prefix an app-absolute path (`/api/report`, `/images/x.webp`) with the mount
  * path. Absolute URLs, protocol-relative URLs, hash/query-only references and
  * paths that already carry the prefix pass through untouched, so the helper is
  * idempotent and safe to apply to values of unknown origin. With an empty mount
@@ -70,11 +70,4 @@ export function prefixWithBasePath(basePath: string, path: string): string {
   if (!path.startsWith('/') || path.startsWith('//')) return path;
   if (path === basePath || path.startsWith(`${basePath}/`) || path.startsWith(`${basePath}?`)) return path;
   return `${basePath}${path}`;
-}
-
-/** Inverse of {@link prefixWithBasePath} for a pathname the browser reports. */
-export function stripBasePath(basePath: string, pathname: string): string {
-  if (basePath === '') return pathname;
-  if (pathname === basePath) return '/';
-  return pathname.startsWith(`${basePath}/`) ? pathname.slice(basePath.length) : pathname;
 }

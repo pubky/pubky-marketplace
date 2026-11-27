@@ -57,7 +57,6 @@ export type TMissingUsersParams = {
 
 export type TFetchStreamFromNexusParams = TFetchUserStreamChunkParams & {
   cachedStream?: { stream: Pubky[] } | null;
-  replaceCache?: boolean;
 };
 
 /**

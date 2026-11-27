@@ -1,5 +1,5 @@
 // Single source of truth for the deterministic clock used by every VRT test.
-// Kept in a browser-free module so fixtures (e.g. `posts.ts`, `profiles.ts`)
+// Kept in a browser-free module so chat fixtures
 // and unit tests can import it without pulling in `vitest/browser`.
 
 /** Frozen instant every VRT render pretends is "now". The freeze itself is

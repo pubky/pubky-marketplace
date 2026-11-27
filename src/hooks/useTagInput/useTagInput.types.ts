@@ -6,6 +6,8 @@ export interface TagLabel {
 }
 
 export interface UseTagInputOptions {
+  /** Label case rules for the viewer's active social version. */
+  normalizeLabel?: (label: string) => string;
   /** Callback when a tag is added. Can return Promise for async handling. */
   onTagAdd: (tag: string) => void | Promise<unknown>;
   /** User's existing tags for duplicate checking (string labels) */

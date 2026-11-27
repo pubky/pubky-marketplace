@@ -2,6 +2,7 @@ import type { Metadata as NextMetadata } from 'next';
 import { getMarketplaceListingRoute } from '@/app/routes';
 import { buildListingDescription, buildListingTitle, MARKETPLACE_STATIC_SEO } from '@/libs/commerce/seo';
 import { fetchListingForMetadata } from '@/libs/og/ogCommerceData';
+import { getConfiguredShopOriginOnServer } from '@/libs/runtime-config/runtime-config';
 import { Metadata } from '@/molecules/Metadata/Metadata';
 import { MarketplaceListing } from '@/templates/Marketplace/MarketplaceListing';
 
@@ -56,5 +57,11 @@ export async function generateMetadata({ params }: MarketplaceListingPageProps):
 
 export default async function MarketplaceListingPage({ params }: MarketplaceListingPageProps) {
   const { sellerPubky, listingId } = await params;
-  return <MarketplaceListing sellerPubky={sellerPubky} listingId={listingId} />;
+  return (
+    <MarketplaceListing
+      sellerPubky={sellerPubky}
+      listingId={listingId}
+      shareOrigin={getConfiguredShopOriginOnServer()}
+    />
+  );
 }

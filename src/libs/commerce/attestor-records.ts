@@ -1,15 +1,10 @@
-import {
-  attestorAnnotationUriBuilder,
-  attestorProfileUriBuilder,
-  verifyAttestorAnnotation,
-  verifyAttestorProfile,
-} from 'pubky-app-specs';
+import { buildMarketUri, verifyAttestorAnnotation, verifyAttestorProfile } from 'pubky-market-specs';
 import { z } from 'zod';
 import type { AttestorProfileKeyWindow } from '@/libs/commerce/attestor-key-windows';
 
 /**
- * The records an attestor publishes on its own homeserver (specs
- * `0.6.2-marketplace.16`), read from the index's copy. The index verifies
+ * The records an attestor publishes on its own homeserver, read from the
+ * index's copy. The index verifies
  * each record before it stores it, but the Shop does not take the index's
  * word for what a record says: it re-verifies the proof over the record the
  * index served, against the URI it builds itself (attestor and order ref),
@@ -70,7 +65,10 @@ export function verifiedAttestorProfileKeyWindows(
   record: unknown,
 ): AttestorProfileKeyWindow[] | null {
   try {
-    const verified: unknown = verifyAttestorProfile(attestorProfileUriBuilder(attestorId), JSON.stringify(record));
+    const verified: unknown = verifyAttestorProfile(
+      buildMarketUri(attestorId, 'attestor_profile'),
+      JSON.stringify(record),
+    );
     const windows = profileRecordSchema.parse(verified).keys.map((key) => ({
       pubky: key.pubky,
       validUntil: secondsCeil(key.validUntil),
@@ -113,7 +111,7 @@ export function verifiedAttestorAnnotationOutcomes(
 ): ReviewOutcome[] | null {
   try {
     const verified: unknown = verifyAttestorAnnotation(
-      attestorAnnotationUriBuilder(attestorId, orderRef),
+      buildMarketUri(attestorId, 'attestor_annotation', orderRef),
       JSON.stringify(record),
     );
     return latestReviewOutcomes(annotationRecordSchema.parse(verified).outcomes);

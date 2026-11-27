@@ -47,12 +47,10 @@ README, "Seller-set periods".
 
 ## Spec dependency
 
-The record schema is shared with the `pubky-app-specs` fork
-(`PubkyAppShop`), which defines both fields (optional, whole days, 1-60,
-skipped when absent) from `0.6.2-marketplace.13`, the version pinned in
-`vendor/pubky-app-specs`. `createShop` through the wasm builder keeps them,
-rejects out-of-range values, and omits them for a shop that sets neither;
-`commerce.specs.test.ts` pins that contract. The Shop still writes the shop
+The `PubkyMarketShop` record in `pubky-market-specs` defines both fields as optional
+whole days from 1 through 60. The vendored `buildShop` binding preserves both values,
+rejects values outside the range, and omits unset fields. The tests in
+`commerce.specs.test.ts` exercise that contract. The Shop still writes the shop
 record as raw JSON validated by its own schema, so the fields reach Nexus and
 other clients as spec fields without a second code path.
 

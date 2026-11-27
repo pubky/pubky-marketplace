@@ -53,6 +53,7 @@ export function ClickableTagsList({
   showAddButton = false,
   addMode = false,
   readOnly = false,
+  normalizeLabel,
   showTagClose = false,
   className,
   onTagClick,
@@ -79,7 +80,7 @@ export function ClickableTagsList({
   const { enrichedTags } = useEnrichedTags(fetchedTags);
 
   // Determine if input should be shown
-  const hasInput = showInput || isAdding;
+  const hasInput = !readOnly && (showInput || isAdding);
   const isAtLimit = maxTags ? enrichedTags.length >= maxTags : false;
   const inputWidth = isAtLimit ? TAG_INPUT_WIDTH_AT_LIMIT : TAG_INPUT_WIDTH_DEFAULT;
 
@@ -185,6 +186,7 @@ export function ClickableTagsList({
             widthByState={{ input: inputWidth, addButton: 34 }}
             inputContent={
               <TagInput
+                normalizeLabel={normalizeLabel}
                 onTagAdd={handleTagAddFromInput}
                 existingTags={enrichedTags}
                 viewerTags={viewerTags}

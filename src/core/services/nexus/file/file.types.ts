@@ -1,9 +1,5 @@
 import type { Pubky } from '@/models/models.types';
 
-export type TFileBody = {
-  uris: Pubky[];
-};
-
 export enum FileVariant {
   SMALL = 'small',
   FEED = 'feed',

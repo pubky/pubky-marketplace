@@ -109,6 +109,8 @@ export type THomeserverJsonIfFound<T> =
   | { found: true; json: T | undefined };
 
 export type TPutBlobParams = {
+  /** Apply the small-record IO deadline to SDK writes of structured social data. */
+  bounded?: boolean;
   url: string;
   blob: Uint8Array;
   /** The URL recorded in error context and logs; defaults to `url`. Unpublished paths pass a redacted form. */

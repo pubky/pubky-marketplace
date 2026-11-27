@@ -2,6 +2,7 @@
 
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { normalizeSocialTagLabel } from '@/libs/tag-label';
 import { useTagSuggestions } from './useTagSuggestions';
 import { TAG_SUGGESTIONS_DEFAULT_LIMIT } from './useTagSuggestions.constants';
 
@@ -66,6 +67,22 @@ describe('useTagSuggestions', () => {
     expect(mockGetTagsByPrefix).toHaveBeenCalledWith({
       prefix: 'bit',
       limit: TAG_SUGGESTIONS_DEFAULT_LIMIT,
+    });
+  });
+
+  it('preserves distinct v1 tag spellings when filtering results from v1 search', async () => {
+    mockGetTagsByPrefix.mockResolvedValue(['Ärger', 'ärger']);
+    const { result } = renderHook(() =>
+      useTagSuggestions({ query: 'Ärg', excludeTags: ['ärger'], normalizeLabel: normalizeSocialTagLabel }),
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current.suggestions).toEqual(['Ärger']);
+    expect(mockGetTagsByPrefix).toHaveBeenCalledWith({
+      prefix: 'Ärg',
+      limit: TAG_SUGGESTIONS_DEFAULT_LIMIT,
+      version: 'v1',
     });
   });
 

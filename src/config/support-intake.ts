@@ -1,10 +1,10 @@
 /**
- * Limits for the support form routes (src/app/api/{feedback,report,copyright}/route.ts).
+ * Limits for the support form routes (src/app/api/{report,copyright}/route.ts).
  * Counters live in server process memory, so a deployment with several
  * instances multiplies every request limit by the instance count.
  */
 
-export type TSupportIntakeKind = 'feedback' | 'report' | 'copyright';
+export type TSupportIntakeKind = 'report' | 'copyright';
 
 export type TSupportIntakeLimits = {
   /** Submissions one client address may send per window. */
@@ -30,7 +30,6 @@ export const SUPPORT_INTAKE_RATE_LIMIT_MAX_KEYS = 5_000;
  * lists several URLs and a postal address.
  */
 export const SUPPORT_INTAKE_LIMITS: Record<TSupportIntakeKind, TSupportIntakeLimits> = {
-  feedback: { perClientRequests: 10, globalRequests: 300, maxBodyBytes: 16 * 1024 },
   report: { perClientRequests: 20, globalRequests: 600, maxBodyBytes: 16 * 1024 },
   copyright: { perClientRequests: 10, globalRequests: 100, maxBodyBytes: 64 * 1024 },
 };

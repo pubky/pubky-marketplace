@@ -3,7 +3,7 @@
 This document captures the intent, boundaries, responsibilities, and operating model of `src/core/`.
 Based on ADR-0004, ADR-0008, ADR-0009.
 
-For **UI** (`src/components/`, `src/app/`) and related **`src/libs/`** usage such as **icon imports** (stock icons from `lucide-react`, custom SVGs from `@/icons`, URL helpers from `@/libs/utils/urlToIcon`), see **`docs/components.md`** — _Icons (Lucide and custom)_.
+For **UI** (`src/components/`, `src/app/`) and related **`src/libs/`** usage such as **icon imports** (stock icons from `lucide-react`, custom SVGs from `@/icons`), see **`docs/components.md`** — _Icons (Lucide and custom)_.
 
 ## Layer Flow
 
@@ -63,7 +63,6 @@ Modules are imported directly through the path aliases in `tsconfig.json`. Keep 
 - Call controllers (like UI does)
 - **NEVER** call application directly
 - **NEVER** call services directly
-- **Mute list (homeserver events stream)**: `MuteListSyncCoordinator` (`src/core/coordinators/mute-list-sync/`) refreshes the local mute list when another session changes `/pub/pubky.app/mutes/`; see `docs/adr/0014-muting-system.md`.
 - **Chat (homeserver event streams, inbox pings, reconciliation)**: `ChatSyncCoordinator` (`src/core/coordinators/chat-sync/`) elects one leader tab per account with a Web Lock; that tab long-polls the inbox, keeps live event streams on peer homeservers and reconciles every known conversation on a cadence, all through `ChatController`; see `docs/chat/README.md` and `docs/adr/0030-chat-transport.md`.
 
 ### Application (`src/core/application/`)
@@ -140,10 +139,7 @@ Pipes → no IO; transform only
 Only these Applications can call other Applications:
 
 - `PostApplication`
-- `NotificationApplication`
 - `BootstrapApplication`
-- `MigrationApplication`
-- `HotApplication`
 - `PostStreamApplication`
 - `TtlApplication`
 
@@ -152,9 +148,9 @@ Only these Applications can call other Applications:
 ```typescript
 // ALLOWED: PostApplication (orchestrator) calls helper applications
 // Real: src/core/application/post/post.ts
-static async commitCreate({ postUrl, compositePostId, post, fileAttachments, tags }) {
-  await FileApplication.commitCreate({ fileAttachments });
-  await TagApplication.commitCreate({ tagList: tags });
+static async fetch({ compositeId, viewerId }: TFetchPostParams) {
+  await PostStreamApplication.fetchMissingPostsFromNexus({ cacheMissPostIds: [compositeId], viewerId });
+  return await LocalPostService.readDetails({ postId: compositeId });
 }
 
 // FORBIDDEN: Helper applications cannot call others
@@ -167,7 +163,7 @@ static async commitCreate({ fileAttachments }) {
 PostApplication → FileApplication → PostApplication  // VIOLATION
 
 // ONLY ALLOWED DEPTH-2 PATHS: attachment persistence via PostStreamApplication
-PostApplication | NotificationApplication | TtlApplication
+PostApplication | TtlApplication
   → PostStreamApplication
     → FileApplication
 
@@ -182,30 +178,21 @@ Since the architecture uses static classes without dependency injection, these c
 ### Controller calling Service directly
 
 ```typescript
-// BAD — controller bypasses application layer
-class PostController {
-  static async commitCreate(params) {
-    await LocalPostService.create(post); // Bypass application
-  }
-}
-
-// GOOD — controller delegates to application
-// Real: src/core/controllers/post/post.ts
-class PostController {
-  static async commitCreate(params) {
-    const { post, meta } = await PostNormalizer.to(postData, authorId);
-    await PostApplication.commitCreate({ compositePostId, post, postUrl: meta.url });
-  }
+// PostController.getCounts delegates the local read to PostApplication.
+static async getCounts({ compositeId }: TCompositeId): Promise<PostCountsModelSchema | null> {
+  return await PostApplication.getCounts({ compositeId });
 }
 ```
+
+A direct call to `LocalPostService.readCounts` from the controller would bypass the application layer. [Post controller](../src/core/controllers/post/post.ts)
 
 ### Application accessing Store
 
 ```typescript
 // BAD — application reaches into UI state
 class PostApplication {
-  static async commitCreate(params) {
-    usePostStore.getState().setLoading(true); // VIOLATION
+  static async fetch(params) {
+    useAuthStore.getState().setHasProfile(true); // VIOLATION
   }
 }
 
@@ -221,45 +208,11 @@ class UserController {
 
 ### IO in Pipes
 
-```typescript
-// BAD — pipe performs IO
-class PostNormalizer {
-  static async normalize(post) {
-    const user = await LocalUserService.readDetails(post.author); // IO!
-  }
-}
+The watchlist pipe turns records into mergeable state with `watchlistRecordToState`. Its inputs contain everything it needs. The application reads the records before calling the pipe. [Watchlist transformations](../src/core/pipes/commerce/commerce.watchlist.ts)
 
-// GOOD — pipe is pure transformation
-// Real: src/core/pipes/user/user.normalizer.ts
-class UserNormalizer {
-  static to({ name, bio, image, links, status }, pubky) {
-    const builder = PubkySpecsSingleton.get(pubky);
-    return builder.createProfile(name, bio, image, links, status);
-  }
-}
-```
+### Coordinator calls
 
-### Coordinator calling Application directly
-
-```typescript
-// BAD — coordinator bypasses controller
-class NotificationCoordinator {
-  protected async poll() {
-    await NotificationApplication.fetchNotifications({ userId }); // Bypass controller
-  }
-}
-
-// GOOD — coordinator goes through controller
-// Real: src/core/coordinators/notifications/notifications.ts
-import { useAuthStore } from '@/stores/auth/auth.store';
-
-class NotificationCoordinator {
-  protected async poll() {
-    const userId = useAuthStore.getState().selectCurrentUserPubky();
-    await NotificationController.fetchNotifications({ userId }); // Through controller
-  }
-}
-```
+`NotificationCoordinator` calls `CommerceController.refreshMarketplaceNotificationBadge()` when it polls. The controller owns the application call and store updates. [Market notification coordinator](../src/core/coordinators/notifications/notifications.ts)
 
 ## IO Boundaries
 
@@ -300,7 +253,7 @@ src/core/
 Trace the existing flow and its callers before changing these areas. Keep unrelated refactors out of the change.
 
 - `src/core/database/franky/**` + `src/config/database.ts` — schema upgrades, legacy table removal and database recovery. A version or index change needs an explicit PR callout covering retained data, upgrade/downgrade behavior and validation. Preserve device-local inventory, drafts and import state; see `docs/data-patterns.md` — _Schema changes_.
-- `src/core/services/homeserver/**`, `src/core/pipes/**` and `vendor/pubky-app-specs/**` — session authority and wire formats. Preserve grant ownership, capability checks and payload shapes; do not change a format incidentally while adding a feature.
+- `src/core/services/homeserver/**`, `src/core/pipes/**` and `vendor/pubky-market-specs/**` — session authority and wire formats. Preserve grant ownership, capability checks and payload shapes; do not change a format incidentally while adding a feature.
 - `src/core/services/local/**` — Dexie and TTL consistency. Persist dependencies before dependents and refresh affected TTL rows on writes. Check pending local writes before changing refresh or reconciliation behavior.
 - `src/core/application/**` cross-domain calls — check the ADR-0009 allow-list before wiring Applications together.
 - `services/marketplace/**` and commerce transaction integrations — transaction authority, inventory, payment and fulfillment state. Follow the commerce ADRs and runbooks; do not treat service-owned truth as a UI cache or remove active workflows as cleanup.

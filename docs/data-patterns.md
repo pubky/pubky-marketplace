@@ -60,20 +60,9 @@ type BaseStreamModelSchema<TId, TItem> = {
 // Example: TagStreamModelSchema  = BaseStreamModelSchema<TagStreamTypes, NexusHotTag>
 ```
 
-### Stream Operations
+### Reading a cached post
 
-```typescript
-// Reading from stream (fast, local)
-// Real: src/core/services/local/stream/posts/posts.ts
-const posts = await LocalStreamPostsService.read(streamId);
-
-// Fetching or reading a stream slice
-// Real: src/core/controllers/stream/posts/posts.ts
-await StreamPostsController.getOrFetchStreamSlice({ streamId, viewerId, cursor, limit });
-
-// Getting the head position of a stream
-const head = await StreamPostsController.getStreamHead({ streamId });
-```
+For an individual post, the Shop reads local details through `PostController.getDetails`. If the post is missing, `PostController.fetch` requests its composite ID from Nexus and persists the result so the local read updates. [Post details hook](../src/hooks/usePostDetails/usePostDetails.tsx)
 
 ### Stream Staleness
 
@@ -113,13 +102,7 @@ await TtlApplication.forceRefreshUsersByIds({ userIds: staleUserIds, viewerId })
 
 ### TTL on Writes
 
-```typescript
-// Local services update TTL automatically when persisting data
-// Real: src/core/services/local/post/post.ts
-// LocalPostService.create() internally updates post_ttl.lastUpdatedAt
-
-// Forgetting TTL update = stale cache that won't refresh
-```
+`LocalStreamPostsService.persistPosts` writes one `lastUpdatedAt` per live post to `PostTtlModel` alongside the corresponding details, counts, tags and relationships. Tombstoned IDs are filtered from all five batches. [Local post stream service](../src/core/services/local/stream/posts/posts.ts)
 
 ### TTL Constants
 
@@ -152,68 +135,18 @@ Pipes normalize external data to domain shapes.
 
 ### Pipe Structure
 
-```typescript
-// Real: src/core/pipes/post/post.normalizer.ts
-export class PostNormalizer {
-  // Create a new post via pubky-app-specs builder
-  static async to(post: PostValidatorData, specsPubky: Pubky): Promise<PostResult> {
-    try {
-      const builder = PubkySpecsSingleton.get(specsPubky);
-      return builder.createPost(post.content, post.kind, post.parentUri ?? null, embedObject, attachments);
-    } catch (error) {
-      if (error instanceof AppError) throw error;
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, error as string, {
-        service: ErrorService.PubkyAppSpecs,
-        operation: 'createPost',
-        context: { post, specsPubky },
-      });
-    }
-  }
-
-  // Edit an existing post
-  static async toEdit({ compositePostId, content, currentUserPubky }): Promise<PostResult> {
-    const builder = PubkySpecsSingleton.get(authorId);
-    return builder.editPost(originalPost, postId, content);
-  }
-}
-```
+`CommerceRecordNormalizer` validates public keys and listing IDs with their commerce schemas. Its `listingCompositeId` method validates the two pieces of a composite ID before joining them. [Commerce normalizer](../src/core/pipes/commerce/commerce.normalizer.ts)
 
 ### Where to Use Pipes
 
 ```typescript
-// Controllers call pipes before delegating to application
-// Real: src/core/controllers/post/post.ts
-class PostController {
-  static async commitCreate({ authorId, content, isArticle, tags, attachments }: TCreatePostParams) {
-    const fileAttachments = attachments ? await FileNormalizer.toFileAttachment({ file, pubky: authorId }) : [];
-    const { post, meta } = await PostNormalizer.to({ content, kind: postKind, ... }, authorId);
-    const tagList = tags?.map((tag) => TagNormalizer.from({ taggerId: authorId, ... }));
-    await PostApplication.commitCreate({ compositePostId, post, postUrl: meta.url, fileAttachments, tags: tagList });
-  }
-}
-
-// Application also normalizes data before persisting
-// Real: src/core/application/profile/profile.ts
-class ProfileApplication {
-  static async commitUpdate({ pubky, name, bio, image, links }) {
-    const { user, meta } = UserNormalizer.to({ name, bio, image, links, status }, pubky);
-    await HomeserverService.request({ method: HttpMethod.PUT, url: meta.url, bodyJson: user.toJson() });
-    await LocalProfileService.updateDetails(user, pubky);
-  }
-}
+// CommerceController.getOrFetchListing validates inputs before dispatch.
+const owner = CommerceRecordNormalizer.pubky(ownerPubky);
+const id = CommerceRecordNormalizer.entityId(listingId);
+return await CommerceApplication.getOrFetchListing(owner, id);
 ```
 
-### Never Return Un-normalized Data
-
-```typescript
-// BAD: Returning raw external shape
-return await HomeserverService.request<RawSettings>({ method: HttpMethod.GET, url });
-
-// GOOD: Normalize through pipes
-// Real: src/core/application/settings/settings.ts
-const settingsJson = await HomeserverService.request<RawSettings>({ method: HttpMethod.GET, url });
-return SettingsNormalizer.from(settingsJson);
-```
+The watchlist application converts homeserver records with `watchlistRecordToState` before merging them with local items and tombstones. The same pipe converts local rows into the merge representation. [Watchlist pipe](../src/core/pipes/commerce/commerce.watchlist.ts)
 
 ## Data Model Reference
 
@@ -256,7 +189,7 @@ post_ttl           — Cache staleness (id, lastUpdatedAt)
 
 ```
 post_streams       — Post composite IDs in streams
-unread_post_streams — Unread post stream tracking
+unread_post_streams — Legacy unread post streams retained for database compatibility
 user_streams       — User pubkys in streams
 tag_streams        — Hot tags in streams
 ```

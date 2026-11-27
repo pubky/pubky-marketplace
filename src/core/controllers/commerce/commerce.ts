@@ -31,6 +31,7 @@ import {
 } from '@/config/commerce';
 import { IMAGE_MAX_UPLOAD_SIZE } from '@/config/images';
 import { captureAuthScope } from '@/controllers/auth/auth-scope';
+import { captureTagViewer } from '@/controllers/commerce/tag-viewer';
 import type { SellerDeliveryKey } from '@/libs/commerce/delivery-envelope';
 import {
   type MarketplaceDigitalDeliveryCapability,
@@ -44,7 +45,6 @@ import { PAYMENT_METHOD_DISCOVERY_SELLER_CAP, type PaymentMethodFilter } from '@
 import type { BindDeliveryAddress, PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import { resolveCheckoutFulfillment } from '@/libs/commerce/pickup';
 import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-address';
-import type { PrivRecoveryKeyExport } from '@/libs/commerce/priv-recovery-key';
 import { SELLER_AUTO_CONFIRM_PASS_TIMEOUT_MS } from '@/libs/commerce/seller-auto-confirm';
 import type { ShipFromAddress, ShippingParcel, ShippoRate } from '@/libs/commerce/shipping';
 import {
@@ -100,6 +100,8 @@ export class CommerceController {
   private static inventorySessionEndedUnbind: (() => void) | null = null;
   /** What the detail page's projection poll last cached per listing, to spot a sale it did not cause. */
   private static cachedListingAvailability = new Map<string, string>();
+  /** The viewer check for the latest community tag request on each listing or shop. */
+  private static tagReads = new Map<string, () => boolean>();
   /** The order states already seen this session; a new or moved order can change a listing's availability. */
   private static observedOrderStates = new Map<string, string>();
 
@@ -276,19 +278,11 @@ export class CommerceController {
     return await CommerceApplication.getMarketplaceTags(TagKind.LISTING, `${seller}:${id}`);
   }
 
-  /**
-   * Fetches community tags for a listing from the marketplace Nexus, merging
-   * into the local cache. Returns [] without faking when the tag endpoint is
-   * not deployed yet (404).
-   */
+  /** Refreshes the listing's community tags for the current viewer. */
   static async fetchListingTags(sellerPubky: unknown, listingId: unknown, viewerId?: string) {
     const seller = CommerceRecordNormalizer.pubky(sellerPubky);
     const id = CommerceRecordNormalizer.entityId(listingId);
-    return await CommerceApplication.fetchMarketplaceTags({
-      kind: TagKind.LISTING,
-      taggedId: `${seller}:${id}`,
-      viewerId,
-    });
+    return this.refreshMarketplaceTags(TagKind.LISTING, `${seller}:${id}`, viewerId);
   }
 
   /** Reads locally cached community tags for a shop (viewer write-through included). */
@@ -296,17 +290,31 @@ export class CommerceController {
     return await CommerceApplication.getMarketplaceTags(TagKind.SHOP, CommerceRecordNormalizer.pubky(ownerPubky));
   }
 
-  /**
-   * Fetches community tags for a shop from the marketplace Nexus, merging into
-   * the local cache. Returns [] without faking when the tag endpoint is not
-   * deployed yet (404).
-   */
+  /** Refreshes the shop's community tags for the current viewer. */
   static async fetchShopTags(ownerPubky: unknown, viewerId?: string) {
-    return await CommerceApplication.fetchMarketplaceTags({
-      kind: TagKind.SHOP,
-      taggedId: CommerceRecordNormalizer.pubky(ownerPubky),
-      viewerId,
-    });
+    return this.refreshMarketplaceTags(TagKind.SHOP, CommerceRecordNormalizer.pubky(ownerPubky), viewerId);
+  }
+
+  /** Only the latest read may update this target, including after another read finishes. */
+  private static async refreshMarketplaceTags(
+    kind: TagKind.LISTING | TagKind.SHOP,
+    taggedId: string,
+    viewerId?: string,
+  ) {
+    const viewerIsCurrent = captureTagViewer(viewerId);
+    if (!viewerIsCurrent()) return [];
+    const key = `${kind}:${taggedId}`;
+    this.tagReads.set(key, viewerIsCurrent);
+    try {
+      return await CommerceApplication.fetchMarketplaceTags({
+        kind,
+        taggedId,
+        viewerId,
+        isCurrent: () => this.tagReads.get(key) === viewerIsCurrent && viewerIsCurrent(),
+      });
+    } finally {
+      if (this.tagReads.get(key) === viewerIsCurrent) this.tagReads.delete(key);
+    }
   }
 
   static async getAllListings() {
@@ -352,15 +360,6 @@ export class CommerceController {
 
   static async fetchSellerCatalogListings(sellerPubky: unknown): Promise<void> {
     await CommerceApplication.fetchSellerCatalogListings(CommerceRecordNormalizer.pubky(sellerPubky));
-  }
-
-  /**
-   * Refreshes the catalog cache with listings from followed sellers for the
-   * home-feed shelf. See `CommerceApplication.fetchFollowedSellerCatalogListings`
-   * for the request-count bounds.
-   */
-  static async fetchFollowedSellerListings(followedPubkys: unknown): Promise<void> {
-    await CommerceApplication.fetchFollowedSellerCatalogListings(CommerceRecordNormalizer.pubkyList(followedPubkys));
   }
 
   static async initializeSandboxCatalog(): Promise<boolean> {
@@ -705,10 +704,12 @@ export class CommerceController {
   private static autoFollowSellers(sellers: Iterable<string | undefined>): void {
     const follower = this.getCurrentUserPubky();
     for (const seller of new Set([...sellers].filter((value): value is string => Boolean(value)))) {
-      void UserApplication.ensureSellerFollow({ follower, seller }).catch((error: unknown) => {
-        // AppError factories already report at their origin.
-        if (!isAppError(error)) Logger.warn('Could not follow the seller for this action', { error });
-      });
+      void UserApplication.ensureSellerFollow({ follower, seller, signal: captureAuthScope() }).catch(
+        (error: unknown) => {
+          // AppError factories already report at their origin.
+          if (!isAppError(error)) Logger.warn('Could not follow the seller for this action', { error });
+        },
+      );
     }
   }
 
@@ -2115,16 +2116,6 @@ export class CommerceController {
     return CommercePrivKeyringApplication.subscribeReady((ownerPubky) => {
       if (useAuthStore.getState().currentUserPubky === ownerPubky) listener();
     });
-  }
-
-  /**
-   * The signed-in user's recovery key file for "Export recovery key", or why
-   * the marketplace will not release the key.
-   */
-  static async exportPrivRecoveryKey(): Promise<PrivRecoveryKeyExport> {
-    const currentUserPubky = useAuthStore.getState().currentUserPubky;
-    if (!currentUserPubky) return { kind: 'needs_reauth' };
-    return await CommercePrivKeyringApplication.exportRecoveryKey(currentUserPubky);
   }
 
   /**

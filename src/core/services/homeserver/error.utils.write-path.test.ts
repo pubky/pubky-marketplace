@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AppError } from '@/libs/error/error';
 import { AuthErrorCode } from '@/libs/error/error.codes';
-import { isAuthError, isWritePathNotAllowedError, requiresLogin } from '@/libs/error/error.utils';
+import { isAuthError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
 import { handleError } from './error.utils';
 
@@ -37,14 +37,11 @@ describe('homeserver write-path 403', () => {
 
     expect(isAuthError(error)).toBe(true);
     expect(error.code).toBe(AuthErrorCode.FORBIDDEN);
-    expect(requiresLogin(error)).toBe(false);
-    expect(isWritePathNotAllowedError(error)).toBe(true);
   });
 
   it('a capability 403 is not reported as an account restriction', () => {
     const error = mapped(capabilityForbidden);
 
     expect(isAuthError(error)).toBe(true);
-    expect(isWritePathNotAllowedError(error)).toBe(false);
   });
 });

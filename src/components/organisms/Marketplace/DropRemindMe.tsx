@@ -16,16 +16,6 @@ export interface DropRemindMeProps {
   dropUrl: string;
 }
 
-/**
- * "Remind me" without a daemon and without pretending (drops design,
- * "Before the drop"): a client-built ICS export whose event time is the
- * service-enforced schedule when the drop is registered (the seller's
- * stated intent otherwise), plus the existing shop-follow so this seller's
- * listings surface on the followed-shops shelf. The drop watchlist itself
- * is listing-keyed by spec, so drops deliberately do NOT write fake
- * watchlist entries — the honest affordances are the calendar and the
- * follow.
- */
 export function DropRemindMe({ record, projection, dropUrl }: DropRemindMeProps) {
   const follow = useCommerceShopFollow(record.ownerPubky);
 
@@ -71,8 +61,7 @@ export function DropRemindMe({ record, projection, dropUrl }: DropRemindMeProps)
       <Typography as="p" className="text-xs text-muted-foreground">
         The calendar alert fires from your own calendar
         {projection ? ' at the service-enforced start time' : ' at the seller’s stated start time (not yet registered)'}
-        . Watching the seller surfaces their shop on your followed-shops shelf — this app runs no background
-        notification daemon and will never pretend to.
+        .
       </Typography>
     </section>
   );
