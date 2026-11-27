@@ -2123,3 +2123,54 @@ describe('MarketplaceOrders inline parse errors (#581)', () => {
     expect(errorCard).toHaveTextContent('orders[0]: Invalid input: expected object, received null');
   });
 });
+
+describe('MarketplaceOrders durable review editing', () => {
+  beforeEach(() => {
+    ordersState.currentUserPubky = CURRENT_USER;
+    ordersState.parseErrors = [];
+    ordersState.needsSession = false;
+    ordersState.error = null;
+    vi.spyOn(CommerceController, 'getOwnMarketplaceReview').mockResolvedValue(null);
+    vi.spyOn(CommerceController, 'getOwnMarketplaceOrderReviews').mockResolvedValue([]);
+    vi.spyOn(CommerceController, 'getAwaitingReleaseOwnMarketplaceReviews').mockResolvedValue([]);
+  });
+
+  function completedReviewedOrder() {
+    const createdAt = new Date(Date.now() - 60_000).toISOString();
+    return orderView('completed', 'Reviewed camera', 'buyer', {
+      reviews: [
+        {
+          id: '00000000-0000-4000-8000-000000004201',
+          reviewerPubky: CURRENT_USER,
+          subjectPubky: ORDER_FIXTURE_SELLER,
+          listingAggregateId: `listing:${ORDER_FIXTURE_SELLER}_Reviewed_camera`,
+          rating: 5,
+          text: 'Great condition.',
+          createdAt,
+        },
+      ],
+    });
+  }
+
+  it.each(['transaction-service', 'locks-paykit'] as const)(
+    'renders the 24-hour Edit review action in %s mode',
+    async (mode) => {
+      ordersState.adapterMode = mode;
+      ordersState.orders = [completedReviewedOrder()];
+
+      render(<MarketplaceOrders />);
+
+      expect(await screen.findByRole('button', { name: 'Edit review' })).toBeInTheDocument();
+    },
+  );
+
+  it('withholds Edit review in sandbox mode', () => {
+    ordersState.adapterMode = 'sandbox';
+    ordersState.orders = [completedReviewedOrder()];
+
+    render(<MarketplaceOrders />);
+
+    expect(screen.getByText('Reviewed camera')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit review' })).not.toBeInTheDocument();
+  });
+});

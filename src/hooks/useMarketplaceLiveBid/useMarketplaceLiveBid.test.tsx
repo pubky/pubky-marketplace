@@ -87,21 +87,45 @@ describe('useMarketplaceLiveBid', () => {
     vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(auctionProjection());
   });
 
-  it('fetches live bid state once the card becomes visible in transaction-service mode', async () => {
-    const { result } = renderHook(() => useMarketplaceLiveBid(SELLER, 'camera', true));
+  it.each(['transaction-service', 'locks-paykit'] as const)(
+    'fetches live bid state once the card becomes visible in %s mode',
+    async (mode) => {
+      config.mode = mode;
+      const { result } = renderHook(() => useMarketplaceLiveBid(SELLER, 'camera', true));
 
-    expect(result.current.bid).toBeNull();
-    expect(CommerceController.getMarketplaceListingProjection).not.toHaveBeenCalled();
+      expect(result.current.bid).toBeNull();
+      expect(CommerceController.getMarketplaceListingProjection).not.toHaveBeenCalled();
 
+      attachAndShow(result.current.ref);
+
+      await waitFor(() =>
+        expect(result.current.bid).toEqual({
+          currentPrice: { amountMinor: 7_500, currency: 'USD', exponent: 2 },
+          bidCount: 4,
+        }),
+      );
+      expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledExactlyOnceWith(SELLER, 'camera');
+    },
+  );
+
+  it.each([
+    ['sold', { state: 'sold' as const, availableQuantity: 0 }, true],
+    ['reserved', { state: 'reserved' as const, availableQuantity: 0 }, false],
+  ])('reports %s card state in locks-paykit mode', async (expectedState, overrides, expectedSoldOut) => {
+    config.mode = 'locks-paykit';
+    vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue({
+      ...auctionProjection(),
+      auction: null,
+      saleFormat: 'fixed_price',
+      ...overrides,
+    });
+
+    const { result } = renderHook(() => useMarketplaceLiveBid(SELLER, 'boots', true));
     attachAndShow(result.current.ref);
 
-    await waitFor(() =>
-      expect(result.current.bid).toEqual({
-        currentPrice: { amountMinor: 7_500, currency: 'USD', exponent: 2 },
-        bidCount: 4,
-      }),
-    );
-    expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledExactlyOnceWith(SELLER, 'camera');
+    await waitFor(() => expect(result.current.listingState).toBe(expectedState));
+    expect(result.current.soldOut).toBe(expectedSoldOut);
+    expect(result.current.bid).toBeNull();
   });
 
   it('reports sold out when every size is sold out, and not while one has stock', async () => {
@@ -244,7 +268,7 @@ describe('useMarketplaceLiveBid', () => {
     expect(result.current.bid).toBeNull();
   });
 
-  it.each(['sandbox', 'unavailable', 'locks-paykit'] as const)('stays inert in %s mode', (mode) => {
+  it.each(['sandbox', 'unavailable'] as const)('stays inert in %s mode', (mode) => {
     config.mode = mode;
     const { result } = renderHook(() => useMarketplaceLiveBid(SELLER, 'camera', true));
 

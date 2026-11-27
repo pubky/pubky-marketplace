@@ -12,7 +12,7 @@ import { Link } from '@/atoms/Link/Link';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
 import { withBasePath } from '@/config/base-path';
-import { isTransactionalCommerceMode } from '@/config/commerce';
+import { isDurableCommerceMode, isTransactionalCommerceMode } from '@/config/commerce';
 import { type MarketplaceOrderView, useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplaceOrders';
 import { useMarkMarketplaceOrdersSeen } from '@/hooks/useMarkMarketplaceOrdersSeen/useMarkMarketplaceOrdersSeen';
 import { useNowMs } from '@/hooks/useNowMs/useNowMs';
@@ -542,7 +542,7 @@ export function MarketplaceOrders() {
                                 order={order}
                                 payment={payment}
                                 isBuyer={isBuyer}
-                                canEditReview={adapterMode === 'transaction-service'}
+                                canEditReview={isDurableCommerceMode(adapterMode)}
                                 actOnOrder={actOnOrder}
                                 onChanged={refresh}
                                 messageAction={<MarketplaceOrderMessageCta order={order} />}

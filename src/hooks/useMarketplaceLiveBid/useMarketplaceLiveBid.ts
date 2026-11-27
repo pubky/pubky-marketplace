@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { getCommerceAdapterMode } from '@/config/commerce';
+import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useViewportObserver } from '@/hooks/useViewportObserver/useViewportObserver';
 import { projectionReadsSoldOut } from '@/libs/commerce/listing-variants';
@@ -44,18 +44,18 @@ export interface UseMarketplaceLiveBidResult {
  * poll seeing the listing change — see `listingCardRefresh`) and when the
  * window regains focus, the same trigger the detail page's poll uses.
  *
- * Scope: `transaction-service` mode only. The sandbox keeps terms-only cards;
- * its simulated bid state stays on the detail page where it is labeled as
- * such. Failures (no session yet, service unreachable) leave `bid` and
- * `listingState` null and the card falls back to the seller's terms
- * from the index — never a fabricated bid or sold-out claim.
+ * Scope: durable commerce modes (`transaction-service` and `locks-paykit`).
+ * The sandbox keeps terms-only cards; its simulated bid state stays on the
+ * detail page where it is labeled as such. Failures (no session yet, service
+ * unreachable) leave `bid` and `listingState` null and the card falls back to
+ * the seller's terms from the index — never a fabricated bid or sold-out claim.
  */
 export function useMarketplaceLiveBid(
   sellerPubky: string,
   listingId: string,
   enabled: boolean,
 ): UseMarketplaceLiveBidResult {
-  const isDurableMode = getCommerceAdapterMode() === 'transaction-service';
+  const isDurableMode = isDurableCommerceMode(getCommerceAdapterMode());
   const isActive = enabled && isDurableMode;
   const { ref, isVisible } = useViewportObserver({ enabled: isActive });
   const [bid, setBid] = useState<MarketplaceLiveBid | null>(null);
