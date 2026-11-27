@@ -366,6 +366,14 @@ const EXEMPT_CONTROLLERS: Record<string, { calls: string[]; reason: string }> = 
     calls: ['CommerceApplication.restoreInventorySession', 'CommerceApplication.restoreMarketplaceSession'],
     reason: "Restores the signed-in account's own sessions at sign-in; the gated controllers decide what they may do.",
   },
+  'commerce/attestor-guide.ts': {
+    calls: [
+      'CommerceAttestorApplication.loadKeyWindows',
+      'CommerceAttestorApplication.retainedCutoffProfileAttestors',
+      'CommerceAttestorApplication.unconfirmedProfileAttestors',
+    ],
+    reason: 'The public /llms.txt guide reads signed attestor profiles and deployment trust settings.',
+  },
   'import-image/import-image.ts': {
     calls: ['ImportImageApplication.fetch'],
     reason: 'The /api/import-image fetch proxy: no credential, no seller data, public images only.',
