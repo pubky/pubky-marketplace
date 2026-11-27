@@ -5420,7 +5420,9 @@ export class CommerceApplication {
         seller_id: sellerPubky,
         ...(attestors !== null && { attestors }),
       });
-      return { status: 'rated', summary: CommerceRecordNormalizer.nexusReputationSummary(payload) };
+      if (payload !== null) {
+        return { status: 'rated', summary: CommerceRecordNormalizer.nexusReputationSummary(payload) };
+      }
     } catch (error) {
       if (!(isAppError(error) && isNotFound(error))) {
         Logger.warn('Seller reputation fetch failed; rendering no reputation surface', { sellerPubky, error });

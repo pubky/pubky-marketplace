@@ -231,6 +231,17 @@ describe('NexusMarketplaceService', () => {
     });
   });
 
+  it('reads shop reputation via fetchNexusIfFound without retrying through queryNexus', async () => {
+    const seller = 's'.repeat(52);
+    mockFetchNexus.mockResolvedValueOnce(null);
+
+    await expect(NexusMarketplaceService.fetchShopReputation({ seller_id: seller })).resolves.toBeNull();
+    expect(mockFetchNexus).toHaveBeenCalledWith({
+      url: marketplaceApi.shopReputation({ seller_id: seller }),
+    });
+    expect(mockQueryNexus).not.toHaveBeenCalled();
+  });
+
   it('propagates Nexus errors to the caller', async () => {
     mockQueryNexus.mockRejectedValue(new Error('nexus unreachable'));
 

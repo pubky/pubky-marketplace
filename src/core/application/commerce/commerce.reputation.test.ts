@@ -85,6 +85,14 @@ describe('CommerceApplication.fetchSellerReputationOverview', () => {
       expect.arrayContaining([expect.stringMatching(/^(buckets|scoped)$/)]),
     );
   });
+
+  it('treats a null reputation read as new_seller once the review stream responds', async () => {
+    vi.spyOn(NexusMarketplaceService, 'fetchShopReputation').mockResolvedValue(null);
+    const probe = vi.spyOn(NexusMarketplaceService, 'fetchShopReviews').mockResolvedValue([]);
+
+    await expect(CommerceApplication.fetchSellerReputationOverview(SELLER)).resolves.toEqual({ status: 'new_seller' });
+    expect(probe).toHaveBeenCalledWith({ seller_id: SELLER, limit: 1 });
+  });
 });
 
 describe('CommerceApplication.fetchListingRating', () => {
