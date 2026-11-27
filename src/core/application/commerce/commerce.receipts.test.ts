@@ -903,6 +903,31 @@ describe('CommerceApplication.publishOrderReceipts without the seller side', () 
     expect(homeserver.files.has(sealedUrl(BUYER, SOLD_RECEIPT))).toBe(false);
   });
 
+  it.each([105, 199])('caps mixed pages at 100 purchases and resumes with the next of %i purchases', async (count) => {
+    const record = await publishedRecord();
+    CommerceApplication.resetReceiptPublicationMemo();
+    homeserver.files.clear();
+    const [sale] = plantSellerReceipts(record, 1);
+    const purchases = Array.from({ length: count }, (_, n) => sellerReceiptId(n + 1));
+    for (const receiptId of purchases) homeserver.files.set(legacyUrl(BUYER, receiptId), { ...record, receiptId });
+    const list = vi.spyOn(CommerceHomeserverService, 'list');
+    homeserver.log.length = 0;
+
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [], { sellerSide: false })).resolves.toBe(
+      'unavailable',
+    );
+    const deletes = () => homeserver.log.filter((entry) => entry.startsWith('DELETE '));
+    expect(deletes()).toEqual(purchases.slice(0, 100).map((id) => `DELETE ${legacyUrl(BUYER, id)}`));
+    expect(homeserver.files.has(legacyUrl(BUYER, purchases[100]))).toBe(true);
+    list.mockClear();
+
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [], { sellerSide: false })).resolves.toBe('published');
+    expect(list.mock.calls[0][3]).toBe(legacyUrl(BUYER, purchases[99]));
+    expect(deletes()).toEqual(purchases.map((id) => `DELETE ${legacyUrl(BUYER, id)}`));
+    expect(homeserver.files.has(legacyUrl(BUYER, sale))).toBe(true);
+    expect(homeserver.files.has(sealedUrl(BUYER, sale))).toBe(false);
+  });
+
   it('moves a purchase receipt behind more than a batch of seller receipts, reading those once', async () => {
     const record = await publishedRecord();
     CommerceApplication.resetReceiptPublicationMemo();

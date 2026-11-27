@@ -135,6 +135,7 @@ export class LocalChatService {
     owner: string,
     peer: string,
     latest: { sentAt: number; body: string; direction: ChatMessageDirection; context: ChatContext | null },
+    judgedContext?: ChatContext | null,
   ): Promise<void> {
     try {
       await db.transaction('rw', ChatConversationModel.table, async () => {
@@ -142,10 +143,9 @@ export class LocalChatService {
         const row = await ChatConversationModel.table.get(id);
         if (!row) return;
         if (row.last_message_at !== null && row.last_message_at > latest.sentAt) return;
-        const context = latest.context ?? row.last_context;
-        const contextChanged =
-          (context?.listingId ?? null) !== (row.last_context?.listingId ?? null) ||
-          (context?.orderId ?? null) !== (row.last_context?.orderId ?? null);
+        const mayChangeContext = judgedContext === undefined || sameChatContext(row.last_context, judgedContext);
+        const context = mayChangeContext && latest.context ? latest.context : row.last_context;
+        const contextChanged = !sameChatContext(context, row.last_context);
         await ChatConversationModel.table.update(id, {
           last_message_at: latest.sentAt,
           last_message_preview: chatPreview(latest.body),

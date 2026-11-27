@@ -62,6 +62,7 @@ import type {
 import { ChatHomeserverService } from '@/services/homeserver/chat/chat-storage';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import type { THomeserverResourceEvent } from '@/services/homeserver/homeserver.types';
+import { isHomeserverPublishConflict } from '@/services/homeserver/write-retry';
 import { InboxService } from '@/services/inbox/inbox';
 import type { InboxAvailability, InboxPing, InboxPingRef } from '@/services/inbox/inbox.types';
 import { LocalChatService } from '@/services/local/chat/chat';
@@ -433,8 +434,7 @@ export class ChatApplication {
         operation: 'queueMessage',
       });
     }
-    // An existing row's context moves only with touchConversation, in message order, so a newer message's
-    // context stored after this send was judged stays and the outbox judges the send under it.
+    // Only seed a new row here. The latest-message update compares the context a restricted send was judged on.
     await this.ensureConversationRow(me, peer, 'local', { context, keepExistingRow: true, signal });
     const messageId = crypto.randomUUID();
     const sentAt = Date.now();
@@ -457,7 +457,12 @@ export class ChatApplication {
     signal?.throwIfAborted();
     await LocalChatService.putMessage(row);
     signal?.throwIfAborted();
-    await LocalChatService.touchConversation(me, peer, { sentAt, body, direction: 'sent', context: context ?? null });
+    await LocalChatService.touchConversation(
+      me,
+      peer,
+      { sentAt, body, direction: 'sent', context: context ?? null },
+      params.judgedContext,
+    );
     return row.id;
   }
 
@@ -496,15 +501,13 @@ export class ChatApplication {
   }
 
   private static async sendDueMessages(me: string, signal?: AbortSignal, sends?: ChatOutboxSends): Promise<void> {
-    const due: ChatMessageModelSchema[] = [];
-    for (const row of await LocalChatService.listDueOutbox(me, Date.now())) {
-      if (!sends || (await sends(row))) due.push(row);
-    }
-    if (due.length === 0) return;
-    const identity = await this.requireIdentity(me, signal);
+    const due = await LocalChatService.listDueOutbox(me, Date.now());
+    let identity: ChatIdentityModelSchema | undefined;
     const keysByPeer = new Map<string, ChatPeerKeyResult>();
 
     for (const row of due) {
+      if (sends && !(await sends(row))) continue;
+      identity ??= await this.requireIdentity(me, signal);
       let keys = keysByPeer.get(row.peer_pubky);
       if (!keys) {
         // A message waiting on a keyless peer re-probes them on a short cadence:
@@ -520,6 +523,7 @@ export class ChatApplication {
         }
         keysByPeer.set(row.peer_pubky, keys);
       }
+      if (sends && !(await sends(row))) continue;
       signal?.throwIfAborted();
       if (keys.state !== 'ready') {
         await LocalChatService.updateMessage(row.id, {
@@ -547,10 +551,14 @@ export class ChatApplication {
           aad: chatAad(me, row.peer_pubky, path),
           plaintext,
         });
-        await ChatHomeserverService.putMessageFile(me, keys.ownFolderId, row.file_name, envelope);
+        // A restricted outbox must judge the thread again before a retry after network backoff.
+        await ChatHomeserverService.putMessageFile(me, keys.ownFolderId, row.file_name, envelope, {
+          singleAttempt: !!sends,
+        });
       } catch (error) {
         const attempts = row.attempts + 1;
-        const permanent = !(isAppError(error) && isRetryable(error)) || attempts >= CHAT_SEND_MAX_ATTEMPTS;
+        const retryable = (isAppError(error) && isRetryable(error)) || (!!sends && isHomeserverPublishConflict(error));
+        const permanent = !retryable || attempts >= CHAT_SEND_MAX_ATTEMPTS;
         signal?.throwIfAborted();
         await LocalChatService.updateMessage(row.id, {
           attempts,
@@ -579,7 +587,7 @@ export class ChatApplication {
         ping_attempts: 0,
       });
     }
-    await this.flushPrivState(me, signal);
+    if (identity) await this.flushPrivState(me, signal);
   }
 
   /**
@@ -614,6 +622,7 @@ export class ChatApplication {
       const conversation = await LocalChatService.getConversation(me, peer);
       if (!conversation?.own_folder_id) continue;
       const replied = await LocalChatService.hasReceivedFrom(me, peer);
+      if (sends && !(await sends({ peer_pubky: peer, context: null }))) continue;
       signal?.throwIfAborted();
       try {
         await InboxService.ping(me, {

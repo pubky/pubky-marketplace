@@ -12,6 +12,7 @@ import { chatMessageUrl, chatPingSlot, chatPrivateKeyUrl, chatPublicKeyUrl } fro
 import { NetworkErrorCode, RateLimitErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
+import { HttpMethod } from '@/libs/http/http.types';
 import {
   ChatConversationModel,
   ChatIdentityModel,
@@ -273,19 +274,23 @@ describe('ChatApplication', () => {
       });
     });
 
-    it('records the send context when the send is the newest message', async () => {
-      await ChatApplication.queueMessage(ALICE, {
-        peer: BOB,
-        body: 'About the boots',
-        context: { listingId: 'boots' },
-      });
+    it.each([undefined, purchase])(
+      'records the newest send context when the stored purchase is allowed (%j)',
+      async (judgedContext) => {
+        await ChatApplication.queueMessage(ALICE, {
+          peer: BOB,
+          body: 'About the boots',
+          context: { listingId: 'boots' },
+          judgedContext,
+        });
 
-      expect(await LocalChatService.getConversation(ALICE, BOB)).toMatchObject({
-        last_context: { listingId: 'boots' },
-        last_message_direction: 'sent',
-        priv_state_dirty: true,
-      });
-    });
+        expect(await LocalChatService.getConversation(ALICE, BOB)).toMatchObject({
+          last_context: { listingId: 'boots' },
+          last_message_direction: 'sent',
+          priv_state_dirty: true,
+        });
+      },
+    );
 
     it('writes the route context while the stored context is still the judged one', async () => {
       await ChatApplication.openConversation(ALICE, BOB, { listingId: 'boots' }, undefined, {
@@ -426,6 +431,33 @@ describe('ChatApplication', () => {
       await ChatApplication.retryMessage(ALICE, id);
       await ChatApplication.flushOutbox(ALICE);
       expect((await LocalChatService.getMessage(id))?.status).toBe('sent');
+    });
+
+    it('holds a purchase that becomes a sale during peer key lookup, then sends it once the purchase resumes', async () => {
+      const purchase = { orderId: 'bought-from-bob' };
+      const sale = { orderId: 'sold-to-bob' };
+      await ChatApplication.ensureIdentity(ALICE);
+      await ChatApplication.ensureIdentity(BOB);
+      const id = await ChatApplication.queueMessage(ALICE, { peer: BOB, body: 'About my order', context: purchase });
+      const key = homeserver.holdNext(HttpMethod.GET, chatPublicKeyUrl(BOB));
+      const sends = async () =>
+        (await LocalChatService.getConversation(ALICE, BOB))?.last_context?.orderId === purchase.orderId;
+      const flushing = ChatApplication.flushOutbox(ALICE, undefined, { sends });
+      await key.reached;
+      await LocalChatService.updateConversation(ALICE, BOB, { last_context: sale });
+      key.release();
+      await flushing;
+
+      const message = await LocalChatService.getMessage(id);
+      const conversation = await LocalChatService.getConversation(ALICE, BOB);
+      const url = chatMessageUrl(ALICE, conversation!.own_folder_id!, message!.file_name);
+      expect(homeserver.files.has(url)).toBe(false);
+      expect(message).toMatchObject({ status: 'queued', attempts: 0, next_attempt_at: null });
+      await LocalChatService.updateConversation(ALICE, BOB, { last_context: purchase });
+      await ChatApplication.flushOutbox(ALICE, undefined, { sends });
+      expect((await LocalChatService.getMessage(id))?.status).toBe('sent');
+      expect(homeserver.log.filter((entry) => entry === `PUT ${url}`)).toHaveLength(1);
+      expect(HomeserverService.request).toHaveBeenCalledWith(expect.objectContaining({ url, singleAttempt: true }));
     });
 
     it('leaves a message the sends filter refuses as it is, queued or failed', async () => {

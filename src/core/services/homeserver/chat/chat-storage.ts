@@ -149,11 +149,18 @@ export class ChatHomeserverService {
     return records;
   }
 
-  static async putMessageFile(me: string, folderId: string, fileName: string, envelope: ChatEnvelope): Promise<void> {
+  static async putMessageFile(
+    me: string,
+    folderId: string,
+    fileName: string,
+    envelope: ChatEnvelope,
+    { singleAttempt }: { singleAttempt?: boolean } = {},
+  ): Promise<void> {
     await HomeserverService.request({
       method: HttpMethod.PUT,
       url: chatMessageUrl(me, folderId, fileName),
       bodyJson: envelope,
+      singleAttempt,
       logUrl: CHAT_LOG_MESSAGE,
     });
   }

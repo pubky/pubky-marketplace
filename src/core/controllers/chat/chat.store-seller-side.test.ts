@@ -344,6 +344,29 @@ describe('ChatController sale threads in a store', () => {
     expect(vi.mocked(ChatApplication.retryMessage).mock.calls[0][3]?.sends).toEqual(expect.any(Function));
   });
 
+  it('holds a queued purchase if the stored thread changes while its order is being resolved', async () => {
+    setStoreSeller(STORE_SELLER);
+    await ChatController.fetchStoreThreadRoles();
+    await ChatController.commitFlushOutbox();
+    const sends = vi.mocked(ChatApplication.flushOutbox).mock.calls[0][2]?.sends;
+    const purchase = { orderId: 'older-purchase' };
+    let stored = thread(FRIEND, purchase);
+    vi.mocked(ChatApplication.getConversation).mockImplementation(async () => stored as never);
+    vi.mocked(CommerceApplication.getMarketplaceOrderParties).mockImplementationOnce(async () => {
+      stored = thread(FRIEND, { orderId: 'order-sold' });
+      return { buyerPubky: VIEWER, sellerPubky: FRIEND };
+    });
+    const message = { peer_pubky: FRIEND, context: purchase };
+
+    expect(await sends?.(message)).toBe(false);
+    stored = thread(FRIEND, purchase);
+    vi.mocked(CommerceApplication.getMarketplaceOrderParties).mockResolvedValue({
+      buyerPubky: VIEWER,
+      sellerPubky: FRIEND,
+    });
+    expect(await sends?.(message)).toBe(true);
+  });
+
   it.each(['fetchConversationUpdates', 'handleInboxPings'] as const)(
     'sends only the store seller row when %s triggers an outbox flush',
     async (entryPoint) => {
@@ -888,13 +911,14 @@ describe('ChatController sale threads in a store', () => {
       });
       await vi.waitFor(() => expect(CommerceApplication.getMarketplaceOrderParties).toHaveBeenCalled());
       await LocalChatService.touchConversation(VIEWER, FRIEND, {
-        sentAt: Date.now() + 60_000,
+        sentAt: Date.now(),
         body: 'About the sale',
         direction: 'received',
         context: sale,
       });
       release();
-      await expect(sending).resolves.toEqual(expect.any(String));
+      const queuedId = await sending;
+      expect(await LocalChatService.getMessage(queuedId)).toMatchObject({ status: 'queued', attempts: 0 });
 
       expect(await LocalChatService.getConversation(VIEWER, FRIEND)).toMatchObject({ last_context: sale });
       await ChatController.commitFlushOutbox();

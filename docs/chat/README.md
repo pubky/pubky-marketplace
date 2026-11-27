@@ -77,9 +77,9 @@ screen explains that restriction and decides again whenever the roles change or 
 thread's latest context keeps it shown; a thread that closes is restricted at once, and these decisions judge the
 route's context but never write it, so a route context the store refuses keeps the screen restricted. An open writes the
 route's context only while the stored context is still the one it judged, so a context a message stores meanwhile
-stays, and the thread is judged again under it. A send sets the context only of a row it creates; an existing row's
-context follows its newest message, so a newer sale message stored while a send was being judged keeps the thread
-closed and that send stays queued. A rebuild that finds a row created meanwhile only advances its read checkpoint.
+stays, and the thread is judged again under it. When a buyer queues a message, the latest-message update checks that
+the thread still has the context used to allow the send. A sale context that arrived during the check stays in place.
+The outbox checks the thread again after the peer's key is ready and before each delivery attempt, including retries. A rebuild that finds a row created meanwhile only advances its read checkpoint.
 `useStoreThreadRoles` reads the roles and retries a read that failed, an order or listing lookup that threw, or an
 order by-id lookup that found nothing. A send that starts while such a read fails part way uses what that read verified
 for the same account. Until the roles arrive, only the thread with the store seller is shown. The Shop still receives

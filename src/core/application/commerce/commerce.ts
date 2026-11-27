@@ -2921,7 +2921,13 @@ export class CommerceApplication {
         );
         return 'incomplete';
       }
-      const result = await this.migratePlaintextReceiptPage(ownerPubky, keyring, sellerSide, urls);
+      const result = await this.migratePlaintextReceiptPage(
+        ownerPubky,
+        keyring,
+        sellerSide,
+        urls,
+        RECEIPT_MIGRATION_BATCH - moved,
+      );
       if (result === 'needs_reauth') return 'needs_reauth';
       if (result === 'revoked') {
         if (!sellerSide) this.receiptMigrationFailedCycles.add(ownerPubky);
@@ -2930,7 +2936,7 @@ export class CommerceApplication {
       moved += result.moved;
       incomplete ||= result.incomplete;
       if (result.incomplete && !sellerSide) this.receiptMigrationFailedCycles.add(ownerPubky);
-      if (urls.length < RECEIPT_MIGRATION_BATCH) {
+      if (result.processed === urls.length && urls.length < RECEIPT_MIGRATION_BATCH) {
         this.receiptMigrationCursors.delete(ownerPubky);
         if (!sellerSide) {
           const failed = this.receiptMigrationFailedCycles.delete(ownerPubky);
@@ -2938,7 +2944,7 @@ export class CommerceApplication {
         }
         break;
       }
-      cursor = urls[urls.length - 1];
+      cursor = urls[result.processed - 1];
       if (sellerSide || moved >= RECEIPT_MIGRATION_BATCH || page >= RECEIPT_MIGRATION_MAX_PAGES) {
         if (!sellerSide) this.receiptMigrationCursors.set(ownerPubky, cursor);
         incomplete = true;
@@ -2948,16 +2954,20 @@ export class CommerceApplication {
     return incomplete ? 'incomplete' : 'done';
   }
 
-  /** One listed page of {@link migratePlaintextReceipts}: how many receipts it moved, and whether one stayed. */
+  /** Counts inspected URLs separately from receipts charged to the budget so the next pass resumes mid-page. */
   private static async migratePlaintextReceiptPage(
     ownerPubky: string,
     keyring: PrivKeyring,
     sellerSide: boolean,
     urls: string[],
-  ): Promise<{ moved: number; incomplete: boolean } | 'needs_reauth' | 'revoked'> {
+    remaining: number,
+  ): Promise<{ moved: number; processed: number; incomplete: boolean } | 'needs_reauth' | 'revoked'> {
     let moved = 0;
     let incomplete = false;
+    let processed = 0;
     for (const url of urls) {
+      if (moved === remaining) break;
+      processed += 1;
       if (!sellerSide && this.plaintextSellerReceiptUrls.has(url)) continue;
       const receiptId = url.slice(url.lastIndexOf('/') + 1);
       try {
@@ -2997,7 +3007,7 @@ export class CommerceApplication {
         incomplete = true;
       }
     }
-    return { moved, incomplete };
+    return { moved, processed, incomplete };
   }
 
   /** Whether a decrypted sealed receipt is exactly the validated plaintext one. */

@@ -332,13 +332,12 @@ export class ChatController {
     peer: string,
     context: ChatContext | null | undefined,
     signal: AbortSignal,
+    storedContext: ChatContext | null,
   ): Promise<boolean> {
     signal.throwIfAborted();
     if (peer === getStoreSeller()) return false;
     if (roles === null) return true;
-    const existing = await ChatApplication.getConversation(me, peer);
-    signal.throwIfAborted();
-    const contexts = [existing?.last_context, context];
+    const contexts = [storedContext, context];
     const missingOrderIds = new Set<string>();
     for (const candidate of contexts) {
       const orderId = candidate?.orderId;
@@ -376,8 +375,12 @@ export class ChatController {
       return recorded === undefined || recorded === 'unresolved' ? null : recorded;
     };
     if (context && contextRole(merged, peer, context, sideOf(context)) === 'sale') return true;
-    const thread = existing ?? { peer_pubky: peer, last_context: null };
-    return isSaleThread(thread, merged, getStoreSeller(), sideOf(thread.last_context));
+    return isSaleThread(
+      { peer_pubky: peer, last_context: storedContext },
+      merged,
+      getStoreSeller(),
+      sideOf(storedContext),
+    );
   }
 
   /** Refuses a write in a sale thread, or about a sale, for a viewer who cannot sell here. */
@@ -386,10 +389,13 @@ export class ChatController {
     peer: string,
     context: ChatContext | undefined,
     signal: AbortSignal,
-  ): Promise<void> {
-    const sale = await this.isSaleWrite(me, await this.knownStoreThreadRoles(me, signal), peer, context, signal);
+  ): Promise<ChatContext | null> {
+    const roles = await this.knownStoreThreadRoles(me, signal);
+    const storedContext = await this.storedContext(me, peer);
+    const sale = await this.isSaleWrite(me, roles, peer, context, signal, storedContext);
     signal.throwIfAborted();
     if (sale) StoreSellerGate.assertCanSellHere(me);
+    return storedContext;
   }
 
   /** For a viewer who cannot sell here, which queued messages may go out: none in a sale thread or about a sale. */
@@ -399,9 +405,13 @@ export class ChatController {
     let roles: Promise<StoreThreadRoles | null> | undefined;
     return async ({ peer_pubky, context }) => {
       roles ??= this.knownStoreThreadRoles(me, signal);
-      const sale = await this.isSaleWrite(me, await roles, peer_pubky, context, signal);
+      const known = await roles;
+      const judgedContext = await this.storedContext(me, peer_pubky);
+      const sale = await this.isSaleWrite(me, known, peer_pubky, context, signal, judgedContext);
+      // An order or listing lookup may have awaited the network. Leave a changed thread for the next flush.
+      const allowed = !sale && sameChatContext(judgedContext, await this.storedContext(me, peer_pubky));
       signal.throwIfAborted();
-      return !sale;
+      return allowed;
     };
   }
 
@@ -446,9 +456,13 @@ export class ChatController {
     const signal = captureAuthScope();
     const sellsHere = StoreSellerGate.canSellHere(me);
     const peer = this.normalizePeer(params.peerPubky);
-    if (!sellsHere) await this.assertNotSaleThread(me, peer, params.context, signal);
+    const judgedContext = sellsHere ? undefined : await this.assertNotSaleThread(me, peer, params.context, signal);
     signal.throwIfAborted();
-    const id = await ChatApplication.queueMessage(me, { peer, body: params.body, context: params.context }, signal);
+    const id = await ChatApplication.queueMessage(
+      me,
+      { peer, body: params.body, context: params.context, judgedContext },
+      signal,
+    );
     void this.flushOutboxFor(me, signal);
     if (params.context) void this.followSellerOnIntent(me, peer, params.context, signal);
     return id;
