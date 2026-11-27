@@ -14,9 +14,14 @@ import { MarketplaceSessionService } from '@/services/marketplace/marketplace-se
 import { MARKETPLACE_SESSION_GRANT } from '@/services/marketplace/marketplace-session-grant';
 import { resetMarketplaceOrderDiagnostics } from '@/services/marketplace/marketplace-order-diagnostics';
 import {
+  PAYMENT_UPSTREAM_INCONSISTENT_BUYER_COPY,
+  PAYMENT_UPSTREAM_INCONSISTENT_SELLER_COPY,
+} from '@/libs/commerce/bitcoin-buyer-status';
+import {
   DERIVED_PAYING_ORDER_ID,
   MALFORMED_ORDER_ID,
   STAGING_ORDERS_BUYER_PUBKY,
+  STAGING_ORDERS_SELLER_PUBKY,
   stagingCheckoutPayingResponse,
   stagingOrdersResponse,
   stagingOrdersWithMalformedResponse,
@@ -30,7 +35,7 @@ const MARKETPLACE_ORIGIN = 'http://127.0.0.1:8080';
 
 const navigation = vi.hoisted(() => ({
   pathname: '/marketplace/orders',
-  buyer: 'idgopdnhi9psboqguyzsmsj1hyyy7gks7wxa4ym9eazz6pibsfay',
+  viewer: 'idgopdnhi9psboqguyzsmsj1hyyy7gks7wxa4ym9eazz6pibsfay',
 }));
 
 let ordersPayload: { orders: unknown[] } = { orders: [] };
@@ -49,7 +54,7 @@ vi.mock('@/config/commerce', async () => {
 vi.mock('@/stores/auth/auth.store', async () => {
   const { createMarketplaceVrtAuthStore: createAuth } = await import('@/test/mocks/marketplace-vrt');
   return {
-    useAuthStore: createAuth({ currentUserPubky: navigation.buyer }),
+    useAuthStore: createAuth({ getCurrentUserPubky: () => navigation.viewer }),
   };
 });
 
@@ -187,21 +192,26 @@ function showRoute(pathname: string, search = '') {
   window.history.replaceState(null, '', `${pathname}${search}`);
 }
 
-beforeEach(() => {
-  // The paying view counts down once a second. Pin `Date.now` so the 30:00
-  // hold does not move between browsers or during the matcher retry.
-  vi.spyOn(Date, 'now').mockReturnValue(VRT_FROZEN_NOW_MS);
-  resetMarketplaceOrderDiagnostics();
+function establishSession(pubky: string) {
   MarketplaceSessionService.clearSession();
   MarketplaceSessionService.establishClaimedGrantSession(
     {
       token: SESSION_TOKEN,
-      pubky: STAGING_ORDERS_BUYER_PUBKY,
+      pubky,
       capabilities: MARKETPLACE_SESSION_GRANT,
       expiresAt: '2027-01-02T12:00:00.000Z',
     },
-    STAGING_ORDERS_BUYER_PUBKY,
+    pubky,
   );
+}
+
+beforeEach(() => {
+  // The paying view counts down once a second. Pin `Date.now` so the 30:00
+  // hold does not move between browsers or during the matcher retry.
+  vi.spyOn(Date, 'now').mockReturnValue(VRT_FROZEN_NOW_MS);
+  navigation.viewer = STAGING_ORDERS_BUYER_PUBKY;
+  resetMarketplaceOrderDiagnostics();
+  establishSession(STAGING_ORDERS_BUYER_PUBKY);
   installOrdersFetch(globalThis.fetch.bind(globalThis));
   vi.spyOn(CommerceController, 'resumeOwnReviewPublications').mockResolvedValue(0);
   vi.spyOn(CommerceController, 'resumeOwnReviewRemovals').mockResolvedValue(0);
@@ -229,7 +239,13 @@ describe('PR 582 staging orders visual proof', () => {
 
     await expect.element(screen.getByText('Order 470c02d8')).toBeVisible();
     await expect.element(screen.getByText('British laugh')).toBeVisible();
+    await expect
+      .element(screen.getByTestId('payment-manual-review-copy'))
+      .toHaveTextContent(PAYMENT_UPSTREAM_INCONSISTENT_BUYER_COPY);
     expect(screen.container.querySelectorAll('[data-testid="order-reference"]')).toHaveLength(7);
+    expect(
+      screen.container.querySelector('[data-testid="marketplace-abandoned-checkouts"]')?.textContent,
+    ).not.toContain('Order 470c02d8');
     expect(screen.container.textContent).not.toContain('temporarily unavailable');
     await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('after-orders-list', {
       screenshotOptions: { animations: 'disabled', caret: 'hide' },
@@ -245,9 +261,11 @@ describe('PR 582 staging orders visual proof', () => {
       disableHover: true,
     });
 
-    await expect.element(screen.getByTestId('payment-manual-review-copy')).toBeVisible();
+    await expect
+      .element(screen.getByTestId('payment-manual-review-copy'))
+      .toHaveTextContent(PAYMENT_UPSTREAM_INCONSISTENT_BUYER_COPY);
     await expect.element(screen.getByText('Order 470c02d8')).toBeVisible();
-    expect(screen.container.textContent).toContain('under review');
+    await expect.element(screen.getByText('Under manual review')).toBeVisible();
     await expect(await expectVrtSurface('marketplace-checkout')).toMatchScreenshot(
       'after-checkout-470c02d8-under-review',
       { screenshotOptions: { animations: 'disabled', caret: 'hide' } },
@@ -283,10 +301,34 @@ describe('PR 582 staging orders visual proof', () => {
 
     await expect.element(screen.getByTestId('marketplace-order-parse-error')).toBeVisible();
     await expect.element(screen.getByText('Order could not be displayed')).toBeVisible();
+    // The card still names the order locally. Diagnostics omit that id.
     await expect.element(screen.getByText(MALFORMED_ORDER_ID)).toBeVisible();
     await expect.element(screen.getByText('Order 470c02d8')).toBeVisible();
     expect(screen.container.querySelectorAll('[data-testid="order-reference"]')).toHaveLength(7);
     await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('after-orders-parse-error', {
+      screenshotOptions: { animations: 'disabled', caret: 'hide' },
+    });
+  });
+
+  it('renders 470c02d8 for the seller with wallet-check guidance and the review form', async () => {
+    navigation.viewer = STAGING_ORDERS_SELLER_PUBKY;
+    establishSession(STAGING_ORDERS_SELLER_PUBKY);
+    ordersPayload = stagingOrdersResponse();
+    showRoute('/marketplace/orders');
+
+    const screen = await renderForVRT(<MarketplaceOrders />, {
+      viewport: VRT_VIEWPORT_DESKTOP,
+      disableHover: true,
+    });
+
+    await expect.element(screen.getByText('Order 470c02d8')).toBeVisible();
+    await expect
+      .element(screen.getByTestId('payment-manual-review-copy'))
+      .toHaveTextContent(PAYMENT_UPSTREAM_INCONSISTENT_SELLER_COPY);
+    await expect
+      .element(screen.getByTestId('seller-bitcoin-resolve-prompt'))
+      .toHaveTextContent('Resolve payment review');
+    await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('after-orders-470c02d8-seller', {
       screenshotOptions: { animations: 'disabled', caret: 'hide' },
     });
   });

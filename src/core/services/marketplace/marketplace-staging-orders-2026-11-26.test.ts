@@ -8,6 +8,7 @@ import {
   MALFORMED_ORDER_CHANGED_PATHS,
   MALFORMED_ORDER_ID,
   MALFORMED_ORDER_SOURCE_ID,
+  MALFORMED_PAYMENT_ID,
   MALFORMED_REVIEW_REASON,
   STAGING_ORDERS_BUYER_PUBKY,
   stagingCheckoutPayingResponse,
@@ -166,6 +167,10 @@ describe('staging orders captured on 2026-11-26', () => {
       }),
     ]);
     expect(loggerError).toHaveBeenCalledOnce();
+    const reported = JSON.stringify(loggerError.mock.calls);
+    expect(reported).toContain('payment.reviewReason: invalid_value');
+    expect(reported).not.toContain(MALFORMED_ORDER_ID);
+    expect(reported).not.toContain(MALFORMED_PAYMENT_ID);
     loggerError.mockRestore();
   });
 });
