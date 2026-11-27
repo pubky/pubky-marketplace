@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { StoreState } from '@/config/store-mode';
 import {
   canSellHere,
   CONFLICTING_COUNTERPARTY,
@@ -16,6 +17,10 @@ import {
 const STORE_SELLER = 's'.repeat(52);
 const VIEWER = 'v'.repeat(52);
 const OTHER = 'o'.repeat(52);
+const OFF: StoreState = { kind: 'off' };
+const CLAIMED: StoreState = { kind: 'claimed', seller: STORE_SELLER, source: 'pinned', claimMode: false };
+const UNCLAIMED: StoreState = { kind: 'unclaimed', claimMode: true };
+const UNAVAILABLE: StoreState = { kind: 'unavailable', claimMode: true };
 
 const rows = [
   { id: 'bought-from-store', sellerPubky: STORE_SELLER },
@@ -26,15 +31,20 @@ const rows = [
 const ids = (list: { id: string }[]) => list.map(({ id }) => id);
 
 describe('canSellHere', () => {
-  it('lets nobody signed out sell in a store, and everyone outside store mode', () => {
-    expect(canSellHere(null, STORE_SELLER)).toBe(false);
-    expect(canSellHere(null, null)).toBe(true);
+  it('lets everyone sell when store mode is off', () => {
+    expect(canSellHere(null, OFF)).toBe(true);
+    expect(canSellHere(VIEWER, OFF)).toBe(true);
   });
 
-  it('lets only the store seller sell in a store, and everyone outside store mode', () => {
-    expect(canSellHere(VIEWER, STORE_SELLER)).toBe(false);
-    expect(canSellHere(STORE_SELLER, STORE_SELLER)).toBe(true);
-    expect(canSellHere(VIEWER, null)).toBe(true);
+  it('lets only the store seller sell in a claimed store', () => {
+    expect(canSellHere(null, CLAIMED)).toBe(false);
+    expect(canSellHere(VIEWER, CLAIMED)).toBe(false);
+    expect(canSellHere(STORE_SELLER, CLAIMED)).toBe(true);
+  });
+
+  it.each([UNCLAIMED, UNAVAILABLE])('lets nobody sell while the store is $kind', (state) => {
+    expect(canSellHere(null, state)).toBe(false);
+    expect(canSellHere(STORE_SELLER, state)).toBe(false);
   });
 });
 
@@ -94,7 +104,7 @@ describe('isSaleSubject', () => {
 
 describe('withoutSalesOutsideStoreSeller', () => {
   it('drops the rows another signed-in seller sold in a store', () => {
-    expect(ids(withoutSalesOutsideStoreSeller(rows, VIEWER, STORE_SELLER))).toEqual([
+    expect(ids(withoutSalesOutsideStoreSeller(rows, VIEWER, CLAIMED))).toEqual([
       'bought-from-store',
       'bought-elsewhere',
     ]);
@@ -102,11 +112,11 @@ describe('withoutSalesOutsideStoreSeller', () => {
 
   it('keeps every row for the store seller', () => {
     const storeSellerRows = [...rows, { id: 'sold-by-store', sellerPubky: STORE_SELLER }];
-    expect(withoutSalesOutsideStoreSeller(storeSellerRows, STORE_SELLER, STORE_SELLER)).toBe(storeSellerRows);
+    expect(withoutSalesOutsideStoreSeller(storeSellerRows, STORE_SELLER, CLAIMED)).toBe(storeSellerRows);
   });
 
   it('keeps every row outside store mode', () => {
-    expect(withoutSalesOutsideStoreSeller(rows, VIEWER, null)).toBe(rows);
+    expect(withoutSalesOutsideStoreSeller(rows, VIEWER, OFF)).toBe(rows);
   });
 });
 
@@ -186,7 +196,7 @@ describe('withoutSalesNotificationsOutsideStoreSeller', () => {
   ];
 
   it('keeps only what another signed-in seller bought in a store, and hides what it cannot tell', () => {
-    expect(ids(withoutSalesNotificationsOutsideStoreSeller(notifications, VIEWER, STORE_SELLER, roles))).toEqual([
+    expect(ids(withoutSalesNotificationsOutsideStoreSeller(notifications, VIEWER, CLAIMED, roles))).toEqual([
       'order-bought',
       'offer-made',
       'outbid',
@@ -198,13 +208,13 @@ describe('withoutSalesNotificationsOutsideStoreSeller', () => {
   });
 
   it('keeps every notification for the store seller', () => {
-    expect(withoutSalesNotificationsOutsideStoreSeller(notifications, STORE_SELLER, STORE_SELLER, roles)).toBe(
+    expect(withoutSalesNotificationsOutsideStoreSeller(notifications, STORE_SELLER, CLAIMED, roles)).toBe(
       notifications,
     );
   });
 
   it('keeps every notification outside store mode', () => {
-    expect(withoutSalesNotificationsOutsideStoreSeller(notifications, VIEWER, null, roles)).toBe(notifications);
+    expect(withoutSalesNotificationsOutsideStoreSeller(notifications, VIEWER, OFF, roles)).toBe(notifications);
   });
 });
 
@@ -225,7 +235,7 @@ describe('isSaleThread', () => {
     peer: string,
     context: { orderId?: string; listingId?: string } | null,
     listingSide: ListingSide | null = null,
-  ) => isSaleThread({ peer_pubky: peer, last_context: context }, roles, STORE_SELLER, listingSide);
+  ) => isSaleThread({ peer_pubky: peer, last_context: context }, roles, CLAIMED, listingSide);
 
   it('is a sale thread with a buyer of the viewer, about an order it sold, or about its own listing', () => {
     expect(isSale(BUYER, null)).toBe(true);
@@ -368,9 +378,9 @@ describe('isSaleThread', () => {
     expect(mergeStoreThreadRoles(merged, placed(OTHER)).boughtOrders).toEqual({ contested: CONFLICTING_COUNTERPARTY });
     expect(mergeStoreThreadRoles(placed(OTHER), placed(OTHER)).boughtOrders).toEqual({ contested: OTHER });
     for (const peer of [OTHER, 'p'.repeat(52)]) {
-      expect(
-        isSaleThread({ peer_pubky: peer, last_context: { orderId: 'contested' } }, merged, STORE_SELLER, null),
-      ).toBe(true);
+      expect(isSaleThread({ peer_pubky: peer, last_context: { orderId: 'contested' } }, merged, CLAIMED, null)).toBe(
+        true,
+      );
     }
   });
 
@@ -393,7 +403,7 @@ describe('isSaleThread', () => {
 
   it('shows only the thread with the store seller before the roles are read', () => {
     const unread = (peer: string, context: { orderId?: string } | null) =>
-      isSaleThread({ peer_pubky: peer, last_context: context }, null, STORE_SELLER, null);
+      isSaleThread({ peer_pubky: peer, last_context: context }, null, CLAIMED, null);
     expect(unread(STORE_SELLER, { orderId: 'bought' })).toBe(false);
     expect(unread(STORE_SELLER, null)).toBe(false);
     expect(unread(OTHER, null)).toBe(true);

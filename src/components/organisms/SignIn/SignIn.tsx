@@ -109,10 +109,12 @@ const SignInBothSigners = ({
   auth,
   withoutKeys,
   onWithoutKeys,
+  showPassport,
 }: {
   auth: TSignerAuth;
   withoutKeys: boolean;
   onWithoutKeys: () => void;
+  showPassport: boolean;
 }) => {
   const offersWithoutKeys = !withoutKeys && isPrivKeysRequested();
   return (
@@ -183,14 +185,14 @@ const SignInBothSigners = ({
             </Typography>
             <Typography className="text-secondary-foreground opacity-80">Use your existing sign-in methods.</Typography>
           </div>
-          <PassportSignInButton />
+          {showPassport && <PassportSignInButton />}
         </IllustratedCard>
       </div>
     </Container>
   );
 };
 
-export const SignInContent = () => {
+export const SignInContent = ({ showPassport = true }: { showPassport?: boolean } = {}) => {
   const [withoutKeys, setWithoutKeys] = useState(false);
   const auth = useMobileAuth(withoutKeys ? { withPrivKeys: false } : {});
   const { url, isLoading, isExpired, fetchUrl, copyAuthUrl, isOpeningRing, onAuthorizeClick } = auth;
@@ -251,7 +253,14 @@ export const SignInContent = () => {
     );
   }
   if (isGrantSignInAvailable) {
-    return <SignInBothSigners auth={auth} withoutKeys={withoutKeys} onWithoutKeys={() => setWithoutKeys(true)} />;
+    return (
+      <SignInBothSigners
+        auth={auth}
+        withoutKeys={withoutKeys}
+        onWithoutKeys={() => setWithoutKeys(true)}
+        showPassport={showPassport}
+      />
+    );
   }
   return (
     <>

@@ -1,0 +1,1 @@
+Store mode: `PUBKY_RUNTIME_STORE_MODE=single_seller` can start a shop without a seller, and the owner claims it in the browser with a one-time setup code and Pubky Ring. Visitors see a holding page until then; once claimed, the shop permanently serves only that identity, with guided steps for the first listing, getting paid, and sharing the shop link. Unset, nothing changes.

@@ -1,6 +1,7 @@
+import type { StoreState } from '@/config/store-mode';
+
 /**
- * Which pages and route handlers a store-mode deployment (`PUBKY_RUNTIME_STORE_SELLER`, see
- * `@/config/store-mode`) serves. Every `page.tsx` and every `route.ts` under `src/app`, `/api`
+ * Which pages and route handlers a store-mode deployment (see `@/config/store-mode`) serves. Every `page.tsx` and every `route.ts` under `src/app`, `/api`
  * included, has one row, keyed by its folder; `store-route-policy.test.ts` fails on a file without
  * a row, and at run time a store answers 404 for any path that matches no row, so a new page or
  * handler stays hidden in store mode until it is classified here. Outside store mode these tables
@@ -19,7 +20,9 @@ type StoreRouteScope =
   /** Selling tools; only the store seller, signed in, may use them. */
   | 'seller-viewer'
   /** The store seller's own record, edited by the store seller: `seller-path` and `seller-viewer`. */
-  | 'seller-path-and-viewer';
+  | 'seller-path-and-viewer'
+  /** First-boot claiming, or the claimed summary after it. */
+  | 'store-setup';
 
 type StoreRoutePolicy =
   | { mode: 'both' }
@@ -32,6 +35,7 @@ const STORE_HOME: StoreRoutePolicy = { mode: 'store-scoped', scope: 'store-home'
 const SELLER_PATH: StoreRoutePolicy = { mode: 'store-scoped', scope: 'seller-path' };
 const SELLER_VIEWER: StoreRoutePolicy = { mode: 'store-scoped', scope: 'seller-viewer' };
 const SELLER_PATH_AND_VIEWER: StoreRoutePolicy = { mode: 'store-scoped', scope: 'seller-path-and-viewer' };
+const STORE_SETUP: StoreRoutePolicy = { mode: 'store-scoped', scope: 'store-setup' };
 
 // exported for tests
 /** The page folders under `src/app`, with route groups `(...)` and parallel slots `@...` as on disk. */
@@ -73,6 +77,8 @@ export const STORE_PAGE_POLICY: Readonly<Record<string, StoreRoutePolicy>> = {
   '/messages/[pubky]': BOTH,
   '/offline': BOTH,
   '/sentry-test': MARKETPLACE_ONLY,
+  '/setup': STORE_SETUP,
+  '/store-unavailable': MARKETPLACE_ONLY,
 };
 
 type StoreRouteHandlerRow = { policy: StoreRoutePolicy; reason: string };
@@ -121,6 +127,10 @@ export const STORE_ROUTE_HANDLER_POLICY: Readonly<Record<string, StoreRouteHandl
   '/api/marketplace/grant-flows/[stateId]/status': { policy: BOTH, reason: GRANT_BFF },
   '/api/marketplace/health': { policy: BOTH, reason: 'Grant BFF readiness, for deploy and install checks.' },
   '/api/marketplace/session': { policy: BOTH, reason: GRANT_BFF },
+  '/api/marketplace/store': {
+    policy: BOTH,
+    reason: 'The public resolved store state used to finish first-boot claiming.',
+  },
   '/api/paykit-creator': {
     policy: BOTH,
     reason:
@@ -300,21 +310,49 @@ export function matchStoreRoute(
 type StoreRouteDecision =
   | { kind: 'allow' }
   | { kind: 'not-found' }
+  | { kind: 'unavailable' }
   /** Open the store seller's shop. */
   | { kind: 'store-home' };
 
 function decidePage(
   { policy, params }: NonNullable<ReturnType<typeof matchStoreRoute>>,
-  storeSeller: string,
+  state: Extract<StoreState, { kind: 'claimed' }>,
 ): StoreRouteDecision {
   if (policy.mode === 'both') return { kind: 'allow' };
   if (policy.mode === 'marketplace-only') return { kind: 'not-found' };
   if (policy.scope === 'store-home') return { kind: 'store-home' };
+  if (policy.scope === 'store-setup') {
+    return state.source === 'claim' ? { kind: 'allow' } : { kind: 'not-found' };
+  }
   if (policy.scope === 'seller-path' || policy.scope === 'seller-path-and-viewer') {
-    return params.sellerPubky === storeSeller ? { kind: 'allow' } : { kind: 'not-found' };
+    return params.sellerPubky === state.seller ? { kind: 'allow' } : { kind: 'not-found' };
   }
   // `seller-viewer`: the viewer is known only in the browser; the route guard checks it.
   return { kind: 'allow' };
+}
+
+const UNCLAIMED_PAGES = new Set(['/', '/setup', '/(auth)/sign-in', '/(auth)/logout', '/complete-profile']);
+const UNCLAIMED_HANDLERS = new Set(['/api/build', '/api/marketplace/health', '/api/marketplace/store']);
+
+function isUnclaimedGrantHandler(key: string): boolean {
+  return (
+    key === '/api/marketplace/session' ||
+    key.startsWith('/api/marketplace/bootstrap-') ||
+    key.startsWith('/api/marketplace/grant-')
+  );
+}
+
+function decideUnclaimedRoute(pathname: string): StoreRouteDecision {
+  if (RSC_REQUEST_SUFFIX.test(pathname)) {
+    const decision = decideUnclaimedRoute(pathname.replace(RSC_REQUEST_SUFFIX, '') || '/');
+    return decision.kind === 'allow' ? decision : { kind: 'not-found' };
+  }
+  const page = matchStoreRoute(pathname);
+  if (!page) return { kind: 'not-found' };
+  if (UNCLAIMED_PAGES.has(page.key) || UNCLAIMED_HANDLERS.has(page.key) || isUnclaimedGrantHandler(page.key)) {
+    return { kind: 'allow' };
+  }
+  return { kind: 'not-found' };
 }
 
 /**
@@ -324,10 +362,13 @@ function decidePage(
  * or when it is an entry route (the Market's image, which the store's other pages point at), and
  * never open the store home.
  */
-export function decideStoreRoute(pathname: string, storeSeller: string): StoreRouteDecision {
+export function decideStoreRoute(pathname: string, state: StoreState): StoreRouteDecision {
   if (pathname.startsWith('/_next/') || STORE_STATIC_FILES.has(pathname)) return { kind: 'allow' };
+  if (state.kind === 'off') return { kind: 'allow' };
+  if (state.kind === 'unavailable') return { kind: 'unavailable' };
+  if (state.kind === 'unclaimed') return decideUnclaimedRoute(pathname);
   if (RSC_REQUEST_SUFFIX.test(pathname)) {
-    const decision = decideStoreRoute(pathname.replace(RSC_REQUEST_SUFFIX, '') || '/', storeSeller);
+    const decision = decideStoreRoute(pathname.replace(RSC_REQUEST_SUFFIX, '') || '/', state);
     return decision.kind === 'allow' ? decision : { kind: 'not-found' };
   }
 
@@ -335,13 +376,13 @@ export function decideStoreRoute(pathname: string, storeSeller: string): StoreRo
   const last = segments.at(-1);
   if (last !== undefined && METADATA_IMAGE_SEGMENT.test(last)) {
     const page = matchStoreRoute(`/${segments.slice(0, -1).join('/')}`);
-    const kind = page ? decidePage(page, storeSeller).kind : 'not-found';
+    const kind = page ? decidePage(page, state).kind : 'not-found';
     return kind === 'allow' || kind === 'store-home' ? { kind: 'allow' } : { kind: 'not-found' };
   }
 
   const page = matchStoreRoute(pathname);
   if (!page) return { kind: 'not-found' };
-  return decidePage(page, storeSeller);
+  return decidePage(page, state);
 }
 
 /** Whether a store lets only the store seller, signed in, open this path (selling tools). */

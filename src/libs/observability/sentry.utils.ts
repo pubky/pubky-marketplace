@@ -88,10 +88,32 @@ export function stripConversationQueryParam(value: string): string {
   return stripped.replace(/\?&+/g, '?').replace(/&&+/g, '&').replace(/\?#/g, '#').replace(/[?&]$/g, '');
 }
 
+const SETUP_ROUTE_PATTERN = /(?:^|\/)setup(?:\/|[?#]|$)/i;
+
+function stripSetupCodeQueryParam(value: string): string {
+  return value.replace(/((?:^|\/)setup\/?\?[^#\s"'<>)]*)/gi, (segment) =>
+    segment
+      .replace(/([?&])code=[^&#\s"'<>)]*/gi, '$1')
+      .replace(/\?&+/g, '?')
+      .replace(/&&+/g, '&')
+      .replace(/[?&]$/g, ''),
+  );
+}
+
+function stripStoreClaimFragment(value: string): string {
+  return stripSetupCodeQueryParam(value)
+    .replace(/#claim=[^#]*/gi, '')
+    .replace(/([?&])claim=[^&#]*/gi, '$1')
+    .replace(/\?&+/g, '?')
+    .replace(/&&+/g, '&')
+    .replace(/[?&](?=#)/g, '')
+    .replace(/[?&]$/g, '');
+}
+
 function scrubSensitiveStringPatterns(value: string): string {
   if (value.length > SENTRY_REDACTION_MAX_STRING_LENGTH) return SENTRY_LIMIT_REDACTED;
 
-  const scrubbed = stripConversationQueryParam(value)
+  const scrubbed = stripStoreClaimFragment(stripConversationQueryParam(value))
     .replace(PUBKY_URI_PATTERN, PUBKY_REDACTED)
     .replace(PUBKY_HTTP_HOST_PATTERN, PUBKY_REDACTED)
     .replace(PUBKY_COMPACT_URI_PATTERN, PUBKY_REDACTED)
@@ -114,6 +136,31 @@ function scrubRequestConversationQuery(request: Sentry.ErrorEvent['request'] | T
     const record = queryString as Record<string, unknown>;
     for (const key of Object.keys(record)) {
       if (key.toLowerCase() === 'conversation') delete record[key];
+    }
+  }
+}
+
+function stripBareSetupQueryParams(query: string): string {
+  return query
+    .replace(/(?:[?&]|^)(?:code|claim)=[^&#]*/gi, (match) =>
+      match.startsWith('?') || match.startsWith('&') ? match[0] : '',
+    )
+    .replace(/\?&+/g, '?')
+    .replace(/&&+/g, '&')
+    .replace(/^[?&]+|[?&]+$/g, '');
+}
+
+function scrubRequestStoreSetupQuery(request: Sentry.ErrorEvent['request'] | TransactionEvent['request']): void {
+  if (!request) return;
+  if (typeof request.url !== 'string' || !SETUP_ROUTE_PATTERN.test(request.url)) return;
+  const queryString = request.query_string;
+  if (typeof queryString === 'string') {
+    request.query_string = stripBareSetupQueryParams(queryString);
+  } else if (queryString && typeof queryString === 'object' && !Array.isArray(queryString)) {
+    const record = queryString as Record<string, unknown>;
+    for (const key of Object.keys(record)) {
+      const lower = key.toLowerCase();
+      if (lower === 'code' || lower === 'claim') delete record[key];
     }
   }
 }
@@ -427,6 +474,7 @@ export function scrubSensitiveData(event: Sentry.ErrorEvent, hint?: Sentry.Event
     if (event.request) {
       event.request = sanitizeForSentryHook(event.request, state) as Sentry.ErrorEvent['request'];
       scrubRequestConversationQuery(event.request);
+      scrubRequestStoreSetupQuery(event.request);
     }
 
     if (event.user) {
@@ -496,6 +544,7 @@ export function scrubTransactionEvent(event: TransactionEvent): TransactionEvent
     if (event.request) {
       event.request = sanitizeForSentryHook(event.request, state) as typeof event.request;
       scrubRequestConversationQuery(event.request);
+      scrubRequestStoreSetupQuery(event.request);
     }
 
     if (event.breadcrumbs) {

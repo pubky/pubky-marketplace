@@ -17,6 +17,8 @@ describe('persisted store keys', () => {
       expect(key.startsWith('shop-'), key).toBe(true);
     }
     expect(keys.AUTH_PERSIST_KEY).toBe('shop-auth-store');
+    expect(keys.PERSISTED_STORE_KEYS).toContain('shop-store-setup-storage');
+    expect(keys.PERSISTED_STORE_KEYS).not.toContain('shop:store-claim-code:v1');
     expect(new Set(keys.PERSISTED_STORE_KEYS).size).toBe(keys.PERSISTED_STORE_KEYS.length);
   });
 

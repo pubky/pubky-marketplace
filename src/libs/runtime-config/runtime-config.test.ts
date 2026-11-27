@@ -7,6 +7,7 @@ import {
   getEuFenceEnabled,
   getLocksUrl,
   getMarketplaceNexusUrl,
+  getMarketplaceServiceUrl,
   getMarketplaceUrl,
   getPassportOrigin,
   getPassportPrivEncryptionKeysEnabled,
@@ -171,6 +172,21 @@ describe('runtime-config resolver', () => {
         vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', 'https://pubky.app');
         expect(readServerConfig().storeSeller).toBeUndefined();
       });
+      it('refuses claim mode in a build that links out to the social app', () => {
+        vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', 'https://pubky.app');
+        vi.stubEnv('PUBKY_RUNTIME_STORE_MODE', 'single_seller');
+        vi.stubEnv('PUBKY_RUNTIME_MARKETPLACE_GRANT_SESSION_ENABLED', 'true');
+        vi.stubEnv('PUBKY_RUNTIME_MARKETPLACE_URL', 'https://marketplace.example.com');
+        expect(() => readServerConfig()).toThrow('requires a build without NEXT_PUBLIC_SOCIAL_HOST');
+      });
+      it('refuses claim mode on a Vercel build', () => {
+        vi.stubEnv('NEXT_PUBLIC_SOCIAL_HOST', '');
+        vi.stubEnv('VERCEL', '1');
+        vi.stubEnv('PUBKY_RUNTIME_STORE_MODE', 'single_seller');
+        vi.stubEnv('PUBKY_RUNTIME_MARKETPLACE_GRANT_SESSION_ENABLED', 'true');
+        vi.stubEnv('PUBKY_RUNTIME_MARKETPLACE_URL', 'https://marketplace.example.com');
+        expect(() => readServerConfig()).toThrow('cannot run on a Vercel build');
+      });
     });
 
     it('parses PUBKY_RUNTIME_* when present', () => {
@@ -188,6 +204,13 @@ describe('runtime-config resolver', () => {
       expect(getPaykitSetupUrl()).toBe('https://paykit.runtime.example.com/setup');
       expect(getCommerceAdapterMode()).toBe('locks-paykit');
       expect(getCommercePollIntervalMs()).toBe(1_500);
+    });
+
+    it('uses the server service URL with the marketplace URL as fallback', () => {
+      vi.stubEnv('MARKETPLACE_SERVICE_URL', 'http://marketplace-service:8080');
+      expect(getMarketplaceServiceUrl()).toBe('http://marketplace-service:8080');
+      vi.stubEnv('MARKETPLACE_SERVICE_URL', '');
+      expect(getMarketplaceServiceUrl()).toBe(APP_RUNTIME_DEFAULTS.marketplaceUrl);
     });
 
     it('parses without the optional Sentry tier (disabled DSN, defaulted rates)', () => {

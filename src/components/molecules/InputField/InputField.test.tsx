@@ -58,6 +58,12 @@ describe('InputField', () => {
     rerender(<InputField value="" status="error" message="Enter a valid amount." messageType="error" />);
     expect(screen.getByTestId('input')).not.toHaveAttribute('aria-describedby');
   });
+
+  it('forwards spellCheck to the input', () => {
+    render(<InputField value="secret" spellCheck={false} />);
+
+    expect(screen.getByTestId('input')).toHaveAttribute('spellcheck', 'false');
+  });
 });
 
 describe('InputField - Loading state', () => {

@@ -19,9 +19,11 @@ const interTight = Inter_Tight({
 
 interface RootContainerProps {
   children: React.ReactNode;
+  storeStateScript?: string | null;
+  showPlausible?: boolean;
 }
 
-export function RootContainer({ children }: RootContainerProps) {
+export function RootContainer({ children, storeStateScript, showPlausible = true }: RootContainerProps) {
   const plausibleDomain = getPlausibleDomain();
   const plausibleScriptUrl = getPlausibleScriptUrl();
 
@@ -45,12 +47,13 @@ export function RootContainer({ children }: RootContainerProps) {
           NOTE: if a Content-Security-Policy is added later, this inline script needs a nonce.
         */}
         <script id="pubky-runtime-config" dangerouslySetInnerHTML={{ __html: serializeRuntimeConfig() }} />
+        {storeStateScript && <script id="pubky-store-state" dangerouslySetInnerHTML={{ __html: storeStateScript }} />}
         {/*
           Raw inline script for the same reason: it applies pubky-app's shared `pubky-theme`
           during parsing, before the first paint, so a light visitor never sees the dark base.
         */}
         <script id="pubky-theme-prepaint" dangerouslySetInnerHTML={{ __html: buildThemePrepaintScript() }} />
-        {plausibleDomain && plausibleScriptUrl && (
+        {showPlausible && plausibleDomain && plausibleScriptUrl && (
           <>
             <script
               id="pubky-plausible-page-url"

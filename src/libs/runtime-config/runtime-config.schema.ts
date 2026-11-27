@@ -340,6 +340,9 @@ const optionalShopGrantClientIdFromString = optionalTrimmedString.pipe(shopGrant
 
 /** The store seller's pubky in z-base-32; set, it turns store mode on. */
 const optionalStoreSellerFromString = optionalTrimmedString.pipe(pubkyValue.optional());
+const storeModeValue = z.enum(['single_seller']);
+export type StoreMode = z.infer<typeof storeModeValue>;
+const optionalStoreModeFromString = optionalTrimmedString.pipe(storeModeValue.optional());
 
 /**
  * The per-region commerce modes (`SELECTOR=MODE` list, see `@/libs/commerce/region-modes`). The
@@ -474,22 +477,65 @@ function validatePaykitServerApiEnvInput(
  * into an embedded one, so store mode takes neither.
  */
 function validateStoreModeEnvInput(
-  input: { storeSeller?: string; embedded?: boolean; frameAncestors?: string[] },
+  input: {
+    storeSeller?: string;
+    storeMode?: StoreMode;
+    embedded?: boolean;
+    frameAncestors?: string[];
+    marketplaceGrantSessionEnabled?: boolean;
+    marketplaceUrl?: string;
+  },
   ctx: z.RefinementCtx,
+  allowLoopbackHttp: boolean,
 ): void {
-  if (input.storeSeller === undefined) return;
+  const claimMode = input.storeMode === 'single_seller' && input.storeSeller === undefined;
+  if (input.storeSeller === undefined && input.storeMode === undefined) return;
+  const modeKey = claimMode ? 'storeMode' : 'storeSeller';
+  const modeName = claimMode
+    ? `${PUBKY_RUNTIME_ENV_NAMES.storeMode}=single_seller without ${PUBKY_RUNTIME_ENV_NAMES.storeSeller} (claim mode)`
+    : `${PUBKY_RUNTIME_ENV_NAMES.storeSeller} (store mode)`;
   if (input.embedded === true) {
     ctx.addIssue({
       code: 'custom',
-      path: ['storeSeller'],
-      message: `${PUBKY_RUNTIME_ENV_NAMES.storeSeller} (store mode) cannot be combined with ${PUBKY_RUNTIME_ENV_NAMES.embedded}=true.`,
+      path: [modeKey],
+      message: `${modeName} cannot be combined with ${PUBKY_RUNTIME_ENV_NAMES.embedded}=true.`,
     });
   }
   if (input.frameAncestors !== undefined && input.frameAncestors.length > 0) {
     ctx.addIssue({
       code: 'custom',
-      path: ['storeSeller'],
-      message: `${PUBKY_RUNTIME_ENV_NAMES.storeSeller} (store mode) cannot be combined with ${PUBKY_RUNTIME_ENV_NAMES.frameAncestors}; a store is not framed.`,
+      path: [modeKey],
+      message: `${modeName} cannot be combined with ${PUBKY_RUNTIME_ENV_NAMES.frameAncestors}; a store is not framed.`,
+    });
+  }
+  if (!claimMode) return;
+  if (input.marketplaceGrantSessionEnabled !== true) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['storeMode'],
+      message: `${modeName} requires ${PUBKY_RUNTIME_ENV_NAMES.marketplaceGrantSessionEnabled}=true.`,
+    });
+  }
+  const marketplaceUrl = input.marketplaceUrl;
+  let validOrigin = false;
+  if (marketplaceUrl !== undefined) {
+    try {
+      const url = new URL(marketplaceUrl);
+      const exactOrigin = url.origin === marketplaceUrl;
+      const loopback =
+        allowLoopbackHttp &&
+        url.protocol === 'http:' &&
+        (LOCAL_DEV_HOSTNAMES.has(url.hostname) || url.hostname === '[::1]');
+      validOrigin = exactOrigin && (url.protocol === 'https:' || loopback);
+    } catch {
+      validOrigin = false;
+    }
+  }
+  if (!validOrigin) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['storeMode'],
+      message: `${modeName} requires ${PUBKY_RUNTIME_ENV_NAMES.marketplaceUrl} to be an exact https:// origin${allowLoopbackHttp ? ', or a loopback http:// origin in local development and tests' : ''}.`,
     });
   }
 }
@@ -775,9 +821,12 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
   /**
    * Store mode: the one seller this deployment serves (a z-base-32 Pubky). Set, the Shop is that
    * seller's store: `/` opens their shop and routes outside it return 404 (see
-   * `src/app/store-route-policy.ts`). Absent means the full Market, as before.
+   * `src/app/store-route-policy.ts`). A pin implies single-seller mode; without a pin, `storeMode`
+   * may enable claiming. With neither value the full Market runs as before.
    */
   storeSeller: pubkyValue.optional(),
+  /** Single-seller mode without a seller pin enables first-boot claiming. */
+  storeMode: storeModeValue.optional(),
   /**
    * Whether the Shop's grant sign-in asks the signer for the `e` action on
    * `/priv/pubky.app/marketplace/` (priv-encryption Phase 4), so the user's
@@ -907,6 +956,7 @@ export const runtimeEnvInputSchema = z
     storageAdoptLegacy: optionalBooleanFromString,
     shopPublicPath: optionalShopPublicPathFromString,
     storeSeller: optionalStoreSellerFromString,
+    storeMode: optionalStoreModeFromString,
     privEncryptionKeys: optionalBooleanFromString,
     passportPrivEncryptionKeys: optionalBooleanFromString,
     privEncryptionKeysHomeservers: optionalHomeserverArrayFromString('PRIV_ENCRYPTION_KEYS_HOMESERVERS'),
@@ -937,7 +987,7 @@ export const runtimeEnvInputSchema = z
   .superRefine(validatePaykitServerApiEnvInput)
   .superRefine(validateAuctionDurationsEnvInput)
   .superRefine(validateStagingEndpointsEnvInput)
-  .superRefine(validateStoreModeEnvInput)
+  .superRefine((input, ctx) => validateStoreModeEnvInput(input, ctx, false))
   .pipe(runtimeConfigValueSchema);
 
 /**
@@ -1016,6 +1066,7 @@ export const runtimeEnvInputSchemaWithDefaults = z
     storageAdoptLegacy: optionalBooleanFromString,
     shopPublicPath: optionalShopPublicPathFromString,
     storeSeller: optionalStoreSellerFromString,
+    storeMode: optionalStoreModeFromString,
     privEncryptionKeys: optionalBooleanFromString,
     passportPrivEncryptionKeys: optionalBooleanFromString,
     privEncryptionKeysHomeservers: optionalHomeserverArrayFromString('PRIV_ENCRYPTION_KEYS_HOMESERVERS'),
@@ -1045,7 +1096,8 @@ export const runtimeEnvInputSchemaWithDefaults = z
   .superRefine(validateLocksPaykitEnvInput)
   .superRefine(validatePaykitServerApiEnvInput)
   .superRefine(validateAuctionDurationsEnvInput)
-  .superRefine(validateStoreModeEnvInput)
+  // The lenient schema is the existing local development and test boundary for loopback HTTP.
+  .superRefine((input, ctx) => validateStoreModeEnvInput(input, ctx, true))
   .pipe(lenientRuntimeConfigValueSchema);
 
 // ---------------------------------------------------------------------------
@@ -1116,6 +1168,7 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   storageAdoptLegacy: 'PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY',
   shopPublicPath: 'PUBKY_RUNTIME_SHOP_PUBLIC_PATH',
   storeSeller: 'PUBKY_RUNTIME_STORE_SELLER',
+  storeMode: 'PUBKY_RUNTIME_STORE_MODE',
   privEncryptionKeys: 'PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS',
   passportPrivEncryptionKeys: 'PUBKY_RUNTIME_PASSPORT_PRIV_ENCRYPTION_KEYS',
   privEncryptionKeysHomeservers: 'PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS_HOMESERVERS',

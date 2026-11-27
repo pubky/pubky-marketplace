@@ -37,6 +37,7 @@ interface InputFieldProps {
   dataCy?: string;
   inputClassName?: React.HTMLAttributes<HTMLInputElement>['className'];
   autoComplete?: string;
+  spellCheck?: boolean;
   /** Defaults to `text`; `password` masks a secret (such as a store key) as it is typed. */
   type?: 'text' | 'password';
   role?: React.AriaRole;
@@ -77,6 +78,7 @@ export function InputField({
   dataCy,
   inputClassName,
   autoComplete,
+  spellCheck,
   type = 'text',
   role,
   'aria-expanded': ariaExpanded,
@@ -138,6 +140,7 @@ export function InputField({
           onPaste={onPaste}
           maxLength={maxLength}
           autoComplete={autoComplete}
+          spellCheck={spellCheck}
           role={role}
           aria-expanded={ariaExpanded}
           aria-controls={ariaControls}

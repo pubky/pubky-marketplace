@@ -820,6 +820,15 @@ describe('SignInContent - Continue with Google (Pubky Passport)', () => {
     expect(screen.getByTestId('sign-in-qr')).toBeInTheDocument();
   });
 
+  it('can be hidden while Ring and Bitkit remain available', async () => {
+    await act(async () => {
+      render(<SignInContent showPassport={false} />);
+    });
+
+    expect(screen.queryByTestId('sign-in-passport-option')).not.toBeInTheDocument();
+    expect(screen.getByTestId('sign-in-qr')).toBeInTheDocument();
+  });
+
   it('starts the Passport attempt from the click itself', async () => {
     await act(async () => {
       render(<SignInContent />);

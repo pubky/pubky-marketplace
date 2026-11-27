@@ -78,14 +78,10 @@ describe('Next redirects', () => {
     vi.unstubAllEnvs();
   });
 
-  it('redirects only the root to the marketplace', async () => {
+  it('leaves the root to request-time store routing', async () => {
     const configuredRedirects = await redirects();
 
-    expect(configuredRedirects).toContainEqual({
-      source: '/',
-      destination: '/marketplace',
-      permanent: false,
-    });
+    expect(resolveRedirect(configuredRedirects, '/')).toBeNull();
     expect(configuredRedirects).not.toContainEqual(expect.objectContaining({ source: '/:path*' }));
   });
 

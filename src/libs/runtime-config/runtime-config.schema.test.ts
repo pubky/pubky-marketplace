@@ -696,6 +696,82 @@ describe('store seller runtime value', () => {
   });
 });
 
+describe('store claim runtime values', () => {
+  const CLAIM_INPUT = {
+    storeMode: 'single_seller',
+    marketplaceGrantSessionEnabled: 'true',
+    marketplaceUrl: 'https://marketplace.example.com',
+  };
+
+  it('treats an empty mode as unset and rejects every other mode', () => {
+    expect(runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, storeMode: ' ' }).storeMode).toBeUndefined();
+    expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, storeMode: 'marketplace' })).toThrow(
+      'single_seller',
+    );
+  });
+
+  it('accepts claim mode with grant sessions and an HTTPS marketplace origin', () => {
+    expect(runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, ...CLAIM_INPUT }).storeMode).toBe('single_seller');
+    expect(runtimeEnvInputSchemaWithDefaults.parse(CLAIM_INPUT).storeMode).toBe('single_seller');
+  });
+
+  it('keeps a seller pin independent of the claim prerequisites', () => {
+    const parsed = runtimeEnvInputSchema.parse({
+      ...VALID_ENV_INPUT,
+      storeMode: 'single_seller',
+      storeSeller: 'o'.repeat(52),
+    });
+    expect(parsed.storeSeller).toBe('o'.repeat(52));
+    expect(parsed.storeMode).toBe('single_seller');
+  });
+
+  it('refuses claim mode with embedding', () => {
+    expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, ...CLAIM_INPUT, embedded: 'true' })).toThrow(
+      'PUBKY_RUNTIME_EMBEDDED',
+    );
+  });
+
+  it('refuses claim mode with frame ancestors', () => {
+    expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, ...CLAIM_INPUT, frameAncestors: "'self'" })).toThrow(
+      'PUBKY_RUNTIME_FRAME_ANCESTORS',
+    );
+  });
+
+  it('refuses claim mode without grant sessions', () => {
+    expect(() =>
+      runtimeEnvInputSchema.parse({
+        ...VALID_ENV_INPUT,
+        storeMode: 'single_seller',
+        marketplaceUrl: 'https://marketplace.example.com',
+      }),
+    ).toThrow('PUBKY_RUNTIME_MARKETPLACE_GRANT_SESSION_ENABLED=true');
+  });
+
+  it('refuses a non-HTTPS or non-origin marketplace URL in the strict schema', () => {
+    for (const marketplaceUrl of [
+      'http://marketplace.example.com',
+      'https://marketplace.example.com/',
+      'https://marketplace.example.com/v1',
+    ]) {
+      expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, ...CLAIM_INPUT, marketplaceUrl })).toThrow(
+        'exact https:// origin',
+      );
+    }
+  });
+
+  it.each(['http://127.0.0.1:3100', 'http://localhost:3100', 'http://[::1]:3100'])(
+    'allows loopback %s only in the lenient local schema',
+    (marketplaceUrl) => {
+      expect(runtimeEnvInputSchemaWithDefaults.parse({ ...CLAIM_INPUT, marketplaceUrl }).marketplaceUrl).toBe(
+        marketplaceUrl,
+      );
+      expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, ...CLAIM_INPUT, marketplaceUrl })).toThrow(
+        'exact https:// origin',
+      );
+    },
+  );
+});
+
 describe('readSentryEnvironment', () => {
   it('reads PUBKY_RUNTIME_SENTRY_ENVIRONMENT as the runtime resolver parses it', () => {
     const env = { PUBKY_RUNTIME_SENTRY_ENVIRONMENT: 'staging' };

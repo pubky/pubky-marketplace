@@ -3,7 +3,7 @@ import type { ChatOpenResult, ChatOutboxSends, ChatSyncOutcome, ChatSyncReason }
 import { CommerceApplication } from '@/application/commerce/commerce';
 import { UserApplication } from '@/application/user/user';
 import { CHAT_FETCH_CONCURRENCY, CHAT_PING_MAX_HANDLING_ATTEMPTS } from '@/config/chat';
-import { getStoreSeller } from '@/config/store-mode';
+import { getStoreState } from '@/config/store-mode';
 import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import { StoreSellerGate } from '@/controllers/store-seller-gate/store-seller-gate';
 import { sameChatContext } from '@/libs/chat/context';
@@ -278,7 +278,7 @@ export class ChatController {
   ): Promise<boolean> {
     const listingId = thread.last_context?.listingId;
     const side = listingId ? await this.listingSide(me, roles, thread.peer_pubky, listingId) : null;
-    return !isSaleThread(thread, roles, getStoreSeller(), side);
+    return !isSaleThread(thread, roles, getStoreState(), side);
   }
 
   /**
@@ -335,7 +335,8 @@ export class ChatController {
     storedContext: ChatContext | null,
   ): Promise<boolean> {
     signal.throwIfAborted();
-    if (peer === getStoreSeller()) return false;
+    const storeState = getStoreState();
+    if (storeState.kind === 'claimed' && peer === storeState.seller) return false;
     if (roles === null) return true;
     const contexts = [storedContext, context];
     const missingOrderIds = new Set<string>();
@@ -375,12 +376,7 @@ export class ChatController {
       return recorded === undefined || recorded === 'unresolved' ? null : recorded;
     };
     if (context && contextRole(merged, peer, context, sideOf(context)) === 'sale') return true;
-    return isSaleThread(
-      { peer_pubky: peer, last_context: storedContext },
-      merged,
-      getStoreSeller(),
-      sideOf(storedContext),
-    );
+    return isSaleThread({ peer_pubky: peer, last_context: storedContext }, merged, storeState, sideOf(storedContext));
   }
 
   /** Refuses a write in a sale thread, or about a sale, for a viewer who cannot sell here. */

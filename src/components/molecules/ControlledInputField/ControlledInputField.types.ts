@@ -40,6 +40,8 @@ export interface ControlledInputFieldProps<T extends FieldValues> {
   type?: 'text' | 'password';
   /** Browser autofill hint forwarded to the input */
   autoComplete?: string;
+  /** Browser spellcheck hint forwarded to the input */
+  spellCheck?: boolean;
   /** Cypress selector forwarded to the input */
   dataCy?: string;
 }

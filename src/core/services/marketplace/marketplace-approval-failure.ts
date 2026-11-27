@@ -4,8 +4,18 @@ import { Err } from '@/libs/error/error.factories';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 
 /** Expected approval states are control flow, not failed-service telemetry. */
-export function marketplaceApprovalFailure(message: string, operation: string, status?: number): AppError {
-  const common = { message, service: ErrorService.Marketplace, operation, context: { statusCode: status } };
+export function marketplaceApprovalFailure(
+  message: string,
+  operation: string,
+  status?: number,
+  retryAfter?: number,
+): AppError {
+  const common = {
+    message,
+    service: ErrorService.Marketplace,
+    operation,
+    context: { statusCode: status, retryAfter },
+  };
   if (
     (status === undefined || status === 401) &&
     (message === 'shop_session_missing' || message === 'shop_session_expired')

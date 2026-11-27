@@ -30,7 +30,7 @@ import {
   isTransactionalCommerceMode,
 } from '@/config/commerce';
 import { IMAGE_MAX_UPLOAD_SIZE } from '@/config/images';
-import { getStoreSeller } from '@/config/store-mode';
+import { getStoreState } from '@/config/store-mode';
 import { captureAuthScope } from '@/controllers/auth/auth-scope';
 import { captureTagViewer } from '@/controllers/commerce/tag-viewer';
 import { StoreSellerGate } from '@/controllers/store-seller-gate/store-seller-gate';
@@ -97,6 +97,8 @@ export interface CommerceCatalogUiFilters {
   countryCode?: string | null;
 }
 
+type GrantSessionMintOutcome = { ok: true; session: MarketplaceSessionInfo | null } | { ok: false; error: unknown };
+
 export class CommerceController {
   private constructor() {}
 
@@ -104,7 +106,11 @@ export class CommerceController {
   private static defaultShopSession = new Map<string, Promise<void>>();
 
   private static sessionEndedUnbind: (() => void) | null = null;
-  private static grantSessionMint: { session: object; promise: Promise<MarketplaceSessionInfo | null> } | null = null;
+  private static grantSessionMint: {
+    session: object;
+    forceFresh: boolean;
+    promise: Promise<GrantSessionMintOutcome>;
+  } | null = null;
   private static grantSessionFailures = new WeakSet<object>();
   /** The grant-minted session this tab installed, to recognise its rejection. */
   private static grantSessionInstalled: { authSession: object; issuedAt: string } | null = null;
@@ -386,10 +392,11 @@ export class CommerceController {
    * Resolves null when the flag is off, the sign-in is not grant-backed, or
    * the service refused; the caller then offers the approval flow. A failed
    * attempt, or a minted session the service later rejected, is not repeated
-   * for the same sign-in unless `retryAfterFailure` (an explicit user retry).
+   * for the same sign-in unless `retryAfterFailure` or `forceFresh` (an
+   * explicit retry or forced refresh).
    */
   static async ensureMarketplaceSessionFromGrant(
-    options: { retryAfterFailure?: boolean } = {},
+    options: { retryAfterFailure?: boolean; throwOnFailure?: boolean; forceFresh?: boolean } = {},
   ): Promise<MarketplaceSessionInfo | null> {
     if (!getMarketplaceGrantSessionEnabled()) return null;
     const auth = useAuthStore.getState();
@@ -398,19 +405,31 @@ export class CommerceController {
     if (!session || !grant || auth.isLoggingOut) return null;
     const pubky = session.info.publicKey.z32();
     const current = useCommerceStore.getState().marketplaceSession;
-    if (CommerceApplication.hasActiveMarketplaceSession() && current?.pubky === pubky) return current;
-    if (this.grantSessionMint?.session === session) return await this.grantSessionMint.promise;
-    if (this.grantSessionFailures.has(session) && !options.retryAfterFailure) return null;
+    if (!options.forceFresh && CommerceApplication.hasActiveMarketplaceSession() && current?.pubky === pubky) {
+      return current;
+    }
+    const applyOutcome = (outcome: GrantSessionMintOutcome): MarketplaceSessionInfo | null => {
+      if (outcome.ok) return outcome.session;
+      if (options.throwOnFailure) throw outcome.error;
+      return null;
+    };
+    const inFlight = this.grantSessionMint;
+    if (inFlight?.session === session) {
+      if (!options.forceFresh || inFlight.forceFresh) return applyOutcome(await inFlight.promise);
+      await inFlight.promise;
+      return await this.ensureMarketplaceSessionFromGrant(options);
+    }
+    if (this.grantSessionFailures.has(session) && !options.retryAfterFailure && !options.forceFresh) return null;
 
     const isCurrent = () => useAuthStore.getState().session === session && !useAuthStore.getState().isLoggingOut;
-    const attempt = (async (): Promise<MarketplaceSessionInfo | null> => {
+    const attempt = (async (): Promise<GrantSessionMintOutcome> => {
       try {
-        const restored = this.restorePersistedMarketplaceSession(pubky);
-        if (restored) return restored;
+        const restored = options.forceFresh ? null : this.restorePersistedMarketplaceSession(pubky);
+        if (restored) return { ok: true, session: restored };
         const minted = await CommerceApplication.mintMarketplaceSessionFromGrant({ grant, pubky });
         if (!isCurrent()) {
           await CommerceApplication.revokeGrantMarketplaceSession(minted);
-          return null;
+          return { ok: true, session: null };
         }
         let installed: MarketplaceSessionInfo;
         try {
@@ -422,7 +441,7 @@ export class CommerceController {
         this.grantSessionInstalled = { authSession: session, issuedAt: installed.issuedAt };
         this.writeMarketplaceSessionStore(installed);
         this.grantSessionFailures.delete(session);
-        return installed;
+        return { ok: true, session: installed };
       } catch (error) {
         if (isCurrent()) this.grantSessionFailures.add(session);
         // SDK errors may carry proof material in their message; log the kind only.
@@ -431,12 +450,12 @@ export class CommerceController {
             errorName: error instanceof Error ? error.name : typeof error,
           });
         }
-        return null;
+        return { ok: false, error };
       }
     })();
-    this.grantSessionMint = { session, promise: attempt };
+    this.grantSessionMint = { session, forceFresh: options.forceFresh === true, promise: attempt };
     try {
-      return await attempt;
+      return applyOutcome(await attempt);
     } finally {
       if (this.grantSessionMint?.promise === attempt) this.grantSessionMint = null;
     }
@@ -1413,7 +1432,7 @@ export class CommerceController {
     const sellsHere = this.sellsHere();
     const viewerPubky = this.getCurrentUserPubky();
     const offers = await CommerceApplication.getMarketplaceOffers(viewerPubky);
-    return sellsHere ? offers : withoutSalesOutsideStoreSeller(offers, viewerPubky, getStoreSeller());
+    return sellsHere ? offers : withoutSalesOutsideStoreSeller(offers, viewerPubky, getStoreState());
   }
 
   static async getMarketplaceNotifications() {
@@ -1430,7 +1449,7 @@ export class CommerceController {
     const notifications = await CommerceApplication.getMarketplaceNotifications(viewerPubky, { sellerSide: sellsHere });
     if (sellsHere) return notifications;
     const roles = await this.resolveStoreNotificationRoles(viewerPubky, storeNotificationSubjects(notifications));
-    return withoutSalesNotificationsOutsideStoreSeller(notifications, viewerPubky, getStoreSeller(), roles);
+    return withoutSalesNotificationsOutsideStoreSeller(notifications, viewerPubky, getStoreState(), roles);
   }
 
   /**
@@ -1569,7 +1588,7 @@ export class CommerceController {
     const result = await CommerceApplication.fetchMarketplaceOrderList(viewerPubky);
     const orders = sellsHere
       ? result.orders
-      : withoutSalesOutsideStoreSeller(result.orders, viewerPubky, getStoreSeller());
+      : withoutSalesOutsideStoreSeller(result.orders, viewerPubky, getStoreState());
     this.noteOrderListings(orders);
     // A malformed row has no verified seller, so a buyer-only view cannot identify its side.
     return { orders, parseErrors: sellsHere ? result.parseErrors : [] };
@@ -1579,7 +1598,7 @@ export class CommerceController {
     const sellsHere = this.sellsHere();
     const viewerPubky = this.getCurrentUserPubky();
     const read = await CommerceApplication.getMarketplaceOrders(viewerPubky);
-    const orders = sellsHere ? read : withoutSalesOutsideStoreSeller(read, viewerPubky, getStoreSeller());
+    const orders = sellsHere ? read : withoutSalesOutsideStoreSeller(read, viewerPubky, getStoreState());
     this.noteOrderListings(orders);
     return orders;
   }

@@ -1,4 +1,4 @@
-import { getStoreSeller } from '@/config/store-mode';
+import { getStoreState } from '@/config/store-mode';
 import { isPubkyIdentifier } from '@/libs/utils/utils';
 
 export const ROOT_ROUTES = '/';
@@ -24,6 +24,8 @@ export enum APP_ROUTES {
   PROFILE = '/profile',
   WHO_TO_FOLLOW = '/who-to-follow',
   SHARE = '/share',
+  SETUP = '/setup',
+  STORE_UNAVAILABLE = '/store-unavailable',
 }
 
 export enum MARKETPLACE_ROUTES {
@@ -149,6 +151,9 @@ export const EXPLORE_ROUTES: string[] = [
 // Core explore routes are intentionally not listed here so auth hydration can
 // still finish before app shell routes render for logged-in users.
 export const PUBLIC_ROUTES: string[] = [
+  // Store state gates these pages on the server, so their content renders before auth hydration.
+  ROOT_ROUTES,
+  APP_ROUTES.SETUP,
   AUTH_ROUTES.LOGOUT,
   // Profile is public to prevent RouteGuard redirect during logout.
   // The profile page components handle unauthenticated state gracefully.
@@ -176,13 +181,21 @@ export const ALLOWED_ROUTES = [
   APP_ROUTES.PROFILE,
   APP_ROUTES.WHO_TO_FOLLOW,
   APP_ROUTES.SHARE,
+  APP_ROUTES.SETUP,
   POST_ROUTES.POST,
   AUTH_ROUTES.LOGOUT,
 ];
 
 // Route guard configurations for different authentication states
 export const UNAUTHENTICATED_ROUTES = {
-  allowedRoutes: [ROOT_ROUTES, AUTH_ROUTES.SIGN_IN, ...EXPLORE_ROUTES, AUTH_ROUTES.LOGOUT, COPYRIGHT_ROUTES.COPYRIGHT],
+  allowedRoutes: [
+    ROOT_ROUTES,
+    AUTH_ROUTES.SIGN_IN,
+    ...EXPLORE_ROUTES,
+    AUTH_ROUTES.LOGOUT,
+    COPYRIGHT_ROUTES.COPYRIGHT,
+    APP_ROUTES.SETUP,
+  ],
   redirectTo: ROOT_ROUTES,
 };
 
@@ -196,10 +209,10 @@ export function getShopHomeRoute(): string {
   return getMarketplaceHomeRoute();
 }
 
-/** The Market's landing page: the catalog, or in store mode the store seller's shop. */
+/** The Market's landing page: the catalog, or in a claimed store the store seller's shop. */
 export function getMarketplaceHomeRoute(): string {
-  const storeSeller = getStoreSeller();
-  return storeSeller === null ? APP_ROUTES.MARKETPLACE : getMarketplaceShopRoute(storeSeller);
+  const state = getStoreState();
+  return state.kind === 'claimed' ? getMarketplaceShopRoute(state.seller) : APP_ROUTES.MARKETPLACE;
 }
 
 export const AUTHENTICATED_ROUTES = {

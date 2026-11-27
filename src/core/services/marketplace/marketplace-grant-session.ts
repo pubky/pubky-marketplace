@@ -5,6 +5,7 @@ import { isAppError } from '@/libs/error/error';
 import { safeFetch } from '@/libs/error/error.http';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { HttpMethod } from '@/libs/http/http.types';
+import { parseRetryAfterHeader } from '@/libs/http/response.utils';
 import { Logger } from '@/libs/logger/logger';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import { marketplaceApprovalFailure } from './marketplace-approval-failure';
@@ -47,8 +48,8 @@ export type MintedGrantSession = {
   expiresAt: string;
 };
 
-function failure(code: string, status?: number) {
-  return marketplaceApprovalFailure(code, OPERATION, status);
+function failure(code: string, status?: number, retryAfter?: number) {
+  return marketplaceApprovalFailure(code, OPERATION, status, retryAfter);
 }
 
 async function errorCode(response: Response): Promise<string> {
@@ -87,7 +88,13 @@ export class MarketplaceGrantSessionService {
         ErrorService.Marketplace,
         OPERATION,
       );
-      if (!response.ok) throw failure(await errorCode(response), response.status);
+      if (!response.ok) {
+        throw failure(
+          await errorCode(response),
+          response.status,
+          parseRetryAfterHeader(response.headers.get('retry-after')),
+        );
+      }
       return { status: response.status, body: (await response.json().catch(() => null)) as unknown };
     };
 

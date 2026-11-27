@@ -9,6 +9,7 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import { ordersSeenStorageKey } from '@/libs/commerce/marketplace-attention';
 import { ownDropsStorageKey } from '@/libs/commerce/own-drops-storage';
 import { Identity } from '@/libs/identity/identity';
+import { STORE_CLAIM_CODE_SESSION_KEY, subscribeStoreClaimCodeChange } from '@/libs/store-claim/store-claim-code';
 import { readPersistedAuthPubky } from '@/stores/auth/auth.persisted';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { buyerCountryFor, useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
@@ -49,6 +50,7 @@ beforeEach(() => {
   resetGrantTest();
   useBuyerCountryStore.getState().reset();
   localStorage.clear();
+  window.sessionStorage.clear();
   vi.spyOn(AuthApplication, 'logout').mockResolvedValue(undefined);
 });
 afterEach(() => {
@@ -68,6 +70,30 @@ describe('sign-out and account switches remove what the leaving account left on 
 
     expect(useBuyerCountryStore.getState()).toMatchObject({ country: null, owner: null });
     expect(localStorage.getItem(BUYER_COUNTRY_PERSIST_KEY)).toBeNull();
+  });
+
+  it('removes the setup code during shared sign-out cleanup', async () => {
+    signIn(ALICE);
+    window.sessionStorage.setItem(STORE_CLAIM_CODE_SESSION_KEY, '0123456789ABCDEFGHJKMNPQRSTVWXYZ');
+
+    await AuthController.logout();
+
+    expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBeNull();
+  });
+
+  it('removes a setup code pasted in a signed-out tab when another tab signs out', async () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeStoreClaimCodeChange(listener);
+    window.sessionStorage.setItem(STORE_CLAIM_CODE_SESSION_KEY, '0123456789ABCDEFGHJKMNPQRSTVWXYZ');
+
+    try {
+      await AuthController.handleCrossTabSignOut();
+
+      expect(window.sessionStorage.getItem(STORE_CLAIM_CODE_SESSION_KEY)).toBeNull();
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+    }
   });
 
   it('removes the signing-out account’s per-pubky keys and leaves every other key alone', async () => {

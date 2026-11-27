@@ -88,4 +88,21 @@ describe('ControlledInputField', () => {
     expect(screen.queryByText('Test Label')).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText('Enter value')).toBeInTheDocument();
   });
+
+  it('forwards spellCheck to the input', () => {
+    render(
+      <TestWrapper>
+        {(form) => (
+          <ControlledInputField<TestFormData>
+            name="testField"
+            control={form.control}
+            placeholder="Enter value"
+            spellCheck={false}
+          />
+        )}
+      </TestWrapper>,
+    );
+
+    expect(screen.getByPlaceholderText('Enter value')).toHaveAttribute('spellcheck', 'false');
+  });
 });

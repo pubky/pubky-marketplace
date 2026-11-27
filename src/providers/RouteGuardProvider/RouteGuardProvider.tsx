@@ -8,10 +8,11 @@ import {
   isDynamicPublicRoute,
   matchesAllowedRoute,
   PUBLIC_ROUTES,
+  ROOT_ROUTES,
 } from '@/app/routes';
 import { isStoreSellerViewerRoute } from '@/app/store-route-policy';
 import { Spinner } from '@/atoms/Spinner/Spinner';
-import { getStoreSeller } from '@/config/store-mode';
+import { getStoreState } from '@/config/store-mode';
 import { AuthController } from '@/controllers/auth/auth';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useAuthStatus } from '@/hooks/useAuthStatus/useAuthStatus';
@@ -79,6 +80,10 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
   const isRestoringSession = useAuthStore((state) => state.isRestoringSession);
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const wasDbReset = useMigrationStore((state) => state.wasDbReset);
+  const storeState = getStoreState();
+  const isMinimalStoreDocument =
+    (storeState.kind === 'unclaimed' && pathname === ROOT_ROUTES) ||
+    (storeState.kind === 'unavailable' && pathname === APP_ROUTES.STORE_UNAVAILABLE);
 
   // Prevents running resync more than once at a time (ex: React Strict Mode and effect re-fires mid-resync)
   const isMigrationResyncRunningRef = useRef(false);
@@ -195,8 +200,16 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
     router.push(returnTo);
   }, [status, isLoading, pathname, router]);
 
-  const isPublicRoute = PUBLIC_ROUTES.includes(pathname) || isDynamicPublicRoute(pathname);
+  const isPublicRoute =
+    (PUBLIC_ROUTES.includes(pathname) || isDynamicPublicRoute(pathname)) &&
+    !(
+      storeState.kind !== 'off' &&
+      storeState.claimMode &&
+      pathname === APP_ROUTES.SETUP &&
+      status === AuthStatus.NEEDS_PROFILE_CREATION
+    );
   const isRouteAccessible = useMemo(() => {
+    if (isMinimalStoreDocument) return true;
     if (isPublicRoute) return true;
 
     // Wait for authentication status to be determined before allowing access to protected routes
@@ -211,7 +224,7 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
     return routeAccess.allowedRoutes.some((route) =>
       matchesAllowedRoute(pathname, route, { restrictExploreSubRoutes }),
     );
-  }, [isLoading, isPublicRoute, pathname, status]);
+  }, [isLoading, isPublicRoute, pathname, status, isMinimalStoreDocument]);
 
   // Handle automatic redirects when user tries to access unauthorized routes
   useEffect(() => {
@@ -270,12 +283,11 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
   }, [status, pathname, router, isLoading, isRouteAccessible, isPublicRoute]);
 
   // A store's selling tools exist only for the store seller; the proxy cannot see who is signed in.
-  const storeSeller = getStoreSeller();
   if (
-    storeSeller !== null &&
+    storeState.kind === 'claimed' &&
     status === AuthStatus.AUTHENTICATED &&
     !isLoading &&
-    currentUserPubky !== storeSeller &&
+    currentUserPubky !== storeState.seller &&
     isStoreSellerViewerRoute(pathname)
   ) {
     return <NotFound />;

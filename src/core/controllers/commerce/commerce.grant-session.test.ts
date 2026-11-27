@@ -122,6 +122,94 @@ describe('CommerceController.ensureMarketplaceSessionFromGrant', () => {
     expect(mint).toHaveBeenCalledTimes(1);
   });
 
+  it('surfaces a shared 429 or network failure to a throwing caller joining a non-throwing mint', async () => {
+    signIn();
+    const pending = deferred<MintedGrantSession>();
+    mint.mockReturnValue(pending.promise);
+    const rateLimited = new Error('rate_limited_429');
+
+    const coordinatorCall = CommerceController.ensureMarketplaceSessionFromGrant();
+    const setupCall = CommerceController.ensureMarketplaceSessionFromGrant({
+      retryAfterFailure: true,
+      throwOnFailure: true,
+    });
+    pending.reject(rateLimited);
+
+    await expect(coordinatorCall).resolves.toBeNull();
+    await expect(setupCall).rejects.toBe(rateLimited);
+    expect(mint).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a non-throwing caller returning null when joining a failing throwing mint', async () => {
+    signIn();
+    const pending = deferred<MintedGrantSession>();
+    mint.mockReturnValue(pending.promise);
+    const networkFailure = new TypeError('Failed to fetch');
+
+    const setupCall = CommerceController.ensureMarketplaceSessionFromGrant({
+      retryAfterFailure: true,
+      throwOnFailure: true,
+    });
+    const coordinatorCall = CommerceController.ensureMarketplaceSessionFromGrant();
+    pending.reject(networkFailure);
+
+    await expect(setupCall).rejects.toBe(networkFailure);
+    await expect(coordinatorCall).resolves.toBeNull();
+    expect(mint).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let a forced fresh caller join a non-fresh restore', async () => {
+    signIn();
+    const restored = { ...INFO, issuedAt: '2026-10-15T00:00:01.000Z' };
+    restore.mockReturnValue(restored);
+
+    const restoring = CommerceController.ensureMarketplaceSessionFromGrant();
+    const forced = CommerceController.ensureMarketplaceSessionFromGrant({ forceFresh: true });
+
+    await expect(restoring).resolves.toEqual(restored);
+    await expect(forced).resolves.toEqual(INFO);
+    expect(mint).toHaveBeenCalledTimes(1);
+    expect(restore).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs a fresh mint for a non-throwing forceFresh caller after a failing non-fresh flight', async () => {
+    signIn();
+    const firstFlight = deferred<MintedGrantSession>();
+    mint.mockReturnValueOnce(firstFlight.promise).mockResolvedValueOnce(MINTED);
+
+    const nonFresh = CommerceController.ensureMarketplaceSessionFromGrant();
+    const forced = CommerceController.ensureMarketplaceSessionFromGrant({ forceFresh: true });
+    firstFlight.reject(new Error('first_flight_failed'));
+
+    await expect(nonFresh).resolves.toBeNull();
+    await expect(forced).resolves.toEqual(INFO);
+    expect(mint).toHaveBeenCalledTimes(2);
+    expect(restore).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs a fresh mint and surfaces fresh errors for a throwing forceFresh caller after a failing non-fresh flight', async () => {
+    signIn();
+    const firstFlight = deferred<MintedGrantSession>();
+    const freshFailure = new Error('fresh_flight_failed');
+    mint.mockReturnValueOnce(firstFlight.promise).mockRejectedValueOnce(freshFailure);
+
+    const nonFresh = CommerceController.ensureMarketplaceSessionFromGrant();
+    const forced = CommerceController.ensureMarketplaceSessionFromGrant({ forceFresh: true, throwOnFailure: true });
+    firstFlight.reject(new Error('first_flight_failed'));
+
+    await expect(nonFresh).resolves.toBeNull();
+    await expect(forced).rejects.toBe(freshFailure);
+    expect(mint).toHaveBeenCalledTimes(2);
+    expect(restore).toHaveBeenCalledTimes(1);
+
+    // A subsequent forceFresh call without retryAfterFailure still bypasses grantSessionFailures.
+    mint.mockResolvedValueOnce(MINTED);
+    await expect(
+      CommerceController.ensureMarketplaceSessionFromGrant({ forceFresh: true, throwOnFailure: true }),
+    ).resolves.toEqual(INFO);
+    expect(mint).toHaveBeenCalledTimes(3);
+  });
+
   it('revokes and drops a session minted after the account changed', async () => {
     signIn();
     const pending = deferred<MintedGrantSession>();

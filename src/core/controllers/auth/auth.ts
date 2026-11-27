@@ -45,6 +45,7 @@ import {
   withShopHostCleanupLock,
   writeAppliedHostCleanupEpoch,
 } from '@/libs/shop-session/cleanup';
+import { clearStoreClaimCode } from '@/libs/store-claim/store-claim-code';
 import type { Pubky } from '@/models/models.types';
 import { PubkySpecsSingleton } from '@/pipes/pipes.builder';
 import { clearRouteGuardReturnTo } from '@/providers/RouteGuardProvider/RouteGuardProvider.returnPath';
@@ -1073,6 +1074,7 @@ export class AuthController {
     clearMuteSyncCursorSessionStorage();
     // A stored post-sign-in return path belongs to the signed-out identity.
     clearRouteGuardReturnTo();
+    clearStoreClaimCode();
 
     // Reset singletons
     PubkySpecsSingleton.reset();
@@ -1553,6 +1555,8 @@ export class AuthController {
   }
 
   static async handleCrossTabSignOut(): Promise<void> {
+    // A setup code pasted in this tab while it was signed out goes with the other tab's sign-out too.
+    clearStoreClaimCode();
     if (this.hostMode) return;
     this.logoutGeneration++;
     this.cancelAllAuthFlows();

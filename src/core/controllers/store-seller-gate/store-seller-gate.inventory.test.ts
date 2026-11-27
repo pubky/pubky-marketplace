@@ -28,7 +28,7 @@ import { ImportStoreCatalogController } from '@/controllers/import-store/import-
 import { isAppError } from '@/libs/error/error';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { COMMERCE_FIXTURE_BUYER, COMMERCE_FIXTURE_SELLER } from '@/test/fixtures/commerce/commerce';
-import { setStoreSeller } from '@/test-utils/store-mode';
+import { setStoreSeller, setStoreState } from '@/test-utils/store-mode';
 import { StoreSellerGate } from './store-seller-gate';
 
 const commerceConfig = vi.hoisted(() => ({ mode: 'transaction-service' as string }));
@@ -899,6 +899,7 @@ describe('store seller gate inventory', () => {
 
   afterEach(() => {
     setStoreSeller(undefined);
+    setStoreState(undefined);
     useAuthStore.setState({ currentUserPubky: null });
     vi.clearAllMocks();
   });
@@ -1158,6 +1159,29 @@ describe('store seller gate inventory', () => {
     entriesOf(controller)
       .filter(([, entry]) => entry.kind === 'refuse' || entry.kind === 'empty')
       .map(([method, entry]) => [`${controller.name}.${method}`, controller.controller, method, entry] as const),
+  );
+
+  it.each(['unclaimed', 'unavailable'] as const)(
+    'refuses or empties every seller-side method for every viewer while %s',
+    async (kind) => {
+      setStoreState({ kind, claimMode: true });
+      for (const [label, controller, method, entry] of sellerEntries) {
+        for (const viewer of [STORE_SELLER, SELLER_ELSEWHERE, null]) {
+          useAuthStore.setState({ currentUserPubky: viewer });
+          reached = [];
+          gate.mockClear();
+
+          const outcome = await call(controller, method);
+
+          if (viewer !== null) expect(gate, label).toHaveBeenCalled();
+          expect(reached, label).toEqual([]);
+          if (entry.kind === 'refuse') {
+            if (viewer === null && gate.mock.calls.length === 0) expect(outcome.error, label).toBeDefined();
+            else expect(isGateRefusal(outcome.error), label).toBe(true);
+          } else expect(outcome, label).toEqual({ result: entry.kind === 'empty' ? entry.empty : undefined });
+        }
+      }
+    },
   );
 
   it.each(sellerEntries)(

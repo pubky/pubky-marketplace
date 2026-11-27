@@ -1,3 +1,4 @@
+import { setStoreStateForTests, type StoreState } from '@/config/store-mode';
 import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
 import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
 
@@ -8,5 +9,15 @@ import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.sc
 export function setStoreSeller(seller: string | undefined): void {
   if (seller === undefined) delete process.env[PUBKY_RUNTIME_ENV_NAMES.storeSeller];
   else process.env[PUBKY_RUNTIME_ENV_NAMES.storeSeller] = seller;
+  resetRuntimeConfigForTests();
+}
+
+export function setStoreState(state: StoreState | undefined): void {
+  setStoreStateForTests(state);
+}
+
+export function setStoreMode(mode: 'single_seller' | undefined): void {
+  if (mode === undefined) delete process.env[PUBKY_RUNTIME_ENV_NAMES.storeMode];
+  else process.env[PUBKY_RUNTIME_ENV_NAMES.storeMode] = mode;
   resetRuntimeConfigForTests();
 }
