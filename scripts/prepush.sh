@@ -51,19 +51,21 @@ fi
 
 # A broken dependency tree fails every later step with an unrelated error,
 # and must never pass through a reused stamp, so this runs before reuse.
-# The shared seed is read-only; a lane gates only on its own node_modules.
+# When PREPUSH_SHARED_SEED is set, refuse a node_modules resolving inside it.
 # A .pnpm directory means pnpm ran in this npm tree, which leaves a second
 # copy of packages such as @sentry/core.
-shared_seed="${PREPUSH_SHARED_SEED:-/Volumes/t7/vibes-dev/.deps/pubky-app-shop-v068-4713}"
+shared_seed="${PREPUSH_SHARED_SEED:-}"
 deps_problem=""
 if [ ! -d "$ROOT/node_modules" ]; then
   deps_problem="node_modules is missing"
 else
   nm_real="$(cd "$ROOT/node_modules" && pwd -P)"
-  seed_real="$(cd "$shared_seed" 2>/dev/null && pwd -P || printf '%s' "$shared_seed")"
-  case "$nm_real/" in
-    "$seed_real"/*) deps_problem="node_modules resolves into the shared seed ${seed_real}" ;;
-  esac
+  if [ -n "$shared_seed" ]; then
+    seed_real="$(cd "$shared_seed" 2>/dev/null && pwd -P || printf '%s' "$shared_seed")"
+    case "$nm_real/" in
+      "$seed_real"/*) deps_problem="node_modules resolves into the shared seed ${seed_real}" ;;
+    esac
+  fi
   if [ -z "$deps_problem" ] && [ -e "$nm_real/.pnpm" ]; then
     deps_problem="node_modules/.pnpm exists"
   fi
@@ -74,7 +76,7 @@ else
   done
 fi
 if [ -n "$deps_problem" ]; then
-  echo "prepush: ${deps_problem}; rebuild this lane's node_modules (release skill §1)" >&2
+  echo "prepush: ${deps_problem}; run 'npm ci' to rebuild node_modules" >&2
   exit 1
 fi
 

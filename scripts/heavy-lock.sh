@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Fair slots for pre-push work that used to share one heavy.lock.
 #
-# lockf without -k removes the lock file on exit, so waiters are not ordered.
 # Each class has its own ticket queue. A process may run only when fewer than
-# SLOTS older live tickets exist, then it holds one slot with lockf -k.
+# SLOTS older live tickets exist, then it holds one slot using a portable file
+# lock (flock on Linux or Python fcntl.flock on macOS and Linux).
 # Each scan drops a ticket whose PID is dead, a zombie, or reused.
 # EXIT, INT, and TERM remove the current ticket immediately. SIGKILL cannot
 # be caught; the next scan expires that ticket so it cannot block the queue.
@@ -18,18 +18,16 @@
 #
 # Classes do not exclude each other. A VRT run and two cargo runs can overlap.
 #
-# vrt and cargo refuse to take a slot when a volume in HEAVY_DISK_VOLUMES has
-# less than HEAVY_DISK_FLOOR_GIB free. VRT and Rust builds are what filled
-# /Volumes/vibedrive to 100% and failed with ENOSPC. A volume that is not
-# mounted is skipped. node is not checked.
+# Optional disk floor: when both HEAVY_DISK_VOLUMES is non-empty and
+# HEAVY_DISK_FLOOR_GIB is greater than 0, vrt and cargo refuse to take a slot
+# if a mounted volume has less than HEAVY_DISK_FLOOR_GIB free. Disabled by
+# default. A volume that is not mounted is skipped. node is not checked.
 #
-# HEAVY_LOCK_DIR overrides the directory (tests). The default is the shared
-# lock directory. This does not take heavy.lock; in-flight worktrees that
-# still lock that file keep their old behavior until they update.
+# HEAVY_LOCK_DIR overrides the directory (defaults to a user cache path).
 
-HEAVY_LOCK_DIR="${HEAVY_LOCK_DIR:-/Volumes/t7/vibes-dev/.locks}"
-HEAVY_DISK_FLOOR_GIB="${HEAVY_DISK_FLOOR_GIB:-25}"
-HEAVY_DISK_VOLUMES="${HEAVY_DISK_VOLUMES:-/Volumes/vibedrive /Volumes/t7}"
+HEAVY_LOCK_DIR="${HEAVY_LOCK_DIR:-${XDG_CACHE_HOME:-${HOME:-${TMPDIR:-/tmp}}/.cache}/pubky-marketplace/locks}"
+HEAVY_DISK_FLOOR_GIB="${HEAVY_DISK_FLOOR_GIB:-0}"
+HEAVY_DISK_VOLUMES="${HEAVY_DISK_VOLUMES:-}"
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   echo "source scripts/heavy-lock.sh" >&2
@@ -48,14 +46,60 @@ heavy_slots() {
   esac
 }
 
-# 0 when every mounted volume has at least the floor free. Otherwise prints
-# the refusal and returns 1.
+heavy_with_lock() {
+  local mode="$1" lockfile="$2" backend="${HEAVY_LOCK_BACKEND:-auto}"
+  shift 2
+  if [ "$backend" = auto ]; then
+    if command -v flock >/dev/null 2>&1; then
+      backend=flock
+    elif command -v python3 >/dev/null 2>&1; then
+      backend=python3
+    else
+      echo "heavy-lock: need flock or python3 on PATH" >&2
+      return 1
+    fi
+  fi
+  case "$backend" in
+    flock)
+      if [ "$mode" = try ]; then
+        flock -n -E 75 -- "$lockfile" "$@"
+      else
+        flock -- "$lockfile" "$@"
+      fi
+      ;;
+    python3)
+      python3 -c '
+import fcntl, os, sys
+mode, lockfile = sys.argv[1], sys.argv[2]
+cmd = sys.argv[3:]
+fd = os.open(lockfile, os.O_CREAT | os.O_RDWR, 0o666)
+flags = fcntl.LOCK_EX | (fcntl.LOCK_NB if mode == "try" else 0)
+try:
+    fcntl.flock(fd, flags)
+except BlockingIOError:
+    sys.exit(75)
+os.set_inheritable(fd, True)
+os.execvp(cmd[0], cmd)
+' "$mode" "$lockfile" "$@"
+      ;;
+    *)
+      echo "heavy-lock: unknown lock backend: $backend" >&2
+      return 1
+      ;;
+  esac
+}
+
+# 0 when every configured mounted volume has at least the floor free.
+# Otherwise prints the refusal and returns 1.
 heavy_disk_ok() {
   local class="$1" vol free_kib free_gib status=0
   case "$class" in
     vrt|cargo) ;;
     *) return 0 ;;
   esac
+  if [ -z "$HEAVY_DISK_VOLUMES" ] || [ "${HEAVY_DISK_FLOOR_GIB:-0}" -le 0 ]; then
+    return 0
+  fi
   for vol in $HEAVY_DISK_VOLUMES; do
     [ -d "$vol" ] || continue
     free_kib=$(df -Pk "$vol" 2>/dev/null | awk 'NR == 2 { print $4 }')
@@ -67,7 +111,7 @@ heavy_disk_ok() {
     fi
   done
   if [ "$status" -ne 0 ]; then
-    echo "heavy-lock: free space first: stale worktree target dirs under /Volumes/t7/vibes-dev/.cargo-target, unused docker volumes (docker volume ls), and old VRT attachments; see the fleet-resource-hygiene skill" >&2
+    echo "heavy-lock: free disk space or adjust HEAVY_DISK_FLOOR_GIB / HEAVY_DISK_VOLUMES" >&2
   fi
   return "$status"
 }
@@ -127,9 +171,19 @@ heavy_finish_signal() {
 }
 
 heavy_arm_traps() {
-  HEAVY_SAVED_EXIT=$(trap -p EXIT || true)
-  HEAVY_SAVED_INT=$(trap -p INT || true)
-  HEAVY_SAVED_TERM=$(trap -p TERM || true)
+  # Bash 4+ reports the parent shell's traps from `trap -p` inside a subshell
+  # even though subshells reset traps on fork. Only save and restore traps at
+  # the top-level shell so a backgrounded `run_heavy ... &` cannot re-arm and
+  # fire the caller's EXIT/signal traps.
+  if [ "${BASH_SUBSHELL:-0}" -eq 0 ]; then
+    HEAVY_SAVED_EXIT=$(trap -p EXIT || true)
+    HEAVY_SAVED_INT=$(trap -p INT || true)
+    HEAVY_SAVED_TERM=$(trap -p TERM || true)
+  else
+    HEAVY_SAVED_EXIT=""
+    HEAVY_SAVED_INT=""
+    HEAVY_SAVED_TERM=""
+  fi
   trap 'heavy_finish_exit' EXIT
   trap 'heavy_finish_signal INT' INT
   trap 'heavy_finish_signal TERM' TERM
@@ -158,7 +212,7 @@ heavy_issue() {
   local seqfile="$HEAVY_LOCK_DIR/${class}.seq"
   local issue="$HEAVY_LOCK_DIR/${class}.issue.lock"
   mkdir -p "$qdir"
-  lockf -k "$issue" bash -c '
+  heavy_with_lock block "$issue" bash -c '
     set -euo pipefail
     seqfile="$1"
     qdir="$2"
@@ -252,7 +306,7 @@ heavy_run_in_slot() {
   : > "$marker"
   # `||` keeps a non-zero status under set -e. A bare assignment from $? after
   # `if` is wrong on bash 3.2: a failed if with no else reports status 0.
-  lockf -k -s -t 0 "$slotfile" bash -c '
+  heavy_with_lock try "$slotfile" bash -c '
     printf 1 > "$1"
     shift
     printf "%s\n" "$1" >&2

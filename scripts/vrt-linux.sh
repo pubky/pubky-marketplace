@@ -44,7 +44,7 @@ fi
 
 # The host tree has macOS binaries, so the container installs its own Linux
 # dependencies into a volume, mounted at the host node_modules' real path.
-# For a lane whose node_modules is a symlink into /Volumes/t7/vibes-dev/.deps,
+# For a checkout whose node_modules is a symlink into a shared directory,
 # the symlink inside /w resolves to the volume. npm ci must not run in /w
 # then: it deletes the symlink through the bind mount and writes a Linux tree
 # into the worktree. It runs in the real path's parent instead, which exists
@@ -52,7 +52,7 @@ fi
 # to /w/vendor for the file: dependencies. The worktree and the host tree
 # are never modified. For a real directory the real path is /w/node_modules.
 if [ ! -e "$ROOT/node_modules" ]; then
-  echo "vrt-linux: node_modules is missing; rebuild this lane's node_modules (release skill §1)" >&2
+  echo "vrt-linux: node_modules is missing; run 'npm ci' to rebuild node_modules" >&2
   exit 1
 fi
 NM_REAL="$(cd "$ROOT/node_modules" && pwd -P)"

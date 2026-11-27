@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Proves queue tickets disappear on INT/TERM, and a dead PID cannot block
-# the next waiter. Run on the Mac that has lockf. Not part of Linux CI.
+# the next waiter. Portable across Linux (flock) and macOS (python3 fcntl.flock).
 set -euo pipefail
 # Background jobs ignore SIGINT unless job control is on. The real gate is
 # foreground and does receive Ctrl-C. Monitor mode gives each job its own
