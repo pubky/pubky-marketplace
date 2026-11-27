@@ -49,6 +49,10 @@ describe('CommerceController seller side in a store', () => {
     commerceConfig.mode = 'transaction-service';
     useAuthStore.setState({ currentUserPubky: VIEWER });
     vi.spyOn(CommerceApplication, 'getMarketplaceNotifications').mockResolvedValue(notifications);
+    vi.spyOn(CommerceApplication, 'fetchMarketplaceOrderList').mockResolvedValue({
+      orders: [purchase, sale] as never,
+      parseErrors: [{ kind: 'parse_error', index: 2, orderId: 'unknown', issues: [] }],
+    });
     vi.spyOn(CommerceApplication, 'getMarketplaceOrders').mockResolvedValue([purchase, sale] as never);
     vi.spyOn(CommerceApplication, 'getMarketplaceOrder').mockImplementation(
       async (_actor, orderId) => ([purchase, sale].find(({ id }) => id === orderId) ?? null) as never,
@@ -74,6 +78,9 @@ describe('CommerceController seller side in a store', () => {
   it('gives another signed-in seller only their buyer side', async () => {
     setStoreSeller(STORE_SELLER);
 
+    const list = await CommerceController.fetchMarketplaceOrderList();
+    expect(ids(list.orders)).toEqual(['order-purchase']);
+    expect(list.parseErrors).toEqual([]);
     expect(ids(await CommerceController.getMarketplaceOrders())).toEqual(['order-purchase']);
     expect(ids(await CommerceController.getMarketplaceOffers())).toEqual(['offer-made']);
     expect(await CommerceController.getMarketplaceOrder('order-sale')).toBeNull();
@@ -181,12 +188,18 @@ describe('CommerceController seller side in a store', () => {
   it('keeps the seller side for the store seller', async () => {
     setStoreSeller(VIEWER);
 
+    const list = await CommerceController.fetchMarketplaceOrderList();
+    expect(ids(list.orders)).toEqual(['order-purchase', 'order-sale']);
+    expect(list.parseErrors).toHaveLength(1);
     expect(ids(await CommerceController.getMarketplaceOrders())).toEqual(['order-purchase', 'order-sale']);
     expect(ids(await CommerceController.getMarketplaceOffers())).toEqual(['offer-made', 'offer-received']);
     expect((await CommerceController.getMarketplaceOrder('order-sale'))?.id).toBe('order-sale');
   });
 
   it('keeps the seller side outside store mode', async () => {
+    const list = await CommerceController.fetchMarketplaceOrderList();
+    expect(ids(list.orders)).toEqual(['order-purchase', 'order-sale']);
+    expect(list.parseErrors).toHaveLength(1);
     expect(ids(await CommerceController.getMarketplaceOrders())).toEqual(['order-purchase', 'order-sale']);
     expect(ids(await CommerceController.getMarketplaceOffers())).toEqual(['offer-made', 'offer-received']);
     expect((await CommerceController.getMarketplaceOrder('order-sale'))?.id).toBe('order-sale');

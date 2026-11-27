@@ -6,12 +6,11 @@ import { renderForVRT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { setEmbedded } from '@/test-utils/embedded';
 import { EmbeddedLegalFooter } from '@/molecules/EmbeddedLegalFooter/EmbeddedLegalFooter';
-import { Fab } from '@/molecules/Fab/Fab';
 import { MarketplaceContentLayout } from '@/organisms/Marketplace/MarketplaceContentLayout';
 import { Header } from '@/organisms/Header/Header';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 
-// The Shop shell as pubky.app's iframe shows it: the real root-layout chrome (Header, Fab) and
+// The Shop shell as pubky.app's iframe shows it: the real root-layout header and
 // the real MarketplaceContentLayout (mobile header and footer) around the marketplace section bar, plus the
 // legal strip the root layout adds when embedded. Embedded, the host app owns the page chrome, so
 // only the Shop's own content and the legal strip may remain. Scenes exist for the embedded
@@ -55,9 +54,6 @@ vi.mock('@/hooks/useCurrentUserProfile/useCurrentUserProfile', () => ({
     currentUserPubky: USER,
   }),
 }));
-vi.mock('@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery', () => ({
-  useCollectionsNavDiscovery: () => ({ showCollectionsNew: false, markCollectionsNavSeen: vi.fn() }),
-}));
 vi.mock('@/hooks/useAuthStatus/useAuthStatus', () => ({
   useAuthStatus: () => ({
     isFullyAuthenticated: true,
@@ -66,12 +62,6 @@ vi.mock('@/hooks/useAuthStatus/useAuthStatus', () => ({
     hasKeypair: true,
     hasProfile: true,
   }),
-}));
-vi.mock('@/hooks/useFabAction/useFabAction', () => ({
-  useFabAction: () => ({ kind: 'createPost', ariaLabel: 'New post' }),
-}));
-vi.mock('@/hooks/useHotTags/useHotTags', () => ({
-  useHotTags: () => ({ tags: [], rawTags: [], isLoading: false, error: null, refetch: async () => {} }),
 }));
 
 function EmbeddedShopPage() {
@@ -84,14 +74,12 @@ function EmbeddedShopPage() {
         <p className="text-muted-foreground">Your purchases and sales appear here.</p>
       </MarketplaceContentLayout>
       <EmbeddedLegalFooter />
-      <Fab />
     </>
   );
 }
 
 function expectNoShopChrome(root: HTMLElement) {
   expect(root.querySelector('header'), 'the Shop header').toBeNull();
-  expect(root.querySelector('[data-testid="new-post-cta"]'), 'the floating action button').toBeNull();
   expect(root.querySelector('button[aria-label="Account menu"]'), 'the mobile footer account menu').toBeNull();
   expect(root.querySelector('[data-testid="marketplace-section-nav"]'), 'the Shop section bar').not.toBeNull();
   expect(root.querySelector('[data-testid="embedded-legal-footer"]'), 'the legal strip').not.toBeNull();
@@ -121,7 +109,7 @@ describe('Shop embedded in another app — visual regression', () => {
 
     const root = screen.getByTestId(VRT_ROOT_TESTID).element() as HTMLElement;
     expect(root.querySelector('header')).not.toBeNull();
-    expect(root.querySelector('[data-testid="new-post-cta"]')).not.toBeNull();
+    expect(root.querySelector('[aria-label="Market sections"]')).not.toBeNull();
     expect(root.querySelector('[data-testid="embedded-legal-footer"]')).toBeNull();
   });
 });

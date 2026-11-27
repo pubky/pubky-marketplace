@@ -12,7 +12,7 @@ interface PromoDismissalState {
 
 /**
  * Per-account dismissal of the marketplace promo hero, persisted through the
- * same feature-discovery localStorage keys as useCollectionsNavDiscovery.
+ * account-scoped feature-discovery storage namespace.
  * Guests can dismiss for the current session only (no account to key on).
  *
  * `isResolved` is false until the stored dismissal for the current account has

@@ -22,7 +22,7 @@ import {
 import { Logger } from '@/libs/logger/logger';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ArbiscanLookupLink } from '@/molecules/Marketplace/ArbiscanLookupLink';
-import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
+import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
 
 const PANEL_CLASSNAME = 'mt-3 grid gap-3 rounded-md border border-border/60 bg-card/50 p-4';
 
@@ -40,24 +40,26 @@ type ActOnOrder = (order: MarketplaceOrder, kind: string, payload: Record<string
 export function MarketplaceUsdtRefundAddress({
   order,
   isBuyer,
-  paymentInReview,
-  reviewAbandoned = false,
+  payment,
   actOnOrder,
 }: {
   order: MarketplaceOrder;
   isBuyer: boolean;
-  /** The payment projection is in `manual_review`: late or mismatched money the seller may return. */
-  paymentInReview: boolean;
-  /** The payment's review ended `abandoned`: received money the seller still owes back. */
-  reviewAbandoned?: boolean;
+  payment?: MarketplacePayment | null;
   actOnOrder: ActOnOrder;
 }) {
-  const surface = usdtRefundSurface(order, isBuyer, paymentInReview, reviewAbandoned);
+  const surface = usdtRefundSurface(order, isBuyer, payment);
   if (surface.kind === 'hidden') return null;
   return surface.kind === 'buyer' ? (
-    <BuyerRefundAddress order={order} phase={surface.phase} refundDue={surface.refundDue} actOnOrder={actOnOrder} />
+    <BuyerRefundAddress
+      order={order}
+      phase={surface.phase}
+      refundDue={surface.refundDue}
+      unverified={surface.unverified}
+      actOnOrder={actOnOrder}
+    />
   ) : (
-    <SellerRefundAddress order={order} phase={surface.phase} paymentInReview={paymentInReview} />
+    <SellerRefundAddress order={order} phase={surface.phase} paymentInReview={payment?.state === 'manual_review'} />
   );
 }
 
@@ -80,11 +82,13 @@ function BuyerRefundAddress({
   order,
   phase,
   refundDue,
+  unverified,
   actOnOrder,
 }: {
   order: MarketplaceOrder;
   phase: 'needed' | 'confirmed' | 'recorded';
   refundDue: boolean;
+  unverified?: boolean;
   actOnOrder: ActOnOrder;
 }) {
   const [editing, setEditing] = useState(false);
@@ -126,7 +130,9 @@ function BuyerRefundAddress({
     phase === 'recorded'
       ? USDT_REFUND_COPY.buyerRecorded
       : phase === 'confirmed'
-        ? USDT_REFUND_COPY.buyerConfirmed
+        ? unverified
+          ? 'Your refund address is confirmed in case the seller needs to return a payment.'
+          : USDT_REFUND_COPY.buyerConfirmed
         : refundDue
           ? USDT_REFUND_COPY.buyerNeededDue
           : USDT_REFUND_COPY.buyerNeeded;
@@ -260,7 +266,7 @@ function SellerRefundAddress({
   paymentInReview,
 }: {
   order: MarketplaceOrder;
-  phase: 'waiting' | 'confirmed' | 'recorded';
+  phase: 'waiting' | 'confirmed' | 'recorded' | 'unverified';
   paymentInReview: boolean;
 }) {
   const [copied, setCopied] = useState(false);
@@ -272,15 +278,19 @@ function SellerRefundAddress({
   const due = usdtRefundDueMoney(order);
   const dueUsdt = isUsdtRefundOrder(order) ? formatUsdtRefundAmount(order, due.amountMinor) : null;
   const copy =
-    phase === 'recorded'
-      ? typeof order.externalRefund?.receivedUnits === 'number'
-        ? USDT_REFUND_COPY.sellerRecordedChecked
-        : USDT_REFUND_COPY.sellerRecorded
-      : phase === 'confirmed'
-        ? paymentInReview
-          ? USDT_REFUND_COPY.sellerConfirmedInReview
-          : USDT_REFUND_COPY.sellerConfirmed
-        : USDT_REFUND_COPY.sellerAwaitingBuyer;
+    phase === 'unverified'
+      ? destination
+        ? 'If you verify a transfer in your wallet and need to return it, use the address the buyer confirmed.'
+        : 'If you verify a transfer in your wallet and need to return it, ask the buyer to confirm their refund address.'
+      : phase === 'recorded'
+        ? typeof order.externalRefund?.receivedUnits === 'number'
+          ? USDT_REFUND_COPY.sellerRecordedChecked
+          : USDT_REFUND_COPY.sellerRecorded
+        : phase === 'confirmed'
+          ? paymentInReview
+            ? USDT_REFUND_COPY.sellerConfirmedInReview
+            : USDT_REFUND_COPY.sellerConfirmed
+          : USDT_REFUND_COPY.sellerAwaitingBuyer;
 
   return (
     <section className={PANEL_CLASSNAME} aria-label={USDT_REFUND_COPY.sellerTitle} data-testid="usdt-refund-seller">
@@ -293,7 +303,7 @@ function SellerRefundAddress({
       {destination && (
         <>
           <AddressLine address={destination.address} confirmedAt={destination.confirmedAt} />
-          {dueUsdt && phase !== 'recorded' && (
+          {dueUsdt && phase !== 'recorded' && phase !== 'unverified' && (
             <Typography as="p" className="text-sm" data-testid="usdt-refund-amount">
               Refund amount: {dueUsdt}
             </Typography>

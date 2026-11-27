@@ -15,9 +15,18 @@ import { asOpaque } from '@/test-utils/type-assertions';
 import type { TTagEventParams } from './tag.types';
 
 // Mock HomeserverService
+vi.mock('@/services/homeserver/social-writes', () => ({
+  SocialWriteService: { requireEpoch: vi.fn(async () => 'legacy'), getEpoch: vi.fn(async () => 'legacy') },
+}));
+
 vi.mock('@/services/homeserver/homeserver', () => ({
   HomeserverService: {
     request: vi.fn(),
+    putBlob: vi.fn(),
+    getJsonIfFound: vi.fn(),
+    canCurrentUserSessionWrite: vi.fn(() => false),
+    canCurrentHostSessionWrite: vi.fn(() => true),
+    canCurrentSessionWrite: vi.fn(() => true),
   },
 }));
 
@@ -299,6 +308,14 @@ describe('TagController', () => {
     });
   });
 
+  it('fetches the tag write epoch for the requested account', async () => {
+    const { SocialWriteService } = await import('@/services/homeserver/social-writes');
+    vi.mocked(SocialWriteService.getEpoch).mockResolvedValueOnce('v1');
+
+    await expect(TagController.fetchWriteEpoch(testData.taggerPubky)).resolves.toBe('v1');
+    expect(SocialWriteService.getEpoch).toHaveBeenCalledWith(testData.taggerPubky, 'tags');
+  });
+
   describe('getViewerUserTagLabels', () => {
     it('answers the labels the viewer put on users, most used first', async () => {
       const viewer = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo' as Pubky;
@@ -316,5 +333,133 @@ describe('TagController', () => {
 
       await expect(TagController.getViewerUserTagLabels(viewer, 8)).resolves.toEqual(['trusted', 'fast']);
     });
+  });
+});
+
+describe('Market social v1 tags', () => {
+  const viewer = 'dzswkfy7ek3bqnoc89jxuqqfbzhjrj6mi8qthgbxxcqkdugm3rio';
+  const seller = '8kkppkmiubfq4pxn6f73nqrhhhgkb5xyfprntc9si3np9ydbotto';
+
+  it('retries the active tag after a failed delete even when its legacy copy is already gone', async () => {
+    const { buildTag } = await import('pubky-social-specs');
+    const { TagController } = await import('./tag');
+    const { SocialWriteService } = await import('@/services/homeserver/social-writes');
+    const { MarketplaceTagsModel } = await import('@/models/marketplace/tags/marketplaceTags');
+    const rowId = `shop:${seller}`;
+    const target = `pubky://${seller}/pub/pubky.app/marketplace/v1/shop.json`;
+    const tag = buildTag(viewer, target, 'art');
+    const legacyUrl = `pubky://${viewer}/pub/pubky.app/tags/${tag.id}`;
+    const params = { taggedId: seller, taggedKind: TagKind.SHOP, taggerId: viewer, label: 'art' };
+    await MarketplaceTagsModel.upsert({
+      id: rowId,
+      tags: [{ label: 'art', taggers: [viewer], taggers_count: 1, relationship: true, tag_uri: tag.url }],
+    });
+    vi.mocked(SocialWriteService.requireEpoch).mockResolvedValueOnce('v1').mockResolvedValueOnce('v1');
+    vi.mocked(HomeserverService.canCurrentUserSessionWrite).mockReturnValueOnce(true).mockReturnValueOnce(true);
+    vi.mocked(HomeserverService.getJsonIfFound)
+      .mockResolvedValueOnce({ found: true, json: { uri: target, label: 'art' } })
+      .mockResolvedValueOnce({ found: false });
+    const request = vi
+      .mocked(HomeserverService.request)
+      .mockClear()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('homeserver unavailable'))
+      .mockResolvedValueOnce(undefined);
+    await expect(TagController.commitDelete(params)).rejects.toThrow('homeserver unavailable');
+    expect((await MarketplaceTagsModel.findById(rowId))?.tags[0]).toMatchObject({
+      relationship: true,
+      tag_uri: tag.url,
+    });
+
+    await TagController.commitDelete(params);
+    expect(request.mock.calls.map(([{ url }]) => url)).toEqual([legacyUrl, tag.url, tag.url]);
+    expect((await MarketplaceTagsModel.findById(rowId))?.tags).toEqual([]);
+  });
+
+  it.each(['same tab', 'another tab'] as const)(
+    'does not restore an outgoing viewer’s tag after sign-out in %s during the index-address read',
+    async (source) => {
+      const { TagController } = await import('./tag');
+      const { SocialWriteService } = await import('@/services/homeserver/social-writes');
+      const { MarketplaceTagsModel } = await import('@/models/marketplace/tags/marketplaceTags');
+      const { endAuthScope } = await import('@/controllers/auth/auth-scope');
+      const { bumpAuthEpoch } = await import('@/controllers/auth/auth-epoch');
+      const rowId = `shop:${seller}`;
+      const params = { taggedId: seller, taggedKind: TagKind.SHOP, taggerId: viewer, label: 'art' };
+      const tagUri = `pubky://${viewer}/pub/social/v1/tags/01BHZZZZZZZZZZZZZZZZZZZZZZ.json`;
+      vi.mocked(SocialWriteService.requireEpoch).mockResolvedValueOnce('v1');
+      const read = Promise.withResolvers<{ found: false }>();
+      vi.mocked(HomeserverService.getJsonIfFound).mockClear().mockReturnValueOnce(read.promise);
+      vi.mocked(HomeserverService.request).mockClear();
+      await MarketplaceTagsModel.upsert({
+        id: rowId,
+        tags: [{ label: 'art', taggers: [viewer], taggers_count: 1, relationship: true, tag_uri: tagUri }],
+      });
+      const pending = TagController.commitDelete(params);
+      await vi.waitFor(() => expect(HomeserverService.getJsonIfFound).toHaveBeenCalledWith({ url: tagUri }));
+      if (source === 'same tab') endAuthScope();
+      else bumpAuthEpoch();
+      const nextViewerTag = { label: 'new-account', taggers: [seller], taggers_count: 1, relationship: true };
+      await MarketplaceTagsModel.upsert({ id: rowId, tags: [nextViewerTag] });
+      const cancelled = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+      if (source === 'same tab') read.reject(new Error('Owner no longer signed in'));
+      else read.resolve({ found: false });
+      await cancelled;
+      expect((await MarketplaceTagsModel.findById(rowId))?.tags).toEqual([nextViewerTag]);
+      expect(HomeserverService.request).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not start an outgoing viewer’s local create after the profile lookup completes', async () => {
+    const { TagController } = await import('./tag');
+    const { SocialWriteService } = await import('@/services/homeserver/social-writes');
+    const { MarketplaceTagsModel } = await import('@/models/marketplace/tags/marketplaceTags');
+    const { endAuthScope } = await import('@/controllers/auth/auth-scope');
+    const lookup = Promise.withResolvers<'v1'>();
+    vi.mocked(SocialWriteService.requireEpoch).mockReturnValueOnce(lookup.promise);
+    vi.mocked(HomeserverService.putBlob).mockClear();
+    const rowId = `shop:${seller}`;
+    await MarketplaceTagsModel.table.delete(rowId);
+    const pending = TagController.commitCreate({
+      taggedId: seller,
+      taggedKind: TagKind.SHOP,
+      taggerId: viewer,
+      label: 'art',
+    });
+    endAuthScope();
+    const cancelled = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    lookup.resolve('v1');
+    await cancelled;
+    expect(await MarketplaceTagsModel.findById(rowId)).toBeNull();
+    expect(HomeserverService.putBlob).not.toHaveBeenCalled();
+  });
+
+  it('writes spec bytes under the viewer and preserves the commerce target and non-ASCII case', async () => {
+    const { SocialWriteService } = await import('@/services/homeserver/social-writes');
+    const { TagController } = await import('./tag');
+    const { buildTag, decodeObject } = await import('pubky-social-specs');
+    vi.mocked(SocialWriteService.requireEpoch).mockResolvedValueOnce('v1');
+    const target = `pubky://${seller}/pub/pubky.app/marketplace/v1/listings/boots`;
+    const url = buildTag(viewer, target, 'ABC-ЦЕНА').url;
+    await TagController.commitCreate({
+      taggedId: `${seller}:boots`,
+      taggedKind: TagKind.LISTING,
+      taggerId: viewer,
+      label: 'ABC-ЦЕНА',
+    });
+    const put = vi.mocked(HomeserverService.putBlob).mock.calls.at(-1)![0];
+    expect(put.url).toBe(url);
+    expect(decodeObject(url, put.blob, 'tag')).toMatchObject({ uri: target, label: 'abc-ЦЕНА' });
+    const { MarketplaceTagsModel } = await import('@/models/marketplace/tags/marketplaceTags');
+    const stored = await MarketplaceTagsModel.findById(`listing:${seller}:boots`);
+    expect(stored?.tags[0]?.label).toBe('abc-ЦЕНА');
+    vi.mocked(SocialWriteService.requireEpoch).mockResolvedValueOnce('v1');
+    await TagController.commitDelete({
+      taggedId: `${seller}:boots`,
+      taggedKind: TagKind.LISTING,
+      taggerId: viewer,
+      label: 'abc-ЦЕНА',
+    });
+    expect(HomeserverService.request).toHaveBeenCalledWith({ method: HttpMethod.DELETE, url });
   });
 });

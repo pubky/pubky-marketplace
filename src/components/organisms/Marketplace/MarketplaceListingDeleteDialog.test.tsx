@@ -84,6 +84,17 @@ describe('MarketplaceListingDeleteDialog', () => {
     expect(screen.queryByTestId('listing-delete-open-orders')).not.toBeInTheDocument();
   });
 
+  it('shows both readable open orders and the unchecked notice when an order list was partial', () => {
+    render(
+      <MarketplaceListingDeleteDialog
+        controller={controllerFor(planFor([target('one')], { openOrders: 1, ordersChecked: false }))}
+      />,
+    );
+
+    expect(screen.getByTestId('listing-delete-open-orders')).toHaveTextContent('1 open order');
+    expect(screen.getByTestId('listing-delete-orders-unchecked')).toBeInTheDocument();
+  });
+
   it('cannot confirm while it is still checking, and says so', () => {
     render(<MarketplaceListingDeleteDialog controller={controllerFor(null)} />);
 

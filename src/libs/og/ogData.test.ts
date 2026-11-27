@@ -1,7 +1,6 @@
 import sharp from 'sharp';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Logger } from '@/libs/logger/logger';
-import { FileVariant } from '@/services/nexus/file/file.types';
 import { asOpaque } from '@/test-utils/type-assertions';
 
 vi.mock('sharp', () => ({
@@ -12,148 +11,7 @@ vi.mock('sharp', () => ({
   })),
 }));
 
-vi.mock('@/services/nexus/file/file.api', () => ({
-  filesApi: {
-    getFileUrl: vi.fn(
-      ({ pubky, file_id, variant }: { pubky: string; file_id: string; variant: string }) =>
-        `https://cdn.test/files/${pubky}/${file_id}/${variant}`,
-    ),
-    getAvatarUrl: vi.fn((pubky: string, version?: string | number) =>
-      version ? `https://cdn.test/avatar/${pubky}?v=${version}` : `https://cdn.test/avatar/${pubky}`,
-    ),
-  },
-}));
-
-const {
-  buildAvatarUrl,
-  fetchAttachmentImageAsDataUri,
-  fetchImageAsDataUri,
-  fetchPostTags,
-  fetchProfileForMetadata,
-  OG_IMAGE_MAX_BYTES,
-  resolvePostAttachmentUrl,
-} = await import('./ogData');
-
-const jsonResponse = (body: unknown) =>
-  new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
-
-describe('resolvePostAttachmentUrl', () => {
-  it('returns null for empty / whitespace / nullish input', () => {
-    expect(resolvePostAttachmentUrl(null)).toBeNull();
-    expect(resolvePostAttachmentUrl(undefined)).toBeNull();
-    expect(resolvePostAttachmentUrl('')).toBeNull();
-    expect(resolvePostAttachmentUrl('   ')).toBeNull();
-  });
-
-  it('rejects any non-pubky:// reference (SSRF guard — only CDN file URIs are fetched)', () => {
-    // Absolute URLs (even http(s)) are NOT fetched — this prevents pointing the
-    // server-side image fetch at arbitrary/internal hosts.
-    expect(resolvePostAttachmentUrl('https://example.com/img.png')).toBeNull();
-    expect(resolvePostAttachmentUrl('http://169.254.169.254/latest/meta-data')).toBeNull();
-    expect(resolvePostAttachmentUrl('http://localhost:6379')).toBeNull();
-    expect(resolvePostAttachmentUrl('data:image/png;base64,AAAA')).toBeNull();
-    expect(resolvePostAttachmentUrl('file:///etc/passwd')).toBeNull();
-    expect(resolvePostAttachmentUrl('not a url')).toBeNull();
-  });
-
-  it('resolves a pubky:// files URI to a CDN URL (default FEED variant)', () => {
-    expect(resolvePostAttachmentUrl('pubky://userpk/pub/pubky.app/files/file123')).toBe(
-      'https://cdn.test/files/userpk/file123/feed',
-    );
-  });
-
-  it('resolves a pubky:// files URI with an explicit variant', () => {
-    expect(resolvePostAttachmentUrl('pubky://userpk/pub/pubky.app/files/file123', FileVariant.MAIN)).toBe(
-      'https://cdn.test/files/userpk/file123/main',
-    );
-  });
-
-  it('returns null for a pubky:// URI without a files segment', () => {
-    expect(resolvePostAttachmentUrl('pubky://userpk/pub/pubky.app/posts/post123')).toBeNull();
-  });
-});
-
-describe('buildAvatarUrl', () => {
-  it('returns null when the user has no avatar (falsy image flag)', () => {
-    expect(buildAvatarUrl({ id: 'u1', image: null, indexed_at: 123 })).toBeNull();
-  });
-
-  it('builds the avatar CDN URL with indexed_at as the cache-busting version', () => {
-    expect(buildAvatarUrl({ id: 'u1', image: 'pubky://u1/pub/pubky.app/files/av', indexed_at: 123 })).toBe(
-      'https://cdn.test/avatar/u1?v=123',
-    );
-  });
-});
-
-describe('fetchProfileForMetadata', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('returns the user details and counts when both resolve', async () => {
-    // First fetch = user details, second = counts (Promise.all array order).
-    vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(jsonResponse({ name: 'Alice', bio: 'hi' }))
-      .mockResolvedValueOnce(jsonResponse({ posts: 5, followers: 10 }));
-
-    const result = await fetchProfileForMetadata('somepubky');
-
-    expect(result?.user.name).toBe('Alice');
-    expect(result?.counts.posts).toBe(5);
-    expect(result?.counts.followers).toBe(10);
-  });
-
-  it('returns null when the user details are not found', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Not Found', { status: 404 }));
-
-    expect(await fetchProfileForMetadata('somepubky')).toBeNull();
-  });
-
-  it('defaults counts to zeros when the counts request 404s but the user resolves', async () => {
-    vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(jsonResponse({ name: 'Alice', bio: 'hi' }))
-      .mockResolvedValueOnce(new Response('Not Found', { status: 404 }));
-
-    const result = await fetchProfileForMetadata('somepubky');
-
-    expect(result?.user.name).toBe('Alice');
-    expect(result?.counts.posts).toBe(0);
-    expect(result?.counts.followers).toBe(0);
-  });
-});
-
-describe('fetchPostTags', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('returns the tags list, requesting the given post tags endpoint and limit', async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(jsonResponse([{ label: 'ai', taggers_count: 21 }]));
-
-    const tags = await fetchPostTags('author', 'post1', 3);
-
-    expect(tags).toEqual([{ label: 'ai', taggers_count: 21 }]);
-    const url = String(fetchSpy.mock.calls[0][0]);
-    // Path asserts author/post order — swapped arguments would silently fetch
-    // a nonexistent post's tags and every card would render without tags.
-    expect(url).toContain('/v0/post/author/post1/tags');
-    expect(url).toContain('limit_tags=3');
-  });
-
-  it('returns an empty list on 404', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Not Found', { status: 404 }));
-
-    expect(await fetchPostTags('author', 'post1', 3)).toEqual([]);
-  });
-
-  it('returns an empty list when the fetch fails (non-fatal)', async () => {
-    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'));
-
-    expect(await fetchPostTags('author', 'post1', 3)).toEqual([]);
-  });
-});
+const { fetchImageAsDataUri, OG_IMAGE_MAX_BYTES } = await import('./ogData');
 
 describe('fetchImageAsDataUri', () => {
   afterEach(() => {
@@ -422,47 +280,5 @@ describe('fetchImageAsDataUri', () => {
     const result = await fetchImageAsDataUri('https://cdn.test/a.png');
 
     expect(result).toMatch(/^data:image\/png;base64,/);
-  });
-});
-
-describe('fetchAttachmentImageAsDataUri', () => {
-  const attachmentUri = 'pubky://userpk/pub/pubky.app/files/file123';
-  const feedUrl = 'https://cdn.test/files/userpk/file123/feed';
-  const mainUrl = 'https://cdn.test/files/userpk/file123/main';
-  const imageResponse = () =>
-    new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'Content-Type': 'image/svg+xml' } });
-
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('uses the feed variant when it is available', async () => {
-    const fetcher = vi.fn(async (_url: string) => imageResponse());
-
-    await expect(fetchAttachmentImageAsDataUri(attachmentUri, fetcher)).resolves.toMatch(/^data:image\/png;base64,/);
-    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([feedUrl]);
-  });
-
-  it('falls back to main once when the feed variant is unavailable', async () => {
-    const fetcher = vi.fn(async (url: string) =>
-      url === feedUrl ? new Response('no variant', { status: 400 }) : imageResponse(),
-    );
-
-    await expect(fetchAttachmentImageAsDataUri(attachmentUri, fetcher)).resolves.toMatch(/^data:image\/png;base64,/);
-    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([feedUrl, mainUrl]);
-  });
-
-  it('returns null when both variants are unavailable', async () => {
-    const fetcher = vi.fn(async (_url: string) => new Response('missing', { status: 404 }));
-
-    await expect(fetchAttachmentImageAsDataUri(attachmentUri, fetcher)).resolves.toBeNull();
-    expect(fetcher).toHaveBeenCalledTimes(2);
-  });
-
-  it('fetches nothing for a non-pubky reference', async () => {
-    const fetcher = vi.fn(async (_url: string) => imageResponse());
-
-    await expect(fetchAttachmentImageAsDataUri('https://example.com/a.svg', fetcher)).resolves.toBeNull();
-    expect(fetcher).not.toHaveBeenCalled();
   });
 });

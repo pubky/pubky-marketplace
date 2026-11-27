@@ -13,9 +13,7 @@ describe('SignInStore', () => {
 
       expect(state.authUrlResolved).toBe(false);
       expect(state.profileChecked).toBe(false);
-      expect(state.bootstrapFetched).toBe(false);
-      expect(state.dataPersisted).toBe(false);
-      expect(state.homeserverSynced).toBe(false);
+      expect(state.marketReady).toBe(false);
     });
   });
 
@@ -30,19 +28,9 @@ describe('SignInStore', () => {
       expect(useSignInStore.getState().profileChecked).toBe(true);
     });
 
-    it('should set bootstrapFetched to true', () => {
-      useSignInStore.getState().setBootstrapFetched(true);
-      expect(useSignInStore.getState().bootstrapFetched).toBe(true);
-    });
-
-    it('should set dataPersisted to true', () => {
-      useSignInStore.getState().setDataPersisted(true);
-      expect(useSignInStore.getState().dataPersisted).toBe(true);
-    });
-
-    it('should set homeserverSynced to true', () => {
-      useSignInStore.getState().setHomeserverSynced(true);
-      expect(useSignInStore.getState().homeserverSynced).toBe(true);
+    it('should set marketReady to true', () => {
+      useSignInStore.getState().setMarketReady(true);
+      expect(useSignInStore.getState().marketReady).toBe(true);
     });
 
     it('should track progress through all steps', () => {
@@ -54,14 +42,8 @@ describe('SignInStore', () => {
       store.setProfileChecked(true);
       expect(useSignInStore.getState().profileChecked).toBe(true);
 
-      store.setBootstrapFetched(true);
-      expect(useSignInStore.getState().bootstrapFetched).toBe(true);
-
-      store.setDataPersisted(true);
-      expect(useSignInStore.getState().dataPersisted).toBe(true);
-
-      store.setHomeserverSynced(true);
-      expect(useSignInStore.getState().homeserverSynced).toBe(true);
+      store.setMarketReady(true);
+      expect(useSignInStore.getState().marketReady).toBe(true);
     });
   });
 
@@ -72,9 +54,7 @@ describe('SignInStore', () => {
       // Set all state
       store.setAuthUrlResolved(true);
       store.setProfileChecked(true);
-      store.setBootstrapFetched(true);
-      store.setDataPersisted(true);
-      store.setHomeserverSynced(true);
+      store.setMarketReady(true);
 
       // Reset
       store.reset();
@@ -83,9 +63,7 @@ describe('SignInStore', () => {
       const resetState = useSignInStore.getState();
       expect(resetState.authUrlResolved).toBe(false);
       expect(resetState.profileChecked).toBe(false);
-      expect(resetState.bootstrapFetched).toBe(false);
-      expect(resetState.dataPersisted).toBe(false);
-      expect(resetState.homeserverSynced).toBe(false);
+      expect(resetState.marketReady).toBe(false);
     });
   });
 });

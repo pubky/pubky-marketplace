@@ -98,16 +98,13 @@ describe('store route policy table', () => {
 
 describe('matchStoreRoute', () => {
   it('drops route groups and ignores parallel slots', () => {
-    expect(matchStoreRoute('/home')?.key).toBe('/(feeds)/home');
-    expect(matchStoreRoute('/profile')?.key).toBe('/profile/(own)');
-    expect(matchStoreRoute('/post/a/b')?.key).toBe('/post/[userId]/[postId]');
+    expect(matchStoreRoute('/sign-in')?.key).toBe('/(auth)/sign-in');
+    expect(storeRouteUrlSegments('/(group)/@slot/[...path]')).toBeNull();
   });
 
-  it('prefers static segments over dynamic ones', () => {
-    expect(matchStoreRoute('/collections/bookmarks')?.key).toBe('/collections/bookmarks');
-    expect(matchStoreRoute('/settings/edit')?.key).toBe('/(edit-profile)/settings/edit');
-    expect(matchStoreRoute('/profile/followers')?.key).toBe('/profile/(own)/followers');
-    expect(matchStoreRoute(`/profile/${OTHER_SELLER}/followers`)?.key).toBe('/profile/[pubky]/followers');
+  it('matches the social handoff handler and keeps retired social paths out of the store', () => {
+    expect(matchStoreRoute('/social-handoff/profile/alice')?.key).toBe('/social-handoff/[...segments]');
+    expect(matchStoreRoute('/profile/alice')).toBeNull();
   });
 
   it('returns the page params', () => {
@@ -163,6 +160,8 @@ describe('decideStoreRoute', () => {
     `/profile/${STORE_SELLER}`,
     '/who-to-follow',
     '/share',
+    '/settings/account',
+    '/social-handoff/settings/account',
     '/marketplace/drops',
     '/marketplace/sandbox',
     '/copyright',
@@ -179,7 +178,7 @@ describe('decideStoreRoute', () => {
     '/marketplace/checkout',
     '/marketplace/orders',
     '/messages',
-    '/settings/account',
+    '/marketplace/settings/addresses',
     '/offline',
   ])('serves the shared page %s', (pathname) => {
     expect(decide(pathname)).toBe('allow');

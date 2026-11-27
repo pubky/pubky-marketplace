@@ -1,13 +1,10 @@
 import { getHomeserver } from '@/config/network';
-import { Env } from '@/libs/env/env';
 import {
   getPassportPrivEncryptionKeysEnabled,
   getPrivEncryptionKeysEnabled,
   getPrivEncryptionKeysHomeservers,
   getShopGrantClientIdOverride,
 } from '@/libs/runtime-config/runtime-config';
-
-export const APP_VERSION = Env.NEXT_PUBLIC_APP_VERSION;
 
 /**
  * Minimum storage permissions needed to open Shop with an existing grant.

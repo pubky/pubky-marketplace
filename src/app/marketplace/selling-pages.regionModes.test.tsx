@@ -17,6 +17,8 @@ import ConnectorCatalogPage from './settings/store-connections/[connectionId]/pa
 import StoreConnectionsPage from './settings/store-connections/page';
 import StorefrontPage from './storefront/page';
 
+vi.mock('@/hooks/useSignOut/useSignOut', () => ({ useSignOut: () => ({ isLoading: false, handleSignOut: vi.fn() }) }));
+
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: { getShop: vi.fn(async () => null) },
 }));
@@ -110,6 +112,20 @@ describe('the seller pages of the Market', () => {
 
     expect(await screen.findByText('page: studio')).toBeInTheDocument();
     expect(screen.queryByTestId('selling-unavailable')).not.toBeInTheDocument();
+  });
+
+  it('keeps account actions available to buyers while seller payment setup is blocked', async () => {
+    setRegionModes(LAUNCH);
+    stubClientRegion('US');
+    render(<PaymentSettingsPage />);
+
+    expect(await screen.findByTestId('selling-unavailable')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeEnabled();
+    expect(screen.getByRole('link', { name: 'Manage delivery addresses' })).toHaveAttribute(
+      'href',
+      '/marketplace/settings/addresses',
+    );
+    expect(screen.getByText(/Shop publicly follows a seller/)).toBeVisible();
   });
 
   describe.each(sellingPages)('%s', (_name, page, marker) => {

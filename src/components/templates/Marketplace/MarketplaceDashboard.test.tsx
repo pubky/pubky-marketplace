@@ -208,10 +208,10 @@ describe('MarketplaceDashboard', () => {
   describe('store connections entry', () => {
     const entry = () => screen.getByRole('link', { name: /Store connections/ });
 
-    it('always shows the Store connections button next to Payment settings', () => {
+    it('always shows the Store connections button next to Shop settings', () => {
       render(<MarketplaceDashboard />);
       expect(entry()).toHaveAttribute('href', MARKETPLACE_ROUTES.SETTINGS_STORE_CONNECTIONS);
-      expect(screen.getByRole('link', { name: /Payment settings/ })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /Shop settings/ })).toBeInTheDocument();
     });
 
     it.each(['unavailable', 'sandbox', 'transaction-service'] as const)(
@@ -466,7 +466,7 @@ describe('MarketplaceDashboard', () => {
 
     expect(screen.queryByTestId('create-listing-payment-precondition')).not.toBeInTheDocument();
     expect(
-      within(screen.getByRole('navigation', { name: 'Shop actions' })).getByRole('link', { name: 'Payment settings' }),
+      within(screen.getByRole('navigation', { name: 'Shop actions' })).getByRole('link', { name: 'Shop settings' }),
     ).toHaveAttribute('href', MARKETPLACE_ROUTES.SETTINGS);
     expect(screen.getByRole('button', { name: 'Sell an item' })).toBeEnabled();
   });
@@ -489,7 +489,7 @@ describe('MarketplaceDashboard', () => {
     render(<MarketplaceDashboard />);
 
     const actions = within(screen.getByRole('navigation', { name: 'Shop actions' }));
-    for (const name of ['Payment settings', 'Storefront', 'Inventory', 'Shipping presets']) {
+    for (const name of ['Shop settings', 'Storefront', 'Inventory', 'Shipping presets']) {
       expect(actions.getByRole('link', { name })).toHaveClass('bg-secondary');
     }
     expect(screen.queryByTestId('create-listing-payment-precondition')).not.toBeInTheDocument();

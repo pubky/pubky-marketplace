@@ -1,5 +1,4 @@
-import { isSocialLinkOutEnabled } from '@/config/social';
-import { getStoreSeller, isStoreMode } from '@/config/store-mode';
+import { getStoreSeller } from '@/config/store-mode';
 import { isPubkyIdentifier } from '@/libs/utils/utils';
 
 export const ROOT_ROUTES = '/';
@@ -25,10 +24,6 @@ export enum APP_ROUTES {
   PROFILE = '/profile',
   WHO_TO_FOLLOW = '/who-to-follow',
   SHARE = '/share',
-}
-
-export enum COLLECTION_ROUTES {
-  BOOKMARKS = '/collections/bookmarks',
 }
 
 export enum MARKETPLACE_ROUTES {
@@ -196,15 +191,9 @@ export const NEEDS_PROFILE_CREATION_ROUTES = {
   redirectTo: ACCOUNT_ROUTES.COMPLETE_PROFILE,
 };
 
-/**
- * Where the Shop sends a user when it navigates "home" on its own (route guard,
- * logo, post-completion, not-found fallbacks). With social link-out on, `/home`
- * belongs to the social host, where a Shop session does not carry over, so the
- * Shop stays on its catalog instead. A store (store mode) goes to its own shop.
- */
+/** The Shop's landing page, including after sign-in. */
 export function getShopHomeRoute(): string {
-  if (isStoreMode()) return getMarketplaceHomeRoute();
-  return isSocialLinkOutEnabled() ? APP_ROUTES.MARKETPLACE : APP_ROUTES.HOME;
+  return getMarketplaceHomeRoute();
 }
 
 /** The Market's landing page: the catalog, or in store mode the store seller's shop. */
@@ -287,20 +276,6 @@ export function matchesAllowedRoute(
   return pathname.startsWith(`${route}/`);
 }
 
-/**
- * Matches a single post route `/post/[userId]/[postId]` and returns its params,
- * or `null` for any other path. Shape-only matching — identifier validation is
- * the caller's concern (mirrors `matchSingleCollectionRoute`).
- */
-export function matchPostRoute(pathname: string): { userId: string; postId: string } | null {
-  const segments = pathname.split('/').filter(Boolean);
-  if (segments[0] !== 'post' || segments.length !== 3) {
-    return null;
-  }
-  const [, userId, postId] = segments;
-  return { userId, postId };
-}
-
 export function isCoreExploreRoute(pathname: string): boolean {
   return EXPLORE_ROUTES.includes(pathname);
 }
@@ -358,22 +333,6 @@ export function getProfileRoute(route: PROFILE_ROUTES, pubky?: string): string {
 // ============================================================================
 // Collection Route Helpers
 // ============================================================================
-
-/**
- * Builds the route to a single collection's detail page.
- *
- * @param authorPubky - The collection owner's pubky
- * @param postId - The collection post id (raw, not composite)
- * @returns The full route path (e.g. `/collections/<pubky>/<postId>`)
- */
-export function getCollectionRoute(authorPubky: string, postId: string): string {
-  return `${APP_ROUTES.COLLECTIONS}/${authorPubky}/${postId}`;
-}
-
-/** `/collections` exactly — the collections overview page (not a single collection or bookmarks). */
-export function isCollectionsOverviewRoute(pathname: string): boolean {
-  return pathname === APP_ROUTES.COLLECTIONS;
-}
 
 /**
  * Matches a single collection detail route `/collections/[userId]/[postId]` and

@@ -26,7 +26,7 @@ The deployment column and backend version descriptions below are a historical ha
 | [pubky/pubky-marketplace-service](https://github.com/pubky/pubky-marketplace-service) | Transaction service (Rust, sqlx, Postgres) | `main` | GHCR image, deployed through [pubky/shop-migration](https://github.com/pubky/shop-migration) |
 | [pubky/marketplace-nexus](https://github.com/pubky/marketplace-nexus) | Marketplace indexer (upstream Nexus plus marketplace indexing; carries the history of the fork `BitcoinErrorLog/pubky-nexus`, frozen since 6 Oct) | `main` | Deployed through [pubky/shop-migration](https://github.com/pubky/shop-migration) |
 | [BitcoinErrorLog/paykit-server](https://github.com/BitcoinErrorLog/paykit-server) | Paykit server (fork, rc55). Being ported onto upstream rc9 (Paykit rc71) before the beta (launch plan §5); the port runs as exactly one process | `master` | Deployed through [pubky/shop-migration](https://github.com/pubky/shop-migration); production host `paykit-shop.pubky.app` |
-| [BitcoinErrorLog/pubky-app-specs](https://github.com/BitcoinErrorLog/pubky-app-specs) | Marketplace record types (specs fork) | — | Vendored into the Shop as a tarball |
+| [pubky/pubky-market-specs](https://github.com/pubky/pubky-market-specs) | Marketplace record types and attestation verification | — | Vendored into the Shop as a tarball |
 | [pubky/pubky-shop-sdk](https://github.com/pubky/pubky-shop-sdk) | `@bitcoinerrorlog/pubky-shop` SDK (npm) | `main` | npm |
 | [pubky/pubky-marketplace](https://github.com/pubky/pubky-marketplace) | Issue tracker for testers | — | — |
 

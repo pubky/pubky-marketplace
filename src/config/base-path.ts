@@ -1,5 +1,5 @@
 import { getDefaultUrl } from '@/config/metadata';
-import { prefixWithBasePath, stripBasePath } from '@/libs/base-path/base-path';
+import { prefixWithBasePath } from '@/libs/base-path/base-path';
 import { Env } from '@/libs/env/env';
 import { getShopPublicPathOverride } from '@/libs/runtime-config/runtime-config';
 
@@ -20,11 +20,6 @@ export function getBasePath(): string {
  */
 export function withBasePath(path: string): string {
   return prefixWithBasePath(getBasePath(), path);
-}
-
-/** The pathname without the mount path (what `usePathname()` reports). */
-export function withoutBasePath(pathname: string): string {
-  return stripBasePath(getBasePath(), pathname);
 }
 
 /**

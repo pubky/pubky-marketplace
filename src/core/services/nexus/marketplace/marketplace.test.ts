@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS } from '@/config/commerce';
 import { getNexusUrl } from '@/config/nexus';
+import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
 import { fetchNexusIfFound, queryNexus } from '@/services/nexus/nexus.utils';
 import { createNexusListingDetailsFixture } from '@/test/fixtures/commerce/commerce';
 import { NexusMarketplaceService } from './marketplace';
 import { marketplaceApi } from './marketplace.api';
+
+vi.mock('@/services/nexus/social-v1', () => ({ socialNexusServesV1: vi.fn(async () => false) }));
 
 vi.mock('@/services/nexus/nexus.utils', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/nexus/nexus.utils')>();
@@ -232,5 +235,114 @@ describe('NexusMarketplaceService', () => {
     mockQueryNexus.mockRejectedValue(new Error('nexus unreachable'));
 
     await expect(NexusMarketplaceService.fetchListingStream()).rejects.toThrow('nexus unreachable');
+  });
+});
+
+describe('Commerce tags on the social Nexus', () => {
+  beforeEach(() => {
+    vi.stubEnv('PUBKY_RUNTIME_MARKETPLACE_TAGS_BACKFILLED', 'true');
+    resetRuntimeConfigForTests();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    resetRuntimeConfigForTests();
+  });
+
+  const seller = '8kkppkmiubfq4pxn6f73nqrhhhgkb5xyfprntc9si3np9ydbotto';
+  const viewer = 'dzswkfy7ek3bqnoc89jxuqqfbzhjrj6mi8qthgbxxcqkdugm3rio';
+
+  it('looks up the canonical listing URI and derives the viewer relationship from tag_uri', async () => {
+    const { socialNexusServesV1 } = await import('@/services/nexus/social-v1');
+    vi.mocked(socialNexusServesV1).mockResolvedValueOnce(true);
+    const tag = {
+      label: 'sale',
+      taggers: [],
+      taggers_count: 1,
+      tag_uri: `pubky://${viewer}/pub/social/v1/tags/abc.json`,
+    };
+    vi.mocked(fetchNexusIfFound).mockResolvedValueOnce({ tags: [tag] });
+    expect(
+      await NexusMarketplaceService.fetchListingTags({ seller_id: seller, listing_id: 'boots', viewer_id: viewer }),
+    ).toEqual({ tags: [{ ...tag, relationship: true }], completeResource: true });
+    const url = new URL(vi.mocked(fetchNexusIfFound).mock.calls.at(-1)![0].url);
+    expect(url.pathname).toBe('/v1/resource/by-uri');
+    expect(url.searchParams.get('uri')).toBe(`pubky://${seller}/pub/pubky.app/marketplace/v1/listings/boots`);
+    expect(url.searchParams.get('viewer_id')).toBe(viewer);
+  });
+
+  it.each([
+    [0, 1],
+    [1, 5],
+  ])('preserves cached tags outside resource page skip %i, limit %i', async (skip_tags, limit_tags) => {
+    const { socialNexusServesV1 } = await import('@/services/nexus/social-v1');
+    vi.mocked(socialNexusServesV1).mockResolvedValueOnce(true);
+    vi.mocked(fetchNexusIfFound).mockResolvedValueOnce({
+      tags: [{ label: 'art', tag_uri: null, taggers: [], taggers_count: 1 }],
+    });
+    const page = await NexusMarketplaceService.fetchShopTags({ seller_id: seller, skip_tags, limit_tags });
+    expect(page.completeResource).toBe(false);
+  });
+
+  it('reads subsequent pages before a backfilled resource can retire stale labels', async () => {
+    const { socialNexusServesV1 } = await import('@/services/nexus/social-v1');
+    vi.mocked(socialNexusServesV1).mockResolvedValueOnce(true);
+    const tags = Array.from({ length: 100 }, (_, index) => ({
+      label: String(index),
+      taggers: [],
+      taggers_count: 1,
+      tag_uri: null,
+    }));
+    vi.mocked(fetchNexusIfFound).mockResolvedValueOnce({ tags }).mockResolvedValueOnce({ tags: [] });
+    const page = await NexusMarketplaceService.fetchShopTags({ seller_id: seller });
+    expect(page.tags).toHaveLength(tags.length);
+    expect(page.completeResource).toBe(true);
+    expect(new URL(vi.mocked(fetchNexusIfFound).mock.calls.at(-1)![0].url).searchParams.get('skip_tags')).toBe('100');
+  });
+
+  it.each(['removed', 'reordered'] as const)('handles a resource that is %s during pagination', async (change) => {
+    const { socialNexusServesV1 } = await import('@/services/nexus/social-v1');
+    vi.mocked(socialNexusServesV1).mockResolvedValueOnce(true);
+    const tags = Array.from({ length: 100 }, (_, index) => ({
+      label: String(index),
+      taggers: [],
+      taggers_count: 1,
+      tag_uri: null,
+    }));
+    vi.mocked(fetchNexusIfFound)
+      .mockResolvedValueOnce({ tags })
+      .mockResolvedValueOnce(change === 'removed' ? null : { tags: [tags[0]] });
+    const page = await NexusMarketplaceService.fetchShopTags({ seller_id: seller });
+    expect(page.tags).toHaveLength(change === 'removed' ? 0 : 100);
+    expect(page.completeResource).toBe(change === 'removed');
+  });
+
+  it('rejects malformed resource data before reconciling the cache', async () => {
+    const { socialNexusServesV1 } = await import('@/services/nexus/social-v1');
+    vi.mocked(socialNexusServesV1).mockResolvedValueOnce(true);
+    vi.mocked(fetchNexusIfFound).mockResolvedValueOnce({});
+    await expect(NexusMarketplaceService.fetchShopTags({ seller_id: seller })).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+  });
+
+  it('keeps the legacy Market projection partial even when its page is empty', async () => {
+    const { socialNexusServesV1 } = await import('@/services/nexus/social-v1');
+    vi.mocked(socialNexusServesV1).mockResolvedValueOnce(false);
+    vi.mocked(queryNexus).mockResolvedValueOnce([]);
+    const page = await NexusMarketplaceService.fetchShopTags({ seller_id: seller });
+    expect(page).toEqual({ tags: [], completeResource: false });
+  });
+
+  it('returns no tags for an absent shop resource on a v1 index without reviving a stale Market projection', async () => {
+    const { socialNexusServesV1 } = await import('@/services/nexus/social-v1');
+    vi.mocked(socialNexusServesV1).mockResolvedValueOnce(true);
+    vi.mocked(fetchNexusIfFound).mockResolvedValueOnce(null);
+    vi.mocked(queryNexus).mockClear();
+    expect(await NexusMarketplaceService.fetchShopTags({ seller_id: seller })).toEqual({
+      tags: [],
+      completeResource: true,
+    });
+    expect(queryNexus).not.toHaveBeenCalled();
   });
 });

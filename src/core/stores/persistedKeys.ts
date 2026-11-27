@@ -16,14 +16,23 @@ export const BUYER_COUNTRY_PERSIST_KEY = shopStorageKey('buyer-country-storage')
 export const SELLER_PAYMENT_CONFIRM_PERSIST_KEY = shopStorageKey('seller-payment-confirm-storage');
 export const MIGRATION_STORE_KEY = 'migration-store';
 
+// Keep retired Shop store names in the registry so earlier installations can still be cleaned on identity changes.
+const RETIRED_SOCIAL_STORE_KEYS = [SEARCH_PERSIST_KEY, HOME_PERSIST_KEY, HOT_PERSIST_KEY] as const;
+
+export function clearRetiredSocialStores(): void {
+  try {
+    for (const key of RETIRED_SOCIAL_STORE_KEYS) window.localStorage.removeItem(key);
+  } catch (error) {
+    Logger.warn('Could not clear retired Shop preferences', { error });
+  }
+}
+
 // List of all persisted store keys (Local storage keys)
 // EX: MIGRATION_STORE_KEY won't be included in this list because it's not a persisted store key.
 export const PERSISTED_STORE_KEYS = [
   AUTH_PERSIST_KEY,
   NOTIFICATION_PERSIST_KEY,
-  SEARCH_PERSIST_KEY,
-  HOME_PERSIST_KEY,
-  HOT_PERSIST_KEY,
+  ...RETIRED_SOCIAL_STORE_KEYS,
   SETTINGS_PERSIST_KEY,
   MARKETPLACE_DISPLAY_PERSIST_KEY,
   BUYER_COUNTRY_PERSIST_KEY,

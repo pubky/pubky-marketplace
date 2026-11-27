@@ -1,4 +1,4 @@
-import { PubkySpecsBuilder } from 'pubky-app-specs';
+import { buildMarketUri, buildWatchlist } from 'pubky-market-specs';
 import { describe, expect, it } from 'vitest';
 import { parseListingUri } from './listingUri';
 
@@ -34,30 +34,41 @@ describe('parseListingUri', () => {
   });
 });
 
-describe('listing URI agreement with pubky-app-specs', () => {
-  const builder = new PubkySpecsBuilder(SELLER);
+describe('listing URI compatibility with pubky-market-specs', () => {
+  const validateWatchlistItem = (listingId: string) =>
+    buildWatchlist(SELLER, {
+      schemaVersion: 1,
+      recordType: 'watchlist',
+      ownerPubky: SELLER,
+      revision: 1,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      items: [{ listingOwnerPubky: SELLER, listingId, watchedAtMs: 1 }],
+      tombstones: [],
+    }).free();
 
   it.each([
     ['32-hex entity id', '1061cf08aaad4c8f99d996f3c2c092ba'],
     ['Crockford timestamp id', '0034A0X7NJ52A'],
     ['one-character entity id', 'a'],
     ['128-character entity id', 'a'.repeat(128)],
-  ])('accepts %s in both validators', (_, listingId) => {
-    const uri = `pubky://${SELLER}/pub/pubky.app/marketplace/v1/listings/${listingId}`;
+  ])('accepts a %s from the Market URI builder', (_, listingId) => {
+    const uri = buildMarketUri(SELLER, 'listing', listingId);
 
+    expect(() => validateWatchlistItem(listingId)).not.toThrow();
     expect(parseListingUri(uri)).toEqual({ sellerPubky: SELLER, listingId });
-    expect(() => builder.createCollectionPost('Saved', '', [uri])).not.toThrow();
   });
 
+  // The spec URI builder interpolates IDs without validating them. Shop enforces its transaction-service ID rules.
   it.each([
     ['slash', 'listing/id'],
     ['dot', 'listing.id'],
     ['empty', ''],
     ['129-character entity id', 'a'.repeat(129)],
-  ])('rejects %s in both validators', (_, listingId) => {
-    const uri = `pubky://${SELLER}/pub/pubky.app/marketplace/v1/listings/${listingId}`;
+  ])('enforces the Shop ID rules for %s', (_, listingId) => {
+    const uri = buildMarketUri(SELLER, 'listing', listingId);
 
+    expect(() => validateWatchlistItem(listingId)).toThrow();
     expect(parseListingUri(uri)).toBeNull();
-    expect(() => builder.createCollectionPost('Saved', '', [uri])).toThrow();
   });
 });

@@ -8,8 +8,8 @@ describe('ROUTE_ACCESS_MAP authenticated redirect', () => {
     setSocialHost(undefined);
   });
 
-  it('sends signed-in users to /home while social link-out is off', () => {
-    expect(ROUTE_ACCESS_MAP[AuthStatus.AUTHENTICATED].redirectTo).toBe('/home');
+  it('sends signed-in users to the catalog by default', () => {
+    expect(ROUTE_ACCESS_MAP[AuthStatus.AUTHENTICATED].redirectTo).toBe('/marketplace');
   });
 
   it('sends signed-in users to the marketplace while social link-out is on', () => {

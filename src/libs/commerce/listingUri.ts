@@ -1,8 +1,7 @@
 /**
  * Parsing for canonical marketplace listing URIs
  * (`pubky://<sellerPubky>/pub/pubky.app/marketplace/v1/listings/<listingId>`),
- * the exact form `listingUriBuilder` produces and pubky-app-specs accepts as
- * a collection item since 0.6.2-marketplace.2.
+ * the form produced by the Market spec for a listing.
  */
 
 import { commerceEntityIdSchema, commercePubkySchema } from './transaction-contracts';

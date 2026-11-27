@@ -1,6 +1,7 @@
 import { Serwist } from 'serwist';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { asOpaque } from '@/test-utils/type-assertions';
+import manifest from '../public/manifest.json';
 import { buildRuntimeCaching } from './sw.routes';
 
 class TestExtendableEvent extends Event {
@@ -66,6 +67,47 @@ describe('service worker runtime routes', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect((fetchMock.mock.calls[0]?.[0] as Request).url).toBe(request.url);
   });
+
+  it('keeps the standalone Shop off the OS file-sharing sheet', () => {
+    expect(manifest).not.toHaveProperty('share_target');
+  });
+
+  it.each(['/', '/shop-embed/'])(
+    'rejects old OS shares locally and limits cleanup to a root worker (%s)',
+    async (scope) => {
+      vi.resetModules();
+      const cacheDelete = vi.fn().mockResolvedValue(true);
+      const worker = Object.assign(new EventTarget(), {
+        skipWaiting: vi.fn(),
+        location: window.location,
+        registration: { scope: new URL(scope, window.location.origin).href },
+        caches: { delete: cacheDelete },
+      });
+      vi.stubGlobal('self', worker);
+      const { Serwist: WorkerSerwist } = await import('serwist');
+      const listeners = vi.spyOn(WorkerSerwist.prototype, 'addEventListeners').mockImplementation(() => {});
+      try {
+        await import('./sw');
+        const request = new Request(new URL('/share', window.location.origin), {
+          method: 'POST',
+          body: new FormData(),
+        });
+        const respondWith = vi.fn<(response: Response) => void>();
+        worker.dispatchEvent(Object.assign(new TestFetchEvent(request, Promise.resolve(undefined)), { respondWith }));
+        if (scope === '/') expect(respondWith.mock.calls[0]?.[0].status).toBe(405);
+        else expect(respondWith).not.toHaveBeenCalled();
+        expect(fetchMock).not.toHaveBeenCalled();
+
+        const event = new TestExtendableEvent('activate');
+        worker.dispatchEvent(event);
+        await Promise.all(event.lifetime);
+        if (scope === '/') expect(cacheDelete).toHaveBeenCalledWith('share-target-files');
+        else expect(cacheDelete).not.toHaveBeenCalled();
+      } finally {
+        listeners.mockRestore();
+      }
+    },
+  );
 
   it('leaves same-origin subresource requests to the browser', () => {
     expect(handle(serwist, requestWithMode('/_next/static/chunks/main.js', 'no-cors'))).toBeUndefined();

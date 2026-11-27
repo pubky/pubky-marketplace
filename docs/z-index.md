@@ -4,14 +4,14 @@ Standard z-index values for consistent stacking order throughout the application
 
 ## Z-Index Scale
 
-| Value   | Purpose                     | Examples                                 |
-| ------- | --------------------------- | ---------------------------------------- |
-| `-z-10` | Background elements         | Fixed background layers                  |
-| `z-10`  | Sticky/relative overlays    | `ProgressSteps`, `ButtonFilters`, badges |
-| `z-30`  | Floating buttons (scrolled) | `NewPostsButton` when scrolled           |
-| `z-40`  | Fixed navigation & FAB      | `Fab`, `MobileFooter`, dialog overlay    |
-| `z-50`  | Modals, dialogs, popovers   | `Dialog`, `Sheet`, `Popover`, dropdowns  |
-| `z-60`  | Modal controls              | Close buttons on lightboxes              |
+| Value   | Purpose                     | Examples                                  |
+| ------- | --------------------------- | ----------------------------------------- |
+| `-z-10` | Background elements         | Fixed background layers                   |
+| `z-10`  | Sticky/relative overlays    | `ProgressSteps`, badges                   |
+| `z-30`  | Floating buttons (scrolled) | Floating controls above scrolling content |
+| `z-40`  | Fixed navigation & FAB      | `MobileFooter`, dialog overlay            |
+| `z-50`  | Modals, dialogs, popovers   | `Dialog`, `Popover`, dropdowns            |
+| `z-60`  | Modal controls              | Close buttons on lightboxes               |
 
 ## Layer Hierarchy
 
@@ -99,32 +99,26 @@ z-0   ─────────────  Normal document flow
 ### Sticky/Relative (`z-10`)
 
 - `ProgressSteps`
-- `ButtonFilters`
 - `WordSlot` badges
-- `IllustratedEmptyState`
 
 ### Floating (`z-30`)
 
-- `NewPostsButton` (when scrolled)
+- Controls that float above scrolling content
 
 ### Fixed Navigation (`z-40`)
 
-- `Fab` (FAB)
 - `MobileFooter`
 - `DialogOverlay`
 
 ### Modals (`z-50`)
 
 - `Dialog` / `DialogContent`
-- `Sheet` / `SheetContent`
-- `SideDrawer`
 - `Popover` / `PopoverContent`
-- `SearchInput` dropdown
 - `TagInput` dropdown
 
 ### Modal Controls (`z-60`)
 
-- `PostAttachmentsImagesAndVideos` close button
+- Lightbox close controls
 
 ## Rules
 

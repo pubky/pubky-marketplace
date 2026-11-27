@@ -39,8 +39,6 @@ const SENTRY_ENV_INPUT = {
 const APP_ENV_INPUT = {
   notificationPollIntervalMs: '1234',
   notificationPollOnStart: 'false',
-  streamFetchLimit: '25',
-  maxStreamTags: '7',
   ttlPostMs: '45000',
   moderationId: VALID_MODERATION_ID,
   moderatedTags: '["spam","nudity"]',
@@ -208,8 +206,6 @@ describe('runtimeEnvInputSchema', () => {
 
     expect(parsed.notificationPollIntervalMs).toBe(1234);
     expect(parsed.notificationPollOnStart).toBe(false);
-    expect(parsed.streamFetchLimit).toBe(25);
-    expect(parsed.maxStreamTags).toBe(7);
     expect(parsed.moderationId).toBe(VALID_MODERATION_ID);
     expect(parsed.moderatedTags).toEqual(['spam', 'nudity']);
     expect(parsed.exchangeRateApi).toBe('https://rates.example.com/btc');
@@ -322,12 +318,12 @@ describe('runtimeEnvInputSchema', () => {
 
   it('throws on invalid optional boolean values', () => {
     expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, notificationPollOnStart: 'tru' })).toThrow();
-    expect(() => runtimeEnvInputSchemaWithDefaults.parse({ streamPollOnStart: 'yes' })).toThrow();
+    expect(() => runtimeEnvInputSchemaWithDefaults.parse({ notificationPollOnStart: 'yes' })).toThrow();
   });
 
   it('throws on invalid optional integer values', () => {
     expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, ttlPostMs: '123abc' })).toThrow();
-    expect(() => runtimeEnvInputSchemaWithDefaults.parse({ maxStreamTags: '0' })).toThrow();
+    expect(() => runtimeEnvInputSchemaWithDefaults.parse({ ttlUserMs: '0' })).toThrow();
   });
 
   it('fails closed on unsupported commerce adapter modes', () => {

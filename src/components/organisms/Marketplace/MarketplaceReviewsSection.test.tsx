@@ -116,14 +116,17 @@ describe('MarketplaceReviewsSection reviewer link', () => {
     setSocialHost(undefined);
   });
 
-  it('links the reviewer to their Shop profile while social link-out is off', () => {
+  it('links the reviewer to their Shop and public social profile by default', () => {
     render(<MarketplaceReviewsSection reviews={listedState()} />);
 
     expect(screen.getByRole('link', { name: `${REVIEWER.slice(0, 8)}…` })).toHaveAttribute(
       'href',
-      `/profile/${REVIEWER}`,
+      `/marketplace/shop/${REVIEWER}`,
     );
-    expect(screen.queryByRole('link', { name: 'Profile on Pubky' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Profile on Pubky' })).toHaveAttribute(
+      'href',
+      `https://pubky.app/profile/${REVIEWER}`,
+    );
   });
 
   it('links the reviewer to their shop, with their profile on the social host beside it, while on', () => {

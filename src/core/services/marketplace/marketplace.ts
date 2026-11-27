@@ -35,6 +35,7 @@ import { PARSE_JSON_WITH_BODY_EXCERPT, parseResponseOrThrow } from '@/libs/http/
 import { rasterImageMimeType, readBodyWithin } from '@/libs/media/image-bytes';
 import { marketplaceSessionRequired } from './marketplace-approval-failure';
 import { reportMarketplaceNotificationInvalidTypes } from './marketplace-notification-diagnostics';
+import { reportMarketplaceOrderParseErrors } from './marketplace-order-diagnostics';
 import {
   type MarketplaceBidHistory,
   type MarketplaceListingProjection,
@@ -43,8 +44,9 @@ import {
   type MarketplaceOffer,
   marketplaceOfferSchema,
   type MarketplaceOrder,
+  marketplaceOrderDiagnosticIssues,
+  type MarketplaceOrderListResult,
   type MarketplaceParticipantOrder,
-  marketplaceParticipantOrderSchema,
   type MarketplacePayment,
   marketplacePaymentSchema,
   type MarketplaceReceipt,
@@ -52,6 +54,7 @@ import {
   type MarketplaceSellerAnnualLimit,
   type MarketplaceSellerListingProjection,
   parseMarketplaceNotificationEntries,
+  parseMarketplaceOrderList,
 } from './marketplace-projections';
 import { MarketplaceTransactionService } from './marketplace-transaction';
 
@@ -118,6 +121,7 @@ export type {
   MarketplaceOffer,
   MarketplaceOfferAward,
   MarketplaceOrder,
+  MarketplaceOrderParseError,
   MarketplacePayment,
   MarketplacePublicDrop,
   MarketplacePublicListingAvailability,
@@ -454,12 +458,12 @@ export class MarketplaceGatewayService {
     return parsed.data;
   }
 
-  static async getOrders(
+  static async getOrderList(
     actor: string,
     options: { signal?: AbortSignal } = {},
-  ): Promise<MarketplaceParticipantOrder[]> {
+  ): Promise<MarketplaceOrderListResult> {
     if (isDurableCommerceMode(getCommerceAdapterMode())) {
-      return await MarketplaceTransactionService.getOrders(actor, options);
+      return await MarketplaceTransactionService.getOrderList(actor, options);
     }
     this.assertSandbox();
     const url = `${getMarketplaceUrl()}/v1/orders`;
@@ -470,15 +474,19 @@ export class MarketplaceGatewayService {
       'getOrders',
     );
     const raw = await parseResponseOrThrow<unknown>(response, ErrorService.Marketplace, 'getOrders', url);
-    const parsed = z.object({ orders: z.array(marketplaceParticipantOrderSchema) }).safeParse(raw);
-    if (!parsed.success) {
-      throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Marketplace returned invalid orders.', {
-        service: ErrorService.Marketplace,
-        operation: 'getOrders',
-        context: { statusCode: response.status },
-      });
-    }
-    return parsed.data.orders;
+    return parseMarketplaceOrderList(raw, reportMarketplaceOrderParseErrors);
+  }
+
+  /**
+   * Returns only rows that parsed cleanly; callers that need to know whether
+   * any rows were dropped (for example, counting open orders before listing
+   * deletion) must call `getOrderList()`.
+   */
+  static async getOrders(
+    actor: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<MarketplaceParticipantOrder[]> {
+    return (await this.getOrderList(actor, options)).orders;
   }
 
   static async getPayment(actor: string, paymentId: string): Promise<MarketplacePayment | null> {
@@ -500,7 +508,10 @@ export class MarketplaceGatewayService {
       throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Marketplace returned an invalid payment.', {
         service: ErrorService.Marketplace,
         operation: 'getPayment',
-        context: { statusCode: response.status },
+        context: {
+          statusCode: response.status,
+          parseIssues: marketplaceOrderDiagnosticIssues(parsed.error.issues, 'payment'),
+        },
       });
     }
     return parsed.data;

@@ -192,6 +192,22 @@ export class HomeserverService {
     return capabilitiesGrantWrite(capabilities, path);
   }
 
+  /** Whether the active identity owns this path and its current grant covers the write. */
+  static canCurrentUserSessionWrite(pubky: string, path: string): boolean {
+    const state = useAuthStore.getState();
+    return (
+      !state.isLoggingOut &&
+      state.currentUserPubky === pubky &&
+      state.session?.info.publicKey.z32() === pubky &&
+      this.canCurrentSessionWrite(path)
+    );
+  }
+
+  /** V1 social records are written only through an App-owned session. */
+  static canCurrentHostSessionWrite(pubky: string, path: string): boolean {
+    return useAuthStore.getState().sessionOwner === 'host' && this.canCurrentUserSessionWrite(pubky, path);
+  }
+
   /**
    * Whether the current grant covers every Shop storage permission.
    */
@@ -1072,7 +1088,7 @@ export class HomeserverService {
    * @param {string} url - Pubky URL.
    * @param {Uint8Array} blob - Raw bytes of the blob to upload.
    */
-  static async putBlob({ url, blob, logUrl }: TPutBlobParams) {
+  static async putBlob({ url, blob, logUrl, bounded }: TPutBlobParams) {
     const contextUrl = logUrl ?? url;
     // Uint8Array is mutable; retries must replay the exact original payload.
     const retryBody = blob.slice();
@@ -1082,7 +1098,10 @@ export class HomeserverService {
       try {
         await retryHomeserverWrite(
           HttpMethod.PUT,
-          () => owned.session.storage.putBytes(toSdkPath(owned.path), retryBody.slice()),
+          () => {
+            const write = () => owned.session.storage.putBytes(toSdkPath(owned.path), retryBody.slice());
+            return bounded ? boundedHomeserverIo(write, 'putBlob') : write();
+          },
           {
             beforeAttempt: () => this.assertWriteSessionCurrent(owned.session, authEpoch, contextUrl, HttpMethod.PUT),
           },
@@ -1217,30 +1236,6 @@ export class HomeserverService {
   }
 
   /**
-   * Fetches a resource from the homeserver.
-   *
-   * @param {string} url - Pubky URL to fetch.
-   * @returns {Promise<Response>} The fetch response.
-   */
-  static async get(url: string): Promise<Response> {
-    const pubkySdk = this.getPubkySdk();
-    try {
-      if (isHttpUrl(url)) {
-        return await pubkySdk.client.fetch(url);
-      }
-
-      const owned = this.resolveOwnedSessionPath(url);
-      if (owned) {
-        return await getOwnedResponse({ session: owned.session, path: owned.path, url });
-      }
-
-      return await pubkySdk.publicStorage.get(url as Address);
-    } catch (error) {
-      return handleError({ error, additionalContext: { url, method: HttpMethod.GET } });
-    }
-  }
-
-  /**
    * Checks whether a homeserver resource exists without treating an expected 404 as an error.
    * Storage SDK probes return a boolean; plain HTTP URLs retain explicit response handling.
    */
@@ -1275,33 +1270,6 @@ export class HomeserverService {
       service: ErrorService.Homeserver,
       operation: 'restoreSession',
     });
-  }
-
-  /**
-   * Subscribe to homeserver `/events-stream` for a user's pub directory subtree (SDK SSE wrapper).
-   * Used for mute-list sync; callers own {@link ReadableStreamDefaultReader} lifecycle.
-   */
-  static async subscribeUserEventStreamForPath(params: {
-    userZ32: TPubkyModel;
-    cursor: string | null;
-    pathPrefix: string;
-  }): Promise<ReadableStream<THomeserverUserEvent>> {
-    try {
-      const pubkySdk = this.getPubkySdk();
-      const pk = PublicKey.from(params.userZ32);
-      const stream = (await pubkySdk
-        .eventStreamForUser(pk, params.cursor)
-        .path(params.pathPrefix)
-        .live()
-        .subscribe()) as ReadableStream<HomeserverSdkUserEvent>;
-
-      return this.normalizeUserEventStream(stream);
-    } catch (error) {
-      return handleError({
-        error,
-        additionalContext: { pathPrefix: params.pathPrefix },
-      });
-    }
   }
 
   /**

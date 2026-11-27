@@ -143,6 +143,31 @@ describe('LocalMarketplaceTagService', () => {
       expect(tag?.taggers_count).toBe(2);
     });
 
+    it('replaces a stale legacy aggregate with a complete nonempty resource page, retaining a pending add', async () => {
+      const viewer = testData.taggerPubky;
+      const other = testData.anotherTaggerPubky;
+      await MarketplaceTagsModel.upsert({
+        id: listingRowId,
+        tags: [createTagRecord('absent', [other], false), createTagRecord('art', [viewer], true)],
+      });
+      await LocalMarketplaceTagService.create(createTagParams('pending'));
+      await LocalMarketplaceTagService.create(createTagParams('removed'));
+      await LocalMarketplaceTagService.delete(createTagParams('removed'));
+      // A second tab shares Dexie but has fresh sessionStorage.
+      window.sessionStorage.clear();
+      await LocalMarketplaceTagService.mergeTags({
+        taggedId: listingRowId,
+        viewerId: viewer,
+        clearMissing: true,
+        tags: [createTagRecord('art', [other], false), createTagRecord('removed', [viewer], true)],
+      });
+      const tags = await LocalMarketplaceTagService.read(listingRowId);
+      expect(tags).toEqual(
+        expect.arrayContaining([createTagRecord('art', [other], false), createTagRecord('pending', [viewer], true)]),
+      );
+      expect(tags).toHaveLength(2);
+    });
+
     it('leaves locally-known labels alone when absent from the Nexus response', async () => {
       await LocalMarketplaceTagService.create(createTagParams('handmade'));
 
@@ -156,5 +181,26 @@ describe('LocalMarketplaceTagService', () => {
       const labels = saved?.tags.map((t) => t.label).sort();
       expect(labels).toEqual(['handmade', 'vintage']);
     });
+  });
+});
+
+describe('Marketplace viewer tag addresses', () => {
+  const viewer = testData.taggerPubky;
+  const id = '01BHZZZZZZZZZZZZZZZZZZZZZZ';
+  it('accepts only a tag file below the current viewer’s social root', async () => {
+    const row = buildMarketplaceTagRowId(TagKind.LISTING, testData.listingId);
+    for (const [url, accepted] of [
+      [`pubky://${viewer}/pub/social/v1/tags/${id}.json`, true],
+      [`pubky://${viewer}/pub/pubky.app/tags/${id}`, true],
+      [`pubky://${testData.anotherTaggerPubky}/pub/social/v1/tags/${id}.json`, false],
+      [`pubky://${viewer}/priv/social/v1/tags/${id}.json`, false],
+      [`pubky://${viewer}/pub/social/v1/profile.json`, false],
+    ] as const) {
+      await MarketplaceTagsModel.upsert({
+        id: row,
+        tags: [{ label: 'art', taggers: [], taggers_count: 1, relationship: true, tag_uri: url }],
+      });
+      expect(await LocalMarketplaceTagService.getViewerTagUrl(row, 'art', viewer)).toBe(accepted ? url : undefined);
+    }
   });
 });

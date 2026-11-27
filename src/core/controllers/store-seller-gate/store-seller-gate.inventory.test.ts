@@ -68,7 +68,6 @@ const COMMERCE_INVENTORY: Record<string, Entry> = {
   writeMarketplaceSessionStore: none,
   writeInventorySessionStore: none,
   subscribePrivKeysReady: none,
-  exportPrivRecoveryKey: none,
   // Public reads: shops, listings, tags, catalog, drops, reviews, media
   getShop: none,
   fetchShippingProfile: none,
@@ -98,7 +97,6 @@ const COMMERCE_INVENTORY: Record<string, Entry> = {
   getCatalogEntriesBySeller: none,
   fetchCatalogListings: none,
   fetchSellerCatalogListings: none,
-  fetchFollowedSellerListings: none,
   initializeSandboxCatalog: none,
   fetchDrop: none,
   getPublicDrop: none,
@@ -283,6 +281,7 @@ const COMMERCE_INVENTORY: Record<string, Entry> = {
   getMarketplaceFeedNotifications: split,
   refreshMarketplaceNotificationBadge: split,
   markAllMarketplaceNotificationsRead: split,
+  fetchMarketplaceOrderList: split,
   getMarketplaceOrders: split,
   getMarketplacePayment: split,
   getMarketplaceReceipt: split,

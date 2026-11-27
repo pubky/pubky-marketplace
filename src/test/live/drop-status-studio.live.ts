@@ -333,17 +333,12 @@ async function capturePage(page: Page, name: string): Promise<void> {
   writeFileSync(path.join(SHOT_DIR, `${name}.txt`), await page.locator('body').innerText());
 }
 
-async function completeOnboardingIfNeeded(page: Page): Promise<void> {
-  const form = page.getByTestId('create-profile-form');
-  const onOnboarding = page.url().includes('/complete-profile') || (await form.count()) > 0;
-  if (!onOnboarding) return;
-  const nameInput = page.locator('#profile-name-input');
-  await nameInput.waitFor({ state: 'visible', timeout: 30_000 });
-  if (!(await nameInput.inputValue()).trim()) {
-    await nameInput.fill('Drop status proof');
+function requireProfiledSeat(page: Page): void {
+  if (new URL(page.url()).pathname.endsWith('/complete-profile')) {
+    throw new Error(
+      'This live proof needs a seller with a profile. Complete the test account’s profile in Pubky App before running it.',
+    );
   }
-  await page.getByRole('button', { name: 'Finish' }).click();
-  await page.waitForURL((url) => !url.pathname.includes('/complete-profile'), { timeout: 90_000 });
 }
 
 async function signInWithEncryptedFile(page: Page, seat: Seat): Promise<void> {
@@ -372,7 +367,7 @@ async function signInWithEncryptedFile(page: Page, seat: Seat): Promise<void> {
       page.waitForURL((url) => !url.pathname.includes('/sign-in'), { timeout: 180_000 }),
       restore.click({ force: true }),
     ]);
-    await completeOnboardingIfNeeded(page);
+    requireProfiledSeat(page);
   } catch (error) {
     await capturePage(page, 'seller-restore');
     throw error;
@@ -391,14 +386,18 @@ async function openDropsHome(
 ): Promise<void> {
   if (session) await injectMarketplaceSession(page, session);
   await page.goto(`${shopUrl}${DROPS_PATH}`, { waitUntil: 'domcontentloaded', timeout: 180_000 });
-  await completeOnboardingIfNeeded(page);
+  requireProfiledSeat(page);
   if (!page.url().includes(DROPS_PATH)) {
     if (session) await injectMarketplaceSession(page, session);
     await page.goto(`${shopUrl}${DROPS_PATH}`, { waitUntil: 'domcontentloaded', timeout: 180_000 });
   }
   const home = page.locator('[data-surface="drop-studio-home"]');
   try {
-    await home.waitFor({ state: 'visible', timeout: 60_000 });
+    await home
+      .or(page.getByRole('heading', { name: 'Complete your Pubky profile' }))
+      .first()
+      .waitFor({ state: 'visible', timeout: 60_000 });
+    requireProfiledSeat(page);
     await page.getByRole('heading', { name: 'Your drops' }).waitFor({ state: 'visible', timeout: 45_000 });
   } catch (error) {
     await capturePage(page, `${shotPrefix}-boot`);

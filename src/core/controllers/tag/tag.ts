@@ -1,10 +1,14 @@
 import { TagApplication } from '@/application/tag/tag';
+import { captureAuthWriteGuard } from '@/controllers/auth/auth-scope';
 import type { TTagEventParams } from '@/controllers/tag/tag.types';
 import type { Pubky } from '@/models/models.types';
-import { TagNormalizer } from '@/pipes/tag/tag.normalizer';
 
 export class TagController {
   private constructor() {}
+
+  static fetchWriteEpoch(owner: Pubky) {
+    return TagApplication.fetchWriteEpoch(owner);
+  }
 
   /**
    * Create a tag
@@ -14,9 +18,10 @@ export class TagController {
    * @param params.taggerId - ID of the user adding the tag
    */
   static async commitCreate(params: TTagEventParams) {
-    const tag = TagNormalizer.from(params);
+    const assertCurrent = captureAuthWriteGuard();
+    const tag = await TagApplication.prepareTag(params);
 
-    await TagApplication.commitCreate({ tagList: [tag] });
+    await TagApplication.commitCreate({ tagList: [tag], assertCurrent });
   }
 
   /**
@@ -37,14 +42,19 @@ export class TagController {
    * @param params.taggerId - ID of the user removing the tag
    */
   static async commitDelete(params: TTagEventParams) {
-    const { tagUrl, label, taggerId, taggedId, taggedKind } = TagNormalizer.from(params);
+    const assertCurrent = captureAuthWriteGuard();
+    const { tagUrl, tagJson, label, taggerId, taggedId, taggedKind } = await TagApplication.prepareTag(params);
 
-    await TagApplication.commitDelete({
-      taggedId,
-      label,
-      taggedKind,
-      taggerId,
-      tagUrl,
-    });
+    await TagApplication.commitDelete(
+      {
+        taggedId,
+        label,
+        taggedKind,
+        taggerId,
+        tagUrl,
+        targetUri: typeof tagJson.uri === 'string' ? tagJson.uri : undefined,
+      },
+      assertCurrent,
+    );
   }
 }

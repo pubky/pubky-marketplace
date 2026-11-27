@@ -10,12 +10,11 @@ import { HeaderNavigationButtons } from '../Header/Header';
 
 export const HeaderSignIn = ({ ...props }: React.HTMLAttributes<HTMLDivElement>) => {
   const { userDetails, currentUserPubky } = useCurrentUserProfile();
-  // Social unread plus marketplace unread — one badge for the whole surface.
-  const unreadNotifications = useNotificationStore((state) => state.selectTotalUnread());
+  const unreadNotifications = useNotificationStore((state) => state.selectMarketplaceUnread());
 
   return (
     <Container className="min-w-0 flex-1 flex-row items-center justify-end gap-3" {...props}>
-      {/* Social search (posts, people, tags) lives on the social host once link-out is on. */}
+      {/* Social search (posts, people, tags) lives on the social host. */}
       <SearchInput />
       <HeaderNavigationButtons
         avatarImage={

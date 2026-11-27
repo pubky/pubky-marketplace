@@ -3,7 +3,9 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Gavel, HandCoins, type LucideIcon, MessageCircle } from 'lucide-react';
+import { getProfileRoute, PROFILE_ROUTES } from '@/app/routes';
 import { Container } from '@/atoms/Container/Container';
+import { getSocialHostUrl } from '@/config/social';
 import { useRelativeTime } from '@/hooks/useRelativeTime/useRelativeTime';
 import { useUserProfile } from '@/hooks/useUserProfile/useUserProfile';
 import {
@@ -11,12 +13,10 @@ import {
   NotificationActorHeading,
 } from '@/molecules/NotificationRowChrome/NotificationRowChrome';
 import { RelativeTimestamp } from '@/molecules/RelativeTimestamp/RelativeTimestamp';
-import { getUserProfileLink } from '@/organisms/NotificationItem/NotificationItem.utils';
 import type { MarketplaceFeedNotification } from '@/pipes/marketplaceNotification/marketplaceNotification.types';
 import { isIntegrityGapActivityType, marketplaceActivityLabel } from '@/services/marketplace/marketplace-activity-copy';
 import { getMarketplaceNotificationActionText } from './MarketplaceNotificationItem.utils';
 
-/** Same dimensions as the social NotificationIcon so mixed rows align. */
 const ICON_SIZE = 24;
 const BADGE_SIZE = 11;
 
@@ -82,7 +82,7 @@ export function MarketplaceNotificationItem({ notification, isMobile = false }: 
   const userProfileLink =
     notification.actorPubky === 'system' || notification.actorPubky === 'paypal-ipn'
       ? null
-      : getUserProfileLink(notification.actorPubky);
+      : getSocialHostUrl(getProfileRoute(PROFILE_ROUTES.PROFILE, notification.actorPubky));
   const actionText = getMarketplaceNotificationActionText(notification);
   const timestampDate = new Date(notification.timestamp);
 

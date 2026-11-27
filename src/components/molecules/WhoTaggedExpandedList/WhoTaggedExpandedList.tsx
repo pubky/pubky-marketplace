@@ -1,7 +1,5 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { getUserProfileUrl } from '@/app/routes';
 import { Container } from '@/atoms/Container/Container';
 import { useBulkUserAvatars } from '@/hooks/useBulkUserAvatars/useBulkUserAvatars';
 import { useFollowUser } from '@/hooks/useFollowUser/useFollowUser';
@@ -25,7 +23,6 @@ export function WhoTaggedExpandedList({
   isLoadingTaggers,
   'data-testid': dataTestId,
 }: WhoTaggedExpandedListProps) {
-  const router = useRouter();
   const { toggleFollow, isUserLoading } = useFollowUser();
   const { requireAuth } = useRequireAuth();
   const { currentUserPubky } = useAuthStore();
@@ -51,10 +48,6 @@ export function WhoTaggedExpandedList({
     requireAuth(() => toggleFollow(userId, isFollowing, displayName));
   };
 
-  const handleUserClick = (userId: string) => {
-    router.push(getUserProfileUrl(userId, currentUserPubky));
-  };
-
   if (taggerIds.length === 0) {
     return null;
   }
@@ -77,7 +70,6 @@ export function WhoTaggedExpandedList({
           tagger={tagger}
           isLoading={isUserLoading(tagger.id)}
           isCurrentUser={tagger.id === currentUserPubky}
-          onUserClick={handleUserClick}
           onFollowClick={handleFollowClick}
         />
       ))}

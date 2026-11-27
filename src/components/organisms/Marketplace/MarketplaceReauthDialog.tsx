@@ -19,7 +19,7 @@ import { MarketplaceSessionConnectDialog } from './MarketplaceSessionConnectDial
  * Who refused: the homeserver (the Shop session's grant cannot write
  * `/priv/pubky.app/`, the `needs_reauth` states) or the marketplace, which
  * would not release the private data key to the current purchase session
- * (the `needs_marketplace_approval` states and the recovery-key export).
+ * (the `needs_marketplace_approval` states).
  */
 export type MarketplaceReauthRefusal = 'homeserver' | 'purchase_session';
 

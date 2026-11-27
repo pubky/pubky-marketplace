@@ -7,13 +7,7 @@ export const createSignInActions = (set: ZustandSet<SignInStore>) => ({
 
   setProfileChecked: (value: boolean) => set({ profileChecked: value }, false, SignInActionTypes.SET_PROFILE_CHECKED),
 
-  setBootstrapFetched: (value: boolean) =>
-    set({ bootstrapFetched: value }, false, SignInActionTypes.SET_BOOTSTRAP_FETCHED),
-
-  setDataPersisted: (value: boolean) => set({ dataPersisted: value }, false, SignInActionTypes.SET_DATA_PERSISTED),
-
-  setHomeserverSynced: (value: boolean) =>
-    set({ homeserverSynced: value }, false, SignInActionTypes.SET_HOMESERVER_SYNCED),
+  setMarketReady: (value: boolean) => set({ marketReady: value }, false, SignInActionTypes.SET_MARKET_READY),
 
   reset: () => set(signInInitialState, false, SignInActionTypes.RESET),
 });

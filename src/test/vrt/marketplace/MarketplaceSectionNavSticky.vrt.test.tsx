@@ -54,9 +54,6 @@ vi.mock('@/hooks/useCurrentUserProfile/useCurrentUserProfile', () => ({
     currentUserPubky: USER,
   }),
 }));
-vi.mock('@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery', () => ({
-  useCollectionsNavDiscovery: () => ({ showCollectionsNew: false, markCollectionsNavSeen: vi.fn() }),
-}));
 vi.mock('@/hooks/useAuthStatus/useAuthStatus', () => ({
   useAuthStatus: () => ({
     isFullyAuthenticated: true,

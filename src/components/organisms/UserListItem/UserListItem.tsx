@@ -5,8 +5,8 @@ import { getUserProfileUrl } from '@/app/routes';
 import { TagKind } from '@/application/tag/tag.types';
 import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
-import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
+import { getSocialHostUrl } from '@/config/social';
 import { USER_LIST_TAG_MAX_LENGTH, USER_LIST_TAGS_MAX_TOTAL_CHARS } from '@/config/tags';
 import { resolveFollowDisplayName } from '@/hooks/useFollowUser/useFollowUser.utils';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
@@ -170,9 +170,9 @@ function CompactVariant({
   showStats,
   className,
   dataTestId,
-  onUserClick,
   onFollowClick,
   ttlRef,
+  profileUrl,
 }: VariantProps) {
   return (
     <Container
@@ -182,9 +182,9 @@ function CompactVariant({
       data-testid={dataTestId || `user-list-item-${user.id}`}
     >
       {/* Clickable user area */}
-      <Button
-        overrideDefaults
-        onClick={onUserClick}
+      <a
+        href={profileUrl}
+        target="_top"
         className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left transition-opacity hover:opacity-80"
         aria-label={`View ${displayName}'s profile`}
       >
@@ -212,7 +212,7 @@ function CompactVariant({
             </Typography>
           )}
         </Container>
-      </Button>
+      </a>
 
       {/* Follow button or Me button */}
       {isCurrentUser ? (
@@ -248,10 +248,8 @@ function FullVariant({
   dataTestId,
   onFollowClick,
   ttlRef,
+  profileUrl,
 }: VariantProps) {
-  const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
-  const profileUrl = getUserProfileUrl(user.id, currentUserPubky);
-
   return (
     <Container
       ref={ttlRef}
@@ -261,7 +259,7 @@ function FullVariant({
       {/* Main row */}
       <Container overrideDefaults className="flex flex-wrap items-center justify-between gap-6 lg:flex-nowrap">
         {/* User info */}
-        <Link href={profileUrl} className="flex min-w-0 flex-1 items-center gap-2">
+        <a href={profileUrl} target="_top" className="flex min-w-0 flex-1 items-center gap-2">
           <AvatarWithFallback avatarUrl={avatarUrl} name={displayName} fallbackSeed={user.id} size="md" />
           <Container overrideDefaults className="min-w-0 flex-1 truncate">
             <Typography data-cy="profile-follower-item-name" size="sm" className="truncate font-bold">
@@ -271,7 +269,7 @@ function FullVariant({
               {formattedPublicKey}
             </Typography>
           </Container>
-        </Link>
+        </a>
 
         {/* Desktop: Tags — constrained pills prevent overlay */}
         <TagsList userId={user.id} className="hidden flex-nowrap justify-end *:max-w-[135px] xl:flex" />
@@ -340,13 +338,13 @@ export function UserListItem({
   isStatusLoading = false,
   isCurrentUser = false,
   showStats = false,
-  onUserClick,
   onFollowClick,
   className,
   'data-testid': dataTestId,
 }: UserListItemProps) {
   // Auth requirement for follow action
   const { requireAuth } = useRequireAuth();
+  const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
 
   // Subscribe to TTL coordinator based on viewport visibility
   const { ref: ttlRef } = useTtlSubscription({
@@ -370,10 +368,6 @@ export function UserListItem({
       posts: 0,
     };
   const isFollowing = isFollowingProp ?? user.isFollowing ?? false;
-  const handleUserClick = () => {
-    onUserClick?.(user.id);
-  };
-
   // Wrap follow click with auth requirement
   const handleFollowClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -393,7 +387,7 @@ export function UserListItem({
     showStats,
     className,
     dataTestId,
-    onUserClick: handleUserClick,
+    profileUrl: getSocialHostUrl(getUserProfileUrl(user.id, currentUserPubky)),
     onFollowClick: handleFollowClick,
     ttlRef,
   };

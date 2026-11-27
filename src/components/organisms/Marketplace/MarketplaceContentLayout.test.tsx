@@ -2,25 +2,14 @@ import { render, screen } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MobileHeaderProps } from '@/molecules/MobileHeader/MobileHeader';
-import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceContentLayout } from './MarketplaceContentLayout';
 
 const shellMocks = vi.hoisted(() => ({
-  homeLayout: 'columns',
-  homeStore: vi.fn(),
-  customFeed: vi.fn(),
   viewport: vi.fn(() => false),
   header: vi.fn(),
   footer: vi.fn(),
 }));
 
-vi.mock('@/stores/home/home.store', () => ({
-  useHomeStore: () => {
-    shellMocks.homeStore();
-    return { layout: shellMocks.homeLayout };
-  },
-}));
-vi.mock('@/hooks/useCustomFeed/useCustomFeed', () => ({ useCustomFeed: shellMocks.customFeed }));
 vi.mock('@/hooks/useIsMobile/useIsMobile', () => ({ useIsMobile: shellMocks.viewport }));
 
 // Test the layout's chrome contract separately from the real mobile chrome's
@@ -55,11 +44,9 @@ const retainedProps = {
 describe('MarketplaceContentLayout', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    shellMocks.homeLayout = 'columns';
-    shellMocks.customFeed.mockReturnValue(undefined);
   });
 
-  it('renders the existing chrome and content without subscribing to feed layout or viewport hooks', () => {
+  it('renders the existing chrome and content without subscribing to viewport changes', () => {
     render(<MarketplaceContentLayout>Market content</MarketplaceContentLayout>);
 
     expect(screen.getByText('Market content')).toBeInTheDocument();
@@ -71,8 +58,6 @@ describe('MarketplaceContentLayout', () => {
       hasGradientBackground: undefined,
     });
     expect(shellMocks.footer).toHaveBeenCalled();
-    expect(shellMocks.homeStore).not.toHaveBeenCalled();
-    expect(shellMocks.customFeed).not.toHaveBeenCalled();
     expect(shellMocks.viewport).not.toHaveBeenCalled();
   });
 
@@ -90,35 +75,11 @@ describe('MarketplaceContentLayout', () => {
     expect(screen.getByText('Market content')).toHaveClass('overflow-visible');
   });
 
-  it.each(['columns', 'wide', 'list', 'visual'])(
-    'preserves the existing Market DOM and passed props when the saved feed layout is %s',
-    (layout) => {
-      shellMocks.homeLayout = layout;
-      const previous = render(
-        <ContentLayout
-          showLeftSidebar={false}
-          showRightSidebar={false}
-          showLeftMobileButton={false}
-          showRightMobileButton={false}
-          {...retainedProps}
-        >
-          <div>Market content</div>
-        </ContentLayout>,
-      );
-      const previousMarkup = previous.container.innerHTML;
-      previous.unmount();
-      vi.clearAllMocks();
-
-      const current = render(
-        <MarketplaceContentLayout {...retainedProps}>
-          <div>Market content</div>
-        </MarketplaceContentLayout>,
-      );
-
-      expect(current.container.innerHTML).toBe(previousMarkup);
-      expect(shellMocks.homeStore).not.toHaveBeenCalled();
-      expect(shellMocks.customFeed).not.toHaveBeenCalled();
-      expect(shellMocks.viewport).not.toHaveBeenCalled();
-    },
-  );
+  it('applies Market layout overrides without clipping sticky children', () => {
+    render(<MarketplaceContentLayout {...retainedProps}>Market content</MarketplaceContentLayout>);
+    expect(screen.getByText('Market content')).toHaveClass('max-w-4xl');
+    expect(screen.getByText('Market content')).not.toHaveClass('lg:overflow-hidden');
+    expect(document.querySelector('.marketplace-surface')).toHaveClass('pb-28');
+    expect(shellMocks.header).toHaveBeenCalledWith(expect.objectContaining({ hasGradientBackground: false }));
+  });
 });

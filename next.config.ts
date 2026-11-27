@@ -11,7 +11,7 @@ import {
   normalizeBasePath,
 } from './src/libs/base-path/base-path';
 import { resolveSentryRelease } from './src/libs/build-info/build-info';
-import { buildSocialLinkOutRedirects, parseSocialHost, resolveShopOrigins } from './src/libs/social-host/social-host';
+import { parseSocialHost, resolveShopOrigins, SOCIAL_LINK_OUT_SOURCES } from './src/libs/social-host/social-host';
 
 /**
  * Mount path and asset prefix (see `src/libs/base-path/base-path.ts`). Both are
@@ -35,38 +35,37 @@ export function resolveMountConfig(env: Record<string, string | undefined>) {
   };
 }
 
-export const redirects = async () => [
-  // Retired signup URLs keep exact, temporary aliases; seller shops remain dynamic.
-  { source: '/onboarding/profile', destination: '/complete-profile', permanent: false },
-  { source: '/onboarding/backup', destination: '/sign-in', permanent: false },
-  { source: '/onboarding/human', destination: '/sign-in', permanent: false },
-  { source: '/onboarding/install', destination: '/sign-in', permanent: false },
-  { source: '/onboarding/pubky', destination: '/sign-in', permanent: false },
-  { source: '/onboarding/scan', destination: '/sign-in', permanent: false },
-  { source: '/invite/:inviteCode', destination: '/sign-in', permanent: false },
-  { source: '/marketplace/shop', destination: '/marketplace/storefront', permanent: false },
-  {
-    source: '/',
-    destination: '/marketplace',
-    permanent: false,
-  },
-  // Social link-out (off unless NEXT_PUBLIC_SOCIAL_HOST is set). Listed before the
-  // legacy posts redirect so a legacy URL reaches the social host in one hop.
-  // Unconditional and session-free: a Shop-signed-in user lands on the social
-  // host signed out unless they signed in there too (one sign-in per site).
-  ...buildSocialLinkOutRedirects(
-    parseSocialHost(process.env.NEXT_PUBLIC_SOCIAL_HOST, process.env.NODE_ENV, resolveShopOrigins(process.env)),
-  ),
-  // /profile/[pubky] is the canonical other-user posts view (see app/profile/[pubky]/page.tsx).
-  // The legacy /profile/[pubky]/posts route is kept as a 308 permanent redirect so existing
-  // bookmarks, shares, and search indexes consolidate onto the canonical URL without invoking
-  // any React/SSR work for the legacy path.
-  {
-    source: '/profile/:pubky/posts',
-    destination: '/profile/:pubky',
-    permanent: true,
-  },
-];
+export const redirects = async () => {
+  // A shared App origin is expected when the Shop is mounted beneath it.
+  parseSocialHost(
+    process.env.NEXT_PUBLIC_SOCIAL_HOST,
+    process.env.NODE_ENV,
+    process.env.NEXT_PUBLIC_BASE_PATH ? [] : resolveShopOrigins(process.env),
+  );
+  return [
+    // Retired signup URLs keep exact, temporary aliases; seller shops remain dynamic.
+    { source: '/onboarding/profile', destination: '/complete-profile', permanent: false },
+    { source: '/onboarding/backup', destination: '/sign-in', permanent: false },
+    { source: '/onboarding/human', destination: '/sign-in', permanent: false },
+    { source: '/onboarding/install', destination: '/sign-in', permanent: false },
+    { source: '/onboarding/pubky', destination: '/sign-in', permanent: false },
+    { source: '/onboarding/scan', destination: '/sign-in', permanent: false },
+    { source: '/invite/:inviteCode', destination: '/sign-in', permanent: false },
+    { source: '/marketplace/shop', destination: '/marketplace/storefront', permanent: false },
+    {
+      source: '/',
+      destination: '/marketplace',
+      permanent: false,
+    },
+    { source: '/profile/notifications', destination: '/marketplace/notifications', permanent: false },
+  ];
+};
+
+export const socialRewrites = async () =>
+  SOCIAL_LINK_OUT_SOURCES.map((source) => ({
+    source,
+    destination: `/social-handoff${source}`,
+  }));
 
 const nextConfig: NextConfig = {
   ...resolveMountConfig(process.env),
@@ -95,6 +94,7 @@ const nextConfig: NextConfig = {
   // frame-ancestors allow-list is a runtime value (`PUBKY_RUNTIME_FRAME_ANCESTORS`),
   // which `headers()` could only freeze at build time.
   redirects,
+  rewrites: socialRewrites,
   webpack: (config, { isServer }) => {
     if (isServer) {
       config.externals.push('@synonymdev/pubky');

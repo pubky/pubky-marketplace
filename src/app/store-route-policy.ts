@@ -39,19 +39,9 @@ export const STORE_PAGE_POLICY: Readonly<Record<string, StoreRoutePolicy>> = {
   '/': STORE_HOME,
   '/(auth)/logout': BOTH,
   '/(auth)/sign-in': BOTH,
-  '/(edit-profile)/settings/edit': BOTH,
-  '/(feeds)/@post/(.)post/[userId]/[postId]': MARKETPLACE_ONLY,
-  '/(feeds)/@post/[...catchAll]': MARKETPLACE_ONLY,
-  '/(feeds)/feed/[id]': MARKETPLACE_ONLY,
-  '/(feeds)/home': MARKETPLACE_ONLY,
-  '/(feeds)/search': MARKETPLACE_ONLY,
-  '/collections': MARKETPLACE_ONLY,
-  '/collections/[userId]/[postId]': MARKETPLACE_ONLY,
-  '/collections/bookmarks': MARKETPLACE_ONLY,
   '/complete-profile': BOTH,
   // Its form files notices with the hosted Market's support desk (`/api/copyright`).
   '/copyright': MARKETPLACE_ONLY,
-  '/hot': MARKETPLACE_ONLY,
   '/marketplace': STORE_HOME,
   '/marketplace/award-checkout': BOTH,
   '/marketplace/cart': BOTH,
@@ -82,34 +72,7 @@ export const STORE_PAGE_POLICY: Readonly<Record<string, StoreRoutePolicy>> = {
   '/messages': BOTH,
   '/messages/[pubky]': BOTH,
   '/offline': BOTH,
-  '/post/[userId]/[postId]': MARKETPLACE_ONLY,
-  '/profile/(own)': MARKETPLACE_ONLY,
-  '/profile/(own)/collections': MARKETPLACE_ONLY,
-  '/profile/(own)/followers': MARKETPLACE_ONLY,
-  '/profile/(own)/following': MARKETPLACE_ONLY,
-  '/profile/(own)/friends': MARKETPLACE_ONLY,
-  '/profile/(own)/posts': MARKETPLACE_ONLY,
-  '/profile/(own)/profile': MARKETPLACE_ONLY,
-  '/profile/(own)/replies': MARKETPLACE_ONLY,
-  '/profile/(own)/tagged': MARKETPLACE_ONLY,
-  '/profile/(own)/tags': MARKETPLACE_ONLY,
-  '/profile/[pubky]': MARKETPLACE_ONLY,
-  '/profile/[pubky]/collections': MARKETPLACE_ONLY,
-  '/profile/[pubky]/followers': MARKETPLACE_ONLY,
-  '/profile/[pubky]/following': MARKETPLACE_ONLY,
-  '/profile/[pubky]/friends': MARKETPLACE_ONLY,
-  '/profile/[pubky]/profile': MARKETPLACE_ONLY,
-  '/profile/[pubky]/replies': MARKETPLACE_ONLY,
-  '/profile/[pubky]/tagged': MARKETPLACE_ONLY,
   '/sentry-test': MARKETPLACE_ONLY,
-  '/settings': BOTH,
-  '/settings/account': BOTH,
-  '/settings/help': BOTH,
-  '/settings/muted-users': BOTH,
-  '/settings/notifications': BOTH,
-  '/settings/privacy-safety': BOTH,
-  '/share': MARKETPLACE_ONLY,
-  '/who-to-follow': MARKETPLACE_ONLY,
 };
 
 type StoreRouteHandlerRow = { policy: StoreRoutePolicy; reason: string };
@@ -135,10 +98,6 @@ export const STORE_ROUTE_HANDLER_POLICY: Readonly<Record<string, StoreRouteHandl
     policy: MARKETPLACE_ONLY,
     reason: "Files copyright notices with the hosted Market's support desk using its server secrets.",
   },
-  '/api/feedback': {
-    policy: MARKETPLACE_ONLY,
-    reason: "Sends feedback to the hosted Market's support desk using its server secrets.",
-  },
   '/api/fx-rate': {
     policy: BOTH,
     reason: "The indicative bitcoin rate behind the store's converted price hints.",
@@ -162,10 +121,6 @@ export const STORE_ROUTE_HANDLER_POLICY: Readonly<Record<string, StoreRouteHandl
   '/api/marketplace/grant-flows/[stateId]/status': { policy: BOTH, reason: GRANT_BFF },
   '/api/marketplace/health': { policy: BOTH, reason: 'Grant BFF readiness, for deploy and install checks.' },
   '/api/marketplace/session': { policy: BOTH, reason: GRANT_BFF },
-  '/api/og-metadata': {
-    policy: MARKETPLACE_ONLY,
-    reason: 'Link previews in social posts; no store page shows them, and it fetches arbitrary URLs.',
-  },
   '/api/paykit-creator': {
     policy: BOTH,
     reason:
@@ -177,6 +132,10 @@ export const STORE_ROUTE_HANDLER_POLICY: Readonly<Record<string, StoreRouteHandl
   },
   '/api/sentry-test': { policy: MARKETPLACE_ONLY, reason: 'Development and preview error-reporting check.' },
   '/auth/passport/return': { policy: BOTH, reason: 'The Pubky Passport sign-in popup returns here.' },
+  '/social-handoff/[...segments]': {
+    policy: MARKETPLACE_ONLY,
+    reason: 'Retired social pages open in Pubky App from the hosted Market only.',
+  },
   '/llms.txt': {
     policy: MARKETPLACE_ONLY,
     reason: "Agent guide to the hosted Market's shared index; a store is one seller's shop.",
@@ -185,10 +144,7 @@ export const STORE_ROUTE_HANDLER_POLICY: Readonly<Record<string, StoreRouteHandl
 
 /**
  * Where the proxy rewrites a path a store does not serve: the route Next.js builds from
- * `src/app/not-found.tsx`, which answers 404. Another path is no substitute, even with
- * `NextResponse.rewrite(url, { status: 404 })`: the `(feeds)` `@post` catch-all matches it, so
- * without a status its 404 screen is sent with 200, and with one a production build renders some
- * paths as an error screen, without their runtime config.
+ * `src/app/not-found.tsx`, which answers 404 with the app’s not-found page.
  * `scripts/store-mode-served-check.mjs` checks this against a production build.
  */
 export const STORE_NOT_FOUND_PATHNAME = '/_not-found';
@@ -204,19 +160,12 @@ const METADATA_IMAGE_SEGMENT = /^(?:opengraph|twitter)-image(?:-[\w-]+)?$/;
  */
 export const STORE_STATIC_FILES: ReadonlySet<string> = new Set([
   '/franky.png',
-  '/images/a-tether-company.svg',
   '/images/bg-home-mobile.svg',
   '/images/bitkit/app-store.png',
   '/images/bitkit/google-play.png',
   '/images/bitkit/logo.svg',
-  '/images/collections-onboarding.webp',
-  '/images/connections-empty-state.webp',
   '/images/key.webp',
   '/images/keyring.webp',
-  '/images/landing-experience2.png',
-  '/images/landing-experience4.png',
-  '/images/landing-experience5.png',
-  '/images/landing-move.png',
   '/images/logo-pubky-ring.svg',
   '/images/manifest/web-app-manifest-1280x720.png',
   '/images/manifest/web-app-manifest-128x128.png',
@@ -231,10 +180,6 @@ export const STORE_STATIC_FILES: ReadonlySet<string> = new Set([
   '/images/manifest/web-app-manifest-72x72.png',
   '/images/manifest/web-app-manifest-96x96.png',
   '/images/marketplace/marketplace-icon.png',
-  '/images/note.webp',
-  '/images/notifications-empty-state.webp',
-  '/images/post-not-found-empty-state.webp',
-  '/images/posts-replies-empty-state.webp',
   '/images/pubky-ring-qr-example.webp',
   '/images/qr-blurred.png',
   '/images/ring-logo.svg',
@@ -243,15 +188,14 @@ export const STORE_STATIC_FILES: ReadonlySet<string> = new Set([
   '/images/sign-in/cloud.webp',
   '/images/sign-in/google.svg',
   '/images/synonym-grey-logo.svg',
-  '/images/synonym-white-logo.svg',
   '/images/tag.webp',
-  '/images/tagged-empty-state.webp',
   '/images/tether-text.svg',
   '/manifest.json',
   '/preview.webp',
   '/pubky-favicon.svg',
   '/pubky-logo-on-light.svg',
   '/pubky-logo.svg',
+  '/social-handoff.js',
   '/sw.js',
   '/sw.js.map',
   '/favicon.ico',

@@ -69,7 +69,7 @@ vi.mock('@/app/routes', () => ({
     SELL: '/marketplace/sell',
     OFFERS: '/marketplace/offers',
   },
-  PUBLIC_ROUTES: ['/landing'],
+  PUBLIC_ROUTES: ['/landing', '/marketplace'],
   getMarketplaceHomeRoute: () => mocks.marketplaceHome,
   isDynamicPublicRoute: (path: string) => {
     const segments = path.split('/').filter(Boolean);
@@ -146,9 +146,9 @@ vi.mock('@/controllers/auth/auth', () => ({
     settlePendingGrantKeyCleanup: mocks.settlePendingGrantKeyCleanup,
   },
 }));
-vi.mock('@/controllers/migration/migration', () => ({
-  MigrationController: {
-    resync: mocks.mockResync,
+vi.mock('@/controllers/commerce/commerce', () => ({
+  CommerceController: {
+    syncWatchlist: mocks.mockResync,
   },
 }));
 
@@ -295,7 +295,7 @@ describe('RouteGuardProvider — migration resync', () => {
     expect(mocks.settlePendingGrantKeyCleanup).toHaveBeenCalledTimes(1);
   });
 
-  it('calls MigrationController.resync when wasDbReset is true and user is authenticated', async () => {
+  it('syncs the private watchlist when wasDbReset is true and user is authenticated', async () => {
     mocks.wasDbReset = true;
     mocks.mockResync.mockResolvedValue(undefined);
 
@@ -309,7 +309,42 @@ describe('RouteGuardProvider — migration resync', () => {
       await vi.runAllTimersAsync();
     });
 
-    expect(mocks.mockResync).toHaveBeenCalledWith('test-pubky-z32');
+    expect(mocks.mockResync).toHaveBeenCalledWith();
+  });
+
+  it('waits for the restored grant before syncing a persisted identity', async () => {
+    mocks.wasDbReset = true;
+    mocks.session = null;
+    mocks.isLoading = true;
+    mocks.mockResync.mockResolvedValue(undefined);
+    const children = <div>Market</div>;
+    const view = render(<RouteGuardProvider>{children}</RouteGuardProvider>);
+    expect(mocks.mockResync).not.toHaveBeenCalled();
+    expect(mocks.resetMigrationStore).not.toHaveBeenCalled();
+
+    mocks.session = {};
+    mocks.isLoading = false;
+    view.rerender(<RouteGuardProvider>{children}</RouteGuardProvider>);
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    expect(mocks.mockResync).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the public catalog available during a stalled grant restore after DB recreation', () => {
+    mocks.wasDbReset = true;
+    mocks.pathname = '/marketplace';
+    mocks.isLoading = true;
+    mocks.session = null;
+    render(
+      <RouteGuardProvider>
+        <div>Public catalog</div>
+      </RouteGuardProvider>,
+    );
+
+    expect(screen.getByText('Public catalog')).toBeVisible();
+    expect(mocks.mockResync).not.toHaveBeenCalled();
+    expect(mocks.resetMigrationStore).not.toHaveBeenCalled();
   });
 
   it('shows loading spinner while wasDbReset is true', () => {

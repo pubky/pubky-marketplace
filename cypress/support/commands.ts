@@ -3,7 +3,7 @@
 import { TEST_BACKUP_PASSWORD, backupDownloadFilePath, extendedTimeout } from './common';
 import { goToProfilePageFromHeader } from './header';
 import { waitForFeedToLoad } from './posts';
-import { BackupType, CheckForNewPosts, PostType, WaitForNewPosts } from './types/enums';
+import { BackupType } from './types/enums';
 // ***********************************************
 // This example commands.ts shows you how to
 // create various custom commands and overwrite
@@ -243,63 +243,14 @@ function inputRecoveryPhraseWords(recoveryPhrase: string): void {
   });
 }
 
-Cypress.Commands.add('backupRecoveryFile', (passcode = TEST_BACKUP_PASSWORD) => {
-  cy.get('#remind-backup-now-btn').click();
-  cy.get('#backup-recovery-file-btn').click();
-  cy.get('#backup-recovery-file-password-input').type(passcode);
-  cy.get('#backup-download-recovery-file-btn').click();
-  cy.get('#backup-successful-ok-btn').click();
-});
-
 Cypress.Commands.add('deleteDownloadsFolder', () => {
   const downloadsFolder = Cypress.config('downloadsFolder');
   cy.task('deleteFolder', downloadsFolder);
 });
 
-Cypress.Commands.add('deleteFile', (filePath: string) => {
-  cy.task('deleteFile', filePath).then(() => {
-    cy.log(`${filePath} has been deleted`);
-  });
-});
-
 Cypress.Commands.add('renameFile', (fromPath: string, toPath: string) => {
   cy.task('renameFile', { fromPath, toPath }).then(() => {
     cy.log(`File has been renamed from ${fromPath} to ${toPath}`);
-  });
-});
-
-// Useful when 'should.be' doesn't work due to additional space inserted before final word.
-Cypress.Commands.add('innerTextShouldEq', { prevSubject: 'element' }, (subject, text) => {
-  cy.wrap(subject).should(($elem) => {
-    expect($elem.get(0).innerText).to.eq(text);
-  });
-});
-
-// Useful when 'should.contain' doesn't work due to additional space inserted before final word.
-Cypress.Commands.add('innerTextContains', { prevSubject: 'element' }, (subject, text) => {
-  return cy.wrap(subject).then(($elem) => {
-    return $elem.get(0).innerText.includes(text);
-  });
-});
-
-// Useful when 'should.contain' doesn't work due to additional space inserted before final word.
-Cypress.Commands.add('innerTextShouldContain', { prevSubject: 'element' }, (subject, text) => {
-  cy.wrap(subject).should(($elem) => {
-    expect($elem.get(0).innerText).to.contain(text);
-  });
-});
-
-// Useful when 'should.not.contain' doesn't work due to additional space inserted before final word.
-Cypress.Commands.add('innerTextShouldNotContain', { prevSubject: 'element' }, (subject, text) => {
-  cy.wrap(subject).should(($elem) => {
-    expect($elem.get(0).innerText).to.not.contain(text);
-  });
-});
-
-// Useful when 'should.not.be' doesn't work due to additional space inserted before final word.
-Cypress.Commands.add('innerTextShouldNotEq', { prevSubject: 'element' }, (subject, text) => {
-  cy.wrap(subject).should(($elem) => {
-    expect($elem.get(0).innerText).to.not.eq(text);
   });
 });
 
@@ -355,185 +306,4 @@ Cypress.Commands.add('saveCopiedPubkyToAlias', (alias: string) => {
     .then((text) => {
       storeStringToAlias(text, alias);
     });
-});
-
-// Stores the clipboard contents to an alias for later use
-// see https://docs.cypress.io/guides/core-concepts/variables-and-aliases#Sharing-Context
-// note: aliases work in the context of as test and only the first test after before
-Cypress.Commands.add('saveCopiedTextToAlias', (alias: string) => {
-  cy.window()
-    .then((win) => {
-      // ensure focus is on the window before attempting to read clipboard
-      win.focus();
-      // requires browser to be in focus
-      return win.navigator.clipboard.readText();
-      // previous 'then' is callback of a promise which doesn't guarantee synchronous execution
-      // so an additional 'then' is needed to guarantee the alias is stored before the next test step
-    })
-    .then((text) => {
-      // store pubky as alias
-      cy.wrap(text).as(alias);
-    });
-});
-
-Cypress.Commands.add('assertElementDoesNotExist', (selector) => {
-  cy.get('body').then(($body) => {
-    assert($body.find(selector).length === 0, `${selector} exists. It should not.`);
-  });
-});
-
-Cypress.Commands.add('waitReload', (time = 2000) => {
-  cy.wait(time).reload();
-});
-
-// wait for element to appear by default
-Cypress.Commands.add('waitReloadWhileElementDoesNotExist', (selector, attempts = 30) => {
-  const go = (attempts: number) => {
-    if (attempts <= 0) assert(false, `waitReloadWhileElementDoesNotExist: ${selector} not found`);
-
-    cy.get('body').then(($body) => {
-      if ($body.find(selector).length === 0) {
-        cy.log(`waitReloadWhileElementDoesNotExist: ${selector} not found; waiting and reloading.`);
-        cy.wait(1_000);
-        cy.reload();
-        // wait for page to load before checking again
-        // TODO: improve wait by detecting presence of key element on page (e.g. profile picture)
-        cy.wait(Cypress.expose('ci') ? 3_000 : 1_000);
-        go(attempts - 1);
-      } else {
-        cy.log(`waitReloadWhileElementDoesNotExist: ${selector} found; continuing.`);
-        return;
-      }
-    });
-  };
-  cy.log(`waitReloadWhileElementDoesNotExist: starting with selector: ${selector} and attempts: ${attempts}.`);
-  go(attempts);
-});
-
-Cypress.Commands.add('countPostsInBookmarks', (expectedCount: number) => {
-  cy.get('#bookmarked-posts').find('[id="post-container"]').should('have.length', expectedCount);
-});
-
-Cypress.Commands.add('findPostInBookmarks', (postIdx: number) => {
-  return cy.get('#bookmarked-posts').find('[id="post-container"]').eq(postIdx);
-});
-
-const findPostInFeed = (
-  postIdx = 0,
-  filterText?: string,
-  checkForNewPosts = CheckForNewPosts.No,
-  waitForNewPosts = WaitForNewPosts.No,
-  postType = PostType.Any,
-) => {
-  var filteredPosts: JQuery<HTMLElement>;
-  // find the post in the timeline
-  return cy
-    .get('[data-cy="timeline-posts"]')
-    .find('[data-cy="post-card"]')
-    .should('have.length.gt', postIdx)
-    .then(($posts): Cypress.Chainable<JQuery<HTMLElement>> => {
-      // optionally filter posts by contained text and whether the card itself is a repost
-      filteredPosts = $posts.filter((_idx, element) => {
-        const matchesText = !filterText || element.innerText.includes(filterText);
-        const isRepost = element.querySelector('[data-cy="post-preview-card"]') !== null;
-        const matchesPostType = postType === PostType.Any ? true : postType === PostType.Repost ? isRepost : !isRepost;
-
-        return matchesText && matchesPostType;
-      });
-
-      // Check if the requested post index exists
-      if (filteredPosts.length > postIdx) {
-        cy.log(`findPostInFeed: Post found at index ${postIdx} (${filteredPosts.length} matching posts found)`);
-        return cy.wrap(filteredPosts.eq(postIdx));
-      }
-      cy.log(
-        `findPostInFeed: Post not found at index ${postIdx} (${filteredPosts.length} matching posts found, ${$posts.length} total posts)`,
-      );
-
-      // Post not found - if checkForNewPosts is enabled, try clicking "See new posts" button
-      if (checkForNewPosts) {
-        cy.log(`Clicking 'See new posts' button to check for new posts`);
-        // Check if "See new posts" button exists and click it
-        cy.get('[data-cy="new-posts-button"]', { timeout: 30_000 }).should('be.visible').click();
-        waitForFeedToLoad();
-        // Recursively call findPostInFeed without checking for new posts
-        return findPostInFeed(postIdx, filterText, CheckForNewPosts.No, WaitForNewPosts.Yes, postType);
-      }
-
-      // Post not found - if waitForNewPosts is enabled, wait for new posts and try again
-      if (waitForNewPosts) {
-        cy.log(`Waiting for new posts to appear`);
-        cy.wait(Cypress.expose('ci') ? 2_000 : 500);
-        waitForFeedToLoad();
-        return findPostInFeed(postIdx, filterText, checkForNewPosts, WaitForNewPosts.No, postType);
-      }
-
-      // fail the test if the post cannot be found
-      assert.fail(`findPostInFeed: Post not found at index ${postIdx} - Failing test`);
-    });
-};
-
-// useful to find your latest new post
-Cypress.Commands.add('findFirstPostInFeed', (checkForNewPosts = CheckForNewPosts.No) => {
-  return findPostInFeed(0, undefined, checkForNewPosts);
-});
-
-// useful for finding a specific post by text
-Cypress.Commands.add(
-  'findFirstPostInFeedFiltered',
-  (filterText, checkForNewPosts = CheckForNewPosts.No, waitForNewPosts = WaitForNewPosts.No) => {
-    return findPostInFeed(0, filterText, checkForNewPosts, waitForNewPosts);
-  },
-);
-
-Cypress.Commands.add(
-  'findFirstPostInFeedFilteredByType',
-  (
-    filterText,
-    postType = PostType.Post,
-    checkForNewPosts = CheckForNewPosts.No,
-    waitForNewPosts = WaitForNewPosts.No,
-  ) => {
-    return findPostInFeed(0, filterText, checkForNewPosts, waitForNewPosts, postType);
-  },
-);
-
-// useful for finding a specific post by index with optional filter text
-Cypress.Commands.add(
-  'findPostInFeed',
-  (postIdx = 0, filterText?, checkForNewPosts = CheckForNewPosts.No, waitForNewPosts = WaitForNewPosts.No) => {
-    return findPostInFeed(postIdx, filterText, checkForNewPosts, waitForNewPosts);
-  },
-);
-
-Cypress.Commands.add(
-  'findPostInFeedByType',
-  (
-    postType = PostType.Post,
-    filterText?,
-    checkForNewPosts = CheckForNewPosts.No,
-    waitForNewPosts = WaitForNewPosts.No,
-  ) => {
-    return findPostInFeed(0, filterText, checkForNewPosts, waitForNewPosts, postType);
-  },
-);
-
-// useful for finding a specific post card by text in search results
-Cypress.Commands.add('findPostInSearchResults', (filterText?: string, postIdx = 0) => {
-  return cy
-    .get('[data-cy="post-search-results"]')
-    .find('[data-cy="post-card"]')
-    .then(($postCards) => {
-      const filtered = filterText
-        ? $postCards.filter((_idx, element) => element.innerText.includes(filterText))
-        : $postCards;
-      return cy.wrap(filtered).eq(postIdx);
-    });
-});
-
-// To prevent Cypress from failing the test when running pubky-app with dev build:
-// `Uncaught SyntaxError: Invalid or unexpected token` on Chrome, and
-// `Uncaught SyntaxError: "" literal not terminated before end of script` on firefox.
-Cypress.on('uncaught:exception', () => {
-  return false;
 });

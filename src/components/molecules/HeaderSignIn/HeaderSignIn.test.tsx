@@ -14,15 +14,12 @@ vi.mock('@/hooks/useCurrentUserProfile/useCurrentUserProfile', () => ({
 
 // Mock dependencies
 vi.mock('@/stores/notification/notification.store', () => ({
-  useNotificationStore: vi.fn(
-    (selector: (state: { selectUnread: () => number; selectTotalUnread: () => number }) => number) => {
-      const state = {
-        selectUnread: () => 5,
-        selectTotalUnread: () => 5,
-      };
-      return selector(state);
-    },
-  ),
+  useNotificationStore: vi.fn((selector: (state: { selectMarketplaceUnread: () => number }) => number) => {
+    const state = {
+      selectMarketplaceUnread: () => 5,
+    };
+    return selector(state);
+  }),
 }));
 vi.mock('@/controllers/file/file', () => ({
   FileController: {

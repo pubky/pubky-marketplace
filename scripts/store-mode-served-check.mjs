@@ -2,9 +2,8 @@
 // What a production build serves in store mode (`PUBKY_RUNTIME_STORE_SELLER`), checked with plain HTTP and Chromium.
 //
 // The proxy answers a path a store does not serve by rewriting it to `/_not-found`, the route Next.js builds from
-// `src/app/not-found.tsx` (see `STORE_NOT_FOUND_PATHNAME` in `src/app/store-route-policy.ts`). A rewrite's own status
-// is not what a visitor gets, and rewriting to any other path lets the `(feeds)` `@post` catch-all answer with 200 or
-// a broken screen, so this check pins the behaviour a Next.js upgrade could change: a masked page or route handler
+// `src/app/not-found.tsx` (see `STORE_NOT_FOUND_PATHNAME` in `src/app/store-route-policy.ts`). This check verifies
+// what the visitor gets from the production server. A masked page or route handler
 // answers 404 with the app's not-found page, while kept routes still answer. A page can arrive with the right status
 // and markup and still hydrate into an error screen, so Chromium opens the masked pages that a guest stays on.
 //
@@ -59,10 +58,9 @@ const MASKED = [
   '/robots.txt',
   '/hot.txt',
   '/api',
-  '/api/feedback',
+  '/social-handoff/profile/alice',
   '/api/report',
   '/api/sentry-test',
-  '/api/og-metadata',
   '/api/no-such-handler',
 ];
 

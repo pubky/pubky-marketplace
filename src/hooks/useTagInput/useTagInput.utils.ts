@@ -1,3 +1,4 @@
+import { normalizeLegacyTagLabel } from '@/libs/tag-label';
 import { TAG_SUGGESTIONS_DEFAULT_LIMIT } from '../useTagSuggestions/useTagSuggestions.constants';
 import { TAG_INPUT_MAX_SUGGESTIONS } from './useTagInput.constants';
 import type { TagLabel } from './useTagInput.types';
@@ -15,10 +16,11 @@ export function mergeTagSuggestions(
   api: readonly string[],
   enabled: boolean,
   limit = TAG_SUGGESTIONS_DEFAULT_LIMIT,
+  normalizeLabel = normalizeLegacyTagLabel,
 ): TagLabel[] {
   if (!enabled || api.length === 0) return [...local];
-  const localSet = new Set(local.map((t) => t.label.toLowerCase()));
-  const apiTagsToAdd = api.filter((label) => !localSet.has(label.toLowerCase())).map((label) => ({ label }));
+  const localSet = new Set(local.map((t) => normalizeLabel(t.label)));
+  const apiTagsToAdd = api.filter((label) => !localSet.has(normalizeLabel(label))).map((label) => ({ label }));
   return [...local, ...apiTagsToAdd].slice(0, limit);
 }
 
@@ -44,15 +46,16 @@ export function filterSuggestions<T extends { label: string }>(
   tags: T[],
   inputValue: string,
   maxResults = TAG_INPUT_MAX_SUGGESTIONS,
+  normalizeLabel = normalizeLegacyTagLabel,
 ): T[] {
   const trimmed = inputValue.trim();
   if (!trimmed) return [];
 
-  const inputText = trimmed.toLowerCase();
+  const inputText = normalizeLabel(trimmed);
 
   return tags
     .filter((tag) => {
-      const tagLabel = tag.label.toLowerCase();
+      const tagLabel = normalizeLabel(tag.label);
       return tagLabel.includes(inputText) && tagLabel !== inputText;
     })
     .slice(0, maxResults);
