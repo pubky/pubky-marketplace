@@ -24,7 +24,7 @@ import {
  * - dev/test: reads the same `PUBKY_RUNTIME_*` names leniently (honoring `.env.local` /
  *   `src/config/test.ts` partial overrides), with staging defaults filling the gaps.
  *
- * This module must NOT import `Env` (keeps the import graph a leaf, avoids the env/logger cycle).
+ * This module must NOT import `Env` (keeps the import graph a leaf, avoids the env<->logger cycle).
  */
 
 export const RUNTIME_CONFIG_WINDOW_KEY = '__PUBKY_CONFIG__';
@@ -120,7 +120,7 @@ function validateBuildBoundConfig(config: RuntimeConfig): RuntimeConfig {
 
 /** Exported for unit tests; prefer `getRuntimeConfig()` in app code. */
 export function readServerConfig(): RuntimeConfig {
-  // Deployed/required mode: strict parse - ALL required network values must be set and valid.
+  // Deployed/required mode: strict parse — ALL required network values must be set and valid.
   // Partial deploy config fails loudly instead of silently resolving to staging defaults.
   if (isRuntimeConfigRequired() && (!isProductionBuildPhase() || isVercelBuild())) {
     const result = runtimeEnvInputSchema.safeParse(readRuntimeEnvInput());
@@ -237,7 +237,7 @@ export const getMarketplaceServiceUrl = (): string =>
   process.env.MARKETPLACE_SERVICE_URL?.trim() || getRuntimeConfig().marketplaceUrl;
 /**
  * Nexus base URL for marketplace/commerce index reads ONLY. Falls back to the
- * main `nexusUrl` when `PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL` is unset - the
+ * main `nexusUrl` when `PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL` is unset — the
  * override exists because official Nexus deployments do not serve the
  * marketplace index endpoints yet. Social surfaces must keep using
  * `getNexusUrl`.

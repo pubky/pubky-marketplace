@@ -396,7 +396,7 @@ function scrubAdditionalEventCarriers(event: Sentry.ErrorEvent | TransactionEven
 }
 
 /**
- * Defensive PII filter: redacts user-provided identifiers across application-owned
+ * Defensive PII filter — redacts user-provided identifiers across application-owned
  * event surfaces (messages, exception values, breadcrumb data, extras, and AppError context).
  *
  * The browser/server initializers also set sendDefaultPii: false; this hook is a

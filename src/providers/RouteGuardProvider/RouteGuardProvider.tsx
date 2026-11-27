@@ -64,9 +64,9 @@ interface RouteGuardProviderProps {
  * - Allows dynamic public routes (/post/[x]/[y], /profile/[pubky]) without auth
  *
  * Route access is configured via ROUTE_ACCESS_MAP which maps:
- * - UNAUTHENTICATED users to signin/explore routes
- * - AUTHENTICATED users to app routes (feed, profile, etc.)
- * - NEEDS_PROFILE_CREATION users to profile creation route
+ * - UNAUTHENTICATED users → signin/explore routes
+ * - AUTHENTICATED users → app routes (feed, profile, etc.)
+ * - NEEDS_PROFILE_CREATION users → profile creation route
  */
 export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
   const hosted = useIsShopHosted();
@@ -112,7 +112,7 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
     if (!grantSessionRecordId && !shouldAttemptSessionRestore(sessionExport)) {
       // Rehydrate set isRestoringSession when the predicate read true; if the
       // situation changed before this effect ran (e.g. logout suppression
-      // landed in between), no restore will run - clear the flag so it cannot
+      // landed in between), no restore will run — clear the flag so it cannot
       // stick and strand useAuthStatus in its loading branch.
       if (isRestoringSession) {
         useAuthStore.getState().setIsRestoringSession(false);

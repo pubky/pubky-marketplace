@@ -40,7 +40,7 @@ export function RootContainer({ children, storeStateScript }: RootContainerProps
           <script> element rendered first in <body>: App Router's next/script with
           strategy="beforeInteractive" serializes inline content into the `self.__next_s`
           queue, which the client runtime executes only AFTER the main bundle's module scope
-          - i.e. after instrumentation-client.ts has already evaluated (and missed the
+          — i.e. after instrumentation-client.ts has already evaluated (and missed the
           config, silently disabling client Sentry). A raw inline script is emitted as-is in
           the SSR HTML and executes during document parsing, before any async bundle.
           NOTE: if a Content-Security-Policy is added later, this inline script needs a nonce.

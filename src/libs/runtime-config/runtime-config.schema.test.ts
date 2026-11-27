@@ -154,7 +154,7 @@ describe('runtimeEnvInputSchema', () => {
 
   it('keeps the marketplace Nexus override genuinely optional in the strict deployed parse', () => {
     // A deployed container that sets every REQUIRED network value but no
-    // override must parse - the var is optional, not silently required.
+    // override must parse — the var is optional, not silently required.
     const parsed = runtimeEnvInputSchema.parse(VALID_ENV_INPUT);
     expect(parsed.marketplaceNexusUrl).toBeUndefined();
 
@@ -344,7 +344,7 @@ describe('runtimeEnvInputSchema', () => {
         .commerceAdapterMode,
     ).toBe('locks-paykit');
 
-    // Any missing or blank rail URL fails the whole parse - the deployment
+    // Any missing or blank rail URL fails the whole parse — the deployment
     // refuses to start rather than running real payments on defaulted URLs.
     for (const key of ['marketplaceUrl', 'locksUrl', 'paykitSetupUrl'] as const) {
       const withoutKey: Record<string, string> = { ...VALID_ENV_INPUT, ...rails, commerceAdapterMode: 'locks-paykit' };

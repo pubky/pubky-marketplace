@@ -132,7 +132,7 @@ export enum COPYRIGHT_ROUTES {
 }
 
 export enum DEV_ROUTES {
-  /** Sentry verification harness - gated to non-production by the page itself. */
+  /** Sentry verification harness — gated to non-production by the page itself. */
   SENTRY_TEST = '/sentry-test',
 }
 
@@ -164,7 +164,7 @@ export const PUBLIC_ROUTES: string[] = [
   // The page returns 404 in production via isSentryTestHarnessEnabled().
   DEV_ROUTES.SENTRY_TEST,
   // Catalog home is guest HTML (SSR of the public Nexus listing stream + OG).
-  // Exact match only - `PUBLIC_ROUTES.includes(pathname)` - so writable
+  // Exact match only — `PUBLIC_ROUTES.includes(pathname)` — so writable
   // surfaces under `/marketplace/...` stay behind the auth gate.
   APP_ROUTES.MARKETPLACE,
 ];
@@ -273,7 +273,7 @@ type MatchesAllowedRouteOptions = {
  * Whether `pathname` is reachable via an allowed route entry.
  *
  * Non-explore routes keep prefix matching (e.g. settings sub-pages). Explore
- * routes optionally match exactly - see `restrictExploreSubRoutes`.
+ * routes optionally match exactly — see `restrictExploreSubRoutes`.
  */
 export function matchesAllowedRoute(
   pathname: string,
@@ -444,7 +444,7 @@ type NavItemActiveConfig = {
 /**
  * Returns whether a pathname should highlight a primary nav item.
  *
- * Uses `activePrefix` when set (e.g. Settings to any `/settings/*` route),
+ * Uses `activePrefix` when set (e.g. Settings → any `/settings/*` route),
  * otherwise falls back to exact href match and sub-routes under `href`.
  */
 export function isNavItemActive(pathname: string, item: NavItemActiveConfig): boolean {

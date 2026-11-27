@@ -267,7 +267,7 @@ describe('runtime-config resolver', () => {
     });
 
     it('resolves staging defaults when nothing is set in dev/test', () => {
-      // No PUBKY_RUNTIME_* set (cleared in beforeEach); not required under Vitest, so staging defaults apply.
+      // No PUBKY_RUNTIME_* set (cleared in beforeEach); not required under Vitest -> staging defaults.
       const config = readServerConfig();
       expect(config.nexusUrl).toBe(NETWORK_RUNTIME_DEFAULTS.nexusUrl);
       // The staging default, spelled out:

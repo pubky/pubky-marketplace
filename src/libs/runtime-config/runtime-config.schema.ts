@@ -16,7 +16,7 @@ import { parseRegionModes } from '../commerce/region-modes';
  *    analytics, and external-link values that deployers may override without rebuilding.
  *
  * This module is a leaf (zod only, no `Env`, no logger) so the runtime-config resolver never
- * pulls in the heavy `env, libs/error, logger, env` import cycle.
+ * pulls in the heavy `env -> libs/error -> logger -> env` import cycle.
  *
  * Two schemas are intentionally provided because the two inputs differ in shape:
  *  - env vars arrive as STRINGS (e.g. `PKARR_RELAYS` is a JSON string, `TESTNET` is "true"/"false")
@@ -33,7 +33,7 @@ const urlValue = z.url();
 const homeserverValue = z.string().min(1);
 /**
  * Declared deploy identity. Drives environment-gated behavior (e.g. the staging
- * homeserver sign-in guard) - declared explicitly instead of inferred from
+ * homeserver sign-in guard) — declared explicitly instead of inferred from
  * network values, so config drift can never silently flip it (see
  * `isStagingHomeserverDeploy` in `@/config/network`).
  */
@@ -120,7 +120,7 @@ function parsePkarrRelaysString(val: string): string[] {
   return parseJsonStringArray(val, 'PKARR_RELAYS');
 }
 
-// String-input transforms from env values to parsed values
+// String-input transforms (env var -> parsed value)
 const pkarrRelaysFromString = z.string().transform((val, ctx) => {
   try {
     return parsePkarrRelaysString(val);
@@ -382,7 +382,7 @@ const sampleRateFromString = z
 
 /**
  * The runtime values `locks-paykit` mode depends on. The mode may only activate when every
- * one of them is EXPLICITLY configured - the localhost defaults exist for local development
+ * one of them is EXPLICITLY configured — the localhost defaults exist for local development
  * of the other modes and must never silently become a real payment deployment's endpoints.
  */
 export const LOCKS_PAYKIT_REQUIRED_CONFIG_KEYS = ['marketplaceUrl', 'locksUrl', 'paykitSetupUrl'] as const;
@@ -391,7 +391,7 @@ export const LOCKS_PAYKIT_REQUIRED_CONFIG_KEYS = ['marketplaceUrl', 'locksUrl', 
  * Fail-closed activation gate for `locks-paykit` mode, applied to BOTH env-input schemas
  * (strict deployed parse and lenient dev parse) BEFORE defaults are layered, so "explicitly
  * set" is checkable. A partial payment-rail configuration makes the whole config parse fail
- * loudly - the deployment refuses to start rather than pointing real-payment flows at
+ * loudly — the deployment refuses to start rather than pointing real-payment flows at
  * defaulted URLs. `unavailable` remains the schema default when the mode is unset.
  *
  * Secrets are deliberately NOT part of the client config: the Locks verification keys
@@ -740,7 +740,7 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
     .default(APP_RUNTIME_DEFAULTS.marketplaceGrantPollMilliseconds),
   /**
    * Whether the Shop offers Pubky Passport ("Continue with Google"). Runtime
-   * rollback: `false` hides every Passport entry point without a rebuild - the
+   * rollback: `false` hides every Passport entry point without a rebuild — the
    * sign-in button and the Passport purchase approval. A Passport sign-in that
    * is already active stays signed in, but its purchase approval is refused
    * with the grant-session copy, as for a Bitkit sign-in with the grant flow off.
@@ -893,7 +893,7 @@ const lenientRuntimeConfigValueSchema = runtimeConfigValueSchema.extend({
 export type RuntimeConfig = z.infer<typeof runtimeConfigValueSchema>;
 
 /**
- * Strict env-input schema from string inputs to parsed `RuntimeConfig`. NO defaults for the
+ * Strict env-input schema (string inputs -> parsed `RuntimeConfig`). NO defaults for the
  * required network tier: a missing value THROWS. Used for the production parse of
  * `PUBKY_RUNTIME_*` so partial deploy config fails loudly instead of silently resolving to a
  * staging URL. Optional public values stay optional here (for example, absent moderationId
@@ -1101,7 +1101,7 @@ export const runtimeEnvInputSchemaWithDefaults = z
   .pipe(lenientRuntimeConfigValueSchema);
 
 // ---------------------------------------------------------------------------
-// Env-name and config-key mapping
+// Env-name <-> config-key mapping
 // ---------------------------------------------------------------------------
 
 /**
