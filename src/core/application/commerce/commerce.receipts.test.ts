@@ -19,6 +19,7 @@ import { CommercePrivStoreService } from '@/services/homeserver/commerce/priv-st
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import { MarketplaceGatewayService } from '@/services/marketplace/marketplace';
 import { MarketplaceSessionService } from '@/services/marketplace/marketplace-session';
+import { MARKETPLACE_SESSION_GRANT } from '@/services/marketplace/marketplace-session-grant';
 import receiptAttestationV1 from '@/test/fixtures/commerce/receipt-attestation-v1.json';
 import receiptAttestationV2Bitcoin from '@/test/fixtures/commerce/receipt-attestation-v2-bitcoin.json';
 import receiptAttestationV2SameCurrency from '@/test/fixtures/commerce/receipt-attestation-v2-same-currency.json';
@@ -1118,9 +1119,65 @@ describe('CommerceApplication.publishOrderReceipts without the seller side', () 
     expect(list).toHaveBeenCalledTimes(2);
   });
 
-  it('caches immutable receipts in memory per session and clears them on clearMarketplaceSession', async () => {
+  it('caches immutable receipts in memory per session and clears them on sign-out, expiry, and 401 rejection', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('locks-paykit');
+      CommerceApplication.resetReceiptCache();
+      establishMarketplaceSession(BUYER);
+      const receipt = {
+        id: RECEIPT_ID,
+        orderId: ORDER_ID,
+        paymentId: '018f47d2-6a27-7c23-a49d-6b21bb770202',
+        issuerPubky: SELLER,
+        recipientPubky: BUYER,
+        total: { amountMinor: 14_796, currency: 'USD', exponent: 2 },
+        contentHash: 'a'.repeat(64),
+        issuedAt: '2026-08-19T22:00:00.000Z',
+      };
+      const fetchReceipt = vi.spyOn(MarketplaceGatewayService, 'getReceipt').mockResolvedValue(receipt);
+
+      await expect(CommerceApplication.getMarketplaceReceipt(BUYER, RECEIPT_ID)).resolves.toEqual(receipt);
+      await expect(CommerceApplication.getMarketplaceReceipt(BUYER, RECEIPT_ID)).resolves.toEqual(receipt);
+      expect(fetchReceipt).toHaveBeenCalledTimes(1);
+
+      // Transport-side 401 rejection invalidates receiptCache immediately instead of serving cached private data.
+      MarketplaceSessionService.clearSession('rejected');
+      await Promise.resolve();
+      fetchReceipt.mockRejectedValueOnce(new Error('session required'));
+      await expect(CommerceApplication.getMarketplaceReceipt(BUYER, RECEIPT_ID)).rejects.toThrow('session required');
+      expect(fetchReceipt).toHaveBeenCalledTimes(2);
+
+      // Re-establish a short-lived session, warm cache, then let TTL expire past the 30s margin.
+      MarketplaceSessionService.establishClaimedGrantSession(
+        {
+          token: 'B'.repeat(43),
+          pubky: BUYER,
+          capabilities: MARKETPLACE_SESSION_GRANT,
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+        BUYER,
+      );
+      fetchReceipt.mockResolvedValueOnce(receipt);
+      await expect(CommerceApplication.getMarketplaceReceipt(BUYER, RECEIPT_ID)).resolves.toEqual(receipt);
+      expect(fetchReceipt).toHaveBeenCalledTimes(3);
+
+      vi.advanceTimersByTime(61_000);
+      fetchReceipt.mockRejectedValueOnce(new Error('session expired'));
+      await expect(CommerceApplication.getMarketplaceReceipt(BUYER, RECEIPT_ID)).rejects.toThrow('session expired');
+      expect(fetchReceipt).toHaveBeenCalledTimes(4);
+    } finally {
+      MarketplaceSessionService.clearSession();
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not repopulate receiptCache or migration completion memo when in-flight reads resolve after sign-out', async () => {
     vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('locks-paykit');
     CommerceApplication.resetReceiptCache();
+    CommerceApplication.resetReceiptPublicationMemo();
+    establishMarketplaceSession(BUYER);
+
     const receipt = {
       id: RECEIPT_ID,
       orderId: ORDER_ID,
@@ -1131,15 +1188,40 @@ describe('CommerceApplication.publishOrderReceipts without the seller side', () 
       contentHash: 'a'.repeat(64),
       issuedAt: '2026-08-19T22:00:00.000Z',
     };
-    const fetchReceipt = vi.spyOn(MarketplaceGatewayService, 'getReceipt').mockResolvedValue(receipt);
+    const deferredReceipt = Promise.withResolvers<typeof receipt>();
+    const fetchReceipt = vi
+      .spyOn(MarketplaceGatewayService, 'getReceipt')
+      .mockReturnValueOnce(deferredReceipt.promise)
+      .mockResolvedValue(receipt);
 
-    await expect(CommerceApplication.getMarketplaceReceipt(BUYER, RECEIPT_ID)).resolves.toEqual(receipt);
-    await expect(CommerceApplication.getMarketplaceReceipt(BUYER, RECEIPT_ID)).resolves.toEqual(receipt);
-    expect(fetchReceipt).toHaveBeenCalledTimes(1);
+    const inFlightReceipt = CommerceApplication.getMarketplaceReceipt(BUYER, RECEIPT_ID);
+    await CommerceApplication.clearMarketplaceSessionForSignOut();
+    deferredReceipt.resolve(receipt);
+    await inFlightReceipt;
 
-    vi.spyOn(MarketplaceSessionService, 'clearSession').mockImplementation(() => {});
-    CommerceApplication.clearMarketplaceSession();
+    // A fresh session must re-fetch from the service because the late promise could not write after teardown.
+    establishMarketplaceSession(BUYER);
     await expect(CommerceApplication.getMarketplaceReceipt(BUYER, RECEIPT_ID)).resolves.toEqual(receipt);
     expect(fetchReceipt).toHaveBeenCalledTimes(2);
+
+    // Same late-completion guard for plaintext receipt migration.
+    grantCapableSession();
+    homeserver.files.clear();
+    const deferredList = Promise.withResolvers<string[]>();
+    const list = vi
+      .spyOn(CommerceHomeserverService, 'list')
+      .mockReturnValueOnce(deferredList.promise)
+      .mockResolvedValue([]);
+
+    const inFlightMigration = CommerceApplication.publishOrderReceipts(BUYER, []);
+    await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(1));
+    await CommerceApplication.clearMarketplaceSessionForSignOut();
+    deferredList.resolve([]);
+    await inFlightMigration;
+
+    establishMarketplaceSession(BUYER);
+    await expect(CommerceApplication.publishOrderReceipts(BUYER, [])).resolves.toBe('published');
+    expect(list).toHaveBeenCalledTimes(2);
+    MarketplaceSessionService.clearSession();
   });
 });

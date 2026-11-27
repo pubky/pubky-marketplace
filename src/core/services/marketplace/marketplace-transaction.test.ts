@@ -2429,6 +2429,27 @@ describe('MarketplaceTransactionService.getHealth (the pickup_available capabili
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
     loggerError.mockRestore();
   });
+
+  it('times out a hung /health request, clears the single-flight slot, and recovers on the next call', async () => {
+    vi.useFakeTimers();
+    const loggerError = vi.spyOn(Logger, 'error').mockImplementation(() => undefined);
+    try {
+      vi.mocked(fetch)
+        .mockImplementationOnce(() => new Promise<Response>(() => {}))
+        .mockResolvedValueOnce(jsonResponse(200, { status: 'ok', pickup_available: true }));
+
+      const hung = MarketplaceTransactionService.getHealth();
+      const caught = hung.catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await expect(caught).resolves.toMatchObject({ code: 'REQUEST_TIMEOUT' });
+
+      await expect(MarketplaceTransactionService.getHealth()).resolves.toMatchObject({ pickupAvailable: true });
+      expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+    } finally {
+      loggerError.mockRestore();
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('MarketplaceTransactionService.getDrop (the seller drop projection)', () => {

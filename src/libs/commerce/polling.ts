@@ -54,6 +54,8 @@ export interface CommercePollerOptions {
 export interface CommercePoller {
   /** Runs a tick immediately when visible and not already in flight. */
   trigger: () => void;
+  /** Clears any terminal stop or failure backoff and runs a fresh tick when visible. */
+  restart: () => void;
   /** Stops all timers and removes DOM listeners. */
   stop: () => void;
 }
@@ -75,6 +77,8 @@ export function startCommercePoller({
   let active = true;
   let stoppedByOutcome = false;
   let inFlight = false;
+  let restartEpoch = 0;
+  let restartRequested = false;
   let timer: number | null = null;
   let consecutiveFailures = 0;
   let lastOutcome: CommercePollOutcome = 'ok';
@@ -101,6 +105,7 @@ export function startCommercePoller({
     if (!active || stoppedByOutcome || inFlight || isDocumentHidden()) return;
     clearTimer();
     inFlight = true;
+    const epoch = restartEpoch;
     let outcome: CommercePollOutcome = 'ok';
     try {
       outcome = await poll();
@@ -110,6 +115,11 @@ export function startCommercePoller({
       inFlight = false;
     }
     if (!active) return;
+    if (restartRequested || epoch !== restartEpoch) {
+      restartRequested = false;
+      if (!stoppedByOutcome && !isDocumentHidden()) void runTick();
+      return;
+    }
     lastOutcome = outcome;
     if (outcome === 'stop') {
       stoppedByOutcome = true;
@@ -158,6 +168,19 @@ export function startCommercePoller({
     trigger: () => {
       if (!active || stoppedByOutcome) return;
       void runTick();
+    },
+    restart: () => {
+      if (!active) return;
+      stoppedByOutcome = false;
+      consecutiveFailures = 0;
+      lastOutcome = 'ok';
+      restartEpoch += 1;
+      clearTimer();
+      if (inFlight) {
+        restartRequested = true;
+        return;
+      }
+      if (!isDocumentHidden()) void runTick();
     },
     stop: () => {
       active = false;

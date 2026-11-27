@@ -67,6 +67,7 @@ export class SellerPaymentConfirmCoordinator extends Coordinator<
     this.unsubscribeSettingSync ??= CommerceController.subscribeSellerPaymentAutoConfirmSync();
     this.unsubscribeCommerceSession ??= useCommerceStore.subscribe((state, prevState) => {
       if (state.marketplaceSession !== prevState.marketplaceSession) {
+        this.paymentConfirmationMode = 'unchecked';
         this.evaluateAndStartPolling();
       }
     });

@@ -68,6 +68,7 @@ import { Err } from '@/libs/error/error.factories';
 import { httpResponseToError, safeFetch } from '@/libs/error/error.http';
 import { ErrorService } from '@/libs/error/error.types';
 import { HttpStatusCode } from '@/libs/http/http.types';
+import { withIoDeadline } from '@/libs/http/io-deadline';
 import { PARSE_JSON_WITH_BODY_EXCERPT, parseResponseOrThrow } from '@/libs/http/response.utils';
 import { marketplaceSessionRequired } from './marketplace-approval-failure';
 import { reportMarketplaceNotificationInvalidTypes } from './marketplace-notification-diagnostics';
@@ -110,6 +111,8 @@ import { MarketplaceSessionService } from './marketplace-session';
 
 /** In-memory TTL for public `GET /health` capability responses. */
 export const HEALTH_CACHE_TTL_MS = 20_000;
+/** Bounded timeout for a single `GET /health` read so a hung socket cannot wedge the single-flight slot. */
+export const HEALTH_REQUEST_TIMEOUT_MS = 10_000;
 
 /**
  * Command kinds the durable Rust service implements (its envelope contract
@@ -709,18 +712,27 @@ export class MarketplaceTransactionService {
     if (this.healthInFlight && this.healthInFlight.url === url) {
       return await this.healthInFlight.promise;
     }
-    const promise = (async () => {
-      const response = await safeFetch(url, { method: 'GET' }, ErrorService.Marketplace, 'getHealth');
-      const raw = await parseResponseOrThrow<unknown>(response, ErrorService.Marketplace, 'getHealth', url);
-      const parsed = this.parseProjection(
-        'getHealth',
-        marketplaceHealthSchema,
-        toCamelCaseWire(raw),
-        'Marketplace returned an invalid health read.',
-      );
-      this.healthCache = { url, value: parsed, expiresAt: Date.now() + HEALTH_CACHE_TTL_MS };
-      return parsed;
-    })().finally(() => {
+    const promise = withIoDeadline(
+      async (signal) => {
+        const response = await safeFetch(url, { method: 'GET', signal }, ErrorService.Marketplace, 'getHealth');
+        const raw = await parseResponseOrThrow<unknown>(response, ErrorService.Marketplace, 'getHealth', url);
+        const parsed = this.parseProjection(
+          'getHealth',
+          marketplaceHealthSchema,
+          toCamelCaseWire(raw),
+          'Marketplace returned an invalid health read.',
+        );
+        if (!signal.aborted) {
+          this.healthCache = { url, value: parsed, expiresAt: Date.now() + HEALTH_CACHE_TTL_MS };
+        }
+        return parsed;
+      },
+      {
+        service: ErrorService.Marketplace,
+        operation: 'getHealth',
+        timeoutMs: HEALTH_REQUEST_TIMEOUT_MS,
+      },
+    ).finally(() => {
       if (this.healthInFlight?.promise === promise) this.healthInFlight = null;
     });
     this.healthInFlight = { url, promise };

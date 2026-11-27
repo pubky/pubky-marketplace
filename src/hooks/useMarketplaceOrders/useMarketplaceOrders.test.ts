@@ -1002,7 +1002,7 @@ describe('useMarketplaceOrders', () => {
     expect(result.current.error).not.toBe(MARKETPLACE_FAILURE_MESSAGES.unavailable);
   });
 
-  it('caches immutable receipts per order ID and runs auction reserve sweep once per session scope', async () => {
+  it('caches immutable receipts per order ID and delegates reserve-sweep retry to the controller', async () => {
     config.mode = 'locks-paykit';
     const [baseOrder] = await CommerceController.getMarketplaceOrders();
     const paidOrder: MarketplaceOrder = {
@@ -1035,6 +1035,9 @@ describe('useMarketplaceOrders', () => {
     };
     vi.mocked(CommerceController.getMarketplaceOrders).mockResolvedValue([paidOrder]);
     vi.mocked(CommerceController.getMarketplaceReceipt).mockResolvedValue(receipt);
+    vi.mocked(CommerceController.sweepOwnAuctionReserves)
+      .mockRejectedValueOnce(new Error('transient homeserver error'))
+      .mockResolvedValue(0);
 
     const { result } = renderHook(() => useMarketplaceOrders());
     await waitFor(() => expect(result.current.orders[0]?.receipt).toEqual(receipt));
@@ -1046,7 +1049,7 @@ describe('useMarketplaceOrders', () => {
 
     expect(CommerceController.fetchMarketplaceOrderList).toHaveBeenCalledTimes(3);
     expect(CommerceController.getMarketplaceReceipt).toHaveBeenCalledTimes(1);
-    expect(CommerceController.sweepOwnAuctionReserves).toHaveBeenCalledTimes(1);
+    expect(CommerceController.sweepOwnAuctionReserves).toHaveBeenCalledTimes(3);
     expect(result.current.orders[0]?.receipt).toEqual(receipt);
   });
 

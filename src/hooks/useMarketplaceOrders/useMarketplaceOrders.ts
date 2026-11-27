@@ -69,7 +69,6 @@ interface OrderReadScope {
   adapterMode: CommerceAdapterMode;
   auth: AbortSignal;
   receiptCache: Map<string, { receiptId: string; receipt: MarketplaceReceipt }>;
-  housekeepingStarted: boolean;
   hasActiveCheckout: boolean;
 }
 
@@ -84,7 +83,6 @@ function createOrderReadScope(
     adapterMode,
     auth: captureAuthScope(),
     receiptCache: new Map(),
-    housekeepingStarted: false,
     hasActiveCheckout: false,
   };
 }
@@ -398,10 +396,7 @@ async function loadOrders(
   // failure keeps the row pending and is logged inside the application.
   void CommerceController.resumeOwnReviewPublications().catch(() => undefined);
   void CommerceController.resumeOwnReviewRemovals().catch(() => undefined);
-  if (!scope.housekeepingStarted) {
-    scope.housekeepingStarted = true;
-    void CommerceController.sweepOwnAuctionReserves().catch(() => undefined);
-  }
+  void CommerceController.sweepOwnAuctionReserves().catch(() => undefined);
   // Same outbox semantics for own review-RESPONSE records (subject-only
   // responses published to the responder's homeserver).
   void CommerceController.resumeOwnReviewResponsePublications().catch(() => undefined);

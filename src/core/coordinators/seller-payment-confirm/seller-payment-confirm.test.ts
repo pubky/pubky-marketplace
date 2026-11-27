@@ -219,4 +219,31 @@ describe('SellerPaymentConfirmCoordinator', () => {
     expect(fetchMode).toHaveBeenCalledTimes(2);
     expect(pass).toHaveBeenCalledTimes(1);
   });
+
+  it('re-checks deployment mode when marketplaceSession changes after latching inactive', async () => {
+    const fetchMode = vi
+      .spyOn(CommerceController, 'fetchPaymentConfirmationMode')
+      .mockResolvedValueOnce('automatic')
+      .mockResolvedValueOnce('seller');
+    const pass = vi.spyOn(CommerceController, 'autoConfirmSellerPayments').mockResolvedValue([]);
+    useAuthStore.getState().init({ session: mockSession(), currentUserPubky: 's'.repeat(52), hasProfile: true });
+    const coordinator = SellerPaymentConfirmCoordinator.getInstance();
+    await coordinator.setRoute('/marketplace/orders');
+    await coordinator.start();
+    await flushPromises();
+
+    expect(fetchMode).toHaveBeenCalledTimes(1);
+    expect(pass).not.toHaveBeenCalled();
+
+    useCommerceStore.getState().setMarketplaceSession({
+      pubky: 's'.repeat(52),
+      capabilities: '/pub/pubky.app/:rw',
+      issuedAt: '2026-11-27T01:00:00.000Z',
+      expiresAt: '2026-11-28T01:00:00.000Z',
+    });
+    await flushPromises();
+
+    expect(fetchMode).toHaveBeenCalledTimes(2);
+    expect(pass).toHaveBeenCalledTimes(1);
+  });
 });

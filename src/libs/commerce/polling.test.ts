@@ -127,8 +127,8 @@ describe('commerce polling scheduler', () => {
     poller.stop();
   });
 
-  it('stops polling permanently when outcome is stop', async () => {
-    const poll = vi.fn(async () => 'stop' as const);
+  it('stops polling permanently when outcome is stop until restart() is called', async () => {
+    const poll = vi.fn<() => Promise<'stop' | 'ok'>>().mockResolvedValueOnce('stop').mockResolvedValue('ok');
     const poller = startCommercePoller({ poll, getIntervalMs: () => 2_000, refetchOnFocus: true });
     await vi.advanceTimersByTimeAsync(0);
     expect(poll).toHaveBeenCalledTimes(1);
@@ -136,6 +136,13 @@ describe('commerce polling scheduler', () => {
     await vi.advanceTimersByTimeAsync(60_000);
     window.dispatchEvent(new Event('focus'));
     expect(poll).toHaveBeenCalledTimes(1);
+
+    poller.restart();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(poll).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(poll).toHaveBeenCalledTimes(3);
     poller.stop();
   });
 

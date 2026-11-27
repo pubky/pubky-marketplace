@@ -1844,7 +1844,24 @@ export class CommerceApplication {
     this.clearSessionScopedState();
   }
 
-  private static clearSessionScopedState(): void {
+  /**
+   * Monotonic counter incremented whenever session-scoped caches/memos clear
+   * (sign-out, account switch, TTL expiry, 401 rejection, or session
+   * replacement) so late-settling promises can never repopulate cleared state.
+   */
+  private static sessionCacheGeneration = 0;
+  private static sessionLifecycleUnsubscribe: Array<() => void> | null = null;
+
+  private static ensureSessionLifecycleSubscribed(): void {
+    if (this.sessionLifecycleUnsubscribe) return;
+    this.sessionLifecycleUnsubscribe = [
+      MarketplaceSessionService.onSessionEnded(() => this.clearCommerceCaches()),
+      MarketplaceSessionService.onSessionReplaced(() => this.clearCommerceCaches()),
+    ];
+  }
+
+  private static clearCommerceCaches(): void {
+    this.sessionCacheGeneration += 1;
     this.publishedReceiptUrls.clear();
     this.plaintextSellerReceiptUrls.clear();
     this.receiptMigrationCursors.clear();
@@ -1857,6 +1874,10 @@ export class CommerceApplication {
     this.receiptInFlight.clear();
     this.ownReviewHomeserverMisses.clear();
     this.deletedOwnReviews.clear();
+  }
+
+  private static clearSessionScopedState(): void {
+    this.clearCommerceCaches();
     CommercePrivKeyringApplication.clear();
   }
 
@@ -1873,6 +1894,7 @@ export class CommerceApplication {
    * sign-out) can null the zustand copy without the service touching stores.
    */
   static onMarketplaceSessionEnded(listener: (event: MarketplaceSessionEndedEvent) => void): () => void {
+    this.ensureSessionLifecycleSubscribed();
     return MarketplaceSessionService.onSessionEnded(listener);
   }
 
@@ -2170,12 +2192,23 @@ export class CommerceApplication {
 
   /** Test support: clears the in-memory immutable receipt cache. */
   static resetReceiptCache(): void {
+    this.sessionCacheGeneration += 1;
     this.receiptCache.clear();
     this.receiptInFlight.clear();
   }
 
   static async getMarketplaceReceipt(actorPubky: string, receiptId: string): Promise<MarketplaceReceipt | null> {
-    const key = `${getCommerceAdapterMode()}:${actorPubky}:${receiptId}`;
+    this.ensureSessionLifecycleSubscribed();
+    const mode = getCommerceAdapterMode();
+    if (isDurableCommerceMode(mode)) {
+      const session = MarketplaceSessionService.getActiveSession();
+      if (!session || session.pubky !== actorPubky) {
+        this.receiptCache.clear();
+        this.receiptInFlight.clear();
+        return await MarketplaceGatewayService.getReceipt(actorPubky, receiptId);
+      }
+    }
+    const key = `${mode}:${actorPubky}:${receiptId}`;
     const cached = this.receiptCache.get(key);
     if (cached) {
       this.receiptCache.delete(key);
@@ -2185,9 +2218,10 @@ export class CommerceApplication {
     const existing = this.receiptInFlight.get(key);
     if (existing) return await existing;
 
+    const generation = this.sessionCacheGeneration;
     const promise = MarketplaceGatewayService.getReceipt(actorPubky, receiptId)
       .then((receipt) => {
-        if (receipt !== null) {
+        if (receipt !== null && this.sessionCacheGeneration === generation) {
           if (this.receiptCache.has(key)) {
             this.receiptCache.delete(key);
           } else if (this.receiptCache.size >= this.RECEIPT_CACHE_MAX_ENTRIES) {
@@ -2899,6 +2933,7 @@ export class CommerceApplication {
 
   /** Test support: clears the session-scoped published-receipt and migration memos. */
   static resetReceiptPublicationMemo(): void {
+    this.sessionCacheGeneration += 1;
     this.publishedReceiptUrls.clear();
     this.plaintextSellerReceiptUrls.clear();
     this.receiptMigrationCursors.clear();
@@ -2931,6 +2966,7 @@ export class CommerceApplication {
     keyring: PrivKeyring,
     sellerSide: boolean,
   ): Promise<'done' | 'incomplete' | 'needs_reauth'> {
+    this.ensureSessionLifecycleSubscribed();
     const key = `${ownerPubky}\0${sellerSide}`;
     const fullKey = `${ownerPubky}\0true`;
     if (this.receiptMigrationCompleted.has(key) || this.receiptMigrationCompleted.has(fullKey)) {
@@ -2938,9 +2974,12 @@ export class CommerceApplication {
     }
     const active = this.receiptMigrationRuns.get(key);
     if (active) return active;
-    const run = this.runPlaintextReceiptMigration(ownerPubky, keyring, sellerSide)
+    const generation = this.sessionCacheGeneration;
+    const run = this.runPlaintextReceiptMigration(ownerPubky, keyring, sellerSide, generation)
       .then((outcome) => {
-        if (outcome === 'done') this.receiptMigrationCompleted.add(key);
+        if (outcome === 'done' && this.sessionCacheGeneration === generation) {
+          this.receiptMigrationCompleted.add(key);
+        }
         return outcome;
       })
       .finally(() => {
@@ -2957,24 +2996,28 @@ export class CommerceApplication {
     ownerPubky: string,
     keyring: PrivKeyring,
     sellerSide: boolean,
+    generation: number,
   ): Promise<'done' | 'incomplete' | 'needs_reauth'> {
     const directory = CommerceRecordNormalizer.orderReceiptDirectoryUri(ownerPubky);
     let cursor = sellerSide ? undefined : this.receiptMigrationCursors.get(ownerPubky);
     let incomplete = false;
     let moved = 0;
     for (let page = 1; ; page += 1) {
+      if (this.sessionCacheGeneration !== generation) return 'incomplete';
       let urls: string[];
       try {
         urls = await CommerceHomeserverService.list(directory, RECEIPT_MIGRATION_BATCH, PRIV_V1_LOG_PATH, cursor);
       } catch (error) {
         if (this.isPrivateAccessDenied(error)) return 'needs_reauth';
-        if (!sellerSide) this.receiptMigrationFailedCycles.add(ownerPubky);
+        if (!sellerSide && this.sessionCacheGeneration === generation)
+          this.receiptMigrationFailedCycles.add(ownerPubky);
         Logger.warn(
           'Listing plaintext order receipts failed; the move retries on the next orders load',
           privErrorSummary(error),
         );
         return 'incomplete';
       }
+      if (this.sessionCacheGeneration !== generation) return 'incomplete';
       const result = await this.migratePlaintextReceiptPage(
         ownerPubky,
         keyring,
@@ -2982,25 +3025,31 @@ export class CommerceApplication {
         urls,
         RECEIPT_MIGRATION_BATCH - moved,
       );
+      if (this.sessionCacheGeneration !== generation) return 'incomplete';
       if (result === 'needs_reauth') return 'needs_reauth';
       if (result === 'revoked') {
-        if (!sellerSide) this.receiptMigrationFailedCycles.add(ownerPubky);
+        if (!sellerSide && this.sessionCacheGeneration === generation)
+          this.receiptMigrationFailedCycles.add(ownerPubky);
         return 'incomplete';
       }
       moved += result.moved;
       incomplete ||= result.incomplete;
-      if (result.incomplete && !sellerSide) this.receiptMigrationFailedCycles.add(ownerPubky);
+      if (result.incomplete && !sellerSide && this.sessionCacheGeneration === generation) {
+        this.receiptMigrationFailedCycles.add(ownerPubky);
+      }
       if (result.processed === urls.length && urls.length < RECEIPT_MIGRATION_BATCH) {
-        this.receiptMigrationCursors.delete(ownerPubky);
+        if (this.sessionCacheGeneration === generation) this.receiptMigrationCursors.delete(ownerPubky);
         if (!sellerSide) {
-          const failed = this.receiptMigrationFailedCycles.delete(ownerPubky);
+          const failed =
+            this.sessionCacheGeneration === generation && this.receiptMigrationFailedCycles.delete(ownerPubky);
           return failed || incomplete ? 'incomplete' : 'done';
         }
         break;
       }
       cursor = urls[result.processed - 1];
       if (sellerSide || moved >= RECEIPT_MIGRATION_BATCH || page >= RECEIPT_MIGRATION_MAX_PAGES) {
-        if (!sellerSide) this.receiptMigrationCursors.set(ownerPubky, cursor);
+        if (!sellerSide && this.sessionCacheGeneration === generation)
+          this.receiptMigrationCursors.set(ownerPubky, cursor);
         incomplete = true;
         break;
       }
@@ -6648,6 +6697,7 @@ export class CommerceApplication {
 
   /** Test support: clears the session-scoped auction reserve sweep memo. */
   static resetAuctionReserveSweepMemo(): void {
+    this.sessionCacheGeneration += 1;
     this.auctionReserveSweptOwners.clear();
     this.auctionReserveSweepRuns.clear();
   }
@@ -6659,6 +6709,7 @@ export class CommerceApplication {
    * session once a sweep finishes cleanly.
    */
   static async sweepOwnAuctionReserves(ownerPubky: string, actorPubky: string = ownerPubky): Promise<number> {
+    this.ensureSessionLifecycleSubscribed();
     if (actorPubky !== ownerPubky) return 0;
     if (HomeserverService.getCurrentUserPubky() !== ownerPubky) return 0;
     if (!HomeserverService.canCurrentSessionWrite(PRIVATE_APP_DATA_PATH)) return 0;
@@ -6666,29 +6717,32 @@ export class CommerceApplication {
     const active = this.auctionReserveSweepRuns.get(ownerPubky);
     if (active) return await active;
 
-    const run = this.runAuctionReserveSweep(ownerPubky).finally(() => {
+    const generation = this.sessionCacheGeneration;
+    const run = this.runAuctionReserveSweep(ownerPubky, generation).finally(() => {
       if (this.auctionReserveSweepRuns.get(ownerPubky) === run) this.auctionReserveSweepRuns.delete(ownerPubky);
     });
     this.auctionReserveSweepRuns.set(ownerPubky, run);
     return await run;
   }
 
-  private static async runAuctionReserveSweep(ownerPubky: string): Promise<number> {
+  private static async runAuctionReserveSweep(ownerPubky: string, generation: number): Promise<number> {
     const directory = CommerceRecordNormalizer.auctionReserveDirectoryUri(ownerPubky);
     let entries: string[] = [];
     try {
       entries = await HomeserverService.listAll({ baseDirectory: directory });
     } catch (error) {
       if (isAppError(error) && isNotFound(error)) {
-        this.auctionReserveSweptOwners.add(ownerPubky);
+        if (this.sessionCacheGeneration === generation) this.auctionReserveSweptOwners.add(ownerPubky);
         return 0;
       }
       Logger.warn('Auction reserve sweep could not list the owner directory', { error });
       return 0;
     }
+    if (this.sessionCacheGeneration !== generation) return 0;
     let deleted = 0;
     let failed = false;
     for (const entry of entries) {
+      if (this.sessionCacheGeneration !== generation) return deleted;
       const url = ownAuctionReserveFileUrl(directory, entry);
       if (!url) continue;
       try {
@@ -6700,7 +6754,7 @@ export class CommerceApplication {
         Logger.warn('Auction reserve sweep could not delete an owner file', { error });
       }
     }
-    if (!failed) {
+    if (!failed && this.sessionCacheGeneration === generation) {
       this.auctionReserveSweptOwners.add(ownerPubky);
     }
     return deleted;

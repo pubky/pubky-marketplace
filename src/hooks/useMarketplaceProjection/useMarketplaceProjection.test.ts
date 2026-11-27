@@ -302,4 +302,65 @@ describe('useMarketplaceProjection', () => {
       vi.useRealTimers();
     }
   });
+
+  it('restarts interval and focus polling after listing_deleted when manual refresh recovers a live projection', async () => {
+    vi.useFakeTimers();
+    try {
+      config.mode = 'locks-paykit';
+      const seller = 'y'.repeat(52);
+      const aggregateId = `listing:${seller}_recreated`;
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValueOnce(null);
+      vi.mocked(CommerceController.syncListingRegistration).mockResolvedValueOnce({
+        ok: true,
+        version: 1,
+        commandId: '018f47d2-6a27-7c23-a62f-000000000752',
+        aggregateId,
+        revision: 2,
+        eventIds: [],
+        result: { kind: 'listing_deleted', listing: { aggregateId, serverRevision: 2 } },
+      } as never);
+
+      const { result } = renderHook(() => useMarketplaceProjection(seller, 'recreated'));
+      await act(async () => vi.advanceTimersByTimeAsync(0));
+      expect(result.current.listingRemoved).toBe(true);
+      expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(1);
+
+      // Polling is stopped while removed.
+      await act(async () => vi.advanceTimersByTimeAsync(180_000));
+      expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(1);
+
+      // Listing recovers and user triggers manual refresh().
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue({
+        aggregateId,
+        sellerPubky: seller,
+        listingId: 'recreated',
+        listingRevision: 2,
+        contentHash: 'd'.repeat(64),
+        serverRevision: 3,
+        state: 'available',
+        availableQuantity: 1,
+        reservedQuantity: 0,
+        unitPrice: { amountMinor: 5_000, currency: 'USD', exponent: 2 },
+        saleFormat: 'fixed_price',
+        fulfillmentMethods: ['shipping'],
+        auction: null,
+      });
+
+      act(() => result.current.refresh());
+      await act(async () => vi.advanceTimersByTimeAsync(0));
+      expect(result.current.listingRemoved).toBe(false);
+      expect(result.current.projection).toMatchObject({ serverRevision: 3 });
+      expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(2);
+
+      // Interval polling and focus polling both resumed cleanly.
+      await act(async () => vi.advanceTimersByTimeAsync(60_000));
+      expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(3);
+
+      window.dispatchEvent(new Event('focus'));
+      await act(async () => vi.advanceTimersByTimeAsync(0));
+      expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

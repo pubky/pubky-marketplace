@@ -1,6 +1,6 @@
 'use client';
 
-import { type Dispatch, type SetStateAction, useEffect, useRef, useState } from 'react';
+import { type Dispatch, type RefObject, type SetStateAction, useEffect, useRef, useState } from 'react';
 import {
   getCommerceAdapterMode,
   getCommercePollIntervalMs,
@@ -9,7 +9,12 @@ import {
 } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
-import { classifyCommercePollError, type CommercePollOutcome, startCommercePoller } from '@/libs/commerce/polling';
+import {
+  classifyCommercePollError,
+  type CommercePoller,
+  type CommercePollOutcome,
+  startCommercePoller,
+} from '@/libs/commerce/polling';
 import { buildMarketplaceListingAggregateId, isListingDeletedResponse } from '@/libs/commerce/transaction-commands';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
@@ -44,14 +49,19 @@ export function useMarketplaceProjection(sellerPubky: string, listingId: string)
   const [listingRemoved, setListingRemoved] = useState(false);
   const generationRef = useRef(0);
   const syncBudgetRef = useRef<ListingSyncBudget>({ attempts: 0, removed: false });
+  const pollerRef = useRef<CommercePoller | null>(null);
 
   const refresh = () => {
-    const generation = generationRef.current;
     syncBudgetRef.current = { attempts: 0, removed: false };
+    if (pollerRef.current) {
+      pollerRef.current.restart();
+      return;
+    }
+    const generation = generationRef.current;
     void loadProjection(
       sellerPubky,
       listingId,
-      syncBudgetRef.current,
+      syncBudgetRef,
       setProjection,
       setIsLoading,
       setError,
@@ -64,8 +74,7 @@ export function useMarketplaceProjection(sellerPubky: string, listingId: string)
   useEffect(() => {
     const generation = ++generationRef.current;
     const isCurrent = () => generationRef.current === generation;
-    const syncBudget: ListingSyncBudget = { attempts: 0, removed: false };
-    syncBudgetRef.current = syncBudget;
+    syncBudgetRef.current = { attempts: 0, removed: false };
     setProjection(null);
     setIsLoading(true);
     setError(null);
@@ -80,7 +89,7 @@ export function useMarketplaceProjection(sellerPubky: string, listingId: string)
         loadProjection(
           sellerPubky,
           listingId,
-          syncBudget,
+          syncBudgetRef,
           setProjection,
           setIsLoading,
           setError,
@@ -91,8 +100,10 @@ export function useMarketplaceProjection(sellerPubky: string, listingId: string)
       getIntervalMs: getCommercePollIntervalMs,
       refetchOnFocus: true,
     });
+    pollerRef.current = poller;
     return () => {
       poller.stop();
+      if (pollerRef.current === poller) pollerRef.current = null;
     };
   }, [isTransactional, listingId, sellerPubky, marketplaceSession]);
 
@@ -102,7 +113,7 @@ export function useMarketplaceProjection(sellerPubky: string, listingId: string)
 async function loadProjection(
   sellerPubky: string,
   listingId: string,
-  syncBudget: ListingSyncBudget,
+  syncBudgetRef: RefObject<ListingSyncBudget>,
   setProjection: Dispatch<SetStateAction<MarketplaceListingProjection | null>>,
   setIsLoading: Dispatch<SetStateAction<boolean>>,
   setError: Dispatch<SetStateAction<string | null>>,
@@ -112,6 +123,7 @@ async function loadProjection(
 ): Promise<CommercePollOutcome> {
   if (!isTransactionalCommerceMode(getCommerceAdapterMode())) return 'stop';
   try {
+    const syncBudget = syncBudgetRef.current;
     let next = await CommerceController.getMarketplaceListingProjection(sellerPubky, listingId);
     let removed = syncBudget.removed;
     // An unregistered listing is healable by ANY signed-in user: the service
