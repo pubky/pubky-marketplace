@@ -54,8 +54,32 @@ describe('MarketplaceStoreClaimService', () => {
     ['claim_session_source', 'session-source'],
     ['claim_session_capability', 'session-capability'],
   ] as const)('maps %s', async (reason, kind) => {
-    fetchMock.mockResolvedValue(respond(403, { error: 'unauthorized', reason }));
+    fetchMock.mockResolvedValue(
+      respond(403, { ok: false, error: { code: 'UNAUTHORIZED', message: 'Not authorized.', reason } }),
+    );
     await expect(MarketplaceStoreClaimService.claim(CODE, PUBKY)).resolves.toEqual({ kind });
+  });
+
+  it('does not read a refusal reason outside the error object', async () => {
+    fetchMock.mockResolvedValue(
+      respond(403, { ok: false, reason: 'claim_code_invalid', error: { code: 'UNAUTHORIZED' } }),
+    );
+    await expect(MarketplaceStoreClaimService.claim(CODE, PUBKY)).rejects.toBeDefined();
+  });
+
+  it('reads the claimed seller from an already-claimed answer', async () => {
+    fetchMock.mockResolvedValue(
+      respond(409, {
+        ok: false,
+        error: { code: 'STORE_ALREADY_CLAIMED', message: 'The store is already claimed.' },
+        seller: PUBKY,
+        store: { mode: 'single_seller', state: 'claimed', seller: PUBKY },
+      }),
+    );
+    await expect(MarketplaceStoreClaimService.claim(CODE, PUBKY)).resolves.toEqual({
+      kind: 'already-claimed',
+      seller: PUBKY,
+    });
   });
 
   it.each([429, 503])('maps Retry-After for status %s without exposing a code or token', async (status) => {

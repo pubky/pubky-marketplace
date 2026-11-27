@@ -28,7 +28,7 @@ export type StoreClaimResult =
 
 function reason(body: unknown): string | null {
   if (typeof body !== 'object' || body === null) return null;
-  const value = (body as { reason?: unknown }).reason;
+  const value = (body as { error?: { reason?: unknown } }).error?.reason;
   return typeof value === 'string' ? value : null;
 }
 
