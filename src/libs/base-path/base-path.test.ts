@@ -5,7 +5,6 @@ import {
   normalizeAssetPrefix,
   normalizeBasePath,
   prefixWithBasePath,
-  stripBasePath,
 } from './base-path';
 
 describe('isValidBasePath', () => {
@@ -63,13 +62,13 @@ describe('normalize helpers', () => {
 
 describe('prefixWithBasePath', () => {
   it('returns the input unchanged for the root mount', () => {
-    expect(prefixWithBasePath('', '/api/feedback')).toBe('/api/feedback');
+    expect(prefixWithBasePath('', '/api/report')).toBe('/api/report');
     expect(prefixWithBasePath('', '/images/x.webp')).toBe('/images/x.webp');
   });
 
   it('prefixes app-absolute paths, keeping query and fragment', () => {
-    expect(prefixWithBasePath('/shop', '/api/feedback')).toBe('/shop/api/feedback');
-    expect(prefixWithBasePath('/shop', '/api/og-metadata?url=a')).toBe('/shop/api/og-metadata?url=a');
+    expect(prefixWithBasePath('/shop', '/api/report')).toBe('/shop/api/report');
+    expect(prefixWithBasePath('/shop', '/api/build?check=a')).toBe('/shop/api/build?check=a');
     expect(prefixWithBasePath('/shop', '/')).toBe('/shop/');
   });
 
@@ -91,15 +90,5 @@ describe('prefixWithBasePath', () => {
   it('is idempotent', () => {
     const once = prefixWithBasePath('/shop', '/api/x');
     expect(prefixWithBasePath('/shop', once)).toBe(once);
-  });
-});
-
-describe('stripBasePath', () => {
-  it('inverts the prefix', () => {
-    expect(stripBasePath('', '/marketplace')).toBe('/marketplace');
-    expect(stripBasePath('/shop', '/shop/marketplace')).toBe('/marketplace');
-    expect(stripBasePath('/shop', '/shop')).toBe('/');
-    expect(stripBasePath('/shop', '/other')).toBe('/other');
-    expect(stripBasePath('/shop', '/shopping')).toBe('/shopping');
   });
 });

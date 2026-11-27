@@ -3,7 +3,6 @@ import { renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AuthApplication } from '@/application/auth/auth';
 import { BootstrapApplication } from '@/application/bootstrap/bootstrap';
-import { SettingsApplication } from '@/application/settings/settings';
 import { AuthController } from '@/controllers/auth/auth';
 import { approve, deferred, grantSession, resetGrantTest } from '@/controllers/auth/auth.grant-test-utils';
 import { bumpAuthEpoch } from '@/controllers/auth/auth-epoch';
@@ -17,10 +16,8 @@ import { pendingOwnedGrants } from '@/services/homeserver/owned-grant-storage';
 import { clearPersistedAuthIdentity } from '@/stores/auth/auth.persisted';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
-import { AUTH_PERSIST_KEY } from '@/stores/persistedKeys';
-import { useSearchStore } from '@/stores/search/search.store';
+import { AUTH_PERSIST_KEY, SEARCH_PERSIST_KEY } from '@/stores/persistedKeys';
 import { useSettingsStore } from '@/stores/settings/settings.store';
-import { settingsInitialState } from '@/stores/settings/settings.types';
 import { asOpaque } from '@/test-utils/type-assertions';
 
 vi.mock('@/database/franky/franky.helpers', () => ({ clearDatabase: vi.fn(), clearPrivateData: vi.fn() }));
@@ -273,7 +270,7 @@ it.each(['logout', 'replacement'] as const)(
     else changing = approve(next).then(() => AuthController.initializeAuthenticatedSession({ session: next }));
     expect(order).toEqual([]);
     order.push('bootstrap');
-    bootstrap.resolve(asOpaque({}));
+    bootstrap.resolve();
     await changing;
     await expect(restoring).resolves.toEqual({ status: change === 'logout' ? 'signed-out' : 'restored' });
     expect(order).toEqual(['bootstrap', 'cleanup']);
@@ -392,26 +389,17 @@ it.each(['alice', 'bob'])('preserves settings only when replacing with the same 
   await AuthController.initializeAuthenticatedSession({ session: old });
   useSettingsStore.getState().setHideSearch(true);
   useSettingsStore.setState({ muted: ['muted-by-alice'] });
-  useSearchStore.getState().addTag('alice-private-search');
+  localStorage.setItem(SEARCH_PERSIST_KEY, 'alice-private-search');
   vi.mocked(AuthApplication.userIsSignedUp).mockResolvedValue(true);
-  vi.mocked(SettingsApplication.initializeSettings).mockClear();
   const next = grantSession(pubky, 'shop.pubky.app', 'next');
   await approve(next);
   await AuthController.initializeAuthenticatedSession({ session: next });
   const settings = useSettingsStore.getState();
   expect(settings.privacy.hideSearch).toBe(pubky === 'alice');
   expect(settings.muted).toEqual(pubky === 'alice' ? ['muted-by-alice'] : []);
-  expect(useSearchStore.getState().recentTags.map((entry) => entry.tag)).toEqual(
-    pubky === 'alice' ? ['alice-private-search'] : [],
-  );
-  if (pubky === 'bob')
-    expect(SettingsApplication.initializeSettings).toHaveBeenCalledWith(
-      'bob',
-      settingsInitialState,
-      expect.any(AbortSignal),
-    );
+  expect(localStorage.getItem(SEARCH_PERSIST_KEY)).toBe(pubky === 'alice' ? 'alice-private-search' : null);
   useSettingsStore.getState().reset();
-  useSearchStore.getState().reset();
+  localStorage.removeItem(SEARCH_PERSIST_KEY);
 });
 
 it('does not let a record-removal marker erase the key of an unresolved retirement', async () => {

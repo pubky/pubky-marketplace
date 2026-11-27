@@ -61,7 +61,7 @@ Guests can open routes that do not require a session:
 
 - **Route guard:** `EXPLORE_ROUTES` is included in `UNAUTHENTICATED_ROUTES`; dynamic public paths are allowed via `isDynamicPublicRoute()` in `RouteGuardProvider`.
 - **UI chrome:** use `usePublicRoute()` for layout (e.g. explore header, mobile footer on `/home`). `isPublicRoute` on the hook result is a **legacy alias** for `isDynamicPublicRoute` only—it is `false` on `/home` even though the page is browsable.
-- **Auth-gated actions:** use `useRequireAuth().requireAuth()` for post, reply, follow, filters, etc. Streams for guests should use `REACH.ALL` (see `useStreamIdFromFilters`, `useHotStreamId`).
+- **Auth-gated actions:** use `useRequireAuth().requireAuth()` for post, reply, follow, filters, etc.
 
 ## Component Template
 
@@ -139,7 +139,7 @@ import { AvatarWithFallback } from '@/organisms/AvatarWithFallback/AvatarWithFal
 Route files that only render a template can re-export the template directly:
 
 ```tsx
-export { Home as default } from '@/templates/Feed/Home/Home';
+export { MarketplaceWatchlist as default } from '@/templates/Marketplace/MarketplaceWatchlist';
 ```
 
 ## Icons (Lucide and custom)
@@ -157,14 +157,10 @@ Use named imports from `lucide-react` only.
 ### Custom / brand icons
 
 ```tsx
-import { MarkdownMark, UsersRound2 } from '@/icons';
+import { PubkyIcon, Bitkit } from '@/icons';
 ```
 
 The `@/icons` alias is defined in `tsconfig.json` and points at `src/libs/icons/icons.tsx`. Add new custom components there; keep them out of generic libs utility modules.
-
-### URL → icon / label helpers
-
-**`getIconFromUrl`** lives in **`@/libs/utils/urlToIcon`** (`src/libs/utils/urlToIcon.ts`). It returns icon component types for link previews — import it from `@/libs/utils/urlToIcon`, not from `@/icons`.
 
 ### Tests
 
@@ -221,13 +217,13 @@ Mock `@/molecules/Toaster/toast` in feature unit tests; assert the options and i
 ## Forms
 
 Build forms with `react-hook-form` and `zod` through `@hookform/resolvers/zod`. Use
-`src/hooks/useCreateCollection/useCreateCollection.ts` and its sibling `useCreateCollection.types.ts`
+`src/hooks/useCopyrightForm/useCopyrightForm.ts` and its sibling `useCopyrightForm.types.ts`
 as a reference for the hook/schema layout.
 
 - The hook owns validation and the mutation. Components call a `use{Action}Form` or `use{Verb}{Entity}` hook that exposes
   `{ form, submit, reset, ... }`, instead of calling `commit*` controllers directly.
 - `submit()` returns `Promise<boolean>` when the caller only needs success/failure, or a created entity ID as
-  `Promise<string | null>` when navigation needs it, as in `useCreateCollection`. Preserve the caller's existing contract
+  `Promise<string | null>` when navigation needs it. Preserve the caller's existing contract
   and keep closing or navigation in the caller.
 - Put the Zod schema, `*_FORM_FIELDS` map, inferred type and default values in a sibling `*.types.ts` file.
 - Use React Hook Form's `Controller` through `ControlledInputField` and `ControlledTextareaField` where applicable.
@@ -235,8 +231,7 @@ as a reference for the hook/schema layout.
 - Compose dedicated hooks for non-text inputs such as cover images and file pickers; their resource lifecycle does not
   belong in a text-field controller.
 - Keep user-facing validation messages as literal US-English strings. Use Zod v4 `z.url()` for URL validation.
-- Choose validation timing for the interaction being built. For example, `useCreateCollection` uses `onChange` so a blur
-  error does not move the dialog close button during a click. Do not copy a different validation mode incidentally.
+- Choose validation timing for the interaction being built. The copyright form validates on blur. Do not copy a different validation mode incidentally.
 - Follow the existing error-handling and notification contracts; avoid logging an error again when its `Err.*` factory
   already logged it. See `error-handling.md` and the existing Toasts section above.
 

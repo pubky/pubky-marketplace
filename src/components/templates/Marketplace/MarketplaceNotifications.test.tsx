@@ -511,7 +511,7 @@ describe('MarketplaceNotifications', () => {
       'A Bitcoin payment is waiting for your confirmation',
       'A Bitcoin payment settled late and needs your decision',
       'A Bitcoin payment amount does not match the invoice',
-      'A confirmed Bitcoin payment could not be applied to this order',
+      'Review the payment status for this order',
       'The confirmation window ended before you confirmed this payment',
       'This Bitcoin payment has waited two business days for your decision',
     ];

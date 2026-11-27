@@ -1,20 +1,15 @@
 import { UserApplication } from '@/application/user/user';
-import { withoutBasePath } from '@/config/base-path';
+import { captureAuthWriteGuard } from '@/controllers/auth/auth-scope';
 import type { TReadProfileParams } from '@/controllers/profile/profile.types';
 import type { TFollowParams, TPubkyListParams } from '@/controllers/user/user.type';
 import { HttpMethod } from '@/libs/http/http.types';
-import { Logger } from '@/libs/logger/logger';
 import { stripPubkyPrefix } from '@/libs/utils/utils';
 import type { Pubky } from '@/models/models.types';
-import type { PostStreamId } from '@/models/stream/post/postStream.types';
 import type { UserCountsModel } from '@/models/user/counts/userCounts';
 import type { UserRelationshipsModelSchema } from '@/models/user/relationships/userRelationships.schema';
-import { FollowNormalizer } from '@/pipes/follow/follow.normalizer';
 import type { NexusTag, NexusUserCounts, NexusUserDetails, NexusUserRelationship } from '@/services/nexus/nexus.types';
 import type { TUserTagsParams } from '@/services/nexus/user/user.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
-import { useHomeStore } from '@/stores/home/home.store';
-import { getHomeStreamIdFromFilters } from '@/stores/home/home.utils';
 
 export class UserController {
   private constructor() {} // Prevent instantiation
@@ -110,20 +105,13 @@ export class UserController {
     return await UserApplication.fetch(params);
   }
 
-  /**
-   * Get user details from local database or fetch from Nexus API
-   * This is a read-only operation that queries the local cache
-   */
-  static async getOrFetchDetails(param: TReadProfileParams): Promise<NexusUserDetails | null> {
-    return await UserApplication.getOrFetchDetails(param);
-  }
-
-  /**
-   * Fetch user details from Nexus and persist locally (network-only, no local read).
-   * Use instead of `getOrFetchDetails` when the caller already knows the user is not cached.
-   */
+  /** Refresh cached user details from Nexus, using the own-profile lookup for the signed-in user. */
   static async fetchDetails(param: TReadProfileParams): Promise<NexusUserDetails | null> {
-    return await UserApplication.fetchDetails(param);
+    const { session, currentUserPubky } = useAuthStore.getState();
+    return await UserApplication.fetchDetails({
+      ...param,
+      ownProfile: Boolean(session) && currentUserPubky === param.userId,
+    });
   }
 
   /**
@@ -144,50 +132,17 @@ export class UserController {
     // Normalize pubky IDs to ensure consistent format for storage and comparison
     // This strips any prefix (pubky or pk:) to get the raw 52-character key
     const normalizedFollowee = stripPubkyPrefix(followee) as Pubky;
-    const { meta, follow } = FollowNormalizer.to({ follower, followee: normalizedFollowee });
+    const assertCurrent = captureAuthWriteGuard();
+    const record = await UserApplication.prepareFollow({ follower, followee: normalizedFollowee });
 
-    // Get active stream ID from store (controller layer responsibility)
-    const activeStreamId = this.getActiveStreamId();
+    assertCurrent();
 
     await UserApplication.commitFollow({
       eventType,
-      followUrl: meta.url,
-      followJson: follow.toJson(),
+      assertCurrent,
+      ...record,
       follower,
       followee: normalizedFollowee,
-      activeStreamId,
     });
-  }
-
-  /**
-   * Gets the currently active stream ID from the home store if on /home route.
-   * This is a controller responsibility - controllers can access UI state stores.
-   *
-   * @returns The active stream ID, or null if not on /home route or if retrieval fails
-   */
-  private static getActiveStreamId(): PostStreamId | null {
-    if (typeof window === 'undefined' || withoutBasePath(window.location.pathname) !== '/home') {
-      return null;
-    }
-
-    try {
-      const homeState = useHomeStore.getState();
-      const authState = useAuthStore.getState();
-      if (!homeState.hasHydrated || !authState.hasHydrated) {
-        return null;
-      }
-
-      return getHomeStreamIdFromFilters({
-        sort: homeState.sort,
-        reach: homeState.reach,
-        content: homeState.content,
-        currentUserPubky: authState.currentUserPubky,
-        profileTags: homeState.profileTags,
-        taggedAsActive: homeState.taggedAsActive,
-      });
-    } catch (error) {
-      Logger.warn('Failed to get active stream ID', { error });
-      return null;
-    }
   }
 }

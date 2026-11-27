@@ -33,9 +33,7 @@ export function useProfileStats(userId: string, options?: UseProfileStatsOptions
     enabled,
   });
 
-  // Get unread notifications count reactively from Zustand store — social plus
-  // marketplace, matching the merged list the Notifications tab shows.
-  const unreadNotificationsCount = useNotificationStore((state) => state.selectTotalUnread());
+  const unreadNotificationsCount = useNotificationStore((state) => state.selectMarketplaceUnread());
 
   // Build stats object from user counts
   // IMPORTANT: Backend counts.posts is the total of every post the user authored,

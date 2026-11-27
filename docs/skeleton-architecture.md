@@ -11,9 +11,9 @@ Use a standalone component folder when the skeleton is reused by multiple parent
 Example:
 
 ```
-src/components/organisms/FullUserListItemSkeleton/
-├── FullUserListItemSkeleton.tsx
-└── FullUserListItemSkeleton.test.tsx
+src/components/atoms/Skeleton/
+├── Skeleton.tsx
+└── Skeleton.test.tsx
 ```
 
 ### Feature-private skeletons
@@ -23,9 +23,9 @@ Use a colocated file for loading states owned by a single component.
 Example:
 
 ```
-src/components/organisms/HotTagsCardsSection/
-├── HotTagsCardsSection.tsx
-├── HotTagsCardsSection.skeleton.tsx
+src/components/molecules/WhoTaggedExpandedList/
+├── WhoTaggedExpandedList.tsx
+├── WhoTaggedExpandedList.skeleton.tsx
 └── ...
 ```
 
@@ -39,7 +39,7 @@ src/components/organisms/HotTagsCardsSection/
 - Component name: `XxxSkeleton`.
 - Private file name: `Xxx.skeleton.tsx`.
 - Reusable file name: `XxxSkeleton.tsx` in its own folder.
-- Do not add skeleton-only `index.ts` files that only re-export other skeletons. Import reusable skeletons directly from their concrete file (for example `@/organisms/FullUserListItemSkeleton/FullUserListItemSkeleton`).
+- Do not add skeleton-only `index.ts` files that only re-export other skeletons. Import reusable skeletons directly from their concrete file (for example `@/atoms/Skeleton/Skeleton`).
 - Do not expose feature-private skeletons as reusable public modules. Keep them colocated and import them relatively from their owning component.
 
 ## Implementation Rules

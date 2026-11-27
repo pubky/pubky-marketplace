@@ -1,4 +1,6 @@
-import { listingUriBuilder, postUriBuilder, shopUriBuilder, TagResult, userUriBuilder } from 'pubky-app-specs';
+import { postUriBuilder, TagResult, userUriBuilder } from 'pubky-app-specs';
+import { buildMarketUri } from 'pubky-market-specs';
+import { buildTag, buildUri } from 'pubky-social-specs';
 import { TagKind } from '@/application/tag/tag.types';
 import type { TTagEventParams, TTagFromResponse } from '@/controllers/tag/tag.types';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
@@ -19,9 +21,9 @@ export class TagNormalizer {
         uri = postUriBuilder(pubky, postId);
       } else if (taggedKind === TagKind.LISTING) {
         const { pubky, id: listingId } = parseCompositeId(taggedId);
-        uri = listingUriBuilder(pubky, listingId);
+        uri = buildMarketUri(pubky, 'listing', listingId);
       } else if (taggedKind === TagKind.SHOP) {
-        uri = shopUriBuilder(taggedId);
+        uri = buildMarketUri(taggedId, 'shop');
       } else {
         uri = userUriBuilder(taggedId);
       }
@@ -40,6 +42,28 @@ export class TagNormalizer {
         service: ErrorService.PubkyAppSpecs,
         operation: 'createTagFromParams',
         context: { taggedKind, taggedId, label, taggerId },
+      });
+    }
+  }
+
+  /** The commerce target keeps its signed URI while the tag file belongs to social/v1. */
+  static fromV1(params: TTagEventParams): TTagFromResponse {
+    const { taggedId, taggedKind, taggerId, label } = params;
+    try {
+      let target: string;
+      if (taggedKind === TagKind.LISTING || taggedKind === TagKind.POST) {
+        const { pubky, id } = parseCompositeId(taggedId);
+        target = taggedKind === TagKind.LISTING ? buildMarketUri(pubky, 'listing', id) : buildUri(pubky, 'post', id);
+      } else {
+        target = taggedKind === TagKind.SHOP ? buildMarketUri(taggedId, 'shop') : buildUri(taggedId, 'user');
+      }
+      const tag = buildTag(taggerId, target, label);
+      return { ...params, label: tag.object.label, tagUrl: tag.url, tagJson: { ...tag.object }, tagBody: tag.body };
+    } catch (cause) {
+      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Invalid social tag', {
+        service: ErrorService.PubkyAppSpecs,
+        operation: 'buildTag',
+        cause,
       });
     }
   }

@@ -5,6 +5,7 @@ import { AuthController } from '@/controllers/auth/auth';
 import { AUTH_EPOCH_KEY } from '@/controllers/auth/auth-epoch';
 import { AuthErrorCode } from '@/libs/error/error.codes';
 import { HttpMethod } from '@/libs/http/http.types';
+import { AUTH_IO_TIMEOUT_MS } from '@/libs/http/io-deadline';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { CommerceHomeserverService } from './commerce/commerce';
@@ -192,6 +193,24 @@ describe('homeserver writes route through the shared retry policy', () => {
       context: { statusCode: 400 },
     });
     expect(mockState.delete).toHaveBeenCalledTimes(1);
+  });
+
+  it('times out an unresponsive SDK write of a social record', async () => {
+    vi.useFakeTimers();
+    try {
+      mockState.putBytes.mockReturnValue(new Promise(() => {}));
+      const put = HomeserverService.putBlob({
+        url: 'pubky://user/pub/social/v1/tags/abc.json',
+        blob: new Uint8Array([1]),
+        bounded: true,
+      });
+      const rejected = expect(put).rejects.toMatchObject({ code: 'REQUEST_TIMEOUT' });
+      await vi.advanceTimersByTimeAsync(AUTH_IO_TIMEOUT_MS);
+      await rejected;
+      expect(mockState.putBytes).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('retries a 503 DELETE and then a media PUT, copying bytes per attempt', async () => {

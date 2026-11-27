@@ -241,6 +241,28 @@ describe('useOrderDigitalDelivery (digital delivery design §3 "After payment", 
     expect(result.current.revealFor(1)).toBeNull();
   });
 
+  it('saves a file pinned as text/html as a download typed application/octet-stream', async () => {
+    const blobs: Blob[] = [];
+    createObjectURL.mockImplementationOnce((blob: Blob) => {
+      blobs.push(blob);
+      return 'blob:purchase';
+    });
+    vi.mocked(CommerceController.openOrderDigitalFile).mockResolvedValue({
+      ok: true,
+      bytes: new TextEncoder().encode('<!doctype html><script>document.title = 1</script>'),
+      fileName: 'page.html',
+      contentType: 'text/html',
+    });
+    const { result } = renderHook(() => useOrderDigitalDelivery(order));
+
+    await act(async () => {
+      await result.current.open(0);
+    });
+
+    expect(clicked[0].download).toBe('page.html');
+    expect(blobs[0].type).toBe('application/octet-stream');
+  });
+
   it('saves a copy of the bytes, so zeroing the source leaves the download intact', () => {
     const bytes = new Uint8Array([9, 9]);
     const blobs: Blob[] = [];
@@ -249,7 +271,7 @@ describe('useOrderDigitalDelivery (digital delivery design §3 "After payment", 
       return 'blob:copy';
     });
 
-    saveDigitalFile(bytes, 'a.bin', 'application/octet-stream');
+    saveDigitalFile(bytes, 'a.bin');
 
     expect(blobs[0].size).toBe(2);
     expect(blobs[0].type).toBe('application/octet-stream');

@@ -176,6 +176,7 @@ export function isHoldExpiredNoLateMoney(
     (order.state === 'cancelled' || payment?.state === 'expired') &&
     order.cancellationReason === PAYMENT_WINDOW_ELAPSED_REASON &&
     payment?.reviewReason !== 'refund_required' &&
+    payment?.reviewReason !== 'upstream_inconsistent' &&
     !isLateCompletionOrder(order)
   );
 }

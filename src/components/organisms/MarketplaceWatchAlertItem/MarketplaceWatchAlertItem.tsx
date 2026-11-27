@@ -12,7 +12,6 @@ import { RelativeTimestamp } from '@/molecules/RelativeTimestamp/RelativeTimesta
 import type { MarketplaceWatchAlertFeedItem } from '@/pipes/marketplaceWatch/marketplaceWatchAlert.types';
 import { getWatchAlertDetail, getWatchAlertHeadline } from './MarketplaceWatchAlertItem.utils';
 
-/** Same dimensions as the social NotificationIcon so mixed rows align. */
 const ICON_SIZE = 24;
 const BADGE_SIZE = 11;
 

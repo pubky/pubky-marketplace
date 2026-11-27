@@ -1,12 +1,7 @@
 import type { TagKind } from '@/application/tag/tag.types';
 import type { Pubky } from '@/models/models.types';
 
-export interface TTagEventParams {
-  taggerId: Pubky | string;
-  taggedId: Pubky;
-  label: string;
-  taggedKind: TagKind;
-}
+export type { TTagEventParams } from '@/application/tag/tag.types';
 
 export interface TTagFromResponse {
   taggerId: Pubky;
@@ -15,4 +10,5 @@ export interface TTagFromResponse {
   taggedKind: TagKind;
   tagUrl: string;
   tagJson: Record<string, unknown>;
+  tagBody?: Uint8Array;
 }

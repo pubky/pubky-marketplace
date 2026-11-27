@@ -17,7 +17,7 @@ describe('marketplace guest route guards', () => {
     cy.get('[role="dialog"]:visible')
       .should('have.length', 1)
       .within(() => {
-        cy.contains('h2', 'Join Pubky').should('be.visible');
+        cy.contains('h2', 'Sign in to Pubky').should('be.visible');
       });
     cy.contains('button', 'Place sandbox order').should('not.exist');
     cy.window().then((window) => {
@@ -36,7 +36,7 @@ describe('marketplace guest route guards', () => {
     cy.get('[role="dialog"]:visible')
       .should('have.length', 1)
       .within(() => {
-        cy.contains('h2', 'Join Pubky').should('be.visible');
+        cy.contains('h2', 'Sign in to Pubky').should('be.visible');
       });
     cy.contains('button', 'Publish listing').should('not.exist');
     cy.get('[data-surface="seller-studio"]').should('not.exist');

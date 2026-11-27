@@ -28,7 +28,6 @@ function limiters(kind: TSupportIntakeKind): TSupportIntakeLimiters {
 }
 
 const LIMITERS: Record<TSupportIntakeKind, TSupportIntakeLimiters> = {
-  feedback: limiters('feedback'),
   report: limiters('report'),
   copyright: limiters('copyright'),
 };

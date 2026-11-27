@@ -214,10 +214,6 @@ vi.mock('@/organisms/Marketplace/MarketplaceCommunityTags', () => ({
   MarketplaceCommunityTags: () => null,
 }));
 
-vi.mock('@/organisms/Marketplace/MarketplaceListingSavePicker', () => ({
-  MarketplaceListingSavePicker: () => null,
-}));
-
 vi.mock('@/organisms/Marketplace/MarketplaceMessageDialog', () => ({
   MarketplaceMessageDialog: () => <button type="button">Message seller</button>,
 }));

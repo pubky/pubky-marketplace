@@ -27,7 +27,6 @@ vi.mock('@/hooks/useMarketplaceLocksPayment/useMarketplaceLocksPayment', () => (
     isUnlocking: false,
     delivery: null,
     error: null,
-    pollExhausted: false,
     start: vi.fn(),
     unlock: vi.fn(),
     resumePolling: vi.fn(),
@@ -81,7 +80,13 @@ const CONFIRMED_DESTINATION = {
 function reviewFixtures(
   options: {
     destination?: boolean;
-    reviewReason?: 'late_settlement' | 'refund_required' | 'amount_mismatch' | 'unpinned_legacy' | null;
+    reviewReason?:
+      | 'late_settlement'
+      | 'refund_required'
+      | 'amount_mismatch'
+      | 'unpinned_legacy'
+      | 'upstream_inconsistent'
+      | null;
     orderOverrides?: Partial<ReturnType<typeof createOrderFixture>>;
   } = {},
 ) {

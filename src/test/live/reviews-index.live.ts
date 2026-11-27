@@ -427,12 +427,11 @@ describe('marketplace reviews — live attested publication and Nexus indexing',
  * Nexus watcher indexes; the reviews below bind to this listing.
  */
 async function publishSellerRecords(sellerPubky: string): Promise<string> {
-  const { PubkySpecsBuilder } = await import('pubky-app-specs');
+  const { buildShop, buildListing } = await import('pubky-market-specs');
   const { CommerceHomeserverService } = await import('@/services/homeserver/commerce/commerce');
   const nowIso = new Date().toISOString();
-  const builder = new PubkySpecsBuilder(sellerPubky);
 
-  const shop = builder.createShop({
+  const shop = buildShop(sellerPubky, {
     schemaVersion: 1,
     recordType: 'shop',
     ownerPubky: sellerPubky,
@@ -448,7 +447,7 @@ async function publishSellerRecords(sellerPubky: string): Promise<string> {
   });
   await CommerceHomeserverService.putJson(shop.meta.url, shop.shop.toJson() as Record<string, unknown>);
 
-  const listing = builder.createListing({
+  const listing = buildListing(sellerPubky, {
     schemaVersion: 1,
     recordType: 'listing',
     ownerPubky: sellerPubky,

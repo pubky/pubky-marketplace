@@ -1,3 +1,6 @@
+import { PubkySpecsBuilder } from 'pubky-app-specs';
+import { buildMarketUri } from 'pubky-market-specs';
+import { buildTag } from 'pubky-social-specs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TagKind } from '@/application/tag/tag.types';
 import { ClientErrorCode } from '@/libs/error/error.codes';
@@ -17,6 +20,8 @@ import type { TCreateTagInput, TDeleteTagInput } from './tag.types';
 vi.mock('@/services/homeserver/homeserver', () => ({
   HomeserverService: {
     request: vi.fn(),
+    canCurrentUserSessionWrite: vi.fn(),
+    getJsonIfFound: vi.fn(),
   },
 }));
 
@@ -29,6 +34,8 @@ const httpError = (code: ClientErrorCode, operation: string) =>
   });
 
 describe('Tag Application', () => {
+  const assertCurrent = vi.fn<() => void>();
+
   // Test data factory
   const createMockTagData = (taggedKind: TagKind = TagKind.POST): TCreateTagInput => ({
     taggedId: taggedKind === TagKind.POST ? 'author:post123' : ('tagged-user-123' as Pubky),
@@ -80,7 +87,7 @@ describe('Tag Application', () => {
       createSpy.mockResolvedValue(true);
       requestSpy.mockResolvedValue(undefined);
 
-      await TagApplication.commitCreate({ tagList: [mockData] });
+      await TagApplication.commitCreate({ tagList: [mockData], assertCurrent });
 
       expect(createSpy).toHaveBeenCalledWith({
         taggedId: mockData.taggedId,
@@ -100,7 +107,9 @@ describe('Tag Application', () => {
 
       createSpy.mockRejectedValue(new Error('Database error'));
 
-      await expect(TagApplication.commitCreate({ tagList: [mockData] })).rejects.toThrow('Database error');
+      await expect(TagApplication.commitCreate({ tagList: [mockData], assertCurrent })).rejects.toThrow(
+        'Database error',
+      );
       expect(createSpy).toHaveBeenCalledOnce();
       expect(requestSpy).not.toHaveBeenCalled();
     });
@@ -113,7 +122,7 @@ describe('Tag Application', () => {
       deleteSpy.mockResolvedValue(true);
       requestSpy.mockRejectedValue(new Error('Failed to PUT to homeserver: 500'));
 
-      await expect(TagApplication.commitCreate({ tagList: [mockData] })).rejects.toThrow(
+      await expect(TagApplication.commitCreate({ tagList: [mockData], assertCurrent })).rejects.toThrow(
         'Failed to PUT to homeserver: 500',
       );
       expect(createSpy).toHaveBeenCalledOnce();
@@ -133,7 +142,7 @@ describe('Tag Application', () => {
       deleteSpy.mockResolvedValue(true);
       requestSpy.mockRejectedValue(new Error('Failed to PUT to homeserver: 500'));
 
-      await expect(TagApplication.commitCreate({ tagList: [mockData] })).rejects.toThrow(
+      await expect(TagApplication.commitCreate({ tagList: [mockData], assertCurrent })).rejects.toThrow(
         'Failed to PUT to homeserver: 500',
       );
       expect(createSpy).toHaveBeenCalledWith({
@@ -157,7 +166,7 @@ describe('Tag Application', () => {
       deleteSpy.mockResolvedValue(true);
       requestSpy.mockRejectedValueOnce(new Error('Failed to PUT to homeserver: 500'));
 
-      await expect(TagApplication.commitCreate({ tagList: mockData })).rejects.toThrow(
+      await expect(TagApplication.commitCreate({ tagList: mockData, assertCurrent })).rejects.toThrow(
         'Failed to PUT to homeserver: 500',
       );
 
@@ -190,7 +199,7 @@ describe('Tag Application', () => {
       deleteSpy.mockResolvedValue(true);
       requestSpy.mockResolvedValue(undefined);
 
-      await TagApplication.commitDelete(mockData);
+      await TagApplication.commitDelete(mockData, assertCurrent);
 
       expect(deleteSpy).toHaveBeenCalledWith({
         taggedId: mockData.taggedId,
@@ -206,7 +215,7 @@ describe('Tag Application', () => {
 
       deleteSpy.mockRejectedValue(new Error('User has not tagged this post with this label'));
 
-      await expect(TagApplication.commitDelete(mockData)).rejects.toThrow(
+      await expect(TagApplication.commitDelete(mockData, assertCurrent)).rejects.toThrow(
         'User has not tagged this post with this label',
       );
       expect(deleteSpy).toHaveBeenCalledOnce();
@@ -221,7 +230,9 @@ describe('Tag Application', () => {
       createSpy.mockResolvedValue(true);
       requestSpy.mockRejectedValue(new Error('Failed to DELETE from homeserver: 404'));
 
-      await expect(TagApplication.commitDelete(mockData)).rejects.toThrow('Failed to DELETE from homeserver: 404');
+      await expect(TagApplication.commitDelete(mockData, assertCurrent)).rejects.toThrow(
+        'Failed to DELETE from homeserver: 404',
+      );
       expect(deleteSpy).toHaveBeenCalledOnce();
       expect(requestSpy).toHaveBeenCalledOnce();
       expect(createSpy).toHaveBeenCalledWith({
@@ -239,7 +250,9 @@ describe('Tag Application', () => {
       createSpy.mockResolvedValue(true);
       requestSpy.mockRejectedValue(new Error('Failed to DELETE from homeserver: 404'));
 
-      await expect(TagApplication.commitDelete(mockData)).rejects.toThrow('Failed to DELETE from homeserver: 404');
+      await expect(TagApplication.commitDelete(mockData, assertCurrent)).rejects.toThrow(
+        'Failed to DELETE from homeserver: 404',
+      );
       expect(deleteSpy).toHaveBeenCalledWith({
         taggedId: mockData.taggedId,
         label: mockData.label,
@@ -259,7 +272,7 @@ describe('Tag Application', () => {
 
       deleteSpy.mockResolvedValue(false); // Nothing to delete
 
-      await TagApplication.commitDelete(mockData);
+      await TagApplication.commitDelete(mockData, assertCurrent);
 
       expect(deleteSpy).toHaveBeenCalledOnce();
       expect(requestSpy).not.toHaveBeenCalled();
@@ -274,7 +287,7 @@ describe('Tag Application', () => {
       requestSpy.mockRejectedValue(httpError(ClientErrorCode.NOT_FOUND, 'commitDelete'));
 
       // Should resolve, not throw — local delete is already correct.
-      await TagApplication.commitDelete(mockData);
+      await TagApplication.commitDelete(mockData, assertCurrent);
 
       expect(deleteSpy).toHaveBeenCalledOnce();
       expect(requestSpy).toHaveBeenCalledOnce();
@@ -314,12 +327,13 @@ describe('Tag Application', () => {
       createSpy.mockResolvedValue(true);
       requestSpy.mockResolvedValue(undefined);
 
-      await TagApplication.commitCreate({ tagList: [listingTagData] });
+      await TagApplication.commitCreate({ tagList: [listingTagData], assertCurrent });
 
       expect(createSpy).toHaveBeenCalledWith({
         taggedId: 'listing:seller123:0034A0X7NJ52A',
         label: 'handmade',
         taggerId: 'tagger123',
+        tagUri: listingTagData.tagUrl,
       });
       expect(requestSpy).toHaveBeenCalledWith({
         method: HttpMethod.PUT,
@@ -333,12 +347,13 @@ describe('Tag Application', () => {
       createSpy.mockResolvedValue(true);
       requestSpy.mockResolvedValue(undefined);
 
-      await TagApplication.commitCreate({ tagList: [shopTagData] });
+      await TagApplication.commitCreate({ tagList: [shopTagData], assertCurrent });
 
       expect(createSpy).toHaveBeenCalledWith({
         taggedId: 'shop:shopowner123',
         label: 'trusted',
         taggerId: 'tagger123',
+        tagUri: shopTagData.tagUrl,
       });
     });
 
@@ -348,7 +363,7 @@ describe('Tag Application', () => {
       deleteSpy.mockResolvedValue(true);
       requestSpy.mockRejectedValue(new Error('Failed to PUT to homeserver: 500'));
 
-      await expect(TagApplication.commitCreate({ tagList: [listingTagData] })).rejects.toThrow(
+      await expect(TagApplication.commitCreate({ tagList: [listingTagData], assertCurrent })).rejects.toThrow(
         'Failed to PUT to homeserver: 500',
       );
       expect(deleteSpy).toHaveBeenCalledWith({
@@ -363,13 +378,16 @@ describe('Tag Application', () => {
       deleteSpy.mockResolvedValue(true);
       requestSpy.mockResolvedValue(undefined);
 
-      await TagApplication.commitDelete({
-        taggedId: shopTagData.taggedId,
-        label: shopTagData.label,
-        taggerId: shopTagData.taggerId,
-        tagUrl: shopTagData.tagUrl,
-        taggedKind: TagKind.SHOP,
-      });
+      await TagApplication.commitDelete(
+        {
+          taggedId: shopTagData.taggedId,
+          label: shopTagData.label,
+          taggerId: shopTagData.taggerId,
+          tagUrl: shopTagData.tagUrl,
+          taggedKind: TagKind.SHOP,
+        },
+        assertCurrent,
+      );
 
       expect(deleteSpy).toHaveBeenCalledWith({
         taggedId: 'shop:shopowner123',
@@ -379,6 +397,125 @@ describe('Tag Application', () => {
       expect(requestSpy).toHaveBeenCalledWith({ method: HttpMethod.DELETE, url: shopTagData.tagUrl });
     });
 
+    it.each([TagKind.LISTING, TagKind.SHOP] as const)(
+      'removes both copies of a migrated %s tag after Nexus returns the v1 address',
+      async (taggedKind) => {
+        const taggerId = 'dzswkfy7ek3bqnoc89jxuqqfbzhjrj6mi8qthgbxxcqkdugm3rio';
+        const seller = '8kkppkmiubfq4pxn6f73nqrhhhgkb5xyfprntc9si3np9ydbotto';
+        const taggedId = taggedKind === TagKind.SHOP ? seller : `${seller}:boots`;
+        const targetUri =
+          taggedKind === TagKind.SHOP ? buildMarketUri(seller, 'shop') : buildMarketUri(seller, 'listing', 'boots');
+        const legacy = new PubkySpecsBuilder(taggerId).createTag(targetUri, 'Art');
+        const current = buildTag(taggerId, targetUri, 'art');
+        expect(legacy.meta.id).toBe(current.id);
+        const { deleteSpy, requestSpy } = setupMarketplaceMocks();
+        deleteSpy.mockResolvedValue(true);
+        vi.spyOn(LocalMarketplaceTagService, 'getViewerTagUrl').mockResolvedValue(current.url);
+        vi.spyOn(HomeserverService, 'canCurrentUserSessionWrite').mockReturnValue(true);
+        const read = vi
+          .spyOn(HomeserverService, 'getJsonIfFound')
+          .mockResolvedValue({ found: true, json: legacy.tag.toJson() });
+        requestSpy.mockResolvedValue(undefined);
+
+        await TagApplication.commitDelete(
+          { taggedKind, taggedId, taggerId, targetUri, label: 'art', tagUrl: current.url },
+          assertCurrent,
+        );
+
+        expect(read.mock.calls).toEqual([[{ url: legacy.meta.url }]]);
+        expect(requestSpy.mock.calls.map(([{ url }]) => url)).toEqual([legacy.meta.url, current.url]);
+      },
+    );
+
+    it.each([
+      ['legacy', 'v1', false, false],
+      ['v1', 'legacy', false, false],
+      ['v1', 'legacy', true, true],
+      ['legacy', 'legacy', true, true],
+    ] as const)(
+      'validates an indexed %s-author tag with a %s address and old grant %s',
+      async (active, indexed, oldGrant, shouldRead) => {
+        const { deleteSpy, requestSpy } = setupMarketplaceMocks();
+        const tagUrl = (epoch: 'legacy' | 'v1', id: string) =>
+          epoch === 'legacy'
+            ? `pubky://tagger123/pub/pubky.app/tags/${id}`
+            : `pubky://tagger123/pub/social/v1/tags/${id}.json`;
+        const targetUri = 'pubky://shopowner123/pub/pubky.app/marketplace/v1/shop.json';
+        const indexedUrl = tagUrl(indexed, '00000000000000000000000000');
+        const computedUrl = tagUrl(active, '11111111111111111111111111');
+        vi.spyOn(LocalMarketplaceTagService, 'getViewerTagUrl').mockResolvedValue(indexedUrl);
+        vi.spyOn(HomeserverService, 'canCurrentUserSessionWrite').mockReturnValue(oldGrant);
+        const read = vi
+          .spyOn(HomeserverService, 'getJsonIfFound')
+          .mockImplementation(async ({ url }) =>
+            url === indexedUrl ? { found: true, json: { uri: targetUri, label: shopTagData.label } } : { found: false },
+          );
+        deleteSpy.mockResolvedValue(true);
+        requestSpy.mockResolvedValue(undefined);
+        await TagApplication.commitDelete({ ...shopTagData, tagUrl: computedUrl, targetUri }, assertCurrent);
+        expect(read.mock.calls.some(([{ url }]) => url === indexedUrl)).toBe(shouldRead);
+        if (active === 'v1' && !oldGrant) {
+          expect(read.mock.calls.some(([{ url }]) => url.includes('/pub/pubky.app/tags/'))).toBe(false);
+        }
+        expect(requestSpy.mock.calls.map(([{ url }]) => url)).toEqual(
+          shouldRead ? [indexedUrl, computedUrl] : [computedUrl],
+        );
+      },
+    );
+
+    it.each(['absent', 'different target', 'different label'])(
+      'skips a legacy candidate that is %s',
+      async (reason) => {
+        const id = '00000000000000000000000000';
+        const tagUrl = `pubky://tagger123/pub/social/v1/tags/${id}.json`;
+        const legacyUrl = `pubky://tagger123/pub/pubky.app/tags/${id}`;
+        const targetUri = 'pubky://shopowner123/pub/pubky.app/marketplace/v1/shop.json';
+        const { deleteSpy, requestSpy } = setupMarketplaceMocks();
+        deleteSpy.mockResolvedValue(true);
+        vi.spyOn(LocalMarketplaceTagService, 'getViewerTagUrl').mockResolvedValue(tagUrl);
+        vi.spyOn(HomeserverService, 'canCurrentUserSessionWrite').mockReturnValue(true);
+        const read = vi.spyOn(HomeserverService, 'getJsonIfFound').mockResolvedValue(
+          reason === 'absent'
+            ? { found: false }
+            : {
+                found: true,
+                json: {
+                  uri: reason === 'different target' ? 'pubky://different' : targetUri,
+                  label: reason === 'different label' ? 'different' : shopTagData.label,
+                },
+              },
+        );
+        requestSpy.mockResolvedValue(undefined);
+        await TagApplication.commitDelete({ ...shopTagData, targetUri, tagUrl }, assertCurrent);
+        expect(read).toHaveBeenCalledWith({ url: legacyUrl });
+        expect(requestSpy.mock.calls.map(([{ url }]) => url)).toEqual([tagUrl]);
+      },
+    );
+
+    it('restores the optimistic viewer tag when the legacy copy cannot be verified', async () => {
+      const { deleteSpy, createSpy, requestSpy } = setupMarketplaceMocks();
+      deleteSpy.mockResolvedValue(true);
+      createSpy.mockResolvedValue(true);
+      const tagUrl = 'pubky://tagger123/pub/social/v1/tags/01BHZZZZZZZZZZZZZZZZZZZZZZ.json';
+      vi.spyOn(LocalMarketplaceTagService, 'getViewerTagUrl').mockResolvedValue(tagUrl);
+      vi.spyOn(HomeserverService, 'canCurrentUserSessionWrite').mockReturnValue(true);
+      const failure = new Error('offline');
+      vi.spyOn(HomeserverService, 'getJsonIfFound').mockRejectedValueOnce(failure);
+      await expect(
+        TagApplication.commitDelete(
+          { ...shopTagData, tagUrl, targetUri: 'pubky://shopowner123/pub/pubky.app/marketplace/v1/shop.json' },
+          assertCurrent,
+        ),
+      ).rejects.toBe(failure);
+      expect(requestSpy).not.toHaveBeenCalled();
+      expect(createSpy).toHaveBeenCalledWith({
+        taggedId: 'shop:shopowner123',
+        label: shopTagData.label,
+        taggerId: shopTagData.taggerId,
+        tagUri: tagUrl,
+      });
+    });
+
     it('never touches the post or user tag services for marketplace kinds', async () => {
       const { createSpy, requestSpy } = setupMarketplaceMocks();
       const postCreateSpy = vi.spyOn(LocalPostTagService, 'create');
@@ -386,7 +523,7 @@ describe('Tag Application', () => {
       createSpy.mockResolvedValue(true);
       requestSpy.mockResolvedValue(undefined);
 
-      await TagApplication.commitCreate({ tagList: [listingTagData, shopTagData] });
+      await TagApplication.commitCreate({ tagList: [listingTagData, shopTagData], assertCurrent });
 
       expect(postCreateSpy).not.toHaveBeenCalled();
       expect(userCreateSpy).not.toHaveBeenCalled();

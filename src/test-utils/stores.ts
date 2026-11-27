@@ -1,11 +1,7 @@
 import { vi } from 'vitest';
 import type { AuthStore } from '@/stores/auth/auth.types';
-import type { HomeStore } from '@/stores/home/home.types';
-import type { HotStore } from '@/stores/hot/hot.types';
-import type { LocalFilesStore } from '@/stores/localFiles/localFiles.types';
 import type { MigrationStore } from '@/stores/migration/migration.types';
 import type { NotificationStore } from '@/stores/notification/notification.types';
-import type { SearchStore } from '@/stores/search/search.types';
 import type { SettingsStore } from '@/stores/settings/settings.types';
 import type { SignInStore } from '@/stores/signIn/signIn.types';
 
@@ -26,17 +22,9 @@ export const mockMigrationStore = (partial: Partial<MigrationStore> = {}): Migra
 export const mockNotificationStore = (partial: Partial<NotificationStore> = {}): NotificationStore =>
   buildStore(partial);
 
-export const mockHomeStore = (partial: Partial<HomeStore> = {}): HomeStore => buildStore(partial);
-
 export const mockSettingsStore = (partial: Partial<SettingsStore> = {}): SettingsStore => buildStore(partial);
 
 export const mockSignInStore = (partial: Partial<SignInStore> = {}): SignInStore => buildStore(partial);
-
-export const mockLocalFilesStore = (partial: Partial<LocalFilesStore> = {}): LocalFilesStore => buildStore(partial);
-
-export const mockHotStore = (partial: Partial<HotStore> = {}): HotStore => buildStore(partial);
-
-export const mockSearchStore = (partial: Partial<SearchStore> = {}): SearchStore => buildStore(partial);
 
 /**
  * Wrap a store snapshot in a Zustand-style hook with selector + getState support.

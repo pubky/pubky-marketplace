@@ -40,7 +40,7 @@ describe('proxy', () => {
     const pattern = new RegExp(`^${matcher}$`);
 
     expect(pattern.test('/marketplace')).toBe(true);
-    expect(pattern.test('/api/feedback')).toBe(true);
+    expect(pattern.test('/api/report')).toBe(true);
     expect(pattern.test('/')).toBe(true);
     expect(pattern.test('/_next/static/chunks/main.js')).toBe(false);
     expect(pattern.test('/_next/image')).toBe(false);

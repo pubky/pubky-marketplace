@@ -766,14 +766,14 @@ describe.each([
     const leaveLegacyRecordWithdrawnAfterWipe = async () => {
       await leaveRecordWithdrawnAfterWipe();
       const { orderRef: _orderRef, ...unscoped } = published.record;
-      const { PubkySpecsBuilder } = await import('pubky-app-specs');
-      const legacy = new PubkySpecsBuilder(ORDER_FIXTURE_BUYER).createMarketplaceReview({
+      const { buildReview } = await import('pubky-market-specs');
+      const legacy = buildReview(ORDER_FIXTURE_BUYER, {
         ...unscoped,
         reviewId: '',
       });
       const legacyUrl = CommerceRecordNormalizer.reviewUri(ORDER_FIXTURE_BUYER, legacy.meta.id);
       homeserver.files.delete(url);
-      homeserver.files.set(legacyUrl, legacy.marketplace_review.toJson());
+      homeserver.files.set(legacyUrl, legacy.review.toJson());
       return legacyUrl;
     };
 

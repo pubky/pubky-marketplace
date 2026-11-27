@@ -1,5 +1,9 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { getSocialHostUrl } from '@/config/social';
+import { AppError } from '@/libs/error/error';
+import { AuthErrorCode } from '@/libs/error/error.codes';
+import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { HttpMethod } from '@/libs/http/http.types';
 import { useFollowUser } from './useFollowUser';
 
@@ -109,6 +113,28 @@ describe('useFollowUser', () => {
     expect(mockToast).toHaveBeenCalledWith({
       title: 'Following Bob',
     });
+  });
+
+  it('opens the target profile in Pubky App when Market lacks social write authority', async () => {
+    mockCommitFollow.mockRejectedValue(
+      new AppError({
+        category: ErrorCategory.Auth,
+        code: AuthErrorCode.SOCIAL_WRITE_UNAVAILABLE,
+        service: ErrorService.Homeserver,
+        message: 'Open Pubky App to follow this account.',
+        operation: 'socialWrite',
+      }),
+    );
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    const { result } = renderHook(() => useFollowUser());
+    await act(async () => {
+      expect(await result.current.toggleFollow('user-1', false, 'Alice')).toBe(false);
+    });
+    const notice = mockToast.mock.lastCall?.[0];
+    expect(notice).toMatchObject({ variant: 'info', action: { label: 'Open Pubky App' } });
+    notice.action.onClick();
+    expect(open).toHaveBeenCalledWith(getSocialHostUrl('/profile/user-1'), '_blank', 'noopener,noreferrer');
+    open.mockRestore();
   });
 
   it('shows a friendly named error toast and resolves false when following fails', async () => {

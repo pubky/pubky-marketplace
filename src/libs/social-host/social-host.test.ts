@@ -1,14 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
-import {
-  buildSocialLinkOutRedirects,
-  isValidSocialHost,
-  parseSocialHost,
-  resolveShopOrigins,
-  SHOP_DEFAULT_URL_ENV_VAR,
-  SOCIAL_LINK_OUT_SOURCES,
-  toSocialHostUrl,
-} from './social-host';
+import { isValidSocialHost, parseSocialHost, resolveShopOrigins, SHOP_DEFAULT_URL_ENV_VAR } from './social-host';
 
 describe('isValidSocialHost', () => {
   it.each(['https://pubky.app', 'https://staging.pubky.app'])('accepts the exact origin %s', (value) => {
@@ -74,39 +66,6 @@ describe('parseSocialHost', () => {
       expect(parseSocialHost('https://pubky.app', 'production', shopOrigins)).toBe('https://pubky.app');
       expect(parseSocialHost('https://www.pubky.app', 'production', shopOrigins)).toBe('https://www.pubky.app');
     }
-  });
-});
-
-describe('buildSocialLinkOutRedirects', () => {
-  it('is empty when link-out is off', () => {
-    expect(buildSocialLinkOutRedirects(undefined)).toEqual([]);
-  });
-
-  it('keeps profile notifications in the Shop ahead of the social profile redirect', () => {
-    const redirects = buildSocialLinkOutRedirects('https://pubky.app');
-    const notifications = redirects.findIndex((route) => route.source === '/profile/notifications');
-    const profile = redirects.findIndex((route) => route.source === '/profile/:path*');
-
-    expect(redirects[notifications]).toEqual({
-      source: '/profile/notifications',
-      destination: '/marketplace/notifications',
-      permanent: false,
-    });
-    expect(notifications).toBeLessThan(profile);
-  });
-
-  it('sends every social source to the same path on the social host', () => {
-    const redirects = buildSocialLinkOutRedirects('https://pubky.app');
-
-    for (const source of SOCIAL_LINK_OUT_SOURCES) {
-      expect(redirects).toContainEqual({ source, destination: `https://pubky.app${source}`, permanent: false });
-    }
-  });
-});
-
-describe('toSocialHostUrl', () => {
-  it('joins the origin and path', () => {
-    expect(toSocialHostUrl('https://pubky.app', '/profile/abc')).toBe('https://pubky.app/profile/abc');
   });
 });
 

@@ -8,6 +8,7 @@ import type { Pubky } from '@/models/models.types';
 import type { UserCountsModel } from '@/models/user/counts/userCounts';
 import { FollowNormalizer } from '@/pipes/follow/follow.normalizer';
 import { HomeserverService } from '@/services/homeserver/homeserver';
+import { SocialWriteService } from '@/services/homeserver/social-writes';
 import { LocalFollowService } from '@/services/local/follow/follow';
 import { LocalProfileService } from '@/services/local/profile/profile';
 import { LocalStreamUsersService } from '@/services/local/stream/users/users';
@@ -15,8 +16,12 @@ import { LocalUserService } from '@/services/local/user/user';
 import type { NexusTag, NexusUser, NexusUserCounts, NexusUserDetails } from '@/services/nexus/nexus.types';
 import { NexusUserStreamService } from '@/services/nexus/stream/users/userStream';
 import { NexusUserService } from '@/services/nexus/user/user';
-import { asInvalid, asOpaque } from '@/test-utils/type-assertions';
+import { asOpaque } from '@/test-utils/type-assertions';
 import { UserApplication } from './user';
+
+vi.mock('@/services/homeserver/social-writes', () => ({
+  SocialWriteService: { requireEpoch: vi.fn(async () => 'legacy'), getEpoch: vi.fn(async () => 'legacy') },
+}));
 
 vi.mock('@/config/moderation', () => ({ getModerationId: vi.fn() }));
 
@@ -44,10 +49,9 @@ describe('UserApplication.commitFollow', () => {
       followJson,
       follower,
       followee,
-      activeStreamId: undefined,
     });
 
-    expect(createSpy).toHaveBeenCalledWith({ follower, followee, activeStreamId: undefined });
+    expect(createSpy).toHaveBeenCalledWith({ follower, followee });
     expect(deleteSpy).not.toHaveBeenCalled();
     expect(requestSpy).toHaveBeenCalledWith({ method: HttpMethod.PUT, url: followUrl, bodyJson: followJson });
   });
@@ -63,10 +67,9 @@ describe('UserApplication.commitFollow', () => {
       followJson,
       follower,
       followee,
-      activeStreamId: undefined,
     });
 
-    expect(deleteSpy).toHaveBeenCalledWith({ follower, followee, activeStreamId: undefined });
+    expect(deleteSpy).toHaveBeenCalledWith({ follower, followee });
     expect(createSpy).not.toHaveBeenCalled();
     expect(requestSpy).toHaveBeenCalledWith({ method: HttpMethod.DELETE, url: followUrl, bodyJson: followJson });
   });
@@ -82,7 +85,6 @@ describe('UserApplication.commitFollow', () => {
       followJson,
       follower,
       followee,
-      activeStreamId: undefined,
     });
 
     expect(deleteSpy).toHaveBeenCalledOnce();
@@ -110,7 +112,6 @@ describe('UserApplication.commitFollow', () => {
       followJson,
       follower,
       followee,
-      activeStreamId: undefined,
     });
 
     expect(events).toEqual([`${HttpMethod.PUT}:${markerUrl}`, 'local-delete', `${HttpMethod.DELETE}:${followUrl}`]);
@@ -134,7 +135,6 @@ describe('UserApplication.commitFollow', () => {
         followJson,
         follower,
         followee,
-        activeStreamId: undefined,
       }),
     ).rejects.toBe(failure);
 
@@ -154,7 +154,6 @@ describe('UserApplication.commitFollow', () => {
       followJson,
       follower,
       followee,
-      activeStreamId: undefined,
     });
 
     expect(createSpy).not.toHaveBeenCalled();
@@ -173,7 +172,6 @@ describe('UserApplication.commitFollow', () => {
         followJson,
         follower,
         followee,
-        activeStreamId: undefined,
       }),
     ).rejects.toThrow('local-fail');
 
@@ -192,7 +190,6 @@ describe('UserApplication.commitFollow', () => {
         followJson,
         follower,
         followee,
-        activeStreamId: undefined,
       }),
     ).rejects.toThrow('local-delete-fail');
 
@@ -211,7 +208,6 @@ describe('UserApplication.commitFollow', () => {
         followJson,
         follower,
         followee,
-        activeStreamId: undefined,
       }),
     ).rejects.toThrow('homeserver-fail');
 
@@ -336,7 +332,7 @@ describe('UserApplication.ensureModerationFollow', () => {
       `${HttpMethod.PUT}:${followUrl}`,
       `${HttpMethod.PUT}:${markerUrl}`,
     ]);
-    expect(localCreate).toHaveBeenCalledWith({ follower, followee: moderationId, activeStreamId: undefined });
+    expect(localCreate).toHaveBeenCalledWith({ follower, followee: moderationId });
     expect(exists).toHaveBeenCalledTimes(2);
     expect(toJson).toHaveBeenCalledOnce();
     expect(request).toHaveBeenNthCalledWith(1, {
@@ -586,7 +582,6 @@ describe('UserApplication.ensureModerationFollow', () => {
       followJson,
       follower,
       followee: moderationId,
-      activeStreamId: undefined,
     });
     expect(markerExists).toBe(true);
     expect(followExists).toBe(false);
@@ -638,92 +633,6 @@ describe('UserApplication.fetchTags', () => {
         limit_tags: 10,
       }),
     ).rejects.toThrow('Service unavailable');
-  });
-});
-
-describe('UserApplication.getOrFetchDetails', () => {
-  const userId = 'pubky_user' as Pubky;
-  const mockUserDetails: NexusUserDetails = {
-    id: userId,
-    name: 'Test User',
-    bio: 'Test bio',
-    image: 'https://example.com/avatar.jpg',
-    indexed_at: 1234567890,
-    links: [{ title: 'GitHub', url: 'https://github.com/user' }],
-    status: 'online',
-  };
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('should return user details from local cache when available (local-first)', async () => {
-    const localSpy = vi.spyOn(LocalUserService, 'readDetails').mockResolvedValue(mockUserDetails);
-    const nexusSpy = vi.spyOn(NexusUserService, 'details').mockResolvedValue(mockUserDetails);
-    const upsertSpy = vi.spyOn(LocalProfileService, 'upsertDetails').mockResolvedValue(undefined);
-
-    const result = await UserApplication.getOrFetchDetails({ userId });
-
-    expect(result).toEqual(mockUserDetails);
-    expect(localSpy).toHaveBeenCalledWith({ userId });
-    expect(nexusSpy).not.toHaveBeenCalled();
-    expect(upsertSpy).not.toHaveBeenCalled();
-  });
-
-  it('should fetch from Nexus and cache locally when not in local cache', async () => {
-    const localSpy = vi
-      .spyOn(LocalUserService, 'readDetails')
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(mockUserDetails);
-    const nexusSpy = vi.spyOn(NexusUserService, 'details').mockResolvedValue(mockUserDetails);
-    const upsertSpy = vi.spyOn(LocalProfileService, 'upsertDetails').mockResolvedValue(undefined);
-
-    const result = await UserApplication.getOrFetchDetails({ userId });
-
-    expect(result).toEqual(mockUserDetails);
-    expect(localSpy).toHaveBeenCalledTimes(2);
-    expect(nexusSpy).toHaveBeenCalledWith({ user_id: userId });
-    expect(upsertSpy).toHaveBeenCalledWith(mockUserDetails);
-  });
-
-  it('should return null when user not found in local cache or Nexus', async () => {
-    const localSpy = vi.spyOn(LocalUserService, 'readDetails').mockResolvedValue(null);
-    const nexusSpy = vi.spyOn(NexusUserService, 'details').mockResolvedValue(asInvalid<NexusUserDetails>(undefined));
-    const upsertSpy = vi.spyOn(LocalProfileService, 'upsertDetails').mockResolvedValue(undefined);
-
-    const result = await UserApplication.getOrFetchDetails({ userId });
-
-    expect(result).toBeNull();
-    expect(localSpy).toHaveBeenCalledTimes(2);
-    expect(nexusSpy).toHaveBeenCalledWith({ user_id: userId });
-    expect(upsertSpy).toHaveBeenCalledWith(undefined);
-  });
-
-  it('should propagate errors from local service', async () => {
-    vi.spyOn(LocalUserService, 'readDetails').mockRejectedValue(new Error('Local database error'));
-    const nexusSpy = vi.spyOn(NexusUserService, 'details').mockResolvedValue(mockUserDetails);
-
-    await expect(UserApplication.getOrFetchDetails({ userId })).rejects.toThrow('Local database error');
-
-    expect(nexusSpy).not.toHaveBeenCalled();
-  });
-
-  it('should propagate errors from Nexus service when local cache is empty', async () => {
-    vi.spyOn(LocalUserService, 'readDetails').mockResolvedValue(null);
-    vi.spyOn(NexusUserService, 'details').mockRejectedValue(new Error('Network error'));
-    const upsertSpy = vi.spyOn(LocalProfileService, 'upsertDetails').mockResolvedValue(undefined);
-
-    await expect(UserApplication.getOrFetchDetails({ userId })).rejects.toThrow('Network error');
-
-    expect(upsertSpy).not.toHaveBeenCalled();
-  });
-
-  it('should propagate errors from upsert when caching Nexus data', async () => {
-    vi.spyOn(LocalUserService, 'readDetails').mockResolvedValue(null);
-    vi.spyOn(NexusUserService, 'details').mockResolvedValue(mockUserDetails);
-    vi.spyOn(LocalProfileService, 'upsertDetails').mockRejectedValue(new Error('Cache write error'));
-
-    await expect(UserApplication.getOrFetchDetails({ userId })).rejects.toThrow('Cache write error');
   });
 });
 
@@ -964,7 +873,7 @@ describe('UserApplication.ensureSellerFollow', () => {
 
     await UserApplication.ensureSellerFollow({ follower, seller });
 
-    expect(localCreate).toHaveBeenCalledWith({ follower, followee: seller, activeStreamId: null });
+    expect(localCreate).toHaveBeenCalledWith({ follower, followee: seller });
     expect(request).toHaveBeenCalledTimes(2);
     expect(request).toHaveBeenNthCalledWith(1, {
       method: HttpMethod.PUT,
@@ -1017,6 +926,7 @@ describe('UserApplication.ensureSellerFollow', () => {
   it('checks the homeserver once per seller per session, even for concurrent triggers', async () => {
     const seller = nextSeller();
     const { exists, request } = spyHomeserver(new Set());
+    vi.mocked(SocialWriteService.getEpoch).mockClear();
 
     await Promise.all([
       UserApplication.ensureSellerFollow({ follower, seller }),
@@ -1026,6 +936,7 @@ describe('UserApplication.ensureSellerFollow', () => {
 
     expect(exists).toHaveBeenCalledTimes(2);
     expect(request).toHaveBeenCalledTimes(2);
+    expect(SocialWriteService.getEpoch).toHaveBeenCalledTimes(1);
   });
 
   it('does not re-follow within the session after the buyer unfollows', async () => {
@@ -1164,5 +1075,102 @@ describe('UserApplication.ensureSellerFollow', () => {
     expect(exists).toHaveBeenCalledOnce();
     expect(localCreate).not.toHaveBeenCalled();
     expect(request).not.toHaveBeenCalled();
+  });
+});
+
+describe('Market follows after migration', () => {
+  const follower = '8kkppkmiubfq4pxn6f73nqrhhhgkb5xyfprntc9si3np9ydbotto';
+  const seller = 'dzswkfy7ek3bqnoc89jxuqqfbzhjrj6mi8qthgbxxcqkdugm3rio';
+  it('checks the v1 follow and creates it before recording the existing once-only marker', async () => {
+    const { SocialWriteService } = await import('@/services/homeserver/social-writes');
+    vi.mocked(SocialWriteService.getEpoch).mockResolvedValueOnce('v1');
+    const url = `pubky://${follower}/pub/social/v1/follows/${seller}.json`;
+    const exists = vi.spyOn(HomeserverService, 'exists').mockResolvedValue(false);
+    const put = vi.spyOn(HomeserverService, 'putBlob').mockResolvedValue(undefined);
+    const request = vi.spyOn(HomeserverService, 'request').mockResolvedValue(undefined);
+    vi.spyOn(LocalFollowService, 'create').mockResolvedValue(undefined);
+    await UserApplication.ensureSellerFollow({ follower, seller });
+    expect(exists).toHaveBeenCalledWith(url);
+    const upload = put.mock.calls[0][0];
+    expect(upload.url).toBe(url);
+    expect(JSON.parse(new TextDecoder().decode(upload.blob))).toEqual({ created_at: expect.any(Number) });
+    expect(request).toHaveBeenCalledWith({
+      method: HttpMethod.PUT,
+      url: `pubky://${follower}/pub/pubky.app/migrations/seller-auto-follow/v1/${seller}.json`,
+      bodyJson: { seller, completedAt: expect.any(Number) },
+    });
+  });
+
+  it('retries after an unavailable write epoch without caching a skipped seller', async () => {
+    const seller = 'y'.repeat(52);
+    vi.mocked(SocialWriteService.getEpoch).mockResolvedValueOnce(null).mockResolvedValueOnce('v1');
+    const exists = vi.spyOn(HomeserverService, 'exists').mockResolvedValue(true);
+    await UserApplication.ensureSellerFollow({ follower, seller });
+    expect(exists).not.toHaveBeenCalled();
+    await UserApplication.ensureSellerFollow({ follower, seller });
+    expect(exists).toHaveBeenCalledOnce();
+  });
+
+  it('checks the v1 moderation follow before recording the durable marker', async () => {
+    vi.mocked(SocialWriteService.getEpoch).mockResolvedValueOnce('v1');
+    vi.spyOn(HomeserverService, 'exists').mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const marker = vi.spyOn(HomeserverService, 'request').mockResolvedValue(undefined);
+    await UserApplication.ensureModerationFollow({ follower, moderationId: seller });
+    expect(HomeserverService.exists).toHaveBeenLastCalledWith(
+      `pubky://${follower}/pub/social/v1/follows/${seller}.json`,
+    );
+    expect(marker).toHaveBeenCalledOnce();
+  });
+
+  it('rolls back a failed v1 follow while the same account is active', async () => {
+    vi.mocked(SocialWriteService.requireEpoch).mockResolvedValueOnce('v1');
+    const record = await UserApplication.prepareFollow({ follower, followee: seller });
+    vi.spyOn(LocalUserService, 'readRelationships').mockResolvedValueOnce(null);
+    vi.spyOn(LocalFollowService, 'create').mockResolvedValue(undefined);
+    const undo = vi.spyOn(LocalFollowService, 'delete').mockResolvedValue(undefined);
+    const failure = new Error('temporarily unavailable');
+    vi.spyOn(HomeserverService, 'putBlob').mockRejectedValueOnce(failure);
+    await expect(
+      UserApplication.commitFollow({ ...record, follower, followee: seller, eventType: HttpMethod.PUT }),
+    ).rejects.toBe(failure);
+    expect(undo).toHaveBeenCalledWith(expect.objectContaining({ follower, followee: seller }));
+  });
+
+  it('unfollows on the active v1 root when the App session has no legacy write grant', async () => {
+    const { SocialWriteService } = await import('@/services/homeserver/social-writes');
+    vi.mocked(SocialWriteService.requireEpoch).mockResolvedValueOnce('v1');
+    const record = await UserApplication.prepareFollow({ follower, followee: seller });
+    vi.spyOn(HomeserverService, 'canCurrentUserSessionWrite').mockReturnValue(false);
+    vi.spyOn(LocalFollowService, 'delete').mockResolvedValue(undefined);
+    const request = vi.spyOn(HomeserverService, 'request').mockResolvedValue(undefined);
+    await UserApplication.commitFollow({ ...record, follower, followee: seller, eventType: HttpMethod.DELETE });
+    expect(request.mock.calls.map(([{ url }]) => url)).toEqual([
+      `pubky://${follower}/pub/social/v1/follows/${seller}.json`,
+    ]);
+  });
+
+  it('removes both epochs on unfollow, even if the earlier record was already absent', async () => {
+    vi.spyOn(HomeserverService, 'canCurrentUserSessionWrite').mockReturnValue(true);
+    const { SocialWriteService } = await import('@/services/homeserver/social-writes');
+    vi.mocked(SocialWriteService.requireEpoch).mockResolvedValueOnce('v1');
+    const record = await UserApplication.prepareFollow({ follower, followee: seller });
+    vi.spyOn(LocalFollowService, 'delete').mockResolvedValue(undefined);
+    const request = vi
+      .spyOn(HomeserverService, 'request')
+      .mockRejectedValueOnce(
+        new AppError({
+          category: ErrorCategory.Client,
+          code: ClientErrorCode.NOT_FOUND,
+          message: 'Already gone',
+          service: ErrorService.Homeserver,
+          operation: 'delete',
+        }),
+      )
+      .mockResolvedValueOnce(undefined);
+    await UserApplication.commitFollow({ ...record, follower, followee: seller, eventType: HttpMethod.DELETE });
+    expect(request.mock.calls.map(([{ url }]) => url)).toEqual([
+      `pubky://${follower}/pub/pubky.app/follows/${seller}`,
+      `pubky://${follower}/pub/social/v1/follows/${seller}.json`,
+    ]);
   });
 });

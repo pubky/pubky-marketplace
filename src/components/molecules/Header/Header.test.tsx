@@ -20,11 +20,6 @@ import {
   HeaderTitle,
 } from './Header';
 
-const collectionsDiscoveryMock = vi.hoisted(() => ({
-  markCollectionsNavSeen: vi.fn(),
-  showCollectionsNew: false,
-}));
-
 // Mock Next.js router
 vi.mock('next/navigation', () => ({
   useRouter: vi.fn(),
@@ -46,12 +41,6 @@ vi.mock('@/stores/auth/auth.store', () => ({
 vi.mock('@/stores/notification/notification.store', () => ({
   useNotificationStore: vi.fn(),
 }));
-vi.mock('@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery', () => ({
-  useCollectionsNavDiscovery: () => ({
-    showCollectionsNew: collectionsDiscoveryMock.showCollectionsNew,
-    markCollectionsNavSeen: collectionsDiscoveryMock.markCollectionsNavSeen,
-  }),
-}));
 vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({
   useMarketplaceCartCount: vi.fn(() => 0),
 }));
@@ -60,22 +49,6 @@ vi.mock('@/hooks/useMarketplaceNavAttention/useMarketplaceNavAttention', () => (
 }));
 vi.mock('@/hooks/useChatUnread/useChatUnread', () => ({
   useChatUnread: vi.fn(() => 0),
-}));
-vi.mock('@/stores/search/search.store', () => ({
-  useSearchStore: vi.fn(() => ({
-    recentUsers: [],
-    recentTags: [],
-    activeTags: [],
-    addUser: vi.fn(),
-    addTag: vi.fn(),
-    setActiveTags: vi.fn(),
-    removeActiveTag: vi.fn(),
-  })),
-}));
-vi.mock('@/controllers/profile/profile', () => ({
-  ProfileController: {
-    read: vi.fn(() => Promise.resolve({ name: 'Test User', image: 'test-image.jpg' })),
-  },
 }));
 vi.mock('@/controllers/file/file', () => ({
   FileController: {
@@ -177,7 +150,6 @@ describe('Header Components', () => {
   beforeEach(() => {
     vi.mocked(useRouter).mockReturnValue(mockRouter as ReturnType<typeof useRouter>);
     vi.mocked(usePathname).mockReturnValue('/home');
-    collectionsDiscoveryMock.showCollectionsNew = false;
     vi.mocked(useAuthStore).mockImplementation((selector) => {
       const state = {
         currentUserPubky: 'test-pubky',
@@ -185,7 +157,7 @@ describe('Header Components', () => {
       };
       return selector(state as never);
     });
-    vi.mocked(useNotificationStore).mockReturnValue({ selectUnread: () => 0 });
+    vi.mocked(useNotificationStore).mockReturnValue({ selectMarketplaceUnread: () => 0 });
     vi.mocked(useMarketplaceCartCount).mockReturnValue(0);
     vi.mocked(useMarketplaceNavAttention).mockReturnValue(0);
     vi.mocked(useLiveQuery).mockReturnValue({ name: 'Test User', image: 'test-image.jpg' });
@@ -193,7 +165,6 @@ describe('Header Components', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
-    collectionsDiscoveryMock.showCollectionsNew = false;
   });
 
   describe('HeaderContainer', () => {
@@ -478,52 +449,11 @@ describe('Header Components', () => {
       const settingsLink = document.querySelector('.lucide-settings')?.closest('a');
       const profileLink = screen.getByText('TU').closest('a');
 
-      expect(homeLink).toHaveAttribute('href', '/home');
-      expect(hotLink).toHaveAttribute('href', '/hot');
-      expect(collectionsLink).toHaveAttribute('href', '/collections');
-      expect(settingsLink).toHaveAttribute('href', '/settings/account');
-      expect(profileLink).toHaveAttribute('href', '/profile');
-    });
-
-    it('highlights Collections on nested collection routes', () => {
-      vi.mocked(usePathname).mockReturnValue('/collections/bookmarks');
-      render(<HeaderNavigationButtons avatarName="TU" />);
-
-      const collectionsButton = document.querySelector('.lucide-library')?.closest('button');
-      expect(collectionsButton).toHaveClass('bg-secondary');
-      expect(collectionsButton).not.toHaveClass('bg-glass');
-    });
-
-    it('does not highlight Collections as new before dismissal', () => {
-      collectionsDiscoveryMock.showCollectionsNew = true;
-
-      render(<HeaderNavigationButtons avatarName="TU" />);
-
-      const collectionsButton = document.querySelector('.lucide-library')?.closest('button');
-      expect(collectionsButton).not.toHaveClass('border-brand', 'text-brand');
-      expect(screen.getByRole('button', { name: 'Collections' })).toBeInTheDocument();
-      expect(screen.queryByText('New')).not.toBeInTheDocument();
-    });
-
-    it('marks Collections discovery seen when clicking the Collections nav link', () => {
-      collectionsDiscoveryMock.showCollectionsNew = true;
-      render(<HeaderNavigationButtons avatarName="TU" />);
-
-      const collectionsLink = document.querySelector('.lucide-library')?.closest('a');
-      expect(collectionsLink).toBeTruthy();
-      fireEvent.click(collectionsLink!);
-
-      expect(collectionsDiscoveryMock.markCollectionsNavSeen).toHaveBeenCalledTimes(1);
-    });
-
-    it('does not show the Collections NEW treatment after dismissal', () => {
-      collectionsDiscoveryMock.showCollectionsNew = false;
-
-      render(<HeaderNavigationButtons avatarName="TU" />);
-
-      expect(screen.queryByText('New')).not.toBeInTheDocument();
-      const collectionsButton = document.querySelector('.lucide-library')?.closest('button');
-      expect(collectionsButton).not.toHaveClass('border-brand');
+      expect(homeLink).toHaveAttribute('href', 'https://pubky.app/home');
+      expect(hotLink).toHaveAttribute('href', 'https://pubky.app/hot');
+      expect(collectionsLink).toHaveAttribute('href', 'https://pubky.app/collections');
+      expect(settingsLink).toHaveAttribute('href', 'https://pubky.app/settings/account');
+      expect(profileLink).toHaveAttribute('href', '/marketplace/notifications');
     });
 
     it('applies correct button classes', () => {
@@ -610,12 +540,17 @@ describe('Header Components', () => {
   });
 
   describe('HeaderExploreNavigationButtons', () => {
-    it('renders full navigation with account routes gated behind the Join dialog', () => {
+    it('requires a Shop session only for messages', () => {
       render(<HeaderExploreNavigationButtons />);
 
       // Home, Hot, and Collections are public explore routes → real navigation links.
       const links = screen.getAllByRole('link');
-      expect(links.map((link) => link.getAttribute('href'))).toEqual(['/home', '/hot', '/collections']);
+      expect(links.map((link) => link.getAttribute('href'))).toEqual([
+        'https://pubky.app/home',
+        'https://pubky.app/hot',
+        'https://pubky.app/collections',
+        'https://pubky.app/settings/account',
+      ]);
       expect(screen.getByTestId('search-input')).toBeInTheDocument();
 
       // All four nav icons are shown.
@@ -624,10 +559,16 @@ describe('Header Components', () => {
       expect(document.querySelector('.lucide-library')).toBeInTheDocument();
       expect(document.querySelector('.lucide-settings')).toBeInTheDocument();
 
-      // Settings require an account, so it renders as an auth-gated button, not a link.
-      expect(document.querySelector('.lucide-settings')?.closest('a')).toBeNull();
-      expect(document.querySelector('[data-cy="header-settings-btn"]')?.tagName).toBe('BUTTON');
-      expect(document.querySelector('.lucide-library')?.closest('a')).toHaveAttribute('href', '/collections');
+      // Settings are managed by the social App.
+      expect(document.querySelector('.lucide-settings')?.closest('a')).toHaveAttribute(
+        'href',
+        'https://pubky.app/settings/account',
+      );
+      expect(document.querySelector('[data-cy="header-messages-btn"]')?.tagName).toBe('BUTTON');
+      expect(document.querySelector('.lucide-library')?.closest('a')).toHaveAttribute(
+        'href',
+        'https://pubky.app/collections',
+      );
     });
 
     it('opens sign-in dialog from the Join button', () => {
@@ -637,17 +578,6 @@ describe('Header Components', () => {
 
       expect(mockSetShowSignInDialog).toHaveBeenCalledWith(true);
     });
-
-    it('highlights Collections on single collection pages for guests', () => {
-      const pubky = 'o1gg96ewuojmopcjbz8895478wdtxtzzber7aezq6ror5a91j7dy';
-      vi.mocked(usePathname).mockReturnValue(`/collections/${pubky}/0034BBBDFK83G`);
-
-      render(<HeaderExploreNavigationButtons />);
-
-      const collectionsButton = document.querySelector('.lucide-library')?.closest('button');
-      expect(collectionsButton).toHaveClass('bg-secondary');
-      expect(collectionsButton).not.toHaveClass('bg-glass');
-    });
   });
 
   describe('social link-out', () => {
@@ -655,11 +585,18 @@ describe('Header Components', () => {
       setSocialHost(undefined);
     });
 
-    it('keeps the social nav and no social-host link while off', () => {
+    it('uses App links and keeps Shop messages in the default layout', () => {
       render(<HeaderSignIn />);
 
       const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
-      expect(hrefs).toEqual(['/home', '/hot', '/collections', '/messages', '/settings/account', '/profile']);
+      expect(hrefs).toEqual([
+        'https://pubky.app/home',
+        'https://pubky.app/hot',
+        'https://pubky.app/collections',
+        '/messages',
+        'https://pubky.app/settings/account',
+        '/marketplace/notifications',
+      ]);
       expect(document.querySelector('[data-cy="header-pubky-btn"]')).toBeNull();
       expect(screen.getByTestId('search-input')).toBeInTheDocument();
     });
@@ -680,7 +617,7 @@ describe('Header Components', () => {
         ]);
         expect(screen.getByRole('button', { name: 'Shop' })).toHaveClass('bg-secondary');
         expect(screen.getByRole('button', { name: 'Home' })).toHaveClass('bg-glass');
-        expect(document.querySelector('[data-cy="header-nav-profile-btn"]')).toHaveAttribute('target', '_self');
+        expect(document.querySelector('[data-cy="header-nav-profile-btn"]')).toHaveAttribute('target', '_top');
         expect(document.querySelector('[data-cy="header-notification-counter"]')).toBeNull();
         expect(useChatUnread).toHaveBeenCalledWith({ enabled: false });
       } finally {
@@ -693,7 +630,7 @@ describe('Header Components', () => {
       render(<HeaderExploreNavigationButtons />);
       const settings = screen.getByRole('button', { name: 'Settings' }).closest('a');
       expect(settings).toHaveAttribute('href', 'https://pubky.app/settings/account');
-      expect(settings).not.toHaveAttribute('target');
+      expect(settings).toHaveAttribute('target', '_top');
       expect(screen.getByTestId('search-input')).toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
       expect(mockPush).not.toHaveBeenCalled();

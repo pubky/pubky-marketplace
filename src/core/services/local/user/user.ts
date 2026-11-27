@@ -1,13 +1,11 @@
 import type { TReadProfileParams } from '@/controllers/profile/profile.types';
 import type { TPubkyListParams } from '@/controllers/user/user.type';
-import { getTtlUserMs } from '@/libs/runtime-config/runtime-config';
 import type { Pubky } from '@/models/models.types';
 import { UserCountsModel } from '@/models/user/counts/userCounts';
 import { UserDetailsModel } from '@/models/user/details/userDetails';
 import { UserRelationshipsModel } from '@/models/user/relationships/userRelationships';
 import type { UserRelationshipsModelSchema } from '@/models/user/relationships/userRelationships.schema';
 import { UserTagsModel } from '@/models/user/tags/userTags';
-import { UserTtlModel } from '@/models/user/ttl/userTtl';
 import type { NexusTag, NexusUserCounts, NexusUserDetails, NexusUserRelationship } from '@/services/nexus/nexus.types';
 
 export class LocalUserService {
@@ -139,24 +137,5 @@ export class LocalUserService {
    */
   static async upsertTags(userId: Pubky, tags: NexusTag[]): Promise<void> {
     await UserTagsModel.upsert({ id: userId, tags });
-  }
-
-  /**
-   * Upserts user TTL record with a calculated timestamp for delayed refresh.
-   * Used to schedule refresh for users not yet indexed in Nexus.
-   *
-   * The timestamp is calculated as: now - (userTtlMs - retryDelayMs)
-   * This ensures the entity becomes stale after the specified delay.
-   *
-   * @param userId - The user ID
-   * @param retryDelayMs - Delay in milliseconds before the entity should become stale.
-   *   If retryDelayMs >= the configured user TTL, the entity becomes immediately stale
-   *   (triggers immediate refresh on next TTL coordinator tick). This is intentional
-   *   and can be useful for forcing immediate refresh.
-   * @returns Promise resolving to void
-   */
-  static async upsertTtlWithDelay(userId: Pubky, retryDelayMs: number): Promise<void> {
-    const lastUpdatedAt = Date.now() - (getTtlUserMs() - retryDelayMs);
-    await UserTtlModel.upsert({ id: userId, lastUpdatedAt });
   }
 }

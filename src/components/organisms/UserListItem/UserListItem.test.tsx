@@ -40,16 +40,6 @@ vi.mock('@/atoms/Container/Container', () => {
   };
 });
 
-vi.mock('@/atoms/Link/Link', () => {
-  return {
-    Link: ({
-      children,
-      overrideDefaults: _overrideDefaults,
-      ...rest
-    }: React.PropsWithChildren<Record<string, unknown>>) => <a {...rest}>{children}</a>,
-  };
-});
-
 vi.mock('@/atoms/Typography/Typography', () => {
   return {
     Typography: ({
@@ -99,6 +89,13 @@ const mockUser: UserListItemData = {
 };
 
 describe('UserListItem - follow button', () => {
+  it.each(['compact', 'full'] as const)('opens the %s user profile in the top-level App', (variant) => {
+    render(<UserListItem user={{ id: 'tagger', name: 'Alice' }} variant={variant} />);
+    const link = screen.getByRole('link');
+    expect(link).toHaveAttribute('href', 'https://pubky.app/profile/tagger');
+    expect(link).toHaveAttribute('target', '_top');
+  });
+
   it('renders an icon button for compact layout', () => {
     render(<UserListItem user={mockUser} variant="compact" onFollowClick={vi.fn()} />);
 

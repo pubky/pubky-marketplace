@@ -34,7 +34,7 @@ export interface ListingDeletePlan {
   /** Targets a live auction's bids keep from being deleted yet, with the service's bid count. */
   blocked: Array<{ target: ListingDeleteTarget; bids: number }>;
   openOrders: number;
-  /** False when the seller's orders could not be read, so the open-order count is unknown. */
+  /** False when the seller's orders could not be read completely, so the open-order count may be incomplete. */
   ordersChecked: boolean;
 }
 
@@ -159,14 +159,14 @@ async function planDelete(targets: ListingDeleteTarget[]): Promise<ListingDelete
     return { targets, blocked, openOrders: 0, ordersChecked: true };
   }
   try {
-    const orders = await CommerceController.getMarketplaceOrders();
+    const { orders, parseErrors } = await CommerceController.fetchMarketplaceOrderList();
     const deletableIds = new Set(
       targets
         .filter((target) => !blocked.some(({ target: held }) => sameListing(held, target)))
         .map(({ ownerPubky, listingId }) => buildMarketplaceListingAggregateId(ownerPubky, listingId)),
     );
     const openOrders = countOpenOrdersForListings(orders, targets[0].ownerPubky, deletableIds);
-    return { targets, blocked, openOrders, ordersChecked: true };
+    return { targets, blocked, openOrders, ordersChecked: parseErrors.length === 0 };
   } catch (error) {
     Logger.warn('Could not read open orders before offering to delete a listing', { error });
     return { targets, blocked, openOrders: 0, ordersChecked: false };

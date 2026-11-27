@@ -63,23 +63,6 @@ vi.mock('@/atoms/List/List', () => {
   };
 });
 
-vi.mock('@/atoms/SidebarButton/SidebarButton', () => {
-  return {
-    SidebarButton: ({
-      children,
-      icon: Icon,
-    }: {
-      children: React.ReactNode;
-      icon: React.ComponentType<{ className?: string }>;
-    }) => (
-      <button data-testid="sidebar-button">
-        <Icon data-testid="sidebar-button-icon" />
-        <span data-testid="sidebar-button-text">{children}</span>
-      </button>
-    ),
-  };
-});
-
 vi.mock('@/atoms/Typography/Typography', () => {
   return {
     Typography: ({
@@ -157,24 +140,25 @@ describe('DialogTerms - regional availability', () => {
     );
   });
 
-  it('describes the Shop without Stripe', () => {
+  it('describes Pubky Market without Stripe', () => {
     const { container } = render(<DialogTerms />);
     const text = container.textContent ?? '';
 
-    expect(text).toContain('PUBKY SHOP AND PUBKY MARKET');
+    expect(text).toContain('PUBKY MARKET');
     expect(text).toContain('We are not the PayPal merchant of record for the sale.');
     expect(text).toContain('PayPal, Bitkit, and similar tools are Third-Party Materials.');
     expect(text).not.toMatch(/stripe/i);
   });
 
-  it('names the product Pubky Market, never Pubky Marketplace', () => {
+  it('names the product Pubky Market, never Pubky Shop or Pubky Marketplace', () => {
     const { container } = render(<DialogTerms />);
     const text = container.textContent ?? '';
 
     expect(text).toContain('What Pubky Market is:');
-    expect(text).toContain('Pubky Market is the name we use for commerce on Pubky.');
-    expect(text).toContain('"Pubky Market" means the concept of commerce among Pubky identities.');
-    expect(text).toContain('Pubky Market is not a separate product or a second set of Terms.');
+    expect(text).toContain('These Terms govern Pubky Market.');
+    expect(text).toContain('"Pubky Market" means the Synonym-operated commerce client and related services');
+    expect(text).toContain('Pubky Market is not a second set of Terms.');
+    expect(text).not.toMatch(/Pubky\s+Shop/i);
     expect(text).not.toMatch(/Pubky Marketplace/i);
     expect(text).not.toContain('PUBKY MARKETPLACE');
   });

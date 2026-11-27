@@ -1,4 +1,4 @@
-import { PubkySpecsBuilder } from 'pubky-app-specs';
+import { buildReview } from 'pubky-market-specs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
@@ -115,7 +115,7 @@ describe('CommerceApplication own-review publication', () => {
       result: reviewResult(wire),
     });
     const { orderRef: _orderRef, ...legacyFields } = current!.record;
-    const legacyBuilt = new PubkySpecsBuilder(ORDER_FIXTURE_BUYER).createMarketplaceReview({
+    const legacyBuilt = buildReview(ORDER_FIXTURE_BUYER, {
       ...legacyFields,
       reviewId: '',
     });
@@ -123,7 +123,7 @@ describe('CommerceApplication own-review publication', () => {
       ...current!,
       id: `${ORDER_FIXTURE_BUYER}:${legacyBuilt.meta.id}`,
       review_id: legacyBuilt.meta.id,
-      record: legacyBuilt.marketplace_review.toJson() as CommerceReviewModelSchema['record'],
+      record: legacyBuilt.review.toJson() as CommerceReviewModelSchema['record'],
     };
     vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(legacyRow);
     vi.spyOn(LocalCommerceService, 'getOwnReviewById').mockResolvedValue(legacyRow);
@@ -316,12 +316,12 @@ describe('CommerceApplication own-review hydrate after local miss', () => {
   /** The record as published before per-order reviews: no orderRef, per-listing path. */
   function legacyRecord(record: CommerceReviewModelSchema['record'], eligibilityAttestation: string) {
     const { orderRef: _orderRef, ...rest } = record;
-    const built = new PubkySpecsBuilder(ORDER_FIXTURE_BUYER).createMarketplaceReview({
+    const built = buildReview(ORDER_FIXTURE_BUYER, {
       ...rest,
       reviewId: '',
       eligibilityAttestation,
     });
-    return built.marketplace_review.toJson() as CommerceReviewModelSchema['record'];
+    return built.review.toJson() as CommerceReviewModelSchema['record'];
   }
 
   it("hydrates a legacy per-listing record that embeds this order's attestation", async () => {

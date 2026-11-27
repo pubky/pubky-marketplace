@@ -4,13 +4,11 @@ import { Checkbox } from '@/atoms/Checkbox/Checkbox';
 import { Link } from '@/atoms/Link/Link';
 import { RadioGroup, RadioGroupItem } from '@/atoms/RadioGroup/RadioGroup';
 import { Switch } from '@/atoms/Switch/Switch';
-import { HotTagCard } from '@/molecules/HotTagCard/HotTagCard';
 import { InputField } from '@/molecules/InputField/InputField';
 import { TextareaField } from '@/molecules/TextareaField/TextareaField';
 import { toast } from '@/molecules/Toaster/toast';
 import { Toaster } from '@/molecules/Toaster/Toaster';
 import { WordSlot } from '@/molecules/WordSlot/WordSlot';
-import { TIMEFRAME } from '@/stores/hot/hot.types';
 import { expectColorContrast, expectGraphicContrast, expectTextContrast } from '@/test-utils/color-contrast';
 import { renderForVRT } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP } from '@/test-utils/vrt.viewports';
@@ -190,7 +188,7 @@ describe.each([
 });
 
 describe('Light theme contrast', () => {
-  it('keeps invalid values, recovery words and pastel counts readable', async () => {
+  it('keeps invalid values and recovery words readable', async () => {
     const onClear = vi.fn();
     const screen = await renderForVRT(
       <main className="bg-background p-6">
@@ -204,7 +202,6 @@ describe('Light theme contrast', () => {
         />
         <WordSlot index={0} word="example" mode="readonly" isCorrect isError={false} onClear={onClear} />
         <WordSlot index={1} word="invalid" mode="readonly" isCorrect={false} isError onClear={onClear} />
-        <HotTagCard rank={1} tagName="bitcoin" postCount={371} timeframe={TIMEFRAME.TODAY} />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP, theme: 'light' },
     );
@@ -212,15 +209,12 @@ describe('Light theme contrast', () => {
     await screen.getByText('Enter a positive bid.').hover();
     for (const input of document.querySelectorAll('input')) expectTextContrast(input);
     expectTextContrast(screen.getByText('Enter a positive bid.').element());
-    expectTextContrast(screen.getByText('371 posts today').element());
     for (const badge of document.querySelectorAll('[data-slot="badge"]')) expectTextContrast(badge);
     for (const index of [1, 2]) {
       const word = screen.getByRole('textbox').nth(index);
       await word.hover();
       expectTextContrast(word.element());
     }
-    await screen.getByText('371 posts today').hover();
-    expectTextContrast(screen.getByText('371 posts today').element());
     await screen.getByRole('textbox').nth(1).click();
     expect(onClear).toHaveBeenCalledWith(0);
   });

@@ -5,7 +5,6 @@ import {
   APP_ROUTES,
   AUTH_ROUTES,
   AUTHENTICATED_ROUTES,
-  getCollectionRoute,
   getMarketplaceAddressSettingsRoute,
   getMarketplaceListingEditRoute,
   getMarketplaceListingRoute,
@@ -15,7 +14,6 @@ import {
   getProfileRoute,
   getShopHomeRoute,
   getUserProfileUrl,
-  isCollectionsOverviewRoute,
   isCoreExploreRoute,
   isDynamicPublicRoute,
   isLogoLandingRoute,
@@ -25,7 +23,6 @@ import {
   matchesAllowedRoute,
   matchMarketplaceListingRoute,
   matchMarketplaceShopRoute,
-  matchPostRoute,
   matchSingleCollectionRoute,
   PROFILE_ROUTES,
   PUBLIC_ROUTES,
@@ -350,19 +347,6 @@ describe('getProfileRoute', () => {
   });
 });
 
-describe('getCollectionRoute', () => {
-  const pubky = 'o1gg96ewuojmopcjbz8895478wdtxtzzber7aezq6ror5a91j7dy';
-  const postId = '0034BBBDFK83G';
-
-  it('joins the collections base route, author pubky, and post id', () => {
-    expect(getCollectionRoute(pubky, postId)).toBe(`/collections/${pubky}/${postId}`);
-  });
-
-  it('is anchored on APP_ROUTES.COLLECTIONS', () => {
-    expect(getCollectionRoute(pubky, postId).startsWith(`${APP_ROUTES.COLLECTIONS}/`)).toBe(true);
-  });
-});
-
 describe('marketplace route helpers', () => {
   const pubky = 'o1gg96ewuojmopcjbz8895478wdtxtzzber7aezq6ror5a91j7dy';
 
@@ -378,22 +362,6 @@ describe('marketplace route helpers', () => {
     expect(pathname).toBe(`/marketplace/shop/${pubky}`);
     expect(matchMarketplaceShopRoute(pathname)).toEqual({ sellerPubky: pubky });
     expect(matchMarketplaceShopRoute('/marketplace/shop')).toBeNull();
-  });
-});
-
-describe('isCollectionsOverviewRoute', () => {
-  it('returns true only for the exact /collections path', () => {
-    expect(isCollectionsOverviewRoute(APP_ROUTES.COLLECTIONS)).toBe(true);
-    expect(isCollectionsOverviewRoute('/collections')).toBe(true);
-  });
-
-  it('returns false for bookmarks, single collections, and unrelated paths', () => {
-    const pubky = 'o1gg96ewuojmopcjbz8895478wdtxtzzber7aezq6ror5a91j7dy';
-
-    expect(isCollectionsOverviewRoute('/collections/bookmarks')).toBe(false);
-    expect(isCollectionsOverviewRoute(`/collections/${pubky}/0034BBBDFK83G`)).toBe(false);
-    expect(isCollectionsOverviewRoute('/collections/')).toBe(false);
-    expect(isCollectionsOverviewRoute('/home')).toBe(false);
   });
 });
 
@@ -419,30 +387,6 @@ describe('matchSingleCollectionRoute', () => {
   it('returns null for unrelated routes', () => {
     expect(matchSingleCollectionRoute('/home')).toBeNull();
     expect(matchSingleCollectionRoute(`/post/${pubky}/${postId}`)).toBeNull();
-  });
-});
-
-describe('matchPostRoute', () => {
-  const pubky = 'o1gg96ewuojmopcjbz8895478wdtxtzzber7aezq6ror5a91j7dy';
-  const postId = '0034BBBDFK83G';
-
-  it('extracts userId and postId from a single post route', () => {
-    expect(matchPostRoute(`/post/${pubky}/${postId}`)).toEqual({ userId: pubky, postId });
-  });
-
-  it('handles trailing slashes', () => {
-    expect(matchPostRoute(`/post/${pubky}/${postId}/`)).toEqual({ userId: pubky, postId });
-  });
-
-  it('returns null for wrong segment counts', () => {
-    expect(matchPostRoute('/post')).toBeNull();
-    expect(matchPostRoute(`/post/${pubky}`)).toBeNull();
-    expect(matchPostRoute(`/post/${pubky}/${postId}/extra`)).toBeNull();
-  });
-
-  it('returns null for unrelated routes', () => {
-    expect(matchPostRoute('/home')).toBeNull();
-    expect(matchPostRoute(`/collections/${pubky}/${postId}`)).toBeNull();
   });
 });
 
@@ -546,9 +490,9 @@ describe('getShopHomeRoute', () => {
     setSocialHost(undefined);
   });
 
-  it('is /home, and the route guard sends signed-in users there, while social link-out is off', () => {
-    expect(getShopHomeRoute()).toBe(APP_ROUTES.HOME);
-    expect(AUTHENTICATED_ROUTES.redirectTo).toBe(APP_ROUTES.HOME);
+  it('the route guard sends signed-in users to the catalog by default', () => {
+    expect(getShopHomeRoute()).toBe(APP_ROUTES.MARKETPLACE);
+    expect(AUTHENTICATED_ROUTES.redirectTo).toBe(APP_ROUTES.MARKETPLACE);
   });
 
   it('is the marketplace, and the route guard sends signed-in users there, while social link-out is on', () => {

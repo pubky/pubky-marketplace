@@ -33,7 +33,12 @@ import {
   reviewWindowClosesAtMs,
   unreviewedListings,
 } from '@/libs/commerce/order-reviews';
-import { buyerCancelOffered, observedPaymentRail, paykitCheckoutCancellable } from '@/libs/commerce/paykit-rail';
+import {
+  buyerCancelOffered,
+  isUnverifiedUpstreamPayment,
+  observedPaymentRail,
+  paykitCheckoutCancellable,
+} from '@/libs/commerce/paykit-rail';
 import { formatUsdt } from '@/libs/commerce/payment-options';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import { isUsdtFulfilmentBlocked, PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
@@ -52,7 +57,7 @@ import { MarketplacePickupRevealDialog } from '@/organisms/Marketplace/Marketpla
 import { MarketplaceReviewFields } from '@/organisms/Marketplace/MarketplaceReviewFields';
 import { MarketplaceShippingLabelDialog } from '@/organisms/Marketplace/MarketplaceShippingLabelDialog';
 import { MarketplaceTrackingDialog } from '@/organisms/Marketplace/MarketplaceTrackingDialog';
-import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
+import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
 
 // Paykit cannot withdraw a request Bitkit already shows, so it stays payable after the cancel.
 const PAYKIT_CANCEL_UNPAID_REQUEST_COPY =
@@ -60,6 +65,7 @@ const PAYKIT_CANCEL_UNPAID_REQUEST_COPY =
 
 export function MarketplaceOrderActions({
   order,
+  payment = order.payment,
   isBuyer,
   canEditReview,
   actOnOrder,
@@ -69,6 +75,7 @@ export function MarketplaceOrderActions({
   messageAction,
 }: {
   order: MarketplaceOrder;
+  payment?: MarketplacePayment | null;
   isBuyer: boolean;
   cancelButtonSize?: 'sm' | 'default';
   /** The checkout gives its cancel the full width, under the pay instructions. */
@@ -209,8 +216,10 @@ export function MarketplaceOrderActions({
   // `refund.record_external` is accepted from these states whether or not
   // PayPal already recorded partial refunds; the record must cover them.
   // Digital orders are refunded from delivered or completed too: there is no return to receive (§6 E9).
+  const unverifiedUpstreamPayment = isUnverifiedUpstreamPayment(order, payment);
   const canRecordRefund =
     !isBuyer &&
+    !(payment?.state === 'manual_review' && unverifiedUpstreamPayment) &&
     (['return_received', 'cancelled'].includes(order.state) ||
       (order.fulfillment === 'digital' && ['delivered', 'completed'].includes(order.state)));
   const refundedMinor = paypalRefundedMinor(order);
@@ -496,7 +505,7 @@ export function MarketplaceOrderActions({
           Press when the buyer has brought it back
         </p>
       )}
-      {awaitingUsdtRefundAddress && (
+      {awaitingUsdtRefundAddress && !unverifiedUpstreamPayment && (
         <p className="mt-2 text-xs text-muted-foreground" data-testid="usdt-refund-address-hint">
           {USDT_REFUND_COPY.sellerWaiting}
         </p>

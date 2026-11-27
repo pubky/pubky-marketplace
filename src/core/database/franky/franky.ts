@@ -66,6 +66,7 @@ import {
 import { type FeedModelSchema, feedTableSchema } from '@/models/feed/feed.schema';
 import { type FileDetailsModelSchema, fileDetailsTableSchema } from '@/models/file/fileDetails.schema';
 import { type HotTagsModelSchema, hotTagsTableSchema } from '@/models/hot/hot.schema';
+import type { MarketplaceTagsModelSchema } from '@/models/marketplace/tags/marketplaceTags';
 import type { Pubky } from '@/models/models.types';
 import { type ModerationModelSchema, moderationTableSchema } from '@/models/moderation/moderation.schema';
 import { notificationTableSchema } from '@/models/notification/notification.schema';
@@ -215,7 +216,7 @@ export class AppDatabase extends Dexie {
   chat_messages!: Dexie.Table<ChatMessageModelSchema>;
   chat_sync_state!: Dexie.Table<ChatSyncStateModelSchema>;
   // Marketplace community tags (listing/shop targets), kind-prefixed row ids
-  marketplace_tags!: Dexie.Table<TagCollectionModelSchema<string>>;
+  marketplace_tags!: Dexie.Table<MarketplaceTagsModelSchema>;
   // Hot tags
   hot_tags!: Dexie.Table<HotTagsModelSchema>;
   // Feeds

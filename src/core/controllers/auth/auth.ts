@@ -1,10 +1,8 @@
 import type { Session, XCallbackParams } from '@synonymdev/pubky';
 import { AuthApplication, isDefinitiveSessionAuthFailure } from '@/application/auth/auth';
 import type { TKeypairParams, TRestorePersistedSessionResult } from '@/application/auth/auth.types';
-import { BootstrapApplication, type BootstrapProgressCallback } from '@/application/bootstrap/bootstrap';
+import { BootstrapApplication } from '@/application/bootstrap/bootstrap';
 import { CommerceApplication } from '@/application/commerce/commerce';
-import { SettingsApplication } from '@/application/settings/settings';
-import { postStreamQueue } from '@/application/stream/posts/muting/post-stream-queue';
 import { TagApplication } from '@/application/tag/tag';
 import type {
   HostSessionApplyStatus,
@@ -26,7 +24,6 @@ import { isGrantKeyCleanupPending } from '@/controllers/auth/grant-key-cleanup';
 import { ChatController } from '@/controllers/chat/chat';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { NotificationCoordinator } from '@/coordinators/notifications/notifications';
-import { StreamCoordinator } from '@/coordinators/streams/stream';
 import { TtlCoordinator } from '@/coordinators/ttl/ttl';
 import { clearDatabase, clearPrivateData } from '@/database/franky/franky.helpers';
 import { clearPubkyLocalStorage } from '@/libs/auth/clear-pubky-local-storage';
@@ -48,11 +45,8 @@ import {
   withShopHostCleanupLock,
   writeAppliedHostCleanupEpoch,
 } from '@/libs/shop-session/cleanup';
-import { sleep } from '@/libs/utils/utils';
 import type { Pubky } from '@/models/models.types';
-import { NotificationNormalizer } from '@/pipes/notification/notification.normalizer';
 import { PubkySpecsSingleton } from '@/pipes/pipes.builder';
-import { SettingsNormalizer } from '@/pipes/settings/settings.normalizer';
 import { clearRouteGuardReturnTo } from '@/providers/RouteGuardProvider/RouteGuardProvider.returnPath';
 import { createCanceledError, isGrantKeyRemovalError } from '@/services/homeserver/error.utils';
 import type { TGenerateAuthUrlResult, THomeserverSessionResult } from '@/services/homeserver/homeserver.types';
@@ -66,15 +60,10 @@ import { useAuthStore } from '@/stores/auth/auth.store';
 import type { AuthInitParams, GrantSigner } from '@/stores/auth/auth.types';
 import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
-import { useHomeStore } from '@/stores/home/home.store';
-import { useHotStore } from '@/stores/hot/hot.store';
-import { useLocalFilesStore } from '@/stores/localFiles/localFiles.store';
 import { useMigrationStore } from '@/stores/migration/migration.store';
 import { useNotificationStore } from '@/stores/notification/notification.store';
-import { AUTH_PERSIST_KEY } from '@/stores/persistedKeys';
-import { useSearchStore } from '@/stores/search/search.store';
+import { AUTH_PERSIST_KEY, clearRetiredSocialStores } from '@/stores/persistedKeys';
 import { useSettingsStore } from '@/stores/settings/settings.store';
-import type { SettingsState } from '@/stores/settings/settings.types';
 import { useSignInStore } from '@/stores/signIn/signIn.store';
 
 /** Forgets the buyer country in memory and removes its persisted copy from the device. */
@@ -483,7 +472,8 @@ export class AuthController {
 
         // null is the durable marker for profile discovery/bootstrap that did
         // not finish after the grant was saved. Keep it until both complete.
-        const hasProfile = sameIdentity ? authStore.hasProfile : null;
+        // A missing profile can be completed in Pubky App between visits.
+        const hasProfile = sameIdentity && authStore.hasProfile === true ? true : null;
         // A logout began while the shared restore was in flight: the logout
         // owns finalization now. Bail out as signed-out — never re-init the
         // just-logged-out identity (that would re-persist its sessionExport
@@ -643,43 +633,10 @@ export class AuthController {
     isCurrent?: () => boolean;
     signal?: AbortSignal;
   }) {
-    const signInStore = useSignInStore.getState();
-    const {
-      meta: { url },
-    } = NotificationNormalizer.to(pubky);
-
-    // Progress callback to update signInStore from Controller layer (respecting architecture rules)
-    const onProgress: BootstrapProgressCallback = (step) => {
-      if (!isCurrent()) return;
-      switch (step) {
-        case 'bootstrapFetched':
-          signInStore.setBootstrapFetched(true); // Step 3 complete (60%)
-          break;
-        case 'dataPersisted':
-          signInStore.setDataPersisted(true); // Step 4 complete (80%)
-          break;
-        case 'homeserverSynced':
-          signInStore.setHomeserverSynced(true); // Step 5 complete (100%)
-          break;
-      }
-    };
-
-    const localSettings = SettingsNormalizer.extractState(useSettingsStore.getState());
-
-    // Sync settings from homeserver before bootstrap; errors are logged and fall back to local settings.
-    const remoteSettings = await this.syncSettings(pubky, localSettings, signal);
-
-    // Resolve final preferences: remote settings win if available, otherwise use local
     if (!isCurrent()) return;
-    const preferences = (remoteSettings ?? localSettings).notifications;
-    const allowedTypes = NotificationNormalizer.toEnabledTypes(preferences);
-
-    const notification = await BootstrapApplication.initialize(
-      { pubky, lastReadUrl: url, allowedTypes, signal },
-      onProgress,
-    );
+    await BootstrapApplication.initialize({ pubky, signal });
     if (!isCurrent()) return;
-    useNotificationStore.getState().setState(notification);
+    useSignInStore.getState().setMarketReady(true);
 
     // Pull the private cross-device watchlist and merge it into local state.
     // Fire-and-forget: sign-in must not block on it, and a failed round
@@ -687,12 +644,6 @@ export class AuthController {
     void CommerceController.syncWatchlist({ signal }).catch((error) => {
       Logger.warn('Watchlist sync after bootstrap failed; it will retry on the next marketplace visit', { error });
     });
-
-    // Apply remote settings to store (store mutation stays in Controller layer)
-    if (remoteSettings) {
-      useSettingsStore.getState().loadFromHomeserver(remoteSettings);
-      Logger.info('Settings loaded from homeserver', { pubky });
-    }
   }
 
   /**
@@ -776,7 +727,7 @@ export class AuthController {
     await AuthApplication.assertFullGrantSession(session);
     const signInStore = useSignInStore.getState();
     signInStore.reset(); // Reset for fresh sign-in
-    signInStore.setAuthUrlResolved(true); // Step 1 complete (20%)
+    signInStore.setAuthUrlResolved(true);
 
     const authStore = useAuthStore.getState();
     let persistAborted = false;
@@ -880,7 +831,7 @@ export class AuthController {
       if (!isCurrent()) throw createCanceledError();
       const isSignedUp = await AuthApplication.userIsSignedUp({ pubky });
       if (!isCurrent()) throw createCanceledError();
-      signInStore.setProfileChecked(true); // Step 2 complete (40%)
+      signInStore.setProfileChecked(true);
 
       if (isSignedUp) {
         await this.hydrateInScope(pubky, isCurrent);
@@ -1014,14 +965,10 @@ export class AuthController {
           // write into the wiped database before `adopt` runs.
           endAuthScope();
           useMigrationStore.getState().reset();
-          // Reset before bootstrap can upload local fallback preferences for
-          // the new account. Same-account renewal preserves these values.
+          // Keep browser preferences separate across accounts. Same-account renewal preserves them.
           useSettingsStore.getState().reset();
-          useSearchStore.getState().reset();
+          clearRetiredSocialStores();
           useNotificationStore.getState().reset();
-          useHomeStore.getState().reset();
-          useHotStore.getState().reset();
-          useLocalFilesStore.getState().reset();
           useCommerceStore.getState().reset();
           resetBuyerCountry();
           for (const departed of new Set([captured?.pubky, currentPubky, persistedPubky])) {
@@ -1153,11 +1100,7 @@ export class AuthController {
         });
       }
       TtlCoordinator.resetInstance();
-      StreamCoordinator.resetInstance();
       NotificationCoordinator.resetInstance();
-
-      // Clear in-memory feed stream queues
-      postStreamQueue.clear();
 
       this.cancelAllAuthFlows();
 
@@ -1170,13 +1113,10 @@ export class AuthController {
       // started during the awaits above holds the scope opened at the top.
       endAuthScope();
       useSignInStore.getState().reset();
-      useLocalFilesStore.getState().reset();
       useCommerceStore.getState().reset();
       // The buyer country is personal data of the signing-out account: gone from memory and from the device.
       resetBuyerCountry();
-      useHomeStore.getState().reset();
-      useHotStore.getState().reset();
-      useSearchStore.getState().reset();
+      clearRetiredSocialStores();
       useNotificationStore.getState().reset();
       useSettingsStore.getState().reset();
       // Entries keyed by the leaving pubky (orders checkpoint, own drops, feature-discovery flags). An
@@ -1656,56 +1596,5 @@ export class AuthController {
       capturedRecordIds,
       preservePublicCache: false,
     });
-  }
-
-  /**
-   * Initializes the application bootstrap after profile creation.
-   * Waits for Nexus to index the user's profile.json, then bootstraps notifications and data.
-   */
-  static async bootstrapWithDelay() {
-    const authStore = useAuthStore.getState();
-    const pubky = authStore.selectCurrentUserPubky();
-    const session = authStore.session;
-    const generation = this.logoutGeneration;
-    const scope = captureAuthScope();
-    const isCurrent = () =>
-      !scope.aborted &&
-      generation === this.logoutGeneration &&
-      useAuthStore.getState().session === session &&
-      Boolean(session);
-    // Wait 5 seconds before bootstrap to let Nexus index the user
-    Logger.info(`Waiting 5 seconds to index ${pubky} profile.json in Nexus before bootstrap...`);
-    await sleep(5000);
-    if (!isCurrent()) return;
-    try {
-      // Bootstrap writes private data. A sign-out takes this lock before its
-      // wipe, so anything written before the scope ended is cleared after it.
-      await withAuthFinalizationLock(async () => {
-        if (isCurrent()) await this.hydrateMeImAlive({ pubky, isCurrent, signal: scope });
-      });
-    } catch (error) {
-      if (scope.aborted) return;
-      throw error;
-    }
-    if (!isCurrent()) return;
-    authStore.setHasProfile(true);
-  }
-
-  /**
-   * Syncs user settings with the homeserver.
-   * Returns remote settings if newer, null otherwise.
-   * All failures are treated as non-blocking and fall back to local settings.
-   */
-  private static async syncSettings(
-    pubky: Pubky,
-    localSettings: SettingsState,
-    signal?: AbortSignal,
-  ): Promise<SettingsState | null> {
-    try {
-      return await SettingsApplication.initializeSettings(pubky, localSettings, signal);
-    } catch (error) {
-      Logger.error('Failed to initialize settings during bootstrap', { error, pubky });
-      return null;
-    }
   }
 }

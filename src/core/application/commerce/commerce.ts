@@ -16,7 +16,6 @@ import {
   getUsdtPaymentsEnabled,
   isDurableCommerceMode,
   isTransactionalCommerceMode,
-  MARKETPLACE_FOLLOWED_SHELF_MAX_SELLER_FETCHES,
 } from '@/config/commerce';
 import { CONNECTOR_SHARE_CONSENT_VERSION } from '@/config/commerce-copy';
 import { BASE_UNITS_PER_BITCOIN } from '@/config/currencies';
@@ -199,7 +198,6 @@ import type {
   CommerceWatchAlertModelSchema,
   CommerceWatchSnapshotModelSchema,
 } from '@/models/commerce/commerce.schema';
-import { selectFollowedSellersToRefresh } from '@/pipes/commerce/commerce.discovery';
 import {
   type CommerceDeliveryAddressInput,
   CommerceRecordNormalizer,
@@ -257,7 +255,7 @@ import {
   type MarketplaceSessionEndedEvent,
   MarketplaceSessionService,
 } from '@/services/marketplace/marketplace-session';
-import { NexusMarketplaceService } from '@/services/nexus/marketplace/marketplace';
+import { type MarketplaceTagPage, NexusMarketplaceService } from '@/services/nexus/marketplace/marketplace';
 import type {
   NexusListingCondition,
   NexusListingDetails,
@@ -835,40 +833,39 @@ export class CommerceApplication {
   }
 
   /**
-   * Fetches the community tag aggregate for a marketplace target from the
-   * marketplace Nexus and merges it into the local cache.
-   *
-   * Honest degradation: the tag endpoints only exist once the marketplace
-   * Nexus deploys tag aggregation. A 404 means "aggregation not available",
-   * so this returns an empty array WITHOUT touching the local cache — the
-   * viewer's own locally written tags keep rendering, and nothing fake is
-   * shown. Any other error propagates.
+   * Reconciles the social Nexus resource tags or merges the legacy Market projection.
+   * A missing legacy endpoint preserves the cache. A transient read failure
+   * propagates so the open page can retry.
    *
    * @param params.kind - `TagKind.LISTING` or `TagKind.SHOP`
    * @param params.taggedId - Composite `seller:listingId` for listings, owner pubky for shops
    * @param params.viewerId - Viewer pubky for relationship data, if signed in
+   * @param params.isCurrent - Checks whether the viewer still owns this cache update
    * @param params.skip - Number of tags to skip (pagination)
    * @param params.limit - Maximum number of tags to return
-   * @returns Tags returned by Nexus; empty when the endpoint is not deployed (404)
+   * @returns The fetched tags, or an empty array when the viewer changes or the legacy endpoint is absent
    */
   static async fetchMarketplaceTags({
     kind,
     taggedId,
     viewerId,
+    isCurrent,
     skip,
     limit,
   }: {
     kind: MarketplaceTagKind;
     taggedId: string;
     viewerId?: string;
+    isCurrent: () => boolean;
     skip?: number;
     limit?: number;
   }): Promise<NexusTag[]> {
-    let nexusTags: NexusTag[];
+    if (!isCurrent()) return [];
+    let page: MarketplaceTagPage;
     try {
       if (kind === TagKind.LISTING) {
         const [sellerId, listingId] = taggedId.split(':');
-        nexusTags = await NexusMarketplaceService.fetchListingTags({
+        page = await NexusMarketplaceService.fetchListingTags({
           seller_id: sellerId,
           listing_id: listingId,
           skip_tags: skip,
@@ -876,7 +873,7 @@ export class CommerceApplication {
           viewer_id: viewerId,
         });
       } else {
-        nexusTags = await NexusMarketplaceService.fetchShopTags({
+        page = await NexusMarketplaceService.fetchShopTags({
           seller_id: taggedId,
           skip_tags: skip,
           limit_tags: limit,
@@ -890,15 +887,19 @@ export class CommerceApplication {
       throw error;
     }
 
-    if (nexusTags.length > 0) {
+    if (!isCurrent()) return [];
+    if (page.completeResource || page.tags.length) {
       await LocalMarketplaceTagService.mergeTags({
         taggedId: buildMarketplaceTagRowId(kind, taggedId),
-        tags: nexusTags,
+        tags: page.tags,
         viewerId: viewerId ?? null,
+        clearMissing: page.completeResource,
+        isCurrent,
       });
     }
 
-    return nexusTags;
+    if (page.probeFailure && isCurrent()) throw page.probeFailure;
+    return isCurrent() ? page.tags : [];
   }
 
   static async getListingsBySeller(sellerPubky: string) {
@@ -1954,6 +1955,10 @@ export class CommerceApplication {
     return await MarketplaceGatewayService.getNotificationPreferences(actorPubky);
   }
 
+  static async fetchMarketplaceOrderList(actorPubky: string) {
+    return await MarketplaceGatewayService.getOrderList(actorPubky);
+  }
+
   static async getMarketplaceOrders(actorPubky: string) {
     return await MarketplaceGatewayService.getOrders(actorPubky);
   }
@@ -2761,8 +2766,8 @@ export class CommerceApplication {
         });
         // Validate through the vendored specs builder before sealing, the
         // same guarantee every other marketplace record gets.
-        const { PubkySpecsBuilder } = await import('pubky-app-specs');
-        const built = new PubkySpecsBuilder(ownerPubky).createWatchlist(body);
+        const { buildWatchlist } = await import('pubky-market-specs');
+        const built = buildWatchlist(ownerPubky, body);
         const record = CommerceRecordNormalizer.watchlistRecord(built.watchlist.toJson());
         signal?.throwIfAborted();
         try {
@@ -3050,8 +3055,8 @@ export class CommerceApplication {
               }
             : {}),
         };
-        const { PubkySpecsBuilder } = await import('pubky-app-specs');
-        const provisional = new PubkySpecsBuilder(ownerPubky).createMarketplaceOrderReceipt(wireBody);
+        const { buildOrderReceipt } = await import('pubky-market-specs');
+        const provisional = buildOrderReceipt(ownerPubky, wireBody);
         const provisionalRecord = CommerceRecordNormalizer.orderReceiptRecord(provisional.order_receipt.toJson());
         const verifiedClaims = verifyOrderReceiptClaims({ ...provisionalRecord });
         if (
@@ -3101,7 +3106,7 @@ export class CommerceApplication {
               }
             : {}),
         };
-        const built = new PubkySpecsBuilder(ownerPubky).createMarketplaceOrderReceipt(verifiedBody);
+        const built = buildOrderReceipt(ownerPubky, verifiedBody);
         const record = CommerceRecordNormalizer.orderReceiptRecord(built.order_receipt.toJson());
         if (verifiedClaims.v === 2) record.settlementTotal = verifiedClaims.settlementTotal;
         if (verifyOwnOrderReceipt({ ...record }) === null) {
@@ -3577,74 +3582,6 @@ export class CommerceApplication {
     });
   }
 
-  /**
-   * Refreshes the catalog cache with recent active listings from the sellers
-   * a viewer follows, for the home-feed "From sellers you follow" shelf.
-   *
-   * Cost model — the Nexus listing stream accepts one `seller_id` per
-   * request, so intersecting a follow graph with the index can never be one
-   * query. This method bounds the cost instead of hiding it:
-   *
-   * 1. ONE shared global page of the newest active listings (the same read
-   *    the catalog grid does) — it both refreshes the cache and cheaply
-   *    discovers followed accounts that recently listed something.
-   * 2. Per-seller refreshes ONLY for follows already known to sell (cached
-   *    shop record or cached index entry), capped at
-   *    {@link MARKETPLACE_FOLLOWED_SHELF_MAX_SELLER_FETCHES} — never a
-   *    request per follow (see {@link selectFollowedSellersToRefresh}).
-   *
-   * Degradation: a failed global page falls back to refreshing cache-known
-   * sellers; failed per-seller refreshes are logged and skipped
-   * (`allSettled`) so one unreachable seller cannot empty the shelf; when
-   * everything fails the shelf renders whatever the cache honestly holds.
-   * Sandbox catalogs are seeded locally and never read from Nexus.
-   */
-  static async fetchFollowedSellerCatalogListings(followedPubkys: string[]): Promise<void> {
-    if (getCommerceAdapterMode() === 'sandbox') return;
-    if (followedPubkys.length === 0) return;
-
-    try {
-      const payload = await NexusMarketplaceService.fetchListingStream({
-        state: 'active',
-        limit: NEXUS_LISTINGS_PER_PAGE,
-      });
-      await LocalCommerceService.bulkUpsertCatalogEntries(CommerceRecordNormalizer.nexusListingStream(payload));
-    } catch (error) {
-      Logger.warn('Failed to refresh the global listing page for the followed-sellers shelf; using cache only', {
-        error,
-      });
-    }
-
-    const [entries, shops] = await Promise.all([
-      LocalCommerceService.getAllCatalogEntries(),
-      LocalCommerceService.getAllShops(),
-    ]);
-    const knownSellerIds = new Set([
-      ...entries.map(({ seller_id }) => seller_id),
-      ...shops.map(({ owner_id }) => owner_id),
-    ]);
-    const sellersToRefresh = selectFollowedSellersToRefresh(
-      followedPubkys,
-      knownSellerIds,
-      MARKETPLACE_FOLLOWED_SHELF_MAX_SELLER_FETCHES,
-    );
-    if (sellersToRefresh.length === 0) return;
-
-    const results = await Promise.allSettled(
-      sellersToRefresh.map((sellerId) => this.fetchSellerCatalogListings(sellerId)),
-    );
-    results.forEach((result, index) => {
-      if (result.status === 'rejected') {
-        Logger.warn('Failed to refresh a followed seller for the shelf; keeping their cached listings', {
-          sellerId: sellersToRefresh[index],
-          error: result.reason,
-        });
-      }
-    });
-
-    await this.hydrateDiscoveredShops(sellersToRefresh);
-  }
-
   private static async hydrateDiscoveredShops(sellerIds: string[]): Promise<void> {
     const shopResults = await Promise.allSettled(sellerIds.map((sellerId) => this.getOrFetchShop(sellerId)));
     shopResults.forEach((result, index) => {
@@ -3875,8 +3812,8 @@ export class CommerceApplication {
     role: 'buyer_reviewing_seller' | 'seller_reviewing_buyer';
     orderRef?: string;
   }): Promise<string> {
-    const { PubkySpecsBuilder } = await import('pubky-app-specs');
-    const built = new PubkySpecsBuilder(input.actorPubky).createMarketplaceReview({
+    const { buildReview } = await import('pubky-market-specs');
+    const built = buildReview(input.actorPubky, {
       schemaVersion: 1,
       recordType: 'review',
       ownerPubky: input.actorPubky,
@@ -4628,7 +4565,7 @@ export class CommerceApplication {
   /**
    * Publishes the reviewer-owned public review record after a successful
    * `review.create`/`review.update` (trust & reputation plan P1.6): builds
-   * the `PubkyAppMarketplaceReview` via the specs builder (deterministic
+   * the `PubkyMarketReview` via the specs builder (deterministic
    * hash ID), embeds the service-issued purchase attestation verbatim in
    * `eligibilityAttestation`, and PUTs it to the reviewer's homeserver with
    * the staged-job outbox pattern listing publication established — a failed
@@ -4783,8 +4720,8 @@ export class CommerceApplication {
         : {};
 
     const build = async (revision: number, createdAt: string) => {
-      const { PubkySpecsBuilder } = await import('pubky-app-specs');
-      const built = new PubkySpecsBuilder(actorPubky).createMarketplaceReview({
+      const { buildReview } = await import('pubky-market-specs');
+      const built = buildReview(actorPubky, {
         schemaVersion: 1,
         recordType: 'review',
         ownerPubky: actorPubky,
@@ -4802,7 +4739,7 @@ export class CommerceApplication {
         ...(orderRef === undefined ? {} : { orderRef }),
       });
       return {
-        record: commerceReviewRecordSchema.parse(built.marketplace_review.toJson()),
+        record: commerceReviewRecordSchema.parse(built.review.toJson()),
         reviewId: built.meta.id,
       };
     };
@@ -5365,8 +5302,8 @@ export class CommerceApplication {
     const nowIso = new Date().toISOString();
     const createdAt = prior?.record.createdAt ?? input.priorCreatedAt ?? nowIso;
 
-    const { PubkySpecsBuilder } = await import('pubky-app-specs');
-    const built = new PubkySpecsBuilder(actorPubky).createReviewResponse({
+    const { buildReviewResponse } = await import('pubky-market-specs');
+    const built = buildReviewResponse(actorPubky, {
       schemaVersion: 1,
       recordType: 'review_response',
       ownerPubky: actorPubky,
@@ -5973,9 +5910,9 @@ export class CommerceApplication {
    * truths (record published / service registered) separately.
    */
   static async commitPublishDrop(record: CommerceDropRecord): Promise<void> {
-    const { PubkySpecsBuilder } = await import('pubky-app-specs');
-    const built = new PubkySpecsBuilder(record.ownerPubky).createMarketplaceDrop({ ...record });
-    const validated = CommerceRecordNormalizer.drop(built.marketplace_drop.toJson());
+    const { buildDrop } = await import('pubky-market-specs');
+    const built = buildDrop(record.ownerPubky, { ...record });
+    const validated = CommerceRecordNormalizer.drop(built.drop.toJson());
     const url = CommerceRecordNormalizer.dropUri(validated.ownerPubky, validated.dropId);
     await CommerceHomeserverService.putJson(url, { ...validated });
   }

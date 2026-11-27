@@ -12,6 +12,7 @@ import { useTagInput } from '@/hooks/useTagInput/useTagInput';
 import { TAG_INPUT_BLUR_DELAY_MS } from '@/hooks/useTagInput/useTagInput.constants';
 import { mergeTagSuggestions } from '@/hooks/useTagInput/useTagInput.utils';
 import { useTagSuggestions } from '@/hooks/useTagSuggestions/useTagSuggestions';
+import { normalizeLegacyTagLabel } from '@/libs/tag-label';
 import { cn } from '@/libs/utils/utils';
 import { EmojiPickerDialog } from '../EmojiPickerDialog/EmojiPickerDialog';
 import type { TagInputHandle, TagInputProps } from './TagInput.types';
@@ -20,6 +21,7 @@ import { TagSuggestionsDropdown } from './TagSuggestionsDropdown/TagSuggestionsD
 export const TagInput = forwardRef<TagInputHandle, TagInputProps>(function TagInput(
   {
     onTagAdd,
+    normalizeLabel = normalizeLegacyTagLabel,
     placeholder,
     existingTags = [],
     viewerTags,
@@ -74,6 +76,7 @@ export const TagInput = forwardRef<TagInputHandle, TagInputProps>(function TagIn
     onTagAdd,
     existingTags: tagsForDuplicateCheck.map((t) => t.label),
     allTags: existingTags,
+    normalizeLabel,
   });
   useImperativeHandle(ref, () => ({
     focus: () => inputRef.current?.focus(),
@@ -83,9 +86,16 @@ export const TagInput = forwardRef<TagInputHandle, TagInputProps>(function TagIn
   const { suggestions: apiSuggestions } = useTagSuggestions({
     query: inputValue,
     excludeTags: apiExcludeTags,
+    normalizeLabel,
     enabled: enableApiSuggestions && showSuggestions,
   });
-  const displaySuggestions = mergeTagSuggestions(suggestions, apiSuggestions, enableApiSuggestions);
+  const displaySuggestions = mergeTagSuggestions(
+    suggestions,
+    apiSuggestions,
+    enableApiSuggestions,
+    undefined,
+    normalizeLabel,
+  );
   const isListboxOpen = showSuggestions && displaySuggestions.length > 0;
   const {
     selectedIndex: selectedSuggestionIndex,
@@ -122,9 +132,9 @@ export const TagInput = forwardRef<TagInputHandle, TagInputProps>(function TagIn
     e.preventDefault();
   };
   const selectSuggestion = (label: string) => {
-    const normalizedLabel = label.toLowerCase();
+    const normalizedLabel = normalizeLabel(label);
     if (addOnSuggestionClick) {
-      const isDuplicate = tagsForDuplicateCheck.some((tag) => tag.label.toLowerCase() === normalizedLabel);
+      const isDuplicate = tagsForDuplicateCheck.some((tag) => normalizeLabel(tag.label) === normalizedLabel);
       if (!isDuplicate) {
         onTagAdd(normalizedLabel);
       }

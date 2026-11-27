@@ -1,27 +1,9 @@
-/**
- * Social link-out: the Shop hands its social surfaces (feed, profiles, posts,
- * collections, settings) to the canonical social app on another origin.
- *
- * The switch is one build-time variable, `NEXT_PUBLIC_SOCIAL_HOST`, holding the
- * social app's exact origin (`https://pubky.app` in production,
- * `https://staging.pubky.app` on staging). Unset means link-out is off and the
- * Shop keeps serving its own copy of those routes.
- *
- * The redirects are unconditional and carry no session. Each site keeps its
- * own sign-in until single sign-on exists, so a user signed in to the Shop
- * (Ring, Bitkit or any other session) arrives on the social host signed out
- * unless they already signed in there. That is the accepted beta behaviour.
- *
- * This module has no `@/` imports so `next.config.ts` can load it to build
- * `redirects()`; components read the same list through `@/config/social`.
- */
-
 export const SOCIAL_HOST_ENV_VAR = 'NEXT_PUBLIC_SOCIAL_HOST';
 
 /**
  * Shop paths that leave for the social host, unchanged (path and query), in
- * Next.js `redirects()` source syntax. The Shop's social routes are the same
- * tree as pubky.app's, so every match maps 1:1 onto the same path there.
+ * Next.js rewrite source syntax. The Shop's former social routes follow the same
+ * tree as the App's. The handoff resolves the legacy profile posts alias.
  * `:path*` also matches the bare prefix (`/profile`, `/settings`, ...).
  */
 export const SOCIAL_LINK_OUT_SOURCES = [
@@ -30,25 +12,12 @@ export const SOCIAL_LINK_OUT_SOURCES = [
   '/hot',
   '/search',
   '/who-to-follow',
+  '/share',
   '/post/:path*',
   '/collections/:path*',
   '/profile/:path*',
   '/settings/:path*',
 ] as const;
-
-/**
- * Social paths whose Shop counterpart stays in the Shop. They are listed
- * before {@link SOCIAL_LINK_OUT_SOURCES} because the first matching redirect wins.
- */
-export const SOCIAL_KEPT_IN_SHOP: readonly { source: string; destination: string }[] = [
-  { source: '/profile/notifications', destination: '/marketplace/notifications' },
-];
-
-export type SocialLinkOutRedirect = {
-  source: string;
-  destination: string;
-  permanent: false;
-};
 
 /**
  * Exact `https://` origin, or `http://localhost:<port>` when `nodeEnv !== 'production'`.
@@ -106,7 +75,7 @@ function withoutWww(origin: string): string {
 }
 
 /**
- * Unset or empty → `undefined` (link-out off). An invalid value throws so a bad
+ * Unset or empty → `undefined` (use the mount and deployment defaults). An invalid value throws so a bad
  * build fails loudly. So does a value naming one of `shopOrigins`, with or
  * without a leading `www.` on either side: every social route would 307 back
  * to itself.
@@ -133,20 +102,16 @@ export function parseSocialHost(
   return value;
 }
 
-/** Temporary (307) redirects so switching link-out off never leaves browsers holding cached permanents. */
-export function buildSocialLinkOutRedirects(socialHost: string | undefined): SocialLinkOutRedirect[] {
-  if (!socialHost) return [];
-  return [
-    ...SOCIAL_KEPT_IN_SHOP.map(({ source, destination }) => ({ source, destination, permanent: false as const })),
-    ...SOCIAL_LINK_OUT_SOURCES.map((source) => ({
-      source,
-      destination: `${socialHost}${source}`,
-      permanent: false as const,
-    })),
-  ];
-}
-
-/** Absolute URL of `path` (which must start with `/`) on the social host. */
-export function toSocialHostUrl(socialHost: string, path: string): string {
-  return `${socialHost}${path}`;
+/** Only the retired public routes can be handed to the App. */
+export function canonicalSocialPath(segments: readonly string[]): string | null {
+  if (!segments.length || segments.some((part) => !part || part === '.' || part === '..' || /[/\\]/.test(part)))
+    return null;
+  const [first, ...rest] = segments;
+  if (
+    !SOCIAL_LINK_OUT_SOURCES.some((source) => source === `/${first}/:path*` || (!rest.length && source === `/${first}`))
+  )
+    return null;
+  if (first === 'profile' && rest.length === 1 && rest[0] === 'notifications') return null;
+  if (first === 'profile' && rest.length === 2 && rest[1] === 'posts') return `/profile/${encodeURIComponent(rest[0])}`;
+  return '/' + segments.map(encodeURIComponent).join('/');
 }

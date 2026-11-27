@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { listingUriBuilder } from 'pubky-app-specs';
+import { buildMarketUri } from 'pubky-market-specs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
@@ -45,7 +45,7 @@ function itemAttestation(listingId: string, orderRef = ORDER_REF) {
     sub: ORDER_FIXTURE_BUYER,
     cpk: ORDER_FIXTURE_SELLER,
     role: 'buyer_reviewing_seller',
-    listing: listingUriBuilder(ORDER_FIXTURE_SELLER, listingId),
+    listing: buildMarketUri(ORDER_FIXTURE_SELLER, 'listing', listingId),
     order_ref: orderRef,
     completed_on: '2026-08-21',
     price_decade: 'USD:2',

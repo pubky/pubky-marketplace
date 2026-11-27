@@ -8,6 +8,7 @@ import { UserApplication } from '@/application/user/user';
 import { captureAuthScope, endAuthScope } from '@/controllers/auth/auth-scope';
 import { Logger } from '@/libs/logger/logger';
 import { HomeserverService } from '@/services/homeserver/homeserver';
+import { SocialWriteService } from '@/services/homeserver/social-writes';
 import { LocalFollowService } from '@/services/local/follow/follow';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
@@ -62,7 +63,7 @@ describe('CommerceController seller auto-follow', () => {
     await CommerceController.commitUpsertCartItem(`${SELLER}:${LISTING_ID}`, 'default', 1);
 
     expect(ensure).toHaveBeenCalledOnce();
-    expect(ensure).toHaveBeenCalledWith({ follower: BUYER, seller: SELLER, signal: expect.any(AbortSignal) });
+    expect(ensure).toHaveBeenCalledWith({ signal: expect.any(AbortSignal), follower: BUYER, seller: SELLER });
   });
 
   it('follows the seller when an awarded offer goes to the cart', async () => {
@@ -76,7 +77,7 @@ describe('CommerceController seller auto-follow', () => {
       2,
     );
 
-    expect(ensure).toHaveBeenCalledWith({ follower: BUYER, seller: SELLER, signal: expect.any(AbortSignal) });
+    expect(ensure).toHaveBeenCalledWith({ signal: expect.any(AbortSignal), follower: BUYER, seller: SELLER });
   });
 
   it('does not follow when the cart write is rejected', async () => {
@@ -98,7 +99,7 @@ describe('CommerceController seller auto-follow', () => {
     expect(ensure).not.toHaveBeenCalled();
 
     await CommerceController.commitCreateFavorite(`${SELLER}:${LISTING_ID}`);
-    expect(ensure).toHaveBeenCalledWith({ follower: BUYER, seller: SELLER, signal: expect.any(AbortSignal) });
+    expect(ensure).toHaveBeenCalledWith({ signal: expect.any(AbortSignal), follower: BUYER, seller: SELLER });
   });
 
   it('follows the seller when the buyer follows the shop, but not when unfollowing it', async () => {
@@ -109,7 +110,7 @@ describe('CommerceController seller auto-follow', () => {
     expect(ensure).not.toHaveBeenCalled();
 
     await CommerceController.commitCreateShopFollow(SELLER);
-    expect(ensure).toHaveBeenCalledWith({ follower: BUYER, seller: SELLER, signal: expect.any(AbortSignal) });
+    expect(ensure).toHaveBeenCalledWith({ signal: expect.any(AbortSignal), follower: BUYER, seller: SELLER });
   });
 
   it('follows the seller after a successful offer and bid, from the listing aggregate', async () => {
@@ -169,8 +170,8 @@ describe('CommerceController seller auto-follow', () => {
 
     expect(commit).toHaveBeenCalledWith(BUYER, input);
     expect(ensure).toHaveBeenCalledTimes(2);
-    expect(ensure).toHaveBeenCalledWith({ follower: BUYER, seller: SELLER, signal: expect.any(AbortSignal) });
-    expect(ensure).toHaveBeenCalledWith({ follower: BUYER, seller: OTHER_SELLER, signal: expect.any(AbortSignal) });
+    expect(ensure).toHaveBeenCalledWith({ signal: expect.any(AbortSignal), follower: BUYER, seller: SELLER });
+    expect(ensure).toHaveBeenCalledWith({ signal: expect.any(AbortSignal), follower: BUYER, seller: OTHER_SELLER });
   });
 
   it('does not follow when checkout is refused', async () => {
@@ -200,7 +201,7 @@ describe('CommerceController seller auto-follow', () => {
       },
     });
 
-    expect(ensure).toHaveBeenCalledWith({ follower: BUYER, seller: SELLER, signal: expect.any(AbortSignal) });
+    expect(ensure).toHaveBeenCalledWith({ signal: expect.any(AbortSignal), follower: BUYER, seller: SELLER });
   });
 
   it('never blocks the buyer action when the follow fails, and reports the failure quietly', async () => {
@@ -233,6 +234,7 @@ describe('CommerceController seller auto-follow', () => {
 
     function followThroughTheHomeserver() {
       ensure.mockRestore();
+      vi.spyOn(SocialWriteService, 'getEpoch').mockResolvedValue('v1');
       const markerCheck = Promise.withResolvers<boolean>();
       const exists = vi.spyOn(HomeserverService, 'exists').mockReturnValueOnce(markerCheck.promise);
       exists.mockResolvedValue(false);

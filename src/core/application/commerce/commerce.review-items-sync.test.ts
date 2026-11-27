@@ -197,8 +197,8 @@ describe('own item reviews on the reviewer homeserver', () => {
     await db.table(CommerceReviewModel.table.name).clear();
     const otherOrder = issuedAttestation('boots', 'ef'.repeat(32));
     const { orderRef: _orderRef, ...unscoped } = boots.record;
-    const { PubkySpecsBuilder } = await import('pubky-app-specs');
-    const legacy = new PubkySpecsBuilder(ORDER_FIXTURE_BUYER).createMarketplaceReview({
+    const { buildReview } = await import('pubky-market-specs');
+    const legacy = buildReview(ORDER_FIXTURE_BUYER, {
       ...unscoped,
       reviewId: '',
       eligibilityAttestation: otherOrder.jws,
@@ -206,7 +206,7 @@ describe('own item reviews on the reviewer homeserver', () => {
     homeserver.files.clear();
     homeserver.files.set(
       CommerceRecordNormalizer.reviewUri(ORDER_FIXTURE_BUYER, legacy.meta.id),
-      legacy.marketplace_review.toJson(),
+      legacy.review.toJson(),
     );
     const single: MarketplaceOrder = { ...order, reviews: [order.reviews![0]] };
     vi.spyOn(MarketplaceGatewayService, 'getReviewAttestations').mockResolvedValue([
@@ -473,8 +473,8 @@ describe('own item reviews on the reviewer homeserver', () => {
         service = installFakeMarketplaceService(single, ORDER_FIXTURE_BUYER);
         const otherOrder = issuedAttestation('boots', 'ef'.repeat(32));
         const { orderRef: _orderRef, ...unscoped } = boots.record;
-        const { PubkySpecsBuilder } = await import('pubky-app-specs');
-        const legacy = new PubkySpecsBuilder(ORDER_FIXTURE_BUYER).createMarketplaceReview({
+        const { buildReview } = await import('pubky-market-specs');
+        const legacy = buildReview(ORDER_FIXTURE_BUYER, {
           ...unscoped,
           reviewId: '',
           eligibilityAttestation: otherOrder.jws,
@@ -482,7 +482,7 @@ describe('own item reviews on the reviewer homeserver', () => {
         homeserver.files.clear();
         homeserver.files.set(
           CommerceRecordNormalizer.reviewUri(ORDER_FIXTURE_BUYER, legacy.meta.id),
-          legacy.marketplace_review.toJson(),
+          legacy.review.toJson(),
         );
         await switchDevice();
       });

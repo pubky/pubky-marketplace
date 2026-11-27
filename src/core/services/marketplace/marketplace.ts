@@ -2,6 +2,7 @@ import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { z } from 'zod';
 import { getCommerceAdapterMode, getMarketplaceUrl, isDurableCommerceMode } from '@/config/commerce';
+import { IMAGE_MAX_UPLOAD_SIZE } from '@/config/images';
 import type { MarketplaceReviewAttestationPending } from '@/libs/commerce/attestation';
 import type {
   MarketplaceDigitalDeliveryCapability,
@@ -31,8 +32,10 @@ import { Err } from '@/libs/error/error.factories';
 import { safeFetch } from '@/libs/error/error.http';
 import { ErrorService } from '@/libs/error/error.types';
 import { PARSE_JSON_WITH_BODY_EXCERPT, parseResponseOrThrow } from '@/libs/http/response.utils';
+import { rasterImageMimeType, readBodyWithin } from '@/libs/media/image-bytes';
 import { marketplaceSessionRequired } from './marketplace-approval-failure';
 import { reportMarketplaceNotificationInvalidTypes } from './marketplace-notification-diagnostics';
+import { reportMarketplaceOrderParseErrors } from './marketplace-order-diagnostics';
 import {
   type MarketplaceBidHistory,
   type MarketplaceListingProjection,
@@ -41,8 +44,9 @@ import {
   type MarketplaceOffer,
   marketplaceOfferSchema,
   type MarketplaceOrder,
+  marketplaceOrderDiagnosticIssues,
+  type MarketplaceOrderListResult,
   type MarketplaceParticipantOrder,
-  marketplaceParticipantOrderSchema,
   type MarketplacePayment,
   marketplacePaymentSchema,
   type MarketplaceReceipt,
@@ -50,6 +54,7 @@ import {
   type MarketplaceSellerAnnualLimit,
   type MarketplaceSellerListingProjection,
   parseMarketplaceNotificationEntries,
+  parseMarketplaceOrderList,
 } from './marketplace-projections';
 import { MarketplaceTransactionService } from './marketplace-transaction';
 
@@ -116,6 +121,7 @@ export type {
   MarketplaceOffer,
   MarketplaceOfferAward,
   MarketplaceOrder,
+  MarketplaceOrderParseError,
   MarketplacePayment,
   MarketplacePublicDrop,
   MarketplacePublicListingAvailability,
@@ -452,12 +458,12 @@ export class MarketplaceGatewayService {
     return parsed.data;
   }
 
-  static async getOrders(
+  static async getOrderList(
     actor: string,
     options: { signal?: AbortSignal } = {},
-  ): Promise<MarketplaceParticipantOrder[]> {
+  ): Promise<MarketplaceOrderListResult> {
     if (isDurableCommerceMode(getCommerceAdapterMode())) {
-      return await MarketplaceTransactionService.getOrders(actor, options);
+      return await MarketplaceTransactionService.getOrderList(actor, options);
     }
     this.assertSandbox();
     const url = `${getMarketplaceUrl()}/v1/orders`;
@@ -468,15 +474,19 @@ export class MarketplaceGatewayService {
       'getOrders',
     );
     const raw = await parseResponseOrThrow<unknown>(response, ErrorService.Marketplace, 'getOrders', url);
-    const parsed = z.object({ orders: z.array(marketplaceParticipantOrderSchema) }).safeParse(raw);
-    if (!parsed.success) {
-      throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Marketplace returned invalid orders.', {
-        service: ErrorService.Marketplace,
-        operation: 'getOrders',
-        context: { statusCode: response.status },
-      });
-    }
-    return parsed.data.orders;
+    return parseMarketplaceOrderList(raw, reportMarketplaceOrderParseErrors);
+  }
+
+  /**
+   * Returns only rows that parsed cleanly; callers that need to know whether
+   * any rows were dropped (for example, counting open orders before listing
+   * deletion) must call `getOrderList()`.
+   */
+  static async getOrders(
+    actor: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<MarketplaceParticipantOrder[]> {
+    return (await this.getOrderList(actor, options)).orders;
   }
 
   static async getPayment(actor: string, paymentId: string): Promise<MarketplacePayment | null> {
@@ -498,7 +508,10 @@ export class MarketplaceGatewayService {
       throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Marketplace returned an invalid payment.', {
         service: ErrorService.Marketplace,
         operation: 'getPayment',
-        context: { statusCode: response.status },
+        context: {
+          statusCode: response.status,
+          parseIssues: marketplaceOrderDiagnosticIssues(parsed.error.issues, 'payment'),
+        },
       });
     }
     return parsed.data;
@@ -777,7 +790,14 @@ export class MarketplaceGatewayService {
       ErrorService.Marketplace,
       'fetchAttachment',
     );
-    const bytes = new Uint8Array(await response.arrayBuffer());
+    const bytes = await readBodyWithin(response, IMAGE_MAX_UPLOAD_SIZE);
+    if (!bytes) {
+      throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Marketplace attachment is larger than the upload limit.', {
+        service: ErrorService.Marketplace,
+        operation: 'fetchAttachment',
+        context: { statusCode: response.status, maxBytes: IMAGE_MAX_UPLOAD_SIZE },
+      });
+    }
     const expectedHash = response.headers.get('x-content-hash');
     if (!expectedHash || bytesToHex(blake3(bytes)) !== expectedHash) {
       throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Marketplace attachment integrity check failed.', {
@@ -786,7 +806,15 @@ export class MarketplaceGatewayService {
         context: { statusCode: response.status },
       });
     }
-    return new Blob([bytes], { type: response.headers.get('content-type') ?? 'application/octet-stream' });
+    const type = rasterImageMimeType(bytes);
+    if (!type) {
+      throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Marketplace attachment is not a supported image.', {
+        service: ErrorService.Marketplace,
+        operation: 'fetchAttachment',
+        context: { statusCode: response.status },
+      });
+    }
+    return new Blob([bytes], { type });
   }
 
   /**

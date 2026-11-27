@@ -15,7 +15,7 @@ import {
   UserRound,
   UserRoundPlus,
 } from 'lucide-react';
-import { APP_ROUTES, isNavItemActive, PROFILE_ROUTES, SETTINGS_ROUTES } from '@/app/routes';
+import { APP_ROUTES, isNavItemActive, MARKETPLACE_ROUTES, PROFILE_ROUTES, SETTINGS_ROUTES } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
@@ -27,10 +27,9 @@ import {
 } from '@/atoms/DropdownMenu/DropdownMenu';
 import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode } from '@/config/commerce';
-import { getSocialHostUrl } from '@/config/social';
+import { getSocialHostUrl, usesSocialHostNavigation } from '@/config/social';
 import { FileController } from '@/controllers/file/file';
 import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
-import { useCollectionsNavDiscovery } from '@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery';
 import { useCurrentUserProfile } from '@/hooks/useCurrentUserProfile/useCurrentUserProfile';
 import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
 import { useKeyboardOffset } from '@/hooks/useKeyboardOffset/useKeyboardOffset';
@@ -38,11 +37,9 @@ import { useMarketplaceCartCount } from '@/hooks/useMarketplaceCartCount/useMark
 import { useMarketplaceNavAttention } from '@/hooks/useMarketplaceNavAttention/useMarketplaceNavAttention';
 import { usePublicRoute } from '@/hooks/usePublicRoute/usePublicRoute';
 import { marketplaceNavAccessibleName } from '@/libs/commerce/marketplace-attention';
-import { handleFeedNavClick } from '@/libs/utils/feedScrollTop';
 import { cn } from '@/libs/utils/utils';
 import { AvatarWithFallback } from '@/organisms/AvatarWithFallback/AvatarWithFallback';
 import { useAuthStore } from '@/stores/auth/auth.store';
-import { useLocalFilesStore } from '@/stores/localFiles/localFiles.store';
 import { useNotificationStore } from '@/stores/notification/notification.store';
 
 export interface MobileFooterProps {
@@ -54,7 +51,6 @@ type FooterNavItem = {
   activePrefix?: string;
   icon: typeof Store;
   label: string;
-  isFeedRoute?: boolean;
 };
 
 /**
@@ -69,26 +65,23 @@ export function MobileFooter({ className }: MobileFooterProps) {
   const setShowSignInDialog = useAuthStore((state) => state.setShowSignInDialog);
   const { isPublicExploreRoute } = usePublicRoute();
   const { userDetails, currentUserPubky } = useCurrentUserProfile();
-  const socialHostUrl = getSocialHostUrl('/');
-  // Social unread plus marketplace unread — one badge for the whole surface.
-  const unreadNotifications = useNotificationStore((state) => state.selectTotalUnread());
+  const socialHostNav = usesSocialHostNavigation();
+  // Shop notifications and unread conversations share the account badge.
+  const unreadNotifications = useNotificationStore((state) => state.selectMarketplaceUnread());
   // Honest device-local unread: conversations whose last received message
   // postdates the local read checkpoint.
-  const unreadMessages = useChatUnread({ enabled: !socialHostUrl });
+  const unreadMessages = useChatUnread({ enabled: !socialHostNav });
   const marketplaceCartCount = useMarketplaceCartCount();
   const marketplaceAttention = useMarketplaceNavAttention();
   const accountUnread = unreadNotifications + unreadMessages;
-  const localAvatarUrl = useLocalFilesStore((state) => state.profile);
   const { isKeyboardVisible } = useKeyboardOffset();
-  const { markCollectionsNavSeen } = useCollectionsNavDiscovery();
   const isEmbedded = useIsEmbedded();
 
   // Get avatar URL and fallback initial - same logic as desktop header
   const avatarUrl =
-    localAvatarUrl ??
-    (currentUserPubky && userDetails?.image
+    currentUserPubky && userDetails?.image
       ? FileController.getAvatarUrl(currentUserPubky, userDetails.indexed_at)
-      : undefined);
+      : undefined;
   const avatarName = userDetails?.name || 'U';
   // Marketplace stays out of primary navigation until the commerce adapter is
   // explicitly configured; production defaults to 'unavailable' (ADR 0019).
@@ -99,7 +92,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
             href: APP_ROUTES.MARKETPLACE,
             activePrefix: APP_ROUTES.MARKETPLACE,
             icon: Store,
-            label: socialHostUrl ? 'Shop' : 'Market',
+            label: socialHostNav ? 'Shop' : 'Market',
           },
         ]
       : [];
@@ -108,13 +101,11 @@ export function MobileFooter({ className }: MobileFooterProps) {
       href: APP_ROUTES.HOME,
       icon: Home,
       label: 'Home',
-      isFeedRoute: true,
     },
     {
       href: APP_ROUTES.SEARCH,
       icon: Search,
       label: 'Search',
-      isFeedRoute: true,
     },
     {
       href: APP_ROUTES.HOT,
@@ -129,7 +120,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
       label: 'Collections',
     },
   ];
-  const navItems = socialHostUrl
+  const navItems = socialHostNav
     ? [...socialNavItems, { href: SETTINGS_ROUTES.ACCOUNT, icon: Settings, label: 'Settings' }]
     : socialNavItems;
   // Hide footer for guests only on non-explore routes. Core explore and dynamic public
@@ -144,7 +135,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
       overrideDefaults
       className={cn(
         'fixed bottom-0 z-40 w-full overflow-x-auto bg-gradient-to-t from-background via-background/95 to-transparent px-3 py-4 lg:hidden',
-        socialHostUrl && 'px-1 min-[360px]:px-3',
+        socialHostNav && 'px-1 min-[360px]:px-3',
         className,
       )}
     >
@@ -154,35 +145,27 @@ export function MobileFooter({ className }: MobileFooterProps) {
       >
         {navItems.map((item) => {
           const Icon = item.icon;
-          const externalHref = item.href === APP_ROUTES.MARKETPLACE ? null : getSocialHostUrl(item.href);
-          const itemIsActive = !externalHref && isNavItemActive(pathname, item);
-          const isCollectionsItem = item.href === APP_ROUTES.COLLECTIONS;
-          const itemBadgeCount = item.href === APP_ROUTES.MARKETPLACE ? marketplaceCartCount + marketplaceAttention : 0;
+          const isShop = item.href === APP_ROUTES.MARKETPLACE;
+          const NavLink = isShop ? Link : 'a';
+          const itemIsActive = isShop && isNavItemActive(pathname, item);
+          const itemBadgeCount = isShop ? marketplaceCartCount + marketplaceAttention : 0;
           const marketplaceLabel =
-            item.href === APP_ROUTES.MARKETPLACE && marketplaceAttention > 0
+            isShop && marketplaceAttention > 0
               ? marketplaceNavAccessibleName(marketplaceCartCount, marketplaceAttention)
               : null;
           return (
-            <Link
+            <NavLink
               key={item.href}
-              href={externalHref ?? item.href}
-              prefetch={false}
+              href={isShop ? item.href : getSocialHostUrl(item.href)}
+              {...(isShop ? { prefetch: false } : { target: '_top' })}
               aria-label={
                 marketplaceLabel ??
                 (itemBadgeCount > 0
                   ? `${item.label}, ${itemBadgeCount} ${itemBadgeCount === 1 ? 'item' : 'items'} in cart`
                   : item.label)
               }
-              onClick={(event) => {
-                if (externalHref) return;
-                if (isAuthenticated && isCollectionsItem) {
-                  markCollectionsNavSeen();
-                }
-                if (!item.isFeedRoute) return;
-                handleFeedNavClick(event, { isActive: itemIsActive, smoothScrollWhenActive: true });
-              }}
               className={cn(
-                socialHostUrl
+                socialHostNav
                   ? 'flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full p-2 transition-all sm:p-3'
                   : 'rounded-full p-3 transition-all',
                 itemBadgeCount > 0 && 'relative inline-flex',
@@ -204,12 +187,13 @@ export function MobileFooter({ className }: MobileFooterProps) {
                   </Typography>
                 </Badge>
               )}
-            </Link>
+            </NavLink>
           );
         })}
-        {isAuthenticated && socialHostUrl ? (
+        {isAuthenticated && socialHostNav ? (
           <a
-            href={getSocialHostUrl(APP_ROUTES.PROFILE)!}
+            href={getSocialHostUrl(APP_ROUTES.PROFILE)}
+            target="_top"
             aria-label="Profile"
             data-cy="footer-nav-profile-btn"
             className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full"
@@ -260,13 +244,17 @@ export function MobileFooter({ className }: MobileFooterProps) {
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" align="end" sideOffset={12} className="w-72 p-2">
               <DropdownMenuItem asChild>
-                <Link href={PROFILE_ROUTES.PROFILE_PAGE} className="min-h-12 gap-2 px-4 py-2 text-sm font-medium">
+                <a
+                  href={getSocialHostUrl(PROFILE_ROUTES.PROFILE_PAGE)}
+                  target="_top"
+                  className="min-h-12 gap-2 px-4 py-2 text-sm font-medium"
+                >
                   <UserRound className="size-5 shrink-0" aria-hidden="true" />
                   Profile
-                </Link>
+                </a>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href={APP_ROUTES.PROFILE} className="min-h-12 gap-2 px-4 py-2 text-sm font-medium">
+                <Link href={MARKETPLACE_ROUTES.NOTIFICATIONS} className="min-h-12 gap-2 px-4 py-2 text-sm font-medium">
                   <Bell className="size-5 shrink-0" aria-hidden="true" />
                   <span className="flex-1">Notifications</span>
                   {unreadNotifications > 0 && (
@@ -284,13 +272,17 @@ export function MobileFooter({ className }: MobileFooterProps) {
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href={PROFILE_ROUTES.POSTS} className="min-h-12 gap-2 px-4 py-2 text-sm font-medium">
+                <a
+                  href={getSocialHostUrl(PROFILE_ROUTES.POSTS)}
+                  target="_top"
+                  className="min-h-12 gap-2 px-4 py-2 text-sm font-medium"
+                >
                   <FileText className="size-5 shrink-0" aria-hidden="true" />
                   My posts
-                </Link>
+                </a>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href={SETTINGS_ROUTES.ACCOUNT} className="min-h-12 gap-2 px-4 py-2 text-sm font-medium">
+                <Link href={MARKETPLACE_ROUTES.SETTINGS} className="min-h-12 gap-2 px-4 py-2 text-sm font-medium">
                   <Settings className="size-5 shrink-0" aria-hidden="true" />
                   Settings
                 </Link>
@@ -303,7 +295,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
             size="icon"
             className={cn(
               'items-center justify-center border bg-glass',
-              socialHostUrl ? 'size-11 shrink-0 sm:size-12' : 'size-12',
+              socialHostNav ? 'size-11 shrink-0 sm:size-12' : 'size-12',
             )}
             aria-label="Join Pubky"
             onClick={() => setShowSignInDialog(true)}

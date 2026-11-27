@@ -3,7 +3,7 @@ import {
   verifyDropEditionAttestation,
   verifyOrderReceiptAttestation,
   verifyPurchaseAttestation,
-} from 'pubky-app-specs';
+} from 'pubky-market-specs';
 import { z } from 'zod';
 import type { CommerceReviewRecord } from '@/libs/commerce/marketplace-records';
 import { toCamelCaseWire } from '@/libs/commerce/wire-casing';

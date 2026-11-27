@@ -1,7 +1,11 @@
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+import sharp from 'sharp';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { IMAGE_MAX_UPLOAD_SIZE } from '@/config/images';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
+import { Logger } from '@/libs/logger/logger';
+import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
 import { MarketplaceGatewayService } from './marketplace';
 
 const SELLER = 'y'.repeat(52);
@@ -255,6 +259,61 @@ describe('MarketplaceGatewayService', () => {
     const downloaded = await MarketplaceGatewayService.fetchAttachment(SELLER, '00000000-0000-4000-8000-000000000990');
     expect(new Uint8Array(await downloaded.arrayBuffer())).toEqual(bytes);
   });
+
+  it('types a downloaded attachment from its bytes, not the declared type', async () => {
+    const bytes = new Uint8Array(
+      await sharp({ create: { width: 2, height: 2, channels: 3, background: '#0a78c8' } })
+        .png()
+        .toBuffer(),
+    );
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(bytes, {
+        status: 200,
+        headers: { 'content-type': 'text/html', 'x-content-hash': bytesToHex(blake3(bytes)) },
+      }),
+    );
+
+    const downloaded = await MarketplaceGatewayService.fetchAttachment(SELLER, 'attachment-id');
+
+    expect(downloaded.type).toBe('image/png');
+  });
+
+  it('refuses an attachment whose bytes are not a raster image', async () => {
+    const bytes = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" onload="document.title=1"/>');
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(bytes, {
+        status: 200,
+        headers: { 'content-type': 'image/png', 'x-content-hash': bytesToHex(blake3(bytes)) },
+      }),
+    );
+
+    await expect(MarketplaceGatewayService.fetchAttachment(SELLER, 'attachment-id')).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+      message: 'Marketplace attachment is not a supported image.',
+    });
+  });
+
+  it('refuses an attachment over the upload limit before reading it', async () => {
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          pulled += 1;
+          controller.enqueue(new Uint8Array(1024));
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(body, { status: 200, headers: { 'content-length': String(IMAGE_MAX_UPLOAD_SIZE + 1) } }),
+    );
+
+    await expect(MarketplaceGatewayService.fetchAttachment(SELLER, 'attachment-id')).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+      message: 'Marketplace attachment is larger than the upload limit.',
+    });
+    expect(pulled).toBe(0);
+  });
 });
 
 describe('MarketplaceGatewayService local pickup facade (Wave 7)', () => {
@@ -356,5 +415,69 @@ describe('MarketplaceGatewayService Paykit rail status', () => {
 
     await expect(MarketplaceGatewayService.getPaykitRailStatus()).resolves.toBe(expected);
     expect((vi.mocked(fetch).mock.calls[0] as [string])[0]).toBe('http://localhost:3100/health');
+  });
+});
+
+describe('MarketplaceGatewayService sandbox order-list resilience (#581)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    config.mode = 'sandbox';
+  });
+
+  it('parses each sandbox order individually and returns inline parse errors for malformed rows', async () => {
+    const valid = createOrderFixture('pending_payment', {
+      id: '06cc87e9-60f8-4942-b1f2-1ca6c24b4535',
+      payment: createPaymentFixture('manual_review', {
+        orderId: '06cc87e9-60f8-4942-b1f2-1ca6c24b4535',
+        reviewReason: 'upstream_inconsistent',
+      }),
+    });
+    const malformed = {
+      ...createOrderFixture('cancelled', { id: '470c02d8-9326-4d89-98f6-199df5a2ffcb' }),
+      payment: {
+        ...createPaymentFixture('manual_review', { orderId: '470c02d8-9326-4d89-98f6-199df5a2ffcb' }),
+        reviewReason: 'unexpected_sandbox_reason',
+      },
+    };
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, { orders: [valid, malformed] }));
+
+    const result = await MarketplaceGatewayService.getOrderList(SELLER);
+
+    expect(result.orders).toHaveLength(1);
+    expect(result.orders[0]?.id).toBe(valid.id);
+    expect(result.orders[0]?.payment?.reviewReason).toBe('upstream_inconsistent');
+    expect(result.parseErrors).toEqual([
+      expect.objectContaining({
+        kind: 'parse_error',
+        index: 1,
+        orderId: '470c02d8-9326-4d89-98f6-199df5a2ffcb',
+        issues: [
+          expect.objectContaining({
+            path: 'orders[1].payment.reviewReason',
+            message: expect.stringContaining('invalid value "unexpected_sandbox_reason"'),
+          }),
+        ],
+      }),
+    ]);
+  });
+
+  it('reports the invalid sandbox payment field without participant identifiers or wire values', async () => {
+    const payment = createPaymentFixture('manual_review');
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, { ...payment, reviewReason: 'private rejected text' }));
+    using loggerError = vi.spyOn(Logger, 'error');
+    await expect(MarketplaceGatewayService.getPayment(SELLER, payment.id)).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+    expect(loggerError.mock.calls.map(([, , context]) => context)).toStrictEqual([
+      { statusCode: 200, parseIssues: ['payment.reviewReason: invalid_value'] },
+    ]);
+  });
+
+  it('throws INVALID_RESPONSE when sandbox /v1/orders omits the top-level orders array', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, { orders: 'not-an-array' }));
+
+    await expect(MarketplaceGatewayService.getOrderList(SELLER)).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
   });
 });

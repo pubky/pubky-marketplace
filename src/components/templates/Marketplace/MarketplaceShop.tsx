@@ -47,7 +47,6 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
   // One list for the review section and the rating header, so a reviewer chip changes both.
   const reviews = useMarketplaceReviews({ sellerPubky });
   const profileRoute = getProfileRoute(PROFILE_ROUTES.PROFILE, sellerPubky);
-  // With social link-out on, profiles live on the social host; plain <a>, same tab.
   const socialProfileUrl = getSocialHostUrl(profileRoute);
   // Embedded in the host app, the profile link must replace the whole page, not just this frame.
   const isEmbedded = useIsEmbedded();
@@ -147,21 +146,14 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
                       </Button>
                     )}
                     <Button asChild variant="secondary" className="rounded-full">
-                      {socialProfileUrl ? (
-                        <a
-                          href={socialProfileUrl}
-                          target={isEmbedded ? '_top' : undefined}
-                          data-cy="profile-on-pubky-link"
-                        >
-                          <User className="size-4" />
-                          {isOwner ? 'My profile on Pubky' : 'Profile on Pubky'}
-                        </a>
-                      ) : (
-                        <Link href={profileRoute} overrideDefaults>
-                          <User className="size-4" />
-                          {isOwner ? 'My profile' : 'Contact seller'}
-                        </Link>
-                      )}
+                      <a
+                        href={socialProfileUrl}
+                        target={isEmbedded ? '_top' : undefined}
+                        data-cy="profile-on-pubky-link"
+                      >
+                        <User className="size-4" />
+                        {isOwner ? 'My profile on Pubky' : 'Profile on Pubky'}
+                      </a>
                     </Button>
                   </div>
                   <div className="flex gap-6 text-sm">
@@ -235,21 +227,14 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
                     <StorefrontOwnerActions />
                   ) : (
                     <Button asChild variant="secondary" className="rounded-full">
-                      {socialProfileUrl ? (
-                        <a
-                          href={socialProfileUrl}
-                          target={isEmbedded ? '_top' : undefined}
-                          data-cy="profile-on-pubky-link"
-                        >
-                          <User className="size-4" />
-                          Profile on Pubky
-                        </a>
-                      ) : (
-                        <Link href={profileRoute} overrideDefaults>
-                          <User className="size-4" />
-                          View seller profile
-                        </Link>
-                      )}
+                      <a
+                        href={socialProfileUrl}
+                        target={isEmbedded ? '_top' : undefined}
+                        data-cy="profile-on-pubky-link"
+                      >
+                        <User className="size-4" />
+                        Profile on Pubky
+                      </a>
                     </Button>
                   )}
                 </div>
