@@ -1,0 +1,1 @@
+With browser translation on (Google Translate, Edge or Safari), the Market keeps working instead of falling to the error page on the next update, and checkout replaces a translated status line, such as the delivery-country prompt or the Locks payment request notice, when the step moves on.

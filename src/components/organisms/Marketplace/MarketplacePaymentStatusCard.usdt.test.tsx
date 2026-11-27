@@ -14,9 +14,11 @@ import {
   USDT_SELLER_REVIEW_COPY,
   USDT_WALLET_HINT,
 } from '@/libs/commerce/usdt-buyer-status';
+import { installTranslatorDomGuard, uninstallTranslatorDomGuard } from '@/libs/dom/translator-dom-guard';
 import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
 import { createUsdtOrderFixture, USDT_ORDER_FIELDS, type UsdtOrderPhase } from '@/test/fixtures/commerce/usdt-orders';
 import { setupFixedDateLocale } from '@/test-utils/date-locale';
+import { translateTextNodes } from '@/test-utils/page-translator';
 import { MarketplacePaymentStatusCard } from './MarketplacePaymentStatusCard';
 
 setupFixedDateLocale();
@@ -110,6 +112,30 @@ beforeEach(() => {
 });
 
 describe('MarketplacePaymentStatusCard — USDT orders', () => {
+  it('removes the translated USDT payment instruction when delivery fails', () => {
+    const { order, payment } = createUsdtOrderFixture('awaiting');
+    const card = (delivery: 'pending' | 'failed') => (
+      <MarketplacePaymentStatusCard
+        order={{ ...order, paykitDeliveryState: delivery }}
+        payment={payment}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />
+    );
+    installTranslatorDomGuard();
+    try {
+      const { container, rerender } = render(card('pending'));
+      translateTextNodes(screen.getByTestId('usdt-awaiting-status'));
+      rerender(card('failed'));
+      expect(screen.getByTestId('paykit-delivery-failed')).toBeVisible();
+      expect(container).not.toHaveTextContent(USDT_BUYER_PHASE_COPY.awaiting);
+    } finally {
+      uninstallTranslatorDomGuard();
+    }
+  });
+
   it('shows a bound unpaid USDT order with the exact amount, the network and the Bitkit hints', () => {
     const { container } = renderPhase('awaiting', true);
 
