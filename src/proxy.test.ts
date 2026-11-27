@@ -75,8 +75,16 @@ describe('proxy', () => {
 });
 
 describe('proxy in store mode', () => {
-  it('passes every path through when store mode is off', async () => {
-    for (const path of ['/', '/marketplace', '/hot', `/marketplace/shop/${OTHER_SELLER}`]) {
+  it('opens the Market from the root with the query kept when store mode is off', async () => {
+    const response = await proxy(request('/?ref=home'));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('https://store.example/marketplace?ref=home');
+    expect(response.headers.get('content-security-policy')).toBe("frame-ancestors 'none'");
+  });
+
+  it('passes every other path through when store mode is off', async () => {
+    for (const path of ['/marketplace', '/hot', `/marketplace/shop/${OTHER_SELLER}`, '/setup']) {
       const response = await proxy(request(path));
       expect(response.headers.get('location')).toBeNull();
       expect(response.headers.get('x-middleware-rewrite')).toBeNull();

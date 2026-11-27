@@ -33,8 +33,14 @@ export async function proxy(request: NextRequest) {
 }
 
 function storeModeResponse(request: NextRequest, state: StoreState): NextResponse | null {
-  if (state.kind === 'off') return null;
   const pathname = request.nextUrl.pathname;
+  if (state.kind === 'off') {
+    if (pathname !== '/') return null;
+    // A redirect in `next.config.ts` would run before this proxy and hide an unclaimed store's holding page.
+    const url = request.nextUrl.clone();
+    url.pathname = APP_ROUTES.MARKETPLACE;
+    return NextResponse.redirect(url, 307);
+  }
   if (state.kind !== 'unavailable' && pathname === STORE_NOT_FOUND_PATHNAME) return null;
   const decision = decideStoreRoute(pathname, state);
   if (decision.kind === 'allow') return null;
