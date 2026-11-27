@@ -1555,6 +1555,40 @@ describe('MarketplacePaymentStatusCard', () => {
     unmount();
   });
 
+  it('replaces translated Bitcoin instructions when a request arrives or delivery fails', () => {
+    const card = (delivery: 'pending' | 'delivered' | 'failed') => (
+      <MarketplacePaymentStatusCard
+        order={createOrderFixture('pending_payment', {
+          holdExpiresAt: '2026-08-20T21:15:00.000Z',
+          holdSource: 'bind',
+          paymentMethod: 'bitcoin',
+          paykitRequestState: 'pending',
+          paykitDeliveryState: delivery,
+        })}
+        payment={createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' })}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />
+    );
+    installTranslatorDomGuard();
+    try {
+      const { container, rerender } = render(card('pending'));
+      translateTextNodes(screen.getByTestId('paykit-delivery-status'));
+      rerender(card('delivered'));
+      expect(screen.getByTestId('paykit-delivery-status')).toHaveTextContent(/Payment request sent/);
+      expect(container).not.toHaveTextContent(/Waiting for your wallet/);
+
+      translateTextNodes(screen.getByTestId('paykit-delivery-status'));
+      rerender(card('failed'));
+      expect(screen.getByTestId('paykit-delivery-failed')).toHaveTextContent(/couldn.t confirm/i);
+      expect(container).not.toHaveTextContent(/Payment request sent|Waiting for your wallet/);
+    } finally {
+      uninstallTranslatorDomGuard();
+    }
+  });
+
   describe('auction winner pay-by deadline', () => {
     const HOLD = '2026-08-20T21:15:00.000Z';
     const REQUEST = '2026-08-20T21:07:00.000Z';

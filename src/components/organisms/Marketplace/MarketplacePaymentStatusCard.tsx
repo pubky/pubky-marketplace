@@ -1113,10 +1113,14 @@ function BuyerBitcoinPaymentProgress({
       </div>
     );
   }
+  const deliveryMessage =
+    requestSent && paymentDeadline
+      ? `Payment request sent. Open Bitkit to approve and pay by ${paymentDeadline}.`
+      : `${progress.text}${paymentDeadline ? ` Pay by ${paymentDeadline}.` : ''}`;
   return (
     <div className="grid gap-2">
       {order.paykitDeliveryState === 'failed' ? (
-        <div className="grid justify-items-start gap-2">
+        <div key="delivery-failed" className="grid justify-items-start gap-2">
           <Typography
             as="p"
             role="alert"
@@ -1128,11 +1132,13 @@ function BuyerBitcoinPaymentProgress({
           {checkoutActions}
         </div>
       ) : (
-        <div className="flex items-center gap-2 text-sm text-foreground" data-testid="paykit-delivery-status">
+        <div
+          key={deliveryMessage}
+          className="flex items-center gap-2 text-sm text-foreground"
+          data-testid="paykit-delivery-status"
+        >
           <LoaderCircle className="size-4 animate-spin" />
-          {requestSent && paymentDeadline
-            ? `Payment request sent. Open Bitkit to approve and pay by ${paymentDeadline}.`
-            : `${progress.text}${paymentDeadline ? ` Pay by ${paymentDeadline}.` : ''}`}
+          {deliveryMessage}
         </div>
       )}
       {order.paykitDeliveryState !== 'failed' && checkoutActions}
@@ -1170,7 +1176,7 @@ function BuyerPaykitPaymentProgress({
         {holderBoundCopy(buyerPayByDeadline(order))}
       </Typography>
       {order.paykitDeliveryState === 'failed' ? (
-        <div className="grid justify-items-start gap-2">
+        <div key="delivery-failed" className="grid justify-items-start gap-2">
           <Typography
             as="p"
             role="alert"
@@ -1270,7 +1276,7 @@ function BuyerUsdtPaymentProgress({
         </Typography>
       )}
       {order.paykitDeliveryState === 'failed' ? (
-        <div className="grid justify-items-start gap-2">
+        <div key="delivery-failed" className="grid justify-items-start gap-2">
           <Typography
             as="p"
             role="alert"
