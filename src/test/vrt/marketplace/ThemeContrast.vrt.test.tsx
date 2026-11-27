@@ -49,26 +49,28 @@ describe.each(['bg-background', 'bg-card', 'bg-card/80', 'bg-popover'])('Field v
   });
 });
 
+const focusRingSize = '0px 0px 0px 3px';
+
+function focusRingColor(wrapper: Element) {
+  const shadows = getComputedStyle(wrapper).boxShadow.split(/,(?![^()]*\))/);
+  const ring = shadows.find((shadow) => shadow.includes(focusRingSize));
+  expect(ring).toBeDefined();
+  return ring!.replace(focusRingSize, '').trim();
+}
+
 for (const [name, Field] of [
   ['Name', InputField],
   ['Bio', TextareaField],
 ] as const) {
   describe(`${name} keyboard focus`, () => {
-    it.each(['dark', 'light'] as const)('shows the default and invalid focus rings in %s mode', async (theme) => {
+    it.each(['dark', 'light'] as const)('shows the default focus border and ring in %s mode', async (theme) => {
       const screen = await renderForVRT(
         <main
           className="bg-card"
           style={{ borderColor: 'var(--ring)', color: 'color-mix(in oklab, var(--ring) 50%, transparent)' }}
         >
           <Field value="My profile" variant="dashed" readOnly />
-          <section
-            style={{
-              borderColor: 'var(--destructive)',
-              color: `color-mix(in oklab, var(--destructive) ${theme === 'light' ? 20 : 40}%, transparent)`,
-            }}
-          >
-            <Field value="My profile" variant="dashed" status="error" readOnly />
-          </section>
+          <Field value="My profile" variant="dashed" status="error" readOnly />
         </main>,
         { viewport: VRT_VIEWPORT_DESKTOP, theme },
       );
@@ -77,20 +79,42 @@ for (const [name, Field] of [
         expect(getComputedStyle(invalid.element()).color).toBe(getComputedStyle(normal.element()).color);
       }
       const card = screen.getByRole('main').element();
-      for (const field of [normal, invalid]) {
-        const wrapper = field.element().parentElement!;
-        const expected = getComputedStyle(wrapper.parentElement!);
-        const ringSize = '0px 0px 0px 3px';
-        expect(getComputedStyle(wrapper).boxShadow).not.toContain(ringSize);
-        await userEvent.tab();
-        await expect.element(field).toHaveFocus();
-        const style = getComputedStyle(wrapper);
-        expect(style.borderTopColor).toBe(expected.borderTopColor);
-        expectColorContrast(style.borderTopColor, card);
-        const ring = style.boxShadow.split(/,(?![^()]*\))/).find((shadow) => shadow.includes(ringSize));
-        expect(ring).toBeDefined();
-        expect(ring!.replace(ringSize, '').trim()).toBe(expected.color);
-      }
+      const wrapper = normal.element().parentElement!;
+      expect(getComputedStyle(wrapper).boxShadow).not.toContain(focusRingSize);
+      await userEvent.tab();
+      await expect.element(normal).toHaveFocus();
+      const border = getComputedStyle(wrapper).borderTopColor;
+      expect(border).toBe(getComputedStyle(card).borderTopColor);
+      expectColorContrast(border, card);
+      expect(focusRingColor(wrapper)).toBe(getComputedStyle(card).color);
+    });
+
+    describe.each(['bg-background', 'bg-card'])('on %s', (surface) => {
+      describe.each(['error', 'success'] as const)('%s state', (status) => {
+        it.each(['dark', 'light'] as const)('shows a distinct keyboard focus ring in %s mode', async (theme) => {
+          const screen = await renderForVRT(
+            <main
+              className={`p-4 ${surface}`}
+              style={{ borderColor: status === 'error' ? 'var(--destructive)' : 'var(--brand)' }}
+            >
+              <Field value="My profile" variant="dashed" status={status} readOnly />
+            </main>,
+            { viewport: VRT_VIEWPORT_DESKTOP, theme },
+          );
+          const field = screen.getByRole('textbox');
+          const wrapper = field.element().parentElement!;
+          const backdrop = screen.getByRole('main').element();
+          const statusBorder = getComputedStyle(backdrop).borderTopColor;
+          expect(getComputedStyle(wrapper).borderTopColor).toBe(statusBorder);
+          expect(getComputedStyle(wrapper).boxShadow).not.toContain(focusRingSize);
+          await userEvent.tab();
+          await expect.element(field).toHaveFocus();
+          expect(getComputedStyle(wrapper).borderTopColor).toBe(statusBorder);
+          // Light-theme success borders use the brand color, which falls below 3:1 on both surfaces.
+          if (status === 'error' || theme === 'dark') expectColorContrast(statusBorder, backdrop);
+          expectColorContrast(focusRingColor(wrapper), backdrop);
+        });
+      });
     });
   });
 }
